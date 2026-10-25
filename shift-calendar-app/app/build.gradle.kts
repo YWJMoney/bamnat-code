@@ -220,7 +220,7 @@ dependencies {
     // 8 KB, no dependencies; adds one normal permission (BIND_GET_INSTALL_REFERRER_SERVICE, 처리방침 4항).
     implementation("com.android.installreferrer:installreferrer:2.2")
 
-    val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     testImplementation(composeBom)
     testImplementation("androidx.window:window-testing:1.3.0")
@@ -234,14 +234,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.core:core-ktx:1.16.0")
-    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.core:core-splashscreen:1.2.0")
     // [PERF-01] Installs src/main/baseline-prof.txt on phones that got the APK outside Play, so the start is compiled ahead too.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
-    implementation("androidx.navigation:navigation-compose:2.9.1")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
 
     // Home screen widgets [FEAT-03, REL-03].
     implementation("androidx.glance:glance-appwidget:1.1.1")
