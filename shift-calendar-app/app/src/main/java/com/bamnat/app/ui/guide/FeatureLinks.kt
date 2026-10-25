@@ -87,6 +87,10 @@ val TOOL_KEYS = setOf(
     "invest.alarms", "invest.stats", "invest.records", "invest.overview",
     // [CUST-01] 화면 꾸미기 over the calendar (CalendarScreen).
     "customize",
+    // [TAX-02] 세금·실수령 card on the 돈 summary (MoneyScreen).
+    "tax",
+    // [PAYX-48] 월급날 비교 on the stats tab: the card comes into view and asks the amount (WorkTypeCards).
+    "pay.gap",
 )
 
 /**

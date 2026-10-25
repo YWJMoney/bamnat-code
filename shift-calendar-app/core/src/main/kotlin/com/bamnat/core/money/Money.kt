@@ -239,8 +239,9 @@ data class CategoryTotal(val category: String, val amount: Long, val count: Int)
 
 /**
  * One month of money for the money tab [WORK-04][LEDG-01]. Income adds up each source the user's
- * work produces; when the user records the salary actually paid (분류 급여) it replaces the
- * engine's estimate so the same pay is never counted twice. A job counts only the deposit and
+ * work produces. [TAX-01] (결정 W-D1, 사용자 U9-다): the month's pay counts once, as the engine's
+ * estimate; the salary actually paid (분류 급여) is kept as an observation ([payRecorded]) that teaches
+ * the 세후 예상, and counts only in a month with no estimate. A job counts only the deposit and
  * balance ticked as paid ([RECV-04]): money still owed is 받을 돈, not 들어온 돈, and the job's
  * costs go out with the other spending so an unpaid job never shows as negative income.
  */
@@ -262,8 +263,10 @@ data class MonthMoney(
     val expenses: Long,
     val expenseByCategory: List<CategoryTotal>,
 ) {
-    /** The engine's estimate only counts until a real salary is written down. */
-    val payCounted: Long get() = if (payRecorded > 0) payRecorded else payEstimate ?: 0
+    /** [TAX-01] The estimate when there is one, else the salary written down; never both. */
+    val payCounted: Long get() = payEstimate ?: payRecorded
+    /** [TAX-01] The salary that came in sits beside the estimate as 관측, not inside 들어온 돈. */
+    val payObserved: Boolean get() = payEstimate != null && payRecorded > 0
     val salesNet: Long get() = sales - salesCosts
     val jobProfit: Long get() = jobEarned - jobCosts
     /** [RECV-04] This month's jobs not yet paid; shown beside 들어온 돈, never inside it. */

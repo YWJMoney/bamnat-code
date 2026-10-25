@@ -417,6 +417,8 @@ fun CalendarScreen(
         delay(150)
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthEstimate(payProfile, snap, visibleMonth) }
     }
+    // [TAX-02] 세후 beside it (프로).
+    val takeHome by produceState<Long?>(null, payEstimate) { value = payEstimate?.let { vm.takeHome(payProfile, it, visibleMonth) } }
     val scope = rememberCoroutineScope()
     // A month picked from the list is there at once.
     val goToMonth: (YearMonth) -> Unit = { m -> scope.launch { pagerState.scrollToPage(monthToPage(baseMonth, m)) } }
@@ -1088,6 +1090,7 @@ fun CalendarScreen(
                     MonthSummaryBar(
                         overview = overview,
                         payEstimate = payEstimate,
+                        takeHome = takeHome,
                         versus = versus,
                         onOpen = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) onOpenPay else onOpenMoney,
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),

@@ -195,6 +195,7 @@ fun PayslipMatchDialog(
             filled = "회사 규칙 ${changes.size}개를 급여 설정에 넣었어요"
         }) { read ->
         form.fill(read, profile)
+        vm.observePayslip(read, chosen) // [TAX-04] 세금 예측도 이 명세서로 맞춰요
         more = true
         val moved = read.month?.takeIf { !it.isAfter(latest) && it != chosen }
         moved?.let { chosen = it }
