@@ -149,7 +149,7 @@ object FillSheetReader {
         DATE.findAll(rest).toList().forEach { m ->
             if (date == null) date = runCatching {
                 if (m.groupValues[1].isNotEmpty()) LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt())
-                else LocalDate.of(LocalDate.now().year, m.groupValues[4].toInt(), m.groupValues[5].toInt())
+                else LocalDate.of(com.bamnat.core.time.Today.date().year, m.groupValues[4].toInt(), m.groupValues[5].toInt())
             }.getOrNull()
             if (m.groupValues[1].isNotEmpty()) cut(m.range)
         }

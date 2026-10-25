@@ -493,6 +493,11 @@ fun MoneyScreen(
         vm.showPage(MoneyViewModel.Page.SUMMARY)
         if (gate.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)) { if (taxSide(settings.workStyle) == TaxSide.BUSINESS) bizTax = true else takingHome = true }
     }
+    // [TAX-02] 세금·실수령 opened from the help search or the update notice: the summary, where the card is.
+    val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
+    LaunchedEffect(featureFocus) {
+        if (featureFocus == "tax" && com.bamnat.app.ui.guide.FeatureLinks.take("tax")) vm.showPage(MoneyViewModel.Page.SUMMARY)
+    }
     val payRecords by vm.payRecords.collectAsStateWithLifecycle()
     val taxSettings by vm.taxSettings.collectAsStateWithLifecycle()
     val rules by vm.rules.collectAsStateWithLifecycle()

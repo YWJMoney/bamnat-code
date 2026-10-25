@@ -231,7 +231,7 @@ class InvestAppTest {
         val t = r.now().trades.single()
         assertEquals(8.0, t.quantity, 1e-9)
         assertEquals(35_000.0, t.price, 1e-9)
-        assertEquals(42.0, t.fee, 1e-9)
+        assertEquals(140.0, t.fee, 1e-9) // [INV-38] 기본 수수료 0.05% (결정 D73)
         assertEquals(0.0, t.tax, 1e-9)
         assertEquals(listOf("정기 적립"), t.tags)
         assertEquals(id, t.alarmId)
