@@ -865,7 +865,6 @@ fun CalendarScreen(
             // [NURS-01] A month's duty typed one day after another, for rosters that come as a sheet.
             onTypeMonth = if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) ({ fillMonth(visibleMonth) }) else null,
             style = settings.workStyle,
-            calendarId = activeCalendar.id,
         ) }
         if (sideways) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1603,9 +1602,8 @@ private fun CalendarHeader(
     /** [CAL-24] 모든 조 보기; null when the calendar has no rotation to split into teams. */
     onOpenTeams: (() -> Unit)? = null,
     onTypeMonth: (() -> Unit)? = null,
-    /** [FIT-01] The calendar on screen's kind of work and id: the tools it does not use wait under 더 보기. */
+    /** [FIT-01] The calendar on screen's kind of work: the tools it does not use wait under 더 보기 (kept per [calendarId]). */
     style: com.bamnat.core.work.WorkStyle? = null,
-    calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
     modifier: Modifier = Modifier,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
