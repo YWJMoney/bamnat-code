@@ -85,6 +85,26 @@ class ShiftsViewModel(
         viewModelScope.launch { repo.deleteShiftType(id) }
     }
 
+    /** [SHFT-09] Where a shift type is used, said in its delete dialog. */
+    suspend fun use(id: Long): com.bamnat.app.data.ScheduleRepository.ShiftTypeUse = repo.shiftTypeUse(id)
+
+    /** [SHFT-09] The last delete, for the snackbar's 되돌리기. */
+    private val _removed = kotlinx.coroutines.flow.MutableSharedFlow<com.bamnat.app.data.ScheduleRepository.ShiftTypeRemoval>(extraBufferCapacity = 1)
+    val removed: kotlinx.coroutines.flow.SharedFlow<com.bamnat.app.data.ScheduleRepository.ShiftTypeRemoval> = _removed
+
+    /** [SHFT-09] Deletes shift type [id]; its days and work-order steps go to [replaceWith], or are emptied without one. */
+    fun deleteUndoable(id: Long, replaceWith: Long? = null) {
+        viewModelScope.launch {
+            repo.deleteShiftTypeUndoable(id, replaceWith)?.let { _removed.emit(it) }
+            container.telemetry.event("shift_type_delete", if (replaceWith != null) "replace" else "clear")
+        }
+    }
+
+    /** [SHFT-09] 되돌리기: the shift type, its days, steps and 대근 as they were. Runs past the screen. */
+    fun restore(removal: com.bamnat.app.data.ScheduleRepository.ShiftTypeRemoval) {
+        container.appScope.launch { repo.restoreShiftType(removal) }
+    }
+
     fun move(id: Long, delta: Int) {
         viewModelScope.launch { repo.moveShiftType(id, delta) }
     }

@@ -305,6 +305,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true && !browse.browsing) {
+            // [NAV-03] 1.25 Z (U4): a help link tapped during the setup is not followed later, out of the blue, once it is done.
+            LaunchedEffect(Unit) { SettingsLinks.target.collect { it?.let(SettingsLinks::consume) } }
             if (consentSeen == null && setupDraft == null) {
                 val key = firstStyleKey
                 if (key == null) {
@@ -346,6 +348,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
             if (NoticeLinks.target.value == null && current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
+                TabHistory.clear()
                 nav.navigate(TopLevel.CALENDAR.route) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
@@ -596,6 +599,48 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
+
+    // [NAV-02] 1.25 Z (U4): back goes where the user was. From a tab reached from another tab, that tab, as it was
+    // left (Android's default went to the calendar from every tab); from the calendar itself, a second back within
+    // two seconds closes the app, so one stray back does not. Screens and sheets inside take back first.
+    // One callback, added again after every move so it comes after the NavHost's own back (added once, at the
+    // start), which would otherwise pop straight to the calendar; screens composed with the move add theirs later
+    // and still go first.
+    val context = LocalContext.current
+    var exitArmedAt by remember { mutableStateOf(0L) }
+    val tabBack = remember { TabBackCallback() }
+    // On every tab; what to do is decided when back comes, from the back stack as it is then (it is not state, and
+    // a tab brought back with its screens is still settling when this is drawn).
+    tabBack.isEnabled = topLevel != null
+    tabBack.onBack = onBack@{
+        val previousRoute = nav.previousBackStackEntry?.destination?.route
+        val current = TopLevel.entries.firstOrNull { it.route == nav.currentBackStackEntry?.destination?.route }
+        when {
+            current != null && current != TopLevel.CALENDAR && previousRoute == TopLevel.CALENDAR.route && TabHistory.previous() != null ->
+                TabHistory.back()?.let { prev -> nav.navigateTopLevel(prev, record = false) }
+            current == TopLevel.CALENDAR && previousRoute == null -> {
+                val now = android.os.SystemClock.uptimeMillis()
+                if (exitArmedAt != 0L && now - exitArmedAt <= EXIT_WINDOW_MILLIS) {
+                    TabHistory.clear()
+                    (context as? android.app.Activity)?.finish()
+                } else {
+                    exitArmedAt = now
+                    android.widget.Toast.makeText(context, "한 번 더 누르면 밤낮이 닫혀요", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            // Anything else is the NavHost's: the screen under this one.
+            else -> return@onBack false
+        }
+        true
+    }
+    val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(dispatcher, lifecycleOwner, backStack?.id) {
+        tabBack.remove()
+        tabBack.dispatcher = dispatcher
+        dispatcher?.addCallback(lifecycleOwner, tabBack)
+        onDispose { tabBack.remove() }
+    }
 
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
     val tabletop = rememberTabletop()
@@ -1434,13 +1479,61 @@ private fun NavHostController.fixCompanySetup(place: FixPlace) {
     }
 }
 
-private fun NavHostController.navigateTopLevel(route: String) {
+/**
+ * [NAV-02] To a tab. From another tab it is a tab switch (each tab keeps its own screens) and the tab left is
+ * remembered for back ([record]); from a screen opened over a tab, the tab goes on top of that screen, so back
+ * returns to it instead of the screen being thrown away.
+ */
+private fun NavHostController.navigateTopLevel(route: String, record: Boolean = true) {
+    val current = currentBackStackEntry?.destination?.route
+    val fromTab = current == null || TopLevel.entries.any { it.route == current }
+    if (!fromTab) {
+        navigate(route) { launchSingleTop = true }
+        return
+    }
+    if (record && current != null && current != route) TabHistory.left(current, route)
     navigate(route) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
     }
 }
+
+/** [NAV-02] The tabs the user went through, latest last, for back. Kept for the app's run; opening the app again clears it. */
+internal object TabHistory {
+    private val stack = ArrayDeque<String>()
+    private const val MAX = 10
+
+    /** Left tab [from] for tab [to]: [to] is taken out further down, so going round the tabs does not grow the list. */
+    fun left(from: String, to: String) {
+        stack.remove(from)
+        stack.remove(to)
+        stack.addLast(from)
+        while (stack.size > MAX) stack.removeFirst()
+    }
+
+    fun previous(): String? = stack.lastOrNull()
+
+    fun back(): String? = stack.removeLastOrNull()
+
+    fun clear() = stack.clear()
+}
+
+/** [NAV-02] Back between tabs and out of the calendar ([AppRoot]); what it does is set on every composition. */
+private class TabBackCallback : androidx.activity.OnBackPressedCallback(false) {
+    /** False hands back on to the callbacks under this one. */
+    var onBack: () -> Boolean = { false }
+    var dispatcher: androidx.activity.OnBackPressedDispatcher? = null
+
+    override fun handleOnBackPressed() {
+        if (onBack()) return
+        isEnabled = false
+        try { dispatcher?.onBackPressed() } finally { isEnabled = true }
+    }
+}
+
+/** [NAV-02] How long the "한 번 더 누르면 닫혀요" stays armed. */
+private const val EXIT_WINDOW_MILLIS = 2_000L
 
 /**
  * Pops only if [route] is still on top, so a double tap on back or save (or a callback that

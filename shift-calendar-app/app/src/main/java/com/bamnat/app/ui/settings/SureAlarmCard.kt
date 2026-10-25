@@ -43,7 +43,7 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
     fun pick(m: AlarmMission?, set: (AlarmMission?) -> Unit) {
         if (m == AlarmMission.PHOTO && references.isEmpty()) photoWanted = true else set(m)
     }
-    SectionCard(title = "확실하게 깨우기" + if (open) "" else " (프로)") {
+    SectionCard(title = "확실하게 깨우기", trailing = { com.bamnat.app.ui.components.ProBadge(locked = !open) }) { // [TIER-06]
         val chosen = if (open) AlarmMission.of(settings.alarmMission) else AlarmMission.NONE
         ChoiceRow(
             MISSION_ROW,

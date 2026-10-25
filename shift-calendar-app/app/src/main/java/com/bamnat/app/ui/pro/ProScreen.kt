@@ -173,6 +173,9 @@ fun ProScreen(onBack: () -> Unit) {
                 StatusCard(gate, pro, zone)
                 ConsentWaiting(c, pro, onMessage = { message = it })
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
+                val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+                ProCollectionCard(gate, settings)
 
                 SectionCard(title = "프로가 더해 주는 것") {
                     PRO_PILLARS.forEachIndexed { i, p ->

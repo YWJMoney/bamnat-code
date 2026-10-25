@@ -132,7 +132,7 @@ class MoneyViewModel(
     private val money = scope.money
     val book: StateFlow<MoneyBook?> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     val gate: StateFlow<Gate> = container.featureGate.state
@@ -445,8 +445,14 @@ fun MoneyScreen(
     // [NAV-01] The same month as the calendar and 근무·급여.
     val month by vm.shownMonth.collectAsStateWithLifecycle()
     val page by vm.page.collectAsStateWithLifecycle()
+    // [TIER-07] 돈 통계 opened from 프로 기능 모아보기 or the help search: the 분석 page.
+    com.bamnat.app.ui.guide.FocusedTool("report", "money.stats") { vm.showPage(MoneyViewModel.Page.REPORT) }
     val view by vm.view.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsStateWithLifecycle()
+    // [NAV-02] 1.25 Z (U4): back from 내역 or 분석 is 요약 of this tab, not the calendar (choosing in 내역 takes back first).
+    androidx.activity.compose.BackHandler(enabled = page != MoneyViewModel.Page.SUMMARY && selection.isEmpty()) {
+        vm.showPage(MoneyViewModel.Page.SUMMARY)
+    }
     var adding by remember { mutableStateOf<MoneyKind?>(null) }
     var addRound by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
@@ -506,11 +512,14 @@ fun MoneyScreen(
     val book = bookOrNull ?: MoneyBook.EMPTY
     val style = settings.workStyle
     // Records show at once; the wage estimate joins when the pay engine has run.
-    val m by produceState(book.month(month), book, style, profile, snapshot, month) {
-        value = vm.month(book, style, profile, snapshot, month)
-    }
-    val analysis by produceState<LedgerAnalysis?>(null, book, style, profile, snapshot, month, page == MoneyViewModel.Page.REPORT) {
-        if (page == MoneyViewModel.Page.REPORT) value = vm.analysis(book, style, profile, snapshot, month, today)
+    // [UX-10] 1.25 Z (U7): opened again, the month shows with its wage estimate from the first frame, not without it and then with.
+    val monthKey = "money:${vm.calendarId}:$month"
+    val lastMonth by com.bamnat.app.ui.rememberLast(monthKey, book, style, profile, snapshot, month) { vm.month(book, style, profile, snapshot, month) }
+    val m = lastMonth ?: book.month(month)
+    val analysis by com.bamnat.app.ui.rememberLast("money.report:${vm.calendarId}:$month", book, style, profile, snapshot, month,
+        page == MoneyViewModel.Page.REPORT) {
+        if (page == MoneyViewModel.Page.REPORT) vm.analysis(book, style, profile, snapshot, month, today)
+        else com.bamnat.app.ui.LastValues.value("money.report:${vm.calendarId}:$month") as LedgerAnalysis?
     }
     val side = taxSide(style)
     val takeHome by produceState<com.bamnat.app.tax.TakeHomeView?>(null, profile, snapshot, payRecords, month, side) {
@@ -588,7 +597,10 @@ fun MoneyScreen(
         // [LEDG-02] Ways to type less.
         MoneyPart.AUTO to { AutoRecordCard(onPaste = { pasting = true }) },
     )
+    // [FIT-01][FIT-02] The parts that suit this calendar's kind of work, and those the user added.
+    val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
     val placed = moneyParts(settings.moneyLayout).filter { it.shown }.map { it.part }
+        .filter { com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, style, fitAdded) }
     var arranging by rememberSaveable { mutableStateOf(false) }
     // Unfolded: the overview on the left, the month's lines on the right, each side in the user's order.
     val left: @Composable () -> Unit = { placed.filter { !wide || !it.right }.forEach { cards.getValue(it)() } }
@@ -719,7 +731,7 @@ fun MoneyScreen(
     if (bizTax) BusinessTaxSheet(taxSettings.business,
         yearOf = { p -> com.bamnat.core.tax.BusinessTax.year(month.year, today, p, book.jobs, book.sales, book.entries) },
         onSave = { vm.saveBusiness(it); bizTax = false }, onDismiss = { bizTax = false })
-    if (arranging) MoneyEditSheet(settings.moneyLayout, vm::updateSettings, onDismiss = { arranging = false })
+    if (arranging) MoneyEditSheet(settings.moneyLayout, vm::updateSettings, onDismiss = { arranging = false }, style = style, calendar = vm.calendarId)
     if (editingCategories) {
         CategoryEditor(book, onSave = { k, edits, renames -> vm.saveCategories(k, edits, renames); editingCategories = false },
             onDismiss = { editingCategories = false }, startKind = editing?.kind ?: adding ?: MoneyKind.EXPENSE)
@@ -865,12 +877,19 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
 internal fun moneyParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(MoneyPart.entries.toList()) { it.id }
 
 @Composable
-internal fun MoneyEditSheet(layout: String, update: ((com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) -> Unit, onDismiss: () -> Unit) {
+internal fun MoneyEditSheet(
+    layout: String, update: ((com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) -> Unit, onDismiss: () -> Unit,
+    /** [FIT-01] The calendar's kind of work and id: the parts it does not use wait under 더 보기. */
+    style: com.bamnat.core.work.WorkStyle? = null, calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) {
     val placed = moneyParts(layout)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val added = com.bamnat.app.ui.guide.rememberFitAdded(calendar)
+    val surface = com.bamnat.core.guide.FitSurface.MONEY_PARTS
     fun write(next: List<com.bamnat.core.layout.PageLayout.Placed<MoneyPart>>) =
         update { it.copy(moneyLayout = com.bamnat.core.layout.PageLayout.of(next) { p -> p.id }.encode()) }
     val rows = { movable: Boolean ->
-        placed.filter { it.part.movable == movable }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
+        placed.filter { it.part.movable == movable && com.bamnat.core.guide.FitTable.visible(surface, it.part.id, style, added) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
         title = "돈 관리 화면 꾸미기",
@@ -879,6 +898,8 @@ internal fun MoneyEditSheet(layout: String, update: ((com.bamnat.app.data.AppSet
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
         middle = "요약·내역·분석 탭",
+        others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> MoneyPart.entries.firstOrNull { it.id == id }?.let { it.label to it.what } },
+        onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, surface, id, on) },
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
         onMove = { id, by ->
             val fixed = placed.filterNot { it.part.movable }

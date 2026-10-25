@@ -93,7 +93,7 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
     }
     val who = remember(profile, month) { vm.reportWho(profile, month) }
     suspend fun year() = vm.yearPays(profile, snapshot, month.year)
-    SectionCard(title = "급여 리포트", trailing = { if (!open) ProPill() else if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) }) {
+    SectionCard(title = "급여 리포트", trailing = { if (!busy) ProPill(locked = !open) else if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) }) {
         Text("계산 풀이와 날짜별 근무를 PDF로 남기거나 CSV로 엑셀에서 열어요. 회사에 물어볼 때 근거로 보여 줄 수 있어요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {

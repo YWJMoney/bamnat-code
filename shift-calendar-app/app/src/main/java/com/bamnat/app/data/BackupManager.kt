@@ -72,6 +72,8 @@ class BackupManager(
     private val profiles: () -> ProfileStore? = { null },
     /** [ROST-06] Each calendar's roster code book (what 병가 or M means there). */
     private val dutyCodes: () -> DutyCodeBook? = { null },
+    /** [BAK-01] The settings kept in files of their own (회사 연결, 결제 알림 조정, 고정비 적은 날 …). */
+    private val settingsFiles: () -> SettingsFilesBackup? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -432,11 +434,14 @@ class BackupManager(
         payStore?.let { putPay(it, root) }
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         guide?.let { root.put("featuresOff", it.exportOff()) }
+        // [FIT-02] Parts and tools added to a calendar they do not suit.
+        guide?.let { root.put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
+        settingsFiles()?.let { root.put("settingsFiles", it.export()) }
         val s = settings.current
         root.put(
             "settings",
@@ -460,6 +465,8 @@ class BackupManager(
                 .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
+                // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
+                .put("restDayCompared", s.restDayCompared)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -822,6 +829,8 @@ class BackupManager(
         root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
         // [GUIDE-05] An older backup has none: the phone's own switches stay.
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
+        // [FIT-02] An older backup has none: what this phone added stays.
+        root.optJSONArray("featuresAdded")?.let { a -> guide?.restoreAdded(a) }
         // [CREW-01] An older backup has no teams: the phone's own stay.
         root.optJSONObject("teams")?.let { o -> teams?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
         // [ROST-06] An older backup has no code book: the phone's own stays.
@@ -853,6 +862,8 @@ class BackupManager(
         // [PROV-04] Read once the calendars are back; a backup from before 1.20 has none, and the phone's own links always stay.
         root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
         root.optJSONObject("profile")?.let { o -> profiles()?.import(o.keys().asSequence().associateWith { o.get(it).toString() }) }
+        // [BAK-01] Once the calendars are back: their marks go into their folders. An older backup has none; the phone's own stay.
+        settingsFiles()?.restore(root.optJSONObject("settingsFiles"))
         // [BACK-01] Photos first, so the records and contracts that point at them find them here.
         photos?.restore(root.optJSONObject("photos"))
         // [REL-15] A file of format 3 brought them as files: each moves in, never over one already here.
@@ -911,6 +922,7 @@ class BackupManager(
                     memoLayout = o.optString("memoLayout", s.memoLayout),
                     rateHint = o.optBoolean("rateHint", s.rateHint),
                     alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),
+                    restDayCompared = o.optBoolean("restDayCompared", s.restDayCompared),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),

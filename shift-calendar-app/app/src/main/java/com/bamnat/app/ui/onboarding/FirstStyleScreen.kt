@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.setup.ChoiceCard
+import com.bamnat.app.ui.setup.JobAsk
 import com.bamnat.app.ui.setup.STYLE_CHOICES
 import com.bamnat.app.ui.setup.StepHeader
 import com.bamnat.core.work.WorkStyle
@@ -39,10 +40,12 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit) {
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 16.dp).semantics { paneTitle = "무슨 일 하세요?" },
+                    .padding(horizontal = 20.dp, vertical = 16.dp).semantics { paneTitle = FIRST_QUESTION },
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                StepHeader("무슨 일 하세요?", "고른 일에 맞는 기능만 켜고, 다음 질문도 그 일에 맞춰 물어요. 나중에 설정에서 바꿀 수 있어요.")
+                // [FIT-03] U23: the user's own words first, the kinds of work under them.
+                StepHeader(FIRST_QUESTION, "적거나 고른 일에 맞는 기능만 켜고, 다음 질문도 그 일에 맞춰 물어요. 적은 말은 이 휴대폰에만 있어요.")
+                JobAsk(onPick = { style, roster -> onPick(FirstStyle(style, roster)) })
                 STYLE_CHOICES.forEach { c ->
                     ChoiceCard(title = c.title, subtitle = c.subtitle.substringBefore(" · "), icon = c.icon, selected = false,
                         onClick = { onPick(FirstStyle(c.style, c.roster)) })
@@ -52,6 +55,9 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit) {
         }
     }
 }
+
+/** [FIT-03] The first screen's question (1.25: was "무슨 일 하세요?"). */
+const val FIRST_QUESTION = "어떤 일을 하고 계신가요?"
 
 /** [SETUP-15] The answer to "무슨 일 하세요?", kept as a word across a turned phone or a process restart. */
 data class FirstStyle(val style: WorkStyle, val roster: Boolean) {

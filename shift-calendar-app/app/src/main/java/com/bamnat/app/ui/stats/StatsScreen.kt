@@ -88,7 +88,7 @@ class StatsViewModel(
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     private val payCalculator = PayCalculator()
@@ -141,8 +141,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
     // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
     // the first open of 통계 draws at once instead of waiting on nine months of days.
-    val figures by androidx.compose.runtime.produceState<StatsFigures?>(null, calc, month) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+    // [UX-10] 1.25 Z (U7): back on this tab, the figures are there from the first frame; worked out again only when the days changed.
+    val figures by com.bamnat.app.ui.rememberLast("stats:${vm.calendarId}:$month", snap, settings.limits, month) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             StatsFigures(calc.month(month), calc.threeMonths(month), (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) })
         }
     }
@@ -158,7 +159,13 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val hasHours = pays || summary.totalMinutes > 0 || three.totalMinutes > 0
     val columns = if (wide) 4 else 2
     var editing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    val statsParts = androidx.compose.runtime.remember(settings.statsLayout) { statsParts(settings.statsLayout) }
+    // [FIT-01][FIT-02] Hours and pay cards only on a calendar paid by the hour or the month, or where the user added them.
+    val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
+    val statsParts = androidx.compose.runtime.remember(settings.statsLayout, style, fitAdded) {
+        statsParts(settings.statsLayout).map { p ->
+            if (p.shown && !com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.STATS_PARTS, p.part.id, style, fitAdded)) p.copy(shown = false) else p
+        }
+    }
     fun shown(p: StatsPart) = statsParts.firstOrNull { it.part == p }?.shown != false
 
     Column(
@@ -190,7 +197,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             // [CUST-01] 화면 꾸미기: the cards' order and which show.
             IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "화면 꾸미기") }
         }
-        if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false })
+        if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false }, style = style, calendar = vm.calendarId)
         // [MCAL-06] Whose hours and pay these are, once there are several calendars; [COMN-03] or all of them.
         var everyCalendar by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
         com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer,
@@ -217,15 +224,15 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
         // instead of closing the app.
         // [MON-01] The month's pay is free.
-        val payTotal = produceState<Long?>(null, payProfile, snap, month) {
-            value = payProfile?.takeIf { pays }?.let { p ->
+        val payTotal = com.bamnat.app.ui.rememberLast("stats.pay:${vm.calendarId}:$month", payProfile, snap, month, pays, settings) {
+            payProfile?.takeIf { pays }?.let { p ->
                 runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             }
         }.value
         // [PAYX-25] The month's 비과세 with the 생산직 연장·야간 part, which needs the month's lines.
-        val payFree = produceState<Long?>(null, payProfile, snap, month) {
-            value = payProfile?.takeIf { pays && it.productionWorker }?.let { p ->
+        val payFree = com.bamnat.app.ui.rememberLast("stats.free:${vm.calendarId}:$month", payProfile, snap, month, pays, settings) {
+            payProfile?.takeIf { pays && it.productionWorker }?.let { p ->
                 withContext(Dispatchers.Default) { com.bamnat.core.pay.TakeHome.nonTaxable(p, month, vm.monthPay(p, snap, month)) }
             }
         }.value
@@ -720,12 +727,19 @@ internal enum class StatsPart(val id: String, val label: String, val what: Strin
 internal fun statsParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(StatsPart.entries.toList()) { it.id }
 
 @Composable
-private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onDismiss: () -> Unit) {
+private fun StatsEditSheet(
+    settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onDismiss: () -> Unit,
+    style: WorkStyle? = settings.workStyle, calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) {
     val placed = statsParts(settings.statsLayout)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val added = com.bamnat.app.ui.guide.rememberFitAdded(calendar)
+    val surface = com.bamnat.core.guide.FitSurface.STATS_PARTS
+    fun fits(p: StatsPart) = com.bamnat.core.guide.FitTable.visible(surface, p.id, style, added)
     fun write(next: List<com.bamnat.core.layout.PageLayout.Placed<StatsPart>>) =
         update { it.copy(statsLayout = com.bamnat.core.layout.PageLayout.of(next) { p -> p.id }.encode()) }
     val rows = { movable: Boolean ->
-        placed.filter { it.part.movable == movable }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
+        placed.filter { it.part.movable == movable && fits(it.part) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
         title = "근무·급여 화면 꾸미기",
@@ -734,6 +748,8 @@ private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppS
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
         middle = "일하는 방식 카드", // [SET-05]
+        others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> StatsPart.entries.firstOrNull { it.id == id }?.let { it.label to it.what } },
+        onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, surface, id, on) },
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
         onMove = { id, by ->
             val fixed = placed.filterNot { it.part.movable }

@@ -1070,7 +1070,8 @@ abstract class ScreenshotBase {
     }
     internal fun Screen.inquiryThread() {
         askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
-        tapText("내 문의:", prefix = true)
+        // The help screen lists every 자주 묻는 질문 above it, and the list grows each release.
+        tapText("내 문의:", prefix = true, scrolls = 30)
         tapText("[알람] 야간 근무 전 알람이 가끔", prefix = true)
     }
     internal fun Screen.whatsNew() = content {

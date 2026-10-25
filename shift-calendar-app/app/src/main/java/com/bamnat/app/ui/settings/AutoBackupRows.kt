@@ -51,7 +51,8 @@ internal fun AutoBackupRows(vm: SettingsViewModel) {
     }
     SwitchRow(
         title = AUTO_BACKUP_ROW,
-        subtitle = (if (open) "" else "프로 · ") + "고른 파일(구글 드라이브도 돼요)에 하루 한 번 암호 건 백업을 덮어쓰고, 다시 읽어 확인해요",
+        pro = true, proLocked = !open, // [TIER-06]
+        subtitle = "고른 파일(구글 드라이브도 돼요)에 하루 한 번 암호 건 백업을 덮어쓰고, 다시 읽어 확인해요",
         checked = state.on && open,
     ) { want ->
         when {
