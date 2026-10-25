@@ -230,7 +230,12 @@ internal fun LimitRow(title: String, subtitle: String, hours: Int, onChange: (In
 
 /** [SET-01] A group on the settings list: what it holds, and how it stands now. [badge]: new answers, counted. */
 @Composable
-internal fun GroupRow(icon: ImageVector, title: String, summary: String, selected: Boolean, badge: Int = 0, onClick: () -> Unit) {
+internal fun GroupRow(
+    icon: ImageVector, title: String, summary: String, selected: Boolean, badge: Int = 0,
+    /** [VIS-06] The group's colour family; null for the rows under 더 보기. */
+    tone: com.bamnat.app.ui.theme.SettingsTone? = null,
+    onClick: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     Row(
         Modifier
@@ -240,14 +245,18 @@ internal fun GroupRow(icon: ImageVector, title: String, summary: String, selecte
             .background(if (selected) com.bamnat.app.ui.components.Selection.container else colors.surface) // [VIS-03]
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { this.selected = selected }
+            .then(if (tone != null) Modifier.drawBehind {
+                // [VIS-06] A band at the left edge in the group's colour.
+                drawRect(tone.band, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
+            } else Modifier)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(40.dp).clip(CircleShape).background(if (selected) colors.surface else colors.secondaryContainer),
+            Modifier.size(40.dp).clip(CircleShape).background(tone?.container ?: if (selected) colors.surface else colors.secondaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = colors.onSecondaryContainer, modifier = Modifier.size(22.dp))
+            Icon(icon, null, tint = tone?.content ?: colors.onSecondaryContainer, modifier = Modifier.size(22.dp))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
