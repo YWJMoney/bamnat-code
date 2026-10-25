@@ -6809,7 +6809,7 @@ const METRIC_MAX_DAYS = 180;
  * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
  * carried ("1.24.0 (35)") are learned on top.
  */
-const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36 };
+const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37 };
 
 function appVersions(rows) {
   const all = rows.reduce((n, x) => n + x.phones, 0);
@@ -6921,7 +6921,7 @@ export async function playVitals(env, now) {
  * says which version it uses (결정 AA-D2), so this is what can reach phones, not what has.
  */
 export const REMOTE = {
-  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide"],
+  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles"],
   base: "https://ywjmoney.github.io/-/remote/v1",
   // The same two keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file).
   keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ="],

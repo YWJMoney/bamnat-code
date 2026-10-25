@@ -183,7 +183,7 @@ test("[ADMUX-15] remote files: version, signature checked with the app's keys, a
   }
   let r = (await call("GET", "/api/admin/remote", undefined, owner)).data;
   const f = Object.fromEntries(r.files.map((x) => [x.kind, x]));
-  assert.equal(r.files.length, 8);
+  assert.equal(r.files.length, 9);
   const rates = JSON.parse(read("rates.json"));
   assert.deepEqual([f.rates.version, f.rates.minApp, f.rates.valid], [rates.version, rates.minApp, true]);
   assert.equal(f.wages.valid, false, "a file changed after signing does not check out");

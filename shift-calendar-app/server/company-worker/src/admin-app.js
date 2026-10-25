@@ -2583,7 +2583,7 @@ function adminApp(L, BUILD) {
   }
 
   const REMOTE_NAMES = { presets: "직군 프리셋", rates: "최저임금·4대 보험 요율", wages: "시중노임단가", taxtable: "간이세액표", publicpay: "공무원 보수",
-    holidays: "공휴일", taxes: "세금", "alarm-guide": "알람 기종별 안내" };
+    holidays: "공휴일", taxes: "세금", "alarm-guide": "알람 기종별 안내", cycles: "회사 근무주기" };
 
   function remoteCard() {
     const r = S.data.remote;
