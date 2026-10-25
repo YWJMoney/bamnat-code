@@ -430,6 +430,8 @@ class BackupManager(
         payStore?.let { putPay(it, root) }
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         guide?.let { root.put("featuresOff", it.exportOff()) }
+        // [FIT-02] Parts and tools added to a calendar they do not suit.
+        guide?.let { root.put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
@@ -814,6 +816,8 @@ class BackupManager(
         root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
         // [GUIDE-05] An older backup has none: the phone's own switches stay.
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
+        // [FIT-02] An older backup has none: what this phone added stays.
+        root.optJSONArray("featuresAdded")?.let { a -> guide?.restoreAdded(a) }
         // [CREW-01] An older backup has no teams: the phone's own stay.
         root.optJSONObject("teams")?.let { o -> teams?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
         // [ROST-06] An older backup has no code book: the phone's own stays.

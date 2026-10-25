@@ -152,6 +152,8 @@ import java.time.LocalDate
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
 import com.bamnat.core.work.ShiftMonth
+import com.bamnat.core.guide.FitSurface
+import com.bamnat.core.guide.FitTable
 import com.bamnat.core.model.ShiftOverride
 import java.time.temporal.ChronoUnit
 import java.time.DayOfWeek
@@ -254,7 +256,10 @@ fun CalendarScreen(
     }
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [CUST-01] The page's parts in the user's order (화면 꾸미기).
-    val calendarParts = remember(settings) { settings.calendarParts() }
+    // [FIT-01][FIT-02] Only the parts that suit this calendar's kind of work, and those the user added to it.
+    val fitCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(fitCalendar.id)
+    val calendarParts = remember(settings, fitAdded) { settings.calendarParts(fitAdded) }
     fun partShown(p: CalendarPart) = calendarParts.firstOrNull { it.part == p }?.shown != false
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
@@ -845,6 +850,8 @@ fun CalendarScreen(
             onOpenTeams = openTeams,
             // [NURS-01] A month's duty typed one day after another, for rosters that come as a sheet.
             onTypeMonth = if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) ({ typingMonth = visibleMonth }) else null,
+            style = settings.workStyle,
+            calendarId = activeCalendar.id,
         ) }
         if (sideways) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1413,7 +1420,7 @@ fun CalendarScreen(
     }
 
     if (editingLayout) {
-        CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false })
+        CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false }, calendar = activeCalendar.id)
     }
     coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
 
@@ -1569,6 +1576,9 @@ private fun CalendarHeader(
     /** [CAL-24] 모든 조 보기; null when the calendar has no rotation to split into teams. */
     onOpenTeams: (() -> Unit)? = null,
     onTypeMonth: (() -> Unit)? = null,
+    /** [FIT-01] The calendar on screen's kind of work and id: the tools it does not use wait under 더 보기. */
+    style: com.bamnat.core.work.WorkStyle? = null,
+    calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
     modifier: Modifier = Modifier,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
@@ -1634,26 +1644,34 @@ private fun CalendarHeader(
         }
     }
     if (menu) {
+        // [FIT-01] Every tool with its id in the fit table; [FIT-02] the ones this kind of work does not use wait under 더 보기.
+        val all = buildList {
+            onEditCalendar?.let { add(CalendarTool("‘$calendarName’ 고치기", Icons.Outlined.Edit, onClick = it, id = "edit")) }
+            // [CAL-24] 모든 조 is also on the calendar itself; here it stays where people learned it.
+            onOpenTeams?.let { add(CalendarTool("모든 조 보기", Icons.Outlined.Groups, onClick = it, id = "teams")) }
+            onTypeMonth?.let { add(CalendarTool("이번 달 전부 넣기", Icons.Outlined.Keyboard, onClick = it, id = "typeMonth")) }
+            add(CalendarTool(if (style?.usesPayEngine != false) "근무표 공유" else "달력 공유", Icons.Filled.Share, onClick = onShare, id = "share"))
+            add(CalendarTool("1년 달력", Icons.Outlined.CalendarViewMonth, id = "year") { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
+            onReceive?.let { add(CalendarTool("동료 근무표 받기", Icons.Outlined.GroupAdd, onClick = it, id = "receive")) }
+            add(CalendarTool("근무 주기 설정", Icons.Filled.EventRepeat, onClick = onOpenPattern, id = "pattern"))
+            add(CalendarTool("새 달력 만들기", Icons.Outlined.LibraryAdd, onClick = onAddCalendar, id = "newCalendar"))
+            onCustomize?.let { add(CalendarTool("화면 꾸미기", Icons.Outlined.Dashboard, onClick = it, id = "customize")) }
+            add(CalendarTool("달력 보기 설정", Icons.Outlined.Tune, id = "viewSettings") {
+                com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR)
+            })
+            add(CalendarTool("도움말·문의", Icons.AutoMirrored.Outlined.HelpOutline, id = "help") {
+                com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
+            })
+        }
+        val added = com.bamnat.app.ui.guide.rememberFitAdded(calendarId)
+        val context = LocalContext.current
+        val (tools, others) = all.partition { t -> t.id == null || FitTable.visible(FitSurface.CALENDAR_TOOLS, t.id, style, added) }
+        val offered = all.filter { t -> t.id != null && FitTable.item(FitSurface.CALENDAR_TOOLS, t.id)?.fits(style) == false }
         CalendarToolsSheet(
             onDismiss = { menu = false },
-            tools = buildList {
-                onEditCalendar?.let { add(CalendarTool("‘$calendarName’ 고치기", Icons.Outlined.Edit, it)) }
-                // [CAL-24] 모든 조 is also on the calendar itself; here it stays where people learned it.
-                onOpenTeams?.let { add(CalendarTool("모든 조 보기", Icons.Outlined.Groups, it)) }
-                onTypeMonth?.let { add(CalendarTool("이번 달 전부 넣기", Icons.Outlined.Keyboard, it)) }
-                add(CalendarTool("근무표 공유", Icons.Filled.Share, onShare))
-                add(CalendarTool("1년 달력", Icons.Outlined.CalendarViewMonth) { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
-                onReceive?.let { add(CalendarTool("동료 근무표 받기", Icons.Outlined.GroupAdd, it)) }
-                add(CalendarTool("근무 주기 설정", Icons.Filled.EventRepeat, onOpenPattern))
-                add(CalendarTool("새 달력 만들기", Icons.Outlined.LibraryAdd, onAddCalendar))
-                onCustomize?.let { add(CalendarTool("화면 꾸미기", Icons.Outlined.Dashboard, it)) }
-                add(CalendarTool("달력 보기 설정", Icons.Outlined.Tune) {
-                    com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR)
-                })
-                add(CalendarTool("도움말·문의", Icons.AutoMirrored.Outlined.HelpOutline) {
-                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
-                })
-            },
+            tools = tools,
+            others = offered.map { com.bamnat.app.ui.components.OtherRow(it.id!!, it.label, "이 달력의 일에는 잘 쓰지 않는 도구예요", it !in others) },
+            onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendarId, FitSurface.CALENDAR_TOOLS, id, on) },
         )
     }
     }
@@ -1672,14 +1690,29 @@ private fun monthTitle(month: YearMonth): androidx.compose.ui.text.AnnotatedStri
 }
 
 /** [CAL-23] One tool of the calendar's tool sheet: a name people can read, not a hidden menu row. */
-internal data class CalendarTool(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val onClick: () -> Unit)
+internal data class CalendarTool(
+    val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    /** [FIT-01] The tool's id in [FitTable] (CALENDAR_TOOLS). */
+    val id: String? = null,
+    val onClick: () -> Unit,
+)
 
 /** [CAL-23] The calendar's tools as big named tiles, three or four to a row. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CalendarToolsSheet(tools: List<CalendarTool>, onDismiss: () -> Unit) {
+internal fun CalendarToolsSheet(
+    tools: List<CalendarTool>, onDismiss: () -> Unit,
+    others: List<com.bamnat.app.ui.components.OtherRow> = emptyList(),
+    onAdd: (String, Boolean) -> Unit = { _, _ -> },
+) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        CalendarToolsGrid(tools, onPicked = onDismiss)
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            CalendarToolsGrid(tools, onPicked = onDismiss)
+            // [FIT-02] What this kind of work does not use, put away and added back here.
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
+                com.bamnat.app.ui.components.FitMore(others, onAdd, title = "이 달력에 안 맞아 숨긴 도구")
+            }
+        }
     }
 }
 
