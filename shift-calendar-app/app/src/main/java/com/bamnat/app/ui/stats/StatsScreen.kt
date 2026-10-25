@@ -113,7 +113,13 @@ class StatsViewModel(
     fun addPay(date: java.time.LocalDate, amount: Long) = viewModelScope.launch {
         scope.money.save(com.bamnat.core.money.MoneyEntry(date = date, kind = com.bamnat.core.money.MoneyKind.INCOME, amount = amount,
             category = com.bamnat.core.money.MoneyCategories.SALARY, note = "급여"))
+        // [TAX-01] The line is 월급 관측 at once, so 세금 예측 learns from it without waiting for 돈 to open.
+        runCatching { com.bamnat.app.tax.SalaryWatch.check(container, calendarId) }
     }
+
+    /** [TAX-02] 1.25 W: the 세후 the records taught (pro), for 월급날 비교's 예상; null when locked or nothing to go on. */
+    suspend fun takeHome(gross: Long, month: YearMonth): com.bamnat.core.tax.TaxLearner.Forecast? =
+        com.bamnat.app.tax.TakeHomeLine.forecast(container, calendarId, payProfile.value, gross, month)
 }
 
 @Composable
@@ -279,7 +285,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
         WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book, payFree,
-            onOpenPay = onOpenPay, onAddPay = vm::addPay)
+            onOpenPay = onOpenPay, onAddPay = vm::addPay, takeHome = vm::takeHome)
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
         // [PAYX-29] The company's 52시간 exception sets the week's limit (none for 선택적·특례·감시단속), and 특례 업종 checks the

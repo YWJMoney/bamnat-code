@@ -107,10 +107,12 @@ internal fun WorkTypeMoreCards(
     onOpenPay: () -> Unit = {},
     /** [PAYX-48] 들어온 급여 적기: a 급여 line in 돈 on that day. */
     onAddPay: (LocalDate, Long) -> Unit = { _, _ -> },
+    /** [TAX-02] 세후 from the calendar's own pay records (W), when 세금 예측 is open to this phone. */
+    takeHome: suspend (Long, YearMonth) -> com.bamnat.core.tax.TaxLearner.Forecast? = { _, _ -> null },
 ) {
     // [GUIDE-05] Each card can be turned off for its calendar.
     if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) {
-        PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable, onOpenPay, onAddPay)
+        PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable, onOpenPay, onAddPay, takeHome)
     }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
@@ -293,13 +295,20 @@ private fun TaxModeChips(mode: TaxMode, onChange: (TaxMode) -> Unit) {
 private fun PayGapCard(
     calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?,
     nonTaxable: Long? = null, onOpenPay: () -> Unit = {}, onAddPay: (LocalDate, Long) -> Unit = { _, _ -> },
+    takeHome: suspend (Long, YearMonth) -> com.bamnat.core.tax.TaxLearner.Forecast? = { _, _ -> null },
 ) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+    // [TAX-02] 1.25 W·V: with 세금 예측 open, the 예상 is the same 세후 the pay screen shows, learned from the pay that came in.
+    val learned by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, payTotal, month, book, profile) {
+        value = payTotal?.let { runCatching { takeHome(it, month) }.getOrNull() }
+    }
+    val fromRecords = learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED
+    val expected = if (fromRecords) learned?.net else payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
         nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
+    val basisLabel = if (fromRecords) "내 월급 기록으로 맞춘 세후" else mode.gapLabel()
     val payDate = profile?.period?.payDate(month)
     val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
     var adding by remember { mutableStateOf(false) }
@@ -319,7 +328,7 @@ private fun PayGapCard(
                 Button(onClick = onOpenPay, modifier = Modifier.padding(top = 8.dp)) { Text("급여 계산 맞추기") }
             }
             gap == null -> {
-                Text("예상 ${Fmt.won(expected)} (" + mode.gapLabel() + ")", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
+                Text("예상 ${Fmt.won(expected)} ($basisLabel)", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
                 Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 돈 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp))
@@ -337,7 +346,7 @@ private fun PayGapCard(
                 )
                 Text(
                     "들어온 돈 ${Fmt.won(gap.received)} (${gap.dates.joinToString(", ") { Fmt.shortDate(it) }}) · " +
-                        "예상 ${Fmt.won(gap.expected)} (" + mode.gapLabel() + ")",
+                        "예상 ${Fmt.won(gap.expected)} ($basisLabel)",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )

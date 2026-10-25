@@ -143,6 +143,43 @@ class WTaxFlowTest {
         assertEquals(3, tax.allObservations().size)
     }
 
+    /**
+     * [PAYX-48][TAX-01][TAX-02] 1.25 통합 (V가 넘긴 것): '월급날 비교'에서 적은 들어온 급여는 바로 월급 관측이 되고, 그 카드의
+     * 예상은 급여 화면과 같은 세후(기록으로 맞춘 값)를 써요.
+     */
+    @Test fun payTypedOnPayDayComparisonIsObservedAndItsEstimateIsTheLearnedTakeHome() = runBlocking {
+        val profile = withPay()
+        val e = lastPay()
+        val vm = com.bamnat.app.ui.stats.StatsViewModel(c, PersonalCalendar.MAIN)
+        val came = e.net!! - 50_000
+        vm.addPay(e.payDay!!, came)
+        // viewModelScope runs on the main looper: let it work instead of blocking on it.
+        val end = System.currentTimeMillis() + 20_000
+        while (c.tax(PersonalCalendar.MAIN).allObservations().isEmpty()) {
+            check(System.currentTimeMillis() < end) { "the typed pay was not observed" }
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        val line = c.calendars.money(PersonalCalendar.MAIN).allEntries().single { it.amount == came }
+        assertEquals(MoneyCategories.SALARY, line.category)
+        val obs = c.tax(PersonalCalendar.MAIN).allObservations().single()
+        assertEquals(came, obs.net)
+        assertEquals(e.payMonth, obs.payMonth)
+        // Three typed payslips teach the deductions; the card's 예상 is then the pay screen's 세후, not the table's.
+        val tax = c.tax(PersonalCalendar.MAIN)
+        val table = TaxLearner.Table.of(profile)
+        val now = YearMonth.from(Today.date())
+        for (i in 1..3) {
+            val m = now.minusMonths(i.toLong() + 1)
+            tax.save(PayObservation(payMonth = m, gross = 3_000_000, net = 3_000_000 - (table.deductions(3_000_000, m) * 1.2).toLong(),
+                date = m.atEndOfMonth(), source = PayObservation.Source.PAYSLIP, kind = IncomeKind.SALARY))
+        }
+        val f = vm.takeHome(3_000_000, now)!!
+        assertEquals(TaxLearner.Basis.LEARNED, f.basis)
+        assertEquals(TakeHomeLine.forecast(c, PersonalCalendar.MAIN, profile, 3_000_000, now)!!.net, f.net)
+        assertTrue(f.net < f.tableNet)
+    }
+
     @Test fun aDepositThatWasNotPayGoesBackAndIsNeverTakenAgain() = runBlocking {
         withPay()
         val e = lastPay()
