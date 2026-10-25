@@ -301,4 +301,124 @@ class ZScreenshotTest : ScreenshotBase() {
         settingsPage("데이터")
         tapText("새 휴대폰으로 옮기기", exact = true)
     }
+
+    // ---- Z 후속 [NAV-04] 남은 뒤로 가기 ----
+
+    /** 이번 달 전부 넣기 as a sheet: back with a day typed asks, 취소 keeps the days, 버리고 닫기 closes. */
+    @Test fun typingSheetAsksBeforeTypedDaysGo() = shoot("923_z_typing_discard_ask", FOLDED) {
+        var closed = 0
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.DutyTypingSheet(snap, java.time.YearMonth.of(2026, 11), onDismiss = { closed++ }, onSave = {}) }
+        settle()
+        // Nothing typed: back closes at once, as before.
+        backOnTop()
+        assertEquals(1, closed)
+        content { com.bamnat.app.ui.calendar.DutyTypingSheet(snap, java.time.YearMonth.of(2026, 11), onDismiss = { closed++ }, onSave = {}) }
+        settle()
+        tapText("주간 넣기", exact = true, scrolls = 0)
+        tapText("야간 넣기", exact = true, scrolls = 0)
+        backOnTop()
+        assertTrue("back asks first", shows("넣은 2일을 버릴까요?", exact = true))
+        assertEquals("nothing closed yet", 1, closed)
+        tapText("취소", exact = true, scrolls = 0)
+        assertFalse("the ask is gone", shows("넣은 2일을 버릴까요?", exact = true))
+        // The days are still there: 저장 still counts them.
+        reveal("2일 저장", exact = true)
+        // 닫기 asks the same; 버리고 닫기 closes.
+        tapText("닫기", exact = true)
+        assertTrue(shows("넣은 2일을 버릴까요?", exact = true))
+        tapText("버리고 닫기", exact = true, scrolls = 0)
+        assertEquals(2, closed)
+        content { com.bamnat.app.ui.calendar.DutyTypingSheet(snap, java.time.YearMonth.of(2026, 11), onDismiss = { closed++ }, onSave = {}) }
+        settle()
+        tapText("주간 넣기", exact = true, scrolls = 0)
+        backOnTop()
+    }
+
+    /** Unfolded, the same keypad beside the month: back with days typed asks; with none it closes the panel. */
+    @Test fun widePanelAsksBeforeTypedDaysGo() = open(UNFOLDED) { scenario ->
+        tapText("도구")
+        tapText("이번 달 전부 넣기", exact = true)
+        while (shownDialogs().isNotEmpty()) backOnTop()
+        tapText("주간 넣기", exact = true)
+        back()
+        assertTrue("back asks first", shows("넣은 1일을 버릴까요?", exact = true))
+        tapText("버리고 닫기", exact = true, scrolls = 0)
+        assertFalse("the panel closed", shows("주간 넣기", exact = true))
+        assertEquals("달력", tabNow())
+        assertFalse(scenario.finishing())
+    }
+
+    /** 한 달 근무 넣기 (folded): back or the arrow with days typed asks; 버리고 나가기 goes back to the calendar. */
+    @Test fun rosterScreenAsksBeforeLeaving() = shoot("924_z_roster_leave_ask", FOLDED) {
+        tapText("도구")
+        tapText("이번 달 전부 넣기", exact = true)
+        assertTrue(shows("한 달 근무 넣기", exact = true))
+        tapText("주간 넣기", exact = true)
+        back()
+        assertTrue("back asks first", shows("넣지 않고 나갈까요?", exact = true))
+        tapText("취소", exact = true, scrolls = 0)
+        assertTrue("still on the screen", shows("한 달 근무 넣기", exact = true))
+        tapText("뒤로", exact = true, scrolls = 0)
+        assertTrue("the arrow asks too", shows("넣지 않고 나갈까요?", exact = true))
+        tapText("버리고 나가기", exact = true, scrolls = 0)
+        assertEquals("달력", tabNow())
+        assertFalse("nothing typed: back leaves at once", shows("넣지 않고 나갈까요?", exact = true))
+        tapText("도구")
+        tapText("이번 달 전부 넣기", exact = true)
+        tapText("주간 넣기", exact = true)
+        back()
+    }
+
+    /** "무슨 일 하세요?" and the first setup's first question: one back only warns, a second closes the app. */
+    @Test fun theFirstSetupClosesOnlyOnASecondBack() {
+        c.consentStore.forget()
+        c.consentStore.availableForTest = setOf(com.bamnat.core.consent.ConsentItem.CALENDAR)
+        runBlocking { c.scheduleRepository.clearPattern() }
+        c.settingsRepository.update { it.copy(workStyle = null) }
+        open(FOLDED) { scenario ->
+            assertTrue(shows("어떤 일을 하고 계신가요?"))
+            back()
+            assertFalse("one back on the very first screen does not close the app", scenario.finishing())
+            assertTrue(shows("어떤 일을 하고 계신가요?"))
+            tapText("백업이나 회사 파일로 시작할게요", exact = true)
+            tapText("허용은 나중에 할게요")
+            assertTrue(shows("어떻게 일하세요?"))
+            back()
+            assertFalse("one back on the first question does not close the app", scenario.finishing())
+            assertTrue(shows("어떻게 일하세요?"))
+            back()
+            assertTrue("a second back closes it", scenario.finishing())
+        }
+    }
+
+    /** 받을 돈: back closes the search (and its words) first, then leaves. */
+    @Test fun owedSearchClosesBeforeLeaving() = open(FOLDED) {
+        var left = 0
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = false, onBack = { left++ }, today = today) }
+        settle()
+        tapText("찾기", exact = true, scrolls = 0)
+        typeInto("이름, 무슨 돈, 메모로 찾기", "민지")
+        assertTrue(shows("지우기", exact = true))
+        back()
+        assertFalse("back closed the search", shows("지우기", exact = true))
+        assertEquals("and did not leave", 0, left)
+    }
+
+    // ---- Z 후속 [BAK-02] 복원 즉시 반영 ----
+
+    /** A backup with 목록 보기 brought back while the calendar is open shows the list at once, without a restart. */
+    @Test fun aRestoredListViewShowsAtOnce() {
+        val view = app.getSharedPreferences("calendar_view", android.content.Context.MODE_PRIVATE)
+        view.edit().putBoolean("list", true).commit()
+        val file = runBlocking { c.backupManager.export() }
+        view.edit().putBoolean("list", false).commit()
+        open(FOLDED) {
+            assertTrue("the month as a grid", shows("목록으로 보기", exact = true))
+            runBlocking { c.backupManager.restore(file) }
+            settle()
+            assertTrue("the list, at once", shows("달력으로 보기", exact = true))
+        }
+    }
 }

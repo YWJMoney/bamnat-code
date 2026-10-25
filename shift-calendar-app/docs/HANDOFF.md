@@ -421,7 +421,9 @@ shift-calendar-app/
 - **알람 휠** `ui/components/AlarmOffsetDialog`(울릴 시각 / 시작 몇 시간 전, `core/alarm/AlarmOffsets`). DB에는 그대로 "시작 몇 분 전".
 - **근무 종류 삭제** `ScheduleRepository.shiftTypeUse`·`deleteShiftTypeUndoable(id, replaceWith)`·`restoreShiftType`: 다른 종류로 바꾸기/비우기, 스낵바 되돌리기(종류 id·날·주기·대근 그대로).
 - **전체 백업** `data/SettingsFilesBackup`: `AppSettings` 밖 설정 파일(`PARTS`)과 고정비 표시(`recurring_marks.json`)를 백업 `settingsFiles`에. 복원 뒤 메모리에 들고 있는 가게(`WorkTypePrefs`·`CompanyStore`·`RateHintStore`·`AutoRecordPrefs`·`ShareGroupStore`)를 `reload()`. **새 설정을 더하면**: `AppSettings` 칸은 `BackupManager` 내보내기·복원과 `ZFullBackupTest.sample`에, 아니면 `SETTINGS_ON_PHONE`에 이유와 함께. 새 SharedPreferences 파일은 `PARTS`·`ELSEWHERE`·`DEVICE_ONLY` 중 하나에(지킴이 시험이 소스를 훑어 빨강). 설정 › 데이터 '새 휴대폰으로 옮기기'가 옮겨지는 것·남는 것을 말해요.
-- 시험: core `ZAlarmCaretTest`, app `ZPartsTest`·`ZShiftTypeDeleteTest`·`ZFullBackupTest`·`ZScreenshotTest`(사진 910~922).
+- 시험: core `ZAlarmCaretTest`, app `ZPartsTest`·`ZShiftTypeDeleteTest`·`ZFullBackupTest`·`ZScreenshotTest`(사진 910~924).
+- **Z 후속(NAV-04·BAK-02·QA-09)**: 친 것을 잃는 곳의 뒤로는 **묻고 닫아요**. 근무 직접 치기(`DutyTypingSheet`·`DutyTypingPanel`)는 `TypingGuard`가 시트의 쓸기·바깥 누르기·뒤로(`confirmValueChange`)와 패널의 뒤로·닫기를 한 질문(‘넣은 n일을 버릴까요?’)으로 모으고, `DutyRosterScreen`은 넣지 않은 칸이 있으면(`Ui.unsaved`) 뒤로·화살표가 ‘넣지 않고 나갈까요?’. 앱이 닫히는 자리(달력 첫 화면, ‘무슨 일 하세요?’, 첫 설정 첫 질문)는 `ui/ExitGuard` 하나로 2초 안 두 번. 받을 돈 검색은 뒤로가 검색부터 닫아요(광장 검색은 X 몫). 달력 보기 설정(`calendar_view`)은 `CalendarViewModel`이 파일 바뀜을 들어 복원 즉시 반영해요.
+- **전체 실행에서만 깨지던 시험의 원인 2가지(QA-09)**: ① Compose의 메인 스레드 dispatcher는 JVM에 하나라 시험을 넘어 살아남는데, Robolectric은 시험 사이에 메인 큐를 비워요. 앞 시험이 Compose 일을 예약한 채 끝나면 dispatcher는 ‘이미 예약됨’으로 믿고 다시 예약하지 않아, 같은 JVM의 다음 화면이 첫 프레임 뒤 멈췄어요(StartupBudgetTest 달 30초 실패, 사진 시험의 ‘못 찾음’). **Compose 화면을 띄우는 시험은 `rules/ComposeMainReset`을 가장 먼저**(`@get:Rule(order = Int.MIN_VALUE) val mainReset = ComposeMainReset.rule()`, `ScreenshotBase`에 들어 있음). ② 앱은 시작할 때 컨테이너를 따로 스레드에서 만들고 그 `start()`가 동의 없는 사용 통계를 지워요. 앱 파일을 직접 쓰는 시험은 먼저 `context.appContainer`로 기다리세요(`OperationsAppTest`).
 
 ### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
 

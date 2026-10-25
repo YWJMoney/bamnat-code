@@ -190,6 +190,18 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
     }
 
+    /**
+     * [BAK-02] 1.25 Z: a backup brought back rewrites this file under the open calendar, so what it says is read
+     * again at once (목록 보기, 오늘의 흐름 접기, 공휴일 답) instead of after the app is closed and opened.
+     */
+    private val viewChanged = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, _ ->
+        runCatching {
+            _listView.value = p.getBoolean(K_LIST, false)
+            _flowFolded.value = if (p.contains(K_FLOW_FOLDED)) p.getBoolean(K_FLOW_FOLDED, false) else null
+            _holidaysKept.value = p.getStringSet(K_HOLIDAYS, emptySet())!!.toSet()
+        }
+    }
+
     /** [CAL-17] A tip said once in the snackbar, closed with 알겠어요; nothing to undo. */
     fun tip(text: String) {
         _messages.tryEmit(UndoMessage(text, actionLabel = "알겠어요") {})
@@ -197,6 +209,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [CAL-07] Months whose holidays the user works on purpose, per calendar: not asked again. */
     private val _holidaysKept = MutableStateFlow(runCatching { viewPrefs.getStringSet(K_HOLIDAYS, emptySet())!!.toSet() }.getOrDefault(emptySet()))
+
+    init { viewPrefs.registerOnSharedPreferenceChangeListener(viewChanged) }
+
+    override fun onCleared() {
+        viewPrefs.unregisterOnSharedPreferenceChangeListener(viewChanged)
+        super.onCleared()
+    }
 
     /**
      * [CAL-07] Public holidays the weekly pattern turns into work this month, for work by weekday

@@ -265,13 +265,19 @@ class AlarmButtonsAllOffTest {
     @Test fun theRingingScreenTakesTheVolumeKeys() {
         at(day.atTime(6, 0))
         start(ring())
-        val activity = Robolectric.buildActivity(AlarmActivity::class.java).setup().get()
-        assertTrue(activity.onKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN)))
-        assertEquals(AlarmService.ACTION_BUTTON, shadowOf(app).nextStartedService.action)
-        assertTrue("shown, for the power button", AlarmService.screenShownAt > 0)
-        // 아무것도 안 함: the volume moves as usual.
-        c.settingsRepository.update { it.copy(alarmButtonAction = "none") }
-        assertFalse(activity.onKeyDown(KeyEvent.KEYCODE_VOLUME_UP, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_UP)))
+        // [QA-09] Closed at the end, so the ringing screen does not stay open under the next tests in this JVM.
+        val screen = Robolectric.buildActivity(AlarmActivity::class.java).setup()
+        try {
+            val activity = screen.get()
+            assertTrue(activity.onKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN)))
+            assertEquals(AlarmService.ACTION_BUTTON, shadowOf(app).nextStartedService.action)
+            assertTrue("shown, for the power button", AlarmService.screenShownAt > 0)
+            // 아무것도 안 함: the volume moves as usual.
+            c.settingsRepository.update { it.copy(alarmButtonAction = "none") }
+            assertFalse(activity.onKeyDown(KeyEvent.KEYCODE_VOLUME_UP, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_UP)))
+        } finally {
+            screen.pause().stop().destroy()
+        }
     }
 
     @Test fun theSettingIsInTheBackupAndTheLockedCopy() = runBlocking {

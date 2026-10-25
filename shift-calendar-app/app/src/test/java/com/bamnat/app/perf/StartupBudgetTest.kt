@@ -15,6 +15,8 @@ import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.compose.ui.semantics.getAllSemanticsNodes
+import androidx.compose.ui.semantics.getOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -36,6 +38,9 @@ import java.time.LocalDate
 class StartupBudgetTest {
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
 
+    /** [QA-09] A Compose dispatch dropped at the end of an earlier test in this JVM is posted again. */
+    @org.junit.Before fun mainThread() = com.bamnat.app.rules.ComposeMainReset.now()
+
     /** A shift worker who finished the first setup: the app opens on the calendar. */
     private fun settledUser(c: AppContainer) = runBlocking {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
@@ -56,6 +61,24 @@ class StartupBudgetTest {
         }
     }
 
+    /** What the activity shows, for a failure that says where the start stopped instead of the month. */
+    private fun ActivityScenario<MainActivity>.shown(): String {
+        var words = ""
+        onActivity { a ->
+            fun root(v: android.view.View): androidx.compose.ui.platform.ViewRootForTest? {
+                if (v is androidx.compose.ui.platform.ViewRootForTest) return v
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) root(v.getChildAt(i))?.let { return it }
+                return null
+            }
+            words = root(a.window.decorView)?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = true).orEmpty()
+                .flatMap { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().map { it.text } }
+                .joinToString(" | ").take(600)
+        }
+        val c = app.container
+        return "style=${c.settingsRepository.current.workStyle} draft=${c.setupDrafts.draft.value} consent=${c.consentStore.seen.value} " +
+            "trace=${StartupTrace.Step.entries.associateWith { StartupTrace.millis(it) }} screen: $words"
+    }
+
     private fun lazyBuilt(c: AppContainer, name: String): Boolean {
         val field = AppContainer::class.java.getDeclaredField("$name\$delegate").apply { isAccessible = true }
         return (field.get(c) as Lazy<*>).isInitialized()
@@ -68,12 +91,12 @@ class StartupBudgetTest {
         assertTrue("container and its start took $built ms (budget $CONTAINER_BUDGET_MS)", built!! <= CONTAINER_BUDGET_MS)
         settledUser(c)
 
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             untilCalendar(limitMillis = 30_000)
             val activity = StartupTrace.millis(StartupTrace.Step.ACTIVITY)
             val calendar = StartupTrace.millis(StartupTrace.Step.CALENDAR)
             assertNotNull("the activity started", activity)
-            assertNotNull("the calendar showed its month", calendar)
+            assertNotNull("the calendar showed its month: ${scenario.shown()}", calendar)
             val toMonth = calendar!! - activity!!
             // Kept in the test report (system-out) so a slower start shows before it fails.
             println("[PERF-01] container ${built} ms, activity to month ${toMonth} ms")
@@ -115,9 +138,9 @@ class StartupBudgetTest {
     @Test fun whatCanWaitStartsOnceTheMonthIsThere() {
         val c = app.container
         settledUser(c)
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             untilCalendar(limitMillis = 30_000)
-            assertNotNull("the calendar showed its month", StartupTrace.millis(StartupTrace.Step.CALENDAR))
+            assertNotNull("the calendar showed its month: ${scenario.shown()}", StartupTrace.millis(StartupTrace.Step.CALENDAR))
             val before = c.keptBeforeLater!!
             assertTrue("${before.size} jobs before the month (budget $FIRST_JOBS_BUDGET): $before", before.size <= FIRST_JOBS_BUDGET)
             assertTrue("widgets and the watch follow the data after the month", "watch" in c.kept && "widgetweek" in c.kept)

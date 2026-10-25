@@ -310,6 +310,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (consentSeen == null && setupDraft == null) {
                 val key = firstStyleKey
                 if (key == null) {
+                    // [NAV-04] 1.25 Z 후속: the very first screen closes only on a second back, as the calendar does.
+                    val context = LocalContext.current
+                    val exit = remember { ExitGuard() }
+                    androidx.activity.compose.BackHandler { exit.press(context) }
                     com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
                     return
                 }
@@ -607,7 +611,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // start), which would otherwise pop straight to the calendar; screens composed with the move add theirs later
     // and still go first.
     val context = LocalContext.current
-    var exitArmedAt by remember { mutableStateOf(0L) }
+    val exitGuard = remember { ExitGuard() }
     val tabBack = remember { TabBackCallback() }
     // On every tab; what to do is decided when back comes, from the back stack as it is then (it is not state, and
     // a tab brought back with its screens is still settling when this is drawn).
@@ -618,16 +622,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         when {
             current != null && current != TopLevel.CALENDAR && previousRoute == TopLevel.CALENDAR.route && TabHistory.previous() != null ->
                 TabHistory.back()?.let { prev -> nav.navigateTopLevel(prev, record = false) }
-            current == TopLevel.CALENDAR && previousRoute == null -> {
-                val now = android.os.SystemClock.uptimeMillis()
-                if (exitArmedAt != 0L && now - exitArmedAt <= EXIT_WINDOW_MILLIS) {
-                    TabHistory.clear()
-                    (context as? android.app.Activity)?.finish()
-                } else {
-                    exitArmedAt = now
-                    android.widget.Toast.makeText(context, "한 번 더 누르면 밤낮이 닫혀요", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
+            current == TopLevel.CALENDAR && previousRoute == null -> { if (exitGuard.press(context)) TabHistory.clear() }
             // Anything else is the NavHost's: the screen under this one.
             else -> return@onBack false
         }
@@ -1531,9 +1526,6 @@ private class TabBackCallback : androidx.activity.OnBackPressedCallback(false) {
         try { dispatcher?.onBackPressed() } finally { isEnabled = true }
     }
 }
-
-/** [NAV-02] How long the "한 번 더 누르면 닫혀요" stays armed. */
-private const val EXIT_WINDOW_MILLIS = 2_000L
 
 /**
  * Pops only if [route] is still on top, so a double tap on back or save (or a callback that
