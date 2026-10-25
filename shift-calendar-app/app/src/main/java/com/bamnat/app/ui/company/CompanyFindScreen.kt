@@ -316,6 +316,7 @@ fun CompanyDetailScreen(
     var sendError by remember { mutableStateOf<String?>(null) }
     // [PLAZA-02][PLAZA-05] Two rule sets of one department side by side: the 대표 판 and another, or a past version.
     var comparing by remember { mutableStateOf<Compare?>(null) }
+    var keepOld by rememberSaveable { mutableStateOf(false) }
 
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
@@ -366,6 +367,25 @@ fun CompanyDetailScreen(
                     }
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    // [PLAZA-05] The rule set this phone used is no longer the department's 대표 판 (결정 D74): say so once, with
+                    // a compare against this phone's own setup, and leave the choice to keep it.
+                    val old = applied?.takeIf { it.companyId == p.id && p.setups.none { su -> su.id == it.setup } }
+                    val lead = old?.let { o -> p.setups.firstOrNull { it.adopted && it.dept == o.dept } }
+                    if (old != null && lead != null && onPick == null && !keepOld) {
+                        SoftCard(highlighted = true) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("쓰시던 판 대신 새 대표 판이 생겼어요", style = MaterialTheme.typography.titleSmall)
+                                Text("같은 부서 분들이 더 많이 쓰는 판이에요. 내 설정과 비교해 보고 바꿀지 정해 주세요. 그대로 두셔도 돼요.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { scope.launch { vm.mine()?.let { m -> comparing = Compare("내 설정과 새 대표 판", m, lead.text, "내 설정", "대표 판", lead) } } }) {
+                                        Text("비교하고 바꾸기")
+                                    }
+                                    TextButton(onClick = { keepOld = true }) { Text("그대로 둘게요") }
+                                }
+                            }
+                        }
                     }
                     // [COMM-14] What only this set has, beside another of the same department.
                     val diffs = remember(p) { com.bamnat.core.plaza.SetupDiff.diff(p.setups.map { it.diffItem() }) }
@@ -437,7 +457,7 @@ fun CompanyDetailScreen(
             note = if (cmp.back) "지난 판도 지워지지 않아요. 우리에게 더 맞으면 이 휴대폰에 다시 넣을 수 있어요." else null,
             action = if (onPick != null || page == null) null else ({
                 Button(onClick = { comparing = null; start(page, cmp.setup) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (cmp.back) "이 판으로 되돌리기" else "이 판 써 보기")
+                    Text(when { cmp.back -> "이 판으로 되돌리기"; cmp.setup.adopted -> "이 판으로 바꾸기"; else -> "이 판 써 보기" })
                 }
             }))
     }
