@@ -34,7 +34,8 @@ class M7AppTest {
         val service = Robolectric.buildService(AlarmService::class.java,
             ring.putInto(Intent(context, AlarmService::class.java).setAction(AlarmService.ACTION_START))).create().startCommand(0, 1).get()
         val notification = shadowOf(context.getSystemService(NotificationManager::class.java)).allNotifications.single()
-        assertEquals(2, notification.actions.size)
+        // [ALRM-09] 1.25 AB: 다시 울림, 끄기 and 오늘 모두 끄기.
+        assertEquals(3, notification.actions.size)
         for (action in notification.actions) {
             assertFalse(action.isAuthenticationRequired)
             assertTrue(shadowOf(action.actionIntent).isBroadcastIntent)

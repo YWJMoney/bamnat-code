@@ -244,10 +244,15 @@ fun CalendarScreen(
     var notificationsAllowed by remember { mutableStateOf(Notifications.canPost(context)) }
     val askNotifications = rememberNotificationAsk()
     var fullScreenAllowed by remember { mutableStateOf(Notifications.canUseFullScreen(context)) }
+    var alarmChannelTrouble by remember { mutableStateOf<String?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         notificationsAllowed = Notifications.canPost(context)
         fullScreenAllowed = Notifications.canUseFullScreen(context)
+        com.bamnat.app.alarm.AlarmsOff.activeUntil(context)
+        alarmChannelTrouble = if (notificationsAllowed) Notifications.alarmChannelTrouble(context) else null
     }
+    // [ALRM-09] 오늘 남은 알람 모두 끄기, until when.
+    val alarmsOffUntil by com.bamnat.app.alarm.AlarmsOff.until.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     // [PERF-01] The month is there: Android's "Fully drawn" for this start, and the startup budget's last step.
     androidx.activity.compose.ReportDrawnWhen { snapshot != null }
@@ -910,6 +915,11 @@ fun CalendarScreen(
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
+            // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
+            alarmsOffUntil != null -> "오늘 알람 끔" to {
+                val text = "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지"
+                AlarmWarningLine(text, "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, linePlace)
+            }
             !alarmSoon -> null
             // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
             // [EASY-01] The example never rings, so it has nothing to turn on.
@@ -926,6 +936,12 @@ fun CalendarScreen(
                 if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
                     android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                         android.net.Uri.parse("package:${context.packageName}")))
+            }, linePlace) }
+            // [ALRM-07] The 근무 알람 notice turned down to 조용히 or hidden: the ringing screen cannot show either.
+            alarmChannelTrouble != null -> alarmChannelTrouble!! to { AlarmWarningLine(alarmChannelTrouble!!, "고치기", {
+                SystemSettings.open(context, android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, Notifications.ALARM_CHANNEL_ID))
             }, linePlace) }
             else -> null
         }

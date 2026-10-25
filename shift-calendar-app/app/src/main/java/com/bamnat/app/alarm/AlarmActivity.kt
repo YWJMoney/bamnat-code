@@ -11,6 +11,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +30,8 @@ import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -63,10 +69,42 @@ class AlarmActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra(EXTRA_MISSION, false)) solving.value = true
+        if (intent.getBooleanExtra(EXTRA_ALL_OFF, false)) AlarmService.allOffAfterMission(true)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AlarmService.screenShown()
+    }
+
+    override fun onStop() {
+        AlarmService.screenHidden()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) AlarmService.screenGone()
+        super.onDestroy()
+    }
+
+    /** [ALRM-08] 소리 줄이기·키우기 while ringing: what 버튼으로 알람 끄기 says; with 아무것도 안 함 the volume moves as usual. */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode in AlarmButtons.VOLUME_KEYS && AlarmService.ringing.value != null &&
+            BootAlarms.ringSettings(this).buttons != AlarmButtons.Action.NONE) {
+            if (event.repeatCount == 0) AlarmService.button(this)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode in AlarmButtons.VOLUME_KEYS && BootAlarms.ringSettings(this).buttons != AlarmButtons.Action.NONE) return true
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         if (intent?.getBooleanExtra(EXTRA_MISSION, false) == true) solving.value = true
+        if (intent?.getBooleanExtra(EXTRA_ALL_OFF, false) == true) AlarmService.allOffAfterMission(true)
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -80,6 +118,7 @@ class AlarmActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
         val snoozeMinutes = BootAlarms.ringSettings(this).snoozeMinutes
+        val buttons = BootAlarms.ringSettings(this).buttons
         // [ALRM-04] 증명 사진's fingerprints; none before the first unlock after a restart, and then it is sums.
         val photos = runCatching { PhotoReferences(this).all.value }.getOrDefault(emptyList())
 
@@ -98,6 +137,8 @@ class AlarmActivity : ComponentActivity() {
                 val mission = current?.let { BootAlarms.ringSettings(this@AlarmActivity).missionFor(it) } ?: AlarmMission.NONE
                 val inMission by solving.collectAsStateWithLifecycle()
                 val since by AlarmService.ringingSince.collectAsStateWithLifecycle()
+                val quiet by AlarmService.quiet.collectAsStateWithLifecycle()
+                val allOffWaits by AlarmService.allOffAfterMission.collectAsStateWithLifecycle()
                 if (current != null && inMission && mission != AlarmMission.NONE) {
                     MissionScreen(
                         mission = mission,
@@ -107,6 +148,7 @@ class AlarmActivity : ComponentActivity() {
                         onDone = { how -> AlarmService.dismiss(this@AlarmActivity, how) },
                         references = photos.map { it.hash },
                         place = photos.lastOrNull()?.place.orEmpty(),
+                        note = missionNote(buttons, quiet, allOffWaits),
                     )
                 } else if (current != null) {
                     RingingScreen(
@@ -118,6 +160,12 @@ class AlarmActivity : ComponentActivity() {
                         onDismiss = {
                             if (mission == AlarmMission.NONE) AlarmService.dismiss(this@AlarmActivity) else solving.value = true
                         },
+                        // [ALRM-09] With a mission it opens the mission first, and turns today off once that is done.
+                        onAllOff = {
+                            if (mission == AlarmMission.NONE) AlarmService.allOff(this@AlarmActivity)
+                            else { AlarmService.allOffAfterMission(true); solving.value = true }
+                        },
+                        hint = AlarmButtons.hint(buttons, mission != AlarmMission.NONE),
                     )
                 }
             }
@@ -127,8 +175,21 @@ class AlarmActivity : ComponentActivity() {
     companion object {
         /** [PROV-06] Open on the mission rather than the ringing screen. */
         const val EXTRA_MISSION = "com.bamnat.app.alarm.extra.MISSION"
+        /** [ALRM-09] 오늘 모두 끄기 from the notice of a mission alarm: it waits for the mission. */
+        const val EXTRA_ALL_OFF = "com.bamnat.app.alarm.extra.ALL_OFF"
     }
 }
+
+/** [ALRM-08][ALRM-09] The line above a mission: what the buttons did or do, and 오늘 모두 끄기 waiting for it. */
+internal fun missionNote(buttons: AlarmButtons.Action, quiet: Boolean, allOffWaits: Boolean): String? = listOfNotNull(
+    when {
+        quiet -> "버튼을 눌러 소리를 ${AlarmButtons.QUIET_SECONDS}초 줄였어요"
+        // The mission's end is said once, by the line below.
+        allOffWaits && buttons == AlarmButtons.Action.DISMISS -> "소리·전원 버튼은 소리만 ${AlarmButtons.QUIET_SECONDS}초 줄여요"
+        else -> AlarmButtons.hint(buttons, mission = true)
+    },
+    if (allOffWaits) "미션을 마치면 오늘 남은 알람이 모두 꺼져요" else null,
+).joinToString("\n").ifEmpty { null }
 
 @Composable
 internal fun RingingScreen(
@@ -138,6 +199,10 @@ internal fun RingingScreen(
     dismissLabel: String = "알람 끄기",
     onSnooze: () -> Unit,
     onDismiss: () -> Unit,
+    /** [ALRM-09] 오늘 남은 알람 모두 끄기; none hides the button (previews). */
+    onAllOff: (() -> Unit)? = null,
+    /** [ALRM-08] What the volume and power buttons do. */
+    hint: String? = null,
 ) {
     val now by produceState(Today.time()) {
         while (true) {
@@ -145,49 +210,76 @@ internal fun RingingScreen(
             delay(1_000)
         }
     }
-    Box(
+    // [ALRM-09] 1.25 AB: on its side (under 480dp tall) the time and the buttons stand side by side; upright, the
+    // buttons at the bottom. Either way the words scroll rather than run under the buttons at large text.
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF1D2B6B), Color(0xFF0F1220))))
             .safeDrawingPadding()
             .padding(24.dp),
     ) {
-        Column(
-            Modifier.align(Alignment.TopCenter).padding(top = 48.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(Icons.Filled.Alarm, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.height(16.dp))
-            Text(
-                Fmt.time(now),
-                color = Color.White,
-                fontSize = 72.sp,
-                fontWeight = FontWeight.Light,
-                style = NumberStyle,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(title, color = Color.White, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-            Text(subtitle, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center)
-        }
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().widthIn(max = 480.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            FilledTonalButton(
-                onClick = onSnooze,
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-            ) {
-                Icon(Icons.Filled.Snooze, contentDescription = null)
-                Text("  ${snoozeMinutes}분 뒤 다시 울림", style = MaterialTheme.typography.titleMedium)
+        val sideways = maxHeight < 480.dp && maxWidth > maxHeight
+        val info: @Composable (Modifier) -> Unit = { m ->
+            Column(m.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Filled.Alarm, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    Fmt.time(now),
+                    color = Color.White,
+                    fontSize = 72.sp,
+                    fontWeight = FontWeight.Light,
+                    style = NumberStyle,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(title, color = Color.White, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+                Text(subtitle, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center)
+                if (hint != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(hint, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                }
             }
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(68.dp),
-                // [VIS-03] Dark letters on the coral button: white was 2.8:1.
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = com.bamnat.app.ui.components.contentColorOn(Color(0xFFFF6B5E))),
-            ) {
-                Text(dismissLabel, style = MaterialTheme.typography.titleLarge)
+        }
+        val buttons: @Composable (Modifier) -> Unit = { m ->
+            Column(m.widthIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(
+                    onClick = onSnooze,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
+                ) {
+                    Icon(Icons.Filled.Snooze, contentDescription = null)
+                    Text("  ${snoozeMinutes}분 뒤 다시 울림", style = MaterialTheme.typography.titleMedium)
+                }
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp),
+                    // [VIS-03] Dark letters on the coral button: white was 2.8:1.
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = com.bamnat.app.ui.components.contentColorOn(Color(0xFFFF6B5E))),
+                ) {
+                    Text(dismissLabel, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                }
+                if (onAllOff != null) {
+                    // [ALRM-09] Up, out of bed: nothing more today. Tomorrow's alarms stay; 다시 켜기 waits on the notice.
+                    OutlinedButton(
+                        onClick = onAllOff,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    ) {
+                        Text("오늘 남은 알람 모두 끄기", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+        }
+        if (sideways) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                info(Modifier.weight(1f))
+                buttons(Modifier.weight(1f).verticalScroll(rememberScrollState()))
+            }
+        } else {
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                info(Modifier.weight(1f).fillMaxWidth().padding(top = 48.dp))
+                Spacer(Modifier.height(16.dp))
+                buttons(Modifier.fillMaxWidth())
             }
         }
     }
