@@ -236,6 +236,9 @@ internal object SettingsIndex {
         // ---- 1.26 묶음 AC [SPAT-02] ----
         screen("${W.title} › 근무 주기", "회사 이름으로 근무주기 찾기", SettingsGo.PATTERN, "회사 근무주기", "공개 자료", "근무주기 검색", "회사 검색",
             "4조 2교대", "3조 2교대", "교대 주기", "처음 제공"),
+        // ---- 1.26 묶음 AE [INVITE-02][INVITE-03] ----
+        screen("설정 › 프로", "친구 초대", SettingsGo.PRO, "초대", "초대 링크", "추천", "친구", "프로 한 달", "공짜 프로", "초대한 친구"),
+        screen("설정 › 프로", "초대 코드 넣기", SettingsGo.PRO, "초대 코드", "받은 코드", "친구 코드", "추천 코드", "코드 입력"),
     )
 
     /** The best fits for [query], best first. */

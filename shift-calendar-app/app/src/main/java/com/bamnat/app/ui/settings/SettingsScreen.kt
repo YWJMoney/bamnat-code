@@ -64,6 +64,7 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.WorkOutline
@@ -722,6 +723,10 @@ private fun SettingsHub(
         // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
+        // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there.
+        if (LocalContext.current.appContainer.inviteApi.enabled) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "친구가 깔고 다른 날 한 번 더 열면 프로 1개월 · 초대 코드 넣기", false) { SettingsLinks.go(SettingsGo.PRO) }
+        }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.

@@ -523,6 +523,16 @@ internal object HelpFaq {
             listOf("근무 주기", "회사 찾기", "광장"),
             "근무 주기 열기" to HelpAction.Go(SettingsGo.PATTERN),
         ),
+        // ---- 1.26 묶음 AE [INVITE-02][INVITE-03][INVITE-04][INVITE-08] ----
+        HelpTopic(
+            "invite", "프로", "친구를 초대하면 무엇을 받나요?",
+            "설정 › 프로 › ‘친구 초대’로 링크를 보내요. 친구가 깔고 알린 날부터 7일 지나 다시 열면 한 명, 5명마다 나에게 프로 1개월(지금 규칙은 카드에 나와요). " +
+                "같은 휴대폰은 한 번만 세요. 링크로 안 깔았으면 설치 7일 안에 ‘초대 코드 넣기’. " +
+                "끄는 법: 링크를 안 만들고 카드에서 ‘괜찮아요’를 누르면 아무것도 안 가요.",
+            listOf("초대", "친구 초대", "추천", "초대 코드", "초대 링크", "프로 한 달", "공짜", "보상"),
+            listOf("설정 › 프로"),
+            "친구 초대 열기" to HelpAction.Go(SettingsGo.PRO),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */

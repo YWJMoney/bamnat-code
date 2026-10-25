@@ -108,6 +108,8 @@ abstract class ScreenshotBase {
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
+        // [INVITE-02] Nor about invites (AE's shots put a fake in its place).
+        c.inviteApi = com.bamnat.app.tier.InviteClient(baseUrl = "")
         // [ONBOARD-01] Through the consent pages already; the shots of them start over.
         c.consentStore.markSeen(ConsentItem.entries)
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.

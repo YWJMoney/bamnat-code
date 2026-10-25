@@ -17,6 +17,8 @@ object WhatsNew {
             // [SPAT-02][SPAT-05] Bundle AC.
             Line("회사 이름으로 공개 자료의 근무주기를 찾아 순서와 오늘 날짜만 맞추면 달력에 들어가요", "plaza.cycles"),
             Line("우리 회사가 없으면 처음으로 넣어 광장에 올려요. 급여 정보까지 올리면 보상을 드려요", "plaza.cycles"),
+            // [INVITE-02][INVITE-03] Bundle AE.
+            Line("설정 › 프로 › ‘친구 초대’로 링크를 보내요. 깐 친구 5명이 7일 넘게 쓸 때마다 나에게 프로 1개월", "pro.invite"),
         )),
         // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
         Release(36, "1.25.0", listOf(

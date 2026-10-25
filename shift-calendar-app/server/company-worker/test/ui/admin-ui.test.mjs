@@ -433,3 +433,52 @@ test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on
   assert.deepEqual(DB.db.prepare("SELECT status FROM posts").all().map((p) => p.status), ["hidden", "hidden"]);
   assert.deepEqual(u.errors, []);
 });
+
+// AE 1.26 시작
+test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", async () => {
+  const { call, env, DB } = await world();
+  const mark = (n) => String(n).repeat(64);
+  const made = await call("POST", "/api/invites/code", { phone: mark(1) }, { "x-device": device(1) });
+  await call("POST", "/api/invites/use", { code: made.data.code, source: "referrer", phone: mark(2) }, { "x-device": device(2), ...from(2) });
+  // [INVITE-08] One friend is enough here, and its first day was long ago by the server's clock.
+  DB.db.prepare("INSERT INTO settings (key, value) VALUES ('invite_friends', '1')").run();
+  DB.db.prepare("UPDATE invite_uses SET first_day = '2000-01-01'").run();
+  assert.equal((await call("POST", "/api/invites/seen", {}, { "x-device": device(2) })).data.status, "credited");
+  const t = await signedIn(env);
+  await t.go("#/rewards");
+  await t.click('[data-act="reward-tab"][data-key="paid"]');
+  await t.settle(30);
+  const main = t.$("#main").textContent;
+  assert.match(main, /친구 초대/);
+  assert.match(main, /보상 받음 1명/);
+  assert.match(main, /친구 1명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.ok(main.includes(made.data.code), "the code most friends came by");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends, days, months and the cap", async () => {
+  const { env, DB } = await world();
+  const t = await signedIn(env);
+  await t.go("#/settings");
+  await t.settle(30);
+  const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
+  assert.ok(card(), "the 친구 초대 card");
+  assert.match(card().textContent, /친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.match(card().textContent, /1년 상한\s+−\s+없음/);
+  const step = async (key, d) => {
+    t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
+    await t.settle();
+  };
+  await step("friends", -1);
+  await step("friends", -1);
+  await step("days", 1);
+  await step("capMonths", 1);
+  assert.match(card().textContent, /친구 3명이 8일 넘게 쓸 때마다 프로 1개월 · 1년에 1개월까지/);
+  card().querySelector('[data-act="save-friend"]').click();
+  await t.settle(30);
+  const rows = Object.fromEntries(DB.db.prepare("SELECT key, value FROM settings WHERE key LIKE 'invite_%'").all().map((r) => [r.key, r.value]));
+  assert.deepEqual(rows, { invite_friends: "3", invite_days: "8", invite_months: "1", invite_cap_months: "1" });
+  assert.match(t.text("#toast"), /친구 초대 규칙을 저장했어요/);
+  assert.deepEqual(t.errors, []);
+});
+// AE 1.26 끝

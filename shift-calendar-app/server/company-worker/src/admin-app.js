@@ -1066,6 +1066,8 @@ function adminApp(L, BUILD) {
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
       // [ADMIN-19] 알림 on this device; [ADMIN-15] the owner's server state comes from /server now.
       if (name === "settings") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
+      // [INVITE-08] 친구 초대 rules.
+      if (name === "settings" && can("settings")) jobs.push(api("/settings/invite").then(keep((d) => { S.data.inviteSettings = d; })));
       if (name === "settings" && S.me?.owner) {
         jobs.push(api("/server").then(keep((d) => { S.server = d; })));
         // [MON-10] The 정식 출시 card is the owner's; S.me is known from the last overview.
@@ -2207,7 +2209,7 @@ function adminApp(L, BUILD) {
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
+          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
         ${edit ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
@@ -2216,8 +2218,42 @@ function adminApp(L, BUILD) {
       </li>`).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
     return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="회사나 부서로 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${csvButton("rewards", r?.status === S.rewardTab ? r.rewards : null)}</div>
+      ${inviteSummaryView(r?.invites)}
       <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요.</p>${body}`;
   }
+
+  // AE 1.26 시작
+  /** [INVITE-06] 친구 초대 at a glance: counted, waiting, stopped and why, and the codes most friends came by. */
+  function inviteSummaryView(v) {
+    if (!v) return "";
+    const why = { self: "자기 초대", phone: "같은 휴대폰" };
+    const refused = Object.entries(v.refused ?? {}).map(([k, n]) => `${why[k] ?? k} ${n}`).join(" · ") || "없음";
+    const top = v.top.length ? `<ul class="rows">${v.top.map((t) => `<li class="item"><div class="row-main"><b>${esc(t.code)}</b>
+      <small>친구 ${t.friends}명 · 채움 ${t.counted} · 사용 기간 채우는 중 ${t.waiting}</small></div></li>`).join("")}</ul>` : "";
+    return `<section class="card" aria-label="친구 초대"><h3>친구 초대</h3>
+      <p>초대 코드 ${v.codes}개 · 보상 받음 ${v.credited}명 · 다음 보상 기다림 ${v.qualified ?? 0}명 · 상한 넘음 ${v.capped}명 · 사용 기간 채우는 중 ${v.waiting}명 · 끝남 ${v.expired ?? 0}명</p>
+      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 설정 › 친구 초대에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${top}</section>`;
+  }
+
+  /** [INVITE-08] The rules in one line: "친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음". */
+  function inviteRuleWords(r) {
+    return `친구 ${r.friends}명이 ${r.days}일 넘게 쓸 때마다 프로 ${r.months}개월 · ${r.capMonths ? `1년에 ${r.capMonths}개월까지` : "상한 없음"}.`;
+  }
+
+  /** [INVITE-08] 설정 › 친구 초대: the developer's numbers, applied by the server to every invite from then on. */
+  function inviteSettingsCard(edit) {
+    const s = S.inviteDraft ?? S.data.inviteSettings;
+    if (!s) return '<section class="card"><h2>친구 초대</h2>' + skeleton(1) + "</section>";
+    return `<section class="card"><h2>친구 초대</h2>
+      ${stepper("friends", "보상에 필요한 친구", s.friends, "명", edit, "friend-step")}
+      ${stepper("days", "친구가 써야 하는 기간", s.days, "일", edit, "friend-step")}
+      ${stepper("months", "보상", s.months, "개월", edit, "friend-step")}
+      ${stepper("capMonths", "1년 상한", s.capMonths ? `${s.capMonths}` : "없음", s.capMonths ? "개월" : "", edit, "friend-step")}
+      <p class="hint">${esc(inviteRuleWords(s))} 쓴다는 건 친구가 초대를 알린 날부터 이 기간이 지난 날(한국 날짜, 서버 시계)에 앱을 다시 여는 거예요. 기간을 채운 친구가 모일 때마다 초대한 분께 보상을 드려요. 상한을 0으로 두면 없음이에요. 같은 휴대폰은 한 번만 세고 자기 초대는 막아요.</p>
+      ${edit ? `<div class="actions">${S.inviteDraft ? '<button class="btn ghost" data-act="friend-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-friend"${S.inviteDraft ? "" : " disabled"}>저장</button></div>` : ""}
+    </section>`;
+  }
+  // AE 1.26 끝
 
   // ---- admins (the owner only) ----
 
@@ -2738,6 +2774,7 @@ function adminApp(L, BUILD) {
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>
+      ${inviteSettingsCard(edit)}
       <section class="card"><h2>답 목표</h2>
         <p class="hint">문의 종류마다 이 시간 안에 첫 답을 하려고 해요. 목록과 홈의 남은 시간, 놓친 문의가 이걸 따라요. 1~168시간이에요.</p>
         ${SLA_NAMES.map(([k, label]) => stepper(k, label, sla[k], "시간", edit, "sla-step")).join("")}
@@ -3379,6 +3416,27 @@ function adminApp(L, BUILD) {
       const by = (s[key] ?? 24) >= 48 ? 12 : (s[key] ?? 24) >= 12 ? 2 : 1;
       s[key] = Math.min(168, Math.max(1, (s[key] ?? 24) + Number(d) * by));
       S.slaDraft = s;
+      render({ keepScroll: true });
+    },
+    // [INVITE-08]
+    "friend-step": ({ key, d }) => {
+      const s = { ...(S.inviteDraft ?? S.data.inviteSettings ?? {}) };
+      const lim = { friends: [1, 50], days: [1, 60], months: [1, 12], capMonths: [0, 120] }[key];
+      if (!lim) return;
+      s[key] = Math.min(lim[1], Math.max(lim[0], (s[key] ?? lim[0]) + Number(d)));
+      S.inviteDraft = s;
+      render({ keepScroll: true });
+    },
+    "friend-undo": () => {
+      S.inviteDraft = null;
+      render({ keepScroll: true });
+    },
+    "save-friend": async () => {
+      const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
+      if (r) {
+        S.data.inviteSettings = r;
+        S.inviteDraft = null;
+      }
       render({ keepScroll: true });
     },
     "sla-undo": () => {

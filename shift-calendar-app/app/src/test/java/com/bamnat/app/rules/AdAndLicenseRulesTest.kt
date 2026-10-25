@@ -85,6 +85,7 @@ class AdAndLicenseRulesTest {
             "com.google.android.gms" to "Google Play 서비스",
             "com.android.billingclient" to "Google Play 결제 라이브러리",
             "com.google.android.ump" to "Google 사용자 메시지 플랫폼",
+            "com.android.installreferrer" to "Google Play 설치 리퍼러",
         )
         for (g in groups) {
             val name = covered[g] ?: error("오픈소스 라이선스 목록에 '$g'을(를) 더해 주세요 (OpenSourceLicenses.kt)")
