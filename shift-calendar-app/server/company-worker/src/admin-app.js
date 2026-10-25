@@ -2144,7 +2144,8 @@ function adminApp(L, BUILD) {
     }
     return `<ul class="rows">${list.map((c) => `<li><a class="row" href="${href("companies", c.id)}">
       <span class="row-main"><b>${esc(c.name)}</b><small>${[c.rules ? `규칙 ${c.rules}` : "규칙 없음", c.pending ? `대기 ${c.pending}` : "", `제보 ${c.reports}`,
-        c.aliases ? `다른 이름 ${c.aliases}` : ""].filter(Boolean).join(" · ")}</small></span>
+        // [PLAZA-13] Phones that joined the company (결정 D79).
+        c.members ? `참여 ${c.members}` : "", c.aliases ? `다른 이름 ${c.aliases}` : ""].filter(Boolean).join(" · ")}</small></span>
       ${c.mergedInto ? '<span class="pill">합쳐짐</span>' : c.hidden ? '<span class="pill">숨김</span>' : c.pending ? '<span class="pill warn">대기</span>' : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>`;
   }
 
@@ -2164,7 +2165,7 @@ function adminApp(L, BUILD) {
         <form data-form="rename"><label for="name">이름</label>
           <div class="field"><input id="name" name="name" value="${esc(c.name)}" maxlength="40" required${dis}>${edit ? '<button class="btn" type="submit">저장</button>' : ""}</div></form>
         <label class="switch"><input type="checkbox" data-change="hidden"${c.hidden ? " checked" : ""}${dis}><span class="track" aria-hidden="true"></span><span>회사 찾기에서 숨기기</span></label>
-        <p class="meta">${day(c.createdAt)}에 생김${c.pending ? ` · 검토 대기 ${c.pending}` : ""}</p>
+        <p class="meta">${day(c.createdAt)}에 생김${c.pending ? ` · 검토 대기 ${c.pending}` : ""} · 참여한 휴대폰 ${c.members ?? 0}대</p>
       </section>
       <section class="card">
         <h2>다른 이름</h2>
@@ -2191,7 +2192,7 @@ function adminApp(L, BUILD) {
     return `<div class="rule${r.withdrawn || r.superseded ? " dim" : ""}">
       <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
         <p class="meta">${r.source === "auto" ? "자동 채택" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}</p></div>
-        <span class="pill ${tone}">${label}</span></div>
+        <span class="pill ${tone}">${label}</span>${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
       <details><summary>내용</summary>${lines(r.lines)}</details>
       ${action ? `<div class="actions">${action}</div>` : ""}
     </div>`;

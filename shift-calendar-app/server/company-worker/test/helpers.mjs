@@ -18,7 +18,8 @@ export function server({ plaza = false, ...extra } = {}) {
     if (!seeded) {
       seeded = true;
       await worker.fetch(new Request(`${ORIGIN}/api/terms`), env);
-      for (const [k, v] of [["adopt_persons", "2"], ["amend_persons", "2"], ["auto_reward", "0"]]) {
+      // [PLAZA-10] and no pass for new information, which 1.26 added.
+      for (const [k, v] of [["adopt_persons", "2"], ["amend_persons", "2"], ["auto_reward", "0"], ["first_months", "0"]]) {
         await DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").bind(k, v).run();
       }
     }

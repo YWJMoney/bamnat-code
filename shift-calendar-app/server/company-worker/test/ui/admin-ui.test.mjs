@@ -433,3 +433,22 @@ test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on
   assert.deepEqual(DB.db.prepare("SELECT status FROM posts").all().map((p) => p.status), ["hidden", "hidden"]);
   assert.deepEqual(u.errors, []);
 });
+
+test("[PLAZA-13] 회사·규칙: how many phones joined a company, and 안정 on a rule that settled (결정 D79)", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const a = await call("POST", "/api/reports", report(1, { company: "참여화학", verified: true }), from(1));
+  await call("POST", "/api/reports", report(2, { company: "참여화학" }), from(2));
+  for (const n of [3, 4, 5]) await call("POST", "/api/uses", { device: device(n), company: a.data.company.id, setup: a.data.setup }, from(n));
+  DB.db.prepare("UPDATE reports SET created_at = created_at - ?").run(31 * 24 * 60 * 60 * 1000);
+  DB.db.prepare("UPDATE rules SET adopted_at = adopted_at - ?").run(31 * 24 * 60 * 60 * 1000);
+  const u = await asOwner(env, t);
+  await u.go("#/companies");
+  assert.match(u.text("#main"), /참여화학.*참여 5/);
+  await u.go(`#/companies/${a.data.company.id}`);
+  await u.settle(20);
+  assert.match(u.text("#main"), /참여한 휴대폰 5대/);
+  assert.ok(u.$$("#main .pill.ok").some((p) => p.textContent === "안정"), "a settled rule says so");
+  assert.deepEqual(u.errors, []);
+});

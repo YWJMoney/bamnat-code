@@ -160,7 +160,8 @@ test("phones that use a rule set are counted once each", async () => {
   const { call } = plaza();
   const t = await talkOn(call);
   const use = (n, on) => call(on ? "POST" : "DELETE", "/api/uses", { device: device(n), company: t.c, setup: t.g }, from(n));
-  assert.deepEqual((await use(2, true)).data, { uses: 1, using: true });
+  const first = (await use(2, true)).data;
+  assert.deepEqual([first.uses, first.using, first.member.joined, first.member.company], [1, true, true, t.c]);
   assert.equal((await use(2, true)).data.uses, 1);
   assert.equal((await use(3, true)).data.uses, 2);
   assert.equal((await use(2, false)).data.uses, 1);

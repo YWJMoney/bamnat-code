@@ -240,10 +240,12 @@ test("nothing that points at a person is stored", async () => {
   assert.ok(all.includes(sha(`device|${device(1)}`).slice(0, 40)), "the install as a hash");
 });
 
-test("search shows a setup still being checked only for its exact name", async () => {
+// [PLAZA-10] 결정 D79 (2026-10-25): a company's first setup is found at once by part of its name, as 첫 판 (first: true).
+test("search shows a setup still being checked as the company's first version", async () => {
   const { call } = server();
   await call("POST", "/api/reports", report(1, { company: "(주)예시정밀" }), from(1));
-  assert.deepEqual((await call("GET", "/api/companies?q=예시")).data.companies, []);
+  const first = (await call("GET", "/api/companies?q=예시")).data.companies;
+  assert.deepEqual(first.map((c) => [c.name, c.adopted, c.pending, c.first]), [["(주)예시정밀", 0, 1, true]]);
   const exact = (await call("GET", `/api/companies?q=${encodeURIComponent("예시 정밀 주식회사")}`)).data.companies;
   assert.equal(exact.length, 1);
   assert.equal(exact[0].name, "(주)예시정밀");
@@ -255,6 +257,7 @@ test("search shows a setup still being checked only for its exact name", async (
   const partial = (await call("GET", "/api/companies?q=예시")).data.companies;
   assert.equal(partial.length, 1);
   assert.equal(partial[0].adopted, 1);
+  assert.equal(partial[0].first, undefined);
 });
 
 test("a company shows its adopted rule first and what is still being checked", async () => {
@@ -298,7 +301,8 @@ test("a rule in use is replaced by another only when more people stand behind it
   assert.equal(more.data.status, "adopted");
   c = await call("GET", `/api/companies/${sent[0].data.company.id}`);
   assert.deepEqual(c.data.setups.map((s) => [s.status, s.version]), [["adopted", 2]]);
-  const h = (await call("GET", `/api/companies/${c.data.id}/history?setup=${more.data.setup}`)).data.versions;
+  // [PLAZA-08] What each version paid is for the members: a sender is one.
+  const h = (await call("GET", `/api/companies/${c.data.id}/history?setup=${more.data.setup}`, undefined, { "x-device": device(3) })).data.versions;
   assert.deepEqual(h.map((v) => [v.version, v.state, v.source]), [[2, "active", "rival"], [1, "superseded", "auto"]]);
   assert.equal(h[1].body.pay.rules.extra[3].percent, 0.1);
   assert.equal(h[0].body.pay.rules.extra[3].percent, 0.12);
@@ -450,7 +454,8 @@ test("a way the app cannot set yet goes to the developer only", async () => {
 
 test("the app can say what adoption takes and earns", async () => {
   const { call } = server();
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75, firstMonths: 0 });
+  assert.equal((await server({ plaza: true }).call("GET", "/api/terms")).data.firstMonths, 1);
 });
 
 test("bodies that are not a report are refused", async () => {

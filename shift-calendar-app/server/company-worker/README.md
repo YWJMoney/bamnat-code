@@ -152,21 +152,23 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 
 | 요청 | 하는 일 |
 | --- | --- |
-| `GET /api/companies?q=` | 회사 찾기. 띄어쓰기, (주), 주식회사, Co., Ltd.는 빼고 찾아요. 아직 확인 중인 회사는 이름이 똑같을 때만 나와요. 초성만 두 글자 넘게(`ㅅㅅㅈㅈ`) 적으면 쓰는 규칙이 있는 회사를 초성으로 찾아요(`companies.cho`·`aliases.cho`, 처음 찾을 때 500개씩 채움) [PLAZA-03] |
-| `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정, 각 설정을 풀어 쓴 줄(`lines`), 지지(`support`) [PLAZA-05]. 설정에는 순서(`rotation`) 대신 요일별 근무 `weekly`(월~일 7칸, 근무 이름이나 null)나 매달 근무표 `roster: true`가 있을 수 있어요 [PLAZA-01] |
-| `GET /api/terms` | 채택 점수와 채택 보상 기간 (보내기 전에 앱이 보여 줘요) |
-| `POST /api/reports` | 제보 보내기 `{v: 1, device, company, dept, verified, note, setup}`. 앱에 없는 방식이면 `ask: true`와 설명(1500자까지)을 `note`에. 선택: `job`(직군 광장), `region`(시·도 코드), `topic: true`(회사 없이 직군 공통 규칙, `job` 필요), `amends`(고치려는 쓰는 규칙 id) [PLZ-02][PLZ-12] |
+| `GET /api/companies?q=` | 회사 찾기. 띄어쓰기, (주), 주식회사, Co., Ltd.는 빼고 찾아요. 아직 확인 중인 회사(첫 제보만 있는 회사)도 이름 일부로 나와요(`first: true`, 1.26 결정 D79). 초성만 두 글자 넘게(`ㅅㅅㅈㅈ`) 적으면 초성으로 찾아요(쓰는 규칙이 있는 회사 먼저, `companies.cho`·`aliases.cho`, 처음 찾을 때 500개씩 채움) [PLAZA-03][PLAZA-10] |
+| `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정, 각 설정을 풀어 쓴 줄(`lines`), 지지(`support`) [PLAZA-05]. 설정에는 순서(`rotation`) 대신 요일별 근무 `weekly`(월~일 7칸, 근무 이름이나 null)나 매달 근무표 `roster: true`가 있을 수 있어요 [PLAZA-01]. **1.26**: 헤더 `X-Device`가 그 회사에 참여한 휴대폰일 때만 설정에 급여 방식(`pay`)과 급여 줄이 와요. 다른 휴대폰·옛 앱에는 근무 시각·순서와 `pay: true`, `payHidden: true`만(`member: false`). 참여한 휴대폰도 하루 120번 넘게 읽으면 그날은 근무만(`limited: true`). 안정이면 `stable: true` [PLAZA-08] |
+| `GET /api/companies/:id/room` | **1.26** 회사 방(헤더 `X-Device`, 참여한 휴대폰만, 아니면 403 `member`): 내가 쓰는 판(`base`, 첫 판이면 `first`), 같은 부서 다른 판(`others`: 사람 수·지지·설정·`changes`), `stable`(같은 판을 쓰는 휴대폰 3대 이상 + 30일 동안 다른 판·채택 없음) [PLAZA-09] |
+| `GET /api/members` · `POST /api/members` · `DELETE /api/members` | **1.26** 회사 참여: 목록(헤더 `X-Device`), 참여 `{device, company, cal}`(달력 하나에 회사 하나, 바꾸면 30일 뒤 `member_wait`, 휴대폰당 2곳 `member_limit`, 409), 떠나기 `{device, company}`(30일은 남아요). 적용(`POST /api/uses`)과 제보도 참여로 세요 [PLAZA-07] |
+| `GET /api/terms` | 채택 점수와 채택 보상 기간, **1.26** 새 정보 보상 `firstMonths` (보내기 전에 앱이 보여 줘요) |
+| `POST /api/reports` | 제보 보내기 `{v: 1, device, company, dept, verified, note, setup}`. 앱에 없는 방식이면 `ask: true`와 설명(1500자까지)을 `note`에. 선택: `job`(직군 광장), `region`(시·도 코드), `topic: true`(회사 없이 직군 공통 규칙, `job` 필요), `amends`(고치려는 쓰는 규칙 id) [PLZ-02][PLZ-12], **1.26** `cal`(앱 안 달력 id, 참여에 씀), `auto`(승인 뒤 저절로 보낸 것). 답에 `first`(그 회사·부서 첫 판), `newInfo`(급여 방식까지 담긴 첫 판, 그때만 `reward`: 하루 1번·1년 3번, 넘으면 `owed`), `member`(보낸 휴대폰의 참여 결과) [PLAZA-10] |
 | `GET /api/reports/:id` | 제보가 어디까지 왔는지: 점수, 채택, 거절 이유, 보상 |
 | `DELETE /api/reports/:id` | 제보 되돌리기 (헤더 `X-Device`) |
 | `DELETE /api/mine` | 이 설치가 보낸 것 전부 지우기 (헤더 `X-Device`) |
 | `POST /api/votes` | 맞았어요·달라요 `{device, company, setup, ok, verified?, why?}` |
 | `GET /api/board?tab=voting\|adopted&from=&q=&job=&region=&sort=` | 회사 규칙 광장: 모든 회사의 투표 중인 규칙(최근 활동 순)이나 채택된 규칙, 20개씩. `q`는 회사 이름이나 다른 이름(회사 찾기처럼 띄어쓰기·(주) 무시, 두 글자부터) [COMM-07]. `job`은 직군 광장, `region`은 시·도 코드, `sort`는 `recent`·`trust`·`used` [PLZ-05][PLZ-12] |
 | `GET /api/plazas` | 직군 광장 목록(채택·투표 중·시세 수), 시·도, 제안 항목, 시세 단위 [PLZ-12] |
-| `GET /api/companies/:id/history?setup=` | 한 부서 규칙이 거쳐 온 버전: 채택 방식(`auto`·`amend`·`rival`·`promote`·`developer`), 날짜, 앞 버전과 달라진 줄, 제안한 글, 그 버전의 설정 `body`(비교·되돌리기) [PLZ-04][PLAZA-05] |
+| `GET /api/companies/:id/history?setup=` | 한 부서 규칙이 거쳐 온 버전: 채택 방식(`auto`·`amend`·`rival`·`promote`·`developer`), 날짜, 앞 버전과 달라진 줄, 제안한 글, 그 버전의 설정 `body`(비교·되돌리기) [PLZ-04][PLAZA-05]. **1.26** 급여 방식과 급여 줄은 참여한 휴대폰(헤더 `X-Device`)에만, 토론의 제안 줄도 급여 항목은 참여한 휴대폰에만 [PLAZA-08] |
 | `GET /api/companies/:id/setups/:setup/posts` | 한 규칙의 토론. 헤더 `X-Device`가 있으면 내 글 표시와 가려진 내 글의 이유 [COMM-06] |
 | `POST /api/posts` | 토론 글 `{device, company, setup, body, parent?, kind?}` (500자까지). `parent`는 답글, `kind`는 `talk`·`question`·`proposal`. 고치자는 제안은 `change: [{field, now, want, why}]`(6줄까지, 금액 없이)와 고친 설정 `proposal`을 함께 [PLZ-05][PLZ-09] |
 | `POST /api/posts/:id/vote` | 글에 맞아요·달라요 `{device, ok: true\|false\|null}`(null은 취소). 제안 글이면 그 설정에 대한 투표도 돼요 [PLZ-01] |
-| `POST /api/uses` · `DELETE /api/uses` | 이 규칙을 쓰기 시작·그만 `{device, company, setup}` → 쓰는 사람 수 [PLZ-08] |
+| `POST /api/uses` · `DELETE /api/uses` | 이 규칙을 쓰기 시작·그만 `{device, company, setup, cal?}` → 쓰는 사람 수. **1.26** 쓰기 시작은 그 회사 참여예요(`member`) [PLZ-08][PLAZA-07] |
 | `POST /api/nick` | 광장 별명 `{device, nick}` (빈 값은 지우기, 이미 쓰는 별명은 409) [PLZ-08] |
 | `GET /api/activity` | 내 활동: 보낸 제보·제안·시세와 상태, 보상, 별명 (헤더 `X-Device`) [PLZ-08] |
 | `GET /api/rates?job=&region=&trade=&unit=` | 임금표: 시세 목록(맞아요·달라요, 내 것·내 표)과 채택된 시세의 낮은·가운데·높은 값 (헤더 `X-Device` 선택) [PLZ-14][PLZ-15] |

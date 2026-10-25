@@ -65,10 +65,10 @@ test("[PLAZA-03] 초성 of a name, and a search by 초성 finds companies with a
   assert.equal(isChoseong("삼ㅅ"), false);
   const { call } = server();
   for (const n of [1, 2, 3]) await call("POST", "/api/reports", report(n, { company: "(주)삼성전자" }), from(n));
-  // Only pending: 초성 never guess a company nobody uses yet.
+  // [PLAZA-10] Only pending: found too since 결정 D79, after the companies with a rule in use, as a first version.
   await call("POST", "/api/reports", report(4, { company: "삼성정밀" }), from(4));
   let found = (await call("GET", "/api/companies?q=" + encodeURIComponent("ㅅㅅㅈ"))).data.companies;
-  assert.deepEqual(found.map((c) => c.name), ["(주)삼성전자"]);
+  assert.deepEqual(found.map((c) => [c.name, c.first ?? false]), [["(주)삼성전자", false], ["삼성정밀", true]]);
   found = (await call("GET", "/api/companies?q=" + encodeURIComponent("ㅅ ㅈ ㅈ"))).data.companies;
   assert.deepEqual(found.map((c) => c.name), ["(주)삼성전자"]);
   // A name changed by the developer is found by its new 초성.
