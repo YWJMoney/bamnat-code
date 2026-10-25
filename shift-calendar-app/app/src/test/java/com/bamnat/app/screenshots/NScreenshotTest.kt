@@ -68,6 +68,8 @@ class NScreenshotTest : ScreenshotBase() {
 
     private fun asking(then: Screen.() -> Unit = {}): Screen.() -> Unit = clean {
         c.asks.clear(PersonalCalendar.MAIN)
+        // The question card comes from a flow read off the main thread: wait for it on a slow CI machine.
+        repeat(100) { if (!shows("나중에", exact = true)) { Thread.sleep(20); settle() } }
         then()
     }
 

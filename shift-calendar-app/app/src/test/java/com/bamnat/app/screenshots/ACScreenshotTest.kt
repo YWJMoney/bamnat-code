@@ -180,6 +180,8 @@ class ACScreenshotTest : ScreenshotBase() {
         tapText("다음", exact = true)
         if (!shows("이대로 계산", exact = true)) tapText("다음", exact = true)
         tapText("이대로 계산", exact = true)
+        // The save runs off the main thread: a slow CI machine may not have it yet after the tap.
+        repeat(100) { if (c.payStore.profile.value == null) { Thread.sleep(20); settle() } }
         val p = c.payStore.profile.value!!
         assertEquals(com.bamnat.core.pay.Occupation.MANUFACTURING, p.occupation)
         val usual = PublicCycles.all.first { it.id == gsEps.id }.let { com.bamnat.core.plaza.PublicPay.usualItems(it) }
