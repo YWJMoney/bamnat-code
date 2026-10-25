@@ -95,6 +95,8 @@ data class SettingEntry(
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
 /** [SET-05] The alarm page's row that moves every shift's alarms at once. */
 internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+/** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
+internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -218,6 +220,17 @@ internal object SettingsIndex {
         row(V, "앱 버전", "버전", "업데이트", row = "버전"),
         // O 1.23 (I)
         row(A, "알람 제안", "스마트 알람", "알람 추천", "늦게 끔", "알람 시간", "숨긴 제안", "다시 보기"), // [ALRM-03]
+        // [READ-04][READ-05][READ-08] 1.25 U: reading a roster or payslip photo, and its ways out.
+        screen(W.title, "근무표 사진이 안 읽힐 때", SettingsGo.DUTY_ROSTER, "사진 인식", "인식 안 돼", "어느 줄", "내 조", "사진 위에서 누르기", "무엇을 읽었는지", "기울어진 사진"),
+        screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
+        // 1.25 묶음 AB
+        row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
+        // ---- 1.25 묶음 Y [TIER-07] ----
+        screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),
+        // 1.25 Z
+        row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
+        // ---- 1.25 묶음 X [PLAZA-06] ----
+        row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
     )
 
     /** The best fits for [query], best first. */

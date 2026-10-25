@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -37,13 +38,25 @@ import com.bamnat.core.time.Today
 internal fun FoundTradesCard(vm: InvestViewModel, state: InvestState, open: (InvestSheet) -> Unit) {
     val alerts by vm.alerts.collectAsStateWithLifecycle()
     val auto by vm.alertAuto.collectAsStateWithLifecycle()
+    // [INV-40] 409 C: a capture shared from the gallery, or the button below.
+    val shot by com.bamnat.app.invest.IncomingFills.shot.collectAsStateWithLifecycle()
+    var capturing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    var sharedShot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null) }
+    androidx.compose.runtime.LaunchedEffect(shot) { com.bamnat.app.invest.IncomingFills.take()?.let { sharedShot = it; capturing = true } }
+    if (capturing) FillCaptureSheet(vm, alerts, sharedShot, onDismiss = { capturing = false; sharedShot = null })
     if (alerts.isEmpty()) return
+    val priceless = alerts.count { it.price <= 0 }
     SectionCard(title = "알림으로 찾은 거래 ${alerts.size}건") {
         Text("증권사·거래소 체결 알림에서 읽었어요. 맞으면 적기, 다르면 고쳐서 적어 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [INV-40] Lines without a price: one capture of the broker's 체결 내역 fills them.
+        if (priceless > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("단가 없는 알림 ${priceless}건", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            FilledTonalButton(onClick = { capturing = true }) { Text("체결 내역 캡처로 채우기") }
+        }
         alerts.sortedByDescending { it.at }.forEachIndexed { i, p ->
             if (i > 0) HorizontalDivider()
-            FoundTrade(p, state) { action ->
+            FoundTrade(p, state, onCapture = { capturing = true }) { action ->
                 when (action) {
                     FoundAction.SAVE -> vm.confirmAlert(p)
                     FoundAction.EDIT -> open(InvestSheet.TradeEdit(p.toDraft(state.account ?: state.settings.lastAccountId)))
@@ -59,7 +72,7 @@ internal fun FoundTradesCard(vm: InvestViewModel, state: InvestState, open: (Inv
 private enum class FoundAction { SAVE, EDIT, DROP }
 
 @Composable
-private fun FoundTrade(p: TradeAlerts.Pending, state: InvestState, onAction: (FoundAction) -> Unit) {
+private fun FoundTrade(p: TradeAlerts.Pending, state: InvestState, onCapture: () -> Unit, onAction: (FoundAction) -> Unit) {
     val time = java.time.Instant.ofEpochMilli(p.at).atZone(Today.zone())
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -76,9 +89,19 @@ private fun FoundTrade(p: TradeAlerts.Pending, state: InvestState, onAction: (Fo
             ).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // [INV-40] Where a price not said came from, and a price that does not agree with the amount.
+        when (p.filledBy) {
+            TradeAlerts.BY_AMOUNT -> "단가는 알림의 체결 금액 ÷ 수량이에요"
+            TradeAlerts.BY_PARTS -> if (p.parts > 1) "알림 ${p.parts}개를 묶은 평균 단가예요 (나누려면 고쳐서 적기)" else "이어 온 알림에서 단가를 찾았어요"
+            TradeAlerts.BY_CAPTURE -> "단가는 체결 내역 캡처에서 읽었어요"
+            else -> null
+        }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        if (p.checked == false) Text("수량 × 단가가 알림의 체결 금액 ${InvestFmt.price(p.amount, p.market)}과 안 맞아요. 고쳐서 적어 주세요.",
+            style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // A price the notification did not say has to be typed first.
-            if (p.price > 0) FilledTonalButton(onClick = { onAction(FoundAction.SAVE) }) { Text("적기") }
+            // A price the notification did not say has to be typed first, or read from a capture.
+            if (p.price > 0 && p.checked != false) FilledTonalButton(onClick = { onAction(FoundAction.SAVE) }) { Text("적기") }
+            if (p.price <= 0) FilledTonalButton(onClick = onCapture) { Text("캡처로 단가 채우기") }
             OutlinedButton(onClick = { onAction(FoundAction.EDIT) }) { Text("고쳐서 적기") }
             TextButton(onClick = { onAction(FoundAction.DROP) }) { Text("넘기기") }
         }

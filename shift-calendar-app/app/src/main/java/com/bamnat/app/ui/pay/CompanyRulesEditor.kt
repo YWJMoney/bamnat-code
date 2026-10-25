@@ -341,8 +341,11 @@ fun CompanyRulesEditor(
                 Hint("주휴일에 일하면 위 방식과 상관없이 휴일근로예요(근로기준법 제55조). 교대 근무는 따로 정하지 않은 곳이 많아요. " +
                     "모르면 ‘정해지지 않음’으로 두면 쉬는 날을 모두 휴무일로 계산해요.")
                 if (draft.fiveOrMoreEmployees) {
-                    Toggle("공휴일 근무는 휴일근로", "근무표에서 공휴일을 다른 날로 바꿔 주는 회사(휴일 대체)라면 꺼 주세요", rules.publicHolidaysPaid) {
-                        setRules(rules.copy(publicHolidaysPaid = it), Unknowns.PUBLIC_HOLIDAYS)
+                    // [HOLI-01] One choice for 빨간날 work in place of the switch and the chips it used to take.
+                    Label("빨간날(공휴일)에 일하면")
+                    HolidayWorkPicker(rules, snapshot.shiftTypes, onChange = { setRules(it, Unknowns.PUBLIC_HOLIDAYS) })
+                    Toggle("공휴일 연차는 연차 일수에서 안 빠짐", "공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요", rules.holidayLeaveFree) {
+                        setRules(rules.copy(holidayLeaveFree = it))
                     }
                 } else {
                     // [PAYS-03] 제55조 제2항 applies from five employees; below that it is the company's choice.
@@ -350,7 +353,7 @@ fun CompanyRulesEditor(
                         setRules(rules.copy(holidaysUnderFive = it), Unknowns.PUBLIC_HOLIDAYS)
                     }
                 }
-                if (if (draft.fiveOrMoreEmployees) rules.publicHolidaysPaid else rules.holidaysUnderFive) {
+                if (!draft.fiveOrMoreEmployees && rules.holidaysUnderFive) {
                     // [PAYX-07] Some companies pay a 공휴일 shift exactly like a 대근.
                     Label("공휴일에 근무표대로 일하면")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -621,7 +624,8 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
         is WeeklyHoliday.Fixed -> add("주휴일 ${Fmt.dayOfWeekShort(w.day)}요일")
     }
     if (supervisoryApproved) add("감시·단속 승인")
-    if (profile.fiveOrMoreEmployees && !publicHolidaysPaid) add("공휴일은 휴일 대체")
+    // [HOLI-01] The 빨간날 choice when it is not the law's.
+    if (profile.fiveOrMoreEmployees && holidayWork != com.bamnat.core.pay.HolidayWork.PREMIUM) add(holidayWorkText())
     if (!profile.fiveOrMoreEmployees && holidaysUnderFive) add("공휴일 유급 (5인 미만)")
     when (breakPay) {
         BreakPay.UNPAID -> Unit

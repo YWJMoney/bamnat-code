@@ -45,6 +45,10 @@ sealed interface RuleChange {
     data class PublicHolidayAs(val kind: Long, val kindName: String) : RuleChange {
         override val summary get() = "공휴일 근무는 $kindName 방식으로"
     }
+    /** [HOLI-01] "빨간날도 교대제라 평일처럼". */
+    data class HolidayMode(val mode: HolidayWork) : RuleChange {
+        override val summary get() = "빨간날 근무는 ${mode.label}"
+    }
     data class PublicHolidaysPaid(val value: Boolean) : RuleChange {
         override val summary get() = if (value) "공휴일 근무는 휴일근로" else "공휴일은 다른 날로 바꿔 쉼(휴일 대체)"
     }
@@ -96,7 +100,18 @@ object RuleText {
     private val monthListRe = Regex("""(\d{1,2})\s*월""")
 
     fun read(text: String, kinds: List<ExtraKind> = emptyList(), shiftTypes: List<ShiftType> = emptyList(), fiveOrMore: Boolean = true): List<RuleFinding> =
-        sentences(text).flatMap { readSentence(it, kinds, shiftTypes, fiveOrMore) }
+        sentences(tidy(text)).flatMap { readSentence(it, kinds, shiftTypes, fiveOrMore) }
+
+    /**
+     * [READ-08] A rules page read from a photo loses small marks (1.25 사진 고정 파일): the dot of "1.5배" ("15배", "1 5배"), the commas
+     * and spaces between clauses ("이내는50%8시간초과분은100%"), and reads 지급 as 지금. Put back before reading; typed
+     * text is left as it is.
+     */
+    internal fun tidy(text: String): String = text
+        .replace(Regex("""(?<![\d.])([12])\s?5\s*배"""), "$1.5배")
+        .replace(Regex("""%(?=\s*\d)"""), "%, ")
+        .replace(Regex("""(?<=[가-힣])(?=\d)"""), " ")
+        .replace("지금한다", "지급한다").replace("지금하여", "지급하여").replace("통상시금", "통상시급")
 
     /** Lines, and sentences within a line; a dot between digits (3.5%) does not end one. */
     internal fun sentences(text: String): List<String> =
@@ -227,6 +242,8 @@ object RuleText {
     private fun publicHoliday(line: String, c: String, kinds: List<ExtraKind>): RuleFinding? {
         if (!Regex("공휴일|빨간날|법정휴일").containsMatchIn(c)) return null
         if ("대체" in c && ("휴일대체" in c || "바꿔" in c || "대체휴" in c)) return RuleFinding(line, RuleChange.PublicHolidaysPaid(false), 0.8)
+        // [HOLI-01] "빨간날도 교대제라 평일처럼", "공휴일 상관없이 근무표대로".
+        if (Regex("평일(처럼|과같|로)|상관없|무관|근무표대로").containsMatchIn(c)) return RuleFinding(line, RuleChange.HolidayMode(HolidayWork.SHIFT_NORMAL), 0.75)
         val kind = kindOf(c.replace("휴일근로", ""), kinds)
         if (kind != null && Regex("(으로|로|처럼|방식|같이|대입)").containsMatchIn(c)) return RuleFinding(line, RuleChange.PublicHolidayAs(kind.first, kind.second), 0.85)
         if (Regex("휴일근로로|휴일근무로|휴일수당").containsMatchIn(c) && percentRe.find(c) == null) return RuleFinding(line, RuleChange.PublicHolidaysPaid(true), 0.75)
@@ -521,9 +538,12 @@ object RuleText {
             is RuleChange.MonthlyHours -> p.copy(monthlyHours = change.hours, estimatedFields = p.estimatedFields - Unknowns.MONTHLY_HOURS)
             is RuleChange.FiveOrMore -> p.copy(fiveOrMoreEmployees = change.value, estimatedFields = p.estimatedFields - Unknowns.FIVE_OR_MORE)
             is RuleChange.Breaks -> p.withRules { it.copy(breakPay = change.mode) }.let { Unknowns.answered(it, Unknowns.BREAK_PAY) }
-            is RuleChange.PublicHolidayAs -> p.withRules { it.copy(publicHolidayAs = change.kind, publicHolidaysPaid = true) }
+            // [HOLI-01] Through the one 빨간날 choice, so 특근처럼 also judges a night shift by the day it starts.
+            is RuleChange.PublicHolidayAs -> p.withRules { it.withHolidayWork(HolidayWork.AS_EXTRA, change.kind) }
                 .let { Unknowns.answered(it, Unknowns.PUBLIC_HOLIDAYS) }
-            is RuleChange.PublicHolidaysPaid -> p.withRules { it.copy(publicHolidaysPaid = change.value) }.let { Unknowns.answered(it, Unknowns.PUBLIC_HOLIDAYS) }
+            is RuleChange.PublicHolidaysPaid -> p.withRules { it.withHolidayWork(if (change.value) HolidayWork.PREMIUM else HolidayWork.SUBSTITUTE) }
+                .let { Unknowns.answered(it, Unknowns.PUBLIC_HOLIDAYS) }
+            is RuleChange.HolidayMode -> p.withRules { it.withHolidayWork(change.mode) }.let { Unknowns.answered(it, Unknowns.PUBLIC_HOLIDAYS) }
             is RuleChange.RestDay -> p.withRules { it.copy(restDayWork = change.mode) }.let { Unknowns.answered(it, Unknowns.REST_DAY_WORK) }
             is RuleChange.ScheduleRegular -> p.copy(scheduleIsRegular = change.value).let { Unknowns.answered(it, Unknowns.SCHEDULE_IS_REGULAR) }
             is RuleChange.WeeklyHolidayDay -> p.withRules { it.copy(weeklyHoliday = WeeklyHoliday.Fixed(change.day)) }

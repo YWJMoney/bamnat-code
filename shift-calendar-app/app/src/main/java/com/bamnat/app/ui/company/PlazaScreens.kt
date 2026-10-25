@@ -210,7 +210,7 @@ private fun TotalBox(label: String, amount: Long, modifier: Modifier) {
 /** [PLZ-04] How a rule grew: every version, how it came in and what changed from the one before. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistorySheet(state: HistoryState?, onClose: () -> Unit) {
+fun HistorySheet(state: HistoryState?, onClose: () -> Unit, onCompare: ((RuleVersion, RuleVersion) -> Unit)? = null) {
     val h = state ?: return
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -219,14 +219,20 @@ fun HistorySheet(state: HistoryState?, onClose: () -> Unit) {
             when {
                 h.error != null -> Text(h.error)
                 h.versions == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
-                else -> h.versions.forEach { VersionRow(it) }
+                else -> {
+                    val now = h.versions.firstOrNull { it.state == "active" }
+                    h.versions.forEach { v ->
+                        VersionRow(v, onCompare = if (onCompare != null && now != null && v != now && v.body != null && now.body != null && v.state != "withdrawn")
+                            ({ onCompare(v, now) }) else null)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun VersionRow(v: RuleVersion) {
+private fun VersionRow(v: RuleVersion, onCompare: (() -> Unit)? = null) {
     SoftCard(highlighted = v.state == "active") {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -241,6 +247,8 @@ private fun VersionRow(v: RuleVersion) {
                 "${dateFormat.format(v.adoptedAt.atZone(Today.zone()))} · " + when (v.source) {
                     "amend" -> "고치자는 제안에 ${v.senders}명이 맞아요"
                     "auto" -> "${v.senders}명이 같은 규칙을 보내 채택"
+                    // [PLAZA-05] 결정 D74: another 판 of the department came to be used by more phones.
+                    "rival" -> "같은 부서의 다른 판을 더 많은 분이 써서 대표 판이 됐어요"
                     else -> "개발자가 확인해 채택"
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -248,6 +256,7 @@ private fun VersionRow(v: RuleVersion) {
             v.removed.forEach { Text("− $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             v.added.forEach { Text("+ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             if (v.version == 1 && v.added.isEmpty()) Text("처음 채택된 규칙이에요", style = MaterialTheme.typography.bodySmall)
+            onCompare?.let { TextButton(onClick = it) { Text("지금 판과 비교 · 되돌리기") } }
         }
     }
 }

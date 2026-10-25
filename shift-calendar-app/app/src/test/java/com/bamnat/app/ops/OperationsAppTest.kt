@@ -72,6 +72,10 @@ class OperationsAppTest {
     }
 
     @Test fun usageStatsAreSentOnceADayOnlyWithAYes() = runBlocking {
+        // [QA-09] The app builds its container on a thread of its own as it starts, and that start drops waiting
+        // counts without a yes (forgetUnless). Under a full run's load it could land after the book below was
+        // written, and the preview came back empty (NPE, full run only): wait for it first.
+        context.appContainer
         val zone = ZoneId.of("Asia/Seoul")
         val today = LocalDate.now(zone).toEpochDay()
         val prefs = context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)

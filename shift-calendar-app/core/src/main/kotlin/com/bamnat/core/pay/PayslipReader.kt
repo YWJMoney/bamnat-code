@@ -71,6 +71,26 @@ data class PayslipRead(
             return earnings.isNotEmpty() && abs(g - earningsSum) <= PayslipMatch.tolerance(g)
         }
 
+    /** [READ-07] 공제 합계: as stated, else the deductions added up. */
+    val deducted: Long?
+        get() = lines.firstOrNull { it.role == SlipRole.DEDUCTION_TOTAL && it.amount != null }?.amount
+            ?: lines.filter { it.role == SlipRole.DEDUCTION && it.amount != null }.takeIf { it.isNotEmpty() }?.sumOf { it.amount!! }
+
+    /**
+     * [READ-07] 실수령액 for the tax estimate (묶음 W): as stated when it agrees with 지급 총액 − 공제, else that difference (a photo
+     * often cuts the last digits of the bottom line: "2,856,0").
+     */
+    val net: Long?
+        get() {
+            val stated = lines.firstOrNull { it.role == SlipRole.NET && it.amount != null }?.amount
+            val worked = gross?.let { g -> deducted?.let { g - it } }
+            return when {
+                worked == null -> stated
+                stated != null && abs(stated - worked) <= PayslipMatch.tolerance(worked) -> stated
+                else -> worked
+            }
+        }
+
     fun amount(role: SlipRole): Long? = lines.filter { it.role == role && it.amount != null }.takeIf { it.isNotEmpty() }?.sumOf { it.amount!! }
 
     fun minutes(role: SlipRole): Int? = lines.filter { it.role == role }.mapNotNull { it.minutes }.takeIf { it.isNotEmpty() }?.sum()
@@ -110,6 +130,7 @@ data class PayslipRead(
 object PayslipReader {
     private val numberRe = Regex("""(?<![\d.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(원|시간|hr|h|H|분|%|배|일|회|월|년)?""")
     private val monthRe = Regex("""(20\d{2})\s*(?:년|[./-])\s*(\d{1,2})\s*(?:월|\b)""")
+    private val dottedThousands = Regex("""(?<![\d.,])\d{1,3}(?:\.\d{3})+(?![\d.])(?!\s*(?:시간|hr|h|H|%|배))""")
     private val wordRe = Regex("""[가-힣A-Za-z][가-힣A-Za-z()·\s]*""")
 
     /** Words that head a section or a column, never a line of pay. */
@@ -126,7 +147,7 @@ object PayslipReader {
 
     /** The role of a pay line by its name, or null when the name says nothing about pay. */
     fun roleOf(rawName: String): SlipRole? {
-        val n = rawName.filterNot { it.isWhitespace() }.lowercase()
+        val n = ocrFix(rawName.filterNot { it.isWhitespace() }.lowercase())
         if (n.isEmpty()) return null
         return when {
             listOf("실수령", "차인지급", "실지급", "차감지급", "실수령액").any { it in n } -> SlipRole.NET
@@ -150,6 +171,17 @@ object PayslipReader {
         }
     }
 
+    /**
+     * [READ-07] Letters a phone's text recognition often reads one stroke off on a payslip (함계 for 합계, 보협 for 보험,
+     * 실수형액 for 실수령액, 언장 for 연장, 지금 for 지급, 한목 for 항목), read as meant. Seen in the photo fixtures of 1.25.
+     */
+    private val OCR_SLIPS = listOf(
+        "함계" to "합계", "함게" to "합계", "합게" to "합계", "보협" to "보험", "실수형" to "실수령", "실수랑" to "실수령",
+        "언장" to "연장", "지금" to "지급", "한목" to "항목", "항모" to "항목", "한모" to "항목", "수딩" to "수당", "근로수딩" to "근로수당",
+    )
+
+    fun ocrFix(s: String): String = OCR_SLIPS.fold(s) { acc, (from, to) -> acc.replace(from, to) }
+
     private class Token(val text: String, val number: Double?, val unit: String, val line: Int, val afterEquals: Boolean)
 
     fun read(text: String): PayslipRead {
@@ -165,6 +197,8 @@ object PayslipReader {
         for ((li, raw) in lines.withIndex()) {
             // Dates are not amounts.
             val line = monthRe.replace(raw, " ").replace(Regex("""\d{4}[./-]\d{1,2}[./-]\d{1,2}"""), " ")
+                // 1.25 통합 직접 시험: a photo often reads the comma of "2,850,000" as a dot; three digits after a dot are thousands.
+                .replace(dottedThousands) { it.value.replace(".", "") }
             val eq = line.lastIndexOf('=')
             if (eq > 0 && pending.isEmpty() || eq > 0 && wordRe.find(line)?.let { roleOf(it.value) } != null) {
                 // A 계산 방법 line: "연장근로수당 16시간 × 12,000 × 1.5 = 288,000".
@@ -181,12 +215,17 @@ object PayslipReader {
                 if (value.isEmpty()) continue
                 val num = numberRe.matchEntire(value)
                 if (num == null) {
-                    val name = value.replace(Regex("""\s+"""), " ").trim().trimEnd('(', '·').trim()
-                    val compact = name.filterNot { it.isWhitespace() }
-                    if (headers.any { compact == it || compact.startsWith(it) && compact.length <= it.length + 2 }) continue
-                    // A long run of words is a sentence or a heading, not a pay line.
-                    if (compact.length > 14 || roleOf(name) == null) continue
-                    pending.addLast(name to raw)
+                    // [READ-07] Words two spaces apart are cells of a row put back together ("지급 항목  금액  공제 항목"): each its own.
+                    for (part in value.split(Regex("""\s{2,}"""))) {
+                        val name = part.replace(Regex("""\s+"""), " ").trim().trimEnd('(', '·').trim()
+                        val compact = ocrFix(name.filterNot { it.isWhitespace() })
+                        if (compact.isEmpty() || headers.any { compact == it || compact.startsWith(it) && compact.length <= it.length + 2 }) continue
+                        // "지급내역 공제내역" one space apart: two column heads, not a 공제 line taking the first amount.
+                        if (name.split(' ').all { w -> ocrFix(w).let { c -> headers.any { c == it } } }) continue
+                        // A long run of words is a sentence or a heading, not a pay line.
+                        if (compact.length > 14 || roleOf(name) == null) continue
+                        pending.addLast(name to raw)
+                    }
                     continue
                 }
                 val n = num.groupValues[1].replace(",", "").toDoubleOrNull() ?: continue

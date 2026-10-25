@@ -59,6 +59,8 @@ import kotlin.math.roundToInt
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class AccessibilityCheckTest {
+    /** [QA-09] See ComposeMainReset. */
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()

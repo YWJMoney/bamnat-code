@@ -116,6 +116,8 @@ internal fun MonthSummaryBar(
     restSigns: Int = 0,
     /** [CAL-51] 상-4: on a low screen the three figures in one line, so the month shows under it. */
     compact: Boolean = false,
+    /** [TAX-02] 세후 예상 of [payEstimate] (프로), said under it; null keeps "세전". */
+    takeHome: Long? = null,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
@@ -126,7 +128,7 @@ internal fun MonthSummaryBar(
                     com.bamnat.core.schedule.RestNudge.monthNote(restSigns)), short = "근무 ${overview.workDays}일"),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
                 overview.extraMinutes.takeIf { it > 0 }?.let { "추가 ${HoursFormat.korean(it)}" }, null, short = HoursFormat.korean(overview.workMinutes)),
-            if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary, short = "급여 ${Fmt.wonShort(payEstimate)}")
+            if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), takeHome?.let { "세전 · 세후 ${Fmt.wonShort(it)}" } ?: "세전", MaterialTheme.colorScheme.primary, short = "급여 ${Fmt.wonShort(payEstimate)}")
             else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null, short = "공휴일 ${overview.holidayWorkDays}일"),
         )
         CalendarFocus.JOBS -> listOf(

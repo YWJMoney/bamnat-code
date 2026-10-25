@@ -217,6 +217,8 @@ private object Routes {
     const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}"
     const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
     const val COMPANY_REPORT = "company_report"
+    /** [PLAZA-06] 처음 설정 다시 받기. */
+    const val SETUP_AGAIN = "setup_again"
     const val COMPANY_SENT = "company_sent"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
@@ -234,6 +236,9 @@ private object Routes {
     const val COMBINED = "combined"
     // [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Shift and day work's own tools, for the calendar on screen.
     const val DUTY_ROSTER = "duty_roster"
+    /** [READ-10] 한 달 근무 넣기 on one month: the calendar's 이번 달 전부 넣기 (1.25 순번 371). */
+    const val DUTY_ROSTER_MONTH = "duty_roster_month/{month}"
+    fun dutyRoster(month: java.time.YearMonth) = "duty_roster_month/$month"
     const val HEALTH_REPORT = "health_report"
     const val TEAMS = "teams"
     const val YEAR = "year"
@@ -300,9 +305,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true && !browse.browsing) {
+            // [NAV-03] 1.25 Z (U4): a help link tapped during the setup is not followed later, out of the blue, once it is done.
+            LaunchedEffect(Unit) { SettingsLinks.target.collect { it?.let(SettingsLinks::consume) } }
             if (consentSeen == null && setupDraft == null) {
                 val key = firstStyleKey
                 if (key == null) {
+                    // [NAV-04] 1.25 Z 후속: the very first screen closes only on a second back, as the calendar does.
+                    val context = LocalContext.current
+                    val exit = remember { ExitGuard() }
+                    androidx.activity.compose.BackHandler { exit.press(context) }
                     com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
                     return
                 }
@@ -341,6 +352,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
             if (NoticeLinks.target.value == null && current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
+                TabHistory.clear()
                 nav.navigate(TopLevel.CALENDAR.route) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
@@ -390,6 +402,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
+            // [TAX-02] Likewise, to open 세금·실수령.
+            NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -403,6 +417,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.GROUP -> { nav.navigate(Routes.SHARE_GROUP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -438,7 +454,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
     val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
     LaunchedEffect(sharedRoster) {
-        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route != Routes.DUTY_ROSTER) {
+        // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
+        // 한 달 근무 넣기 (U, ROST-09) is open stays that screen's.
+        val rosterOpen = nav.currentBackStackEntry?.destination?.route in setOf(Routes.DUTY_ROSTER, Routes.DUTY_ROSTER_MONTH)
+        val shot = sharedRoster as? com.bamnat.app.IncomingRoster.Shared.Photo
+        if (shot != null && activeStyle == WorkStyle.INVEST && !rosterOpen) {
+            com.bamnat.app.IncomingRoster.take()
+            com.bamnat.app.invest.IncomingFills.put(shot.uri)
+            NoticeLinks.open(NoticeLinks.Target.INVEST, activeCalendarId)
+            return@LaunchedEffect
+        }
+        if (sharedRoster != null && !rosterOpen) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
     }
@@ -577,6 +603,39 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
+
+    // [NAV-02] 1.25 Z (U4): back goes where the user was. From a tab reached from another tab, that tab, as it was
+    // left (Android's default went to the calendar from every tab); from the calendar itself, a second back within
+    // two seconds closes the app, so one stray back does not. Screens and sheets inside take back first.
+    // One callback, added again after every move so it comes after the NavHost's own back (added once, at the
+    // start), which would otherwise pop straight to the calendar; screens composed with the move add theirs later
+    // and still go first.
+    val context = LocalContext.current
+    val exitGuard = remember { ExitGuard() }
+    val tabBack = remember { TabBackCallback() }
+    // On every tab; what to do is decided when back comes, from the back stack as it is then (it is not state, and
+    // a tab brought back with its screens is still settling when this is drawn).
+    tabBack.isEnabled = topLevel != null
+    tabBack.onBack = onBack@{
+        val previousRoute = nav.previousBackStackEntry?.destination?.route
+        val current = TopLevel.entries.firstOrNull { it.route == nav.currentBackStackEntry?.destination?.route }
+        when {
+            current != null && current != TopLevel.CALENDAR && previousRoute == TopLevel.CALENDAR.route && TabHistory.previous() != null ->
+                TabHistory.back()?.let { prev -> nav.navigateTopLevel(prev, record = false) }
+            current == TopLevel.CALENDAR && previousRoute == null -> { if (exitGuard.press(context)) TabHistory.clear() }
+            // Anything else is the NavHost's: the screen under this one.
+            else -> return@onBack false
+        }
+        true
+    }
+    val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(dispatcher, lifecycleOwner, backStack?.id) {
+        tabBack.remove()
+        tabBack.dispatcher = dispatcher
+        dispatcher?.addCallback(lifecycleOwner, tabBack)
+        onDispose { tabBack.remove() }
+    }
 
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
     val tabletop = rememberTabletop()
@@ -751,7 +810,15 @@ private fun AppNavHost(
                 onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
                 onEditCalendar = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } },
                 onOpenCombined = { nav.navigate(Routes.COMBINED) { launchSingleTop = true } },
+                onFillMonth = { m -> nav.navigate(Routes.dutyRoster(m)) { launchSingleTop = true } },
             )
+        }
+        // [PLAZA-06] U25-나: the first setup again, in its own draft; done or given up, back where the user was.
+        composable(Routes.SETUP_AGAIN) {
+            val vm = appViewModel(key = "setup_again") { SetupViewModel(it, again = true) }
+            val done by vm.done.collectAsStateWithLifecycle()
+            LaunchedEffect(done) { if (done) nav.popFrom(Routes.SETUP_AGAIN) }
+            SetupHost(vm)
         }
         composable(Routes.COMBINED) { com.bamnat.app.ui.calendar.CombinedScreen(onBack = { nav.popFrom(Routes.COMBINED) }) }
         composable(Routes.CALENDAR_SETUP, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -1133,6 +1200,12 @@ private fun AppNavHost(
             val vm = appViewModel(key = "duty_$calendar") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar) }
             com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER) })
         }
+        composable(Routes.DUTY_ROSTER_MONTH, arguments = listOf(navArgument("month") { type = NavType.StringType })) { entry ->
+            val calendar = remember { container.calendars.active.value }
+            val month = remember { entry.arguments?.getString("month")?.let { runCatching { java.time.YearMonth.parse(it) }.getOrNull() } }
+            val vm = appViewModel(key = "duty_${calendar}_$month") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar, month) }
+            com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER_MONTH) })
+        }
         composable(Routes.TEAMS) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
@@ -1293,7 +1366,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)
         }
-        Place.MONEY -> navigateTopLevel(TopLevel.MONEY.route)
+        Place.MONEY -> if (link.focus == "tax") NoticeLinks.open(NoticeLinks.Target.TAX) else navigateTopLevel(TopLevel.MONEY.route)
         Place.AUTO_RECORD -> NoticeLinks.open(NoticeLinks.Target.AUTO_RECORD)
         Place.MEMOS -> navigateTopLevel(TopLevel.MEMOS.route)
         Place.STATS -> navigateTopLevel(TopLevel.STATS.route)
@@ -1401,11 +1474,56 @@ private fun NavHostController.fixCompanySetup(place: FixPlace) {
     }
 }
 
-private fun NavHostController.navigateTopLevel(route: String) {
+/**
+ * [NAV-02] To a tab. From another tab it is a tab switch (each tab keeps its own screens) and the tab left is
+ * remembered for back ([record]); from a screen opened over a tab, the tab goes on top of that screen, so back
+ * returns to it instead of the screen being thrown away.
+ */
+private fun NavHostController.navigateTopLevel(route: String, record: Boolean = true) {
+    val current = currentBackStackEntry?.destination?.route
+    val fromTab = current == null || TopLevel.entries.any { it.route == current }
+    if (!fromTab) {
+        navigate(route) { launchSingleTop = true }
+        return
+    }
+    if (record && current != null && current != route) TabHistory.left(current, route)
     navigate(route) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/** [NAV-02] The tabs the user went through, latest last, for back. Kept for the app's run; opening the app again clears it. */
+internal object TabHistory {
+    private val stack = ArrayDeque<String>()
+    private const val MAX = 10
+
+    /** Left tab [from] for tab [to]: [to] is taken out further down, so going round the tabs does not grow the list. */
+    fun left(from: String, to: String) {
+        stack.remove(from)
+        stack.remove(to)
+        stack.addLast(from)
+        while (stack.size > MAX) stack.removeFirst()
+    }
+
+    fun previous(): String? = stack.lastOrNull()
+
+    fun back(): String? = stack.removeLastOrNull()
+
+    fun clear() = stack.clear()
+}
+
+/** [NAV-02] Back between tabs and out of the calendar ([AppRoot]); what it does is set on every composition. */
+private class TabBackCallback : androidx.activity.OnBackPressedCallback(false) {
+    /** False hands back on to the callbacks under this one. */
+    var onBack: () -> Boolean = { false }
+    var dispatcher: androidx.activity.OnBackPressedDispatcher? = null
+
+    override fun handleOnBackPressed() {
+        if (onBack()) return
+        isEnabled = false
+        try { dispatcher?.onBackPressed() } finally { isEnabled = true }
     }
 }
 

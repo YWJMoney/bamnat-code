@@ -77,6 +77,7 @@ import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.EditScope
 import com.bamnat.core.pay.FlexPeriod
+import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.Occupation
 import com.bamnat.core.pay.OrdinaryGuess
@@ -201,7 +202,8 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
     var supervisory by mutableStateOf(initial?.rules?.supervisoryApproved ?: false)
     var scheduleRegular by mutableStateOf(initial?.scheduleIsRegular ?: false)
     var flexPeriod by mutableStateOf(initial?.flexPeriod)
-    var publicHolidaysPaid by mutableStateOf(initial?.rules?.publicHolidaysPaid ?: true)
+    // [HOLI-01] 빨간날 work as one of four, in place of the 휴일근로 yes/no it used to be.
+    var holidayWork by mutableStateOf(initial?.rules?.holidayWork ?: HolidayWork.PREMIUM)
     var holidaysUnderFive by mutableStateOf(initial?.rules?.holidaysUnderFive ?: false)
     var restDayWork by mutableStateOf(initial?.rules?.restDayWork ?: RestDayWork.LAW)
     var breakPay by mutableStateOf(initial?.rules?.breakPay ?: BreakPay.UNPAID)
@@ -364,8 +366,8 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
             dailyHours = dailyHours,
             annual = annual,
             dailyLimitMinutes = if (initial != null) initial.dailyLimitMinutes else PayPresets.of(occupationNow).dailyLimitMinutes,
-            rules = (initial?.rules ?: CompanyRules()).copy(
-                supervisoryApproved = supervisory, publicHolidaysPaid = publicHolidaysPaid, holidaysUnderFive = holidaysUnderFive,
+            rules = (initial?.rules ?: CompanyRules()).let { r -> if (r.holidayWork == holidayWork) r else r.withHolidayWork(holidayWork) }.copy(
+                supervisoryApproved = supervisory, holidaysUnderFive = holidaysUnderFive,
                 restDayWork = restDayWork, breakPay = breakPay,
             ),
             estimatedFields = marks,
@@ -444,6 +446,9 @@ fun PayWizard(
     val latestSteps by rememberUpdatedState(steps)
 
     fun go(to: String) { step = to }
+    // [NAV-02] 1.25 Z (U4): back is the step before, like 이전; only the first step leaves the setup (with its answers kept
+    // until then). Before, back closed the whole setup and its answers from any step.
+    androidx.activity.compose.BackHandler(enabled = index > 0) { go(steps[index - 1]) }
     fun next() { latestSteps.let { list -> list.getOrNull(list.indexOf(step) + 1)?.let(::go) } }
     // A single tap answers and moves on, after a beat so the choice is seen.
     fun answerAndGo(change: () -> Unit) {
@@ -498,8 +503,13 @@ fun PayWizard(
     // [PAYS-04][PAYS-05] 명세서로 한 번에 채우기, and what it filled.
     var slipFill by remember { mutableStateOf(false) }
     var slipNote by remember { mutableStateOf<String?>(null) }
-    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false }) { read ->
-        slipNote = s.fillFrom(read)
+    // [READ-08] The company's way of counting as a second photo: its ticked rules go on the profile when the setup is done.
+    var photoRules by remember { mutableStateOf(emptyList<com.bamnat.core.pay.RuleChange>() to Today.month()) }
+    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false },
+        rules = RuleTarget(emptyList(), snapshot?.shiftTypes.orEmpty(), initial?.fiveOrMoreEmployees ?: true) { changes, m ->
+            photoRules = changes to (m ?: Today.month())
+        }) { read ->
+        slipNote = s.fillFrom(read) + if (photoRules.first.isNotEmpty()) " · 회사 규칙 ${photoRules.first.size}개도 넣어요" else ""
         slipFill = false
         go(AMOUNT)
     }
@@ -556,7 +566,7 @@ fun PayWizard(
                     question != null -> question.key in s.answered || question.key in s.unknown
                     else -> true
                 }
-                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(draft) } else next() }, enabled = ready) {
+                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(com.bamnat.core.pay.RuleText.apply(draft, photoRules.first, photoRules.second)) } else next() }, enabled = ready) {
                     Text(if (last) "계산 시작" else "다음")
                 }
             }
@@ -854,11 +864,13 @@ private fun QuestionStep(
             unknownText = "모르면 법대로 연장으로 계산해요"
         }
         SetupQuestion.PUBLIC_HOLIDAYS -> if (s.fiveOrMore) {
-            title = "공휴일에 근무하면 휴일근로로 받나요?"
-            body = "5명 이상 회사는 공휴일이 유급휴일이라 그날 일하면 휴일 가산을 받아요. 근무표에서 다른 날과 바꿔 쉬는 회사(휴일 대체)는 평일처럼 계산해요."
-            add("네, 휴일근로로 받아요", null, pick(true, s.publicHolidaysPaid) { s.publicHolidaysPaid = it })
-            add("아니요, 다른 날로 바꿔 쉬어요", "휴일 대체예요. 공휴일 근무를 평일처럼 계산해요", pick(false, s.publicHolidaysPaid) { s.publicHolidaysPaid = it })
-            unknownText = "모르면 휴일근로로 계산해요"
+            title = "빨간날(공휴일)에 일하면 회사는 어떻게 주나요?"
+            body = "5명 이상 회사는 공휴일이 유급휴일이에요. 그날 일하면 법으로 휴일 가산을 받지만, 교대 회사는 특근·대근으로 세거나 다른 날 쉬게 하기도 해요. " +
+                "빨간날에 휴가를 쓰면 근무한 날로만 인정되고 야간·휴일 가산은 붙지 않아요."
+            HolidayWork.entries.forEach { m ->
+                add(m.label, m.detail + if (m == HolidayWork.AS_EXTRA) ". 근무별 금액은 회사 규칙에서 정해요" else "", pick(m, s.holidayWork) { s.holidayWork = it })
+            }
+            unknownText = "모르면 법대로 휴일 가산으로 계산해요"
         } else {
             title = "회사가 공휴일을 유급휴일로 주나요?"
             body = "5명 미만 회사는 공휴일이 법으로 정해져 있지 않아 회사마다 달라요."
@@ -995,7 +1007,7 @@ private fun PaySetupQuestion.answerText(s: PaySetupState, p: PayProfile): String
     SetupQuestion.FIVE_OR_MORE -> if (p.fiveOrMoreEmployees) "5명 이상" else "5명 미만"
     SetupQuestion.SUPERVISORY -> if (p.rules.supervisoryApproved) "승인 있음" else "승인 없음"
     SetupQuestion.SCHEDULE_IS_REGULAR -> if (p.scheduleIsRegular) "기본 근무" + (p.flexPeriod?.let { " (탄력제 ${it.unit})" } ?: "") else "연장으로 따로"
-    SetupQuestion.PUBLIC_HOLIDAYS -> if (p.fiveOrMoreEmployees) (if (p.rules.publicHolidaysPaid) "휴일근로" else "휴일 대체")
+    SetupQuestion.PUBLIC_HOLIDAYS -> if (p.fiveOrMoreEmployees) p.rules.holidayWork.label
         else if (p.rules.holidaysUnderFive) "유급휴일로 줌" else "평일처럼"
     SetupQuestion.REST_DAY_WORK -> p.rules.restDayWork.label
     SetupQuestion.BREAK_PAY -> p.rules.breakPay.label

@@ -117,6 +117,8 @@ fun MemoListScreen(
     // doubles or drops half-built Korean letters and moves the cursor.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     BackHandler(enabled = state.selecting) { vm.clearSelection() }
+    // [NAV-02] 1.25 Z (U4): back first clears a search, as settings' does, before leaving the tab.
+    BackHandler(enabled = !state.selecting && query.isNotEmpty()) { vm.setQuery("") }
     var sharing by remember { mutableStateOf(false) }
     if (sharing) {
         MemoCalendarsDialog(

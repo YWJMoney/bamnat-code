@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -116,6 +117,11 @@ private fun WorkPage(
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
             NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+        }
+        HorizontalDivider()
+        // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
+        NavRow(SETUP_AGAIN_ROW, "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)
         }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
@@ -231,6 +237,9 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             listOf(3, 5, 10, 15, 20).map { it to "${it}분" }, settings.snoozeMinutes) { m -> vm.update { it.copy(snoozeMinutes = m) } }
         ChoiceRow("자동으로 끄기", "끄지 않으면 이만큼 울리고 멈춰요",
             listOf(1, 3, 5, 10, 20, 30).map { it to "${it}분 뒤" }, settings.ringMinutes) { m -> vm.update { it.copy(ringMinutes = m) } }
+        // [ALRM-08] 결정 D78: 끄기 at first; with a mission the buttons only quiet the sound for a while.
+        ChoiceRow(BUTTON_ACTION_ROW, "울릴 때 소리 줄이기·키우기·전원 버튼을 누르면. 끄기 미션이 있으면 소리만 30초 줄어요",
+            com.bamnat.app.alarm.AlarmButtons.Action.entries.map { it.key to it.label }, settings.alarmButtonAction) { k -> vm.update { it.copy(alarmButtonAction = k) } }
     }
     // [ALRM-03] 스마트 알람 제안: on by default, all on the phone; the hidden ones can come back.
     SectionCard(title = null) {
@@ -539,6 +548,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
     SectionCard(title = "백업") {
         Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정, 내가 만든 근무표 링크를 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없어요.")
         NavRow("백업 저장", "파일로 저장해요. 암호를 걸 수 있어요", files.saveBackup)
+        HorizontalDivider()
+        // [BAK-01] 1.25 Z (U8): what goes to a new phone and what stays here, said before the user relies on it.
+        var moving by remember { mutableStateOf(false) }
+        NavRow(MOVE_ROW, "모든 설정과 기록이 파일 하나로 가요. 이 휴대폰에만 남는 것도 알려 드려요") { moving = true }
+        if (moving) MoveToNewPhoneDialog(onSave = { moving = false; files.saveBackup() }, onDismiss = { moving = false })
         HorizontalDivider()
         // [BACK-01] 결정 D13: photos go in unless the user keeps them on this phone only.
         BackupPhotosRow(vm)
@@ -885,5 +899,36 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
         },
         confirmButton = { TextButton(onClick = { onConfirm(minutes) }, enabled = minutes != 0) { Text("옮기기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/** [PLAZA-06] The row's name, for 설정 찾기 and the tests. */
+const val SETUP_AGAIN_ROW = "처음 설정 다시 받기"
+
+/** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
+internal const val MOVE_ROW = "새 휴대폰으로 옮기기"
+
+/** [BAK-01] 1.25 Z (U8): the three steps, what travels, and what stays on this phone and why (결정 Z-D3). */
+@Composable
+internal fun MoveToNewPhoneDialog(onSave: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(MOVE_ROW) },
+        text = {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                Text("1. 이 휴대폰에서 ‘백업 저장’으로 파일을 만들어요(암호를 걸 수 있어요).\n2. 파일을 새 휴대폰으로 보내요(카톡 나에게 보내기, 클라우드, 케이블).\n3. 새 휴대폰에서 밤낮을 열고 ‘백업이나 회사 파일로 시작할게요’ 또는 설정 › 데이터 › ‘파일 불러오기’.",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("옮겨지는 것", style = MaterialTheme.typography.titleSmall)
+                Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록과 영수증 사진, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
+                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, 내가 만든 근무표 링크",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("이 휴대폰에만 남는 것", style = MaterialTheme.typography.titleSmall)
+                Text("출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 받은 동료 달력, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
+                    "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = onSave) { Text("백업 저장") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }

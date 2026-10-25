@@ -71,6 +71,7 @@ object SetupDraftCodec {
         .put("timesOk", d.timesConfirmed)
         .put("rotation", ids(d.rotation)).put("weekly", ids(d.weekly)).put("noFixedDays", d.noFixedDays)
         .put("painted", JSONObject().apply { d.painted.forEach { (date, id) -> put(date.toString(), id ?: JSONObject.NULL) } })
+        .put("leaves", JSONObject().apply { d.leaves.forEach { (date, l) -> put(date.toString(), "${l.kind.code}.${l.quarters}.${if (l.fromStart) 1 else 0}") } })
         .putOpt("anchor", d.anchor?.toString()).put("todayOk", d.todayConfirmed)
         .put("alarm", d.alarmMinutes ?: -1)
         .put("alarmByType", JSONObject().apply { d.alarmByType.forEach { (id, m) -> put(id.toString(), m ?: -1) } })
@@ -96,6 +97,13 @@ object SetupDraftCodec {
             painted = o.optJSONObject("painted")?.let { p ->
                 p.keys().asSequence().mapNotNull { k ->
                     runCatching { LocalDate.parse(k) }.getOrNull()?.let { date -> date to (if (p.isNull(k)) null else p.getLong(k)) }
+                }.toMap()
+            }.orEmpty(),
+            leaves = o.optJSONObject("leaves")?.let { p ->
+                p.keys().asSequence().mapNotNull { k ->
+                    val date = runCatching { LocalDate.parse(k) }.getOrNull() ?: return@mapNotNull null
+                    val (kind, q, f) = p.optString(k).split('.').mapNotNull { it.toIntOrNull() }.takeIf { it.size == 3 } ?: return@mapNotNull null
+                    com.bamnat.core.model.LeaveKind.fromCode(kind)?.takeIf { q in 1..4 }?.let { date to com.bamnat.core.model.Leave(it, q, f == 1) }
                 }.toMap()
             }.orEmpty(),
             anchor = o.optStringOrNull("anchor")?.let { runCatching { LocalDate.parse(it) }.getOrNull() },

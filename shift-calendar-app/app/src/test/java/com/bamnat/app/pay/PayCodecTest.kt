@@ -265,4 +265,19 @@ class PayCodecTest {
         assertEquals(com.bamnat.core.pay.ProrationBasis.CALENDAR_DAYS, PayCodec.decode(newer).rules.proration)
         assertEquals(com.bamnat.core.hours.HoursException.NONE, PayCodec.decode(newer).rules.hoursException)
     }
+
+    /** [HOLI-01] 빨간날에 일하면: 대체휴일과 교대제라 상관없음을 가르는 고른 값과 근무 종류별 1회 금액이 저장·백업에서 그대로 와요. */
+    @Test fun holidayWorkRoundTrip() {
+        val base = PayProfile(occupation = Occupation.NURSE, wageType = WageType.MONTHLY,
+            base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_508_000))))
+        listOf(com.bamnat.core.pay.HolidayWork.SHIFT_NORMAL, com.bamnat.core.pay.HolidayWork.SUBSTITUTE).forEach { mode ->
+            val p = base.copy(rules = base.rules.withHolidayWork(mode))
+            assertEquals(mode, PayCodec.decode(PayCodec.encode(p)).rules.holidayWork)
+        }
+        val extra = base.copy(rules = base.rules.withHolidayWork(com.bamnat.core.pay.HolidayWork.AS_EXTRA).withHolidayShiftPay(3, 100_000))
+        val back = PayCodec.decode(PayCodec.encode(extra))
+        assertEquals(com.bamnat.core.pay.HolidayWork.AS_EXTRA, back.rules.holidayWork)
+        assertEquals(100_000L, back.rules.holidayShiftPay(3))
+        assertEquals(true, back.rules.holidayByShiftStart)
+    }
 }

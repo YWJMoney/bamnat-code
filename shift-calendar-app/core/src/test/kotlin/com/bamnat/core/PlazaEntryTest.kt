@@ -46,7 +46,7 @@ class PlazaEntryTest {
         assertEquals("다른 점: 대근 기본급의 12%", diff["s2"])
         assertNull(diff["s3"])
         val adopted = SetupDiff.labels(listOf(a.copy(adopted = true, version = 2), b))
-        assertEquals("채택 v2", adopted["s1"])
+        assertEquals("대표 판 v2", adopted["s1"])
         assertEquals("제보 1", adopted["s2"])
     }
 

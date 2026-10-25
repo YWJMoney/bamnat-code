@@ -125,7 +125,12 @@ class AppContainer(context: Context) {
     suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
         captureInto(text, pkg, app, postedAt, fromMessenger).also {
             // [OBS-01] 기록 지점 9: how many, never what or how much.
-            if (it == MoneyRepository.Outcome.SAVED) journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+            if (it == MoneyRepository.Outcome.SAVED) {
+                journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+                // [TAX-01] A pay deposit just written becomes 월급 관측 (and 급여, so it is not added on top of the estimate).
+                runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt)) }
+                    .onFailure { e -> if (e is kotlinx.coroutines.CancellationException) throw e }
+            }
         }
 
     private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
@@ -170,12 +175,24 @@ class AppContainer(context: Context) {
     val payStore = PayStore(appContext)
     /** [LEAVE-01] The main calendar's 연차 원장. */
     val leaveRepository by lazy { com.bamnat.app.leave.LeaveRepository(database, scheduleRepository, payStore) }
+    /** [TAX-01][TAX-06] Calendar [id]'s 월급 관측 and tax answers, in its own database; the main one's otherwise. */
+    fun tax(id: String): com.bamnat.app.data.TaxRepository = com.bamnat.app.data.TaxRepository.of(
+        if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) database else calendars.database(id))
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
-        staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles })
+        staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles },
+        settingsFiles = {
+            com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
+                com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
+                companyStore.reload()
+                rateHints.reload()
+                autoRecordPrefs.reload()
+                shareGroup.reload()
+            }
+        })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -201,6 +218,8 @@ class AppContainer(context: Context) {
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
+    /** [PLAZA-06] 처음 설정 다시 받기: its own draft, so the calendar in use is untouched until it is saved. */
+    val againSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "again_setup_draft.json")) }
     val firstSetup by lazy {
         com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyShare }, { companyStore })
     }

@@ -2,6 +2,7 @@ package com.bamnat.core.setup
 
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -61,6 +62,11 @@ data class SetupDraft(
     val noFixedDays: Boolean = false,
     /** [SETUP-02] Painted roster days: a type id, or null for a plain day off. */
     val painted: Map<LocalDate, Long?> = emptyMap(),
+    /**
+     * [SETUP-15] 연차·반차 read off the roster at setup (1.25 순번 371): saved with the painted days. 1.24 said "설정이
+     * 끝난 뒤 넣어요" and never did (사용자 2026-10-25).
+     */
+    val leaves: Map<LocalDate, Leave> = emptyMap(),
     /** The rotation's step 0 date, from the answer to "오늘 무슨 근무예요?". */
     val anchor: LocalDate? = null,
     /** "회사 근무표와 같아요": required before going on. */
@@ -145,8 +151,13 @@ data class SetupDraft(
     }
 
     /** [SETUP-02] Painted days as the calendar keeps them. */
-    fun paintedEntries(): List<DayEntry> = painted.toSortedMap().map { (date, id) ->
-        DayEntry(date, override = if (id == null) ShiftOverride.Off else ShiftOverride.Shift(id))
+    fun paintedEntries(): List<DayEntry> = (painted.keys + leaves.keys).sorted().map { date ->
+        val override = when {
+            date !in painted -> ShiftOverride.None
+            painted[date] == null -> ShiftOverride.Off
+            else -> ShiftOverride.Shift(painted.getValue(date)!!)
+        }
+        DayEntry(date, override = override, leave = leaves[date])
     }
 
     /** The same draft with the shift ids the phone gave each type on saving; ids not in [ids] stay. */
@@ -177,7 +188,7 @@ data class SetupDraft(
             bundle = bundle, types = types, roles = roles, timesConfirmed = false, rotation = emptyList(),
             // [WORK-01] Weekday work starts Monday to Friday on its day shift.
             weekly = DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
-            painted = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
+            painted = emptyMap(), leaves = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
         )
     }
 
@@ -185,15 +196,17 @@ data class SetupDraft(
      * [COMM-01][SETUP-02] Starts the draft from a shared setup: its shifts and the order as the file
      * names them. The roles are guessed from the times, so the order can still be changed later.
      */
-    fun withShared(source: SetupSource, shifts: List<ShiftType>, order: List<String?>): SetupDraft {
+    fun withShared(source: SetupSource, shifts: List<ShiftType>, order: List<String?>, weekly: List<String?> = emptyList()): SetupDraft {
         val types = shifts.mapIndexed { i, t -> t.copy(id = -(i + 1L), sortOrder = i) }
         val byName = types.associateBy { it.name }
         val day = types.firstOrNull { !it.isOff && it.hasTimes }?.id
         return copy(
             bundle = null, source = source, types = types, roles = types.associate { it.id to ShiftRole.guess(it) },
             timesConfirmed = false, rotation = order.map { name -> name?.let { byName[it]?.id } },
-            weekly = DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
-            painted = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
+            // [PLAZA-01] The company's own days when it gave them, else Monday to Friday for weekday work.
+            weekly = if (weekly.size == 7) weekly.map { name -> name?.let { byName[it]?.id } }
+            else DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
+            painted = emptyMap(), leaves = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
         )
     }
 

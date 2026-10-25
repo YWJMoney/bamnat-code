@@ -95,10 +95,25 @@ fun DutyTypingSheet(
     /** [CAL-27] The calendar's first day of the week, so a cell sits where it sits on the calendar (I 리뷰 P6). */
     weekStart: DayOfWeek = DayOfWeek.SUNDAY,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // [NAV-04] 1.25 Z 후속: a swipe down, a tap outside or back asks first when days are typed, never throws them away.
+    val guard = remember { TypingGuard() }
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        v != androidx.compose.material3.SheetValue.Hidden || guard.typed == 0 || false.also { guard.asking = true }
+    })
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
         DutyTypingPanel(snap, month, onDismiss, onSave, rules, initial, doubtful, onRules, onDoubtLeft, weekStart,
-            Modifier.navigationBarsPadding())
+            Modifier.navigationBarsPadding(), guard)
     }
+}
+
+/**
+ * [NAV-04] Whether closing the keypad would throw typed days away, and whether that is being asked: shared by the
+ * sheet (its swipe, outside tap and back) and the panel (back and 닫기).
+ */
+@androidx.compose.runtime.Stable
+class TypingGuard {
+    var typed by mutableIntStateOf(0)
+    var asking by androidx.compose.runtime.mutableStateOf(false)
 }
 
 /**
@@ -119,6 +134,7 @@ fun DutyTypingPanel(
     onDoubtLeft: (Set<LocalDate>) -> Unit = {},
     weekStart: DayOfWeek = DayOfWeek.SUNDAY,
     modifier: Modifier = Modifier,
+    guard: TypingGuard = remember { TypingGuard() },
 ) {
     val types = snap.shiftTypes
     val offType = types.firstOrNull { it.isOff }
@@ -136,6 +152,17 @@ fun DutyTypingPanel(
         if (history.size > MAX_UNDO) history.removeAt(0)
     }
     val days = month.lengthOfMonth()
+    // [NAV-04] Typed days (a photo's read ones too) are asked about before they go; nothing typed closes at once.
+    androidx.compose.runtime.SideEffect { guard.typed = typed.size }
+    androidx.activity.compose.BackHandler(enabled = typed.isNotEmpty()) { guard.asking = true }
+    if (guard.asking) com.bamnat.app.ui.components.ConfirmDialog(
+        title = "넣은 ${typed.size}일을 버릴까요?",
+        message = "저장하지 않고 닫으면 지금 넣은 ${month.monthValue}월 근무가 달력에 들어가지 않아요.",
+        confirmLabel = "버리고 닫기",
+        onDismiss = { guard.asking = false },
+        onConfirm = { guard.asking = false; guard.typed = 0; onDismiss() },
+        destructive = true,
+    )
     fun shiftOf(date: LocalDate): ShiftType? = when (val o = typed[date]) {
         is ShiftOverride.Shift -> snap.typesById[o.shiftTypeId]
         ShiftOverride.Off -> offType
@@ -238,8 +265,13 @@ fun DutyTypingPanel(
                     if (onRules != null) TextButton(onClick = onRules) { Text("기준 바꾸기") }
                 }
             }
+            // [READ-11] What saving overwrites, said before it does: days already changed by hand (1.25 순번 372). Leave stays.
+            val byDate = remember(snap) { snap.entries.associateBy { it.date } }
+            val over = typed.count { (d, o) -> byDate[d]?.let { e -> e.override != ShiftOverride.None && e.override != o } == true }
+            if (over > 0) Text("이미 바꿔 둔 ${over}일을 덮어써요. 저장한 뒤 ‘되돌리기’나 도구의 ‘방금 넣은 것 되돌리기’로 되돌릴 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton(onClick = onDismiss) { Text("닫기") }
+                TextButton(onClick = { if (typed.isEmpty()) onDismiss() else guard.asking = true }) { Text("닫기") }
                 Button(onClick = { onDoubtLeft(toCheck.toSet()); onSave(typed.toMap()) }, enabled = typed.isNotEmpty()) { Text(if (typed.isEmpty()) "저장" else "${typed.size}일 저장") }
             }
     }

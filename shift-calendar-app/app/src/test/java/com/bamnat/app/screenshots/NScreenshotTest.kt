@@ -71,10 +71,10 @@ class NScreenshotTest : ScreenshotBase() {
         then()
     }
 
-    @Test fun askHomeFolded() = shoot("685_n_ask_home_folded", FOLDED, asking { reveal("나중에", exact = true) })
-    @Test fun askHomeUnfolded() = shoot("686_n_ask_home_unfolded", UNFOLDED, asking { reveal("나중에", exact = true) })
-    @Test fun askHomeBig() = shoot("687_n_ask_home_200", FOLDED, 2f, asking { reveal("나중에", exact = true) })
-    @Test fun askHomeDark() = shoot("688_n_ask_home_dark", FOLDED_NIGHT, asking { reveal("나중에", exact = true) })
+    @Test fun askHomeFolded() = shoot("685_n_ask_home_folded", FOLDED, asking { revealWhenReady("나중에", exact = true) })
+    @Test fun askHomeUnfolded() = shoot("686_n_ask_home_unfolded", UNFOLDED, asking { revealWhenReady("나중에", exact = true) })
+    @Test fun askHomeBig() = shoot("687_n_ask_home_200", FOLDED, 2f, asking { revealWhenReady("나중에", exact = true) })
+    @Test fun askHomeDark() = shoot("688_n_ask_home_dark", FOLDED_NIGHT, asking { revealWhenReady("나중에", exact = true) })
 
     @Test fun askAbovePay() = shoot("689_n_ask_pay", FOLDED, payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true,
         adjust = { it.copy(period = it.period.copy(payDay = null)) }) { vm ->

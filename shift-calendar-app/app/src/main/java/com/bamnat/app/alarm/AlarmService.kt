@@ -48,6 +48,10 @@ class AlarmService : Service() {
     private var vibrator: Vibrator? = null
     private var focusRequest: AudioFocusRequest? = null
     private var volume = 1f
+    /** [ALRM-08] A button pressed on a mission alarm: quiet until then (epoch ms), the mission stays. */
+    private var quietUntil = 0L
+    /** [ALRM-08] The power button, seen as the screen going off; registered only while ringing. */
+    private var screenOff: android.content.BroadcastReceiver? = null
 
     private val alarmAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ALARM)
@@ -60,7 +64,12 @@ class AlarmService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val ring = RingRequest.fromIntent(intent)
-                if (ring == null) {
+                if (ring != null && _ringing.value == null && AlarmsOff.silences(this, ring)) {
+                    // [ALRM-09] 오늘 남은 알람 모두 끄기: anything that still comes today stays silent.
+                    if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_silenced", if (ring.recheck) "recheck" else if (ring.isSnooze) "snooze" else "alarm")
+                    startInForeground(null)
+                    finish()
+                } else if (ring == null) {
                     // startForegroundService() requires startForeground() even when there is nothing to do.
                     startInForeground(null)
                     finish()
@@ -86,19 +95,86 @@ class AlarmService : Service() {
                 }
                 finish()
             }
+            ACTION_ALL_OFF -> {
+                // [ALRM-09] 오늘 남은 알람 모두 끄기. With a mission it opens the mission and waits for it.
+                val ring = _ringing.value
+                if (ring != null && BootAlarms.ringSettings(this).missionFor(ring) != AlarmMission.NONE) {
+                    _allOffAfterMission.value = true
+                    runCatching { startActivity(missionActivityIntent(this, allOff = true)) }
+                } else {
+                    if (ring != null && !BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull("all_off", offDetail(ring)).joinToString(" "))
+                    AlarmsOff.turnOff(this, ring)
+                    finish()
+                }
+            }
+            ACTION_BUTTON -> pressed()
             else -> {
                 // ACTION_DISMISS, or a restart with no intent
                 val ring = _ringing.value
+                val how = intent?.getStringExtra(EXTRA_HOW)?.takeIf { it.isNotEmpty() }
+                // [ALRM-09] 오늘 모두 끄기 on a mission alarm, now that the mission is done (or was given up after 5 minutes).
+                val allOff = intent?.action == ACTION_DISMISS && ring != null && _allOffAfterMission.value && how != null
                 if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) {
-                    appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull(intent.getStringExtra(EXTRA_HOW)?.takeIf { it.isNotEmpty() }, offDetail(ring)).joinToString(" "))
+                    appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull(how, if (allOff) "all_off" else null, offDetail(ring)).joinToString(" "))
                     // [PROV-07] A few minutes on, 일어났나요?; once per alarm, never for a memo's schedule.
                     val minutes = BootAlarms.ringSettings(this).wakeCheckMinutes
-                    if (minutes > 0 && !ring.recheck && ring.label == null) WakeCheck.schedule(this, ring, minutes)
+                    if (minutes > 0 && !ring.recheck && ring.label == null && !allOff && !AlarmsOff.isOff(this)) WakeCheck.schedule(this, ring, minutes)
                 }
+                if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()
             }
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * [ALRM-08] A volume or power button while ringing (결정 D78): 끄기 by default, 다시 울림 or nothing by the
+     * setting; with a mission only the sound goes quiet for a while and the mission stays.
+     */
+    private fun pressed() {
+        val ring = _ringing.value ?: return
+        val settings = BootAlarms.ringSettings(this)
+        val mission = settings.missionFor(ring) != AlarmMission.NONE
+        val outcome = AlarmButtons.outcome(settings.buttons, mission)
+        if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_button", outcome.name.lowercase())
+        when (outcome) {
+            AlarmButtons.Outcome.DISMISS -> onStartCommand(Intent(this, AlarmService::class.java).setAction(ACTION_DISMISS).putExtra(EXTRA_HOW, "button"), 0, 0)
+            AlarmButtons.Outcome.SNOOZE -> onStartCommand(Intent(this, AlarmService::class.java).setAction(ACTION_SNOOZE), 0, 0)
+            AlarmButtons.Outcome.QUIET -> quietBriefly()
+            AlarmButtons.Outcome.NOTHING -> Unit
+        }
+    }
+
+    /** [ALRM-08] The sound almost off and no vibration for [AlarmButtons.QUIET_SECONDS], then back as it was. */
+    private fun quietBriefly() {
+        quietUntil = Today.millis() + AlarmButtons.QUIET_SECONDS * 1_000L
+        _quiet.value = true
+        runCatching { player?.setVolume(QUIET_VOLUME, QUIET_VOLUME) }
+        vibrator?.cancel()
+        vibrator = null
+        handler.removeCallbacks(endQuiet)
+        handler.postDelayed(endQuiet, AlarmButtons.QUIET_SECONDS * 1_000L)
+    }
+
+    private val endQuiet = Runnable {
+        quietUntil = 0L
+        _quiet.value = false
+        if (_ringing.value == null) return@Runnable
+        runCatching { player?.setVolume(volume, volume) }
+        val settings = BootAlarms.ringSettings(this)
+        if (settings.vibrate || player == null) startVibration()
+    }
+
+    private fun listenForPowerButton() {
+        if (screenOff != null) return
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == Intent.ACTION_SCREEN_OFF && AlarmButtons.screenOffIsPress(screenShownAt, screenHiddenAt, Today.millis())) pressed()
+            }
+        }
+        // A system broadcast: not exported to other apps either way.
+        runCatching { ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED) }
+            .onSuccess { screenOff = receiver }
     }
 
     private fun startRinging(ring: RingRequest) {
@@ -116,6 +192,7 @@ class AlarmService : Service() {
             playSound(candidateUris(sound), settings.gradualVolume)
         }
         if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
+        listenForPowerButton()
 
         handler.postDelayed({
             if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull("auto_stop", offDetail(ring)).joinToString(" "))
@@ -166,6 +243,7 @@ class AlarmService : Service() {
         if (ring == null) {
             return builder.setContentTitle(getString(R.string.app_name)).build()
         }
+        val mission = BootAlarms.ringSettings(this).missionFor(ring) != AlarmMission.NONE
         return builder
             .setContentTitle(ring.title)
             .setContentText(describe(ring))
@@ -175,8 +253,14 @@ class AlarmService : Service() {
             .addAction(lockScreenAction("${snoozeMinutes}분 뒤 다시 울림", ACTION_SNOOZE, REQ_SNOOZE))
             // [PROV-06] With a mission, 끄기 opens it over the lock screen instead of turning the alarm off.
             .addAction(
-                if (BootAlarms.ringSettings(this).missionFor(ring) == AlarmMission.NONE) lockScreenAction("끄기", ACTION_DISMISS, REQ_DISMISS)
+                if (!mission) lockScreenAction("끄기", ACTION_DISMISS, REQ_DISMISS)
                 else NotificationCompat.Action.Builder(0, "끄기", missionIntent(this)).setAuthenticationRequired(false).build(),
+            )
+            // [ALRM-07][ALRM-09] All three work from a small notice too, when Android shows no ringing screen
+            // (the phone in use, or 전체 화면 알림 off). With a mission 오늘 모두 끄기 waits for it.
+            .addAction(
+                if (!mission) lockScreenAction("오늘 모두 끄기", ACTION_ALL_OFF, REQ_ALL_OFF)
+                else NotificationCompat.Action.Builder(0, "오늘 모두 끄기", allOffMissionIntent(this)).setAuthenticationRequired(false).build(),
             )
             // Swiping the notification away must not leave the alarm ringing with no controls.
             .setDeleteIntent(serviceIntent(this, ACTION_SNOOZE, REQ_DELETE))
@@ -252,13 +336,13 @@ class AlarmService : Service() {
         override fun run() {
             val mp = player ?: return
             volume = (volume + RAMP_INCREMENT).coerceAtMost(1f)
-            runCatching { mp.setVolume(volume, volume) }
+            if (quietUntil == 0L) runCatching { mp.setVolume(volume, volume) }
             if (volume < 1f) handler.postDelayed(this, RAMP_STEP_MILLIS)
         }
     }
 
     private fun startVibration() {
-        if (vibrator != null) return
+        if (vibrator != null || quietUntil > Today.millis()) return
         val v = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
@@ -295,10 +379,18 @@ class AlarmService : Service() {
         vibrator = null
         focusRequest?.let { getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(it) }
         focusRequest = null
+        quietUntil = 0L
+        _quiet.value = false
+        screenOff?.let { runCatching { unregisterReceiver(it) } }
+        screenOff = null
     }
 
     private fun finish() {
+        val rang = _ringing.value
         stopOutputs()
+        // [ALRM-07] Android 14+ with 전체 화면 알림 off shows only a small notice; say so once, with the way to allow it.
+        if (rang != null && screenShownAt == 0L && !Notifications.canUseFullScreen(this)) Notifications.postFullScreenOff(this)
+        _allOffAfterMission.value = false
         _ringing.value = null
         _since.value = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -317,6 +409,10 @@ class AlarmService : Service() {
         const val ACTION_START = "com.bamnat.app.alarm.START"
         const val ACTION_DISMISS = "com.bamnat.app.alarm.DISMISS"
         const val ACTION_SNOOZE = "com.bamnat.app.alarm.SNOOZE"
+        /** [ALRM-09] 오늘 남은 알람 모두 끄기. */
+        const val ACTION_ALL_OFF = "com.bamnat.app.alarm.ALL_OFF"
+        /** [ALRM-08] A volume or power button. */
+        const val ACTION_BUTTON = "com.bamnat.app.alarm.BUTTON"
         /** [PROV-06] How it was turned off, for the log: "mission", "skip" or none. */
         private const val EXTRA_HOW = "com.bamnat.app.alarm.extra.HOW"
 
@@ -332,6 +428,9 @@ class AlarmService : Service() {
         private const val REQ_DISMISS = 2003
         private const val REQ_DELETE = 2004
         private const val REQ_MISSION = 2005
+        private const val REQ_ALL_OFF = 2006
+        private const val REQ_ALL_OFF_MISSION = 2007
+        private const val QUIET_VOLUME = 0.05f
         private const val GRADUAL_START = 0.15f
         private const val RAMP_INCREMENT = 0.085f
         private const val RAMP_STEP_MILLIS = 2_000L
@@ -346,13 +445,54 @@ class AlarmService : Service() {
         /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
         val ringingSince: StateFlow<Long?> = _since.asStateFlow()
 
+        private val _quiet = MutableStateFlow(false)
+        /** [ALRM-08] A button quieted a mission alarm for a while. */
+        val quiet: StateFlow<Boolean> = _quiet.asStateFlow()
+
+        private val _allOffAfterMission = MutableStateFlow(false)
+        /** [ALRM-09] 오늘 모두 끄기 was asked on a mission alarm: it happens when the mission is done. */
+        val allOffAfterMission: StateFlow<Boolean> = _allOffAfterMission.asStateFlow()
+
+        /** [ALRM-08] When the ringing screen was last in front and last left it (epoch ms, 0 never). */
+        @Volatile var screenShownAt = 0L
+            private set
+        @Volatile var screenHiddenAt = 0L
+            private set
+
+        fun screenShown(now: Long = Today.millis()) { screenShownAt = now }
+        fun screenHidden(now: Long = Today.millis()) { screenHiddenAt = now }
+        /** The ringing screen is gone: the next ring starts from nothing. */
+        fun screenGone() { screenShownAt = 0L; screenHiddenAt = 0L }
+
         /** [PROV-06] The ringing screen, opened on the mission. */
         fun missionIntent(context: Context): PendingIntent = PendingIntent.getActivity(
-            context, REQ_MISSION,
-            Intent(context, AlarmActivity::class.java).putExtra(AlarmActivity.EXTRA_MISSION, true)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            context, REQ_MISSION, missionActivityIntent(context, allOff = false),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+        /** [ALRM-09] The mission, with 오늘 모두 끄기 waiting for it. */
+        fun allOffMissionIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+            context, REQ_ALL_OFF_MISSION, missionActivityIntent(context, allOff = true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        private fun missionActivityIntent(context: Context, allOff: Boolean): Intent =
+            Intent(context, AlarmActivity::class.java).putExtra(AlarmActivity.EXTRA_MISSION, true)
+                .putExtra(AlarmActivity.EXTRA_ALL_OFF, allOff)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        /** [ALRM-09] Marks 오늘 모두 끄기 as waiting for the mission (the screen opened with it). */
+        fun allOffAfterMission(on: Boolean) { _allOffAfterMission.value = on }
+
+        /** [ALRM-09] 오늘 남은 알람 모두 끄기, from the ringing screen. */
+        fun allOff(context: Context) {
+            context.startService(Intent(context, AlarmService::class.java).setAction(ACTION_ALL_OFF))
+        }
+
+        /** [ALRM-08] A volume key on the ringing screen. */
+        fun button(context: Context) {
+            context.startService(Intent(context, AlarmService::class.java).setAction(ACTION_BUTTON))
+        }
 
         /** [PROV-06] 끄기 from the app's own banner: the mission when there is one. */
         fun askToDismiss(context: Context) {

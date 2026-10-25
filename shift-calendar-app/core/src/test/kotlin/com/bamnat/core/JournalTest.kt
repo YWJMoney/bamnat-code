@@ -60,7 +60,8 @@ class JournalTest {
             assertTrue(k.why.endsWith("요"))
             assertTrue(Journal.text(JournalEntry(at(today, 1), k)).isNotBlank())
         }
-        // The ten places of the design memo (with the failed backup as the backup's other line), and 1.24's 한 달 근무 넣기.
-        assertEquals(12, JournalKind.entries.size)
+        // The ten places of the design memo (with the failed backup as the backup's other line), 1.24's 한 달 근무 넣기
+        // and 1.25's 오늘 남은 알람 모두 끄기 (AB) and 월급 관측 [TAX-01].
+        assertEquals(14, JournalKind.entries.size)
     }
 }

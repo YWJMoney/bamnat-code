@@ -224,6 +224,7 @@ test("a new version of a rule in use waits for the developer, with what changed"
   const { company } = await adopted(call);
   const other = setup();
   other.pay.rules.extra[3].percent = 0.12;
+  // [PLAZA-05] As many behind it, and as many pay-slip checks, as behind the rule in use (결정 D74): it waits.
   await call("POST", "/api/reports", report(3, { setup: other, verified: true }), from(3));
   const d = await call("POST", "/api/reports", report(4, { setup: other }), from(4));
   assert.deepEqual([d.data.status, d.data.review], ["pending", true]);
@@ -501,7 +502,7 @@ test("the developer app's screens take a few trips to the database however much 
       inBatch = false;
     }
   };
-  for (const path of ["/api/admin/overview", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
+  for (const path of ["/api/admin/overview", "/api/admin/inbox", "/api/admin/versions", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
     trips = 0;
     const res = await call("GET", path, undefined, admin);
     assert.equal(res.status, 200, path);

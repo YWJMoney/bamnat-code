@@ -72,13 +72,18 @@ class CompanyShare(
                     put(k.id.toString(), JSONArray(set.mapNotNull(names::get)))
                 }
             })
-        (PatternTimeline.current(snapshot.patterns, today()) as? WorkPattern.Rotation)?.let { r ->
-            root.put("rotation", JSONObject()
-                .put("anchor", r.anchorDate.toString())
-                .put("steps", JSONArray(r.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
+        when (val current = PatternTimeline.current(snapshot.patterns, today())) {
+            is WorkPattern.Rotation -> root.put("rotation", JSONObject()
+                .put("anchor", current.anchorDate.toString())
+                .put("steps", JSONArray(current.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
                 // [SETUP-02] The sender's 조, so a coworker on the same one is asked only "같은 B조예요?".
                 .apply { team.trim().take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) } })
+            // [PLAZA-01] Weekday and part-time work travel as their days, Monday first (U2: "모든 유형").
+            is WorkPattern.Weekly -> root.put("weekly", JSONArray(current.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
+            else -> Unit
         }
+        // [PLAZA-01] A roster that comes every month (간호): said so, since such a file has no order to give.
+        if (settings.current.rosterMonthly && !root.has("rotation")) root.put("roster", true)
         payStore.profile.value?.let { p ->
             // [LEAVE-02] The company's leave year goes along; whether the app counts and the 80% years are the user's own.
             val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap(),
@@ -152,6 +157,10 @@ class CompanyShare(
         val anchor: LocalDate?,
         val team: String?,
         val hasPay: Boolean,
+        /** [PLAZA-01] Monday..Sunday by shift name (null a day off); empty when the file has none. */
+        val weekly: List<String?> = emptyList(),
+        /** [PLAZA-01] The days come in a roster every month. */
+        val roster: Boolean = false,
     )
 
     /**
@@ -170,7 +179,15 @@ class CompanyShare(
             anchor = rotation?.let(::anchorOf),
             team = rotation?.optString("team")?.trim()?.take(MAX_TEAM)?.takeIf { it.isNotEmpty() },
             hasPay = root.has("pay"),
+            weekly = weeklyOf(root),
+            roster = root.optBoolean("roster"),
         )
+    }
+
+    /** [PLAZA-01] The file's days of the week, or empty when it has none (or not seven). */
+    private fun weeklyOf(root: JSONObject): List<String?> {
+        val a = root.optJSONArray("weekly")?.takeIf { it.length() == 7 } ?: return emptyList()
+        return (0 until 7).map { i -> if (a.isNull(i)) null else a.getString(i).take(MAX_NAME) }
     }
 
     /** Everything is read once before anything is written, so a broken part changes nothing. */
@@ -198,6 +215,8 @@ class CompanyShare(
             .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", BASE_VERSION)
             .put("company", "").put("template", t.id)
             .put("shiftTypes", JSONArray(t.shifts.map { typeJson(it.type) }))
+        // [PLAZA-01] A roster template says so, as a company's file would.
+        if (t.roster) root.put("roster", true)
         if (t.order.isNotEmpty()) root.put("rotation", JSONObject().put("steps", JSONArray(t.orderNames.map { it ?: JSONObject.NULL })))
         return root.toString()
     }
@@ -268,6 +287,13 @@ class CompanyShare(
                 else schedule.setFirstPattern(pattern, today())
                 cycle = steps.size
             }
+        }
+        // [PLAZA-01] A weekday or part-time company's days, from today on as a team change would.
+        weeklyOf(root).takeIf { rotation && it.isNotEmpty() && !root.has("rotation") }?.let { days ->
+            val pattern = WorkPattern.Weekly.fromSteps(today(), days.map { name -> name?.let(ids::get) })
+            if (schedule.snapshot.first().hasPattern) schedule.changePatternFrom(pattern, today())
+            else schedule.setFirstPattern(pattern, today())
+            cycle = 7
         }
         val (rules, pendingPay) = applyRules(root, ids)
         return Applied(added, cycle, rules, pendingPay)

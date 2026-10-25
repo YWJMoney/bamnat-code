@@ -220,10 +220,12 @@ internal fun TradeSheet(
         mutableStateOf(minuteText(start?.minute ?: if (start == null && (d.date ?: state.today) == Today.date()) Today.time().let { it.hour * 60 + it.minute } else null))
     }
     var fx by rememberSaveable { mutableStateOf(InvestFmt.input(start?.fxRate?.takeIf { start.market.foreign } ?: book.settings.usdKrw)) }
-    // Fees follow what is typed until the user writes their own.
+    // [INV-38] Fees follow the quantity, price, market and account until the user writes their own in this sheet;
+    // a trade being fixed keeps its stored ones only while none of those changed ([InvestFees.shown]).
     var feeText by rememberSaveable { mutableStateOf(start?.fee?.let { InvestFmt.input(it) } ?: "") }
     var taxText by rememberSaveable { mutableStateOf(start?.tax?.let { InvestFmt.input(it) } ?: "") }
-    var costsTyped by rememberSaveable { mutableStateOf(start != null) }
+    var costsTyped by rememberSaveable { mutableStateOf(false) }
+    var editingFees by remember { mutableStateOf(false) }
     val tags = remember { mutableStateListOf<String>().apply { addAll(start?.tags ?: d.tags) } }
     val emotions = remember { mutableStateListOf<Emotion>().apply { addAll(start?.emotions.orEmpty()) } }
     var rules by rememberSaveable { mutableStateOf(start?.followedRules) }
@@ -232,9 +234,11 @@ internal fun TradeSheet(
 
     val q = qty.toDecimal() ?: 0.0
     val p = price.toDecimal() ?: 0.0
-    val suggestion = InvestFees.suggest(market, side, q, p, account)
-    val fee = if (costsTyped) feeText.toDecimal() ?: 0.0 else suggestion.fee
-    val tax = if (costsTyped) taxText.toDecimal() ?: 0.0 else suggestion.tax
+    val suggestion = InvestFees.suggest(market, side, q, p, account, book.settings)
+    val costs = InvestFees.shown(start, if (costsTyped) InvestFees.Suggestion(feeText.toDecimal() ?: 0.0, taxText.toDecimal() ?: 0.0) else null,
+        market, side, q, p, accountId, suggestion)
+    val fee = costs.fee
+    val tax = costs.tax
     val rate = if (market.foreign) fx.toDecimal() ?: book.settings.usdKrw else 1.0
     val key = holdingKey(symbol, name)
     val held = if (key.isEmpty()) 0.0 else vm.heldIn(accountId, key) + (if (start != null && start.key == key && start.accountId == accountId) {
@@ -320,17 +324,23 @@ internal fun TradeSheet(
         if (market.foreign) DecimalField("환율 (1달러)", fx, { fx = it }, Modifier.fillMaxWidth(), suffix = "원",
             supporting = "실제 체결 환율을 적으면 원화 손익이 더 정확해요")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DecimalField("수수료", if (costsTyped) feeText else InvestFmt.input(suggestion.fee), { feeText = it; taxText = if (costsTyped) taxText else InvestFmt.input(suggestion.tax); costsTyped = true },
+            DecimalField("수수료", if (costsTyped) feeText else InvestFmt.input(fee), { feeText = it; taxText = if (costsTyped) taxText else InvestFmt.input(tax); costsTyped = true },
                 Modifier.weight(1f), suffix = if (market.foreign) "$" else "원")
-            DecimalField("세금", if (costsTyped) taxText else InvestFmt.input(suggestion.tax), { taxText = it; feeText = if (costsTyped) feeText else InvestFmt.input(suggestion.fee); costsTyped = true },
+            DecimalField("세금", if (costsTyped) taxText else InvestFmt.input(tax), { taxText = it; feeText = if (costsTyped) feeText else InvestFmt.input(fee); costsTyped = true },
                 Modifier.weight(1f), suffix = if (market.foreign) "$" else "원")
         }
-        Text(
-            if (costsTyped) "직접 적은 수수료·세금으로 저장해요" else
-                "수수료 ${"%.3f".format(account?.feeFor(market) ?: market.defaultFeeRate).trimEnd('0').trimEnd('.')}%" +
-                    (if (side == Side.SELL && market.sellTaxRate > 0) " · 거래세 ${market.sellTaxRate}%" else "") + "로 자동 계산했어요. 고치면 그 값으로 저장해요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        val feeRate = InvestFees.rateFor(market, side, account, book.settings)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (costsTyped) "직접 적은 수수료·세금으로 저장해요" else
+                    "수수료 ${InvestFees.rateText(feeRate)}%" + (if (account?.ownFee(market) != null) " (이 계좌)" else "") +
+                        (if (side == Side.SELL && market.sellTaxRate > 0) " · 거래세 ${market.sellTaxRate}%" else "") + "로 자동 계산했어요. 고치면 그 값으로 저장해요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+            )
+            // [INV-38] Back to the worked-out costs, or the calendar's own 기본 수수료 changed once for every trade.
+            if (costsTyped) TextButton(onClick = { costsTyped = false }) { Text("자동 계산") }
+            else TextButton(onClick = { editingFees = true }) { Text("기본 수수료") }
+        }
         // What this trade comes to, and for a sell what it made against 평균단가.
         if (q > 0 && p > 0) {
             val grossWon = q * p * rate
@@ -343,6 +353,16 @@ internal fun TradeSheet(
                     val cost = holding.costWon * sold / holding.quantity
                     val pnl = (total * sold / q - cost).roundToLong()
                     add("예상 실현손익 ${InvestFmt.signed(pnl, hide)} (${InvestFmt.percent(if (cost > 0) pnl / cost else null)})")
+                }
+                // [INV-39] A sell of 해외 주식: what it adds to this year's 양도소득세; 국내 주식: why there is none.
+                if (side == Side.SELL) {
+                    val day = runCatching { LocalDate.parse(date) }.getOrDefault(state.today)
+                    val preview = com.bamnat.core.invest.InvestTaxes.sellPreview(book, Trade(id = start?.id ?: 0, accountId = accountId, date = day,
+                        symbol = symbol.trim(), name = name.trim(), market = market, side = side, quantity = q, price = p, fxRate = rate, fee = fee, tax = tax))
+                    if (preview != null) add(
+                        if (preview.extraTax > 0) "예상 양도소득세 +${InvestFmt.won(preview.extraTax, hide)} (22%, 올해 해외 주식 이익 ${InvestFmt.signed(preview.yearGain, hide)}, 250만 원 공제 뒤)"
+                        else "양도소득세 없음: 올해 해외 주식 이익이 250만 원 공제 안이에요 (남은 공제 ${InvestFmt.won(preview.deductionLeft, hide)})"
+                    ) else if (market == Market.KR_STOCK || market == Market.KR_ETF) add(com.bamnat.core.invest.InvestTaxes.DOMESTIC_NOTE)
                 }
                 if (side == Side.BUY) {
                     val cash = state.fullResult.accounts.firstOrNull { it.accountId == accountId }?.cash ?: 0L
@@ -363,6 +383,10 @@ internal fun TradeSheet(
         ChoiceChips(listOf(true, false), { rules == it }, { if (it) "지켰어요" else "어겼어요" }, { v -> rules = if (rules == v) null else v })
         OutlinedTextField(memo, { memo = it.take(500) }, label = { Text("메모") }, placeholder = { Text("왜 샀는지, 언제 팔지") },
             modifier = Modifier.fillMaxWidth(), minLines = 2)
+    }
+    if (editingFees) FeeRatesDialog(book.settings, onDismiss = { editingFees = false }) { buy, sell ->
+        vm.saveSettings { it.copy(buyFeeRate = buy, sellFeeRate = sell) }
+        editingFees = false
     }
     if (deleting && start != null) ConfirmDialog(
         title = "이 매매를 지울까요?", message = "${start.title} ${start.side.label} ${InvestFmt.quantity(start.quantity)}주 기록이 없어지고 손익도 다시 계산돼요. 바로 되돌릴 수 있어요.",
@@ -566,4 +590,34 @@ internal fun QuoteSheet(vm: InvestViewModel, state: InvestState, onDismiss: () -
             )
         }
     }
+}
+
+/**
+ * [INV-38] 기본 수수료 (사용자 U17, 결정 D73): 0.05% unless changed, kept in the calendar and used for every trade whose
+ * account has no fee of its own; a buy and a sell can differ.
+ */
+@Composable
+internal fun FeeRatesDialog(settings: com.bamnat.core.invest.InvestSettings, onDismiss: () -> Unit, onSave: (Double, Double) -> Unit) {
+    var buy by rememberSaveable { mutableStateOf(InvestFees.rateText(settings.buyFeeRate)) }
+    var sell by rememberSaveable { mutableStateOf(InvestFees.rateText(settings.sellFeeRate)) }
+    val b = buy.toDecimal()?.takeIf { it in 0.0..5.0 }
+    val s = sell.toDecimal()?.takeIf { it in 0.0..5.0 }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("기본 수수료") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("계좌에 따로 정한 수수료가 없으면 모든 매매에 이 값을 써요. 증권사 앱의 수수료율을 넣어 주세요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                DecimalField("살 때", buy, { buy = it }, Modifier.fillMaxWidth(), suffix = "%")
+                DecimalField("팔 때", sell, { sell = it }, Modifier.fillMaxWidth(), suffix = "%")
+                TextButton(onClick = {
+                    buy = InvestFees.rateText(com.bamnat.core.invest.InvestSettings.DEFAULT_FEE_RATE)
+                    sell = InvestFees.rateText(com.bamnat.core.invest.InvestSettings.DEFAULT_FEE_RATE)
+                }) { Text("0.05%로 되돌리기") }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(b!!, s!!) }, enabled = b != null && s != null) { Text("저장") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }

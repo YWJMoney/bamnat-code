@@ -103,6 +103,9 @@ import com.bamnat.core.time.Today
 
 internal fun won(v: Long): String = "%,d원".format(v)
 
+/** [PAYS-12] 자세히 고치기 opened from the easy setup, with the setup it had come to (null: none yet). */
+private class DetailedStart(val from: PayProfile?)
+
 /** Colours for line kinds, matching the walkthrough's time bar. [VIS-03] The theme's tokens, light and dark. */
 @Composable
 internal fun kindColor(kind: LineKind): Color = payKindColor(kind, LocalCalendarColors.current, MaterialTheme.colorScheme.primary)
@@ -147,9 +150,17 @@ fun PayScreen(
     val gate by vm.gate.collectAsStateWithLifecycle()
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
+    // [PAYS-12] 자세히 고치기 from the easy setup; [PAYS-15] the 광장 ask after a payslip set the rules.
+    var detailedFrom by remember { mutableStateOf<DetailedStart?>(null) }
+    var plazaAsk by rememberSaveable { mutableStateOf(false) }
+    if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
-    androidx.activity.compose.BackHandler(enabled = editingSetup || editingRules) {
-        if (editingSetup) editingSetup = false else editingRules = false
+    androidx.activity.compose.BackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
+        when {
+            detailedFrom != null -> detailedFrom = null
+            editingSetup -> editingSetup = false
+            else -> editingRules = false
+        }
     }
     // [PAYX-22] A change that moves a month matched with a payslip.
     val verified by vm.verifiedPrompt.collectAsStateWithLifecycle()
@@ -186,6 +197,7 @@ fun PayScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         when {
+                            detailedFrom != null -> detailedFrom = null
                             editingSetup -> editingSetup = false
                             editingRules -> editingRules = false
                             else -> onBack()
@@ -207,10 +219,24 @@ fun PayScreen(
                     val month by vm.month.collectAsStateWithLifecycle()
                     val settings by vm.settings.collectAsStateWithLifecycle()
                     var fromSlip by remember { mutableStateOf(false) }
-                    PayWizard(
+                    // [PAYS-12] The easy setup first; the question-by-question one behind 자세히 고치기, from what it had.
+                    val detailed = detailedFrom
+                    if (detailed == null) PayQuickSetup(
                         initial = profile,
+                        snapshot = snap,
+                        preview = { draft -> vm.preview(draft, snap, month) },
+                        slipRules = { base, read, rules -> vm.slipRules(base, snap, read, rules) },
+                        onDone = { p, slip ->
+                            vm.saveSetup(p, slip, invite = !(slip && onShareWay != null))
+                            editingSetup = false
+                            if (slip && onShareWay != null) plazaAsk = true
+                        },
+                        onDetailed = { detailedFrom = DetailedStart(it) },
                         onCancel = if (profile != null) ({ editingSetup = false }) else null,
-                        onDone = { p -> vm.saveSetup(p, fromSlip); editingSetup = false },
+                    ) else PayWizard(
+                        initial = detailed.from ?: profile,
+                        onCancel = { detailedFrom = null },
+                        onDone = { p -> vm.saveSetup(p, fromSlip); editingSetup = false; detailedFrom = null },
                         filledFromSlip = { fromSlip = it },
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
@@ -253,11 +279,15 @@ private fun PayResult(
     val closed by vm.closed.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
-    val view by produceState<PayView?>(null, profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
+    // [UX-10] 1.25 Z (U7): opened again, the month shows at once as it was left; worked out again only when something changed.
+    val viewKey = "pay:${vm.calendarId}:$month"
+    val viewState = com.bamnat.app.ui.rememberLast<PayView?>(viewKey,
+        profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
         // [STAB-01] A calculation that fails keeps the last month shown instead of closing the app.
-        value = runCatching { vm.view(profile, snapshot, month) }
-            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else value }
+        runCatching { vm.view(profile, snapshot, month) }
+            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else com.bamnat.app.ui.LastValues.value(viewKey) as PayView? }
     }
+    val view = viewState.value
     val v = view
     if (v == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -278,6 +308,8 @@ private fun PayResult(
     var raiseTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var importing by remember { mutableStateOf(false) }
     var matching by remember { mutableStateOf(false) }
+    var slipRules by remember { mutableStateOf(false) }
+    var plazaAsk by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     var amountFor by remember { mutableStateOf<com.bamnat.core.pay.MissingItem?>(null) }
     var addingItem by remember { mutableStateOf(false) }
@@ -319,6 +351,17 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
+        val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
+        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
+            value = vm.takeHome(profile, shown.total, month)
+        }
+        takeHome?.let { f ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(com.bamnat.app.tax.TakeHomeLine.text(f, ::won), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.money.ProPill()
+            }
+        }
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
         if (closedSnap == null) Estimates.breakNote(result)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -419,6 +462,9 @@ private fun PayResult(
         }
 
         SectionCard(title = "내 급여 값") {
+            // [PLAZA-04] Pay set up by hand a moment ago: offered to coworkers once, with the plaza's spacing after "다음에".
+            val moment by vm.shareMoment.collectAsStateWithLifecycle()
+            moment?.let { m -> com.bamnat.app.ui.company.ShareWayCard(m, onShare = onShareWay, modifier = Modifier.padding(vertical = 8.dp), onClosed = vm::shareShown) }
             // [PAYS-07][PAYS-09] What was just made, and then the invitation to share the company's way.
             justMade?.let { made ->
                 MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null)
@@ -490,7 +536,7 @@ private fun PayResult(
                 }
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT)) importing = true else openPro() }) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
-                    if (gate.locked(Feature.PAY_RULE_IMPORT)) { Spacer(Modifier.width(6.dp)); ProPill() }
+                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAY_RULE_IMPORT)) // [TIER-06]
                 }
                 if (undo != null) {
                     TextButton(onClick = vm::undo) { Icon(Icons.Filled.Undo, null); Text(" 방금 바꾼 것 되돌리기") }
@@ -531,8 +577,10 @@ private fun PayResult(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() }) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
-                    if (gate.locked(Feature.PAYSLIP_MATCH)) { Spacer(Modifier.width(6.dp)); ProPill() }
+                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAYSLIP_MATCH)) // [TIER-06]
                 }
+                // [PAYS-14] 명세서 + 회사 계산 방법 사진 → 회사 규칙, free like the setup it belongs to.
+                OutlinedButton(onClick = { slipRules = true }) { Text("사진으로 회사 방식 맞추기") }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
             }
         }
@@ -559,6 +607,16 @@ private fun PayResult(
         RaiseDialog(vm, profile, target, onDismiss = { raiseTarget = null })
     }
     if (importing) RuleImportDialog(vm, month, onDismiss = { importing = false })
+    val slipSettings by vm.settings.collectAsStateWithLifecycle()
+    if (slipRules) SlipRulesDialog(
+        infer = { read, rules -> vm.slipRules(profile, snapshot, read, rules) },
+        shiftTypes = snapshot.shiftTypes,
+        fiveOrMore = profile.fiveOrMoreEmployees,
+        kinds = slipSettings.extraKinds.kinds,
+        onDismiss = { slipRules = false },
+        onApply = { r -> vm.applySlipRules(r); slipRules = false; if (onShareWay != null && r.changes.isNotEmpty()) plazaAsk = true },
+    )
+    if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     if (matching) PayslipMatchDialog(vm, profile, snapshot, result.month, onDismiss = { matching = false }, onShareWay = onShareWay)
     if (building || editingRule != null) CustomItemDialog(
         vm, profile, snapshot, month,

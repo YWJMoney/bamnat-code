@@ -1,11 +1,26 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-24, 앱 1.24.0(versionCode 35, 워치 100035) 기준이에요. 맨 위 0항이 지금 판(1.24.0), 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-25, 앱 1.25.0(versionCode 36, 워치 100036) 기준이에요. 맨 위 0항이 지금 판(1.25.0), 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.24.0 직접 입력판 (2026-10-24)
+## 0. 지금 판: 1.25.0 사용자 발견 문제 전면 개선판 (2026-10-25)
+
+사용자 지시(2026-10-25): 출시 전 할 일(1.24 서버·Play·5장)을 하기 전에 사용자가 직접 찾은 문제 26가지(비공개 `research/1.25-사용자-발견-문제-검토.md`, U1~U26)를 검토·개선하고, 사진 인식은 어떤 양식이든 맞게 읽게. 통합 브랜치 `claude/project-thread-nen9px`에 개발 스레드 여덟 묶음(U~AB)을 합쳤어요(PR #115~#122). DB는 21(세금 관측, 묶음 W만). 사진은 휴대폰 안에서만 읽어요(결정 D68, 서버·AI로 보내지 않음).
+
+- **사진·표 읽기(묶음 U, READ-01~11, PR #116)**: 6-7항. 기울어진 사진(1°부터 줄이 섞이던 원인)을 `RosterGeometry`로 바로잡고, 명세서+회사 계산 방법 두 장, 한 달 넣기 되돌리기 10분.
+- **급여 간편 설정·빨간날(묶음 V, HOLI-01~03·PAYS-12~15·PAYX-48, PR #119)**: 6-8항. 근무 형태를 묻고 한 장 확인(칸별 편집기는 '자세히 고치기', D70), 빨간날 근무 회사 방식 4가지(D71), 명세서로 회사 방식 맞추기(무료), 월급날 비교(예상은 세금 예측의 세후와 같은 값).
+- **세금·실수령·투자(묶음 W, TAX-01~07·INV-38~41, PR #117)**: 6-9항. 들어온 월급은 관측(한 번만 셈), 기록으로 배우는 세후(프로 `TAX_FORECAST`), 사업자 본인 세금(D72), 투자 수수료 0.05% 저장(D73), 단가 없는 체결 알림 채우기 A·B·C(D77).
+- **광장·회사 찾기(묶음 X, PLAZA-01~06, PR #122)**: 6-10항. 구조 비교·'다른 점 말하기', 초성 검색, 대표 판 `support()`(관리자 추천과 같은 점수), 첫 설정에서 회사 급여 묻기, 첫 설정 다시 받기. 회사 서버 재배포 필요(D1 `cho` 열은 서버가 스스로 더함).
+- **유형 맞춤·프로 표시(묶음 Y, FIT-01~03·TIER-06~07·VIS-06, PR #120)**: 6-11항. `FitTable` 한 표로 달력마다 맞는 기능만, 숨긴 건 '더 보기'; `ProCatalog` 한 목록으로 프로 배지·모아보기; 설정 색 4가지; "어떤 일을 하고 계신가요?".
+- **뒤로 가기·화면 안정·백업(묶음 Z, NAV·UX·ALRM-06·SHFT-09·BAK-01, PR #121)**: 6-12항. 뒤로 = 바로 전 화면, 숫자 깜박임·하루 창 닫힘 고침, 알람 시·분 휠, 근무 종류 지우기, 새 휴대폰으로 모든 설정 옮기기(`ZFullBackupTest`가 새 설정 값마다 백업 분류를 요구). 달력 도구 칸은 `CalendarToolSlots` 고정 자리 + `FitTable` id.
+- **관리자 앱 완성(묶음 AA, ADMUX-12~20, PR #115)**: 6-13항.
+- **알람 잠금 화면·버튼으로 끄기·오늘 모두 끄기(묶음 AB, ALRM-07~09, PR #118)**: 6-14항.
+- **법 문서**: 처리방침 2.9 그대로, `docs/play-data-safety.md` 1.25.0장(바뀌는 답 없음).
+- **시험 결과(2026-10-25)**: 비공개 `release/1.25.0/사용자가-해야-할-일.md` '시험 결과'. 다음 판은 비공개 `인계/다음-스레드-시작-1.26.md`.
+
+## 0-00. 앞 판: 1.24.0 직접 입력판 (2026-10-24)
 
 사용자 지시(2026-10-24): 1.23 직접 점검 보고서(비공개 `notes/1.23/앱-직접-점검-보고서.md`, 상 4·중 14·하)를 전부 고치고, 듀티표를 글자로 치게 하던 입력을 비롯해 앱 어디서든 "글자로 치는" 간접 입력을 직접 입력으로 바꾼 판이에요. 통합 스레드가 리뷰(비공개 `research/1.24-리뷰-직접입력.md`, 결정 D61~D66)를 하고 순번 341~366을 다섯 묶음(P~T)으로 나눠 개발 스레드 PR #108~#113을 통합 브랜치 `claude/project-thread-2xo1nw`에 합쳤어요(비공개 `계획/1.24-직접입력-전면개선-통합계획.md`). DB 20 그대로, 처리방침 2.9 그대로(법 문서 바뀜 없음), 회사 서버는 다시 배포해야 해요(새 비밀값 없음).
 
@@ -325,6 +340,109 @@ shift-calendar-app/
 - **근무 수** `core/work/ShiftMonth.counts`·`leaveDays`·`nightTimes`: 달력 배지·1년 달력·통계가 같은 함수. 하루 통째 휴가인 날은 근무 종류로 안 세고 "휴가"로 세요. 22~06시 걸친 근무는 "밤 시간 근무"(대근 포함)로 이름이 따로예요.
 - **크기 검사** `test/.../screenshots/LayoutCheck`: 그려진 화면에서 아래·옆 잘림, 말줄임, 한 글자씩 쪼개짐, 하단 바 위에 보이는 온전한 주 수를 셉니다. `RScreenshotTest`의 `audit*`가 점검 보고서의 13가지 크기를 `build/screenshots/r-audit/`에 적고, 760~779는 잘림 0·주 수 하한을 시험해요.
 - 시트 손잡이 이름은 `res/values(-ko)/sheet_strings.xml`이 라이브러리 글을 덮어써요("끌어서 옮기기", "닫기").
+
+
+### 6-7. 사진·표 읽기 (1.25.0 묶음 U, READ-01~11)
+
+1.24까지 듀티표 사진은 단어 y값으로 줄을 묶어서, 휴대폰 사진이 1~3° 기울면 줄이 섞이고 2°부터 0줄이었어요(사용자 "실행 자체를 못 함"). 1.25는 기울기를 재고 바로 세운 뒤 읽어요. 사진은 휴대폰 안에서만(D68), 원본·글자는 저장하지 않아요. 개발계획 `계획/1.25-U-개발계획.md`(원인 표·결정 U-D1~D4), 조사 `research/1.25-U-조사.md`.
+
+| 층 | core | app | 하는 일 |
+|---|---|---|---|
+| 기하 | `imports/RosterGeometry`(`tilt`·`level`·`lines`·`days`·`fit`) | — | 투영으로 기울기(±10°), 바로 세운 좌표에서 왼→오 줄 잇기, 붙은 날짜(1213) 나누기, 날짜 열 `x = a + b·날짜` 직선 |
+| 읽기 | `DutyRoster.analyse`(→ `RosterPhotoRead`: 줄·기울기·줄마다 종류·못 읽은 까닭), `RosterHint`(두 번 누르기), `RosterRow.unsure`·`line` | `ui/imports/RosterReader.photo`·`tapped`·`problem` | 가로·세로·목록 후보, 줄마다 간격 다시 맞춤(원근), 열에서 벗어난 칸은 노란 칸 |
+| 사진 | — | `imports/ImagePrep`, `RosterScanner.scan`(`Scan`: 단어·결과·화면용 사진), `pay/PayslipScanner` | EXIF 방향, 3200px 축소, 기울면 바로 세우고 대비 높여 한 번 더 읽어 나은 쪽. ML Kit `Line.angle`을 `RosterWord.angle`·`OcrLine.angle`로 |
+| 화면 | — | `RosterPhotoViews`(`WhichLine`·`PhotoTapDialog`·`ReadDiagnosisDialog`), `DutyRosterViewModel.Ui.chosen`·`readTapped` | 여러 줄이면 고르기 전엔 넣지 않음, 고른 줄은 `DutyCodeBook.mine`(키 `mine:<달력>`, 백업 `dutyCodes`에 함께)로 다음 달 자동 |
+| 첫 설정 | `SetupDraft.leaves` | `SetupViewModel.useRosterRow`·`answerRosterCode`·`readRosterTapped`, `SetupDraftCodec` `leaves`, `ScheduleRepository.applySetup` | 휴가도 저장, 모르는 글자는 그 자리에서 묻고 칠함 |
+| 넣기·되돌리기 | — | `Routes.DUTY_ROSTER_MONTH`(`CalendarScreen.onFillMonth`), `ui/RecentFill`, `DutyTypingSheet` 덮어쓰기 줄 | '이번 달 전부 넣기'는 그 달의 한 달 근무 넣기로(펼친 폴더블은 옆 판), 넣은 뒤 10분 안엔 도구 '방금 넣은 것 되돌리기'(메모리에만) |
+| 명세서 | `pay/OcrRows.join`(기울기), `PayslipReader.ocrFix`·`deducted`·`net`, `RuleText.tidy`, `PayPhotos` | `ui/pay/PayslipImport.PayslipFillDialog(rules = RuleTarget)` | 명세서 + 회사 계산 방법 두 칸, 어느 쪽이 명세서인지 가림, 규칙은 체크해서 급여 설정에(맞춰 보기: 바로, 간편 설정: 마칠 때) |
+
+- 시험 표본은 `tools/roster_fixtures.py`·`tools/payslip_fixtures.py`가 이 컴퓨터의 실제 OCR(RapidOCR PP-OCRv4 + 한국어)로 만들어요(`core/src/test/resources/roster-photos`·`payslip-photos`). 새 양식이 나오면 `CASES`에 더하고 다시 만든 뒤 `RosterPhotoFixturesTest`를 보세요. ML Kit은 Robolectric에서 안 돌아서 앱 시험은 `RosterScanner.fake`(·`fakeImage`)로 단어를 줘요.
+- 새 화면이 사진을 읽으면 `ImagePrep.load`를 지나게 하세요(큰 사진·EXIF).
+
+### 6-8. 급여 간편 설정·빨간날 근무·명세서로 회사 방식·월급날 비교 (1.25.0 묶음 V, HOLI-01~03·PAYS-12~15·PAYX-48)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-V-개발계획.md`, 근거는 `research/1.25-V-조사.md`.
+
+- **빨간날 근무** `core/pay/CompanyRules.HolidayWork`(법대로 휴일 가산·특근·대근처럼·대체휴일·교대제라 상관없음)는 예전 세 칸(`publicHolidaysPaid`·`publicHolidayAs`·`holidayByShiftStart`)에서 늘 다시 구해요. 바꿀 때는 `withHolidayWork`·`withHolidayShiftPay`만 쓰세요(세 칸을 따로 고치면 고른 것과 어긋나요). 저장은 `holidayWorkChoice`(대체휴일과 교대제를 가르는 것) 하나만 더해요. 특근처럼은 근무 종류별 1회 금액(`extraByShift`, `nightPremium = true`로 근무 종류의 야간 가산은 그대로)이고 시작한 날 기준을 같이 켜요.
+- **빨간날 휴가**: `PayCalculator` 휴가 줄은 그날 유급휴일이 이미 주는 시간을 빼요(시급·일당 이중 지급 고침). 내역 글에 "공휴일이라 근무일로 인정, 야간·휴일 가산 없음". 연차 일수는 그대로 `LeaveSources`의 `holidayLeaveFree`가 정해요.
+- **급여 간편 설정** `ui/pay/PayQuickSetup`이 급여 처음·다시 설정의 기본 길이에요(근무 형태 `core/pay/WorkForm` → 금액 → 빨간날 → `PayStory` 문장 한 장). `PayWizard`는 ‘자세히 고치기’로만 열려요. `WorkForms.apply`는 기존 설정의 값을 지우지 않아요(D70). 근무 형태 추측은 근무 순서(Rotation)에 실제로 도는 근무 종류만 봐요.
+- **명세서로 회사 방식** `core/pay/SlipRules.infer`(명세서 글 + 두 번째 사진의 회사 계산 방법 글 + 그 달 근무)가 기본급·가산율·1회 금액·없는 수당·빨간날 방식을 찾고 `PayslipMatcher`로 나머지를 맞춰요. 화면은 `SlipRulesDialog`(사진 두 장, 두 번째는 고를 때만), 적용 뒤 `PlazaAskDialog`가 광장 올리기를 권해요(`onShareWay`). 사진 글 읽기(OCR)는 묶음 U의 몫이고, 여기는 읽은 글만 받아요.
+- **월급날 비교** `pay.gap`은 `at(Place.STATS, "pay.gap")`이고 카드가 늘 보여요(급여 설정 전엔 급여 화면으로, 입금 전엔 ‘들어온 급여 적기’로 돈 탭 급여 한 줄). **새 바로 가기에 focus 키를 주면 그 키를 받는 화면(`FocusedTool`·`FeatureLinks.take`)이 있어야 해요** — `FeatureDestinationsTest`가 막아요.
+
+### 6-9. 세금 예측·실수령·사업자 세금·투자 수수료와 단가 채우기 (1.25.0 묶음 W, TAX-01~07·INV-38~41)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-W-개발계획.md`, 근거(법령 원문 출처)는 `research/1.25-W-조사.md`.
+
+- **DB 21** (W만 올림): `pay_observations`(월급 관측: 그 달 실수령·세전·출처 DEPOSIT/TYPED/PAYSLIP·소득 종류, 입금이면 가계부 줄 id), `tax_settings`(사업자 답·확인된 회사 이름·'월급 아니에요' 줄 id, 키·글자). `database/.../TaxTables.kt`, 백업은 `data/TaxBackup.kt`("tax" 키, 없으면 휴대폰 것 그대로).
+- **월급 관측** `app/tax/SalaryWatch`: 결제 알림이 적힐 때(`AppContainer.capture`)와 돈 탭이 열릴 때 최근 45일 수입 줄을 `core/tax/SalaryDeposits`로 봄(분류 급여 · 확인된 회사 · 월급날 ±5일·예상 실수령 ±20%·30만 이상). 월급이면 분류를 급여로 바꾸고 관측으로 남김. 결정 W-D1: `MonthMoney.payCounted = 예상 ?: 기록`, 예상이 있는 달은 들어온 돈을 더하지 않음(`payObserved`). 월급날을 안 넣은 사람은 '급여' 낱말·확인된 회사로만 알아봐요.
+- **실수령 학습** `core/tax/TaxLearner`: k = (세전 − 실수령) ÷ 간이세액표·4대 보험 공제, 최근 6달 중앙값, 40% 넘게 벗어난 달(연말정산·상여)은 뺌. 세전이 없는 입금은 급여 엔진 세전을 씀. 세금 방식이 '없음'이면 기록으로 짐작. 화면 계산은 `app/tax/TakeHomeView`.
+- **사업자** `core/tax/BusinessTax`: 장부·단순경비율·기준경비율(경비율은 홈택스에서 사용자가 넣음, W-D3) 중 낮은 것, 부가세 일반·간이·면세, 내는 날(`TaxDeadlines.workday`). 세율·기준금액이 바뀌면 이 파일과 `BusinessTaxTest` 정답을 함께 고쳐요.
+- **화면**: 돈 › 요약 `MoneyPart.TAX`('세금·실수령', `ui/money/TaxCards.kt`: 카드·실수령 기록 시트·지난 월급 적기·사업자 시트). 프로 `Feature.TAX_FORECAST`(W-D4: 투자 수수료 고침은 무료). 알림 '밤낮이 한 일' `JournalKind.PAY_OBSERVED` → `NoticeLinks.Target.TAX`.
+- **투자 수수료(379)**: `InvestSettings.buyFeeRate/sellFeeRate`(기본 0.05%, invest_settings `buyFee`·`sellFee`), 우선순위 계좌 시장별 → 계좌 → 달력 기본 → 시장 기본. 매매 시트는 `InvestFees.shown`으로 값이 바뀔 때마다 다시 계산(직접 친 칸은 그대로), 해외 매도 미리 보기 `InvestTaxes.sellPreview`.
+- **단가 채우기(409, 결정 D77)**: A `TradeAlertParser`가 체결 금액(`AMOUNT`)을 따로 읽어 단가로 잘못 읽지 않고 금액 ÷ 수량, 금액과 안 맞으면 `Pending.checked == false`라 바로 적기 안 함. B `TradeAlerts.add`가 10분 안 같은 주문 알림을 묶음(같은 수량+단가 없음 = 같은 체결, 다른 수량 = 나눠 체결 평균). C `core/invest/FillCapture.kt`(`FillSheetReader`·`FillMatcher`)가 체결 내역 캡처 글자를 행마다 읽고 수량×단가≈금액으로 맞춰 봄, 확실하지 않은 칸은 `unsure`; 화면 `ui/invest/InvestFillCapture.kt`(처음 한 번 안내, 노란 칸 확인 전엔 채우기 막힘). 투자 달력을 보고 있을 때 갤러리 공유 사진은 `invest/IncomingFills`로 투자 탭에. 사진 읽기는 지금 `PayslipScanner`, U의 `ImagePrep`이 합쳐지면 그쪽으로.
+- **캡처 표본** `core/src/test/resources/fill-captures/`: 지어낸 배치 예시 12장(실제 캡처 아님). 실제 캡처 글자를 같은 틀로 더하면 `FillCaptureTest`가 바로 시험해요.
+- **세후 한 줄** `app/tax/TakeHomeLine`: 급여 화면 합계 아래(`PayScreen`, `PayViewModel.takeHome`)와 달력 요약 '예상 급여' 밑 '세전 · 세후 ○'(`CalendarViewModel.takeHome` → `MonthSummaryBar(takeHome)`). 프로가 아니면 null이라 화면이 전과 같음.
+- **U와 이음**: 명세서 사진은 U의 `PayslipScanner`(→ `ImagePrep`)로 읽고, '지난 월급 적기'는 `PayPhotos.read`로 여러 장 중 명세서를 골라 `PayslipRead.gross`·`net`(사진이 끝자리를 잘라도 지급−공제로)·`deducted`, 없으면 `deductionRate`로 실수령. 급여 › 명세서로 맞춰 보기에서 채운 명세서도 `PayViewModel.observePayslip`로 그 달 관측이 됨. 공유 사진은 투자 달력일 때만 `IncomingFills`로, 한 달 근무 넣기 화면이 열려 있으면 U 쪽으로.
+- **5월 신고 알림(INV-41)** `InvestTaxes.reportReminders`: 지난해 해외 주식 이익(먼저 산 것부터, ISA·연금 뺌)이 250만 원을 넘으면 5월 1일·마감(주말·공휴일이면 다음 평일) 일주일 전 08:30. 저장하지 않는 일정(id < 0)으로 `InvestNotices.withReports`가 계획에 섞음.
+- 시험: core `TaxForecastTest`·`BusinessTaxTest`·`FillCaptureTest`·`InvestReportTest`, 앱 `tax/WTaxFlowTest`(끝에서 끝 9개), 사진 `WScreenshotTest` 850~869.
+
+### 6-10. 광장 고도화·회사 찾기·첫 설정 연결 (1.25.0 묶음 X, PLAZA-01~06)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-X-개발계획.md`, 조사는 `research/1.25-X-조사.md`. 결정 X-D1~D7, D74.
+
+- **설정을 항목으로** `core/plaza/SetupFacts`(회사 설정 파일 → 항목 `key`·묶음·서버 말투 값·제안 칸), `SetupCompare`(두 파일 비교, 제안 줄 6개·80자), `SetupEdit`(파일의 값만 바꾸는 편집, 나머지는 그대로), `Choseong`, `ShareAsk`(권유 14→30→90일). 서버의 `describe()`와 말투를 맞춰 두었으니 한쪽을 바꾸면 `PlazaCompareTest`로 같이 보세요.
+- **모든 유형** `CompanyShare`가 주5일·파트타임 `weekly`와 매달 근무표 `roster`를 담고 읽어요(`SetupDraft.withShared(weekly)`). 순서·요일·근무표가 없는 옛 파일은 지문이 그대로예요.
+- **빨간날 근무(V와 연결)** 회사 설정 파일의 `publicHolidays`·`publicHolidayAs`·`holidayByStart`가 V의 네 가지(`HolidayWork`)로 읽혀요. 교대제라 상관없음만 `holidayWork: "SHIFT_NORMAL"`을 더 실어요(서버도 그때만 둬서 다른 지문은 그대로). 비교 항목 `rule:holiday`("빨간날 근무", 서버 describe와 같은 말 `SetupFacts.holidayText`), 편집 창 칩 `SetupEdit.holidayWork`. 근무별 1회 금액(`extraByShift`)은 구조만 가고 금액은 각자 넣어요. 명세서 뒤 `PlazaAskDialog`는 `rewardLine(terms)`, 그때는 급여 화면 권유 카드를 띄우지 않아요(`saveSetup(invite = false)`).
+- **다른 점 말하기** `ui/company/PlazaCompare.kt`: `DiffEditorSheet`(시간·칩·스테퍼, 글자 칸은 이유만), `CompareSheet`·`CompareRows`(다른 곳 먼저, 같은 곳은 접음). 회사 카드·급여 단계(`CompanyPayScreen`의 "이 회사 급여 설정을 쓸까요?")에서 열고, `TalkHolder.send(setupText=)`로 고친 파일 전체가 제안으로 가요. 급여 단계에서 고친 값은 그 휴대폰의 `pendingPay`가 돼요.
+- **대표 판** 서버 `support()`·`outweighs()`·`settle()`의 `rival`, 앱은 "대표 판 vN", 바뀐 기록의 `body`로 비교·되돌리기, 쓰던 판이 바뀌면 회사 화면 맨 위 카드("비교하고 바꾸기"/"그대로 둘게요").
+- **권유** `CompanyStore.handMade`(첫 설정을 회사 없이 직접), `inviteDue`·`inviteNever`, 달력 알림 묶음 `plazaShare` → `ShareInviteNotice`, 급여 화면 `ShareMoment.PAY/PAYSLIP`. 명세서 사진으로 규칙을 넣은 뒤(묶음 V)는 `ShareWayCard(ShareMoment.PAYSLIP, …)`를 띄우면 돼요.
+- **처음 설정 다시 받기** `Routes.SETUP_AGAIN`·`NoticeLinks.Target.SETUP_AGAIN`, `SetupViewModel(again = true)`는 `againSetupDrafts`(따로 둔 초안)를 써서 그만두면 아무것도 안 바뀌고, 저장은 `firstSetup.save`라 오늘부터 바뀌어요. 들어가는 곳: 설정 › 내 근무(`SETUP_AGAIN_ROW`), 도움말·문의 첫 화면, HelpFaq `setupAgain`.
+- 시험: core `PlazaCompareTest`, 서버 `test/plaza-x.test.mjs`·`company.test.mjs`(D74), 앱 `company/PlazaXAppTest`(실제 서버와 왕복), 사진 `XScreenshotTest` 870~889.
+
+### 6-11. 유형 맞춤 화면·프로 표시·설정 색·하는 일 묻기 (1.25.0 묶음 Y, FIT-01~03·TIER-06~07·VIS-06)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-Y-개발계획.md`, 조사는 `research/1.25-Y-조사.md`.
+
+- **유형별 표** `core/guide/FitTable`: 달력 꾸미기 부품(CALENDAR_PARTS)·달력 도구(CALENDAR_TOOLS)·통계 부품(STATS_PARTS)·돈 부품(MONEY_PARTS)마다 어느 `WorkStyle`에 맞는지 한 곳. 표에 없는 id는 늘 보여요(다음 판 부품이 사라지지 않게). 유형이 없는 옛 기본 달력은 교대(SHIFT)로 봐요. 새 부품·도구를 더하면 이 표에 한 줄 넣고 `FitTableTest.everyKindOfWorkSeesItsOwnList`의 기대값을 고치세요.
+- **사용자가 더한 것**: 꾸미기·도구 시트 끝의 "이 달력에 안 맞아 숨긴 기능(도구) n개 · 더 보기"(`ui/components/PageEditSheet.FitMore`)에서 더하기/빼기. `GuideStore.setAdded` → `"달력id/SURFACE:id"`로 그 달력에만, 백업은 `featuresAdded`. 숨긴 것은 지우지 않고 숨기기만 해요(Y-D1).
+- **프로 배지** `ui/components/ProBadge`: 정식 출시 전에도 늘 "프로"를 보이고, 잠기면 자물쇠와 "프로 기능, 잠겨 있어요"(TalkBack). 새 프로 기능은 그 자리에 `ProBadge(locked = gate.locked(Feature.X))` 또는 `SwitchRow(pro = true, proLocked = …)`.
+- **프로 기능 모아보기** `ui/pro/ProCollection` + `core/guide/ProCatalog.tiers`(기능 사전 id → `Feature`): 설정 › 프로 맨 위, 그 달력 유형에 맞는 것 먼저, 누르면 `FeatureLinks.open`으로 그 자리. **새 프로 기능은 `ProCatalog.tiers`에 한 줄**만 더하면 모아보기·기능 찾기·기능 켜고 끄기에 배지가 붙어요(`ProCatalogTest`가 모든 `Feature`가 실려 있는지 봐요).
+- **설정 색** `ui/theme/SettingsTones`: 7묶음은 그대로, 색 4가지(일=파랑: 내 근무·급여, 알림=주황: 알람·알림, 화면=보라: 달력과 화면, 데이터=초록: 데이터·개인정보). 원·아이콘 색과 왼쪽 4dp 띠, 라이트·다크 따로, `ContrastTest.settingsGroupColoursAreReadable`이 대비 4.5:1·3:1을 봐요. 새 묶음은 `SettingsPage.kind`를 정하세요.
+- **하는 일 묻기** `core/work/JobDictionary`(직업 127개, 별칭·초성·오타 거리) + `ui/setup/JobAsk`: 첫 화면 "어떤 일을 하고 계신가요?"와 새 달력 "‘이름’ 달력으로 어떤 일의 일정을 관리하고 싶으세요?". 모두 기기 안에서만 읽고 서버로 안 보내요. 못 찾으면 유형 카드로 고르게 해요.
+### 6-12. 뒤로 가기·화면 안정·메모·하루 창·알람 휠·근무 종류 삭제·전체 백업 (1.25.0 묶음 Z, NAV-02~03·UX-10~13·ALRM-06·SHFT-09·BAK-01)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-Z-개발계획.md`, 근거는 `research/1.25-Z-조사.md`.
+
+- **화면을 더할 때 뒤로 가기 규칙** (Z-D1·D2): 뒤로 = 바로 전 화면. 화면 안에 단계·쪽·옆 패널·검색이 있으면 그 화면에 `BackHandler(enabled = 첫 단계가 아님)`을 두어 앞 단계로(예: `PayWizard`, `MoneyScreen` 요약, `InvestScreen` 첫 탭, `MemoListScreen` 검색, `CalendarScreen` 넓은 화면 패널). 탭 사이 뒤로와 달력에서 2초 안 두 번 닫기는 `AppRoot`의 `TabBackCallback` 하나가 해요: NavHost의 뒤로보다 늦게 등록돼야 해서 **이동할 때마다 다시 등록**하고(`DisposableEffect(backStack.id)`), 할 일은 누른 순간의 back stack으로 정해요(그 외는 아래로 넘김). 탭 이동은 `navigateTopLevel`만 쓰고(기록 `TabHistory`), 다른 화면 위에서 탭으로 가면 그 화면 위에 쌓여요. 첫 설정 중 들어온 설정 링크는 버려요. 시험 `ZScreenshotTest`의 back* (설정 7쪽·달력 도구·돈 쪽·메모 검색·넓은 패널 전수).
+- **달력 도구 칸** `ui/calendar/CalendarToolSlots`: 칸 자리 고정. 달력 종류에 안 맞는 것(교대가 아니면 모든 조, 서버 없으면 받기)만 빼고, 지금 못 쓰는 것은 흐리게 + 이유. 설정·도움말로 나가는 칸은 "다른 화면으로" 줄. 새 도구는 `build()` 목록에 자리를 정해 더하세요.
+- **깜박임** `ui/LastValues`·`rememberLast(key, 입력…)`: 화면이 다시 열려도 첫 프레임부터 마지막 값, 입력이 같으면 다시 계산 안 함(급여·통계·비교 카드·돈 보고서·모든 달력 카드). 근무 스냅숏은 `ScheduleRepository.lastSnapshot`이 새 VM의 첫 값. `produceState(null)`로 숫자를 계산하는 화면을 새로 만들면 이것을 쓰세요.
+- **메모** `MemoEditorScreen`: 커서 따라가기는 글자·커서가 바뀔 때만, 메모 스크롤 안에서만(`core/memo/CaretScroll`, `BringIntoViewRequester` 안 씀 — 창까지 올라가 키보드 닫을 때 창이 밀렸음). 맨 밑으로·맨 위로 버튼은 스크롤 중 나타나 2초 뒤 사라지고, 화면 읽기에는 늘 같은 동작.
+- **하루 창** `ui/components/SheetScrollGuard`(`Modifier.sheetScrollGuard()`): 안쪽을 스크롤한 손짓의 남은 아래 끌기·던지기는 시트로 안 보냄. 안쪽이 스크롤되는 다른 `ModalBottomSheet`에도 내용 바깥 Box에 붙이면 같아요. 시트 맨 위 고정 줄과 손잡이 끌기는 그대로 닫힘.
+- **알람 휠** `ui/components/AlarmOffsetDialog`(울릴 시각 / 시작 몇 시간 전, `core/alarm/AlarmOffsets`). DB에는 그대로 "시작 몇 분 전".
+- **근무 종류 삭제** `ScheduleRepository.shiftTypeUse`·`deleteShiftTypeUndoable(id, replaceWith)`·`restoreShiftType`: 다른 종류로 바꾸기/비우기, 스낵바 되돌리기(종류 id·날·주기·대근 그대로).
+- **전체 백업** `data/SettingsFilesBackup`: `AppSettings` 밖 설정 파일(`PARTS`)과 고정비 표시(`recurring_marks.json`)를 백업 `settingsFiles`에. 복원 뒤 메모리에 들고 있는 가게(`WorkTypePrefs`·`CompanyStore`·`RateHintStore`·`AutoRecordPrefs`·`ShareGroupStore`)를 `reload()`. **새 설정을 더하면**: `AppSettings` 칸은 `BackupManager` 내보내기·복원과 `ZFullBackupTest.sample`에, 아니면 `SETTINGS_ON_PHONE`에 이유와 함께. 새 SharedPreferences 파일은 `PARTS`·`ELSEWHERE`·`DEVICE_ONLY` 중 하나에(지킴이 시험이 소스를 훑어 빨강). 설정 › 데이터 '새 휴대폰으로 옮기기'가 옮겨지는 것·남는 것을 말해요.
+- 시험: core `ZAlarmCaretTest`, app `ZPartsTest`·`ZShiftTypeDeleteTest`·`ZFullBackupTest`·`ZScreenshotTest`(사진 910~924).
+- **Z 후속(NAV-04·BAK-02·QA-09)**: 친 것을 잃는 곳의 뒤로는 **묻고 닫아요**. 근무 직접 치기(`DutyTypingSheet`·`DutyTypingPanel`)는 `TypingGuard`가 시트의 쓸기·바깥 누르기·뒤로(`confirmValueChange`)와 패널의 뒤로·닫기를 한 질문(‘넣은 n일을 버릴까요?’)으로 모으고, `DutyRosterScreen`은 넣지 않은 칸이 있으면(`Ui.unsaved`) 뒤로·화살표가 ‘넣지 않고 나갈까요?’. 앱이 닫히는 자리(달력 첫 화면, ‘무슨 일 하세요?’, 첫 설정 첫 질문)는 `ui/ExitGuard` 하나로 2초 안 두 번. 받을 돈 검색은 뒤로가 검색부터 닫아요(광장 검색은 X 몫). 달력 보기 설정(`calendar_view`)은 `CalendarViewModel`이 파일 바뀜을 들어 복원 즉시 반영해요.
+- **전체 실행에서만 깨지던 시험의 원인 2가지(QA-09)**: ① Compose의 메인 스레드 dispatcher는 JVM에 하나라 시험을 넘어 살아남는데, Robolectric은 시험 사이에 메인 큐를 비워요. 앞 시험이 Compose 일을 예약한 채 끝나면 dispatcher는 ‘이미 예약됨’으로 믿고 다시 예약하지 않아, 같은 JVM의 다음 화면이 첫 프레임 뒤 멈췄어요(StartupBudgetTest 달 30초 실패, 사진 시험의 ‘못 찾음’). **Compose 화면을 띄우는 시험은 `rules/ComposeMainReset`을 가장 먼저**(`@get:Rule(order = Int.MIN_VALUE) val mainReset = ComposeMainReset.rule()`, `ScreenshotBase`에 들어 있음). ② 앱은 시작할 때 컨테이너를 따로 스레드에서 만들고 그 `start()`가 동의 없는 사용 통계를 지워요. 앱 파일을 직접 쓰는 시험은 먼저 `context.appContainer`로 기다리세요(`OperationsAppTest`).
+
+### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
+
+- 모두 회사 서버 안(`server/company-worker`). 앱(Kotlin)·DB 판·서버로 오는 정보는 바뀌지 않음. 회사 서버 재배포가 있어야 관리자 앱에 보여요.
+- `src/index.js`의 `// AA 1.25 시작 … // AA 1.25 끝` 묶음: `metricRange`(7~90일 또는 from·to 최대 180일), `inquiryStats`(첫 답 중앙값·90%·목표 지킴률), `countError`(500마다 `counters`의 `errors|날짜`), `playVitals`(Play Developer Reporting API, 6시간 보관, 403이면 "denied"), `REMOTE`·`remoteState`(GitHub Pages 원격 파일 8종을 받아 Ed25519 확인, 공개 키는 `core/remote/RemoteKeys.kt`와 같아야 함 — 시험이 비교), `inbox`·`inboxItems`(받은함, 기한 규칙은 `INBOX`·SLA·30일·말일), `versions`·`promote`(여러 판, `POST /api/admin/rules/:id/promote`는 이전 판 설정을 새 판으로 올리고 쓰던 판을 이전 판으로), `plazaBulk`(`/posts/bulk`·`/rates/bulk`, 100개까지), `wilson`.
+- `metrics()`는 기존 필드를 그대로 두고 `active`·`plaza`·`inquiries`·`errors`·`dayList`를 더함. 앱 판 이름 → versionCode는 `APP_CODES`(판을 올릴 때 한 줄 더하기) + 문의의 "x.y.z (N)"에서 배움.
+- 화면(`src/admin-app.js`): `#/inbox`(메뉴 숫자 = 기한 넘김, 아래 탭 기본 첫 칸이 받은함), `#/versions`(메뉴 숫자 = 여러 판인 부서), 지표 날짜 칸·카드 5개, 토론·임금표 여러 개 고르기. 키 `g b` 받은함, `g v` 여러 판.
+- 시험: `test/admin-complete.test.mjs`(서버 끝에서 끝), `test/ui/admin-ui.test.mjs` 끝 4개(화면 → 서버). 사진 `server/company-worker/docs/screenshots/admin-1.25/930~939`.
+- 선택 변수 `REMOTE_BASE_URL`. Play 통계는 `PLAY_SERVICE_ACCOUNT`에 Play Console 권한 "앱 정보 보기"와 Google Cloud의 Reporting API 사용(README '지표의 Play 통계와 원격 갱신').
+- 결정 AA-D1~D3: `계획/1.25-AA-개발계획.md` 7장.
+
+### 6-14. 알람: 잠금 화면·버튼으로 끄기·오늘 모두 끄기 (1.25.0 묶음 AB, ALRM-07~09)
+
+- **알림 단추 셋** `AlarmService.buildNotification`: 다시 울림·끄기·오늘 모두 끄기, 모두 잠금 해제 없이. 휴대폰을 쓰는 중이거나 Android 14+ 전체 화면 알림이 꺼져 있으면 Android는 알람 화면 대신 위에 뜨는 알림만 보여 줘요(공식 동작) → 그 알림만으로 다 끌 수 있게. 미션 알람의 끄기·오늘 모두 끄기는 미션 화면을 열어요(`EXTRA_ALL_OFF`).
+- **잠금 화면을 막는 것** `Notifications.alarmChannelTrouble`(근무 알람 채널이 HIGH 미만·잠금 화면 숨김), `dndBlocksAlarms`(완전히 무음), `makerLockScreenPermission`(샤오미·오포·비보 등, 앱 정보로 안내). 알람 점검 줄과 달력 경고. 화면 없이 알림으로만 울렸으면(`screenShownAt == 0` + 권한 없음) 끝난 뒤 `postFullScreenOff`.
+- **버튼** `alarm/AlarmButtons.kt`: 볼륨 키는 `AlarmActivity.onKeyDown`, 전원 버튼은 울리는 동안만 등록하는 `ACTION_SCREEN_OFF` 수신기 + `screenOffIsPress`(알람 화면이 앞에 있을 때만, 뜬 지 1초 안은 무시). 설정 `alarmButtonAction`(dismiss 기본·snooze·none, 백업 `alarmButton`, 잠긴 재부팅 복사본 `button_action`). 미션 알람은 `quietBriefly`(30초 소리 0.05·진동 멈춤). 화면 밖(위에 뜨는 알림만)의 볼륨 키는 받지 않아요(MediaSession 흉내는 쓰지 않음, 조사 3장).
+- **오늘 모두 끄기** `alarm/AlarmsOff.kt`: 기기 보호 저장소 `alarms_off`에 끝 시각(다음 자정, 울리던 근무 시작이 더 늦으면 그때). 켜져 있는 동안 `AlarmService` ACTION_START가 시험 알람 말고는 울리지 않고, `AlarmScheduler.reschedule`·`verify`가 `AlarmsOff.planFrom`으로 그 뒤 첫 알람을 걸어요. 다시 울림·일어났나요?는 끌 때 지움, 메모 일정 울림은 조용한 알림으로. 백업하지 않음. 되돌리기는 알림 '다시 켜기'(`AlarmsOff.ACTION_ON`)와 달력 경고 줄. `JournalKind.ALARMS_OFF`.
+- **알람 화면** `RingingScreen`: 480dp 아래로 낮은 가로 화면은 시계·버튼을 옆으로 나란히(전에는 버튼이 시계를 덮었음), 세로는 글이 길면 스크롤.
+- 시험 `AlarmButtonsAllOffTest`(12개, 끝에서 끝), `M7AppTest`(단추 3개), 사진 `ABScreenshotTest` 960~969. 결정 AB-1~AB-4: `계획/1.25-AB-개발계획.md`.
 
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 

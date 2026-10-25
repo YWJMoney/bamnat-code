@@ -3,6 +3,8 @@ package com.bamnat.app.ui.company
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyDraft
 import com.bamnat.app.company.CompanyException
@@ -275,6 +277,22 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     fun closeHistory() {
         _history.value = null
     }
+
+    /** [PLAZA-02] This phone's own setup (amounts left out), for "내 설정으로 채우기"; null when there is none to read. */
+    suspend fun mine(): String? = runCatching { c.companyShare.exportForServer().toString() }.getOrNull()
+
+    /**
+     * [PLAZA-02] 다른 점 말하기 sent: a proposal on [setup] with the [lines] that changed and the edited [text] as the
+     * rule people vote on. The talk opens on it, so the user sees it went up.
+     */
+    fun propose(page: CompanyPage, setup: SharedSetup, lines: List<com.bamnat.app.company.ChangeLine>, text: String, why: String, done: (String?) -> Unit) {
+        talk.show(page.id, setup.id, "${page.name} · ${setup.dept.ifEmpty { "회사 전체" }}")
+        val body = proposalBody(com.bamnat.core.plaza.SetupCompare.rows(setup.text, text), why)
+        talk.send(body, kind = "proposal", change = lines, setupText = text) { e ->
+            if (e == null) c.telemetry.event("plaza_diff", "sent") else talk.close()
+            done(e)
+        }
+    }
 }
 
 data class HistoryState(val title: String, val versions: List<com.bamnat.app.company.RuleVersion>?, val error: String? = null)
@@ -377,6 +395,7 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         kind: String = "talk",
         change: List<com.bamnat.app.company.ChangeLine> = emptyList(),
         withSetup: Boolean = false,
+        setupText: String? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
@@ -388,7 +407,9 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         if (!com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         scope.launch {
             val error = try {
-                val setup = if (kind == "proposal" && withSetup) c.companyShare.exportForServer() else null
+                // [PLAZA-02] 다른 점 말하기 sends the company's setup as edited, not this phone's own.
+                val setup = if (kind != "proposal") null
+                else setupText?.let { org.json.JSONObject(it) } ?: if (withSetup) c.companyShare.exportForServer() else null
                 if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
@@ -724,14 +745,46 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
 
 /** [COMM-01] The first pay setup from a shared setup: only the user's own amounts are asked. */
 class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
-    val text: String? = c.companyStore.pendingPay
+    /** The company's setup the pay is made from; [PLAZA-03] the user's own corrections replace it ([useEdited]). */
+    var text: String? by androidx.compose.runtime.mutableStateOf(c.companyStore.pendingPay)
+        private set
     val company: String = c.companyStore.applied.value?.company.orEmpty()
+    /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
+    private val applied: AppliedSetup? = c.companyStore.applied.value
+    val canPropose: Boolean get() = applied != null
+    /** [PLAZA-03] What the user changed before the pay was made, so the screen can say their pay uses it. */
+    var edited: Boolean by androidx.compose.runtime.mutableStateOf(false)
+        private set
     /** [COMM-13] 입사일 if a pay profile (an earlier one, or one restored) already knows it. */
     val hireDate: java.time.LocalDate? = c.payStore.profile.value?.hireDate
-    val needs: List<CompanyShare.AmountNeed> = text?.let { runCatching { c.companyShare.amountNeeds(it) }.getOrNull() }.orEmpty()
-    val summary: CompanySummary? = text?.let { runCatching { c.companyShare.summarize(it) }.getOrNull() }
+    val needs: List<CompanyShare.AmountNeed> get() = text?.let { runCatching { c.companyShare.amountNeeds(it) }.getOrNull() }.orEmpty()
+    val summary: CompanySummary? get() = text?.let { runCatching { c.companyShare.summarize(it) }.getOrNull() }
+    /** [PLAZA-03] Whether the company's setup has pay rules to ask "이 회사 급여 설정을 쓸까요?" about. */
+    val hasRules: Boolean get() = summary?.hasRules == true
+    /** [PLAZA-03] The talk the 다른 점 proposal goes to. */
+    val talk = TalkHolder(c, viewModelScope)
+
+    /**
+     * [PLAZA-03] U26 "우리 급여는 달라요": the user's corrected [setup] becomes this phone's (the pay is made from it), and the
+     * same goes to the company's talk as a proposal with the changed [lines], so the next coworker finds it right.
+     */
+    fun useEdited(lines: List<com.bamnat.app.company.ChangeLine>, setup: String, why: String, done: (String?) -> Unit) {
+        val a = applied ?: return done(null)
+        val base = text ?: return done(null)
+        talk.show(a.companyId, a.setup, "${a.company} · ${a.dept.ifEmpty { "회사 전체" }}")
+        talk.send(proposalBody(com.bamnat.core.plaza.SetupCompare.rows(base, setup), why), kind = "proposal", change = lines, setupText = setup) { e ->
+            talk.close()
+            // Their own pay uses what they said, sent or not: a refused post (rules, limits) never blocks the pay.
+            text = setup
+            edited = true
+            c.companyStore.pendingPay = setup
+            c.telemetry.event("plaza_diff", if (e == null) "pay_sent" else "pay_kept")
+            done(e)
+        }
+    }
+
     /** A share of 기본급 bonus, e.g. 상여 짝수 달 100%: said so the user does not look for its amount. */
-    val bonusNote: String? = text?.let { t ->
+    val bonusNote: String? get() = text?.let { t ->
         runCatching {
             JSONObject(t).optJSONObject("pay")?.optJSONArray("items")?.let { a ->
                 (0 until a.length()).map { a.getJSONObject(it) }
@@ -895,10 +948,29 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
         a?.takeIf { enabled && it.vote == null && Today.millis() >= later }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** A setup made or corrected by hand under a company's name and not shared yet. */
-    val invite: StateFlow<CompanyDraft?> = combine(c.companyStore.draft, c.companyStore.inviteClosed) { d, closed ->
-        d?.takeIf { enabled && !closed }
+    /**
+     * A setup made or corrected by hand under a company's name and not shared yet; [PLAZA-04] or one made by hand with no
+     * company (a draft with no name), until something is sent. Asked again 14, 30 and 90 days after each "다음에".
+     */
+    val invite: StateFlow<CompanyDraft?> = combine(c.companyStore.draft, c.companyStore.handMade, c.companyStore.inviteDue, c.companyStore.inviteNever,
+        c.companyStore.sent) { d, hand, due, never, sent ->
+        val draft = d ?: CompanyDraft("").takeIf { hand && sent.isEmpty() && c.companyStore.applied.value == null }
+        draft?.takeIf { enabled && com.bamnat.core.plaza.ShareAsk.due(never, due, Today.millis(), usesCompanySetup = false) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** [PLAZA-04] What would go, in the plaza's words and without amounts, so the user sees it before deciding. */
+    private val _preview = MutableStateFlow<List<String>>(emptyList())
+    val preview: StateFlow<List<String>> = _preview.asStateFlow()
+
+    fun loadPreview() {
+        if (_preview.value.isNotEmpty()) return
+        viewModelScope.launch {
+            _preview.value = runCatching {
+                com.bamnat.core.plaza.SetupFacts.read(c.companyShare.exportForServer().toString())
+                    .groupBy { it.group }.map { (g, f) -> "${g.title}: " + f.take(2).joinToString(" · ") { "${it.label} ${it.value}" } + if (f.size > 2) " 외 ${f.size - 2}가지" else "" }
+            }.getOrDefault(emptyList())
+        }
+    }
 
     init {
         if (enabled) viewModelScope.launch { _terms.value = c.loadTerms() }
@@ -927,9 +999,10 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
         c.telemetry.event("company_fix_start")
     }
 
-    fun closeInvite() {
-        c.companyStore.closeInvite()
-        c.telemetry.event("company_invite_close")
+    /** [PLAZA-04] "다음에" (14, 30, then 90 days) or, with [never], "그만 볼게요". */
+    fun closeInvite(never: Boolean = false) {
+        if (never) c.companyStore.inviteNever() else c.companyStore.inviteLater(Today.millis())
+        c.telemetry.event("company_invite_close", if (never) "never" else "later")
     }
 }
 

@@ -18,6 +18,10 @@ object TradeAlertParser {
         val quantity: Double,
         val price: Double,
         val market: Market,
+        /** [INV-40] 체결 금액 as the text says it (0 when it does not), in the price's currency. */
+        val amount: Double = 0.0,
+        /** [INV-40] The price was worked out as 체결 금액 ÷ 수량 (409 A), not said. */
+        val priceFromAmount: Boolean = false,
     ) {
         val title: String get() = name.ifBlank { symbol }
     }
@@ -46,13 +50,15 @@ object TradeAlertParser {
         Regex("$NUM\\s*([A-Z]{2,10})(?![A-Za-z])"),
     )
     private val PRICE = listOf(
-        Regex("(?:체결\\s*)?(?:단가|가격|평균가|체결가)\\s*[:：]?\\s*\\$?\\s*$NUM\\s*(원|KRW|USD|달러|\\$)?", RegexOption.IGNORE_CASE),
+        Regex("(?:체결\\s*)?(?:단가|가격|평균가|체결가)\\s*[:：]?\\s*\\$?\\s*$NUM\\s*(?:(원|KRW|USD|달러|\\$)(?![가-힣]))?", RegexOption.IGNORE_CASE),
         Regex("[@＠]\\s*\\$?\\s*$NUM"),
         Regex("\\$\\s*$NUM"),
         Regex("$NUM\\s*(원|달러|USD)"),
     )
+    /** [INV-40] 체결·약정·거래 금액, 총액: the whole fill, never a price. */
+    private val AMOUNT = Regex("(?:(?:체결|약정|거래|정산|결제|매수|매도|구매|판매)\\s*(?:금액|대금)|총\\s*(?:체결\\s*)?(?:금액|액)|총액|합계)\\s*[:：]?\\s*\\$?\\s*$NUM\\s*(?:(원|KRW|USD|달러|\\$)(?![가-힣]))?", RegexOption.IGNORE_CASE)
     private val CODE_KR = Regex("(?<![\\d])(\\d{6})(?![\\d])")
-    private val CODE_COIN = Regex("(?:KRW|BTC|USDT)[-/]([A-Z0-9]{2,10})|([A-Z0-9]{2,10})[-/]KRW")
+    private val CODE_COIN = Regex("([A-Z0-9]{2,10})[-/](?:KRW|USDT)|(?:KRW|USDT)[-/]([A-Z0-9]{2,10})")
     private val BRACKET = Regex("[\\[【(（]([^\\]】)）]{1,30})[\\]】)）]")
     private val NAMED = Regex("(?:종목(?:명)?|코인)\\s*[:：]?\\s*([가-힣A-Za-z0-9&.\\- ]{1,30}?)(?=\\s*(?:\\(|\\[|,|/|\\n|수량|\\d|매수|매도|$))")
     private val BEFORE_CODE = Regex("([가-힣A-Za-z&.]{2,20})\\s*[(（]\\s*(?:\\d{6}|[A-Z]{1,10})\\s*[)）]")
@@ -60,6 +66,8 @@ object TradeAlertParser {
     private val TAGS = setOf("매수", "매도", "구매", "판매", "체결", "알림", "주문", "체결통보", "국내", "해외", "주식", "토스증권", "업비트", "빗썸", "알림톡")
 
     private fun num(s: String) = s.replace(",", "").toDoubleOrNull()
+
+    private fun isUsd(unit: String?) = unit != null && (unit.equals("USD", true) || unit == "달러" || unit == "$")
 
     /** Null unless [text] reads as one filled trade; [pkg] is the app it came from. */
     fun parse(text: String, pkg: String = ""): Alert? {
@@ -77,17 +85,22 @@ object TradeAlertParser {
             }
         } ?: return null
         var priceUnit: String? = null
+        // [INV-40] The fill's whole amount, kept apart so "체결금액 715,000원" is never read as the price.
+        val amountMatch = AMOUNT.find(t)
+        val amountSaid = amountMatch?.let { num(it.groupValues[1]) }?.takeIf { it > 0 }
+        val amountUnit = amountMatch?.groupValues?.getOrNull(2)?.takeIf { it.isNotEmpty() } ?: amountMatch?.value?.takeIf { it.contains('$') }?.let { "$" }
         val price = PRICE.firstNotNullOfOrNull { re ->
             re.findAll(t).firstNotNullOfOrNull { m ->
-                // A quantity is never its own price ("10주 … 10원" aside).
+                // A quantity is never its own price ("10주 … 10원" aside), nor is the fill's amount.
                 if (m.value.contains("수량")) return@firstNotNullOfOrNull null
+                if (amountMatch != null && m.range.first <= amountMatch.range.last && m.range.last >= amountMatch.range.first) return@firstNotNullOfOrNull null
                 priceUnit = m.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() } ?: if (m.value.contains('$')) "$" else null
                 num(m.groupValues[1])?.takeIf { it > 0 }
             }
         } ?: 0.0
         val coinCode = CODE_COIN.find(t)?.let { m -> m.groupValues[1].ifEmpty { m.groupValues[2] } }
             ?: unitWord?.takeIf { it.length >= 2 && it.all { c -> c.isUpperCase() || c.isDigit() } && it != "KRW" && it != "USD" }
-        val usd = priceUnit?.let { it.equals("USD", true) || it == "달러" || it == "$" } == true
+        val usd = (priceUnit ?: amountUnit.takeIf { price == 0.0 })?.let { it.equals("USD", true) || it == "달러" || it == "$" } == true
         val market = when {
             coinApp || coinCode != null || unitWord == "개" -> Market.CRYPTO
             usd -> Market.US_STOCK
@@ -104,6 +117,12 @@ object TradeAlertParser {
             ?: BEFORE_SIDE.find(t)?.groupValues?.get(1)?.takeIf { it !in TAGS })
             ?.trim()?.removeSuffix("이")?.takeIf { it.isNotBlank() && it != code }.orEmpty()
         if (code.isEmpty() && name.isEmpty()) return null
-        return Alert(if (buy) Side.BUY else Side.SELL, code, name, qty, price, market)
+        // [INV-40] 409 A: a notification with the amount but no price gives 금액 ÷ 수량; a dollar amount beside a won
+        // price (or the other way) is not compared.
+        val sameMoney = amountSaid != null && (amountUnit == null || priceUnit == null || isUsd(amountUnit) == isUsd(priceUnit))
+        val fromAmount = price == 0.0 && amountSaid != null
+        val p = if (fromAmount) FillMath.round(amountSaid!! / qty) else price
+        return Alert(if (buy) Side.BUY else Side.SELL, code, name, qty, p, market,
+            amount = if (sameMoney || fromAmount) amountSaid ?: 0.0 else 0.0, priceFromAmount = fromAmount)
     }
 }

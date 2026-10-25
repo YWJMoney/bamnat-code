@@ -46,6 +46,8 @@ data class SharedSetup(
     val by: List<String> = emptyList(),
     /** [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from two networks in two different months. */
     val checkedLong: Boolean = false,
+    /** [PLAZA-05] 지지 (결정 D74): phones using it plus people behind it, less 달라요; the most of a department is its 대표 판. */
+    val support: Int = 0,
 ) {
     val hasPay: Boolean get() = runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
 }
@@ -158,6 +160,8 @@ data class RuleVersion(
     val post: String?,
     val added: List<String>,
     val removed: List<String>,
+    /** [PLAZA-05] That version's company settings file, to compare with or go back to; null from an older server. */
+    val body: String? = null,
 )
 
 /** [PLZ-14] A market rate someone sent: per [unit] day, hour or month, with its 맞아요·달라요. */
@@ -392,6 +396,7 @@ class CompanyClient(
                     checked = s.optInt("checked"),
                     by = s.optJSONArray("by").strings(),
                     checkedLong = s.optBoolean("checkedLong"),
+                    support = s.optInt("support"),
                 )
             },
         )
@@ -484,7 +489,8 @@ class CompanyClient(
         request("GET", "/api/companies/$company/history?setup=$setup").optJSONArray("versions").objects().map { v ->
             val ch = v.optJSONObject("changes")
             RuleVersion(v.getInt("version"), v.optString("setup"), v.optString("source"), Instant.parse(v.getString("adoptedAt")), v.optString("state"),
-                v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines())
+                v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines(),
+                v.optJSONObject("body")?.toString())
         }
     }
 

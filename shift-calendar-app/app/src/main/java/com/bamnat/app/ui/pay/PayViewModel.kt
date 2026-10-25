@@ -84,7 +84,7 @@ class PayViewModel(
     val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
     val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     /** [LEAVE-01] The calendar's 연차 원장 today. */
     val leave: StateFlow<com.bamnat.core.leave.LeaveSummary?> =
         scope.leave.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -135,9 +135,13 @@ class PayViewModel(
     }
 
     // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
-    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false) = viewModelScope.launch {
+    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
+        // [PAYS-15] Not when the screen asks itself right away (PlazaAskDialog after a payslip): one ask, not two.
+        if (invite && container.companyStore.applied.value == null) _shareMoment.value =
+            if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
         read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
@@ -148,6 +152,34 @@ class PayViewModel(
     }
 
     fun reset() = viewModelScope.launch { payStore.save(null) }
+
+    private val _shareMoment = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.ShareMoment?>(null)
+    /** [PLAZA-04] The pay was just set up by hand (or from a payslip): the plaza invitation shows once on the pay screen. */
+    val shareMoment: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.ui.company.ShareMoment?> = _shareMoment
+
+    fun shareShown() {
+        _shareMoment.value = null
+    }
+
+    /** [TAX-02] The calendar's pay records, so 세후 예상 under the total follows a newly read or typed month. */
+    val payRecords = container.tax(calendarId).observations
+
+    /** [TAX-02] 세후 예상 for [gross] (프로); null when locked. */
+    suspend fun takeHome(profile: PayProfile, gross: Long, month: java.time.YearMonth) =
+        com.bamnat.app.tax.TakeHomeLine.forecast(container, calendarId, profile, gross, month)
+
+    /**
+     * [TAX-04][READ-08] A payslip the user agreed to (명세서 사진으로 채우기, 맞춰 보기): its 지급 총액 and 실수령 (worked out from
+     * 공제 when the photo cut the bottom line) are that month's pay record for the tax estimate (묶음 W). Nothing without a 실수령.
+     */
+    fun observePayslip(read: com.bamnat.core.pay.PayslipRead, fallback: java.time.YearMonth) {
+        val net = read.net?.takeIf { it > 0 } ?: return
+        val month = read.month ?: fallback
+        viewModelScope.launch {
+            container.tax(calendarId).save(com.bamnat.core.tax.PayObservation(payMonth = month, net = net, gross = read.gross,
+                date = month.atEndOfMonth(), source = com.bamnat.core.tax.PayObservation.Source.PAYSLIP))
+        }
+    }
 
     fun undo() = viewModelScope.launch { payStore.undo() }
 
@@ -404,6 +436,26 @@ class PayViewModel(
         }
         container.telemetry.event("pay_payslip_match", if (match.matched) "matched" else "gap")
         return match
+    }
+
+    /**
+     * [PAYS-14] 명세서(+회사 계산 방법 사진) → 회사 규칙 on top of [profile], worked out off the main thread (D68: on the phone
+     * only). The payslip's own month, else last month. Nothing is saved until [applySlipRules] or a first [saveSetup].
+     */
+    suspend fun slipRules(profile: PayProfile, snapshot: ScheduleSnapshot, read: com.bamnat.core.pay.PayslipRead,
+                          rules: List<com.bamnat.core.pay.RuleChange>): com.bamnat.core.pay.SlipRulesResult? {
+        val month = read.month ?: YearMonth.from(Today.date()).minusMonths(1)
+        val result = withContext(Dispatchers.Default) {
+            com.bamnat.core.pay.SlipRules.infer(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month,
+                snapshot.resolver::resolve, read, ruleChanges = rules, calculator = calculator)
+        }
+        container.telemetry.event("pay_slip_rules", when { result == null -> "none"; result.close -> "close"; else -> "gap" })
+        return result
+    }
+
+    /** [PAYS-14] Keeps the rules a payslip pointed to; one tap on 되돌리기 brings the old ones back. */
+    fun applySlipRules(result: com.bamnat.core.pay.SlipRulesResult) = update { p ->
+        result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames))
     }
 
     // ---- [PAYS-07] the company's own items ----
