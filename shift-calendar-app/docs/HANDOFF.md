@@ -444,6 +444,17 @@ shift-calendar-app/
 - **알람 화면** `RingingScreen`: 480dp 아래로 낮은 가로 화면은 시계·버튼을 옆으로 나란히(전에는 버튼이 시계를 덮었음), 세로는 글이 길면 스크롤.
 - 시험 `AlarmButtonsAllOffTest`(12개, 끝에서 끝), `M7AppTest`(단추 3개), 사진 `ABScreenshotTest` 960~969. 결정 AB-1~AB-4: `계획/1.25-AB-개발계획.md`.
 
+### 6-17. 친구 초대: N명이 쓸 때마다 초대한 사람에게 프로 (1.26.0 묶음 AE, INVITE-01~08)
+
+- **규칙(서버가 정하고 관리자 앱이 바꿈)** `server/company-worker/src/index.js`의 `// AE 1.26` 블록(`INVITE`, `inviteSettings`, `invites()`, `settleInvites`, `inviteSettingsRoute`, `invitePage`, `rewardCounts`). 관리자 앱 설정 › '친구 초대'(`GET/POST /api/admin/settings/invite`, `settings` 표의 `invite_friends`·`invite_days`·`invite_months`·`invite_cap_months`): 기본 **친구 5명 · 사용 기간 7일 · 1개월 · 상한 없음(0)**, 범위 1~50명·1~60일·1~12개월·0~120개월(1년). 앱은 `GET /api/invites/rules`(설치 번호 없이)와 `GET /api/invites`로 규칙을 읽어 보여 주기만 해요.
+- **'사용'의 뜻(결정 D82)**: 친구가 첫 설정 뒤 '알리기'(또는 설치 7일 안 '초대 코드 넣기')로 `POST /api/invites/use`한 날이 첫날(`first_day`, 한국 날짜, **서버 시계**). 앱은 앱을 연 날마다 한 번 `POST /api/invites/seen`을 보내고, 첫날부터 `days`일 이상 지난 날에 오면 `qualified`(채움). 채운 친구가 `friends`명 모일 때마다 오래된 순으로 묶어 `credited`(묶음 = `rewards` 한 줄 id, `rule_id='invite'`, `months`개월, `paid`, 구독 중이면 `deferFor`), 상한을 넘으면 `capped`(친구만 셈). 기준을 낮추면 저장할 때 이미 채운 친구로 바로 지급(`settleAllInvites`). (사용 기간+30)일 안에 안 오면 `expired`. 같은 휴대폰 표시는 한 번(`invite_uses.phone UNIQUE`), 자기 초대(같은 설치·같은 휴대폰 표시) 막음. 회사 방식 보상 상한(`payEach`)은 invite를 세지 않아요. 출시 전에는 기존 `stack()`이 기다림(`waitingMonths`)으로 둬요.
+- **링크** `GET /i/<코드>`: DB를 보지 않는 안내 페이지 → `storeLink()`(Play `details?id=com.bamnat.app&referrer=utm_source=bamnat_invite&utm_content=<코드>`). 아무것도 저장하지 않아 코드가 있는지 알려 주지 않아요.
+- **앱** `tier/Invites.kt`: `InviteApi`/`InviteClient`, `PhoneMark`(SSAID → SHA-256, `HardwareIds` 억제는 여기 한 곳), `PlayReferrer`(Install Referrer 2.2, 한 번 읽고 `endConnection`), `InviteStore`(설정 파일 `invite`, 백업 안 함: 설치에 묶인 서버 상태), `Invites.sync()`는 `afterFirstFrame()`의 한 번짜리 launch와 `syncPro()`에서만(새 시작 작업 없음, `StartupBudgetTest`). 화면 `ui/pro/InviteCard.kt`: 프로 화면 '친구 초대' 카드(한 줄 동의 `INVITE_MAKE_CONSENT` → 공유 시트), 달력 `NoticeStack`의 `inviteArrival`(referrer 코드가 있을 때 '알리기·괜찮아요'), 설정 '더 보기' 줄 '친구 초대'. core `tier/InviteRules`(코드·referrer 읽기·7일·문구).
+- **앱 화면**: 프로 화면 '친구 초대' 카드에 지금 규칙(`InviteTerms.words()`), 진행 '3/5명 · 2명은 사용 기간 채우는 중'(`InviteRules.progress`), '초대한 친구 n명 · 프로 n개월'. 친구 쪽 문구는 '알린 날부터 7일이 지난 뒤 앱을 다시 열면 초대한 분의 친구 수에 들어가요'.
+- **복구 코드**로 이용권을 옮기면 초대 코드와 초대한 친구도 같이 옮겨요(`money()` claim). **모두 지우기**는 초대 코드·사용 기간을 못 채운 기록을 지우고, 채운 기록은 설치 연결을 끊고 휴대폰 표시만 1년(처리방침 3.0 1-12).
+- 관리자 앱: 설정 › '친구 초대' 카드(스테퍼 넷), 보상 화면의 invite 보상은 '친구 초대'(메모 '친구 초대 5명'), 위에 '친구 초대' 요약(코드 수·보상 받음·다음 보상 기다림·상한 넘음·사용 기간 채우는 중·끝남·지금 규칙·최근 30일 막은 이유·친구가 많이 온 코드 5개).
+- 시험: 서버 `test/invite.test.mjs`(12), `test/ui/admin-ui.test.mjs` INVITE-06·INVITE-08, 앱 `tier/InviteAppTest`(실제 Node 서버에서 관리자 로그인으로 규칙 2명·7일 저장, `local-server.mjs --test-clock`으로 서버 시계를 6일·7일 넘김), core `InviteRulesTest`, 사진 `AEScreenshotTest` 1040~1056, `LegalPagesTest.thePrivacyPolicyCoversInvites`. 조사·결정: `research/1.26-AE-초대-조사.md`, `계획/1.26-AE-개발계획.md`.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

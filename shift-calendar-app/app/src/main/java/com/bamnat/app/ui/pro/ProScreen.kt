@@ -215,6 +215,9 @@ fun ProScreen(onBack: () -> Unit) {
 
                 DayPassButton(gate)
 
+                // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 and 초대 코드 넣기.
+                InviteCard(c, onMessage = { message = it })
+
                 if (c.tierApi.enabled) {
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
                     AdminCard(c, pro, onMessage = { message = it })
@@ -330,10 +333,10 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     var code by rememberSaveable { mutableStateOf("") }
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되면 프로 이용권을 드려요. 받을수록 기간이 이어져요.",
+        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
-            Text("• 프로 ${item.months}개월 (${if (item.why == "rule") "회사 방식 채택" else "제안 반영"}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
+            Text("• 프로 ${item.months}개월 (${passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
                 style = MaterialTheme.typography.bodyMedium)
         }
         passes?.until?.let { Text("이용권은 ${dateWords(it.atZone(zone).toLocalDate())}까지예요.", style = MaterialTheme.typography.bodyMedium) }
@@ -433,6 +436,14 @@ private suspend fun runServer(onMessage: (String) -> Unit, block: suspend () -> 
     } catch (e: Exception) {
         onMessage(serverProblem("bad_response"))
     }
+}
+
+/** [MON-08][INVITE-05] Why a reward pass was given, as the server names it. */
+fun passWhy(why: String): String = when (why) {
+    "rule" -> "회사 방식 채택"
+    "rate" -> "임금표 채택"
+    "invite" -> "친구 초대"
+    else -> "제안 반영"
 }
 
 /** What to tell the user about a refusal from the company server here. */

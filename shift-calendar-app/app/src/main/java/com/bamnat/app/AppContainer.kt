@@ -300,6 +300,16 @@ class AppContainer(context: Context) {
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
 
+    // AE 1.26 [INVITE-02][INVITE-03] 친구 초대: built on first use; screenshots and tests put fakes in place of the
+    // server, Play's referrer and the phone mark.
+    var inviteApi: com.bamnat.app.tier.InviteApi = com.bamnat.app.tier.InviteClient()
+    var referrerSource: com.bamnat.app.tier.ReferrerSource = com.bamnat.app.tier.PlayReferrer
+    var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
+    val invites by lazy {
+        com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
+            setupDone = { settingsRepository.current.workStyle != null }, installedAt = { installedAt }, referrer = { referrerSource })
+    }
+
     /**
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
      * passes and admin link when it has any reason to, and Play's purchases; then the gate again.
@@ -313,6 +323,8 @@ class AppContainer(context: Context) {
         }
         runCatching { syncPasses(force) }
         runCatching { sendConsent() }
+        // [INVITE-03] A friend's next day and the inviter's counts; not before the calendar has drawn (afterFirstFrame).
+        runCatching { if (laterStarted.get()) invites.sync(force) }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
         if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
@@ -547,6 +559,8 @@ class AppContainer(context: Context) {
         if (!laterStarted.compareAndSet(false, true)) return
         keptBeforeLater = kept.toList()
         startLater()
+        // [INVITE-03] Once, not kept: after the first setup Play's install referrer is read here (and nowhere at the start).
+        appScope.launch { runCatching { invites.sync() } }
     }
 
     /** [PERF-03] What [start] had running when the waiting jobs started, for the startup budget test. */

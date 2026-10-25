@@ -527,6 +527,9 @@ object FeatureRegistry {
         f("data.movePhone", "BAK-01", "새 휴대폰으로 옮기기", "기록과 모든 설정을 백업 파일 하나로 옮겨요. 이 휴대폰에만 남는 것(지도 위치·알람 소리 등)도 알려 줘요",
             ALL, "설정 › 데이터 › 새 휴대폰으로 옮기기", at(Place.SETTINGS_DATA, "새 휴대폰으로 옮기기"), "새 휴대폰", "기기 변경", "옮기기", "모든 설정",
             under = "data.backup"),
+        // 1.26 묶음 AE (계획/1.26-AE-개발계획.md 424·425).
+        f("pro.invite", "INVITE-02", "친구 초대", "초대 링크로 친구가 밤낮을 깔고 7일 넘게 쓰면 한 명, 5명마다 나에게 프로 1개월(운영자가 정한 규칙, 상한 없음). 받은 초대 코드는 설치 7일 안에 넣어요",
+            ALL, "설정 › 프로 › 친구 초대", at(Place.PRO), "초대", "친구 초대", "추천", "초대 코드", "초대 링크", "프로 한 달", "공짜 프로"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

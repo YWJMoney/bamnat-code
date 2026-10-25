@@ -216,6 +216,9 @@ dependencies {
     // 25.3.0 and later are built with Kotlin 2.3, which this project's Kotlin 2.1 cannot read: raise both together.
     implementation("com.google.android.gms:play-services-ads:25.2.0")
     implementation("com.google.android.ump:user-messaging-platform:4.0.0")
+    // [INVITE-03] 친구 초대: the code an invite link put in Play's install referrer, read once after the first setup.
+    // 8 KB, no dependencies; adds one normal permission (BIND_GET_INSTALL_REFERRER_SERVICE, 처리방침 4항).
+    implementation("com.android.installreferrer:installreferrer:2.2")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)

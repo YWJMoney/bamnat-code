@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
+        Release(37, "1.26.0", listOf(
+            // [INVITE-02][INVITE-03] Bundle AE.
+            Line("설정 › 프로 › ‘친구 초대’로 링크를 보내요. 깐 친구 5명이 7일 넘게 쓸 때마다 나에게 프로 1개월", "pro.invite"),
+        )),
         // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
         Release(36, "1.25.0", listOf(
             // [READ-02][READ-05][READ-06] Bundle U.
