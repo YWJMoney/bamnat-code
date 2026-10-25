@@ -87,6 +87,8 @@ val TOOL_KEYS = setOf(
     "invest.alarms", "invest.stats", "invest.records", "invest.overview",
     // [CUST-01] 화면 꾸미기 over the calendar (CalendarScreen).
     "customize",
+    // [TIER-07] 1.25 묶음 Y: 돈 탭의 월간 보고서(MoneyScreen), 프로 기능 모아보기에서 열어요.
+    "report",
 )
 
 /**

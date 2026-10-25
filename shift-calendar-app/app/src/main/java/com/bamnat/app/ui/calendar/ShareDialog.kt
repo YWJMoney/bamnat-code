@@ -423,7 +423,7 @@ private fun LinkChips(links: List<ShareLinkState?>, slot: Int, open: Boolean, on
             }
             val free = links.withIndex().any { (i, l) -> l == null && i + 1 != slot }
             if (free) FilterChip(selected = false, onClick = onNew, label = { Text("+ 새 링크") },
-                trailingIcon = { com.bamnat.app.ui.money.ProPill(locked = !open) }) // [TIER-06]
+                trailingIcon = if (open) null else ({ com.bamnat.app.ui.money.ProPill(locked = true) })) // [TIER-06] 여러 링크의 '프로'는 기간 줄에 늘 보여요
         }
         Text(
             if (open) "보낼 사람마다 링크를 따로 만들면 보여 줄 것과 기간을 따로 정하고, 하나만 끊을 수도 있어요. 달력마다 ${ShareLinkKey.MAX}개까지예요."

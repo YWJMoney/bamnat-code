@@ -173,7 +173,10 @@ private fun Block(label: String, color: Color, tall: Boolean = false) {
 @Composable
 fun FitMore(others: List<OtherRow>, onAdd: (id: String, added: Boolean) -> Unit, title: String = "이 달력에 안 맞아 숨긴 기능") {
     if (others.isEmpty()) return
-    var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(others.any { it.added }) }
+    // Open each time the sheet opens with something added (the added list can come a moment after the sheet), so it is in sight.
+    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val anyAdded = others.any { it.added }
+    androidx.compose.runtime.LaunchedEffect(anyAdded) { if (anyAdded) open = true }
     TextButton(onClick = { open = !open }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("$title ${others.size}개 · ${if (open) "접기" else "더 보기"}", modifier = Modifier.weight(1f))
         Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null)

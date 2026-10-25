@@ -59,11 +59,13 @@ class YScreenshotTest : ScreenshotBase() {
         assertTrue(FitTable.visible(FitSurface.CALENDAR_TOOLS, id, WorkStyle.INVEST, added))
         // The sheet shows it among the tools now, and after it is closed and opened again.
         val label = mapOf("pattern" to "근무 주기 설정", "typeMonth" to "이번 달 전부 넣기", "receive" to "동료 근무표 받기", "teams" to "모든 조 보기").getValue(id)
-        back()
+        // Closed and opened again (the system back here would not reach the sheet's own window).
+        tap(180f, 60f)
+        assertFalse(shows("달력 도구", exact = true))
         tools()
         assertTrue(shows(label, exact = true))
-        // The sheet fits the screen, so it is not scrolled (a swipe would move the sheet itself).
-        assertTrue("더 보기 stays open on what was added", shows("빼기", exact = true))
+        // 더 보기 opens by itself on what was added (its rows may sit below the fold; a swipe would move the sheet).
+        assertTrue("더 보기 stays open on what was added", shows("이 달력에 안 맞아 숨긴 도구 3개 · 접기", exact = true))
     })
 
     @Test fun investCustomizeHasNoShiftParts() = shoot("892_y_invest_customize", FOLDED, style(WorkStyle.INVEST) {
