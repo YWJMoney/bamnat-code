@@ -117,6 +117,11 @@ private fun WorkPage(
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
             NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
         }
+        HorizontalDivider()
+        // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
+        NavRow(SETUP_AGAIN_ROW, "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)
+        }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
     WorkTools(work.workStyle)
@@ -890,3 +895,6 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
+
+/** [PLAZA-06] The row's name, for 설정 찾기 and the tests. */
+const val SETUP_AGAIN_ROW = "처음 설정 다시 받기"

@@ -201,6 +201,8 @@ class AppContainer(context: Context) {
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
+    /** [PLAZA-06] 처음 설정 다시 받기: its own draft, so the calendar in use is untouched until it is saved. */
+    val againSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "again_setup_draft.json")) }
     val firstSetup by lazy {
         com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyShare }, { companyStore })
     }

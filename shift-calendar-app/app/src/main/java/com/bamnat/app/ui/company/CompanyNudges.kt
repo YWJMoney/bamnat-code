@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -95,7 +96,8 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
     val draft = invite
     val asked = askVote
     when {
-        draft != null -> InviteCard(draft, rewardShort(terms), onShare = onShare, onLater = vm::closeInvite)
+        draft != null -> InviteCard(draft, rewardShort(terms), onShare = onShare, onLater = { vm.closeInvite() }, onNever = { vm.closeInvite(never = true) },
+            preview = vm.preview.collectAsStateWithLifecycle().value, onPreview = vm::loadPreview)
         asked != null -> VoteCard(asked, onRight = { sheet = asked to true }, onWrong = { sheet = asked to false }, onLater = vm::later)
         thanked != null -> SoftCard(highlighted = true) {
             Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -122,23 +124,52 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
     }
 }
 
+/**
+ * The invitation to share what was set up by hand. [PLAZA-04] With no company name (a setup made from scratch) it asks
+ * in [com.bamnat.core.plaza.ShareAsk.Moment.SETUP]'s words; "보낼 내용 보기" shows what would go, without amounts, and
+ * "다음에" waits longer each time while "그만 볼게요" ends it.
+ */
 @Composable
-private fun InviteCard(draft: CompanyDraft, reward: String?, onShare: () -> Unit, onLater: () -> Unit) {
+internal fun InviteCard(
+    draft: CompanyDraft,
+    reward: String?,
+    onShare: () -> Unit,
+    onLater: () -> Unit,
+    onNever: () -> Unit = onLater,
+    preview: List<String> = emptyList(),
+    onPreview: () -> Unit = {},
+) {
+    var showing by rememberSaveable { mutableStateOf(false) }
+    val named = draft.company.isNotBlank()
     SoftCard(highlighted = true) {
-        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (draft.fix) "고친 설정, 알려 주실래요? 🙏" else "${draft.company}의 첫 번째 길잡이가 되어 주실래요? 🧭",
+                    when {
+                        draft.fix -> "고친 설정, 알려 주실래요? 🙏"
+                        named -> "${draft.company}의 첫 번째 길잡이가 되어 주실래요? 🧭"
+                        else -> com.bamnat.core.plaza.ShareAsk.Moment.SETUP.title
+                    },
                     style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(top = 8.dp),
                 )
-                IconButton(onClick = onLater) { Icon(Icons.Filled.Close, "나중에") }
+                IconButton(onClick = onLater) { Icon(Icons.Filled.Close, "다음에") }
             }
             Text(
-                if (draft.fix) "맞게 고친 설정을 보내 주시면 ${draft.company} 설정이 바로잡혀요. 금액은 보내지 않아요."
-                else "직접 맞춘 설정을 금액 없이 나눠 주시면, 같은 회사 분들은 1분이면 설정이 끝나요.",
+                when {
+                    draft.fix -> "맞게 고친 설정을 보내 주시면 ${draft.company} 설정이 바로잡혀요. 금액은 보내지 않아요."
+                    named -> "직접 맞춘 설정을 금액 없이 나눠 주시면, 같은 회사 분들은 1분이면 설정이 끝나요."
+                    else -> "회사 이름만 적어 금액 없이 나눠 주시면, 같은 회사 분들은 회사를 고르기만 하면 설정이 끝나요. 많은 분이 참여할수록 밤낮이 더 정확해져요."
+                },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 12.dp),
             )
+            if (showing) {
+                Column(Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (preview.isEmpty()) Text("불러오는 중…", style = MaterialTheme.typography.bodySmall)
+                    preview.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
+                    Text("금액·이름·연락처는 가지 않아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
@@ -146,7 +177,27 @@ private fun InviteCard(draft: CompanyDraft, reward: String?, onShare: () -> Unit
                 reward?.let { RewardPill(it, Modifier.weight(1f, fill = false).padding(end = 8.dp)) }
                 Button(onClick = onShare) { Text(if (draft.fix) "보내기" else "나눠 볼게요") }
             }
+            Row {
+                if (!showing) TextButton(onClick = { showing = true; onPreview() }) { Text("보낼 내용 보기") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onLater) { Text("다음에") }
+                TextButton(onClick = onNever) { Text("그만 볼게요", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
         }
+    }
+}
+
+/** [PLAZA-04] The invitation on the calendar, right after a setup made by hand; draws nothing when it is not due. */
+@Composable
+fun ShareInviteNotice(modifier: Modifier = Modifier) {
+    val vm = com.bamnat.app.ui.appViewModel { CompanyNudgeViewModel(it) }
+    if (!vm.enabled) return
+    val draft = vm.invite.collectAsStateWithLifecycle().value ?: return
+    val terms by vm.terms.collectAsStateWithLifecycle()
+    Box(modifier) {
+        InviteCard(draft, rewardShort(terms), onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) },
+            onLater = { vm.closeInvite() }, onNever = { vm.closeInvite(never = true) },
+            preview = vm.preview.collectAsStateWithLifecycle().value, onPreview = vm::loadPreview)
     }
 }
 

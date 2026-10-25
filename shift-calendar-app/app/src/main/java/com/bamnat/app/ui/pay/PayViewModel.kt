@@ -138,6 +138,9 @@ class PayViewModel(
     fun saveSetup(profile: PayProfile, fromSlip: Boolean = false) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
+        if (container.companyStore.applied.value == null) _shareMoment.value =
+            if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
         read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
@@ -148,6 +151,14 @@ class PayViewModel(
     }
 
     fun reset() = viewModelScope.launch { payStore.save(null) }
+
+    private val _shareMoment = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.ShareMoment?>(null)
+    /** [PLAZA-04] The pay was just set up by hand (or from a payslip): the plaza invitation shows once on the pay screen. */
+    val shareMoment: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.ui.company.ShareMoment?> = _shareMoment
+
+    fun shareShown() {
+        _shareMoment.value = null
+    }
 
     fun undo() = viewModelScope.launch { payStore.undo() }
 

@@ -1164,6 +1164,10 @@ private fun HelpHome(
                 Spacer(Modifier.width(8.dp))
                 Text(if (vm.online) "문의하기" else "메일로 문의하기")
             }
+            // [PLAZA-06] U25-나: the first setup, skipped or rushed, is one tap away here too.
+            TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN) }, modifier = Modifier.fillMaxWidth()) {
+                Text("처음 설정을 놓치셨나요? 처음 설정 다시 받기")
+            }
         }
         draft?.let { d ->
             DraftLine("쓰던 문의가 있어요: " + d.text.lineSequence().first().take(24), action = "이어 쓰기",

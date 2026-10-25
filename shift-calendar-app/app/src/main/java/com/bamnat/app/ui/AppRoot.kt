@@ -217,6 +217,8 @@ private object Routes {
     const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}"
     const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
     const val COMPANY_REPORT = "company_report"
+    /** [PLAZA-06] 처음 설정 다시 받기. */
+    const val SETUP_AGAIN = "setup_again"
     const val COMPANY_SENT = "company_sent"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
@@ -406,6 +408,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.GROUP -> { nav.navigate(Routes.SHARE_GROUP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -756,6 +760,13 @@ private fun AppNavHost(
                 onOpenCombined = { nav.navigate(Routes.COMBINED) { launchSingleTop = true } },
                 onFillMonth = { m -> nav.navigate(Routes.dutyRoster(m)) { launchSingleTop = true } },
             )
+        }
+        // [PLAZA-06] U25-나: the first setup again, in its own draft; done or given up, back where the user was.
+        composable(Routes.SETUP_AGAIN) {
+            val vm = appViewModel(key = "setup_again") { SetupViewModel(it, again = true) }
+            val done by vm.done.collectAsStateWithLifecycle()
+            LaunchedEffect(done) { if (done) nav.popFrom(Routes.SETUP_AGAIN) }
+            SetupHost(vm)
         }
         composable(Routes.COMBINED) { com.bamnat.app.ui.calendar.CombinedScreen(onBack = { nav.popFrom(Routes.COMBINED) }) }
         composable(Routes.CALENDAR_SETUP, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->

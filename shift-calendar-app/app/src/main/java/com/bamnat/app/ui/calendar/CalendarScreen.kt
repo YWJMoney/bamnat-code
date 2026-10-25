@@ -1049,6 +1049,10 @@ fun CalendarScreen(
                     )
                 }
             })
+            // [PLAZA-04] Right after a setup made by hand: put it on the plaza for coworkers (14·30·90일 간격, 그만 볼게요).
+            if (paint == null && viewingReceived == null) add(Notice("plazaShare", "광장에 올리기") {
+                com.bamnat.app.ui.company.ShareInviteNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             if (guideHere) add(Notice("guide", "오늘의 팁") {

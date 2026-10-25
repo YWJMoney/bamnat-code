@@ -419,6 +419,9 @@ private fun PayResult(
         }
 
         SectionCard(title = "내 급여 값") {
+            // [PLAZA-04] Pay set up by hand a moment ago: offered to coworkers once, with the plaza's spacing after "다음에".
+            val moment by vm.shareMoment.collectAsStateWithLifecycle()
+            moment?.let { m -> com.bamnat.app.ui.company.ShareWayCard(m, onShare = onShareWay, modifier = Modifier.padding(vertical = 8.dp), onClosed = vm::shareShown) }
             // [PAYS-07][PAYS-09] What was just made, and then the invitation to share the company's way.
             justMade?.let { made ->
                 MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null)

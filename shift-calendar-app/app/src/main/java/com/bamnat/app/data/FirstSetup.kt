@@ -59,9 +59,13 @@ class FirstSetup(
             // [COMM-03] 맞았어요·달라요 is asked about the company's setup in use.
             store.setApplied(AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Today.instant()))
             store.setDraft(null)
+            store.setHandMade(false)
         } else if (marked.companyName.isNotBlank()) {
             // [COMM-02] Set up by hand under a company's name: the user is invited to share it later.
             store.setDraft(CompanyDraft(marked.companyName.trim().take(40)))
+        } else if (source == null) {
+            // [PLAZA-04] By hand with no company at all: invited too, the company name asked when they share (U2, U26).
+            store.setHandMade(true)
         }
         if (pendingPay) store.pendingPay = source!!.text
         settings.update { it.copy(workStyle = style, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }

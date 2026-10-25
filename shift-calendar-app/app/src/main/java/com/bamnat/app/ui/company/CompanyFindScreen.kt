@@ -152,7 +152,7 @@ fun CompanyFindScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { vm.query.value = it.take(40) },
-                    placeholder = { Text("회사 이름 (예: 예시정밀)") },
+                    placeholder = { Text("회사 이름이나 초성 (예: 예시정밀, ㅇㅅㅈㅁ)") },
                     leadingIcon = { Icon(Icons.Outlined.Search, null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) IconButton(onClick = { vm.query.value = "" }) { Icon(Icons.Filled.Close, "지우기") }
@@ -179,6 +179,11 @@ fun CompanyFindScreen(
                             NotFound(r.query, rewardLine(terms), ready) { byHand(r.query) }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // [PLAZA-03] 초성 찾기 only offers companies whose rule is in use, so a guess never leads to an empty page.
+                                if (com.bamnat.core.plaza.Choseong.isQuery(r.query)) {
+                                    Text("초성으로 찾았어요. 쓰는 설정이 있는 회사만 보여요.", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                                 r.hits.forEach { hit -> CompanyRow(hit) { keyboard?.hide(); onOpen(hit.id) } }
                                 TextButton(onClick = { byHand(r.query) }) {
                                     Text(if (ready) "여기 없어요. ‘${r.query}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query}’로 직접 설정할게요")
@@ -211,7 +216,7 @@ private fun HowItWorks() {
     SoftCard {
         Column(Modifier.padding(16.dp)) {
             Text("이렇게 끝나요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 6.dp))
-            HowStep(1, "회사 찾기", "띄어쓰기나 (주)는 빼고 적어도 찾아요")
+            HowStep(1, "회사 찾기", "띄어쓰기나 (주)는 빼고, 초성(ㅇㅅㅈㅁ)만 적어도 찾아요")
             HowStep(2, "오늘 근무 고르기", "같은 회사라도 조마다 순서가 달라서, 오늘이 어떤 근무인지만 골라요")
             HowStep(3, "내 기본급 넣기", "근무 시간, 연장·휴무일 근무, 가산 방식은 이미 들어 있어요")
         }
@@ -234,7 +239,7 @@ private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
                 Text(
                     listOfNotNull(
                         hit.alias?.let { "다른 이름 $it" },
-                        if (hit.adopted > 0) "채택된 설정 ${hit.adopted}개" else null,
+                        if (hit.adopted > 0) "쓰는 설정 ${hit.adopted}개" else null,
                         if (hit.pending > 0) "확인 중 ${hit.pending}개" else null,
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

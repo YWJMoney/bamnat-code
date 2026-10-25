@@ -55,14 +55,28 @@ class SetupViewModel(
      * calendar only. The app's settings, pay setup and company stay as they are.
      */
     val calendarId: String? = null,
+    /**
+     * [PLAZA-06] U25-나 처음 설정 다시 받기: the first setup's questions again, for someone who skipped them or wants a
+     * company's setup now. Answers wait in their own draft; leaving changes nothing, and saving applies them as the
+     * first setup would (from today on; past days and days changed by hand stay).
+     */
+    val again: Boolean = false,
 ) : ViewModel() {
-    private val store = if (calendarId != null) c.calendarSetupDrafts else c.setupDrafts
+    private val store = when {
+        calendarId != null -> c.calendarSetupDrafts
+        again -> c.againSetupDrafts
+        else -> c.setupDrafts
+    }
     private val current: SetupDraft get() = store.draft.value ?: SetupDraft()
 
     val draft: StateFlow<SetupDraft> = store.draft.map { it ?: SetupDraft() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, current)
 
     init {
+        if (again && store.draft.value == null) {
+            store.save(SetupDraft())
+            c.telemetry.event("setup_again")
+        }
         // A draft kept from an older build, or cut short, can sit on a step it no longer has.
         val d = current
         if (d.step !in d.steps) store.save(d.copy(step = d.steps.firstOrNull { !d.canLeave(it) } ?: SetupStep.SUMMARY))
@@ -159,7 +173,15 @@ class SetupViewModel(
     /** "나중에": the app opens on the calendar with a card to go on from here. */
     fun later() {
         c.telemetry.event("setup_later", current.step.name)
+        if (again) return cancelAgain()
         update { it.copy(later = true) }
+    }
+
+    /** [PLAZA-06] Leaves 처음 설정 다시 받기: its answers go, the calendar stays as it was. */
+    fun cancelAgain() {
+        if (!again) return
+        store.clear()
+        _done.value = true
     }
 
     // ---- 1. how the user works ----
@@ -595,6 +617,7 @@ class SetupViewModel(
         c.appScope.launch {
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
+                    if (again) { store.clear(); _done.value = true }
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)
                         d.source?.let { append('_').append(it.kind.name) }
