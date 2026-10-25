@@ -39,7 +39,8 @@ object TradeCapture {
         val repo = c.invest(calendarId)
         val pending = TradeAlerts.of(alert, app, postedAt)
         if (!repo.addAlert(pending)) return true
-        if (repo.alertAutoNow() && pending.price > 0) {
+        // [INV-40] A price that does not agree with the notification's own amount waits for a look.
+        if (repo.alertAutoNow() && pending.price > 0 && pending.checked != false) {
             repo.confirmAlert(pending)
             notice(c, calendarId, "${pending.title} ${pending.side.label} 적었어요", pending, "눌러서 고칠 수 있어요")
         } else {

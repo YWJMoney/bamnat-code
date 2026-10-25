@@ -85,7 +85,8 @@ class TradeAlertsTest {
         val a = com.bamnat.core.invest.TradeAlerts.add(emptyList(), pending(0))!!
         assertNull(com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000)))
         assertEquals(2, com.bamnat.core.invest.TradeAlerts.add(a, pending(60 * 60_000))!!.size)
-        assertEquals(2, com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000, 2.0))!!.size)
+        // [INV-40] 1.25 409 B (결정 D77): another quantity of the same order a minute later is a split fill, put together.
+        assertEquals(1, com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000, 2.0))!!.single().parts - 1)
     }
 
     @Test fun capped() {

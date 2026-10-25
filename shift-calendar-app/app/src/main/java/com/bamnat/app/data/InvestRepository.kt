@@ -134,6 +134,22 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode(pendingNow().filter { it.at != at })))
     }
 
+    /** [INV-40] 409 C: prices read from a 체결 내역 capture go on their waiting lines, which still wait for 확인 (결정 D37); fills with no line wait as new ones. */
+    suspend fun fillAlerts(matches: List<com.bamnat.core.invest.FillMatcher.Match>, extra: List<TradeAlerts.Pending>) = db.withTransaction {
+        var list = pendingNow()
+        matches.forEach { m -> list = TradeAlerts.fill(list, m.alert.at, m.price, m.amount) }
+        extra.forEach { p -> TradeAlerts.add(list, p)?.let { list = it } }
+        dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode(list)))
+    }
+
+    suspend fun alertsNow(): List<TradeAlerts.Pending> = pendingNow()
+
+    suspend fun restoreAlerts(list: List<TradeAlerts.Pending>) = dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode(list)))
+
+    /** [INV-40] The capture guide has been shown once. */
+    val fillGuideSeen: Flow<Boolean> = dao.observeSettings().map { l -> l.any { it.key == FILL_GUIDE_KEY && it.value == "true" } }
+    suspend fun setFillGuideSeen() = dao.upsertSetting(InvestSettingEntity(FILL_GUIDE_KEY, "true"))
+
     private suspend fun pendingNow() = TradeAlerts.decode(dao.allSettings().firstOrNull { it.key == TradeAlerts.KEY }?.value)
 
     /** [INV-32] A waiting alert written as a trade into the last used open account, fees suggested, and taken off the list. */
@@ -195,6 +211,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     }
 
     companion object {
+        /** [INV-40] The 체결 내역 capture guide was shown once. */
+        const val FILL_GUIDE_KEY = "fillGuide"
         private val opened = WeakHashMap<AppDatabase, InvestRepository>()
 
         /** One repository per open database, so every screen of a calendar reads the same flows. */
