@@ -214,7 +214,7 @@ fun ShareDialog(
                     Spacer(Modifier.width(6.dp))
                     Text("${month.year}년 PDF")
                 }
-                if (!pdfOpen) com.bamnat.app.ui.money.ProPill()
+                com.bamnat.app.ui.money.ProPill(locked = !pdfOpen) // [TIER-06]
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -272,7 +272,7 @@ fun ShareDialog(
                     FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro() else ttl = d },
                         label = { Text(ShareLinkPayload.ttlLabel(d)) })
                 }
-                if (!moreLinks) com.bamnat.app.ui.money.ProPill(Modifier.align(Alignment.CenterVertically))
+                com.bamnat.app.ui.money.ProPill(Modifier.align(Alignment.CenterVertically), locked = !moreLinks) // [TIER-06]
             }
             // [SHR-12] On by default: whoever got the link sees the calendar as it is now.
             PartRow("고치면 링크도 바로 바꾸기", (if (added) "이 달력을" else "내 달력을") + " 고치면 몇 초 뒤 링크에도 들어가요. 받은 사람 앱은 다음에 열 때 새로 받아요", auto) {
@@ -423,7 +423,7 @@ private fun LinkChips(links: List<ShareLinkState?>, slot: Int, open: Boolean, on
             }
             val free = links.withIndex().any { (i, l) -> l == null && i + 1 != slot }
             if (free) FilterChip(selected = false, onClick = onNew, label = { Text("+ 새 링크") },
-                trailingIcon = if (open) null else ({ com.bamnat.app.ui.money.ProPill() }))
+                trailingIcon = { com.bamnat.app.ui.money.ProPill(locked = !open) }) // [TIER-06]
         }
         Text(
             if (open) "보낼 사람마다 링크를 따로 만들면 보여 줄 것과 기간을 따로 정하고, 하나만 끊을 수도 있어요. 달력마다 ${ShareLinkKey.MAX}개까지예요."
@@ -448,7 +448,7 @@ private fun FeedRow(on: Boolean, open: Boolean, busy: Boolean, url: String?, onC
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("캘린더 구독 주소", style = MaterialTheme.typography.bodyLarge)
-                    if (!open) { Spacer(Modifier.width(6.dp)); com.bamnat.app.ui.money.ProPill() }
+                    Spacer(Modifier.width(6.dp)); com.bamnat.app.ui.money.ProPill(locked = !open) // [TIER-06]
                 }
                 Text("구글·아이폰·아웃룩 캘린더에 구독으로 넣으면 이 링크의 근무가 따라 바뀌어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

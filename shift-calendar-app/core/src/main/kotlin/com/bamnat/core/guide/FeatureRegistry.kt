@@ -477,6 +477,16 @@ object FeatureRegistry {
         f("pay.ruleBuilder", "INPUT-03", "회사 규칙 골라 담기", "대근·특근·토요일 근무가 기본급의 몇 %인지, 몇 시간 넘으면 얼마 더인지 눌러 고르면 한 문장으로 보여 주고 그대로 계산에 넣어요",
             PAID, "${tab(SHIFT)} › 이번 달 급여 › 회사 계산 방식 › 회사만의 규칙", at(Place.PAY), "회사 규칙", "규칙 조립", "대근 계산", "가산", "기본급의 %",
             "토요일 근무", "취업규칙", under = "pay.calc"),
+        // 1.25 묶음 Y: 프로 기능 모아보기 and the pro features that had no line here (계획/1.25-Y-개발계획.md 393).
+        f("pro.collection", "TIER-07", "프로 기능 모아보기", "프로 기능을 한 화면에 모아 이 달력에 맞는 것부터 보여 주고, 누르면 그 기능으로 바로 가요",
+            ALL, "설정 › 프로 › 프로 기능 모아보기", at(Place.PRO), "프로 기능", "모아보기", "유료 기능", "프로 표시", "프로 목록"),
+        f("pay.ruleImport", "PAYS-04", "임금 규칙 자동 인식", "회사 임금 규칙 글을 붙여 넣으면 대근·연장·야간 가산을 읽어 급여 규칙에 채워요",
+            PAID, "${tab(SHIFT)} › 이번 달 급여 › 회사 규칙 글로 채우기", at(Place.PAY), "규칙 인식", "임금 규칙", "취업규칙 붙여넣기", "자동 채우기",
+            under = "pay.calc"),
+        f("pay.bulkEdit", "PAYX-03", "값 일괄 적용", "기본급·시급 같은 값을 고른 기간에 한 번에 바꾸고, 연도별 인상으로 지난 급여를 다시 계산해요",
+            PAID, "${tab(SHIFT)} › 이번 달 급여 › 값 고치기 › 기간 지정", at(Place.PAY), "일괄 적용", "기간 지정", "인상 계산", "소급", under = "pay.calc"),
+        f("money.stats", "TIER-05", "돈 통계", "지난달과 비교, 분류별 지출, 쓰는 속도, 올해 흐름을 그림으로 보여 줘요",
+            ALL, "돈 관리 › 분석", at(Place.MONEY, "report"), "분석", "지출 통계", "분류별", "쓰는 속도", "올해 흐름"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

@@ -399,6 +399,8 @@ fun MoneyScreen(
     // [NAV-01] The same month as the calendar and 근무·급여.
     val month by vm.shownMonth.collectAsStateWithLifecycle()
     val page by vm.page.collectAsStateWithLifecycle()
+    // [TIER-07] 돈 통계 opened from 프로 기능 모아보기 or the help search: the 분석 page.
+    com.bamnat.app.ui.guide.FocusedTool("report", "money.stats") { vm.showPage(MoneyViewModel.Page.REPORT) }
     val view by vm.view.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf<MoneyKind?>(null) }

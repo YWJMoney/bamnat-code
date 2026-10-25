@@ -115,6 +115,9 @@ internal fun SwitchRow(
     warning: String? = null,
     fixLabel: String = "켜기",
     onFix: (() -> Unit)? = null,
+    /** [TIER-06] A pro feature: the 프로 badge beside the title, with a lock while it cannot be used. */
+    pro: Boolean = false,
+    proLocked: Boolean = false,
     onChange: (Boolean) -> Unit,
 ) {
     Column(Modifier.focusMark(title).fillMaxWidth()) {
@@ -127,8 +130,11 @@ internal fun SwitchRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge,
-                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
+                        color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (pro) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp), locked = proLocked)
+                }
                 subtitle?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

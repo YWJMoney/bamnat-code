@@ -100,6 +100,11 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
                 Icon(Icons.Outlined.Explore, null, tint = scheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(feature.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                // [TIER-06] A pro feature says so in the search too.
+                if (com.bamnat.core.guide.ProCatalog.isPro(feature.id)) {
+                    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+                    com.bamnat.app.ui.components.ProBadge(locked = com.bamnat.app.ui.pro.proFeatureOf(feature.id)?.let(gate::locked) == true)
+                }
             }
             Text(feature.what, style = MaterialTheme.typography.bodyMedium)
             Text("어디: ${feature.where}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
