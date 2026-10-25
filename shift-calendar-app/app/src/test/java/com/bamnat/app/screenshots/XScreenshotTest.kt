@@ -222,6 +222,12 @@ class XScreenshotTest : ScreenshotBase() {
         assertTrue(shows("초성으로 찾았어요. 쓰는 설정이 있는 회사만 보여요.", exact = true))
         assertTrue(shows("(주)예시정밀", exact = true))
         assertTrue(shows("쓰는 설정 1개", exact = false))
+        // [NAV-02] Back clears the search first and the screen stays (its 뒤로 is not called); the search again for the picture.
+        back()
+        assertEquals("", vm.query.value)
+        vm.query.value = "ㅇㅅㅈㅁ"
+        waitFor(400)
+        assertTrue(shows("(주)예시정밀", exact = true))
     }
 
     // ---- 388 [PLAZA-04] 광장에 올리기 권유 ----

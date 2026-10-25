@@ -87,12 +87,13 @@ class CompanyStore(context: Context) {
      * [PLAZA-04] When the invitation to share a hand-made setup may show again (epoch ms): "다음에" waits 14, then 30, then
      * 90 days ([com.bamnat.core.plaza.ShareAsk]); "그만 볼게요" ends it. A phone that closed it before 1.25 waits 14 days.
      */
-    private val _inviteDue = MutableStateFlow(
+    private val _inviteDue = MutableStateFlow(readInviteDue())
+
+    private fun readInviteDue(): Long =
         if (prefs.contains("invite_due") || !prefs.getBoolean("invite_closed", false)) prefs.getLong("invite_due", 0)
         else com.bamnat.core.plaza.ShareAsk.nextDue(1, com.bamnat.core.time.Today.millis()).also {
             prefs.edit().putLong("invite_due", it).putInt("invite_laters", 1).apply()
-        },
-    )
+        }
     val inviteDue: StateFlow<Long> = _inviteDue.asStateFlow()
     private val _inviteNever = MutableStateFlow(prefs.getBoolean("invite_never", false))
     val inviteNever: StateFlow<Boolean> = _inviteNever.asStateFlow()
@@ -127,7 +128,8 @@ class CompanyStore(context: Context) {
         _draft.value = readDraft()
         _pendingPay.value = prefs.getString("pending_pay", null)
         _plazaEntryClosed.value = prefs.getString("plaza_entry_closed", null)
-        _inviteClosed.value = prefs.getBoolean("invite_closed", false)
+        // [PLAZA-04] The invitation's own waits stay on the phone (X-D5); a 1.24 backup's 닫음 waits 14 days as on update.
+        _inviteDue.value = readInviteDue()
     }
 
     fun addSent(r: SentReport) = writeSent(listOf(r) + _sent.value.filter { it.id != r.id })

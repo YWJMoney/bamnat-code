@@ -108,6 +108,8 @@ fun CompanyBoardScreen(
     val diffs by vm.diffs.collectAsStateWithLifecycle()
     // [STAB-01] Read on the key's own frame, or half-built Korean letters double or drop.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+    // [NAV-02][PLAZA-03] Back first clears the search, as 메모·설정 do (1.25 Z), and only then leaves the screen.
+    androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) { vm.query.value = "" }
     val keyboard = LocalSoftwareKeyboardController.current
     val tab = if (adopted) chosen else voting
     val list = rememberLazyListState()
