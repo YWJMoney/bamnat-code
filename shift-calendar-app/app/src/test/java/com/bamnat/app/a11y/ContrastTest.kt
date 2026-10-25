@@ -102,6 +102,31 @@ class ContrastTest {
         assertEquals(emptyList<String>(), out)
     }
 
+    /**
+     * [VIS-06] 1.25 묶음 Y: the settings groups' colours. The icon on its circle 4.5:1, the circle and the left
+     * band 3:1 from the page they sit on (1.4.11), and the four kinds told apart from each other.
+     */
+    @Test fun settingsGroupColoursAreReadable() {
+        val out = mutableListOf<String>()
+        for ((theme, tones, page) in listOf(
+            Triple("light", com.bamnat.app.ui.theme.LightSettingsTones, LightColors.surface),
+            Triple("dark", com.bamnat.app.ui.theme.DarkSettingsTones, DarkColors.surface),
+        )) {
+            for (t in tones.all) {
+                if (ratio(t.content, t.container) < TEXT) out += "$theme ${t.name} icon %.2f".format(ratio(t.content, t.container))
+                if (ratio(t.band, page) < NON_TEXT) out += "$theme ${t.name} band %.2f".format(ratio(t.band, page))
+                if (ratio(t.content, page) < NON_TEXT) out += "$theme ${t.name} icon on page %.2f".format(ratio(t.content, page))
+            }
+            assertEquals("$theme four different families", 4, tones.all.map { it.band }.toSet().size)
+        }
+        assertEquals(emptyList<String>(), out)
+        // Groups of one kind share a colour, and the seven fall into all four kinds.
+        val kinds = com.bamnat.app.ui.settings.SettingsPage.entries.groupBy { it.kind }
+        assertEquals(4, kinds.size)
+        assertEquals(setOf(com.bamnat.app.ui.settings.SettingsPage.ALARM, com.bamnat.app.ui.settings.SettingsPage.NOTICES),
+            kinds[com.bamnat.app.ui.theme.SettingsKind.ALERT]?.toSet())
+    }
+
     @Test fun theRatioIsWcags() {
         assertEquals(21.0, ratio(Color.Black, Color.White), 0.01)
         assertEquals(1.0, ratio(Color.White, Color.White), 0.001)

@@ -70,6 +70,8 @@ enum class Feature(val label: String, val minTier: Tier) {
     SURE_ALARM("끄기 미션·일어났는지 확인", Tier.PRO),
     /** [LEAVE-05] 미사용 연차수당: what the days left are worth, and a 정산 row on the 연차 원장. */
     LEAVE_PAYOUT("미사용 연차수당 계산", Tier.PRO),
+    /** [TAX-02][TAX-05] 1.25 W: 세전·세후 learned from real pay, and a 사업자's year of tax (결정 W-D4). */
+    TAX_FORECAST("세금 예측·실수령", Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
     TEAM_ROSTER("팀 근무표 만들기", Tier.LEADER),
 }

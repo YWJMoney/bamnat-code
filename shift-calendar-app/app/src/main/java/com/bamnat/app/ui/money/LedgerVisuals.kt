@@ -184,14 +184,9 @@ fun IconAvatar(icon: ImageVector, tint: Color, size: Dp = 40.dp, modifier: Modif
 @Composable
 fun CategoryAvatar(category: String, size: Dp = 40.dp) = IconAvatar(categoryIcon(category), categoryColor(category), size)
 
-/** [TIER-05][LEDG-15] "프로" beside what will be a pro feature, as the calendar list shows it [MCAL-07]. */
+/** [TIER-05][LEDG-15] "프로" beside a pro feature; [TIER-06] since 1.25 the app's one [com.bamnat.app.ui.components.ProBadge]. */
 @Composable
-fun ProPill(modifier: Modifier = Modifier) {
-    Text(
-        Tier.PRO.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false,
-        modifier = modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 8.dp, vertical = 2.dp),
-    )
-}
+fun ProPill(modifier: Modifier = Modifier, locked: Boolean = false) = com.bamnat.app.ui.components.ProBadge(modifier, locked)
 
 /** [LEDG-15] What an empty part of the ledger says, with the one thing to do next. */
 @Composable

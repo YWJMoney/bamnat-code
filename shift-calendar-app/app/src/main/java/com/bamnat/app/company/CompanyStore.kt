@@ -48,9 +48,11 @@ class CompanyStore(context: Context) {
     private val _applied = MutableStateFlow(readApplied())
     val applied: StateFlow<AppliedSetup?> = _applied.asStateFlow()
 
-    private val _draft = MutableStateFlow(prefs.getString("draft", null)?.let { s ->
+    private val _draft = MutableStateFlow(readDraft())
+
+    private fun readDraft() = prefs.getString("draft", null)?.let { s ->
         runCatching { JSONObject(s).let { CompanyDraft(it.getString("company"), it.optString("dept"), it.optBoolean("fix")) } }.getOrNull()
-    })
+    }
     val draft: StateFlow<CompanyDraft?> = _draft.asStateFlow()
 
     private val _pendingPay = MutableStateFlow(prefs.getString("pending_pay", null))
@@ -88,6 +90,16 @@ class CompanyStore(context: Context) {
     fun closeInvite(closed: Boolean = true) {
         _inviteClosed.value = closed
         prefs.edit().putBoolean("invite_closed", closed).apply()
+    }
+
+    /** [BAK-01] After a restore wrote the file anew: what travels in a backup is read again. */
+    fun reload() {
+        _sent.value = readSent()
+        _applied.value = readApplied()
+        _draft.value = readDraft()
+        _pendingPay.value = prefs.getString("pending_pay", null)
+        _plazaEntryClosed.value = prefs.getString("plaza_entry_closed", null)
+        _inviteClosed.value = prefs.getBoolean("invite_closed", false)
     }
 
     fun addSent(r: SentReport) = writeSent(listOf(r) + _sent.value.filter { it.id != r.id })

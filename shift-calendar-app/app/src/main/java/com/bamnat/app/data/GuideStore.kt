@@ -111,6 +111,21 @@ class GuideStore private constructor(context: Context) {
         edit { putStringSet(K_OFF, off) }
     }
 
+    /** [FIT-02] '더 보기' › 더하기 (or 빼기): a part or tool kept on [calendar] although it does not suit its kind of work. */
+    fun setAdded(calendar: String, key: String, on: Boolean) {
+        val k = GuideState.offKey(calendar, key)
+        edit { putStringSet(K_ADDED, if (on) current.added + k else current.added - k) }
+    }
+
+    /** [FIT-02] The parts and tools added to calendars, for a backup. */
+    fun exportAdded(): JSONArray = JSONArray(current.added.sorted())
+
+    fun restoreAdded(a: JSONArray?) {
+        if (a == null) return
+        val added = (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.contains('/') && s.contains(':') } }.toSet()
+        edit { putStringSet(K_ADDED, added) }
+    }
+
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
         synchronized(this) {
             prefs.edit().apply(block).apply()
@@ -138,11 +153,13 @@ class GuideStore private constructor(context: Context) {
             tipId = prefs.getString(K_TIP_ID, null),
             tipClosed = prefs.getBoolean(K_TIP_CLOSED, false),
             checklists = lists,
+            added = set(K_ADDED),
         )
     }
 
     companion object {
         private const val K_OFF = "off"
+        private const val K_ADDED = "added"
         private const val K_SEEN_VERSION = "seen_version"
         private const val K_USED = "used"
         private const val K_NEVER = "never"

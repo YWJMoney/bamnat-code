@@ -279,11 +279,15 @@ private fun PayResult(
     val closed by vm.closed.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
-    val view by produceState<PayView?>(null, profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
+    // [UX-10] 1.25 Z (U7): opened again, the month shows at once as it was left; worked out again only when something changed.
+    val viewKey = "pay:${vm.calendarId}:$month"
+    val viewState = com.bamnat.app.ui.rememberLast<PayView?>(viewKey,
+        profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
         // [STAB-01] A calculation that fails keeps the last month shown instead of closing the app.
-        value = runCatching { vm.view(profile, snapshot, month) }
-            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else value }
+        runCatching { vm.view(profile, snapshot, month) }
+            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else com.bamnat.app.ui.LastValues.value(viewKey) as PayView? }
     }
+    val view = viewState.value
     val v = view
     if (v == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -347,6 +351,17 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
+        val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
+        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
+            value = vm.takeHome(profile, shown.total, month)
+        }
+        takeHome?.let { f ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(com.bamnat.app.tax.TakeHomeLine.text(f, ::won), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.money.ProPill()
+            }
+        }
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
         if (closedSnap == null) Estimates.breakNote(result)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -518,7 +533,7 @@ private fun PayResult(
                 }
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT)) importing = true else openPro() }) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
-                    if (gate.locked(Feature.PAY_RULE_IMPORT)) { Spacer(Modifier.width(6.dp)); ProPill() }
+                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAY_RULE_IMPORT)) // [TIER-06]
                 }
                 if (undo != null) {
                     TextButton(onClick = vm::undo) { Icon(Icons.Filled.Undo, null); Text(" 방금 바꾼 것 되돌리기") }
@@ -559,7 +574,7 @@ private fun PayResult(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() }) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
-                    if (gate.locked(Feature.PAYSLIP_MATCH)) { Spacer(Modifier.width(6.dp)); ProPill() }
+                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAYSLIP_MATCH)) // [TIER-06]
                 }
                 // [PAYS-14] 명세서 + 회사 계산 방법 사진 → 회사 규칙, free like the setup it belongs to.
                 OutlinedButton(onClick = { slipRules = true }) { Text("사진으로 회사 방식 맞추기") }

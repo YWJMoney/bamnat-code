@@ -87,6 +87,8 @@ private enum class InvestTab(val label: String) { OVERVIEW("한눈에"), HOLDING
 fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState) {
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(InvestTab.OVERVIEW) }
+    // [NAV-02] 1.25 Z (U4): back from another tab of 투자 is its first tab, not the calendar.
+    androidx.activity.compose.BackHandler(enabled = tab != InvestTab.OVERVIEW) { tab = InvestTab.OVERVIEW }
     // Another calendar's screen starts with no sheet of this one's open.
     var sheet by remember(vm.calendarId) { mutableStateOf<InvestSheet?>(null) }
     val scope = rememberCoroutineScope()

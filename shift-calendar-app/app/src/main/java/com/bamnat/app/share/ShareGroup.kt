@@ -40,6 +40,9 @@ class ShareGroupStore(context: Context) {
     val code: StateFlow<String?> = _code.asStateFlow()
     val ownKey: String? get() = prefs.getString("own", null)
 
+    /** [BAK-01] After a restore wrote the file anew. */
+    fun reload() { _code.value = prefs.getString("code", null) }
+
     fun save(code: String, ownKey: String?) {
         prefs.edit().putString("code", code).putString("own", ownKey).apply()
         _code.value = code

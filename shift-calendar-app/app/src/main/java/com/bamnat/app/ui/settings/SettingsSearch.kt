@@ -225,6 +225,10 @@ internal object SettingsIndex {
         screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
         // 1.25 묶음 AB
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
+        // ---- 1.25 묶음 Y [TIER-07] ----
+        screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),
+        // 1.25 Z
+        row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
     )
 
     /** The best fits for [query], best first. */

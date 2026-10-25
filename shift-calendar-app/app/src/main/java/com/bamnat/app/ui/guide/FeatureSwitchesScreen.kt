@@ -219,7 +219,11 @@ private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(feature.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.semantics { heading() })
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(feature.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false).semantics { heading() })
+                // [TIER-06]
+                if (com.bamnat.core.guide.ProCatalog.isPro(feature.id)) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp))
+            }
             Text(feature.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("어디: ${feature.where}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
