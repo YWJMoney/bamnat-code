@@ -27,6 +27,10 @@ object ProCatalog {
         "alarm.missionPhoto" to "SURE_ALARM",
         "money.stats" to "MONEY_STATS",
         "calendars.multi" to "MORE_CALENDARS",
+        // 1.25 묶음 W (결정 W-D4): 세후·실수령, 지난 월급, 사업자 세금은 한 줄(TAX_FORECAST)로 잠겨요.
+        "money.takeHome" to "TAX_FORECAST",
+        "money.payRecords" to "TAX_FORECAST",
+        "money.bizTax" to "TAX_FORECAST",
     )
 
     fun isPro(id: String): Boolean = id in tiers
