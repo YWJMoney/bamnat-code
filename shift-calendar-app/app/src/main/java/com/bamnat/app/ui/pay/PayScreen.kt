@@ -253,11 +253,15 @@ private fun PayResult(
     val closed by vm.closed.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
-    val view by produceState<PayView?>(null, profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
+    // [UX-10] 1.25 Z (U7): opened again, the month shows at once as it was left; worked out again only when something changed.
+    val viewKey = "pay:${vm.calendarId}:$month"
+    val viewState = com.bamnat.app.ui.rememberLast<PayView?>(viewKey,
+        profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
         // [STAB-01] A calculation that fails keeps the last month shown instead of closing the app.
-        value = runCatching { vm.view(profile, snapshot, month) }
-            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else value }
+        runCatching { vm.view(profile, snapshot, month) }
+            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else com.bamnat.app.ui.LastValues.value(viewKey) as PayView? }
     }
+    val view = viewState.value
     val v = view
     if (v == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

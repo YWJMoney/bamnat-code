@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.time.Today
@@ -107,6 +108,14 @@ class ScheduleRepository(
     val snapshot: Flow<ScheduleSnapshot> =
         combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged()) { t, p, e, k -> ScheduleSnapshot(t, p, e, k) }
             .flowOn(Dispatchers.Default)
+            .onEach { lastSnapshot = it }
+
+    /**
+     * [UX-10] 1.25 Z (U7): the latest [snapshot] any screen saw, so a screen opened again starts from it instead of
+     * nothing (a spinner, then the same month). Null until one was read.
+     */
+    @Volatile var lastSnapshot: ScheduleSnapshot? = null
+        private set
 
     /** [EXTRA-05] Pieces of extra work moved from an older record that still need a look. */
     val extrasToReview: Flow<Int> = extraDao.observeNeedsReview().distinctUntilChanged()

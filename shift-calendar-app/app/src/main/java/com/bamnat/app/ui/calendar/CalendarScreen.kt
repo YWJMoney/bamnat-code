@@ -114,6 +114,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import com.bamnat.app.ui.components.sheetScrollGuard
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1505,7 +1506,8 @@ private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content
     // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
     DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
-        Box(Modifier.fillMaxWidth()) {
+        // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
+        Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
         }

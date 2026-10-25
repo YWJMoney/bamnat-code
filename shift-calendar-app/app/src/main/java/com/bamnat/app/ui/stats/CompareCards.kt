@@ -40,8 +40,9 @@ import com.bamnat.core.time.Today
  */
 @Composable
 internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate) {
-    val sides by produceState<List<MonthCompare.Side>?>(null, calc, snap, month, profile) {
-        value = runCatching {
+    // [UX-10] 1.25 Z (U7): the last figures from the first frame, worked out again only when the days or pay changed.
+    val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month", snap, month, profile) {
+        runCatching {
             withContext(Dispatchers.Default) {
                 listOf(month, month.minusMonths(1), month.minusYears(1)).map { m -> MonthCompare.side(calc.month(m), profile?.let { vm.monthPay(it, snap, m) }) }
             }
@@ -94,8 +95,8 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
 /** [PROV-02] 올해 근무·급여 (프로): every month of the year with its hours and pay, and the year so far. */
 @Composable
 internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate) {
-    val year by produceState<MonthCompare.Year?>(null, calc, snap, month.year, profile) {
-        value = runCatching {
+    val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}", snap, month.year, profile) {
+        runCatching {
             withContext(Dispatchers.Default) {
                 MonthCompare.Year(month.year, (1..12).map { m ->
                     val ym = YearMonth.of(month.year, m)

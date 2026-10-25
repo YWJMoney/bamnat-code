@@ -87,7 +87,7 @@ class StatsViewModel(
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     private val payCalculator = PayCalculator()
@@ -134,8 +134,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
     // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
     // the first open of 통계 draws at once instead of waiting on nine months of days.
-    val figures by androidx.compose.runtime.produceState<StatsFigures?>(null, calc, month) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+    // [UX-10] 1.25 Z (U7): back on this tab, the figures are there from the first frame; worked out again only when the days changed.
+    val figures by com.bamnat.app.ui.rememberLast("stats:${vm.calendarId}:$month", snap, settings.limits, month) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             StatsFigures(calc.month(month), calc.threeMonths(month), (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) })
         }
     }
@@ -210,15 +211,15 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
         // instead of closing the app.
         // [MON-01] The month's pay is free.
-        val payTotal = produceState<Long?>(null, payProfile, snap, month) {
-            value = payProfile?.takeIf { pays }?.let { p ->
+        val payTotal = com.bamnat.app.ui.rememberLast("stats.pay:${vm.calendarId}:$month", payProfile, snap, month, pays, settings) {
+            payProfile?.takeIf { pays }?.let { p ->
                 runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             }
         }.value
         // [PAYX-25] The month's 비과세 with the 생산직 연장·야간 part, which needs the month's lines.
-        val payFree = produceState<Long?>(null, payProfile, snap, month) {
-            value = payProfile?.takeIf { pays && it.productionWorker }?.let { p ->
+        val payFree = com.bamnat.app.ui.rememberLast("stats.free:${vm.calendarId}:$month", payProfile, snap, month, pays, settings) {
+            payProfile?.takeIf { pays && it.productionWorker }?.let { p ->
                 withContext(Dispatchers.Default) { com.bamnat.core.pay.TakeHome.nonTaxable(p, month, vm.monthPay(p, snap, month)) }
             }
         }.value

@@ -132,7 +132,7 @@ class MoneyViewModel(
     private val money = scope.money
     val book: StateFlow<MoneyBook?> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     val gate: StateFlow<Gate> = container.featureGate.state
@@ -447,11 +447,14 @@ fun MoneyScreen(
     val book = bookOrNull ?: MoneyBook.EMPTY
     val style = settings.workStyle
     // Records show at once; the wage estimate joins when the pay engine has run.
-    val m by produceState(book.month(month), book, style, profile, snapshot, month) {
-        value = vm.month(book, style, profile, snapshot, month)
-    }
-    val analysis by produceState<LedgerAnalysis?>(null, book, style, profile, snapshot, month, page == MoneyViewModel.Page.REPORT) {
-        if (page == MoneyViewModel.Page.REPORT) value = vm.analysis(book, style, profile, snapshot, month, today)
+    // [UX-10] 1.25 Z (U7): opened again, the month shows with its wage estimate from the first frame, not without it and then with.
+    val monthKey = "money:${vm.calendarId}:$month"
+    val lastMonth by com.bamnat.app.ui.rememberLast(monthKey, book, style, profile, snapshot, month) { vm.month(book, style, profile, snapshot, month) }
+    val m = lastMonth ?: book.month(month)
+    val analysis by com.bamnat.app.ui.rememberLast("money.report:${vm.calendarId}:$month", book, style, profile, snapshot, month,
+        page == MoneyViewModel.Page.REPORT) {
+        if (page == MoneyViewModel.Page.REPORT) vm.analysis(book, style, profile, snapshot, month, today)
+        else com.bamnat.app.ui.LastValues.value("money.report:${vm.calendarId}:$month") as LedgerAnalysis?
     }
     LaunchedEffect(snackbar) {
         val host = snackbar ?: return@LaunchedEffect
