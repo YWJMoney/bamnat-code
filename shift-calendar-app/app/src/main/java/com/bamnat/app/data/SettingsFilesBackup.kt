@@ -144,6 +144,7 @@ class SettingsFilesBackup(
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
+            "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
             "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",

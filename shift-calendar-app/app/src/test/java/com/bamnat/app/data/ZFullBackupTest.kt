@@ -44,6 +44,8 @@ class ZFullBackupTest {
         calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
         backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", rateHint = false, alarmSuggest = false,
+        // 1.25 AB.
+        alarmButtonAction = "snooze",
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)
@@ -61,6 +63,8 @@ class ZFullBackupTest {
         prefs("calendar_view").edit().putBoolean("listView", true).putStringSet("redWorked", setOf("2026-10")).commit()
         prefs("auto_record").edit().putLong("since", 123L).putFloat("weight", 0.5f).commit()
         prefs("share_group").edit().putString("group", "A조").commit()
+        // 1.25 U: which row of a roster photo is the user's, kept with the duty codes.
+        prefs("duty_codes").edit().putString("mine:main", "B조").commit()
         prefs("calendar_import").edit().putBoolean("auto", true).putString("chosen", "7,8").commit()
         val marks = RecurringMarks(marksFile)
         marks.put(mapOf(5L to LocalDate.of(2026, 10, 25)))
@@ -70,6 +74,7 @@ class ZFullBackupTest {
         // A new phone: nothing set, nothing in the files, its own install id and calendar choice.
         c.settingsRepository.update { AppSettings() }
         for (p in SettingsFilesBackup.PARTS) prefs(p.name).edit().clear().commit()
+        prefs("duty_codes").edit().clear().commit()
         prefs("company").edit().putString("device", "new-phone").commit()
         prefs("calendar_import").edit().putString("chosen", "1").commit()
         marksFile.delete()
@@ -91,6 +96,7 @@ class ZFullBackupTest {
         assertEquals(123L, prefs("auto_record").getLong("since", 0))
         assertEquals(0.5f, prefs("auto_record").getFloat("weight", 0f))
         assertEquals("A조", prefs("share_group").getString("group", null))
+        assertEquals("B조", prefs("duty_codes").getString("mine:main", null))
         assertEquals(true, prefs("calendar_import").getBoolean("auto", false))
         // What is this phone's own stays this phone's own.
         assertEquals("new-phone", prefs("company").getString("device", null))

@@ -501,8 +501,13 @@ fun PayWizard(
     // [PAYS-04][PAYS-05] 명세서로 한 번에 채우기, and what it filled.
     var slipFill by remember { mutableStateOf(false) }
     var slipNote by remember { mutableStateOf<String?>(null) }
-    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false }) { read ->
-        slipNote = s.fillFrom(read)
+    // [READ-08] The company's way of counting as a second photo: its ticked rules go on the profile when the setup is done.
+    var photoRules by remember { mutableStateOf(emptyList<com.bamnat.core.pay.RuleChange>() to Today.month()) }
+    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false },
+        rules = RuleTarget(emptyList(), snapshot?.shiftTypes.orEmpty(), initial?.fiveOrMoreEmployees ?: true) { changes, m ->
+            photoRules = changes to (m ?: Today.month())
+        }) { read ->
+        slipNote = s.fillFrom(read) + if (photoRules.first.isNotEmpty()) " · 회사 규칙 ${photoRules.first.size}개도 넣어요" else ""
         slipFill = false
         go(AMOUNT)
     }
@@ -559,7 +564,7 @@ fun PayWizard(
                     question != null -> question.key in s.answered || question.key in s.unknown
                     else -> true
                 }
-                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(draft) } else next() }, enabled = ready) {
+                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(com.bamnat.core.pay.RuleText.apply(draft, photoRules.first, photoRules.second)) } else next() }, enabled = ready) {
                     Text(if (last) "계산 시작" else "다음")
                 }
             }

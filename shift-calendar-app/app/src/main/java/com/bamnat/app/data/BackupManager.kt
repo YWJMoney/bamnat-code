@@ -454,6 +454,8 @@ class BackupManager(
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
+                // [ALRM-08] Added in 1.25 (AB).
+                .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
                 .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("rateHint", s.rateHint)
@@ -903,6 +905,7 @@ class BackupManager(
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
                     wakeCheckMinutes = o.optInt("wakeCheck", s.wakeCheckMinutes).coerceIn(0, 30),
+                    alarmButtonAction = com.bamnat.app.alarm.AlarmButtons.Action.of(o.optString("alarmButton", s.alarmButtonAction)).key,
                     widgetMemo = o.optBoolean("widgetMemo", s.widgetMemo),
                     backupPhotos = o.optBoolean("backupPhotos", s.backupPhotos),
                     moneyLayout = o.optString("moneyLayout", s.moneyLayout),

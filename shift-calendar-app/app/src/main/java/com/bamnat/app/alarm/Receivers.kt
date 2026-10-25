@@ -165,13 +165,16 @@ class SystemEventReceiver : BroadcastReceiver() {
 
 /**
  * [REL-12] The ringing notification's 끄기 and 다시 울림 buttons, usable without unlocking.
- * [SLP-15] And 지금 끄기 on the notice of a snooze still to ring.
+ * [SLP-15] And 지금 끄기 on the notice of a snooze still to ring. [ALRM-09] And 오늘 모두 끄기, 다시 켜기.
  */
 class AlarmActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             AlarmService.ACTION_DISMISS -> AlarmService.dismiss(context)
             AlarmService.ACTION_SNOOZE -> AlarmService.snooze(context)
+            // [ALRM-09] 오늘 모두 끄기 on the ringing notice, and 다시 켜기 on the notice that follows.
+            AlarmService.ACTION_ALL_OFF -> AlarmService.allOff(context)
+            AlarmsOff.ACTION_ON -> AlarmsOff.turnOn(context)
             ACTION_CANCEL_SNOOZE -> if (BootAlarms.isLocked(context)) {
                 // [REL-10] Still locked after a reboot: the snooze lives only in the device-protected copy.
                 context.getSystemService(android.app.AlarmManager::class.java)?.cancel(AlarmScheduler.snoozeIntent(context, null))

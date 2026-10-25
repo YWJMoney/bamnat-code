@@ -234,6 +234,9 @@ private object Routes {
     const val COMBINED = "combined"
     // [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Shift and day work's own tools, for the calendar on screen.
     const val DUTY_ROSTER = "duty_roster"
+    /** [READ-10] 한 달 근무 넣기 on one month: the calendar's 이번 달 전부 넣기 (1.25 순번 371). */
+    const val DUTY_ROSTER_MONTH = "duty_roster_month/{month}"
+    fun dutyRoster(month: java.time.YearMonth) = "duty_roster_month/$month"
     const val HEALTH_REPORT = "health_report"
     const val TEAMS = "teams"
     const val YEAR = "year"
@@ -441,7 +444,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
     val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
     LaunchedEffect(sharedRoster) {
-        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route != Routes.DUTY_ROSTER) {
+        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route !in setOf(Routes.DUTY_ROSTER, Routes.DUTY_ROSTER_MONTH)) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
     }
@@ -796,6 +799,7 @@ private fun AppNavHost(
                 onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
                 onEditCalendar = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } },
                 onOpenCombined = { nav.navigate(Routes.COMBINED) { launchSingleTop = true } },
+                onFillMonth = { m -> nav.navigate(Routes.dutyRoster(m)) { launchSingleTop = true } },
             )
         }
         composable(Routes.COMBINED) { com.bamnat.app.ui.calendar.CombinedScreen(onBack = { nav.popFrom(Routes.COMBINED) }) }
@@ -1177,6 +1181,12 @@ private fun AppNavHost(
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "duty_$calendar") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar) }
             com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER) })
+        }
+        composable(Routes.DUTY_ROSTER_MONTH, arguments = listOf(navArgument("month") { type = NavType.StringType })) { entry ->
+            val calendar = remember { container.calendars.active.value }
+            val month = remember { entry.arguments?.getString("month")?.let { runCatching { java.time.YearMonth.parse(it) }.getOrNull() } }
+            val vm = appViewModel(key = "duty_${calendar}_$month") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar, month) }
+            com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER_MONTH) })
         }
         composable(Routes.TEAMS) {
             val calendar = remember { container.calendars.active.value }

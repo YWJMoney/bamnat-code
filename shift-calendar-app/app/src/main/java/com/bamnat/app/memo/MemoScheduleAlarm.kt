@@ -85,6 +85,11 @@ object MemoScheduleAlarm {
         due.filter { it.reminder?.notify == true }.forEach { post(context, it, at) }
         val ringing = due.filter { it.reminder?.ring == true }
         if (ringing.isEmpty()) return
+        // [ALRM-09] 오늘 남은 알람 모두 끄기: the schedule still shows, quietly, instead of ringing.
+        if (com.bamnat.app.alarm.AlarmsOff.isOff(context, now)) {
+            ringing.filter { it.reminder?.notify != true }.forEach { post(context, it, at) }
+            return
+        }
         val ring = RingRequest(
             shiftName = "",
             shiftDate = at.toLocalDate(),

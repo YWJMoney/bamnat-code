@@ -192,7 +192,7 @@ class SetupFlowTest {
         assertNull(snap.resolver.resolve(today.plusDays(1)).shiftType)
     }
 
-    /** [SETUP-15] 듀티표가 있어요: a pasted roster is painted onto the month it names; its leave waits for after the setup. */
+    /** [SETUP-15] 듀티표가 있어요: a pasted roster is painted onto the month it names; its leave is kept beside the painted days (1.25). */
     @Test fun aRosterReadInTheSetupIsPaintedOntoItsMonth() {
         val vm = vm()
         vm.pickStyle(WorkStyle.SHIFT, roster = true)

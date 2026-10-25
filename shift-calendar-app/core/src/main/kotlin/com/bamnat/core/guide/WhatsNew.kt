@@ -10,8 +10,14 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
-        // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1·AA 0, 10 lines at most; 통합 folds them).
+        // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
         Release(36, "1.25.0", listOf(
+            // [READ-02][READ-05][READ-06] Bundle U.
+            Line("듀티표 사진을 다시 만들었어요. 기울게 찍어도 날짜에 맞춰 읽고, 줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 사진 위 날짜 줄과 내 줄만 눌러 주세요", "shift.roster"),
+            // [READ-08][READ-10][READ-11] Bundle U.
+            Line("명세서와 회사 계산 방법 사진을 함께 넣으면 금액과 규칙을 같이 읽어요. ‘이번 달 전부 넣기’는 사진·엑셀도 되고, 넣은 뒤 도구에서 ‘방금 넣은 것 되돌리기’", "shift.dutyTyping"),
+            // [ALRM-07][ALRM-08][ALRM-09] Bundle AB.
+            Line("알람이 울리면 소리·전원 버튼으로 끄고, ‘오늘 남은 알람 모두 끄기’ 한 번이면 오늘은 더 안 울려요. 잠금 화면에 안 뜨게 막는 설정도 알람 점검이 찾아 줘요", "alarm.allOff"),
             // [NAV-02][UX-10][UX-13][ALRM-06][SHFT-09][BAK-01] Bundle Z.
             Line("뒤로 가기는 바로 전 화면으로, 숫자는 깜박이지 않고, 하루 창은 스크롤하다 닫히지 않아요. 알람은 시·분 휠로, 근무 종류는 지우고 되돌리고, 모든 설정을 새 휴대폰으로 옮겨요", "data.movePhone"),
         )),

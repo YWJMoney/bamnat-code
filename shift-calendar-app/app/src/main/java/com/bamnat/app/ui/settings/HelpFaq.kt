@@ -349,6 +349,41 @@ internal object HelpFaq {
             listOf("알림", "접혀", "더 보기", "카드", "안 보여", "근무 수", "숫자가 달라"),
             listOf("달력"),
         ),
+        // ---- 1.25 묶음 U: [READ-04][READ-05][READ-08][READ-11] ----
+        HelpTopic(
+            "rosterPhoto", "한 달 근무", "듀티표 사진을 못 읽거나 다른 줄을 읽어요",
+            "줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 ‘사진 위에서 누르기’로 날짜 줄과 내 줄을 한 번씩 눌러 주세요. " +
+                "‘무엇을 읽었는지 보기’로 앱이 본 줄을 볼 수 있고, 넣은 뒤엔 달력 › 도구 ‘방금 넣은 것 되돌리기’(10분 안)로 되돌려요.",
+            listOf("사진", "못 읽어", "인식", "인식 안", "다른 줄", "어느 줄", "조", "기울", "누르기", "되돌리기", "전체 넣기", "이번 달 전부 넣기"),
+            listOf("한 달 근무 넣기", "달력"),
+            "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
+        ),
+        HelpTopic(
+            "payslipPhotos", "급여", "명세서와 회사 계산 방법 사진을 같이 넣고 싶어요",
+            "급여 › 명세서로 맞춰 보기 › ‘명세서 사진으로 채우기’의 두 번째 칸에 취업규칙·수당표 사진을 넣으면 금액과 함께 " +
+                "연장 1.5배·야간 50% 같은 규칙을 읽어 고른 것만 급여 설정에 넣어요. 공제·실수령도 보여 주고, 사진은 휴대폰 안에서만 읽어요.",
+            listOf("명세서", "사진", "인식", "두 장", "회사 계산", "계산 방법", "취업규칙", "수당표", "실수령", "공제", "세금"),
+            listOf("급여", "명세서"),
+            "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
+        ),
+        // ---- 1.25 묶음 AB: [ALRM-07][ALRM-08][ALRM-09] ----
+        HelpTopic(
+            "alarmButtons", "알람", "버튼으로 알람을 끄고, 일어났으면 오늘 알람을 모두 끄고 싶어요",
+            "울릴 때 소리·전원 버튼을 누르면 꺼져요(미션이 있으면 소리만 30초 줄어요). " +
+                "알람 화면이나 알림의 ‘오늘 모두 끄기’를 누르면 밤 12시까지 남은 알람·다시 울림·일어났나요?가 멈추고 내일 알람은 그대로예요. " +
+                "잘못 눌렀으면 달력 맨 위 ‘다시 켜기’.",
+            listOf("볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "오늘 알람 끄기", "전체 알람 끄기", "또 울려요", "다시 켜기"),
+            listOf("알람"),
+            "알람 설정 열기" to HelpAction.Page(SettingsPage.ALARM, BUTTON_ACTION_ROW),
+        ),
+        HelpTopic(
+            "alarmLock", "알람", "알람이 울릴 때 잠금 화면에 알람 화면이 안 떠요",
+            "휴대폰을 쓰는 중에는 Android가 위에 뜨는 알림으로만 보여 줘요. 거기 단추로 끄거나 오늘 모두 끌 수 있어요. " +
+                "화면이 꺼져 있을 때도 안 뜨면 ‘알람 점검’이 전체 화면 알림, 조용히 바뀐 알림, 방해 금지, 제조사 권한을 찾아 줘요.",
+            listOf("잠금 화면", "안 떠요", "안 보여요", "알림만 와요", "전체 화면", "화면이 안 켜져"),
+            listOf("알람"),
+            "알람 점검 열기" to HelpAction.Go(SettingsGo.DIAGNOSTICS),
+        ),
         // ---- 1.25 묶음 Z ----
         // [NAV-02] U4.
         HelpTopic(
@@ -380,7 +415,7 @@ internal object HelpFaq {
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
     private val BY_TOPIC = mapOf(
-        "alarm" to listOf("alarm", "sound", "wake"),
+        "alarm" to listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"),
         "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
         "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import"),
         "share" to listOf("share", "receive"),
