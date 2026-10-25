@@ -33,9 +33,17 @@ object TradeAlerts {
         val quantity: Double,
         val price: Double,
         val market: Market,
+        /** [INV-40] 체결 금액 when known (0 when not), in the price's currency. */
+        val amount: Double = 0.0,
+        /** [INV-40] How many notifications this is (409 B: split fills of one order put together). */
+        val parts: Int = 1,
+        /** [INV-40] Where the price came from when it was not said: [BY_AMOUNT], [BY_PARTS] or [BY_CAPTURE]. */
+        val filledBy: String = "",
     ) {
         val title: String get() = name.ifBlank { symbol }
         val tag: String get() = TAG_PREFIX + app.take(20)
+        /** [INV-40] 수량 × 단가 agrees with the amount; null without one. False holds the line for a look (no 바로 적기). */
+        val checked: Boolean? get() = if (amount > 0 && price > 0) FillMath.agrees(quantity, price, amount) else null
 
         fun day(zone: ZoneId = Today.zone()): LocalDate = Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
         fun minute(zone: ZoneId = Today.zone()): Int = LocalDateTime.ofInstant(Instant.ofEpochMilli(at), zone).let { it.hour * 60 + it.minute }
@@ -53,19 +61,64 @@ object TradeAlerts {
 
         fun sameFill(o: Pending) = side == o.side && symbol == o.symbol && name == o.name && quantity == o.quantity &&
             price == o.price && kotlin.math.abs(at - o.at) <= SAME_WITHIN_MILLIS
+
+        /** [INV-40] The same holding and side, close in time: one order's notifications. */
+        fun sameOrder(o: Pending) = side == o.side && market == o.market && symbol == o.symbol && name == o.name &&
+            kotlin.math.abs(at - o.at) <= SAME_WITHIN_MILLIS
+
+        /** The money of the fill: the amount when it agrees, else 수량 × 단가. */
+        val money: Double get() = if (checked == true) amount else quantity * price
     }
 
-    fun of(a: TradeAlertParser.Alert, app: String, at: Long) =
-        Pending(at, app, a.side, a.symbol, a.name, a.quantity, a.price, a.market)
+    /** [INV-40] What filled a price that the notification did not say. */
+    const val BY_AMOUNT = "금액"
+    const val BY_PARTS = "묶음"
+    const val BY_CAPTURE = "캡처"
 
-    /** The waiting list with [p] added, unless the same fill is there already; null when nothing changes. */
-    fun add(list: List<Pending>, p: Pending): List<Pending>? =
-        if (list.any { it.sameFill(p) }) null else (list + p).sortedBy { it.at }.takeLast(MAX)
+    fun of(a: TradeAlertParser.Alert, app: String, at: Long) =
+        Pending(at, app, a.side, a.symbol, a.name, a.quantity, a.price, a.market, a.amount, filledBy = if (a.priceFromAmount) BY_AMOUNT else "")
+
+    /**
+     * The waiting list with [p] added, unless the same fill is there already; null when nothing changes. [INV-40] 409 B:
+     * a notification of the same order a few minutes later is put with the one waiting: the same quantity without a
+     * price (체결 → 정산·잔고 알림) gives the price to the one without, and a different quantity with a price (나눠
+     * 체결) adds up into one line at the average price.
+     */
+    fun add(list: List<Pending>, p: Pending): List<Pending>? {
+        if (list.any { it.sameFill(p) }) return null
+        val order = list.lastOrNull { it.sameOrder(p) }
+        val merged: Pending? = when {
+            order == null -> null
+            // The same fill told twice, one of them with the price.
+            order.quantity == p.quantity && (order.price == 0.0 || p.price == 0.0) -> {
+                if (p.price == 0.0) return null
+                order.copy(price = p.price, amount = p.amount, filledBy = BY_PARTS)
+            }
+            // Split fills of one order, each with its price.
+            order.price > 0 && p.price > 0 && order.parts < MAX_PARTS -> {
+                val qty = order.quantity + p.quantity
+                val money = order.money + p.money
+                order.copy(quantity = qty, price = FillMath.round(money / qty), amount = money, parts = order.parts + p.parts, filledBy = BY_PARTS)
+            }
+            else -> null
+        }
+        val next = if (merged != null) list.map { if (it.at == order!!.at) merged else it } else list + p
+        return next.sortedBy { it.at }.takeLast(MAX)
+    }
+
+    /** One order is split into this many notifications at most before a new line starts. */
+    const val MAX_PARTS = 20
+
+    /** [INV-40] 409 C: a waiting line given the price read from a 체결 내역 capture; it still waits for 확인 (결정 D37). */
+    fun fill(list: List<Pending>, at: Long, price: Double, amount: Double): List<Pending> =
+        list.map { if (it.at == at) it.copy(price = price, amount = amount, filledBy = BY_CAPTURE) else it }
 
     private fun clean(s: String) = s.replace('\t', ' ').replace('\n', ' ')
 
     fun encode(list: List<Pending>): String = list.joinToString("\n") { p ->
-        listOf(p.at.toString(), clean(p.app), p.side.name, clean(p.symbol), clean(p.name), p.quantity.toString(), p.price.toString(), p.market.name)
+        listOf(p.at.toString(), clean(p.app), p.side.name, clean(p.symbol), clean(p.name), p.quantity.toString(), p.price.toString(), p.market.name,
+            // [INV-40] 1.25: older apps read the first eight and leave these.
+            p.amount.toString(), p.parts.toString(), clean(p.filledBy))
             .joinToString("\t")
     }
 
@@ -81,6 +134,9 @@ object TradeAlerts {
             quantity = f[5].toDoubleOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null,
             price = f[6].toDoubleOrNull() ?: 0.0,
             market = Market.entries.firstOrNull { it.name == f[7] } ?: Market.OTHER,
+            amount = f.getOrNull(8)?.toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0,
+            parts = f.getOrNull(9)?.toIntOrNull()?.coerceIn(1, MAX_PARTS) ?: 1,
+            filledBy = f.getOrNull(10).orEmpty(),
         )
     }
 

@@ -221,6 +221,8 @@ class BackupManager(
         })
         // [INV-10] An investor calendar's accounts, trades, deposits, journal, alarms and settings (version 18).
         into.put("invest", InvestBackup.put(source))
+        // [TAX-07] 월급 관측 and tax answers (version 21). Older apps ignore the key.
+        into.put("tax", TaxBackup.put(source))
     }
 
     /** [MCAL-06] A calendar's pay setup and closed months. */
@@ -656,6 +658,8 @@ class BackupManager(
         val owed: List<com.bamnat.app.data.db.ReceivableEntity>?, val owedPaid: List<com.bamnat.app.data.db.ReceivablePaymentEntity>?,
         /** [INV-10] Null for a backup without "invest": the phone's then stay. */
         val invest: InvestBackup.Rows? = null,
+        /** [TAX-07] Null for a backup without "tax" (before 1.25): the phone's then stay. */
+        val tax: TaxBackup.Rows? = null,
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -723,7 +727,8 @@ class BackupManager(
             )
         }
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest)
+        val tax = from.optJSONObject("tax")?.let(TaxBackup::read)
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -748,6 +753,7 @@ class BackupManager(
         }
         // [INV-10] Backups without "invest" (before version 18, or with none before 1.17) leave the phone's; `{}` empties it.
         rows.invest?.let { InvestBackup.write(target, it) }
+        rows.tax?.let { TaxBackup.write(target, it) }
     }
 
     /** [REL-15] The photos [read] left waiting, when they came with this very backup. */

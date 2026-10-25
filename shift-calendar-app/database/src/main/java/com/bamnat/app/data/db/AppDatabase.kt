@@ -22,8 +22,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LeaveLedgerEntity::class,
         // [LEAVE-11] Version 20: 연차 사용 촉진 기록.
         LeaveNoticeEntity::class,
+        // [TAX-01][TAX-06] Version 21: 월급 관측과 세금 설정.
+        PayObservationEntity::class, TaxSettingEntity::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -40,6 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun investDao(): InvestDao
     abstract fun leaveLedgerDao(): LeaveLedgerDao
     abstract fun leaveNoticeDao(): LeaveNoticeDao
+    abstract fun taxDao(): TaxDao
 
     companion object {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
@@ -56,7 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
             get() = arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
+                MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
             )
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -325,6 +328,20 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `leave_notices` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `lapseEpochDay` INTEGER NOT NULL, " +
                     "`step` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, `note` TEXT NOT NULL DEFAULT '', `createdAt` INTEGER NOT NULL DEFAULT 0)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_leave_notices_lapseEpochDay` ON `leave_notices` (`lapseEpochDay`)")
+            }
+        }
+
+        /**
+         * Version 21 (1.25 W) [TAX-01][TAX-06]: pay as it really came (관측) and the user's tax answers. Only new tables:
+         * every row of version 20 keeps its meaning.
+         */
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `pay_observations` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `payMonth` INTEGER NOT NULL, " +
+                    "`net` INTEGER NOT NULL, `gross` INTEGER, `epochDay` INTEGER NOT NULL, `source` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                    "`entryId` INTEGER, `hours` REAL, `days` INTEGER, `note` TEXT NOT NULL DEFAULT '', `createdAt` INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_pay_observations_payMonth` ON `pay_observations` (`payMonth`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `tax_settings` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))")
             }
         }
 

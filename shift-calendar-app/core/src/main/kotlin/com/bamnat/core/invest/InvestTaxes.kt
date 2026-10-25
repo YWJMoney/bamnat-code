@@ -6,22 +6,44 @@ import kotlin.math.roundToLong
 
 /**
  * [INV-03] The fee and tax a trade most likely paid, offered in the trade sheet and always editable:
- * the account's own fee rate (or the market's: 국내 0.015%, 해외 0.25%, 코인 0.05%) and, on selling
+ * the account's own fee rate, else the calendar's 기본 수수료 ([INV-38], 0.05%), and, on selling
  * Korean shares, 증권거래세 0.20% (2026: 코스피 0.05% + 농어촌특별세 0.15%, 코스닥 0.20%). Korean ETFs
  * pay no 거래세.
  */
 object InvestFees {
     data class Suggestion(val fee: Double, val tax: Double)
 
-    fun suggest(market: Market, side: Side, quantity: Double, price: Double, account: InvestAccount?): Suggestion {
+    fun suggest(market: Market, side: Side, quantity: Double, price: Double, account: InvestAccount?, settings: InvestSettings? = null): Suggestion {
         val gross = quantity * price
         if (gross <= 0) return Suggestion(0.0, 0.0)
-        // [INV-33] The account's own fee for this market, else its one fee, else the market's usual one.
-        val rate = account?.feeFor(market) ?: market.defaultFeeRate
+        val rate = rateFor(market, side, account, settings)
         val fee = round(gross * rate / 100, market)
         // 거래세 is cut to the won below, as brokers do.
         val tax = if (side == Side.SELL && market.sellTaxRate > 0) floor(gross * market.sellTaxRate / 100) else 0.0
         return Suggestion(fee, tax)
+    }
+
+    /**
+     * [INV-33][INV-38] The fee rate in percent: the account's own fee for this market, else its one fee, else the
+     * calendar's 기본 수수료 for a buy or a sell (기본 0.05%, 결정 D73), else the market's usual one.
+     */
+    fun rateFor(market: Market, side: Side, account: InvestAccount?, settings: InvestSettings?): Double =
+        account?.ownFee(market) ?: settings?.feeRate(side) ?: market.defaultFeeRate
+
+    /** [INV-38] "0.05" for 0.050%. */
+    fun rateText(rate: Double): String = "%.4f".format(rate).trimEnd('0').trimEnd('.')
+
+    /**
+     * [INV-38] The fee and tax the trade sheet shows (사용자 U17: 매도 단가를 넣어도 세금이 안 채워짐). What the user typed in
+     * this sheet wins; a trade being fixed keeps its stored costs only while nothing that decides them changed (and
+     * they were not left at 0, as a trade from a 체결 알림 without a price was); otherwise the suggestion, worked out
+     * again from the quantity, price, market, side and account as they are now.
+     */
+    fun shown(start: Trade?, typed: Suggestion?, market: Market, side: Side, quantity: Double, price: Double, accountId: Long, suggestion: Suggestion): Suggestion {
+        if (typed != null) return typed
+        val unchanged = start != null && start.quantity == quantity && start.price == price && start.market == market &&
+            start.side == side && start.accountId == accountId
+        return if (unchanged && (start!!.fee != 0.0 || start.tax != 0.0)) Suggestion(start.fee, start.tax) else suggestion
     }
 
     /** Won are whole; dollars keep cents. */
@@ -136,6 +158,57 @@ object InvestTaxes {
     /** [INV-09] The tax usually withheld from a dividend of [gross] won from a holding on [market]. */
     fun dividendTax(gross: Long, market: Market): Long =
         floor(gross * (if (market.foreign) US_DIVIDEND_RATE else DIVIDEND_RATE)).toLong()
+
+    /**
+     * [INV-39] What one sell of 해외 주식 adds to this year's 양도소득세 before it is saved (사용자 U17): this year's gain
+     * matched oldest first without and with it, less the 250만 원 기본공제 (소득세법 제103조), at 22% (제104조 제1항
+     * 제12호 20% + 지방소득세). Null for anything else: 국내 주식 owe it only as 대주주 (종목당 50억 원 등, 확인 필요),
+     * coins not before [CRYPTO_FROM_YEAR], and ISA·연금 accounts not at all.
+     */
+    data class SellPreview(val gain: Long, val yearGain: Long, val taxBefore: Long, val taxAfter: Long, val deductionLeft: Long) {
+        val extraTax: Long get() = taxAfter - taxBefore
+    }
+
+    fun sellPreview(book: InvestBook, trade: Trade): SellPreview? {
+        if (trade.side != Side.SELL || !trade.market.foreign || trade.quantity <= 0 || trade.price <= 0) return null
+        val type = book.account(trade.accountId)?.type
+        if (type != null && (type.taxDeferred || type == AccountType.ISA)) return null
+        val sheltered = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
+        val others = book.trades.filter { trade.id == 0L || it.id != trade.id }
+        fun gain(list: List<Trade>) = Portfolio.fifo(list)
+            .filter { it.market.foreign && it.date.year == trade.date.year && it.accountId !in sheltered }.sumOf { it.pnlWon }.roundToLong()
+        val before = gain(others)
+        val after = gain(others + trade.copy(id = if (trade.id == 0L) Long.MAX_VALUE else trade.id))
+        fun tax(g: Long) = ((g - FOREIGN_DEDUCTION).coerceAtLeast(0) * CAPITAL_GAINS_RATE).roundToLong()
+        return SellPreview(after - before, after, tax(before), tax(after), (FOREIGN_DEDUCTION - after).coerceIn(0, FOREIGN_DEDUCTION))
+    }
+
+    /**
+     * [INV-41] 해외 주식 양도소득세 신고 (5월 1~31일, 소득세법 제110조; 마감이 주말·공휴일이면 다음 평일): a reminder on 5월 1일 and
+     * a week before the deadline, when last year's 해외 주식 이익 (oldest first, ISA·연금 빼고) is over the 250만 원 공제, so
+     * there is tax to report. Shown as dates of the investor calendar (ids below zero, never saved): the coming May only.
+     */
+    fun reportReminders(book: InvestBook, today: LocalDate): List<InvestEvent> {
+        val thisYear = com.bamnat.core.money.TaxDeadlines.workday(LocalDate.of(today.year, 5, 31))
+        val due = if (today.isAfter(thisYear)) com.bamnat.core.money.TaxDeadlines.workday(LocalDate.of(today.year + 1, 5, 31)) else thisYear
+        val year = due.year - 1
+        val sheltered = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
+        val gain = Portfolio.fifo(book.trades).filter { it.market.foreign && it.date.year == year && it.accountId !in sheltered }
+            .sumOf { it.pnlWon }.roundToLong()
+        val taxable = (gain - FOREIGN_DEDUCTION).coerceAtLeast(0)
+        if (taxable <= 0) return emptyList()
+        val tax = (taxable * CAPITAL_GAINS_RATE).roundToLong()
+        val memo = "${year}년 해외 주식 이익 ${"%,d".format(gain)}원 → 예상 세금 ${"%,d".format(tax)}원(250만 원 공제 뒤 22%). ${due.monthValue}월 ${due.dayOfMonth}일까지 홈택스나 증권사 신고 대행으로 신고해요. 자료는 투자 › 내보내기 › 해외 주식 세금 신고 자료"
+        return listOf(LocalDate.of(due.year, 5, 1) to "해외 주식 양도소득세 신고 시작", due.minusDays(7) to "해외 주식 양도소득세 신고 일주일 남음")
+            .filter { (d, _) -> !d.isBefore(today) }
+            .mapIndexed { i, (d, title) -> InvestEvent(id = REPORT_EVENT_ID - i, date = d, kind = EventKind.OTHER, title = title, memo = memo) }
+    }
+
+    /** [INV-41] Ids of [reportReminders]: below zero, apart from saved dates. */
+    const val REPORT_EVENT_ID = -5_31_000L
+
+    /** [INV-39] Said under 국내 주식 sells. */
+    const val DOMESTIC_NOTE = "국내 상장주식은 대주주(종목당 50억 원 이상 등)가 아니면 양도소득세가 없어요. 거래세는 위에 넣었어요."
 
     fun estimate(book: InvestBook, result: PortfolioResult, year: Int): TaxEstimate {
         val inYear = { d: LocalDate -> d.year == year }

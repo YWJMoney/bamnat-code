@@ -51,6 +51,9 @@ data class InvestAccount(
     /** [INV-33] The fee in percent this account charges on [market]. */
     fun feeFor(market: Market): Double = marketFees[market] ?: feeRate ?: market.defaultFeeRate
 
+    /** [INV-38] The account's own fee on [market], or null so the calendar's 기본 수수료 applies. */
+    fun ownFee(market: Market): Double? = marketFees[market] ?: feeRate
+
     companion object {
         /** [INV-33] The settings key that holds account [id]'s market fees. */
         fun feesKey(id: Long) = "fees.$id"
@@ -303,10 +306,21 @@ data class InvestSettings(
     val lastAccountId: Long? = null,
     /** [INV-34] 월말 요약 알림: the month's trades and realised result on its last evening; on, off on the 투자 screen. */
     val monthSummary: Boolean = true,
+    /**
+     * [INV-38] 기본 수수료 in percent of the amount, for every trade whose account has no fee of its own (사용자 U17,
+     * 결정 D73: 0.05%, changed once and used every time); a buy and a sell may differ.
+     */
+    val buyFeeRate: Double = DEFAULT_FEE_RATE,
+    val sellFeeRate: Double = DEFAULT_FEE_RATE,
 ) {
+    /** [INV-38] The calendar's 기본 수수료 for [side]. */
+    fun feeRate(side: Side): Double = if (side == Side.BUY) buyFeeRate else sellFeeRate
+
     companion object {
         val DEFAULT_PRINCIPLES = listOf("손절가를 지켰어요", "한 종목에 몰빵하지 않았어요", "계획한 종목만 샀어요", "뉴스 보고 바로 사지 않았어요")
         const val DEFAULT_USD_KRW = 1_400.0
+        /** [INV-38] 결정 D73. */
+        const val DEFAULT_FEE_RATE = 0.05
     }
 }
 
