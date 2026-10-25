@@ -11,9 +11,15 @@ import java.time.LocalDate
  */
 class RecurringMarks(private val file: File?) {
     private var marks: Map<Long, LocalDate>? = null
+    /** [BAK-01] The file as it was read; a restore that writes it anew is read again. */
+    private var readStamp = 0L
 
     @Synchronized
-    fun all(): Map<Long, LocalDate> = marks ?: load().also { marks = it }
+    fun all(): Map<Long, LocalDate> {
+        val stamp = file?.takeIf { it.exists() }?.lastModified() ?: 0L
+        if (stamp != readStamp) marks = null
+        return marks ?: load().also { marks = it; readStamp = stamp }
+    }
 
     @Synchronized
     fun put(changes: Map<Long, LocalDate>) {
@@ -28,6 +34,7 @@ class RecurringMarks(private val file: File?) {
             val tmp = File(f.parentFile, f.name + ".tmp")
             tmp.writeText(o.toString())
             tmp.renameTo(f)
+            readStamp = f.lastModified()
         }
     }
 
