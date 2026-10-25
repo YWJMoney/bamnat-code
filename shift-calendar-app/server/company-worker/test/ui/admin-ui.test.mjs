@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { Window } from "happy-dom";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
-import { server, signIn, report, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
 
 const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
@@ -102,7 +102,7 @@ async function signedIn(env) {
 test("[ADMUX-01] every screen opens without an error and without a style attribute", async () => {
   const { env } = await world();
   const t = await signedIn(env);
-  for (const s of ["home", "review", "inquiries", "dev", "companies", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings", "account", "more"]) {
+  for (const s of ["home", "inbox", "versions", "review", "inquiries", "dev", "companies", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings", "account", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -231,8 +231,9 @@ test("[ADMUX-03] this device's choices: colours, text size, bottom tabs", async 
   };
   // Home and three: a fourth takes the place of the one there longest.
   await flip("audit", true);
-  assert.match(t.text("#toast"), /3개까지라 검토 대신 활동 기록/);
-  assert.ok(!t.$('.tabs [data-nav="review"]'));
+  // [ADMUX-17] 받은함 is the first tab after home since 1.25, so it is the one that makes room.
+  assert.match(t.text("#toast"), /3개까지라 받은함 대신 활동 기록/);
+  assert.ok(!t.$('.tabs [data-nav="inbox"]'));
   assert.ok(t.$('.tabs [data-nav="audit"]'), "활동 기록 is a bottom tab now");
 });
 
@@ -321,4 +322,114 @@ test("[ADMUX-04] the palette offers what was opened last, and home the saved vie
   const chip = t.$('nav[aria-label="저장한 보기"] a');
   assert.ok(chip, "the saved view is on home");
   assert.equal(chip.getAttribute("href"), "#/inquiries?status=answered");
+});
+
+// ---- 1.25 묶음 AA: 받은함, 여러 판, 지표 기간, 광장 일괄 (끝에서 끝: 화면의 단추 → 서버가 가진 것) ----
+
+/** Remote files and Play are not reachable from a test; the page must still draw. */
+function offline(t) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response("", { status: 404 });
+  t.after(() => { globalThis.fetch = real; });
+}
+
+async function asOwner(env, t) {
+  const s = await signedIn(env);
+  const call = (m, p, body) => worker.fetch(new Request(ORIGIN + p, { method: m, headers: { cookie: s.jar.cookie, origin: ORIGIN, "x-admin": "1", "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined }), env).then((r) => r.json());
+  return { ...s, api: call };
+}
+
+test("[ADMUX-17] 받은함 lists what waits, 맡기 takes the question, 내일 볼게요 hides it on this device only", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/inbox");
+  assert.ok(u.$$("#main .rows.inbox li").length >= 4, "questions and the report wait");
+  assert.match(u.text("#main .rows.inbox"), /아무도 안 맡음/);
+  await u.click('#main [data-act="inbox-assign"]');
+  assert.match(u.text("#toast"), /내가 맡았어요/);
+  const mine = (await u.api("GET", "/api/admin/inquiries?who=mine")).inquiries;
+  assert.equal(mine.length, 1, "the server now holds the question as mine");
+  const before = u.$$("#main .rows.inbox li").length;
+  await u.click('#main [data-act="inbox-snooze"]');
+  assert.equal(u.$$("#main .rows.inbox li").length, before - 1);
+  assert.match(u.window.localStorage.getItem("bamnat-admin-snooze"), /:/);
+  await u.click("#toast [data-undo]");
+  assert.equal(u.$$("#main .rows.inbox li").length, before);
+  // Home sends 지금 할 일 to 받은함.
+  await u.go("#/home");
+  assert.ok(u.$('#main a[href="#/inbox"]'));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-18] 여러 판: 다시 대표로 asks first, then the earlier version is the rule again", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const owner = await signIn(call);
+  const v1 = await call("POST", "/api/reports", report(1), from(1));
+  await call("POST", "/api/reports", report(2), from(2));
+  await call("POST", "/api/reports", report(6), from(6));
+  const twelve = setup();
+  twelve.pay.rules.extra[3].percent = 0.12;
+  const v2 = await call("POST", "/api/reports", report(3, { setup: twelve }), from(3));
+  await call("POST", `/api/admin/groups/${v2.data.company.id}/${v2.data.setup}/adopt`, {}, owner);
+  const u = await asOwner(env, t);
+  await u.go("#/versions?show=history");
+  const btn = u.$('#main [data-act="version-promote"]');
+  assert.ok(btn, "the earlier version can come back");
+  await u.click(btn);
+  assert.match(u.text("dialog"), /v1을 다시 대표로 할까요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /다시 대표로 했어요/);
+  const live = DB.db.prepare("SELECT version, grp, source FROM rules WHERE superseded = 0").get();
+  assert.deepEqual([live.version, live.grp, live.source], [3, v1.data.setup, "promote"]);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-13] 지표: two dates ask the server for that period and the numbers follow", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/metrics");
+  assert.match(u.text("#main .meta"), /\(28일\)/);
+  for (const sec of ["활성", "광장", "문의", "오류", "원격 갱신"]) assert.match(u.text("#main"), new RegExp(sec), `${sec} section`);
+  const to = u.$("#mt-to").value;
+  const from = new Date(Date.parse(to) - 2 * 864e5).toISOString().slice(0, 10);
+  const el = u.$("#mt-from");
+  el.value = from;
+  el.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  await u.settle(30);
+  assert.match(u.text("#main .meta"), /\(3일\)/);
+  assert.match(u.window.location.hash, new RegExp(`from=${from}`));
+  assert.ok(u.$('#main [data-act="metric-clear"]'));
+  await u.click('#main [data-act="metric-clear"]');
+  await u.settle(30);
+  assert.match(u.text("#main .meta"), /\(28일\)/);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on the server", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const { call, env, DB } = s;
+  const a = await call("POST", "/api/reports", report(1), from(1));
+  for (const [n, body] of [[2, "첫 글이에요"], [3, "둘째 글이에요"]]) {
+    await call("POST", "/api/posts", { device: device(n), company: a.data.company.id, setup: a.data.setup, body }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/community?show=all");
+  await u.click('#main [data-act="post-pick"]');
+  await u.click('#main [data-act="post-pick-all"]');
+  assert.equal(u.$$("#main [data-pick-post]:checked").length, 2);
+  await u.click('#main [data-act="post-bulk"][data-key="hide"]');
+  assert.match(u.text("dialog"), /글 2개를 가릴까요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /2개 처리했어요/);
+  assert.deepEqual(DB.db.prepare("SELECT status FROM posts").all().map((p) => p.status), ["hidden", "hidden"]);
+  assert.deepEqual(u.errors, []);
 });
