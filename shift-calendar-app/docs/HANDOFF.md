@@ -326,6 +326,17 @@ shift-calendar-app/
 - **크기 검사** `test/.../screenshots/LayoutCheck`: 그려진 화면에서 아래·옆 잘림, 말줄임, 한 글자씩 쪼개짐, 하단 바 위에 보이는 온전한 주 수를 셉니다. `RScreenshotTest`의 `audit*`가 점검 보고서의 13가지 크기를 `build/screenshots/r-audit/`에 적고, 760~779는 잘림 0·주 수 하한을 시험해요.
 - 시트 손잡이 이름은 `res/values(-ko)/sheet_strings.xml`이 라이브러리 글을 덮어써요("끌어서 옮기기", "닫기").
 
+
+### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
+
+- 모두 회사 서버 안(`server/company-worker`). 앱(Kotlin)·DB 판·서버로 오는 정보는 바뀌지 않음. 회사 서버 재배포가 있어야 관리자 앱에 보여요.
+- `src/index.js`의 `// AA 1.25 시작 … // AA 1.25 끝` 묶음: `metricRange`(7~90일 또는 from·to 최대 180일), `inquiryStats`(첫 답 중앙값·90%·목표 지킴률), `countError`(500마다 `counters`의 `errors|날짜`), `playVitals`(Play Developer Reporting API, 6시간 보관, 403이면 "denied"), `REMOTE`·`remoteState`(GitHub Pages 원격 파일 8종을 받아 Ed25519 확인, 공개 키는 `core/remote/RemoteKeys.kt`와 같아야 함 — 시험이 비교), `inbox`·`inboxItems`(받은함, 기한 규칙은 `INBOX`·SLA·30일·말일), `versions`·`promote`(여러 판, `POST /api/admin/rules/:id/promote`는 이전 판 설정을 새 판으로 올리고 쓰던 판을 이전 판으로), `plazaBulk`(`/posts/bulk`·`/rates/bulk`, 100개까지), `wilson`.
+- `metrics()`는 기존 필드를 그대로 두고 `active`·`plaza`·`inquiries`·`errors`·`dayList`를 더함. 앱 판 이름 → versionCode는 `APP_CODES`(판을 올릴 때 한 줄 더하기) + 문의의 "x.y.z (N)"에서 배움.
+- 화면(`src/admin-app.js`): `#/inbox`(메뉴 숫자 = 기한 넘김, 아래 탭 기본 첫 칸이 받은함), `#/versions`(메뉴 숫자 = 여러 판인 부서), 지표 날짜 칸·카드 5개, 토론·임금표 여러 개 고르기. 키 `g b` 받은함, `g v` 여러 판.
+- 시험: `test/admin-complete.test.mjs`(서버 끝에서 끝), `test/ui/admin-ui.test.mjs` 끝 4개(화면 → 서버). 사진 `server/company-worker/docs/screenshots/admin-1.25/930~939`.
+- 선택 변수 `REMOTE_BASE_URL`. Play 통계는 `PLAY_SERVICE_ACCOUNT`에 Play Console 권한 "앱 정보 보기"와 Google Cloud의 Reporting API 사용(README '지표의 Play 통계와 원격 갱신').
+- 결정 AA-D1~D3: `계획/1.25-AA-개발계획.md` 7장.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

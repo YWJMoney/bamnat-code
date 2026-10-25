@@ -54,6 +54,8 @@ export function adminLib() {
     good: "도움이 됐는지를 다시 골라 주세요",
     hidden: "가려진 항목이에요",
     ids: "고른 항목이 없거나 100개를 넘었어요",
+    // AA 1.25: 이전 판이 아닌 규칙을 다시 대표로 하려 할 때.
+    not_previous: "이전 판만 다시 대표로 할 수 있어요. 화면을 새로 고쳐 주세요",
     info: "함께 보낸 정보를 읽지 못했어요",
     inquiry: "문의를 다시 골라 주세요",
     invite: "초대 링크가 만료됐거나 이미 쓰였어요. 최고 관리자에게 새 링크를 부탁해 주세요",
@@ -177,7 +179,9 @@ export function adminLib() {
     rewards: { status: "owed", q: "" },
     rates: { status: "review", q: "" },
     companies: { q: "" },
-    metrics: { days: "28" },
+    metrics: { days: "28", from: "", to: "" },
+    inbox: { view: "all" },
+    versions: { show: "conflict" },
     audit: { actor: "", kind: "", from: "", to: "" },
     ops: { month: "" },
   };
@@ -358,7 +362,7 @@ export function adminLib() {
    * [values], a dashed line for [before] (the period before), round steps on the axis and every bar's
    * label and number in <title> for a pointer. The numbers also go in a table for screen readers.
    */
-  function barChart(values, { labels = [], before = null, width = 640, height = 180, name = "" } = {}) {
+  function barChart(values, { labels = [], before = null, width = 640, height = 180, name = "", beforeName = "이전 기간" } = {}) {
     const top = Math.max(1, ...values, ...(before ?? []));
     const steps = ticks(top);
     const max = steps[steps.length - 1];
@@ -376,7 +380,7 @@ export function adminLib() {
       ? `<polyline class="before" fill="none" points="${before.map((v, i) => `${(left + i * w + w / 2).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}"/>` : "";
     const every = Math.max(1, Math.ceil(values.length / 7));
     const xs = labels.map((l, i) => (i % every === 0 ? `<text class="axis" x="${(left + i * w + w / 2).toFixed(1)}" y="${height - 4}" text-anchor="middle">${esc(l)}</text>` : "")).join("");
-    const table = `<table class="sr"><caption>${esc(name)}</caption><thead><tr><th>날짜</th><th>값</th>${before ? "<th>이전 기간</th>" : ""}</tr></thead><tbody>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? "")}</td><td>${v}</td>${before ? `<td>${before[i] ?? ""}</td>` : ""}</tr>`).join("")}</tbody></table>`;
+    const table = `<table class="sr"><caption>${esc(name)}</caption><thead><tr><th>날짜</th><th>값</th>${before ? `<th>${esc(beforeName)}</th>` : ""}</tr></thead><tbody>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? "")}</td><td>${v}</td>${before ? `<td>${before[i] ?? ""}</td>` : ""}</tr>`).join("")}</tbody></table>`;
     return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(name)}">${grid}${bars}${line}${xs}</svg>${table}`;
   }
 
@@ -396,7 +400,7 @@ export function adminLib() {
   // ---- [ADMUX-04] keys ----
 
   /** Where g and a letter go. */
-  const GO = { h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "ops", m: "metrics", a: "admins", l: "audit", s: "settings" };
+  const GO = { b: "inbox", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "ops", m: "metrics", a: "admins", l: "audit", s: "settings" };
 
   /**
    * What a key press means, or null: [key] as KeyboardEvent.key, [mods] {ctrl, meta, alt, shift},
