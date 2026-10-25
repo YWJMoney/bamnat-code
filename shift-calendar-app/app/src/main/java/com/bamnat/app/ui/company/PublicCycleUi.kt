@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -451,7 +452,7 @@ private fun TodayInCycle(cycle: PublicCycle, codes: String, picked: Int?, onPick
 @Composable
 private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onShare: () -> Unit, onClose: () -> Unit) {
     val c = LocalContext.current.appContainer
-    val hasPay = c.payStore.profile.value != null
+    val hasPay = c.payStore.profile.collectAsState().value != null
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
