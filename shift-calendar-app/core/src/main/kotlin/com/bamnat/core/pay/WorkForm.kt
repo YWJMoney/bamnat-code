@@ -44,7 +44,10 @@ object WorkForms {
         }
         if (profile?.wageType == WageType.HOURLY) return WorkForm.PART_TIME
         if (profile?.wageType == WageType.DAILY) return WorkForm.DAILY
-        val working = shiftTypes.filter { !it.isOff && it.start != null && it.end != null }
+        val all = shiftTypes.filter { !it.isOff && it.start != null && it.end != null }
+        // The kinds the order actually runs, when it says; a kind put in once by hand does not change the form.
+        val inOrder = (pattern as? WorkPattern.Rotation)?.steps?.filterNotNull()?.toSet().orEmpty()
+        val working = all.filter { it.id in inOrder }.ifEmpty { all }
         if (working.isEmpty()) return null
         fun span(t: ShiftType) = WorkTime.spanMinutes(t.start!!, t.end!!)
         fun night(t: ShiftType) = t.end!! <= t.start!! || t.start!!.hour >= 21
@@ -62,13 +65,14 @@ object WorkForms {
 
     /**
      * [PAYS-12] The pay setup of [form] at [amount] (월 기본급, 시급 or 일당) from [since]. [existing] keeps everything it
-     * holds (D70: a setup made before is never cleared): only the amount, the form's job when it had none, and the 빨간날
+     * holds (D70: a setup made before is never cleared): only the amount, the way it is paid (월급·시급·일당), the form's job when it had none, and the 빨간날
      * choice, when given, change. A new setup starts from the law, with the job's own first-setup rules ([PayPresets.firstSetup]).
      */
     fun apply(form: WorkForm, amount: Long, since: LocalDate, existing: PayProfile? = null, holiday: HolidayWork? = null): PayProfile {
-        val base = existing?.let { it.base.with(DatedValue(since, amount)) } ?: ValueTimeline(listOf(DatedValue(since, amount)))
+        val base = existing?.let { if (it.base.on(since).value == amount) it.base else it.base.with(DatedValue(since, amount)) } ?: ValueTimeline(listOf(DatedValue(since, amount)))
         val p = existing?.copy(
             base = base,
+            wageType = form.wageType,
             occupation = if (existing.occupation == Occupation.CUSTOM) form.occupation else existing.occupation,
             estimatedFields = existing.estimatedFields - Unknowns.BASE,
         ) ?: PayPresets.firstSetup(

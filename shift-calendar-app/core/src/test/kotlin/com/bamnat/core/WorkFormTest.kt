@@ -40,6 +40,9 @@ class WorkFormTest {
         assertEquals(WorkForm.TWO_SHIFT, WorkForms.guess(listOf(day12, night12, off)))
         val four = WorkPattern.Rotation(since, listOf(1L, 1L, 2L, 2L, 9L, 9L, 9L, 9L))
         assertEquals(WorkForm.FOUR_TEAM, WorkForms.guess(listOf(day12, night12, off), four))
+        // An 오후 kind put in once by hand is not in the order: still 2교대.
+        val fiveDays = WorkPattern.Rotation(since, listOf(1L, 1L, 2L, 2L, 9L))
+        assertEquals(WorkForm.TWO_SHIFT, WorkForms.guess(listOf(day12, night12, type(3, "오후", "오", 13, 22), off), fiveDays))
         assertEquals(WorkForm.DAY_ON_DAY_OFF, WorkForms.guess(listOf(type(1, "당번", "당", 9, 9), off)))
         assertEquals(WorkForm.ON_CALL, WorkForms.guess(listOf(type(1, "근무", "근", 9, 18), type(2, "당직", "당", 18, 9), off)))
         assertEquals(WorkForm.OFFICE, WorkForms.guess(listOf(type(1, "사무", "사", 9, 18), off)))
