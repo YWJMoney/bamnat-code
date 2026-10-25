@@ -221,6 +221,10 @@ private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList
         SetupSource.Kind.TEMPLATE -> add("${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
         SetupSource.Kind.SERVER -> add("같은 회사 설정: ${source.name}${source.dept.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}")
         SetupSource.Kind.FILE -> add("동료가 보낸 설정" + source.name.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
+        SetupSource.Kind.PUBLIC -> add(
+            (if (source.id.isNullOrEmpty()) "처음 제공: " else "${com.bamnat.core.plaza.PublicCycles.BADGE}: ") +
+                "${source.name} · ${com.bamnat.core.plaza.PublicCycles.formName(source.dept)}",
+        )
         null -> Unit
     }
 }.joinToString("\n")

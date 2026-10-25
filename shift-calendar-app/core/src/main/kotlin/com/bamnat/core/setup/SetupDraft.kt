@@ -34,7 +34,8 @@ data class SetupSource(
     val team: String? = null,
     val anchor: LocalDate? = null,
 ) {
-    enum class Kind { TEMPLATE, SERVER, FILE }
+    /** [SPAT-03] PUBLIC: a row of the public shift cycles ([id] is the row's, "" for a first provider's own company). */
+    enum class Kind { TEMPLATE, SERVER, FILE, PUBLIC }
 }
 
 /**

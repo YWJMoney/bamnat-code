@@ -431,6 +431,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -1097,6 +1098,7 @@ private fun AppNavHost(
                 return@composable
             }
             val nudges = appViewModel { CompanyNudgeViewModel(it) }
+            val publicUse by container.companyStore.publicUse.collectAsStateWithLifecycle()
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
@@ -1117,6 +1119,9 @@ private fun AppNavHost(
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
+                    // [SPAT-05] A public cycle in use and its pay just set: the plaza, the reward said first.
+                    if (calendar == PersonalCalendar.MAIN && profile != null) com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        onPay = {}, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
                     // [COMM-12] The company is known and no coworker's rules are in use: the plaza, with its name typed.
                     com.bamnat.app.ui.company.PlazaEntryCard(container, calendar, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
                         Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -1135,7 +1140,9 @@ private fun AppNavHost(
                 // [PAYS-09] The invitation after a match or an item of the company's own sends to 내 설정 나누기.
                 onShareWay = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                 // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
-                onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) })
+                onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) },
+                // [SPAT-04] The public cycle in use, for the first pay setup of the main calendar.
+                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } })
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
@@ -1160,7 +1167,10 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_FIND) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays)) },
                 onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
-                onBoard = if (setup) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
+                onBoard = if (setup || !container.companyApi.enabled) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
+                // [SPAT-04][SPAT-05] A public cycle just put in: on to the pay (with its usual allowances), or with pay set, the plaza.
+                onPay = { nav.navigate(Routes.pay()) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
+                onShare = { nav.navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
             )
         }
         composable(
@@ -1227,6 +1237,8 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_REPORT) },
                 onDone = { nav.popFrom(Routes.COMPANY_REPORT) },
                 onOpenSent = { nav.navigate(Routes.COMPANY_SENT) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
+                // [SPAT-05] Sent from a public row: that company's plaza page, in place of the form.
+                onOpenCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
             )
         }
         composable(Routes.COMPANY_SENT) {
@@ -1345,6 +1357,11 @@ private fun AppNavHost(
                     nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
                 }) else null,
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
+                // [SPAT-02] The company's cycle is for the main calendar, as a coworker's setup is (MCAL-06).
+                onFindCompany = if (!setup && calendar == PersonalCalendar.MAIN) ({
+                    vm.draft.forget()
+                    nav.navigate(Routes.companyFind()) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
+                }) else null,
             )
         }
         composable(

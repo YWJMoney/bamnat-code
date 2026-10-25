@@ -215,7 +215,7 @@ fun SetupHost(
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
                             onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
-                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = if (vm.companySearch) ({ searching = true }) else null, onOpenFile = onOpenFile)
+                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { searching = true }, onOpenFile = onOpenFile)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)
                         SetupStep.ORDER -> OrderStep(vm, d)

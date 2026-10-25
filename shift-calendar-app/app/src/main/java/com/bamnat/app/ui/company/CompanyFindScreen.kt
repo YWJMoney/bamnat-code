@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.company
 
 import kotlinx.coroutines.Dispatchers
+import com.bamnat.core.plaza.PublicCycle
+import com.bamnat.core.plaza.PublicCycles
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -114,6 +116,13 @@ fun CompanyFindScreen(
     ready: Boolean = false,
     /** [COMM-07] Every company's rules, to look through without a name. */
     onBoard: (() -> Unit)? = null,
+    /**
+     * [SPAT-02] 첫 설정: a public row (or the user's own company, first to give it) with the order picked, into the draft.
+     * Elsewhere it is null and the row goes on the calendar from its own sheet, then on to [onPay] or [onShare].
+     */
+    onPublic: ((PublicCycle, String) -> Unit)? = null,
+    onPay: () -> Unit = {},
+    onShare: () -> Unit = {},
 ) {
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
@@ -125,6 +134,8 @@ fun CompanyFindScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     if (focus) LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    // [SPAT-02] The user's own company when neither the public rows nor the coworkers have it (사용자 2026-10-25 14:05).
+    var providing by remember { mutableStateOf<PublicCycle?>(null) }
     val byHand = { name: String ->
         keyboard?.hide()
         vm.byHand(name)
@@ -148,7 +159,9 @@ fun CompanyFindScreen(
                 HeroIcon(Icons.Outlined.Apartment)
                 Text(if (setup) "다니는 회사를 찾아볼까요?" else "회사 이름으로 찾아요", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "같은 회사 분들이 맞춰 둔 근무표와 급여 계산 방식을 그대로 가져와요. 금액은 각자 넣어요.",
+                    if (vm.server) "같은 회사 분들이 맞춰 둔 근무표와 급여 계산 방식을 그대로 가져와요. 금액은 각자 넣어요."
+                    // [SPAT-02] Without the company server: the public cycles only.
+                    else "기사·채용 공고·노무 사이트에 나온 회사 근무주기를 찾아요. 고른 뒤 내 근무와 맞춰 봐요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
@@ -178,7 +191,21 @@ fun CompanyFindScreen(
                             Text("찾고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         is CompanyFindViewModel.Result.Found -> if (r.hits.isEmpty()) {
-                            NotFound(r.query, rewardLine(terms), ready) { byHand(r.query) }
+                            if (PublicCycles.search(r.query).isEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FirstProviderCard(r.query.trim(), rewardShort(terms), onStart = { form ->
+                                        keyboard?.hide()
+                                        providing = PublicCycles.provided(r.query.trim(), form)
+                                    }, plaza = vm.server)
+                                    if (setup) TextButton(onClick = { byHand(r.query) }) { Text("‘${r.query.trim()}’ 근무를 처음부터 직접 정할게요") }
+                                    else if (ready && vm.server) TextButton(onClick = { byHand(r.query) }) { Text("지금 쓰는 내 설정을 ‘${r.query.trim()}’로 나눌게요") }
+                                }
+                            } else {
+                                // [SPAT-02] The public rows below are the answer; the way to set it by hand stays one line.
+                                TextButton(onClick = { byHand(r.query) }) {
+                                    Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
+                                }
+                            }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // [PLAZA-03] 초성 찾기 only offers companies whose rule is in use, so a guess never leads to an empty page.
@@ -195,6 +222,9 @@ fun CompanyFindScreen(
                         is CompanyFindViewModel.Result.Failed -> Offline(r.code, onRetry = vm::retry) { byHand(r.query) }
                     }
                 }
+                // [SPAT-02] The public rows under the coworkers' setups, never looking like one of them (D79).
+                PublicCycleSection(query, onPick = onPublic, onPay = onPay, onShare = onShare,
+                    browse = result is CompanyFindViewModel.Result.Idle)
                 if (onBoard != null) {
                     OutlinedButton(onClick = { keyboard?.hide(); onBoard() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Forum, null, Modifier.size(18.dp))
@@ -210,6 +240,10 @@ fun CompanyFindScreen(
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+    providing?.let { p ->
+        PublicApplySheet(p, onDismiss = { providing = null }, onPay = { providing = null; onPay() }, onShare = { providing = null; onShare() },
+            pick = onPublic?.let { f -> { codes: String -> providing = null; f(p, codes) } })
     }
 }
 
@@ -248,22 +282,6 @@ private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
-        }
-    }
-}
-
-@Composable
-private fun NotFound(query: String, reward: String?, ready: Boolean, onByHand: () -> Unit) {
-    SoftCard(highlighted = true) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("아직 ‘$query’ 설정이 없어요", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (ready) "지금 쓰는 설정을 금액 없이 나눠 주시면, 같은 회사 분들은 다음부터 1분이면 끝나요. 처음 길을 내는 분이 되어 주세요!"
-                else "직접 맞춘 뒤 나눠 주시면, 같은 회사 분들은 다음부터 1분이면 끝나요. 처음 길을 내는 분이 되어 주세요!",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            reward?.let { RewardPill(it) }
-            Button(onClick = onByHand, modifier = Modifier.fillMaxWidth()) { Text(if (ready) "‘$query’로 내 설정 나누기" else "‘$query’ 설정 직접 하기") }
         }
     }
 }

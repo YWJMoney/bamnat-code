@@ -3,6 +3,9 @@ package com.bamnat.app.data
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyDraft
 import com.bamnat.app.company.CompanyStore
+import com.bamnat.app.company.PublicCycleFiles
+import com.bamnat.app.company.PublicUse
+import com.bamnat.core.plaza.PublicCycles
 import com.bamnat.core.setup.SetupDraft
 import com.bamnat.core.setup.SetupSource
 import com.bamnat.core.work.WorkStyle
@@ -58,6 +61,14 @@ class FirstSetup(
         if (source?.kind == SetupSource.Kind.SERVER && companyId != null && setupId != null) {
             // [COMM-03] 맞았어요·달라요 is asked about the company's setup in use.
             store.setApplied(AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Today.instant()))
+            store.setDraft(null)
+            store.setHandMade(false)
+        } else if (source?.kind == SetupSource.Kind.PUBLIC) {
+            // [SPAT-03] From a public row: its own way on (pay, then the plaza as '공개 자료 확인·고침'), not the hand-made invite,
+            // so one card asks, not two. The order is the one saved, as the user may have changed it in the setup.
+            val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept)
+            val codes = PublicCycleFiles.codesOf(cycle, marked)
+            store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis()))
             store.setDraft(null)
             store.setHandMade(false)
         } else if (marked.companyName.isNotBlank()) {

@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.company.PublicCycleFiles
+import com.bamnat.core.plaza.PublicCycle
 import com.bamnat.app.company.CompanyPage
 import com.bamnat.app.company.SharedSetup
 import com.bamnat.app.data.BackupException
@@ -318,6 +320,18 @@ class SetupViewModel(
             setup.text,
         )
         c.telemetry.event("company_apply", if (setup.adopted) "adopted" else "pending")
+    }
+
+    /**
+     * [SPAT-02][SPAT-03] A public row (or the user's own company, first to give it) with the order picked on its sheet: read
+     * as a company file, so the times, the order and today are asked next as for any shared setup. [SetupSource.dept] keeps
+     * the 근무형태 key for a first provider's row.
+     */
+    fun pickPublic(cycle: PublicCycle, codes: String) {
+        val text = PublicCycleFiles.text(cycle, codes)
+        val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
+        useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)
+        c.telemetry.event("setup_public", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
     }
 
     private fun useShared(source: SetupSource, text: String, roster: Boolean? = null) {
