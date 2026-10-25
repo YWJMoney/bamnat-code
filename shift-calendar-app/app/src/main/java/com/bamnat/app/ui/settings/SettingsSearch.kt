@@ -218,6 +218,8 @@ internal object SettingsIndex {
         row(V, "앱 버전", "버전", "업데이트", row = "버전"),
         // O 1.23 (I)
         row(A, "알람 제안", "스마트 알람", "알람 추천", "늦게 끔", "알람 시간", "숨긴 제안", "다시 보기"), // [ALRM-03]
+        // 1.25 Z
+        row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
     )
 
     /** The best fits for [query], best first. */

@@ -327,6 +327,20 @@ shift-calendar-app/
 - 시트 손잡이 이름은 `res/values(-ko)/sheet_strings.xml`이 라이브러리 글을 덮어써요("끌어서 옮기기", "닫기").
 
 
+### 6-12. 뒤로 가기·화면 안정·메모·하루 창·알람 휠·근무 종류 삭제·전체 백업 (1.25.0 묶음 Z, NAV-02~03·UX-10~13·ALRM-06·SHFT-09·BAK-01)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-Z-개발계획.md`, 근거는 `research/1.25-Z-조사.md`.
+
+- **화면을 더할 때 뒤로 가기 규칙** (Z-D1·D2): 뒤로 = 바로 전 화면. 화면 안에 단계·쪽·옆 패널·검색이 있으면 그 화면에 `BackHandler(enabled = 첫 단계가 아님)`을 두어 앞 단계로(예: `PayWizard`, `MoneyScreen` 요약, `InvestScreen` 첫 탭, `MemoListScreen` 검색, `CalendarScreen` 넓은 화면 패널). 탭 사이 뒤로와 달력에서 2초 안 두 번 닫기는 `AppRoot`의 `TabBackCallback` 하나가 해요: NavHost의 뒤로보다 늦게 등록돼야 해서 **이동할 때마다 다시 등록**하고(`DisposableEffect(backStack.id)`), 할 일은 누른 순간의 back stack으로 정해요(그 외는 아래로 넘김). 탭 이동은 `navigateTopLevel`만 쓰고(기록 `TabHistory`), 다른 화면 위에서 탭으로 가면 그 화면 위에 쌓여요. 첫 설정 중 들어온 설정 링크는 버려요. 시험 `ZScreenshotTest`의 back* (설정 7쪽·달력 도구·돈 쪽·메모 검색·넓은 패널 전수).
+- **달력 도구 칸** `ui/calendar/CalendarToolSlots`: 칸 자리 고정. 달력 종류에 안 맞는 것(교대가 아니면 모든 조, 서버 없으면 받기)만 빼고, 지금 못 쓰는 것은 흐리게 + 이유. 설정·도움말로 나가는 칸은 "다른 화면으로" 줄. 새 도구는 `build()` 목록에 자리를 정해 더하세요.
+- **깜박임** `ui/LastValues`·`rememberLast(key, 입력…)`: 화면이 다시 열려도 첫 프레임부터 마지막 값, 입력이 같으면 다시 계산 안 함(급여·통계·비교 카드·돈 보고서·모든 달력 카드). 근무 스냅숏은 `ScheduleRepository.lastSnapshot`이 새 VM의 첫 값. `produceState(null)`로 숫자를 계산하는 화면을 새로 만들면 이것을 쓰세요.
+- **메모** `MemoEditorScreen`: 커서 따라가기는 글자·커서가 바뀔 때만, 메모 스크롤 안에서만(`core/memo/CaretScroll`, `BringIntoViewRequester` 안 씀 — 창까지 올라가 키보드 닫을 때 창이 밀렸음). 맨 밑으로·맨 위로 버튼은 스크롤 중 나타나 2초 뒤 사라지고, 화면 읽기에는 늘 같은 동작.
+- **하루 창** `ui/components/SheetScrollGuard`(`Modifier.sheetScrollGuard()`): 안쪽을 스크롤한 손짓의 남은 아래 끌기·던지기는 시트로 안 보냄. 안쪽이 스크롤되는 다른 `ModalBottomSheet`에도 내용 바깥 Box에 붙이면 같아요. 시트 맨 위 고정 줄과 손잡이 끌기는 그대로 닫힘.
+- **알람 휠** `ui/components/AlarmOffsetDialog`(울릴 시각 / 시작 몇 시간 전, `core/alarm/AlarmOffsets`). DB에는 그대로 "시작 몇 분 전".
+- **근무 종류 삭제** `ScheduleRepository.shiftTypeUse`·`deleteShiftTypeUndoable(id, replaceWith)`·`restoreShiftType`: 다른 종류로 바꾸기/비우기, 스낵바 되돌리기(종류 id·날·주기·대근 그대로).
+- **전체 백업** `data/SettingsFilesBackup`: `AppSettings` 밖 설정 파일(`PARTS`)과 고정비 표시(`recurring_marks.json`)를 백업 `settingsFiles`에. 복원 뒤 메모리에 들고 있는 가게(`WorkTypePrefs`·`CompanyStore`·`RateHintStore`·`AutoRecordPrefs`·`ShareGroupStore`)를 `reload()`. **새 설정을 더하면**: `AppSettings` 칸은 `BackupManager` 내보내기·복원과 `ZFullBackupTest.sample`에, 아니면 `SETTINGS_ON_PHONE`에 이유와 함께. 새 SharedPreferences 파일은 `PARTS`·`ELSEWHERE`·`DEVICE_ONLY` 중 하나에(지킴이 시험이 소스를 훑어 빨강). 설정 › 데이터 '새 휴대폰으로 옮기기'가 옮겨지는 것·남는 것을 말해요.
+- 시험: core `ZAlarmCaretTest`, app `ZPartsTest`·`ZShiftTypeDeleteTest`·`ZFullBackupTest`·`ZScreenshotTest`(사진 910~922).
+
 ### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
 
 - 모두 회사 서버 안(`server/company-worker`). 앱(Kotlin)·DB 판·서버로 오는 정보는 바뀌지 않음. 회사 서버 재배포가 있어야 관리자 앱에 보여요.

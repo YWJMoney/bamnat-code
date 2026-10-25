@@ -477,6 +477,10 @@ object FeatureRegistry {
         f("pay.ruleBuilder", "INPUT-03", "회사 규칙 골라 담기", "대근·특근·토요일 근무가 기본급의 몇 %인지, 몇 시간 넘으면 얼마 더인지 눌러 고르면 한 문장으로 보여 주고 그대로 계산에 넣어요",
             PAID, "${tab(SHIFT)} › 이번 달 급여 › 회사 계산 방식 › 회사만의 규칙", at(Place.PAY), "회사 규칙", "규칙 조립", "대근 계산", "가산", "기본급의 %",
             "토요일 근무", "취업규칙", under = "pay.calc"),
+        // 1.25 묶음 Z (계획/1.25-Z-개발계획.md 402).
+        f("data.movePhone", "BAK-01", "새 휴대폰으로 옮기기", "기록과 모든 설정을 백업 파일 하나로 옮겨요. 이 휴대폰에만 남는 것(지도 위치·알람 소리 등)도 알려 줘요",
+            ALL, "설정 › 데이터 › 새 휴대폰으로 옮기기", at(Place.SETTINGS_DATA, "새 휴대폰으로 옮기기"), "새 휴대폰", "기기 변경", "옮기기", "모든 설정",
+            under = "data.backup"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

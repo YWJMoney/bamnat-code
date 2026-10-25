@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1·AA 0, 10 lines at most; 통합 folds them).
+        Release(36, "1.25.0", listOf(
+            // [NAV-02][UX-10][UX-13][ALRM-06][SHFT-09][BAK-01] Bundle Z.
+            Line("뒤로 가기는 바로 전 화면으로, 숫자는 깜박이지 않고, 하루 창은 스크롤하다 닫히지 않아요. 알람은 시·분 휠로, 근무 종류는 지우고 되돌리고, 모든 설정을 새 휴대폰으로 옮겨요", "data.movePhone"),
+        )),
         // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md 1장 5번: P 2·Q 1·R 1·S 1, 8 lines at most; 통합 folds them).
         Release(35, "1.24.0", listOf(
             // [ROST-01][ROST-03][ROST-05] Bundle P.
