@@ -50,6 +50,35 @@ class PlazaCompareTest {
         assertEquals(groups.sorted(), groups)
     }
 
+    @Test fun `빨간날 근무 is one item in four ways, edited the way the pay setup sets it`() {
+        val e = SetupEdit.of(company)!!
+        assertEquals(com.bamnat.core.pay.HolidayWork.PREMIUM, e.holidayWork)
+        val fact = { text: String -> SetupFacts.read(text).single { it.key == "rule:holiday" } }
+        assertEquals("휴일 근무 가산", fact(company).value)
+        assertEquals("holiday", fact(company).field)
+        // 특근·대근처럼: the kind is 특근 (2) when the file named none, and an overnight shift counts on the day it starts.
+        val extra = e.holidayWork(com.bamnat.core.pay.HolidayWork.AS_EXTRA)
+        assertEquals(com.bamnat.core.pay.HolidayWork.AS_EXTRA, extra.holidayWork)
+        assertEquals("특근처럼, 밤샘은 시작한 날로", fact(extra.text).value)
+        val rules = { t: String -> ((Json.parse(t) as Map<*, *>)["pay"] as Map<*, *>)["rules"] as Map<*, *> }
+        assertEquals(com.bamnat.core.model.ExtraKind.SPECIAL_ID.toString(), rules(extra.text)["publicHolidayAs"])
+        // 교대제라 상관없음 and 대체휴일 both leave the day unpaid; only the first keeps a field.
+        val shift = extra.holidayWork(com.bamnat.core.pay.HolidayWork.SHIFT_NORMAL)
+        assertEquals("교대제라 상관없음", fact(shift.text).value)
+        assertEquals(false, rules(shift.text)["publicHolidays"])
+        assertNull(rules(shift.text)["publicHolidayAs"])
+        val sub = shift.holidayWork(com.bamnat.core.pay.HolidayWork.SUBSTITUTE)
+        assertEquals("대체휴일", fact(sub.text).value)
+        assertFalse(rules(sub.text).containsKey("holidayWork"))
+        // As a proposal it is one line under 휴일 근무.
+        val lines = SetupCompare.proposalLines(SetupCompare.rows(company, shift.text))
+        assertEquals(listOf("holiday"), lines.map { it.field })
+        assertEquals("빨간날 근무: 교대제라 상관없음", lines.single().want)
+        // Back to the law keeps 밤샘은 시작한 날로 as CompanyRules.withHolidayWork does; the law on the law changes nothing.
+        assertEquals("휴일 근무 가산, 밤샘은 시작한 날로", fact(sub.holidayWork(com.bamnat.core.pay.HolidayWork.PREMIUM).text).value)
+        assertTrue(SetupCompare.rows(company, e.holidayWork(com.bamnat.core.pay.HolidayWork.PREMIUM).text).all { it.same })
+    }
+
     @Test fun `not a company file reads as nothing`() {
         assertTrue(SetupFacts.read("{}").isEmpty())
         assertTrue(SetupFacts.read("not json").isEmpty())

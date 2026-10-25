@@ -1,5 +1,7 @@
 package com.bamnat.core.plaza
 
+import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.remote.Json
 
 /**
@@ -26,6 +28,8 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
     fun rate(key: String): Double? = (rules()?.get(key) as? Number)?.toDouble()
     val restDay: String get() = rules()?.get("restDay") as? String ?: "LAW"
     val weeklyDay: String get() = rules()?.get("weeklyHolidayDay") as? String ?: "UNKNOWN"
+    /** [HOLI-01][PLAZA-02] The 빨간날 choice the file's fields come to, as [com.bamnat.core.pay.CompanyRules.holidayWork] reads them. */
+    val holidayWork: HolidayWork get() = SetupFacts.holidayWork(rules())
     val nightWindow: Pair<String, String>? get() {
         val r = rules() ?: return null
         val s = r["nightStart"] as? String ?: return null
@@ -89,6 +93,24 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
     }
 
     fun weeklyDay(value: String): SetupEdit = withRules { it["weeklyHolidayDay"] = value }
+
+    /**
+     * [HOLI-01][PLAZA-02] The 빨간날 choice, the same fields [com.bamnat.core.pay.CompanyRules.withHolidayWork] sets: 특근·대근처럼
+     * keeps the kind the file named (특근 when none) and counts an overnight shift by the day it starts.
+     */
+    fun holidayWork(mode: HolidayWork): SetupEdit = withRules { r ->
+        when (mode) {
+            HolidayWork.PREMIUM -> { r["publicHolidays"] = true; r.remove("publicHolidayAs"); r.remove("holidayWork") }
+            HolidayWork.AS_EXTRA -> {
+                r["publicHolidays"] = true
+                r["publicHolidayAs"] = r["publicHolidayAs"]?.toString() ?: ExtraKind.SPECIAL_ID.toString()
+                r["holidayByStart"] = true
+                r.remove("holidayWork")
+            }
+            HolidayWork.SUBSTITUTE -> { r["publicHolidays"] = false; r.remove("publicHolidayAs"); r.remove("holidayWork") }
+            HolidayWork.SHIFT_NORMAL -> { r["publicHolidays"] = false; r.remove("publicHolidayAs"); r["holidayWork"] = HolidayWork.SHIFT_NORMAL.name }
+        }
+    }
 
     /** How a kind of extra work is paid: the law, 통상시급 × [multiplier], or 기본급 [percent] a time. */
     fun kindRule(id: String, basis: String, multiplier: Double? = null, percent: Double? = null): SetupEdit {

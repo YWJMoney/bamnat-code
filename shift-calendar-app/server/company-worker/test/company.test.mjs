@@ -159,7 +159,7 @@ test("a setup reads as plain Korean for the developer", () => {
   assert.equal(lines["순서 8일"], "주간 주간 휴무 휴무 야간 야간 휴무 휴무");
   assert.equal(lines["연장·휴무일 근무"], "잔업(근무 뒤 2시간) · 특근(09:00~18:00) · 대근(주간·야간 대신) · 조기출근(근무 앞 1시간)");
   assert.equal(lines["대근"], "8시간에 기본급 10% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%");
-  assert.equal(lines["공휴일 근무"], "대근 방식");
+  assert.equal(lines["빨간날 근무"], "대근처럼");
   assert.equal(lines["수당"], "상여(2·4·6·8·10·12월 기본급 100%) · 자격수당(매달) · 야간수당(야간마다)");
 });
 

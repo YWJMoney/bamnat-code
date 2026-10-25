@@ -924,6 +924,8 @@ function rules(raw, names, kindIds, say) {
   // [PAYS-03] Kept only when set, so a setup without them keeps its fingerprint and reads as before.
   if (bool(r.supervisory ?? false, "rules")) out.supervisory = true;
   if (bool(r.holidaysU5 ?? false, "rules")) out.holidaysU5 = true;
+  // [HOLI-01][PLAZA-01] 1.25 V: 교대제라 상관없음 is told from 대체휴일 (both unpaid 빨간날) only by this, kept only then.
+  if (out.publicHolidays === false && r.holidayWork === "SHIFT_NORMAL") out.holidayWork = "SHIFT_NORMAL";
   const breakPay = oneOf(r.breakPay ?? "UNPAID", BREAK_PAY, "rules");
   if (breakPay !== "UNPAID") out.breakPay = breakPay;
   if (given(r.publicHolidayAs)) {
@@ -1211,13 +1213,20 @@ export function describe(setup) {
       if (r.nightStart && r.nightEnd) add("야간 시간", `${r.nightStart}~${r.nightEnd}`);
       add("쉬는 날 근무", { LAW: "법대로", HOLIDAY: "휴일근로로", OVERTIME: "연장근로로" }[r.restDay]);
       add("주휴일", r.weeklyHolidayDay === "FIRST_REST" ? "쉬는 날 중 첫날" : WEEKDAYS[r.weeklyHolidayDay] ? `${WEEKDAYS[r.weeklyHolidayDay]}요일` : "");
-      if (r.publicHolidayAs) add("공휴일 근무", `${kindName(r.publicHolidayAs)} 방식`);
+      // [HOLI-01] 빨간날 근무, one of four ways; the same words as the app's SetupFacts.holidayText.
+      if (p.fiveOrMore || r.publicHolidayAs) add("빨간날 근무", holidayText(r, r.publicHolidayAs ? kindName(r.publicHolidayAs) : null));
       for (const [k, e] of Object.entries(r.extra)) add(kindName(k), ruleText(e));
       for (const [k, by] of Object.entries(r.extraByShift)) for (const [n, e] of Object.entries(by)) add(`${kindName(k)} · ${n}`, ruleText(e));
     }
     if (p.items.length) add("수당", p.items.map(itemText).join(" · "));
   }
   return lines;
+}
+
+function holidayText(r, kind) {
+  const mode = r.publicHolidays === false ? (r.holidayWork === "SHIFT_NORMAL" ? "SHIFT_NORMAL" : "SUBSTITUTE") : r.publicHolidayAs ? "AS_EXTRA" : "PREMIUM";
+  const head = { PREMIUM: "휴일 근무 가산", AS_EXTRA: `${kind ?? "특근"}처럼`, SUBSTITUTE: "대체휴일", SHIFT_NORMAL: "교대제라 상관없음" }[mode];
+  return head + (r.holidayByStart && (mode === "PREMIUM" || mode === "AS_EXTRA") ? ", 밤샘은 시작한 날로" : "");
 }
 
 function timingText(k) {

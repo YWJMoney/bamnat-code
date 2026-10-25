@@ -377,6 +377,7 @@ shift-calendar-app/
 
 - **설정을 항목으로** `core/plaza/SetupFacts`(회사 설정 파일 → 항목 `key`·묶음·서버 말투 값·제안 칸), `SetupCompare`(두 파일 비교, 제안 줄 6개·80자), `SetupEdit`(파일의 값만 바꾸는 편집, 나머지는 그대로), `Choseong`, `ShareAsk`(권유 14→30→90일). 서버의 `describe()`와 말투를 맞춰 두었으니 한쪽을 바꾸면 `PlazaCompareTest`로 같이 보세요.
 - **모든 유형** `CompanyShare`가 주5일·파트타임 `weekly`와 매달 근무표 `roster`를 담고 읽어요(`SetupDraft.withShared(weekly)`). 순서·요일·근무표가 없는 옛 파일은 지문이 그대로예요.
+- **빨간날 근무(V와 연결)** 회사 설정 파일의 `publicHolidays`·`publicHolidayAs`·`holidayByStart`가 V의 네 가지(`HolidayWork`)로 읽혀요. 교대제라 상관없음만 `holidayWork: "SHIFT_NORMAL"`을 더 실어요(서버도 그때만 둬서 다른 지문은 그대로). 비교 항목 `rule:holiday`("빨간날 근무", 서버 describe와 같은 말 `SetupFacts.holidayText`), 편집 창 칩 `SetupEdit.holidayWork`. 근무별 1회 금액(`extraByShift`)은 구조만 가고 금액은 각자 넣어요. 명세서 뒤 `PlazaAskDialog`는 `rewardLine(terms)`, 그때는 급여 화면 권유 카드를 띄우지 않아요(`saveSetup(invite = false)`).
 - **다른 점 말하기** `ui/company/PlazaCompare.kt`: `DiffEditorSheet`(시간·칩·스테퍼, 글자 칸은 이유만), `CompareSheet`·`CompareRows`(다른 곳 먼저, 같은 곳은 접음). 회사 카드·급여 단계(`CompanyPayScreen`의 "이 회사 급여 설정을 쓸까요?")에서 열고, `TalkHolder.send(setupText=)`로 고친 파일 전체가 제안으로 가요. 급여 단계에서 고친 값은 그 휴대폰의 `pendingPay`가 돼요.
 - **대표 판** 서버 `support()`·`outweighs()`·`settle()`의 `rival`, 앱은 "대표 판 vN", 바뀐 기록의 `body`로 비교·되돌리기, 쓰던 판이 바뀌면 회사 화면 맨 위 카드("비교하고 바꾸기"/"그대로 둘게요").
 - **권유** `CompanyStore.handMade`(첫 설정을 회사 없이 직접), `inviteDue`·`inviteNever`, 달력 알림 묶음 `plazaShare` → `ShareInviteNotice`, 급여 화면 `ShareMoment.PAY/PAYSLIP`. 명세서 사진으로 규칙을 넣은 뒤(묶음 V)는 `ShareWayCard(ShareMoment.PAYSLIP, …)`를 띄우면 돼요.

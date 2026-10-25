@@ -135,11 +135,12 @@ class PayViewModel(
     }
 
     // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
-    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false) = viewModelScope.launch {
+    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
         // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
-        if (container.companyStore.applied.value == null) _shareMoment.value =
+        // [PAYS-15] Not when the screen asks itself right away (PlazaAskDialog after a payslip): one ask, not two.
+        if (invite && container.companyStore.applied.value == null) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()

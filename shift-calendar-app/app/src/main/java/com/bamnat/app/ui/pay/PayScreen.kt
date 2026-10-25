@@ -227,7 +227,7 @@ fun PayScreen(
                         preview = { draft -> vm.preview(draft, snap, month) },
                         slipRules = { base, read, rules -> vm.slipRules(base, snap, read, rules) },
                         onDone = { p, slip ->
-                            vm.saveSetup(p, slip)
+                            vm.saveSetup(p, slip, invite = !(slip && onShareWay != null))
                             editingSetup = false
                             if (slip && onShareWay != null) plazaAsk = true
                         },

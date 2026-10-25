@@ -39,6 +39,23 @@ test("[PLAZA-01] weekly days and a monthly roster travel, and setups without the
   assert.deepEqual(page.setups[0].setup.weekly, ["주간", "주간", "주간", "주간", "주간", null, null]);
 });
 
+test("[PLAZA-01][HOLI-01] 빨간날 근무 travels as one of four ways, and only 교대제라 상관없음 adds a field", async () => {
+  const at = (rules) => { const s = setup(); Object.assign(s.pay.rules, rules); return cleanSetup(s); };
+  const line = (c) => describe(c).find(([l]) => l === "빨간날 근무")?.[1];
+  // The helper's setup pays a 빨간날 as 대근 (kind 3).
+  assert.equal(line(cleanSetup(setup())), "대근처럼");
+  assert.equal(line(at({ publicHolidayAs: null, holidayByStart: true })), "휴일 근무 가산, 밤샘은 시작한 날로");
+  assert.equal(line(at({ publicHolidayAs: null, publicHolidays: false })), "대체휴일");
+  const shift = at({ publicHolidayAs: null, publicHolidays: false, holidayWork: "SHIFT_NORMAL" });
+  assert.equal(shift.pay.rules.holidayWork, "SHIFT_NORMAL");
+  assert.equal(line(shift), "교대제라 상관없음");
+  // A paid 빨간날 has no use for it, and a setup without it keeps its fingerprint.
+  const premium = at({ publicHolidayAs: null, holidayWork: "SHIFT_NORMAL" });
+  assert.equal("holidayWork" in premium.pay.rules, false);
+  assert.equal(await fingerprint(premium), await fingerprint(at({ publicHolidayAs: null })));
+  assert.notEqual(await fingerprint(shift), await fingerprint(at({ publicHolidayAs: null, publicHolidays: false })));
+});
+
 test("[PLAZA-03] 초성 of a name, and a search by 초성 finds companies with a rule in use", async () => {
   assert.equal(choseong("삼성전자"), "ㅅㅅㅈㅈ");
   assert.equal(choseong("서울대병원abc1"), "ㅅㅇㄷㅂㅇabc1");

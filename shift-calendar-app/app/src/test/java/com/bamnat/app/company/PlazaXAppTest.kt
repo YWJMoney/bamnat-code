@@ -120,6 +120,50 @@ class PlazaXAppTest {
         }
     }
 
+    /** [HOLI-01][HOLI-03] 1.25 V's 빨간날 choice goes with the company's file and comes onto another phone's pay setup. */
+    @Test fun theHolidayWayTravelsWithThePay() = runBlocking {
+        val schedule = weekdaySetup()
+        val day = schedule.snapshot.first().shiftTypes.first { it.name == "주간" }.id
+        suspend fun sent(rules: com.bamnat.core.pay.CompanyRules): JSONObject {
+            store.save(com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.MANUFACTURING, com.bamnat.core.pay.WageType.MONTHLY,
+                com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(today, 3_000_000))), rules = rules), keepUndo = false)
+            return CompanyShare(schedule, store, settings, today = { today }).exportForServer()
+        }
+        val asExtra = sent(com.bamnat.core.pay.CompanyRules().withHolidayWork(com.bamnat.core.pay.HolidayWork.AS_EXTRA).withHolidayShiftPay(day, 120_000))
+        val shiftNormal = sent(com.bamnat.core.pay.CompanyRules().withHolidayWork(com.bamnat.core.pay.HolidayWork.SHIFT_NORMAL))
+        withServer { base ->
+            val api = CompanyClient(base)
+            api.report("plaza-x-device-0021", "빨간날상사", "", false, "", asExtra)
+            api.report("plaza-x-device-0022", "교대상사", "", false, "", shiftNormal)
+            val extraSetup = api.company(api.search("빨간날상사").single().id).setups.single()
+            assertTrue(extraSetup.lines.any { (label, text) -> label == "빨간날 근무" && text == "특근처럼, 밤샘은 시작한 날로" })
+            val normalSetup = api.company(api.search("교대상사").single().id).setups.single()
+            assertTrue(normalSetup.lines.any { (label, text) -> label == "빨간날 근무" && text == "교대제라 상관없음" })
+            // Another phone: its 주간 has its own id, and the amount a time is its own to fill in.
+            val db2 = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+            try {
+                val theirs = ScheduleRepository(db2).also { it.ensureDefaults() }
+                val theirDay = theirs.snapshot.first().shiftTypes.first { it.name == "주간" }.id
+                // Their own pay setup, the law's way: the company's rules go into it.
+                val own = com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.MANUFACTURING, com.bamnat.core.pay.WageType.MONTHLY,
+                    com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(today, 2_500_000))))
+                store.save(own, keepUndo = false)
+                val share = CompanyShare(theirs, store, settings, today = { today })
+                share.apply(extraSetup.text, rotation = true)
+                val r = store.profile.value!!.rules
+                assertEquals(com.bamnat.core.pay.HolidayWork.AS_EXTRA, r.holidayWork)
+                assertTrue(r.holidayByShiftStart)
+                assertNotNull(r.extraByShift[r.publicHolidayAs]?.get(theirDay))
+                assertEquals(0L, r.holidayShiftPay(theirDay))
+                store.save(own, keepUndo = false)
+                share.apply(normalSetup.text, rotation = true)
+                assertEquals(com.bamnat.core.pay.HolidayWork.SHIFT_NORMAL, store.profile.value!!.rules.holidayWork)
+            } finally {
+                db2.close()
+            }
+        }
+    }
+
     /** Runs server/company-worker on Node with SQLite for [block], given its address. Skipped where Node is missing. */
     private suspend fun withServer(block: suspend (String) -> Unit) {
         val dir = File("../server/company-worker")

@@ -302,6 +302,15 @@ private fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, onChange: (SetupE
                 FilterChip(selected = e.weeklyDay == k, onClick = { onChange(e.weeklyDay(k)) }, label = { Text(l) })
             }
         }
+        // [HOLI-01] 빨간날 근무, the four ways of the pay setup (1.25 V); the amounts a time stay each person's own.
+        if (e.fiveOrMore) {
+            Text("빨간날 근무", style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.core.pay.HolidayWork.entries.forEach { m ->
+                    FilterChip(selected = e.holidayWork == m, onClick = { onChange(e.holidayWork(m)) }, label = { Text(m.label) })
+                }
+            }
+        }
     }
     if (e.kindRules.isNotEmpty()) Part(FactGroup.KIND, changed) {
         e.kindRules.forEach { k ->

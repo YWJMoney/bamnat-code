@@ -1,5 +1,6 @@
 package com.bamnat.core.plaza
 
+import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.remote.Json
 
 /**
@@ -17,7 +18,7 @@ data class SetupFact(val key: String, val group: FactGroup, val label: String, v
             key == "rate:ot" || key.startsWith("kind") -> "overtime"
             key == "rate:night" || key == "rate:window" -> "night"
             key == "rate:hw" || key == "rate:ho" || key == "rule:restDay" || key == "rule:weeklyDay" ||
-                key == "rule:publicAs" || key == "rule:holidaysU5" -> "holiday"
+                key == "rule:holiday" || key == "rule:holidaysU5" -> "holiday"
             key == "rule:breakPay" -> "break"
             key.startsWith("item:") -> if (value.contains("월 기본급") || value.contains("상여")) "bonus" else "allowance"
             else -> "other"
@@ -89,7 +90,9 @@ object SetupFacts {
                     is String -> DAY_NAMES[d]?.let { "${it}요일" } ?: "정하지 않음"
                     else -> "정하지 않음"
                 })
-                (r["publicHolidayAs"])?.toString()?.let { add("rule:publicAs", FactGroup.RULE, "공휴일 근무", "${kindName(it)} 방식") }
+                // [HOLI-01] 빨간날 근무, one of four ways (1.25 V); a 5인 미만 workplace only says it when it pays it as a kind.
+                val asKind = r["publicHolidayAs"]?.toString()
+                if (pay["fiveOrMore"] == true || asKind != null) add("rule:holiday", FactGroup.RULE, "빨간날 근무", holidayText(r, asKind?.let(kindName)))
                 if (pay["fiveOrMore"] != true && r["holidaysU5"] == true) add("rule:holidaysU5", FactGroup.RULE, "공휴일", "유급휴일로 줌")
                 (r["breakPay"] as? String)?.let {
                     add("rule:breakPay", FactGroup.RULE, "휴게", if (it == "PAID") "유급 (일한 시간은 아님)" else "일한 시간으로 침")
@@ -214,5 +217,21 @@ object SetupFacts {
         }
         val festivals = (i["festivals"] as? List<*>).orEmpty().joinToString("·") { if (it == "SEOLLAL") "설" else "추석" }
         return listOfNotNull(how, num(i["percentOfBase"])?.let { "기본급 ${pct(it)}" }, festivals.ifEmpty { null }, covers).joinToString(" ")
+    }
+
+    /** [HOLI-01] The 빨간날 choice a file's rules come to, as [com.bamnat.core.pay.CompanyRules.holidayWork] reads its fields. */
+    fun holidayWork(rules: Map<*, *>?): HolidayWork = when {
+        rules?.get("publicHolidays") == false ->
+            if (rules["holidayWork"] == HolidayWork.SHIFT_NORMAL.name) HolidayWork.SHIFT_NORMAL else HolidayWork.SUBSTITUTE
+        rules?.get("publicHolidayAs") != null -> HolidayWork.AS_EXTRA
+        else -> HolidayWork.PREMIUM
+    }
+
+    /** "특근처럼, 밤샘은 시작한 날로": the server's describe says the same. */
+    internal fun holidayText(rules: Map<*, *>, kind: String?): String {
+        val mode = holidayWork(rules)
+        val byStart = rules["holidayByStart"] == true && (mode == HolidayWork.PREMIUM || mode == HolidayWork.AS_EXTRA)
+        val head = if (mode == HolidayWork.AS_EXTRA) "${kind ?: "특근"}처럼" else mode.label
+        return head + if (byStart) ", 밤샘은 시작한 날로" else ""
     }
 }
