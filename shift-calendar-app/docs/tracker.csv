@@ -821,3 +821,10 @@ PLAZA-06,"순번 390 U25-나 첫 설정 다시 받기(설정 도움말·달력 �
 NAV-04,"Z 후속: 남은 뒤로 가기 — 근무 직접 치기(시트·옆 패널) 친 것 버리기 전에 묻기, 한 달 근무 넣기 확인 없이 닫힘 막기, 무슨 일 하세요·첫 설정 첫 질문 뒤로 = 앱 닫힘 → 2초 안 두 번, 받을 돈 검색 뒤로 = 검색 닫기",2 (1.25.0),완료,,"2026-10-25 TypingGuard(confirmValueChange·BackHandler·닫기), DutyRosterScreen Ui.unsaved 묻기, ui/ExitGuard(달력·첫 화면·첫 질문 공용), OwedScreen BackHandler. 끝에서 끝 ZScreenshotTest typingSheetAsksBeforeTypedDaysGo(923)·widePanelAsksBeforeTypedDaysGo·rosterScreenAsksBeforeLeaving(924)·theFirstSetupClosesOnlyOnASecondBack·owedSearchClosesBeforeLeaving"
 BAK-02,"Z 후속: 복원한 달력 보기 설정(calendar_view: 목록 보기·오늘의 흐름 접기·공휴일 답) 앱 다시 열지 않고 즉시 반영",2 (1.25.0),완료,,"2026-10-25 CalendarViewModel이 calendar_view 바뀜을 들어 다시 읽음. 끝에서 끝 ZScreenshotTest.aRestoredListViewShowsAtOnce(열린 달력에서 백업 복원 → 바로 목록)"
 QA-09,"Z 후속: 전체 실행에서만 깨지던 시험 원인 찾아 고치기(건너뛰기 없음) — StartupBudgetTest 2개, OperationsAppTest.usageStatsAreSentOnceADayOnlyWithAYes, 사진 시험 못 찾음",2 (1.25.0),완료,,"2026-10-25 원인 ① 시험 사이 버려진 Compose dispatcher 예약(앞에 Compose 화면 시험이 있으면 늘 재현) → rules/ComposeMainReset(ScreenshotBase·AccessibilityCheckTest·StartupBudgetTest), ② 앱 시작 스레드의 forgetUnless가 시험이 쓴 통계를 지움 → 컨테이너를 먼저 기다림. AlarmButtonsAllOffTest 알람 화면 닫기, StartupBudgetTest 실패 메시지에 화면·상태"
+PLAZA-07,"순번 430 D79 회사 참여: 휴대폰 해시↔회사, 달력당 1곳·바꾸면 30일 뒤·휴대폰당 2곳·많이 읽으면 하루 상한, 적용·제보도 참여",2 (1.26.0),진행 중,,
+PLAZA-08,"순번 430 D79 참여하지 않은 휴대폰(옛 앱 포함)에는 근무 시각·순서와 '급여 방식 있음·확인 n명'만, 참여한 휴대폰에만 급여 방식(회사 자료·이력·토론)",2 (1.26.0),진행 중,,
+PLAZA-09,"순번 430 D79 회사 광장 방(참여한 휴대폰만): 내 판·같은 부서 다른 판·고친 점, 안정(3대 이상 같은 값·30일 고침 없음)이면 권유·소식 멈춤",2 (1.26.0),진행 중,,
+PLAZA-10,"순번 430 D79 검색에 없는 회사의 첫 제보가 바로 첫 판(제보 1·확인 중), 근무만이어도 검색에 뜸, 급여까지 담긴 첫 제보·대표 판이 된 고침에만 보상(하루·1년 상한)",2 (1.26.0),진행 중,,
+PLAZA-11,"순번 430 D79 처음 저장할 때 한 번 승인 카드(혜택 안내 → 승인하면 그 회사 광장), 승인 뒤 근무 주기·급여 방식 고치면 하루 한 번 저절로 보냄, 설정에서 끔",2 (1.26.0),진행 중,,
+PLAZA-12,"순번 430 D79 적용 = 참여, 적용 전 급여 방식 숨김, 참여 뒤 고친 점 카드('야간 50%→60%로 바꾼 사람 3명 · 이 값 쓰기')로 그 값만 내 급여 설정에",2 (1.26.0),진행 중,,
+PLAZA-13,"순번 430 D79 관리자 앱 참여 수·안정, 도움말·설정 찾기·기능 목록·WhatsNew·HANDOFF 6-18, 사진 1060~1069",2 (1.26.0),진행 중,,
