@@ -47,6 +47,11 @@ object SlipRules {
         month: YearMonth,
         resolve: (LocalDate) -> ResolvedDay,
         read: PayslipRead,
+        /**
+         * The second photo the user can add (사용자 2026-10-25 "명세서와 회사 계산 방법 사진 두 장"): the 회사 계산 방법·취업규칙
+         * text read on the phone. Its rules go in first; what the payslip says then fills in the rest.
+         */
+        ruleText: String? = null,
         isHoliday: ((LocalDate) -> Boolean)? = null,
         calculator: PayCalculator = PayCalculator(),
     ): SlipRulesResult? {
@@ -57,6 +62,16 @@ object SlipRules {
         val changes = mutableListOf<String>()
         val hints = mutableListOf<String>()
         var p = profile
+
+        // 0. The company's own way, from the second photo.
+        val shiftTypes = days.mapNotNull { it.shiftType }.distinctBy { it.id }
+        ruleText?.takeIf { it.isNotBlank() }?.let { text ->
+            val found = RuleText.read(text, shiftTypes = shiftTypes, fiveOrMore = p.fiveOrMoreEmployees).filter { it.confidence >= 0.6 }
+            if (found.isNotEmpty()) {
+                p = RuleText.apply(p, found.map { it.change }, month)
+                changes += found.map { "회사 계산 방법: ${it.change.summary}" }
+            }
+        }
 
         // 1. 기본급 or 시급.
         val hourlyOnSlip = read.amount(SlipRole.HOURLY)?.takeIf { it in 1..99_999 }
@@ -83,8 +98,8 @@ object SlipRules {
                 PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount))), Cadence.BONUS, months = setOf(month.monthValue))
             } else {
                 val n = norm(name)
-                val byType = p.items.none { it.cadence == Cadence.PER_SHIFT_TYPE } && days.filter { it.isWorkDay }
-                    .groupBy { it.shiftType }.entries.firstOrNull { (t, ds) -> t != null && t.name.isNotBlank() && n.contains(norm(t.name)) && amount % ds.size == 0L }
+                val byType = days.filter { it.isWorkDay }.groupBy { it.shiftType }.entries
+                    .firstOrNull { (t, ds) -> t != null && t.name.isNotBlank() && n.contains(norm(t.name)) && amount % ds.size == 0L }
                 when {
                     byType != null -> PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount / byType.value.size))),
                         Cadence.PER_SHIFT_TYPE, shiftTypeIds = setOf(byType.key!!.id))
