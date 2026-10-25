@@ -147,7 +147,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
 
-private enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+internal enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
     /** [WORK-06] Income, spending and what is left, for every kind of work. */
     MONEY("money", "돈", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
@@ -159,6 +159,12 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
 
     /** [TYPE-02] The hours-and-money tab is named for the work of the calendar on screen. */
     fun labelFor(style: WorkStyle?): String = if (this == STATS) style.words().tab else label
+
+    companion object {
+        /** [NAV-05] The tabs in the order kept in settings ([com.bamnat.core.layout.TabOrder] keys are the routes). */
+        fun ordered(saved: List<String>): List<TopLevel> =
+            com.bamnat.core.layout.TabOrder.of(saved, entries.map { it.route }).map { k -> entries.first { it.route == k } }
+    }
 }
 
 /** [MON-07] Where the banner may go: under 근무·급여 and 돈 only ([com.bamnat.core.tier.AdRules.banner]). */
@@ -342,7 +348,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         route?.let { com.bamnat.app.ui.guide.GuideUse.screen(com.bamnat.app.data.GuideStore.get(container.appContext), it.substringBefore('/').substringBefore('?')) }
     }
 
-    // Opening the app (again) always lands on the calendar.
+    // [NAV-05] 1.26 AD: the tabs in the user's order (D82); the first is home: the app opens there, back ends there.
+    val tabEdit = remember { TabEdit() }
+    val savedTabs = remember(settingsNow.tabOrder) { TopLevel.ordered(settingsNow.tabOrder) }
+    val home = savedTabs.first()
+    val tabs = if (tabEdit.editing) tabEdit.order.map { k -> TopLevel.entries.first { it.route == k } } else savedTabs
+
+    // Opening the app (again) always lands on the first tab (the calendar unless the user moved another first).
     val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
     LaunchedEffect(homeRequests) {
         // Kept per process with the count: a screen rebuilt (a fold, a restore) does not take one twice or miss one.
@@ -351,9 +363,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
-            if (NoticeLinks.target.value == null && current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
+            val homeRoute = TopLevel.ordered(container.settingsRepository.current.tabOrder).first().route
+            if (NoticeLinks.target.value == null && current != homeRoute && TopLevel.entries.any { it.route == current }) {
                 TabHistory.clear()
-                nav.navigate(TopLevel.CALENDAR.route) {
+                nav.navigate(homeRoute) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
                 }
@@ -603,10 +616,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
+    // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
+    val startTab = rememberSaveable { home.route }
 
     // [NAV-02] 1.25 Z (U4): back goes where the user was. From a tab reached from another tab, that tab, as it was
     // left (Android's default went to the calendar from every tab); from the calendar itself, a second back within
     // two seconds closes the app, so one stray back does not. Screens and sheets inside take back first.
+    // [NAV-05] 1.26 AD: "the calendar" is the first tab ([home]), whichever the user put there, even when it was moved
+    // first in this run (the bottom of the back stack is then still the tab the app opened on, [start]).
     // One callback, added again after every move so it comes after the NavHost's own back (added once, at the
     // start), which would otherwise pop straight to the calendar; screens composed with the move add theirs later
     // and still go first.
@@ -619,12 +636,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     tabBack.onBack = onBack@{
         val previousRoute = nav.previousBackStackEntry?.destination?.route
         val current = TopLevel.entries.firstOrNull { it.route == nav.currentBackStackEntry?.destination?.route }
+        val start = nav.graph.findStartDestination().route
         when {
-            current != null && current != TopLevel.CALENDAR && previousRoute == TopLevel.CALENDAR.route && TabHistory.previous() != null ->
-                TabHistory.back()?.let { prev -> nav.navigateTopLevel(prev, record = false) }
-            current == TopLevel.CALENDAR && previousRoute == null -> { if (exitGuard.press(context)) TabHistory.clear() }
-            // Anything else is the NavHost's: the screen under this one.
-            else -> return@onBack false
+            // A tab put over an inner screen goes back to that screen, as anything else that is the NavHost's.
+            current == null || (previousRoute != null && previousRoute != start) -> return@onBack false
+            current == home -> { if (exitGuard.press(context)) TabHistory.clear() }
+            TabHistory.previous() != null -> TabHistory.back()?.let { prev -> nav.navigateTopLevel(prev, record = false) }
+            // Right over home: the NavHost pops to it.
+            previousRoute == home.route -> return@onBack false
+            // Home was moved first in this run, so it is not under this tab: it is brought up as a tab switch.
+            else -> nav.navigateTopLevel(home.route, record = false)
         }
         true
     }
@@ -637,6 +658,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         onDispose { tabBack.remove() }
     }
 
+    // [NAV-06] 1.26 AD: a long press on a tab moves the tabs; a tap anywhere else, back, or leaving the tabs saves.
+    val saveTabs: () -> Unit = {
+        if (tabEdit.editing) {
+            val made = tabEdit.finish()
+            if (made != savedTabs.map { it.route }) {
+                container.settingsRepository.update { it.copy(tabOrder = com.bamnat.core.layout.TabOrder.toSave(made)) }
+            }
+        }
+    }
+    if (tabEdit.editing) androidx.activity.compose.BackHandler { saveTabs() }
+    LaunchedEffect(route, showNav) { if (!showNav || topLevel == null) saveTabs() }
+    val tabNames: (String) -> String = { k -> TopLevel.entries.first { it.route == k }.labelFor(activeStyle) }
+    val tabsShown: () -> List<String> = { tabs.map { it.route } }
+    val onTab: (TopLevel) -> Unit = { dest -> if (!tabEdit.editing) navigateTop(dest) }
+
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
     val tabletop = rememberTabletop()
     androidx.compose.runtime.CompositionLocalProvider(LocalTabletop provides tabletop) {
@@ -644,17 +680,23 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (wide && showNav) {
                 NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
                     Spacer(Modifier.height(12.dp))
-                    for (dest in TopLevel.entries) {
-                        val selected = dest == topLevel
-                        NavigationRailItem(
-                            selected = selected,
-                            onClick = { navigateTop(dest) },
-                            icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                            label = { TabLabel(dest.labelFor(activeStyle)) },
-                            // [VIS-03] The chosen tab in the same blue as every other chosen thing.
-                            colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
-                        )
+                    tabs.forEachIndexed { index, dest ->
+                        androidx.compose.runtime.key(dest.route) {
+                            val selected = dest == topLevel
+                            val label = dest.labelFor(activeStyle)
+                            NavigationRailItem(
+                                selected = selected,
+                                onClick = { onTab(dest) },
+                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                label = { TabLabel(label) },
+                                modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = false, tabsShown, tabNames, saveTabs),
+                                // [VIS-03] The chosen tab in the same blue as every other chosen thing.
+                                colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
+                            )
+                        }
                     }
+                    // [NAV-06] The rail's empty part is "somewhere else" too.
+                    if (tabEdit.editing) TabEditCatcher(saveTabs, Modifier.fillMaxWidth().weight(1f))
                 }
             }
             Scaffold(
@@ -665,37 +707,49 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 bottomBar = {
                     if (!wide && showNav) {
                         Column {
-                            AdSlot(topLevel.adPlace())
+                            // [NAV-06] While the tabs are moved, the line about it takes the ad's place.
+                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs) else AdSlot(topLevel.adPlace())
                             NavigationBar {
-                                for (dest in TopLevel.entries) {
-                                    val selected = dest == topLevel
-                                    NavigationBarItem(
-                                        selected = selected,
-                                        onClick = { navigateTop(dest) },
-                                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                                        label = { TabLabel(dest.labelFor(activeStyle)) },
-                                        colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
-                                    )
+                                tabs.forEachIndexed { index, dest ->
+                                    androidx.compose.runtime.key(dest.route) {
+                                        val selected = dest == topLevel
+                                        val label = dest.labelFor(activeStyle)
+                                        NavigationBarItem(
+                                            selected = selected,
+                                            onClick = { onTab(dest) },
+                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                            label = { TabLabel(label) },
+                                            modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
+                                            colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 },
             ) { padding ->
-                Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-                    if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
-                        com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    Column(Modifier.fillMaxSize()) {
+                        if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
+                            com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
+                        }
+                        RingingBanner()
+                        AppNavHost(
+                            nav = nav,
+                            container = container,
+                            wide = wide,
+                            snackbar = snackbar,
+                            styleExtras = styleExtras,
+                            start = startTab,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (wide && showNav) {
+                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs) else AdSlot(topLevel.adPlace())
+                        }
                     }
-                    RingingBanner()
-                    AppNavHost(
-                        nav = nav,
-                        container = container,
-                        wide = wide,
-                        snackbar = snackbar,
-                        styleExtras = styleExtras,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (wide && showNav) AdSlot(topLevel.adPlace())
+                    // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else.
+                    if (tabEdit.editing) TabEditCatcher(saveTabs, Modifier.matchParentSize())
                 }
             }
         }
@@ -763,6 +817,7 @@ private fun AppNavHost(
     wide: Boolean,
     snackbar: SnackbarHostState,
     styleExtras: androidx.compose.runtime.MutableState<StyleExtras?>,
+    start: String,
     modifier: Modifier = Modifier,
 ) {
     // Outlives the screen that starts it, e.g. a message shown after 회사 찾기 closes.
@@ -771,7 +826,8 @@ private fun AppNavHost(
     // little and fades. The system's "remove animations" setting turns both off.
     NavHost(
         navController = nav,
-        startDestination = TopLevel.CALENDAR.route,
+        // [NAV-05] The first tab (D82); read once when the app starts, so a move in this run does not reset the screens.
+        startDestination = start,
         modifier = modifier,
         enterTransition = {
             if (betweenTabs()) fadeIn(tween(TAB_IN_MILLIS, delayMillis = TAB_OUT_MILLIS))

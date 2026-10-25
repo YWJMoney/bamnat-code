@@ -453,6 +453,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow("휴대폰 배경색에 맞추기", "배경화면 색으로 앱의 색을 바꿔요", settings.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
         }
+        // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
+        TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
     }
     SectionCard(title = "달력") {
         // [CAL-02] Sunday first, as most Korean calendars are.

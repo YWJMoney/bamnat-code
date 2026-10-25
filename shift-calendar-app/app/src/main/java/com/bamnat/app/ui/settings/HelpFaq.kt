@@ -483,7 +483,7 @@ internal object HelpFaq {
         HelpTopic(
             "back", "화면", "뒤로 가기를 누르면 어디로 가나요?",
             "바로 전에 보던 화면으로 가요. 돈 탭에서 설정 탭으로 왔다면 뒤로는 돈 탭(보던 그대로), 급여 설정은 앞 단계, 돈·투자 탭 안의 다른 쪽은 첫 쪽이에요. " +
-                "달력 첫 화면에서는 한 번 누르면 ‘한 번 더 누르면 밤낮이 닫혀요’가 뜨고, 2초 안에 한 번 더 눌러야 닫혀요.",
+                "맨 앞 메뉴(처음엔 달력)의 첫 화면에서는 한 번 누르면 ‘한 번 더 누르면 밤낮이 닫혀요’가 뜨고, 2초 안에 한 번 더 눌러야 닫혀요.",
             listOf("뒤로", "뒤로 가기", "꺼져요", "앱이 닫혀", "처음으로 가요", "달력으로 가요", "전 화면"),
             listOf("화면 이동"),
         ),
@@ -505,6 +505,15 @@ internal object HelpFaq {
             listOf("데이터"),
             "새 휴대폰으로 옮기기 열기" to HelpAction.Page(SettingsPage.DATA, MOVE_ROW),
         ),
+        // ---- 1.26 묶음 AD [GUIDE-09][NAV-05] ----
+        HelpTopic(
+            "tabOrder", "화면", "달력 말고 다른 화면으로 시작하고 싶어요",
+            "아래 메뉴(달력·돈·메모·근무·급여·설정) 아무거나 길게 누르면 아이콘이 작게 흔들려요. 그대로 끌어 원하는 메뉴를 맨 앞에 두고 다른 곳을 누르면 저장돼요. " +
+                "맨 앞 메뉴가 앱을 켤 때 처음 보이는 화면이고, 뒤로 가기도 거기서 끝나요. 설정 › 달력 화면 › ‘첫 화면·메뉴 순서’에서 위·아래 버튼으로 바꾸거나 ‘처음 순서로’ 되돌려요.",
+            listOf("첫 화면", "시작 화면", "메인 화면", "메뉴 순서", "탭 순서", "순서 바꾸기", "달력 말고", "메모부터", "처음 화면", "흔들"),
+            listOf("화면 이동", "달력 화면"),
+            "첫 화면·메뉴 순서 열기" to HelpAction.Page(SettingsPage.CALENDAR, TAB_ORDER_ROW),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
@@ -515,7 +524,7 @@ internal object HelpFaq {
         "share" to listOf("share", "receive"),
         "company" to listOf("plaza"),
         "backup" to listOf("backup", "movePhone", "phoneCalendar"),
-        "app" to listOf("widget", "alarm", "turnOff", "profile", "journal"),
+        "app" to listOf("widget", "alarm", "turnOff", "profile", "journal", "tabOrder"),
     )
 
     /**

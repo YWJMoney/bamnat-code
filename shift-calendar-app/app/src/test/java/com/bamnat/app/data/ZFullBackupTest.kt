@@ -46,6 +46,8 @@ class ZFullBackupTest {
         backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", rateHint = false, alarmSuggest = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
+        // 1.26 AD.
+        tabOrder = listOf("memos", "calendar"),
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)
