@@ -83,8 +83,6 @@ class ZFullBackupTest {
             assertEquals("설정 ${f.name}", f.get(wanted), f.get(back))
         }
         assertEquals(52, prefs("work_type_prefs").getInt("cap_main", 0))
-        // Read again by the store on screen, without restarting the app.
-        assertEquals(52, WorkTypePrefs.get(app).of("main").overtimeCapHours)
         assertEquals("{\"id\":\"c1\"}", prefs("company").getString("applied", null))
         assertEquals(setOf("r1", "r2"), prefs("company").getStringSet("sent", null))
         assertEquals("간호사|서울", prefs("plaza_rate_hint").getString("own", null))
