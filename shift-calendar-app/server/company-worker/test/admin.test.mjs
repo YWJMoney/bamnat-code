@@ -501,7 +501,7 @@ test("the developer app's screens take a few trips to the database however much 
       inBatch = false;
     }
   };
-  for (const path of ["/api/admin/overview", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
+  for (const path of ["/api/admin/overview", "/api/admin/inbox", "/api/admin/versions", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
     trips = 0;
     const res = await call("GET", path, undefined, admin);
     assert.equal(res.status, 200, path);

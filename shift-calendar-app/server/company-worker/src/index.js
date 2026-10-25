@@ -156,6 +156,8 @@ export default {
     } catch (e) {
       if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
       console.error(e && e.stack ? e.stack : String(e));
+      // [ADMUX-16] 지표 › 오류 counts these; a count that cannot be written changes nothing.
+      if (env.DB) await countError(env).catch(() => {});
       return json({ error: "server" }, 500);
     } finally {
       if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
@@ -3603,16 +3605,16 @@ function secretIssue(env, name, least) {
  * "owner" for managing admins and anything not listed, so a new route stays the owner's until it is.
  */
 function areaFor(path) {
-  if (path === "/overview" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
+  if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
-  if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
+  if (path.startsWith("/companies") || path.startsWith("/rules/") || path === "/versions") return "companies";
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings" || path === "/settings/sla") return "settings";
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
   if (path.startsWith("/notices") || path === "/switches" || path === "/ops") return "ops";
-  if (path === "/metrics") return "metrics";
+  if (path === "/metrics" || path === "/remote") return "metrics";
   if (path.startsWith("/shares")) return "shares";
   if (path === "/audit") return "audit";
   return "owner";
@@ -3684,6 +3686,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
   if (path === "/overview" && method === "GET") return json(await overview(env, actor));
+  // [ADMUX-17] 할 일 받은함: everything this admin may act on, nearest deadline first.
+  if (path === "/inbox" && method === "GET") return json(await inbox(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") return json(serverState(env));
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
@@ -3709,6 +3713,10 @@ async function signedRoute(request, env, url, path, method, now, session) {
   }
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})$/);
   if (m && method === "POST") return setRule(request, env, m[1], now);
+  // [ADMUX-18] 같은 회사 여러 판, and an earlier version made the department's rule again.
+  if (path === "/versions" && method === "GET") return json(await versions(env, url.searchParams.get("show")));
+  m = path.match(/^\/rules\/([A-Za-z0-9]{16})\/promote$/);
+  if (m && method === "POST") return promote(env, m[1], now);
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
@@ -3725,6 +3733,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  // [ADMUX-19] 광장 운영 일괄: many posts or 임금표 entries at once, each handled as it is alone.
+  if (path === "/posts/bulk" && method === "POST") return plazaBulk(request, env, now, "posts");
+  if (path === "/rates/bulk" && method === "POST") return plazaBulk(request, env, now, "rates");
   m = path.match(/^\/posts\/(p[A-Za-z0-9]{15})$/);
   if (m && method === "POST") return moderate(request, env, m[1], now);
   // [PLZ-14] 임금표 to look at, and an admin's call on one.
@@ -3740,6 +3751,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
   if (path === "/metrics" && method === "GET") return json(await metrics(env, url, now));
+  // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
+  if (path === "/remote" && method === "GET") return json(await remoteState(env, now, url.searchParams.get("fresh") === "1"));
   if (path === "/shares" && method === "GET") return shareReports(env);
   m = path.match(/^\/shares\/([A-Za-z0-9]{16,32})\/remove$/);
   if (m && method === "POST") return removeShare(request, env, m[1], now);
@@ -4424,6 +4437,10 @@ async function overview(env, actor) {
   if (can(actor, "companies")) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
     counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
+    // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
+    counts.versionConflicts = `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
+      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
+      WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`;
   }
   // [ADMIN-14] 이달 할 일 still open on the home screen.
   if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
@@ -4432,6 +4449,8 @@ async function overview(env, actor) {
     // [MON-09] Admins' phones waiting for the owner's 승인.
     counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
   }
+  // [ADMUX-17] 받은함's statements ride in the same trip, for the menu badge (what is past its deadline).
+  for (const [k, v] of Object.entries(inboxQueries(actor, now))) counts[`inbox_${k}`] = v;
   const keys = Object.keys(counts);
   const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
@@ -4439,11 +4458,13 @@ async function overview(env, actor) {
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
   const rows = new Set(["settings", "waiting", "phones", "live", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
   for (const k of keys) {
-    if (rows.has(k)) continue;
+    if (rows.has(k) || k.startsWith("inbox_")) continue;
     out[k] = got[k][0].n;
   }
   // [ADMUX-08] The developer app's build, so an open app can say a new one is out.
   out.build = adminBuild();
+  // [ADMUX-17] What in 받은함 is past its deadline, for the menu badge.
+  out.inboxLate = inboxItems(Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]])), actor, now).counts.late;
   out.sla = readSla(got.sla);
   if (got.recent) {
     out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
@@ -4969,13 +4990,19 @@ async function rateList(env, url) {
 async function setRate(request, env, actor, id, now) {
   const body = await readJson(request, 1024);
   const status = oneOf(body.status, ["adopted", "hidden", "pending"], "status");
+  const out = await rateTo(env, actor, id, status, now);
+  return json(out, out.error === "not_found" ? 404 : out.error ? 403 : 200);
+}
+
+/** One 임금표 entry to [status], for one or [ADMUX-19] many. */
+async function rateTo(env, actor, id, status, now) {
   const r = await one(env, "SELECT * FROM rates WHERE id = ?", id);
-  if (!r) return json({ error: "not_found" }, 404);
-  if (r.status === "adopted" && status !== "adopted" && !can(actor, "takedown", "edit")) return json({ error: "no_permission", area: "takedown" }, 403);
+  if (!r) return { error: "not_found" };
+  if (r.status === "adopted" && status !== "adopted" && !can(actor, "takedown", "edit")) return { error: "no_permission", area: "takedown" };
   if (status === "adopted" && r.status !== "adopted") await adoptRate(env, r, await settings(env), now);
   else await run(env, "UPDATE rates SET status = ?, decided_at = ? WHERE id = ?", status, now, id);
   await audit(env, now, `rate_${status}`, id, `${r.trade} ${r.amount}`);
-  return json({ ok: true, status });
+  return { ok: true, status };
 }
 
 // ---- the talk on rule sets, for the developer [COMM-06] ----
@@ -5067,9 +5094,14 @@ function plazaResults(env, p, flagged, writer, now) {
  * the writer cannot post for 30 days, and their post is hidden.
  */
 async function moderate(request, env, id, now) {
-  const body = await readJson(request, 1024);
+  const out = await moderatePost(env, id, await readJson(request, 1024), now);
+  return json(out, out.error ? 404 : 200);
+}
+
+/** One post's handling, for one post or [ADMUX-19] many; the answer for one, or { error } when it is gone. */
+async function moderatePost(env, id, body, now) {
   const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
-  if (!p) return json({ error: "not_found" }, 404);
+  if (!p) return { error: "not_found" };
   const target = `${p.company_id}/${p.grp}/${id}`;
   if (body.action === "hide" || body.action === "mute") {
     const reason = Object.hasOwn(HIDE_REASONS, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
@@ -5093,12 +5125,12 @@ async function moderate(request, env, id, now) {
     await batch(env, [...plazaResults(env, p, "deleted", "deleted", now),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
     await audit(env, now, "post_delete", target);
-    return json({ deleted: true });
+    return { deleted: true };
   } else {
     refuse("action", "action");
   }
   const after = await one(env, "SELECT id, status, hide_reason, kept FROM posts WHERE id = ?", id);
-  return json({ id, status: after.status, kept: after.kept === 1, hidden: after.hide_reason });
+  return { id, status: after.status, kept: after.kept === 1, hidden: after.hide_reason };
 }
 
 // ---- input and output ----
@@ -5394,15 +5426,17 @@ const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).re
 const b64urlText = (text) => b64url(new TextEncoder().encode(text));
 
 /** An OAuth token for the Play Developer API from the service account (JWT bearer, RS256), kept until near its end. */
-async function playToken(env, account, now) {
-  const kept = playTokens.get(env.DB ?? env);
+async function playToken(env, account, now, scope = PLAY.scope) {
+  // [ADMUX-16] One token per scope: purchases (androidpublisher) and Play's vitals (playdeveloperreporting).
+  const tokens = playTokens.get(env.DB ?? env) ?? {};
+  const kept = tokens[scope];
   if (kept && kept.until > now + 60_000) return kept.token;
   const pem = account.private_key.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
   const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
   const iat = Math.floor(now / 1000);
   const head = b64urlText(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64urlText(JSON.stringify({ iss: account.client_email, scope: PLAY.scope, aud: PLAY.token, iat, exp: iat + 3600 }));
+  const claims = b64urlText(JSON.stringify({ iss: account.client_email, scope, aud: PLAY.token, iat, exp: iat + 3600 }));
   const sig = b64url(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${head}.${claims}`)));
   const res = await fetch(PLAY.token, {
     method: "POST",
@@ -5411,7 +5445,7 @@ async function playToken(env, account, now) {
   });
   if (!res.ok) throw new Refuse("play_auth", "play", 502);
   const t = await res.json();
-  playTokens.set(env.DB ?? env, { token: t.access_token, until: now + (Number(t.expires_in) || 3600) * 1000 });
+  playTokens.set(env.DB ?? env, { ...tokens, [scope]: { token: t.access_token, until: now + (Number(t.expires_in) || 3600) * 1000 } });
   return t.access_token;
 }
 
@@ -5905,26 +5939,47 @@ async function usage(request, env) {
  * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share
  * is phone-days that did it within 28 days over all phone-days: about how many of the phones in use
  * do it, without knowing which phones they are. Under 30 phones a day it says 데이터 부족.
+ * [ADMUX-13]~[ADMUX-16] 1.25: any period up to 180 days (from·to), how many phones on which app, the
+ * plaza, how fast questions get their first answer, server errors and, with Play's numbers, crashes.
  */
 async function metrics(env, url, now) {
-  const days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
-  const to = kstDay(now - DAY);
-  const from = kstDay(now - days * DAY);
-  // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
-  const beforeFrom = kstDay(now - 2 * days * DAY);
-  const beforeTo = kstDay(now - (days + 1) * DAY);
-  const [dayRows, eventRows, subs, beforeRows] = (await batch(env, [
+  const r = metricRange(url, now);
+  const { from, to, days } = r;
+  const start = Date.parse(`${from}T00:00:00+09:00`);
+  const end = Date.parse(`${to}T00:00:00+09:00`) + DAY;
+  const lastWeek = kstDay(Date.parse(`${to}T00:00:00+09:00`) - 6 * DAY);
+  const byDay = (col) => `strftime('%Y-%m-%d', (${col} + 32400000) / 1000, 'unixepoch')`;
+  const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
     stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
       SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
-    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", beforeFrom, beforeTo),
-  ])).map((r) => r.results);
-  const was = new Map(beforeRows.map((r) => [r.day, r.phones]));
-  const phoneDays = dayRows.reduce((n, r) => n + r.phones, 0);
+    // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
+    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", r.beforeFrom, r.beforeTo),
+    // [ADMUX-13] Which app the phones of the period's last seven days run.
+    stmt(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY app ORDER BY phones DESC", lastWeek, to),
+    // [ADMUX-14] The plaza, day by day.
+    stmt(env, `SELECT ${byDay("created_at")} AS day, COUNT(*) AS n, COUNT(DISTINCT device) AS people FROM reports WHERE created_at >= ? AND created_at < ? GROUP BY day`, start, end),
+    stmt(env, `SELECT ${byDay("adopted_at")} AS day, COUNT(*) AS n FROM rules WHERE adopted_at >= ? AND adopted_at < ? GROUP BY day`, start, end),
+    stmt(env, `SELECT ${byDay("created_at")} AS day, COUNT(*) AS n FROM posts WHERE created_at >= ? AND created_at < ? GROUP BY day`, start, end),
+    stmt(env, `SELECT ${byDay("at")} AS day, COUNT(*) AS n FROM post_flags WHERE at >= ? AND at < ? GROUP BY day`, start, end),
+    stmt(env, "SELECT COUNT(*) AS n FROM posts WHERE hide_reason = 'flags' AND hidden_at >= ? AND hidden_at < ?", start, end),
+    stmt(env, `SELECT ${byDay("at")} AS day, COUNT(*) AS n FROM uses WHERE at >= ? AND at < ? GROUP BY day`, start, end),
+    stmt(env, "SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'adopted' THEN 1 ELSE 0 END) AS adopted FROM rates WHERE created_at >= ? AND created_at < ?", start, end),
+    // [ADMUX-14] Each question of the period and when it first got an answer.
+    stmt(env, `SELECT i.kind, i.created_at, i.rating, (SELECT MIN(m.at) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS first
+      FROM inquiries i WHERE i.created_at >= ? AND i.created_at < ?`, start, end),
+    // [ADMUX-16] Requests the worker answered with 500, counted per Korean day.
+    stmt(env, "SELECT key, count FROM counters WHERE key BETWEEN ? AND ?", `errors|${from}`, `errors|${to}`),
+    stmt(env, `SELECT COALESCE(json_extract(info, '$.app'), '') AS app, COUNT(*) AS n FROM inquiries
+      WHERE kind = 'bug' AND created_at >= ? AND created_at < ? AND json_valid(info) GROUP BY app ORDER BY n DESC LIMIT 10`, start, end),
+    env.DB.prepare(SLA_SQL),
+  ])).map((x) => x.results);
+  const was = new Map(beforeRows.map((x) => [x.day, x.phones]));
+  const phoneDays = dayRows.reduce((n, x) => n + x.phones, 0);
   const daily = dayRows.length ? Math.round(phoneDays / dayRows.length) : 0;
-  const ev = new Map(eventRows.map((r) => [r.event, r]));
+  const ev = new Map(eventRows.map((x) => [x.event, x]));
   const share = (e) => (phoneDays ? (ev.get(e)?.recent ?? 0) / phoneDays : null);
   const enough = daily >= 30;
   const gate = (name, rule, e, least) => {
@@ -5932,19 +5987,34 @@ async function metrics(env, url, now) {
     return { name, rule, value: v === null ? null : Math.round(v * 1000) / 10, status: !enough || v === null ? "few" : v * 100 >= least ? "pass" : "fail" };
   };
   const s = subs[0] ?? {};
+  const week = dayRows.filter((x) => x.day >= lastWeek);
+  const vitals = await playVitals(env, now);
+  const vital = (name, rule, key, least) => {
+    const v = vitals?.[key];
+    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : "play" };
+    return { name, rule, value: Math.round(v * 10000) / 100, status: vitals.users < 100 ? "few" : v * 100 < least ? "pass" : "fail" };
+  };
+  const dayList = [];
+  for (let d = start; d < end; d += DAY) dayList.push(kstDay(d));
+  const series = (rows) => {
+    const m = new Map(rows.map((x) => [x.day, x.n]));
+    return dayList.map((day) => m.get(day) ?? 0);
+  };
+  const total = (rows) => rows.reduce((n, x) => n + x.n, 0);
+  const sla = readSla(slaRows);
   return {
     from, to, days, phoneDays, daily, enough,
-    series: dayRows.map((r) => ({ day: r.day, phones: r.phones })),
+    series: dayRows.map((x) => ({ day: x.day, phones: x.phones })),
     // The same day [days] earlier for each day of the series, 0 when nothing came that day.
-    before: dayRows.map((r) => was.get(kstDay(Date.parse(`${r.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
+    before: dayRows.map((x) => was.get(kstDay(Date.parse(`${x.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
     events: Object.entries(EVENTS).map(([event, label]) => {
-      const r = ev.get(event);
-      return { event, label, phones: r?.phones ?? 0, total: r?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
+      const e = ev.get(event);
+      return { event, label, phones: e?.phones ?? 0, total: e?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
     }),
     gates: [
-      // Play's numbers come with Play Reporting access (순번 52); until then the row says where to look.
-      { gate: "G0", name: "비정상 종료", rule: "1.09% 미만(내부 0.5%)", value: null, status: "play" },
-      { gate: "G0", name: "ANR", rule: "0.47% 미만(내부 0.2%)", value: null, status: "play" },
+      // [ADMUX-16] Play's own numbers when the service account may read them; until then the row says where to look.
+      { gate: "G0", ...vital("비정상 종료", "1.09% 미만(내부 0.5%)", "crash", 1.09) },
+      { gate: "G0", ...vital("ANR", "0.47% 미만(내부 0.2%)", "anr", 0.47) },
       { gate: "G0", name: "테스터", rule: "12명이 14일", value: null, status: "play" },
       { gate: "G1", ...gate("급여 화면을 본 사용자", "30% 이상", "pay_view", 30) },
       { gate: "G2", ...gate("근무표 링크를 만든 사용자", "15% 이상", "share_made", 15) },
@@ -5955,8 +6025,475 @@ async function metrics(env, url, now) {
       trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0,
     },
     shares: await shareStats(env, days),
+    // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.
+    active: {
+      daily, week: week.length ? Math.round(week.reduce((n, x) => n + x.phones, 0) / week.length) : 0,
+      most: dayRows.reduce((m, x) => (x.phones > (m?.phones ?? -1) ? x : m), null),
+      versions: appVersions(versionRows),
+    },
+    dayList,
+    plaza: {
+      reports: total(reportRows), people: reportRows.reduce((n, x) => n + x.people, 0), adopted: total(ruleRows), posts: total(postRows),
+      flags: total(flagRows), hidden: hiddenRows[0]?.n ?? 0, applied: total(useRows), rates: rateRows[0]?.n ?? 0, ratesAdopted: rateRows[0]?.adopted ?? 0,
+      series: { reports: series(reportRows), adopted: series(ruleRows), posts: series(postRows), flags: series(flagRows), applied: series(useRows) },
+    },
+    inquiries: inquiryStats(inquiryRows, sla, dayList, now),
+    errors: {
+      server: series(errorRows.map((x) => ({ day: x.key.slice(7), n: x.count }))),
+      serverTotal: errorRows.reduce((n, x) => n + x.count, 0),
+      bugs: bugRows.map((x) => ({ app: x.app || "모름", n: x.n })),
+      play: vitals ? { users: vitals.users ?? null, day: vitals.day ?? null, error: vitals.error ?? null } : null,
+    },
   };
 }
+
+// AA 1.25 시작
+/** [ADMUX-13] The days asked: 7 to 90 back from yesterday, or from·to dates (at most 180 days, none after yesterday). */
+export function metricRange(url, now) {
+  const yesterday = kstDay(now - DAY);
+  const dateOf = (k) => {
+    const v = url.searchParams.get(k);
+    return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00+09:00`)) ? v : null;
+  };
+  let from = dateOf("from");
+  let to = dateOf("to");
+  let days;
+  if (from && to) {
+    if (to > yesterday) to = yesterday;
+    if (from > to) from = to;
+    days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY) + 1;
+    if (days > METRIC_MAX_DAYS) {
+      days = METRIC_MAX_DAYS;
+      from = kstDay(Date.parse(`${to}T00:00:00+09:00`) - (days - 1) * DAY);
+    }
+  } else {
+    days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
+    to = yesterday;
+    from = kstDay(now - days * DAY);
+  }
+  const first = Date.parse(`${from}T00:00:00+09:00`);
+  return { from, to, days, beforeFrom: kstDay(first - days * DAY), beforeTo: kstDay(first - DAY) };
+}
+
+const METRIC_MAX_DAYS = 180;
+
+/**
+ * [ADMUX-15] Each app version's code, for "can this phone take that remote file" (minApp is a code). The
+ * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
+ * carried ("1.24.0 (35)") are learned on top.
+ */
+const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36 };
+
+function appVersions(rows) {
+  const all = rows.reduce((n, x) => n + x.phones, 0);
+  return rows.map((x) => ({ app: x.app, code: APP_CODES[x.app] ?? null, phones: x.phones, share: all ? Math.round((1000 * x.phones) / all) / 10 : 0 }));
+}
+
+/** The value at [q] (0..1) of sorted [list], or null for none. */
+const quantile = (list, q) => (list.length ? list[Math.min(list.length - 1, Math.max(0, Math.ceil(q * list.length) - 1))] : null);
+
+/** [ADMUX-14] How the period's questions were answered: counts, first-answer minutes, kept targets, the users' word. */
+export function inquiryStats(rows, sla, dayList, now) {
+  const waits = rows.filter((x) => x.first !== null).map((x) => Math.round((x.first - x.created_at) / 60000)).sort((a, b) => a - b);
+  // A question still unanswered counts against the target once its time is up.
+  const due = rows.filter((x) => x.first !== null || now - x.created_at > sla[slaKey(x.kind)] * HOUR);
+  const kept = due.filter((x) => x.first !== null && x.first - x.created_at <= sla[slaKey(x.kind)] * HOUR).length;
+  const good = rows.filter((x) => x.rating === 1).length;
+  const bad = rows.filter((x) => x.rating === -1).length;
+  const kinds = new Map();
+  for (const x of rows) {
+    const k = kinds.get(x.kind) ?? { kind: x.kind, n: 0, answered: 0, waits: [] };
+    k.n++;
+    if (x.first !== null) {
+      k.answered++;
+      k.waits.push(Math.round((x.first - x.created_at) / 60000));
+    }
+    kinds.set(x.kind, k);
+  }
+  const per = (pick) => {
+    const m = new Map();
+    for (const x of rows) {
+      const at = pick(x);
+      if (at === null) continue;
+      const d = kstDay(at);
+      m.set(d, (m.get(d) ?? 0) + 1);
+    }
+    return dayList.map((d) => m.get(d) ?? 0);
+  };
+  return {
+    received: rows.length, answered: waits.length, median: quantile(waits, 0.5), p90: quantile(waits, 0.9),
+    kept: due.length ? Math.round((1000 * kept) / due.length) / 10 : null, due: due.length,
+    good, bad, rated: good + bad ? Math.round((1000 * good) / (good + bad)) / 10 : null,
+    kinds: [...kinds.values()].sort((a, b) => b.n - a.n).map((k) => ({ kind: k.kind, n: k.n, answered: k.answered,
+      median: quantile(k.waits.sort((a, b) => a - b), 0.5), target: sla[slaKey(k.kind)] })),
+    series: { received: per((x) => x.created_at), answered: per((x) => x.first) },
+  };
+}
+
+/** [ADMUX-16] One more request the worker could not answer (500) on today's Korean day; kept 400 days. */
+async function countError(env) {
+  const now = Date.now();
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2)
+    ON CONFLICT (key) DO UPDATE SET count = count + 1`).bind(`errors|${kstDay(now)}`, now + 400 * DAY).run();
+}
+
+/**
+ * [ADMUX-16] Play's user-perceived crash and ANR rates over 28 days (Play Developer Reporting API), with the
+ * same service account as the purchase checks once Play Console gives it "앱 정보 보기". Asked at most every
+ * six hours; Play's daily numbers come a day or two late. Null when no account is set.
+ */
+const VITALS = { scope: "https://www.googleapis.com/auth/playdeveloperreporting", api: "https://playdeveloperreporting.googleapis.com/v1beta1/apps",
+  keepMs: 6 * HOUR };
+const vitalsKept = new WeakMap();
+
+export async function playVitals(env, now) {
+  const account = playReady(env);
+  if (!account) return null;
+  const kept = vitalsKept.get(env.DB ?? env);
+  if (kept && kept.until > now) return kept.value;
+  const pkg = env.PLAY_PACKAGE || "com.bamnat.app";
+  // Daily rows are Los Angeles days (the only zone Play takes); ten days back is enough for the latest one.
+  const la = (ms) => {
+    const [y, m, d] = new Date(ms - 8 * HOUR).toISOString().slice(0, 10).split("-").map(Number);
+    return { year: y, month: m, day: d, timeZone: { id: "America/Los_Angeles" } };
+  };
+  const ask = async (token, set, metric) => {
+    const res = await fetch(`${VITALS.api}/${encodeURIComponent(pkg)}/${set}:query`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ timelineSpec: { aggregationPeriod: "DAILY", startTime: la(now - 10 * DAY), endTime: la(now) },
+        metrics: [metric, "distinctUsers"] }),
+      signal: AbortSignal.timeout(SHARE_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Refuse(res.status === 403 ? "play_denied" : "play", "play", 502);
+    const rows = (await res.json()).rows ?? [];
+    const last = rows.at(-1);
+    if (!last) return { rate: null, users: 0, day: null };
+    const val = (name) => Number(last.metrics?.find((x) => x.metric === name)?.decimalValue?.value);
+    const t = last.startTime ?? {};
+    return { rate: Number.isFinite(val(metric)) ? val(metric) : null, users: Number.isFinite(val("distinctUsers")) ? val("distinctUsers") : 0,
+      day: t.year ? `${t.year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}` : null };
+  };
+  let value;
+  try {
+    const token = await playToken(env, account, now, VITALS.scope);
+    const [crash, anr] = await Promise.all([ask(token, "crashRateMetricSet", "userPerceivedCrashRate28dUserWeighted"),
+      ask(token, "anrRateMetricSet", "userPerceivedAnrRate28dUserWeighted")]);
+    value = { crash: crash.rate, anr: anr.rate, users: crash.users, day: crash.day };
+  } catch (e) {
+    value = { error: e?.code === "play_denied" ? "denied" : "unreachable" };
+  }
+  vitalsKept.set(env.DB ?? env, { value, until: now + (value.error ? HOUR : VITALS.keepMs) });
+  return value;
+}
+
+/**
+ * [ADMUX-15] 원격 갱신 배포 현황: each signed file on the site the app reads (remote/v1 on GitHub Pages, or
+ * REMOTE_BASE_URL), whether its Ed25519 signature checks out with the keys the app trusts, and how many of
+ * the phones of the last seven days (usage stats) run an app new enough (minApp) to take it. The app never
+ * says which version it uses (결정 AA-D2), so this is what can reach phones, not what has.
+ */
+export const REMOTE = {
+  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide"],
+  base: "https://ywjmoney.github.io/-/remote/v1",
+  // The same two keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file).
+  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ="],
+  keepMs: 10 * 60 * 1000,
+};
+const remoteKept = new WeakMap();
+
+const unb64 = (text) => Uint8Array.from(atob(text.trim()), (c) => c.charCodeAt(0));
+
+async function signedBy(bytes, signature) {
+  let sig;
+  try {
+    sig = unb64(signature);
+  } catch {
+    return false;
+  }
+  for (const k of REMOTE.keys) {
+    try {
+      const key = await crypto.subtle.importKey("raw", unb64(k), { name: "Ed25519" }, false, ["verify"]);
+      if (await crypto.subtle.verify({ name: "Ed25519" }, key, sig, bytes)) return true;
+    } catch {
+      // A runtime without Ed25519 cannot say; the file shows as not checked.
+    }
+  }
+  return false;
+}
+
+async function remoteState(env, now, fresh = false) {
+  const kept = remoteKept.get(env.DB ?? env);
+  if (!fresh && kept && kept.until > now) return kept.value;
+  const base = (typeof env.REMOTE_BASE_URL === "string" && /^https:\/\/[^\s]+$/.test(env.REMOTE_BASE_URL.trim())
+    ? env.REMOTE_BASE_URL.trim() : REMOTE.base).replace(/\/+$/, "");
+  const get = async (path) => {
+    try {
+      const res = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(SHARE_TIMEOUT_MS), headers: { "cache-control": "no-cache" } });
+      return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+    } catch {
+      return null;
+    }
+  };
+  const week = await all(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY app",
+    kstDay(now - 7 * DAY), kstDay(now - DAY));
+  // Codes the questions carried ("1.24.0 (35)"), on top of the list of releases.
+  const learned = await all(env, `SELECT DISTINCT json_extract(info, '$.app') AS app FROM inquiries
+    WHERE json_valid(info) AND created_at > ? LIMIT 200`, now - 90 * DAY);
+  const codes = { ...APP_CODES };
+  for (const { app } of learned) {
+    const m = /^(\d{1,2}\.\d{1,3}\.\d{1,3}) \((\d{1,6})\)$/.exec(app ?? "");
+    if (m) codes[m[1]] = Number(m[2]);
+  }
+  const phones = week.reduce((n, x) => n + x.phones, 0);
+  const files = await Promise.all(REMOTE.kinds.map(async (kind) => {
+    const [bytes, sig] = await Promise.all([get(`${kind}.json`), get(`${kind}.json.sig`)]);
+    if (!bytes) return { kind, found: false };
+    let f = null;
+    try {
+      f = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      return { kind, found: true, readable: false };
+    }
+    const minApp = Number.isInteger(f.minApp) ? f.minApp : null;
+    const able = week.filter((x) => codes[x.app] !== undefined && (minApp === null || codes[x.app] >= minApp)).reduce((n, x) => n + x.phones, 0);
+    const unknown = week.filter((x) => codes[x.app] === undefined).reduce((n, x) => n + x.phones, 0);
+    return {
+      kind, found: true, readable: f.kind === kind && f.format === 1, version: f.version ?? null, issued: f.issued ?? null, minApp,
+      source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig), valid: sig ? await signedBy(bytes, new TextDecoder().decode(sig)) : false,
+      reach: phones ? Math.round((1000 * able) / phones) / 10 : null, unknown,
+    };
+  }));
+  const value = { base, at: iso(now), phones, files };
+  remoteKept.set(env.DB ?? env, { value, until: now + REMOTE.keepMs });
+  return value;
+}
+
+/** [ADMUX-19] Up to 100 posts (show·hide·delete) or 임금표 entries (adopted·hidden·pending) in one go. */
+async function plazaBulk(request, env, now, what) {
+  const body = await readJson(request, 8 * 1024);
+  const pattern = what === "posts" ? /^p[A-Za-z0-9]{15}$/ : /^[A-Za-z0-9]{22}$/;
+  if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > DEV.bulk || body.ids.some((x) => typeof x !== "string" || !pattern.test(x))) {
+    refuse("ids", "ids");
+  }
+  const ids = [...new Set(body.ids)];
+  let action;
+  if (what === "posts") {
+    action = oneOf(body.action, ["show", "hide", "delete"], "action");
+    if (action === "delete" && !can(env.actor, "community", "edit")) return json({ error: "no_permission", area: "community" }, 403);
+  } else {
+    action = oneOf(body.action, ["adopted", "hidden", "pending"], "action");
+  }
+  const done = [];
+  const skipped = [];
+  for (const id of ids) {
+    const out = what === "posts" ? await moderatePost(env, id, { action, reason: body.reason }, now) : await rateTo(env, env.actor, id, action, now);
+    (out.error ? skipped : done).push(out.error ? { id, error: out.error } : id);
+  }
+  await audit(env, now, `${what === "posts" ? "post" : "rate"}_bulk`, `${done.length}개`, `${action}${skipped.length ? ` (${skipped.length} 건너뜀)` : ""}`);
+  return json({ done, skipped });
+}
+
+/** [ADMUX-18] Wilson score lower bound (95%) of [ok] among [n], as a percent: a share that does not jump on two votes. */
+export function wilson(ok, n) {
+  if (!n) return 0;
+  const z = 1.96;
+  const p = ok / n;
+  const lower = (p + (z * z) / (2 * n) - z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n)) / (1 + (z * z) / n);
+  return Math.round(1000 * Math.max(0, lower)) / 10;
+}
+
+/**
+ * [ADMUX-18] 같은 회사 여러 판: per company and department, the rule in use, the setups waiting to replace it
+ * and the earlier versions, side by side with how many phones took each (uses), 맞았어요·달라요, trust, the
+ * Wilson share and what differs from the rule in use. show "conflict" (default): two or more live ones;
+ * "history": also departments whose only others are earlier versions.
+ */
+async function versions(env, show) {
+  const [ruleRows, groupRows, reports, votes, useRows, postRows, companyRows, settingRows] = (await batch(env, [
+    env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
+    env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at FROM reports WHERE status = 'pending'
+      ORDER BY verified DESC, created_at DESC`),
+    env.DB.prepare("SELECT company_id, grp, device, points, cluster FROM reports WHERE status IN ('pending', 'adopted')"),
+    env.DB.prepare("SELECT company_id, grp, device, ok, verified, cluster FROM votes"),
+    env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM uses GROUP BY company_id, grp"),
+    env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM posts WHERE status = 'shown' GROUP BY company_id, grp"),
+    env.DB.prepare("SELECT id, name FROM companies"),
+    env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
+  ])).map((r) => r.results);
+  const { adoptPoints } = readSettings(settingRows);
+  const scores = tallies(reports, votes);
+  const used = new Map(useRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
+  const talk = new Map(postRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
+  const names = new Map(companyRows.map((c) => [c.id, c.name]));
+  const depts = new Map();
+  const at = (company, norm, dept) => {
+    const key = `${company}/${norm}`;
+    if (!depts.has(key)) depts.set(key, { company: { id: company, name: names.get(company) ?? "" }, dept, list: [] });
+    return depts.get(key);
+  };
+  const card = (company, grp, more) => {
+    const sc = scores.get(`${company}/${grp}`) ?? NO_SCORE;
+    return { setup: grp, uses: used.get(`${company}/${grp}`) ?? 0, ok: sc.persons, bad: sc.bad, points: sc.points, ...trust(sc, adoptPoints),
+      wilson: wilson(sc.persons, sc.persons + sc.bad), posts: talk.get(`${company}/${grp}`) ?? 0, ...more };
+  };
+  for (const r of ruleRows) {
+    at(r.company_id, r.dept_norm, r.dept).list.push(card(r.company_id, r.grp, {
+      state: r.superseded ? "previous" : "active", rule: r.id, version: r.version, source: r.source, at: iso(r.adopted_at), raw: r.setup }));
+  }
+  const seen = new Set();
+  for (const g of groupRows) {
+    const key = `${g.company_id}/${g.grp}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const reportsOf = groupRows.filter((x) => x.company_id === g.company_id && x.grp === g.grp);
+    at(g.company_id, g.dept_norm, g.dept).list.push(card(g.company_id, g.grp, {
+      state: "pending", reports: reportsOf.length, verified: reportsOf.filter((x) => x.verified === 1).length,
+      at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup }));
+  }
+  const out = [];
+  let conflicts = 0;
+  for (const d of depts.values()) {
+    const live = d.list.filter((c) => c.state !== "previous");
+    const conflict = live.length >= 2;
+    if (conflict) conflicts++;
+    if (d.list.length < 2 || (!conflict && show !== "history")) continue;
+    const active = d.list.find((c) => c.state === "active");
+    const base = active ? describe(JSON.parse(active.raw)) : null;
+    // The one most people took and trust: phones that use it, people who sent or backed it, over the Wilson share.
+    const score = (c) => (c.uses + c.ok + (c.verified ?? 0)) * (0.5 + c.wilson / 200);
+    const best = live.length ? live.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
+    const order = { active: 0, pending: 1, previous: 2 };
+    out.push({
+      company: d.company, dept: d.dept, conflict,
+      candidates: d.list.sort((a, b) => order[a.state] - order[b.state] || (b.version ?? 0) - (a.version ?? 0) || b.at.localeCompare(a.at)).map((c) => {
+        const lines = describe(JSON.parse(c.raw));
+        const { raw, ...rest } = c;
+        return { ...rest, lines, changes: base && c !== active ? diffLines(base, lines) : null, recommended: Boolean(conflict && c === best) };
+      }),
+    });
+  }
+  out.sort((a, b) => b.conflict - a.conflict || a.company.name.localeCompare(b.company.name));
+  return { conflicts, show: show === "history" ? "history" : "conflict", items: out };
+}
+
+/**
+ * [ADMUX-18] An earlier version back as the department's rule: a new version with its setup (source
+ * "promote"), the rule in use becomes an earlier one. Nothing is deleted; phones on the replaced one hear
+ * of the new version through 광장 소식 like any other.
+ */
+async function promote(env, id, now) {
+  if (!can(env.actor, "takedown", "edit")) return json({ error: "no_permission", area: "takedown" }, 403);
+  const r = await one(env, "SELECT * FROM rules WHERE id = ?", id);
+  if (!r) return json({ error: "not_found" }, 404);
+  if (!r.superseded || r.withdrawn) return json({ error: "not_previous" }, 409);
+  const last = await one(env, "SELECT MAX(version) AS v FROM rules WHERE company_id = ? AND dept_norm = ?", r.company_id, r.dept_norm);
+  const ruleId = randomId(16);
+  await batch(env, [
+    stmt(env, "UPDATE rules SET superseded = 1 WHERE company_id = ? AND dept_norm = ? AND superseded = 0", r.company_id, r.dept_norm),
+    stmt(env, `INSERT INTO rules (id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'promote', ?, 0, 0)`, ruleId, r.company_id, r.dept, r.dept_norm, r.grp, (last?.v ?? 0) + 1, r.setup, now),
+  ]);
+  await audit(env, now, "rule_promote", ruleId, `v${r.version} → v${(last?.v ?? 0) + 1}`);
+  return companyInfo(env, r.company_id);
+}
+
+/**
+ * [ADMUX-17] 할 일 받은함: every thing waiting on this admin's areas in one list, the nearest deadline
+ * first, then the oldest. A deadline is the question's answer target, 30 days to look at a post the flags
+ * hid (운영 규칙), a week for a setup or 임금표 entry to be decided, the month's end for its chores.
+ */
+function inboxQueries(actor, now) {
+  const q = {};
+  if (can(actor, "inquiries")) {
+    q.inquiries = `SELECT i.id, i.kind, i.updated_at, i.assignee, i.assignee_name, i.same,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+        (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+      FROM inquiries i WHERE i.status = 'open' ORDER BY i.updated_at LIMIT 300`;
+    q.sla = SLA_SQL;
+  }
+  if (can(actor, "review")) {
+    q.groups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
+      FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 100`;
+    q.asks = "SELECT p.id, p.dept, p.created_at, c.name FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 50";
+    q.doubted = `SELECT r.id, r.dept, r.version, c.name, MAX(v.at) AS at, COUNT(*) AS n FROM rules r JOIN companies c ON c.id = r.company_id
+      JOIN votes v ON v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0 WHERE r.withdrawn = 0 AND r.superseded = 0 GROUP BY r.id LIMIT 50`;
+  }
+  if (can(actor, "community")) {
+    q.posts = `SELECT p.id, p.body, p.flags, p.status, p.hide_reason, p.hidden_at, p.created_at, c.name,
+        (SELECT MIN(f.at) FROM post_flags f WHERE f.post_id = p.id) AS flagged
+      FROM posts p JOIN companies c ON c.id = p.company_id WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') LIMIT 100`;
+    q.rates = "SELECT id, trade, amount, unit, created_at FROM rates WHERE status = 'pending' ORDER BY created_at LIMIT 50";
+  }
+  if (can(actor, "dev")) {
+    q.dev = "SELECT id, title, status, assignee, created_at FROM dev_items WHERE deleted_at IS NULL AND status = 'todo' ORDER BY created_at LIMIT 50";
+  }
+  if (can(actor, "rewards")) q.owed = "SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed'";
+  if (can(actor, "ops")) q.ops = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
+  if (actor.owner) {
+    q.admins = "SELECT id, name, email, created_at FROM admins WHERE status = 'pending'";
+    q.phones = "SELECT id, admin_name, created_at FROM admin_devices WHERE status = 'pending'";
+  }
+  return q;
+}
+
+async function inbox(env, actor, now) {
+  const q = inboxQueries(actor, now);
+  const keys = Object.keys(q);
+  const res = await batch(env, keys.map((k) => (Array.isArray(q[k]) ? stmt(env, ...q[k]) : env.DB.prepare(q[k]))));
+  return inboxItems(Object.fromEntries(keys.map((k, i) => [k, res[i].results])), actor, now);
+}
+
+/** [ADMUX-17] The list from what [inboxQueries] read (also read inside the overview's one trip). */
+function inboxItems(got, actor, now) {
+  const items = [];
+  const add = (item) => items.push({ due: null, ...item, at: iso(item.at), ...(item.due ? { due: iso(item.due) } : {}) });
+  const short = (t) => [...String(t ?? "")].slice(0, 80).join("");
+  if (got.inquiries) {
+    const sla = readSla(got.sla);
+    for (const r of got.inquiries) {
+      if (r.last !== "user") continue;
+      add({ type: "inquiry", id: r.id, kind: r.kind, title: short(r.first) || "(내용 없음)", at: r.updated_at, due: r.updated_at + sla[slaKey(r.kind)] * HOUR,
+        same: r.same ?? 0, mine: r.assignee === actor.id, assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null });
+    }
+  }
+  for (const g of got.groups ?? []) {
+    add({ type: "group", id: `${g.company_id}.${g.grp}`, title: `${g.name}${g.dept ? ` ${g.dept}` : ""}`, n: g.n, at: g.since, due: g.since + INBOX.decideDays * DAY });
+  }
+  for (const a of got.asks ?? []) add({ type: "ask", id: a.id, title: `${a.name}${a.dept ? ` ${a.dept}` : ""}`, at: a.created_at, due: a.created_at + INBOX.decideDays * DAY });
+  for (const d of got.doubted ?? []) add({ type: "doubted", id: d.id, title: `${d.name}${d.dept ? ` ${d.dept}` : ""} v${d.version}`, n: d.n, at: d.at });
+  for (const p of got.posts ?? []) {
+    const hidden = p.status === "hidden" && p.hide_reason === "flags";
+    add({ type: hidden ? "hidden_post" : "flagged_post", id: p.id, title: short(p.body), company: p.name, n: p.flags,
+      at: hidden ? p.hidden_at : p.flagged ?? p.created_at, due: hidden ? p.hidden_at + LIMITS.hiddenReviewDays * DAY : null });
+  }
+  for (const r of got.rates ?? []) add({ type: "rate", id: r.id, title: `${r.trade} ${r.amount.toLocaleString("ko-KR")}원`, at: r.created_at, due: r.created_at + INBOX.decideDays * DAY });
+  for (const d of got.dev ?? []) add({ type: "dev", id: d.id, title: short(d.title), at: d.created_at, mine: d.assignee === actor.id });
+  if (got.owed?.[0]?.n) add({ type: "rewards", id: "owed", title: "드릴 보상", n: got.owed[0].n, at: got.owed[0].since });
+  if (got.ops) {
+    const month = kstDay(now).slice(0, 7);
+    const [y, m] = month.split("-").map(Number);
+    const monthEnd = Date.parse(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01T00:00:00+09:00`);
+    for (const i of opsItems(month, got.ops[0]?.value)) {
+      if (!i.done) add({ type: "ops", id: i.key, title: i.text, at: Date.parse(`${month}-01T00:00:00+09:00`), due: monthEnd });
+    }
+  }
+  for (const a of got.admins ?? []) add({ type: "admin", id: a.id, title: `${a.name} (${maskEmail(a.email)})`, at: a.created_at });
+  for (const p of got.phones ?? []) add({ type: "phone", id: p.id, title: `${p.admin_name}의 휴대폰`, at: p.created_at });
+  items.sort((a, b) => (a.due && b.due ? a.due.localeCompare(b.due) : a.due ? -1 : b.due ? 1 : a.at.localeCompare(b.at)));
+  const today = Date.parse(`${kstDay(now)}T00:00:00+09:00`) + DAY;
+  const counts = { today: 0, week: 0, all: items.length, late: 0, mine: items.filter((i) => i.mine).length };
+  for (const i of items) {
+    const due = i.due ? Date.parse(i.due) : null;
+    if (due !== null && due < now) counts.late++;
+    if (due !== null && due < today) counts.today++;
+    if (due !== null && due < today + 6 * DAY) counts.week++;
+  }
+  return { now: iso(now), counts, items: items.slice(0, 200) };
+}
+
+const INBOX = { decideDays: 7 };
+// AA 1.25 끝
 
 // [COMM-09] 이 사람 글 안 보기 without a list on the server. Each post carries its writer sealed with a key
 // only this server has (AES-GCM, a fresh nonce each time), so the marks of two posts never match and
