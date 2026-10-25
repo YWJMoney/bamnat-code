@@ -181,6 +181,52 @@ class MoneyViewModel(
         return gross(month)
     }
 
+    /** [TAX-01][TAX-04] The calendar's 월급 관측 and tax answers. */
+    private val tax = container.tax(calendarId)
+    val payRecords: StateFlow<List<com.bamnat.core.tax.PayObservation>> =
+        tax.observations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val taxSettings: StateFlow<com.bamnat.core.tax.TaxSettings> =
+        tax.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.bamnat.core.tax.TaxSettings())
+
+    /** [TAX-01] Pay that came in since the last look becomes 월급 관측, when the money tab opens. */
+    fun checkSalary() {
+        container.appScope.launch {
+            runCatching { com.bamnat.app.tax.SalaryWatch.check(container, calendarId) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+        }
+    }
+
+    /** [TAX-02] The 세금·실수령 card's numbers, off the main thread. */
+    suspend fun takeHome(profile: PayProfile?, snapshot: ScheduleSnapshot?, records: List<com.bamnat.core.tax.PayObservation>, month: YearMonth) =
+        withContext(Dispatchers.Default) { com.bamnat.app.tax.TakeHomeView.of(profile, snapshot, records, month) }
+
+    fun savePayRecord(o: com.bamnat.core.tax.PayObservation) {
+        container.appScope.launch {
+            tax.save(o)
+            _undo.tryEmit(UndoMessage("${Fmt.month(o.payMonth)} 실수령을 적었어요", undo = null))
+        }
+    }
+
+    fun deletePayRecord(o: com.bamnat.core.tax.PayObservation) {
+        container.appScope.launch {
+            tax.delete(o.id)
+            _undo.tryEmit(UndoMessage("${Fmt.month(o.payMonth)} 기록을 지웠어요") { tax.save(o.copy(id = 0)) })
+        }
+    }
+
+    /** [TAX-01] A deposit taken for pay that was not: back to 부수입, and never taken again. */
+    fun notPay(o: com.bamnat.core.tax.PayObservation) {
+        val entry = book.value?.entries?.firstOrNull { it.id == o.entryId }
+        container.appScope.launch {
+            if (entry != null) com.bamnat.app.tax.SalaryWatch.notPay(container, calendarId, entry) else tax.delete(o.id)
+            _undo.tryEmit(UndoMessage("월급이 아닌 걸로 돌려놨어요", undo = null))
+        }
+    }
+
+    fun saveBusiness(p: com.bamnat.core.tax.BusinessTax.Profile) {
+        container.appScope.launch { tax.saveSettings { it.copy(business = p) } }
+    }
+
     /** [LEDG-29] The 가계부 counts pay as 지급일 실수령 or as the month's 세전. */
     fun setLedgerTakeHome(on: Boolean) = viewModelScope.launch { scope.pay.update { it.copy(ledgerTakeHome = on) } }
 
@@ -437,6 +483,18 @@ fun MoneyScreen(
         vm.showPage(MoneyViewModel.Page.SUMMARY)
         autoRecording = true
     }
+    // [TAX-01] What came in since the last look is checked for pay, and 알림 '세금 카드' lands on the sheet.
+    LaunchedEffect(vm) { vm.checkSalary() }
+    var takingHome by rememberSaveable { mutableStateOf(false) }
+    var bizTax by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.TAX) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.TAX)
+        vm.showPage(MoneyViewModel.Page.SUMMARY)
+        if (gate.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)) { if (taxSide(settings.workStyle) == TaxSide.BUSINESS) bizTax = true else takingHome = true }
+    }
+    val payRecords by vm.payRecords.collectAsStateWithLifecycle()
+    val taxSettings by vm.taxSettings.collectAsStateWithLifecycle()
     val rules by vm.rules.collectAsStateWithLifecycle()
     val captures by vm.captures.collectAsStateWithLifecycle()
     val autoRecord by vm.autoRecord.collectAsStateWithLifecycle()
@@ -448,6 +506,14 @@ fun MoneyScreen(
     }
     val analysis by produceState<LedgerAnalysis?>(null, book, style, profile, snapshot, month, page == MoneyViewModel.Page.REPORT) {
         if (page == MoneyViewModel.Page.REPORT) value = vm.analysis(book, style, profile, snapshot, month, today)
+    }
+    val side = taxSide(style)
+    val takeHome by produceState<com.bamnat.app.tax.TakeHomeView?>(null, profile, snapshot, payRecords, month, side) {
+        value = if (side == TaxSide.PAY) vm.takeHome(profile, snapshot, payRecords, month) else null
+    }
+    val business = remember(book, taxSettings, side, month, today) {
+        if (side != TaxSide.BUSINESS) null
+        else com.bamnat.core.tax.BusinessTax.year(month.year, today, taxSettings.business, book.jobs, book.sales, book.entries)
     }
     LaunchedEffect(snackbar) {
         val host = snackbar ?: return@LaunchedEffect
@@ -490,6 +556,8 @@ fun MoneyScreen(
         },
         MoneyPart.RECENT to { RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) }) },
         MoneyPart.INCOME to { IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome) },
+        // [TAX-02][TAX-05] 세전·세후 and this year's tax (프로).
+        MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true }) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
             OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
@@ -639,6 +707,13 @@ fun MoneyScreen(
             onRemove = { vm.removeAccount(it); editingAccount = null },
             onDismiss = { editingAccount = null; addingAccount = null; addingAnyAccount = false })
     }
+    if (takingHome) takeHome?.let { v ->
+        TakeHomeSheet(v, onAdd = vm::savePayRecord, onDelete = vm::deletePayRecord, onNotPay = vm::notPay,
+            onDismiss = { takingHome = false }, today = today)
+    }
+    if (bizTax) BusinessTaxSheet(taxSettings.business,
+        yearOf = { p -> com.bamnat.core.tax.BusinessTax.year(month.year, today, p, book.jobs, book.sales, book.entries) },
+        onSave = { vm.saveBusiness(it); bizTax = false }, onDismiss = { bizTax = false })
     if (arranging) MoneyEditSheet(settings.moneyLayout, vm::updateSettings, onDismiss = { arranging = false })
     if (editingCategories) {
         CategoryEditor(book, onSave = { k, edits, renames -> vm.saveCategories(k, edits, renames); editingCategories = false },
@@ -665,6 +740,8 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
     SectionCard(title = "수입 내역") {
         if (style?.usesPayEngine != false) {
             val label = when {
+                m.payObserved && net -> "급여 (지급일 실수령 예상)"
+                m.payObserved -> "급여 (세전 예상)"
                 m.payRecorded > 0 -> "급여 (받은 금액)"
                 m.payEstimate != null && net -> "급여 (지급일 실수령 예상)"
                 m.payEstimate != null -> "급여 (세전 예상)"
@@ -680,8 +757,10 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
                     TextButton(onClick = onOpenPay) { Text(if (hasProfile) "열기" else "정하기") }
                 }
             }
+            // [TAX-01] 결정 W-D1: the pay that came is an observation beside the estimate, never added on top.
+            if (m.payObserved) Line("  실제 들어온 월급 ${Fmt.won(m.payRecorded)} · 관측 (세금 예측에 써요)", "", muted = true)
             // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
-            if (hasProfile && m.payRecorded == 0L) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (hasProfile && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })
                 FilterChip(selected = net, onClick = { onTakeHome(true) }, label = { Text("지급일 실수령") })
             }
@@ -766,6 +845,7 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
     INCOME("income", "수입 내역", "급여 예상과 적은 수입", right = true),
+    TAX("tax", "세금·실수령", "세전·세후 예상, 올해 낼 세금", right = true),
     OWED("owed", "받을 돈", "빌려준 돈·외상·안 받은 일감", right = true),
     WORK("work", "일감·매출 돈", "일감 입금 맞추기, 카드 매출 입금 예정"),
     ALL("all", "모든 달력 합계", "달력이 둘 이상일 때"),

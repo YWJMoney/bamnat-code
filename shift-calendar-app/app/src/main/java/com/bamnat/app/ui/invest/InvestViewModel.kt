@@ -335,7 +335,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         val qty = d.quantity ?: return false
         val price = d.price ?: return false
         val account = d.accountId?.takeIf { s.full.account(it)?.hidden == false } ?: 0L
-        val fees = com.bamnat.core.invest.InvestFees.suggest(d.market, d.side, qty, price, s.full.account(account))
+        val fees = com.bamnat.core.invest.InvestFees.suggest(d.market, d.side, qty, price, s.full.account(account), s.full.settings)
         saveTrade(Trade(accountId = account, date = s.today, symbol = d.symbol, name = d.name, market = d.market, side = d.side,
             quantity = qty, price = price, fxRate = if (d.market.foreign) s.settings.usdKrw else 1.0, fee = fees.fee, tax = fees.tax,
             tags = listOf(if (a.kind == com.bamnat.core.invest.AlarmKind.PLAN) "정기 적립" else a.kind.label), alarmId = a.id), null)

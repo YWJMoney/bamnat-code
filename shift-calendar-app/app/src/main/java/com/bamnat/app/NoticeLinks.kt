@@ -65,6 +65,8 @@ object NoticeLinks {
         WHATS_NEW,
         /** [SHR-14] 우리 조 모아 보기. */
         GROUP,
+        /** [TAX-02] 1.25 W: the money tab with 세금·실수령 open. */
+        TAX,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

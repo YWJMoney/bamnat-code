@@ -393,6 +393,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
+            // [TAX-02] Likewise, to open 세금·실수령.
+            NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -1303,7 +1305,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)
         }
-        Place.MONEY -> navigateTopLevel(TopLevel.MONEY.route)
+        Place.MONEY -> if (link.focus == "tax") NoticeLinks.open(NoticeLinks.Target.TAX) else navigateTopLevel(TopLevel.MONEY.route)
         Place.AUTO_RECORD -> NoticeLinks.open(NoticeLinks.Target.AUTO_RECORD)
         Place.MEMOS -> navigateTopLevel(TopLevel.MEMOS.route)
         Place.STATS -> navigateTopLevel(TopLevel.STATS.route)

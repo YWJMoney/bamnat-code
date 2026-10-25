@@ -26,6 +26,8 @@ enum class JournalKind(val feature: String, val why: String, val route: FeatureR
     NEWS("plaza.news", "밤낮 소식은 하루 한 번 묶어서 와요", FeatureRoute(Place.SETTINGS_NOTICES, "밤낮 소식")),
     /** [ROST-11] A month's roster read and put on the calendar; detail "month days source" ([rosterDetail]). */
     ROSTER("shift.roster", "한 달 근무 넣기로 넣은 날은 되돌릴 수 있어요", FeatureRoute(Place.DUTY_ROSTER)),
+    /** [TAX-01] 1.25 W: a pay deposit kept as 월급 관측 and filed as 급여. */
+    PAY_OBSERVED("money.takeHome", "들어온 월급을 실수령 기록으로 남겼어요. 월급이 아니면 돈 탭 세금 카드에서 고를 수 있어요", FeatureRoute(Place.MONEY, "tax")),
 }
 
 /** [ROST-11] Where a month's roster came from, as the journal's detail keeps it (a digit, never the roster). */
@@ -105,6 +107,7 @@ object Journal {
             JournalKind.OUTBOX -> "기다리던 것 보냄"
             JournalKind.LEAVE_NOTICE -> "연차 사용 촉진 알림"
             JournalKind.MONEY_CAPTURED -> "결제 알림을 돈 기록으로 적음"
+            JournalKind.PAY_OBSERVED -> "들어온 월급을 실수령 기록으로 남김"
             JournalKind.NEWS -> "밤낮 소식 받음"
             JournalKind.ROSTER -> d?.split(' ')?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 3 }
                 ?.let { (m, days, src) -> "${m}월 근무 ${days}일 넣음" + (RosterFrom.of(src)?.let { " (${it.word})" } ?: "") }

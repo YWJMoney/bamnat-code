@@ -244,7 +244,7 @@ object InvestNotices {
         val fx = if (d.market.foreign) book.settings.usdKrw else 1.0
         val qty = d.quantity ?: return
         val price = d.price ?: return
-        val costs = InvestFees.suggest(d.market, d.side, qty, price, book.account(account))
+        val costs = InvestFees.suggest(d.market, d.side, qty, price, book.account(account), book.settings)
         val now = Today.dateTime()
         repo.saveTrade(Trade(
             accountId = account, date = today, minute = now.hour * 60 + now.minute, symbol = d.symbol, name = d.name, market = d.market,

@@ -140,7 +140,7 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     suspend fun confirmAlert(p: TradeAlerts.Pending): Trade {
         val book = now()
         val account = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false } ?: ensureAccount()
-        val costs = com.bamnat.core.invest.InvestFees.suggest(p.market, p.side, p.quantity, p.price, book.account(account))
+        val costs = com.bamnat.core.invest.InvestFees.suggest(p.market, p.side, p.quantity, p.price, book.account(account), book.settings)
         val t = p.toTrade(account, book.settings.usdKrw).copy(fee = costs.fee, tax = costs.tax)
         val id = saveTrade(t)
         dropAlert(p.at)
@@ -169,6 +169,9 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
             // [INV-34] Absent means on.
             "monthSummary" to s.monthSummary.toString(),
             LAST_ACCOUNT to (s.lastAccountId?.toString() ?: ""),
+            // [INV-38] 기본 수수료, kept so every trade uses it.
+            "buyFee" to s.buyFeeRate.toString(),
+            "sellFee" to s.sellFeeRate.toString(),
         )
 
         fun decode(m: Map<String, String>): InvestSettings {
@@ -185,6 +188,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
                 hideAmounts = m["hideAmounts"] == "true",
                 monthSummary = m["monthSummary"] != "false",
                 lastAccountId = m[LAST_ACCOUNT]?.toLongOrNull(),
+                buyFeeRate = m["buyFee"]?.toDoubleOrNull()?.takeIf { it in 0.0..5.0 } ?: d.buyFeeRate,
+                sellFeeRate = m["sellFee"]?.toDoubleOrNull()?.takeIf { it in 0.0..5.0 } ?: d.sellFeeRate,
             )
         }
     }
