@@ -224,6 +224,7 @@ test("a new version of a rule in use waits for the developer, with what changed"
   const { company } = await adopted(call);
   const other = setup();
   other.pay.rules.extra[3].percent = 0.12;
+  // [PLAZA-05] As many behind it, and as many pay-slip checks, as behind the rule in use (결정 D74): it waits.
   await call("POST", "/api/reports", report(3, { setup: other, verified: true }), from(3));
   const d = await call("POST", "/api/reports", report(4, { setup: other }), from(4));
   assert.deepEqual([d.data.status, d.data.review], ["pending", true]);

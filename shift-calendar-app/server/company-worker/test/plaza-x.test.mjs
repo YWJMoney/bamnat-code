@@ -2,7 +2,7 @@
 // 대표 판(결정 D74)과 쓰던 사람에게 가는 소식, 이력의 판 내용. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { choseong, isChoseong, cleanSetup, fingerprint, describe } from "../src/index.js";
+import { choseong, isChoseong, cleanSetup, fingerprint, describe, support } from "../src/index.js";
 import { server, report, setup, device, from, signIn } from "./helpers.mjs";
 
 /** A weekday company: Monday to Friday 주간, no rotation. */
@@ -82,4 +82,26 @@ test("[PLAZA-05] a new 대표 판 tells the phones that used the old one, and th
   assert.equal(h[0].body.shiftTypes[0].end, "18:00");
   assert.equal(h[1].body.shiftTypes[0].end, "19:00");
   assert.ok(h[0].changes.added.some(([l]) => l === "근무"));
+});
+
+test("[PLAZA-05] 지지 is the developer's 여러 판 score: a pay-slip check tips a tie, and the recommended 판 is the one the plaza picks", async () => {
+  // Weighed by the Wilson share: more 달라요 counts against it, and two people with no 달라요 beat one.
+  assert.ok(support({ uses: 0, ok: 3, bad: 0 }) > support({ uses: 0, ok: 3, bad: 2 }));
+  assert.ok(support({ uses: 0, ok: 2, bad: 0 }) > support({ uses: 0, ok: 1, bad: 0 }));
+  assert.ok(support({ uses: 0, ok: 2, bad: 0, verified: 1 }) > support({ uses: 0, ok: 2, bad: 0 }));
+  const { call } = server();
+  const first = [];
+  for (const n of [1, 2, 3]) first.push(await call("POST", "/api/reports", report(n), from(n)));
+  const c = first[0].data.company.id;
+  const other = setup();
+  other.pay.monthlyHours = 209;
+  for (const n of [4, 5]) await call("POST", "/api/reports", report(n, { setup: other }), from(n));
+  const h = await signIn(call);
+  const before = (await call("GET", "/api/admin/versions", undefined, h)).data.items[0];
+  assert.deepEqual(before.candidates.filter((x) => x.recommended).map((x) => x.state), ["active"]);
+  // A third with a pay-slip check: now it has more 지지, and the plaza makes it the 대표 판.
+  const third = await call("POST", "/api/reports", report(6, { setup: other, verified: true }), from(6));
+  assert.equal(third.data.status, "adopted");
+  const after = (await call("GET", "/api/admin/versions?show=history", undefined, h)).data.items[0];
+  assert.equal(after.candidates.find((x) => x.state === "active").setup, third.data.setup);
 });

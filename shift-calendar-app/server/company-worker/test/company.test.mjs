@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { normName, personal, cleanSetup, readReport, fingerprint, describe as words } from "../src/index.js";
+import { normName, personal, cleanSetup, readReport, fingerprint, describe as words, support } from "../src/index.js";
 import { server, setup, report, device, from } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
@@ -282,17 +282,17 @@ test("a company shows its adopted rule first and what is still being checked", a
 
 test("a rule in use is replaced by another only when more people stand behind it (결정 D74)", async () => {
   const { call } = server();
-  for (const n of [1, 2, 6]) await call("POST", "/api/reports", report(n, { verified: n === 1 }), from(n));
+  for (const n of [1, 2, 6]) await call("POST", "/api/reports", report(n), from(n));
   const other = setup();
   other.pay.rules.extra[3].percent = 0.12;
   const sent = [];
-  for (const n of [3, 4, 5]) sent.push(await call("POST", "/api/reports", report(n, { setup: other, verified: true }), from(n)));
+  for (const n of [3, 4, 5]) sent.push(await call("POST", "/api/reports", report(n, { setup: other }), from(n)));
   // As many behind it as behind the one in use: the one in use stays (a tie never moves people).
-  assert.equal(sent[2].data.points, 6);
+  assert.equal(sent[2].data.points, 3);
   assert.equal(sent[2].data.status, "pending");
   let c = await call("GET", `/api/companies/${sent[0].data.company.id}`);
   assert.deepEqual(c.data.setups.map((s) => s.status), ["adopted", "pending"]);
-  assert.deepEqual(c.data.setups.map((s) => s.support), [3, 3]);
+  assert.deepEqual(c.data.setups.map((s) => s.support), [support({ uses: 0, ok: 3, bad: 0 }), support({ uses: 0, ok: 3, bad: 0 })]);
   // One more: it becomes the 대표 판, and the one before is an earlier version, not gone.
   const more = await call("POST", "/api/reports", report(7, { setup: other }), from(7));
   assert.equal(more.data.status, "adopted");
@@ -315,7 +315,8 @@ test("an earlier version's users count for it, and one the developer turned down
   other.pay.monthlyHours = 209;
   for (const n of [3, 4, 5, 6]) await call("POST", "/api/reports", report(n, { setup: other }), from(n));
   let page = (await call("GET", `/api/companies/${c}`)).data;
-  assert.deepEqual(page.setups.map((s) => [s.status, s.support]), [["adopted", 13], ["pending", 4]]);
+  assert.deepEqual(page.setups.map((s) => [s.status, s.support]), [["adopted", support({ uses: 10, ok: 3, bad: 0 })], ["pending", support({ uses: 0, ok: 4, bad: 0 })]]);
+  assert.ok(page.setups[0].support > page.setups[1].support);
   // Turned down by the developer: however many come, it waits.
   const grp = page.setups[1].id;
   DB.db.prepare("UPDATE reports SET status = 'rejected' WHERE grp = ?").run(grp);

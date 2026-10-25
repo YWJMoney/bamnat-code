@@ -1415,7 +1415,8 @@ async function state(env, companyId, grp, threshold, adopted) {
       (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
       (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
       (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
-        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked`, companyId, grp);
+        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp);
   const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
       WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
   // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
@@ -1425,18 +1426,27 @@ async function state(env, companyId, grp, threshold, adopted) {
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
     ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
     // [PLAZA-05] What decides the 대표 판 of a department (D74): phones using it, people behind it, less 달라요.
-    support: support(s, who.uses),
+    support: support({ uses: who.uses, ok: s.persons, bad: s.bad, verified: who.sentChecked }),
     ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
 }
 
-/** [PLAZA-05] 지지 (결정 D74, X-D3): phones that use a rule set plus the people who sent it or said 맞았어요, less those who said 달라요. */
-export const support = (s, uses) => uses + s.persons - s.bad;
+/**
+ * [PLAZA-05] 지지 (결정 D74, X-D3), the one score for which 판 of a department should be its 대표 판: phones that use it,
+ * people who sent or backed it ([ok]) and pay-slip checks of a waiting one ([verified]), weighed by the Wilson share of
+ * 맞았어요 among 맞았어요·달라요. The developer's 같은 회사 여러 판 screen recommends by the same score ([ADMUX-18]), so the
+ * plaza's own choice and the recommendation never disagree. One decimal.
+ */
+export const support = (c) => Math.round(10 * (c.uses + c.ok + (c.verified ?? 0)) * (0.5 + wilson(c.ok, c.ok + c.bad) / 200)) / 10;
 
 /** [PLAZA-05] Whether [grp] has more 지지 than [active], the department's 대표 판; a tie keeps the one in use. */
 async function outweighs(env, companyId, grp, active) {
   const uses = (g) => one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", companyId, g);
-  const [mine, theirs, mineUses, theirUses] = await Promise.all([score(env, companyId, grp), score(env, companyId, active.grp), uses(grp), uses(active.grp)]);
-  return support(mine, mineUses.n) > support(theirs, theirUses.n);
+  // A pay-slip check counts on either side, as on the developer's screen.
+  const checked = (g) => one(env, "SELECT COUNT(*) AS n FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted') AND verified = 1", companyId, g);
+  const [mine, theirs, mineUses, theirUses, mineChecked, theirChecked] = await Promise.all([score(env, companyId, grp), score(env, companyId, active.grp),
+    uses(grp), uses(active.grp), checked(grp), checked(active.grp)]);
+  return support({ uses: mineUses.n, ok: mine.persons, bad: mine.bad, verified: mineChecked.n })
+    > support({ uses: theirUses.n, ok: theirs.persons, bad: theirs.bad, verified: theirChecked.n });
 }
 
 /**
@@ -6419,7 +6429,7 @@ async function versions(env, show) {
     env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
     env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at FROM reports WHERE status = 'pending'
       ORDER BY verified DESC, created_at DESC`),
-    env.DB.prepare("SELECT company_id, grp, device, points, cluster FROM reports WHERE status IN ('pending', 'adopted')"),
+    env.DB.prepare("SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE status IN ('pending', 'adopted')"),
     env.DB.prepare("SELECT company_id, grp, device, ok, verified, cluster FROM votes"),
     env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM uses GROUP BY company_id, grp"),
     env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM posts WHERE status = 'shown' GROUP BY company_id, grp"),
@@ -6429,6 +6439,9 @@ async function versions(env, show) {
   const { adoptPoints } = readSettings(settingRows);
   const scores = tallies(reports, votes);
   const used = new Map(useRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
+  // [PLAZA-05] Pay-slip-checked reports of every 판, the rule in use too, as the plaza's own 지지 counts them.
+  const checked = new Map();
+  for (const r of reports) if (r.verified === 1) checked.set(`${r.company_id}/${r.grp}`, (checked.get(`${r.company_id}/${r.grp}`) ?? 0) + 1);
   const talk = new Map(postRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
   const names = new Map(companyRows.map((c) => [c.id, c.name]));
   const depts = new Map();
@@ -6440,7 +6453,7 @@ async function versions(env, show) {
   const card = (company, grp, more) => {
     const sc = scores.get(`${company}/${grp}`) ?? NO_SCORE;
     return { setup: grp, uses: used.get(`${company}/${grp}`) ?? 0, ok: sc.persons, bad: sc.bad, points: sc.points, ...trust(sc, adoptPoints),
-      wilson: wilson(sc.persons, sc.persons + sc.bad), posts: talk.get(`${company}/${grp}`) ?? 0, ...more };
+      wilson: wilson(sc.persons, sc.persons + sc.bad), posts: talk.get(`${company}/${grp}`) ?? 0, verified: checked.get(`${company}/${grp}`) ?? 0, ...more };
   };
   for (const r of ruleRows) {
     at(r.company_id, r.dept_norm, r.dept).list.push(card(r.company_id, r.grp, {
@@ -6453,7 +6466,7 @@ async function versions(env, show) {
     seen.add(key);
     const reportsOf = groupRows.filter((x) => x.company_id === g.company_id && x.grp === g.grp);
     at(g.company_id, g.dept_norm, g.dept).list.push(card(g.company_id, g.grp, {
-      state: "pending", reports: reportsOf.length, verified: reportsOf.filter((x) => x.verified === 1).length,
+      state: "pending", reports: reportsOf.length,
       at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup }));
   }
   const out = [];
@@ -6466,7 +6479,7 @@ async function versions(env, show) {
     const active = d.list.find((c) => c.state === "active");
     const base = active ? describe(JSON.parse(active.raw)) : null;
     // The one most people took and trust: phones that use it, people who sent or backed it, over the Wilson share.
-    const score = (c) => (c.uses + c.ok + (c.verified ?? 0)) * (0.5 + c.wilson / 200);
+    const score = support;
     const best = live.length ? live.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
     const order = { active: 0, pending: 1, previous: 2 };
     out.push({
