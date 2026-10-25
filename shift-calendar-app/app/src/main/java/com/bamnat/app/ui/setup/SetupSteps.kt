@@ -63,6 +63,7 @@ import com.bamnat.app.ui.components.TimeRangePart
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.bamnat.app.ui.shifts.ShiftTypeEditorDialog
 import com.bamnat.app.ui.work.icon
+import com.bamnat.core.plaza.PublicCycles
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.BundleShift
@@ -159,8 +160,12 @@ private fun FileCard(title: String, text: String, onClick: () -> Unit) {
 internal fun CompanyStep(vm: SetupViewModel, d: SetupDraft, onSearch: (() -> Unit)?, onOpenFile: () -> Unit) {
     StepHeader(
         "어느 회사에서 일하세요?",
-        if (onSearch != null) "같은 회사 분들이 나눈 설정이 있으면 그대로 가져와요. 회사 이름은 몰라도 괜찮아요."
-        else "회사 이름은 나중에 같은 회사 분들과 설정을 나눌 때만 써요. 비워 둬도 괜찮아요.",
+        when {
+            onSearch == null -> "회사 이름은 나중에 같은 회사 분들과 설정을 나눌 때만 써요. 비워 둬도 괜찮아요."
+            vm.companySearch -> "같은 회사 분들이 나눈 설정이나 공개 자료의 근무주기가 있으면 그대로 가져와요. 회사 이름은 몰라도 괜찮아요."
+            // [SPAT-02] Without the company server the public cycles are still there.
+            else -> "공개 자료에 회사 근무주기가 있으면 그대로 가져와요. 회사 이름은 몰라도 괜찮아요."
+        },
     )
     // Typed here and sent on: the draft would put the cursor back on every letter.
     var name by rememberSaveable { mutableStateOf(d.companyName) }
@@ -183,7 +188,8 @@ internal fun CompanyStep(vm: SetupViewModel, d: SetupDraft, onSearch: (() -> Uni
             Icon(Icons.Filled.Search, null)
             Spacer(Modifier.width(8.dp))
             // [COMM-12] The name just typed, in the button: the plaza is for this company.
-            Text(name.trim().takeIf { it.length >= 2 }?.let { "‘$it’ 분들이 올린 규칙 찾기" } ?: "같은 회사 설정 찾아보기",
+            Text(name.trim().takeIf { it.length >= 2 }?.let { if (vm.companySearch) "‘$it’ 분들이 올린 규칙 찾기" else "‘$it’ 근무주기 찾기" }
+                ?: if (vm.companySearch) "같은 회사 설정 찾아보기" else "회사 근무주기 찾아보기",
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -213,10 +219,14 @@ private fun SourceCard(source: SetupSource, d: SetupDraft, onChange: () -> Unit)
         SetupSource.Kind.TEMPLATE -> CompanyTemplates.BADGE
         SetupSource.Kind.SERVER -> if (source.adopted) "같은 회사 분들이 확인한 설정" else "같은 회사 분이 나눈 설정 · 확인 중"
         SetupSource.Kind.FILE -> "동료가 보낸 회사 설정 파일"
+        // [SPAT-02] Never like a setup coworkers adopted (D79).
+        SetupSource.Kind.PUBLIC -> if (source.id.isNullOrEmpty()) "처음 제공 · 다 마치면 광장에 올릴 수 있어요"
+        else "${PublicCycles.BADGE} · 회사가 확인한 정보는 아니에요"
     }
     val title = when {
         source.kind == SetupSource.Kind.FILE && source.name.isBlank() -> "받은 회사 설정"
         source.kind == SetupSource.Kind.SERVER && source.dept.isNotBlank() -> "${source.name} · ${source.dept}"
+        source.kind == SetupSource.Kind.PUBLIC -> "${source.name} · ${PublicCycles.formName(source.dept)}"
         else -> source.name
     }
     ChoiceCard(
@@ -254,6 +264,10 @@ internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDis
                     onOpen = { openId = it },
                     onByHand = { name ->
                         if (name.isNotBlank()) vm.setCompanyName(name)
+                        onDismiss()
+                    },
+                    onPublic = { cycle, codes ->
+                        vm.pickPublic(cycle, codes)
                         onDismiss()
                     },
                 )

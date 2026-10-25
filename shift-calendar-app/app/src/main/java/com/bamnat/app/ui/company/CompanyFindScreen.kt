@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.company
 
 import kotlinx.coroutines.Dispatchers
+import com.bamnat.core.plaza.PublicCycle
+import com.bamnat.core.plaza.PublicCycles
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -114,6 +116,13 @@ fun CompanyFindScreen(
     ready: Boolean = false,
     /** [COMM-07] Every company's rules, to look through without a name. */
     onBoard: (() -> Unit)? = null,
+    /**
+     * [SPAT-02] 첫 설정: a public row (or the user's own company, first to give it) with the order picked, into the draft.
+     * Elsewhere it is null and the row goes on the calendar from its own sheet, then on to [onPay] or [onShare].
+     */
+    onPublic: ((PublicCycle, String) -> Unit)? = null,
+    onPay: () -> Unit = {},
+    onShare: () -> Unit = {},
 ) {
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
@@ -125,6 +134,8 @@ fun CompanyFindScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     if (focus) LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    // [SPAT-02] The user's own company when neither the public rows nor the coworkers have it (사용자 2026-10-25 14:05).
+    var providing by remember { mutableStateOf<PublicCycle?>(null) }
     val byHand = { name: String ->
         keyboard?.hide()
         vm.byHand(name)
@@ -178,7 +189,17 @@ fun CompanyFindScreen(
                             Text("찾고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         is CompanyFindViewModel.Result.Found -> if (r.hits.isEmpty()) {
-                            NotFound(r.query, rewardLine(terms), ready) { byHand(r.query) }
+                            if (PublicCycles.search(r.query).isEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FirstProviderCard(r.query.trim(), rewardLine(terms), onStart = { form ->
+                                        keyboard?.hide()
+                                        providing = PublicCycles.provided(r.query.trim(), form)
+                                    })
+                                    if (setup) TextButton(onClick = { byHand(r.query) }) { Text("‘${r.query.trim()}’ 근무를 처음부터 직접 정할게요") }
+                                }
+                            } else {
+                                NotFound(r.query, rewardLine(terms), ready) { byHand(r.query) }
+                            }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // [PLAZA-03] 초성 찾기 only offers companies whose rule is in use, so a guess never leads to an empty page.
@@ -195,6 +216,9 @@ fun CompanyFindScreen(
                         is CompanyFindViewModel.Result.Failed -> Offline(r.code, onRetry = vm::retry) { byHand(r.query) }
                     }
                 }
+                // [SPAT-02] The public rows under the coworkers' setups, never looking like one of them (D79).
+                PublicCycleSection(query, onPick = onPublic, onPay = onPay, onShare = onShare,
+                    browse = result is CompanyFindViewModel.Result.Idle)
                 if (onBoard != null) {
                     OutlinedButton(onClick = { keyboard?.hide(); onBoard() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Forum, null, Modifier.size(18.dp))
@@ -210,6 +234,10 @@ fun CompanyFindScreen(
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+    providing?.let { p ->
+        PublicApplySheet(p, onDismiss = { providing = null }, onPay = { providing = null; onPay() }, onShare = { providing = null; onShare() },
+            pick = onPublic?.let { f -> { codes: String -> providing = null; f(p, codes) } })
     }
 }
 

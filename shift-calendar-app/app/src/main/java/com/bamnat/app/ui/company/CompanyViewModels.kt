@@ -77,7 +77,8 @@ class CompanyFindViewModel(private val c: AppContainer) : ViewModel() {
                 delay(300)
                 _result.value = Result.Searching
                 _result.value = try {
-                    Result.Found(q, c.companyApi.search(q))
+                    // [SPAT-02] Without the company server the public rows are still searched, on the screen.
+                    Result.Found(q, if (c.companyApi.enabled) c.companyApi.search(q) else emptyList())
                 } catch (e: CompanyException) {
                     Result.Failed(q, e.code)
                 }

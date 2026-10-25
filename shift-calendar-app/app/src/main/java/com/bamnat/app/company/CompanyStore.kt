@@ -121,6 +121,22 @@ class CompanyStore(context: Context) {
         prefs.edit().putBoolean("hand_made", on).apply()
     }
 
+    private val _publicUse = MutableStateFlow(PublicUse.read(prefs.getString("public_use", null)))
+    /**
+     * [SPAT-03] The public row this phone's cycle came from and how far the pay and plaza steps have gone; on this phone
+     * only (not in the backup's "company" part), as the other invitation memories.
+     */
+    val publicUse: StateFlow<PublicUse?> = _publicUse.asStateFlow()
+
+    fun setPublicUse(u: PublicUse?) {
+        _publicUse.value = u
+        prefs.edit().apply { if (u == null) remove("public_use") else putString("public_use", u.json()) }.apply()
+    }
+
+    fun updatePublicUse(change: (PublicUse) -> PublicUse) {
+        _publicUse.value?.let { setPublicUse(change(it)) }
+    }
+
     /** [BAK-01] After a restore wrote the file anew: what travels in a backup is read again. */
     fun reload() {
         _sent.value = readSent()
