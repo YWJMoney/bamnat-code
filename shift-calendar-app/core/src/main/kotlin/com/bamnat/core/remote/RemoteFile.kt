@@ -41,8 +41,10 @@ object RemoteFiles {
     const val TAXES = "taxes"
     /** [REMOTE-07] 제조사별 알람 설정 안내 ([AlarmGuides]); the frame is K's, the words L's. 1.23. */
     const val ALARM_GUIDE = "alarm-guide"
+    /** [SPAT-01] 회사별 교대 주기 공개 자료 ([com.bamnat.core.plaza.PublicCycles]), 1.26 결정 D80. */
+    const val CYCLES = "cycles"
     /** The files the app reads; each ships inside the app and is published at [path]. */
-    val KINDS = listOf(PRESETS, RATES, WAGES, TAXTABLE, PUBLICPAY, HOLIDAYS, TAXES, ALARM_GUIDE)
+    val KINDS = listOf(PRESETS, RATES, WAGES, TAXTABLE, PUBLICPAY, HOLIDAYS, TAXES, ALARM_GUIDE, CYCLES)
 
     /** Where the files live on the site, below the app's `bamnat.remoteBaseUrl`. */
     fun path(kind: String) = "remote/v1/$kind.json"

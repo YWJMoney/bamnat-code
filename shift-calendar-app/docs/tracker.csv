@@ -821,3 +821,9 @@ PLAZA-06,"순번 390 U25-나 첫 설정 다시 받기(설정 도움말·달력 �
 NAV-04,"Z 후속: 남은 뒤로 가기 — 근무 직접 치기(시트·옆 패널) 친 것 버리기 전에 묻기, 한 달 근무 넣기 확인 없이 닫힘 막기, 무슨 일 하세요·첫 설정 첫 질문 뒤로 = 앱 닫힘 → 2초 안 두 번, 받을 돈 검색 뒤로 = 검색 닫기",2 (1.25.0),완료,,"2026-10-25 TypingGuard(confirmValueChange·BackHandler·닫기), DutyRosterScreen Ui.unsaved 묻기, ui/ExitGuard(달력·첫 화면·첫 질문 공용), OwedScreen BackHandler. 끝에서 끝 ZScreenshotTest typingSheetAsksBeforeTypedDaysGo(923)·widePanelAsksBeforeTypedDaysGo·rosterScreenAsksBeforeLeaving(924)·theFirstSetupClosesOnlyOnASecondBack·owedSearchClosesBeforeLeaving"
 BAK-02,"Z 후속: 복원한 달력 보기 설정(calendar_view: 목록 보기·오늘의 흐름 접기·공휴일 답) 앱 다시 열지 않고 즉시 반영",2 (1.25.0),완료,,"2026-10-25 CalendarViewModel이 calendar_view 바뀜을 들어 다시 읽음. 끝에서 끝 ZScreenshotTest.aRestoredListViewShowsAtOnce(열린 달력에서 백업 복원 → 바로 목록)"
 QA-09,"Z 후속: 전체 실행에서만 깨지던 시험 원인 찾아 고치기(건너뛰기 없음) — StartupBudgetTest 2개, OperationsAppTest.usageStatsAreSentOnceADayOnlyWithAYes, 사진 시험 못 찾음",2 (1.25.0),완료,,"2026-10-25 원인 ① 시험 사이 버려진 Compose dispatcher 예약(앞에 Compose 화면 시험이 있으면 늘 재현) → rules/ComposeMainReset(ScreenshotBase·AccessibilityCheckTest·StartupBudgetTest), ② 앱 시작 스레드의 forgetUnless가 시험이 쓴 통계를 지움 → 컨테이너를 먼저 기다림. AlarmButtonsAllOffTest 알람 화면 닫기, StartupBudgetTest 실패 메시지에 화면·상태"
+SPAT-01,"순번 413 회사별 교대주기 공개 자료 148줄을 앱 자료로(core, 원격 갱신 형식 remote/v1/cycles.json): 순서·시간을 근무 종류·주기 코드로, 못 바꾸는 줄은 형태만, 신뢰도 그대로",2 (1.26.0),진행 중,,
+SPAT-02,"순번 414 회사 검색 하나(이름·초성·업종·근무형태): 첫 설정·근무 주기 바꾸기·광장 찾기, 공개 자료 기반 배지·신뢰도·시점·출처 링크, 없으면 처음 제공 권유",2 (1.26.0),진행 중,,
+SPAT-03,"순번 415 근무주기 맞추기: 순서를 알면 미리 보기 → 오늘이 몇 번째 날 → 달력(WriteGate), 공개 순서 없음은 그 형태의 흔한 순서 후보를 고르거나 고침(사용자 확인)",2 (1.26.0),진행 중,,
+SPAT-04,"순번 416 적용 뒤 급여 넣기 유도(V 간편 급여, 그 업종 흔한 수당을 추정으로 미리 채움)",2 (1.26.0),진행 중,,
+SPAT-05,"순번 417 급여까지 넣으면 광장 올리기 권유(보상 먼저, 보낼 내용 미리 보기, 기존 제보 길·동의) → 그 회사 광장으로, 공개 자료에서 시작한 것은 공개 자료 확인·고침으로, 근무주기만도 올릴 수 있음(보상은 급여 포함일 때만)",2 (1.26.0),진행 중,,
+SPAT-06,"순번 418 도움말·설정 찾기·기능 목록·WhatsNew 2줄·HANDOFF 6-15·화면 사진 1000~1019",2 (1.26.0),진행 중,,
