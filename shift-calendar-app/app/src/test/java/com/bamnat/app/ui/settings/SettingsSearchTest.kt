@@ -85,7 +85,8 @@ class SettingsSearchTest {
     }
 
     @Test fun helpForAScreenPutsItsAnswersFirst() {
-        assertEquals(listOf("alarm", "sound", "wake"), HelpFaq.about("설정 > 알람").map { it.id })
+        // [ALRM-08][ALRM-09] 1.25 AB adds the buttons and the lock screen.
+        assertEquals(listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"), HelpFaq.about("설정 > 알람").map { it.id })
         assertTrue(HelpFaq.about("달력").map { it.id }.containsAll(listOf("share", "oneday", "calendars")))
         assertEquals(listOf("import"), HelpFaq.about("캘린더에서 가져오기").map { it.id })
         assertTrue(HelpFaq.about(null).isEmpty())

@@ -364,6 +364,15 @@ shift-calendar-app/
 - 선택 변수 `REMOTE_BASE_URL`. Play 통계는 `PLAY_SERVICE_ACCOUNT`에 Play Console 권한 "앱 정보 보기"와 Google Cloud의 Reporting API 사용(README '지표의 Play 통계와 원격 갱신').
 - 결정 AA-D1~D3: `계획/1.25-AA-개발계획.md` 7장.
 
+### 6-14. 알람: 잠금 화면·버튼으로 끄기·오늘 모두 끄기 (1.25.0 묶음 AB, ALRM-07~09)
+
+- **알림 단추 셋** `AlarmService.buildNotification`: 다시 울림·끄기·오늘 모두 끄기, 모두 잠금 해제 없이. 휴대폰을 쓰는 중이거나 Android 14+ 전체 화면 알림이 꺼져 있으면 Android는 알람 화면 대신 위에 뜨는 알림만 보여 줘요(공식 동작) → 그 알림만으로 다 끌 수 있게. 미션 알람의 끄기·오늘 모두 끄기는 미션 화면을 열어요(`EXTRA_ALL_OFF`).
+- **잠금 화면을 막는 것** `Notifications.alarmChannelTrouble`(근무 알람 채널이 HIGH 미만·잠금 화면 숨김), `dndBlocksAlarms`(완전히 무음), `makerLockScreenPermission`(샤오미·오포·비보 등, 앱 정보로 안내). 알람 점검 줄과 달력 경고. 화면 없이 알림으로만 울렸으면(`screenShownAt == 0` + 권한 없음) 끝난 뒤 `postFullScreenOff`.
+- **버튼** `alarm/AlarmButtons.kt`: 볼륨 키는 `AlarmActivity.onKeyDown`, 전원 버튼은 울리는 동안만 등록하는 `ACTION_SCREEN_OFF` 수신기 + `screenOffIsPress`(알람 화면이 앞에 있을 때만, 뜬 지 1초 안은 무시). 설정 `alarmButtonAction`(dismiss 기본·snooze·none, 백업 `alarmButton`, 잠긴 재부팅 복사본 `button_action`). 미션 알람은 `quietBriefly`(30초 소리 0.05·진동 멈춤). 화면 밖(위에 뜨는 알림만)의 볼륨 키는 받지 않아요(MediaSession 흉내는 쓰지 않음, 조사 3장).
+- **오늘 모두 끄기** `alarm/AlarmsOff.kt`: 기기 보호 저장소 `alarms_off`에 끝 시각(다음 자정, 울리던 근무 시작이 더 늦으면 그때). 켜져 있는 동안 `AlarmService` ACTION_START가 시험 알람 말고는 울리지 않고, `AlarmScheduler.reschedule`·`verify`가 `AlarmsOff.planFrom`으로 그 뒤 첫 알람을 걸어요. 다시 울림·일어났나요?는 끌 때 지움, 메모 일정 울림은 조용한 알림으로. 백업하지 않음. 되돌리기는 알림 '다시 켜기'(`AlarmsOff.ACTION_ON`)와 달력 경고 줄. `JournalKind.ALARMS_OFF`.
+- **알람 화면** `RingingScreen`: 480dp 아래로 낮은 가로 화면은 시계·버튼을 옆으로 나란히(전에는 버튼이 시계를 덮었음), 세로는 글이 길면 스크롤.
+- 시험 `AlarmButtonsAllOffTest`(12개, 끝에서 끝), `M7AppTest`(단추 3개), 사진 `ABScreenshotTest` 960~969. 결정 AB-1~AB-4: `계획/1.25-AB-개발계획.md`.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

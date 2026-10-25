@@ -61,7 +61,8 @@ class AlarmScheduler(
     fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = Today.dateTime()) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
-        val from = planFrom(after)
+        // [ALRM-09] 오늘 남은 알람 모두 끄기: the next alarm is the first one after it.
+        val from = AlarmsOff.planFrom(context, planFrom(after))
         val plan = if (enabled) nextOf(calendars, from) else null
         val operation = shiftAlarmIntent(plan)
         saveBootCopy(if (enabled) planAhead(calendars, from) else emptyList())
@@ -99,7 +100,7 @@ class AlarmScheduler(
     fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = Today.dateTime()): Boolean {
         // An alarm that just rang is being planned past; until that is done nothing is missing.
         if (Today.millis() - firedAtMillis < SETTLE_MILLIS) return false
-        val expected = if (enabled) nextOf(calendars, planFrom(now)) else null
+        val expected = if (enabled) nextOf(calendars, AlarmsOff.planFrom(context, planFrom(now))) else null
         val held = systemHolds()
         val pending = prefs.getLong(K_PENDING, 0L)
         val problem = when {
