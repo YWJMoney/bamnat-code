@@ -1,5 +1,6 @@
-// [INVITE-02][INVITE-03][INVITE-04][INVITE-05][INVITE-06] 친구 초대: the code and its link, the friend's report and second
-// day, a month for the inviter (waiting before the launch), and what stops a phone counting twice: `npm test`.
+// [INVITE-02][INVITE-03][INVITE-04][INVITE-05][INVITE-06][INVITE-08] 친구 초대: the code and its link, the friend's report
+// and period of use, months for the inviter each time enough friends used the app (waiting before the launch), the
+// developer app's rules, and what stops a phone counting twice: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -21,6 +22,18 @@ async function code(call, n = 1, phoneN = n) {
 const use = (call, n, c, { source = "referrer", phoneN = n } = {}) =>
   call("POST", "/api/invites/use", { code: c, source, phone: mark(phoneN) }, phone(n));
 const seen = (call, n) => call("POST", "/api/invites/seen", {}, phone(n));
+const view = async (call, n = 1) => (await call("GET", "/api/invites", undefined, phone(n))).data;
+
+/** The developer app sets the rules; returns what the server keeps. */
+async function rules(call, body) {
+  const owner = await signIn(call);
+  const r = await call("POST", "/api/admin/settings/invite", body, owner);
+  assert.equal(r.status, 200, r.text);
+  return r.data;
+}
+
+/** One friend, one day: most tests are about something else. */
+const oneByOne = (call) => rules(call, { friends: 1, days: 1 });
 
 test("a code is eight plain letters, typed any way, and its link goes to Play with the referrer", async () => {
   assert.equal(inviteCodeOf("abcd-2345"), "ABCD2345");
@@ -39,8 +52,10 @@ test("a code is eight plain letters, typed any way, and its link goes to Play wi
   assert.equal((await call("GET", "/i/nope")).status, 404);
 });
 
-test("one code per install: asked again, the same code and link", async () => {
+test("one code per install: asked again, the same code and link; the rules need no install", async () => {
   const { call } = server();
+  // [INVITE-08] Until the developer changes them: 5 friends who use it 7 days give 1 month, with no cap.
+  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 0 });
   assert.equal((await call("POST", "/api/invites/code", {}, phone(1))).data.error, "phone");
   assert.equal((await call("POST", "/api/invites/code", { phone: mark(1) })).data.error, "device");
   const c = await code(call);
@@ -49,58 +64,115 @@ test("one code per install: asked again, the same code and link", async () => {
   assert.equal(again.status, 200);
   assert.equal(again.data.code, c);
   assert.equal(again.data.link, `${ORIGIN}/i/${c}`);
-  const view = (await call("GET", "/api/invites", undefined, phone(1))).data;
-  assert.deepEqual(view, { code: c, link: `${ORIGIN}/i/${c}`, friends: 0, months: 0, waiting: 0, capMonths: 12, capReached: false, used: null });
-  // A phone without a code sees none.
-  assert.equal((await call("GET", "/api/invites", undefined, phone(9))).data.code, null);
+  assert.deepEqual(await view(call), { code: c, link: `${ORIGIN}/i/${c}`, need: 5, days: 7, months: 1, capMonths: 0,
+    progress: 0, waiting: 0, friends: 0, given: 0, capReached: false, used: null });
+  // A phone without a code sees none, and the rules.
+  const none = await view(call, 9);
+  assert.deepEqual([none.code, none.need], [null, 5]);
 });
 
-test("a friend who comes back another day gives the inviter a month, waiting for the launch", async (t) => {
+test("five friends who each use the app seven days give the inviter a month, waiting for the launch", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call } = server();
   const c = await code(call);
   assert.equal((await use(call, 2, "WRNGXYZ2")).status, 404);
   const first = await use(call, 2, c.toLowerCase().replace(/(.{4})/, "$1-"));
-  assert.deepEqual([first.status, first.data.status], [201, "waiting"]);
+  assert.deepEqual([first.status, first.data.status, first.data.daysLeft], [201, "waiting", 7]);
   // Reporting again changes nothing.
   assert.equal((await use(call, 2, c)).data.status, "waiting");
-  assert.equal((await call("GET", "/api/invites", undefined, phone(1))).data.waiting, 1);
-  assert.equal((await call("GET", "/api/invites", undefined, phone(2))).data.used, "waiting");
+  for (const n of [3, 4]) await use(call, n, c);
+  assert.equal((await view(call, 2)).used, "waiting");
 
-  // The same Korean day, even 23 hours on by UTC from midnight, is not a second day.
-  assert.equal((await seen(call, 2)).data.status, "waiting");
-  t.mock.timers.tick(12 * 60 * 60 * 1000); // 2026-10-25 15:00Z = 10-26 00:00 KST
-  assert.equal((await seen(call, 2)).data.status, "credited");
-  assert.equal((await seen(call, 2)).data.status, "credited");
+  // Six Korean days on is not yet the period, by the server's clock.
+  t.mock.timers.tick(6 * DAY);
+  assert.deepEqual([(await seen(call, 2)).data.status, (await seen(call, 2)).data.daysLeft], ["waiting", 1]);
+  // 2026-11-01 03:00Z: seven days after 10-25 KST.
+  t.mock.timers.tick(DAY);
+  for (const n of [2, 3, 4]) assert.equal((await seen(call, n)).data.status, "qualified");
+  for (const n of [5, 6]) await use(call, n, c);
+  // "3/5명 · 2명은 사용 기간 채우는 중".
+  let v = await view(call);
+  assert.deepEqual([v.progress, v.need, v.waiting, v.friends, v.given], [3, 5, 2, 3, 0]);
 
-  const view = (await call("GET", "/api/invites", undefined, phone(1))).data;
-  assert.equal(view.friends, 1);
-  assert.equal(view.months, 1);
-  assert.equal(view.waiting, 0);
+  t.mock.timers.tick(7 * DAY);
+  assert.equal((await seen(call, 5)).data.status, "qualified");
+  assert.equal((await seen(call, 6)).data.status, "credited");
+  assert.equal((await seen(call, 2)).data.status, "credited");
+  v = await view(call);
+  assert.deepEqual([v.progress, v.waiting, v.friends, v.given], [0, 0, 5, 1]);
+
   // Before the launch the month waits, as other reward passes do, and shows as an invite.
   const passes = (await call("GET", "/api/passes", undefined, phone(1))).data;
   assert.equal(passes.until, null);
   assert.equal(passes.waitingMonths, 1);
   assert.deepEqual(passes.items.map((i) => [i.months, i.why]), [[1, "invite"]]);
-  // The friend gets nothing.
+  // The friends get nothing.
   assert.equal((await call("GET", "/api/passes", undefined, phone(2))).data.items.length, 0);
 
   // After the launch it runs a month from the launch day.
   const owner = await signIn(call);
   await call("POST", "/api/admin/launch", { billingLive: true }, owner);
   const live = (await call("GET", "/api/passes", undefined, phone(1))).data;
-  assert.equal(live.until, "2026-11-25T15:00:00.000Z");
+  assert.equal(live.until, "2026-12-08T03:00:00.000Z");
   assert.equal(live.waitingMonths, 0);
 });
 
-test("the second day must come within 30 days, by the server's clock", async (t) => {
+test("with no cap, every five more friends give another month", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
+  const { call } = server();
+  const c = await code(call);
+  for (let n = 10; n < 22; n++) await use(call, n, c);
+  t.mock.timers.tick(7 * DAY);
+  for (let n = 10; n < 22; n++) await seen(call, n);
+  const v = await view(call);
+  assert.deepEqual([v.friends, v.given, v.progress, v.capReached], [12, 2, 2, false]);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(1))).data.waitingMonths, 2);
+});
+
+test("the developer app sets the rules, within limits; a lowered number pays at once and a cap holds", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
+  const { call } = server();
+  const owner = await signIn(call);
+  assert.deepEqual((await call("GET", "/api/admin/settings/invite", undefined, owner)).data, { friends: 5, days: 7, months: 1, capMonths: 0 });
+  for (const [body, key] of [[{ friends: 0 }, "friends"], [{ days: 61 }, "days"], [{ months: 0 }, "months"], [{ capMonths: -1 }, "capMonths"], [{ friends: "3" }, "friends"]]) {
+    const r = await call("POST", "/api/admin/settings/invite", body, owner);
+    assert.deepEqual([r.status, r.data.error], [400, key]);
+  }
+  // Not from a page elsewhere, and not without signing in.
+  assert.equal((await call("POST", "/api/admin/settings/invite", { friends: 3 })).status, 403);
+
+  const c = await code(call);
+  for (let n = 10; n < 13; n++) await use(call, n, c);
+  t.mock.timers.tick(7 * DAY);
+  for (let n = 10; n < 13; n++) await seen(call, n);
+  assert.deepEqual([(await view(call)).progress, (await view(call)).given], [3, 0]);
+  // Three friends are enough now: the three already counted give their month when it is saved.
+  assert.deepEqual(await rules(call, { friends: 3, months: 2 }), { friends: 3, days: 7, months: 2, capMonths: 0 });
+  assert.deepEqual([(await view(call)).progress, (await view(call)).given], [0, 2]);
+  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 3, days: 7, months: 2, capMonths: 0 });
+
+  // A cap of 3 months in a year: the next group of three is counted without months.
+  await rules(call, { capMonths: 3, days: 1 });
+  for (let n = 20; n < 23; n++) await use(call, n, c);
+  t.mock.timers.tick(DAY);
+  const got = [];
+  for (let n = 20; n < 23; n++) got.push((await seen(call, n)).data.status);
+  assert.deepEqual(got, ["qualified", "qualified", "capped"]);
+  const v = await view(call);
+  assert.deepEqual([v.friends, v.given, v.capReached, v.capMonths], [6, 2, true, 3]);
+});
+
+test("a friend who does not come back within the period and 30 days is let go", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call, env } = server();
   const c = await code(call);
   await use(call, 2, c);
-  t.mock.timers.tick(31 * DAY);
+  t.mock.timers.tick(36 * DAY);
+  assert.equal((await view(call)).waiting, 1);
+  t.mock.timers.tick(2 * DAY);
+  assert.equal((await view(call)).waiting, 0);
   assert.equal((await seen(call, 2)).data.status, "expired");
-  assert.equal((await call("GET", "/api/invites", undefined, phone(1))).data.months, 0);
+  assert.equal((await view(call)).given, 0);
   // The hourly clean-up forgets it after that.
   await prune(env, Date.now());
   assert.equal((await seen(call, 2)).status, 404);
@@ -109,6 +181,7 @@ test("the second day must come within 30 days, by the server's clock", async (t)
 test("the same phone counts once, however often the app is installed again", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call } = server();
+  await oneByOne(call);
   const c = await code(call);
   const other = await code(call, 5);
   await use(call, 2, c);
@@ -118,8 +191,8 @@ test("the same phone counts once, however often the app is installed again", asy
   const again = await use(call, 3, c, { phoneN: 2 });
   assert.deepEqual([again.data.status, again.data.reason], ["refused", "phone"]);
   assert.equal((await use(call, 4, other, { phoneN: 2, source: "typed" })).data.reason, "phone");
-  assert.equal((await call("GET", "/api/invites", undefined, phone(1))).data.friends, 1);
-  assert.equal((await call("GET", "/api/invites", undefined, phone(5))).data.friends, 0);
+  assert.equal((await view(call)).friends, 1);
+  assert.equal((await view(call, 5)).friends, 0);
 });
 
 test("inviting oneself does not count: the same install, or the same phone installed again", async () => {
@@ -127,37 +200,25 @@ test("inviting oneself does not count: the same install, or the same phone insta
   const c = await code(call);
   const same = await use(call, 1, c);
   assert.deepEqual([same.data.status, same.data.reason], ["refused", "self"]);
-  // The inviter's phone (mark 1) with the app installed again under a new install id.
+  // The inviter's phone (mark 6) with the app installed again under a new install id.
   const c2 = await code(call, 6);
   const again = await use(call, 7, c2, { phoneN: 6 });
   assert.equal(again.data.reason, "self");
   assert.equal((await seen(call, 7)).data.status, "refused");
 });
 
-test("an inviter gets at most 12 months in 365 days; more friends still count", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
-  const { call } = server();
-  const c = await code(call);
-  for (let n = 10; n < 23; n++) await use(call, n, c);
-  t.mock.timers.tick(DAY);
-  const got = [];
-  for (let n = 10; n < 23; n++) got.push((await seen(call, n)).data.status);
-  assert.deepEqual(got, [...Array(12).fill("credited"), "capped"]);
-  const view = (await call("GET", "/api/invites", undefined, phone(1))).data;
-  assert.deepEqual([view.friends, view.months, view.capReached], [13, 12, true]);
-  assert.equal((await call("GET", "/api/passes", undefined, phone(1))).data.waitingMonths, 12);
-});
-
 test("invites do not use up the cap of rewards for company rules", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call, DB } = server();
+  await oneByOne(call);
   const c = await code(call);
   for (let n = 10; n < 14; n++) await use(call, n, c);
   t.mock.timers.tick(DAY);
   for (let n = 10; n < 14; n++) await seen(call, n);
   // Four invite months in 90 days; the rule reward cap (3 in 90 days) looks only at rule rewards.
-  const sum = DB.db.prepare("SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = (SELECT device FROM invite_codes) AND rule_id != 'invite'").get();
-  assert.equal(sum.m, 0);
+  const dev = "(SELECT device FROM invite_codes)";
+  assert.equal(DB.db.prepare(`SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ${dev} AND rule_id = 'invite'`).get().m, 4);
+  assert.equal(DB.db.prepare(`SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ${dev} AND rule_id != 'invite'`).get().m, 0);
 });
 
 test("a friend's report is held to a few tries an hour per network", async () => {
@@ -175,14 +236,15 @@ test("a friend's report is held to a few tries an hour per network", async () =>
 test("a recovery code moves the invite code too; 모두 지우기 keeps only a counted phone's mark", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call, DB, env } = server();
+  await oneByOne(call);
   const c = await code(call);
   await use(call, 2, c);
   t.mock.timers.tick(DAY);
   await seen(call, 2);
   const rc = (await call("POST", "/api/passes/code", {}, phone(1))).data.code;
   await call("POST", "/api/passes/claim", { code: rc }, phone(8));
-  const moved = (await call("GET", "/api/invites", undefined, phone(8))).data;
-  assert.deepEqual([moved.code, moved.friends, moved.months], [c, 1, 1]);
+  const moved = await view(call, 8);
+  assert.deepEqual([moved.code, moved.friends, moved.given], [c, 1, 1]);
 
   // The friend wipes what it sent: its install is cut loose, the phone mark stays for the year.
   assert.equal((await call("DELETE", "/api/mine", undefined, phone(2))).status, 200);
@@ -198,9 +260,10 @@ test("a recovery code moves the invite code too; 모두 지우기 keeps only a c
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM invite_uses").get().n, 0);
 });
 
-test("the developer app's 보상 screen names invite rewards and sums up invites", async (t) => {
+test("the developer app's 보상 screen names invite rewards and sums up invites with the rules", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call } = server();
+  await oneByOne(call);
   const c = await code(call);
   await use(call, 2, c);
   await use(call, 3, c);
@@ -210,12 +273,13 @@ test("the developer app's 보상 screen names invite rewards and sums up invites
   const owner = await signIn(call);
   const r = (await call("GET", "/api/admin/rewards?status=paid", undefined, owner)).data;
   assert.equal(r.rewards.length, 1);
-  assert.deepEqual([r.rewards[0].company.name, r.rewards[0].invite, r.rewards[0].months, r.rewards[0].memo], ["친구 초대", true, 1, "친구 초대"]);
+  assert.deepEqual([r.rewards[0].company.name, r.rewards[0].invite, r.rewards[0].months, r.rewards[0].memo], ["친구 초대", true, 1, "친구 초대 1명"]);
   assert.equal(r.invites.codes, 1);
   assert.equal(r.invites.credited, 1);
   assert.equal(r.invites.waiting, 1);
+  assert.deepEqual(r.invites.rules, { friends: 1, days: 1, months: 1, capMonths: 0 });
   assert.deepEqual(r.invites.refused, { self: 1 });
-  assert.deepEqual(r.invites.top, [{ code: c, friends: 2, credited: 1, waiting: 1 }]);
+  assert.deepEqual(r.invites.top, [{ code: c, friends: 2, counted: 1, waiting: 1 }]);
   // A raw request without a device is refused, as for passes.
   assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/invites`), { DB: null })).status, 503);
 });
