@@ -135,9 +135,10 @@ class PlazaXAppTest {
             val api = CompanyClient(base)
             api.report("plaza-x-device-0021", "빨간날상사", "", false, "", asExtra)
             api.report("plaza-x-device-0022", "교대상사", "", false, "", shiftNormal)
-            val extraSetup = api.company(api.search("빨간날상사").single().id).setups.single()
+            // [PLAZA-08] 1.26 (결정 D79): each sender joined its company, so it reads the pay way back.
+            val extraSetup = CompanyClient(base, device = { "plaza-x-device-0021" }).company(api.search("빨간날상사").single().id).setups.single()
             assertTrue(extraSetup.lines.any { (label, text) -> label == "빨간날 근무" && text == "특근처럼, 밤샘은 시작한 날로" })
-            val normalSetup = api.company(api.search("교대상사").single().id).setups.single()
+            val normalSetup = CompanyClient(base, device = { "plaza-x-device-0022" }).company(api.search("교대상사").single().id).setups.single()
             assertTrue(normalSetup.lines.any { (label, text) -> label == "빨간날 근무" && text == "교대제라 상관없음" })
             // Another phone: its 주간 has its own id, and the amount a time is its own to fill in.
             val db2 = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()

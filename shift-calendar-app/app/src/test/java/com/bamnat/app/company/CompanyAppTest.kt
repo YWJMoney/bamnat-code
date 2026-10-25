@@ -183,7 +183,8 @@ class CompanyAppTest {
      * a format drift on either side fails here, not on a user's phone. Skipped where Node is missing.
      */
     @Test fun theServerTakesWhatTheAppSends() = withServer { base ->
-        val api = CompanyClient(base)
+        // [PLAZA-08] 1.26 (결정 D79): the sender joined by sending, so it reads the pay way back.
+        val api = CompanyClient(base, device = { "app-test-device-0001" })
         val share = CompanyShare(senderSetup(), store, settings, today = { today })
         val sent = api.report("app-test-device-0001", "(주)예시정밀", "생산 2팀", true, "야간 가산은 22시부터예요", share.exportForServer())
         assertEquals("pending", sent.status)

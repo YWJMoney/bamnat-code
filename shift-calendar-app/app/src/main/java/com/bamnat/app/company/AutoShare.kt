@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
  * [PLAZA-07] 결정 D79: the work order and pay way shared with the company's plaza by themselves. The first time a cycle or
  * pay way is saved for a known company (one applied, or typed during setup), the user is asked once ([ask]); after yes,
  * each change marks the setup to share and [OutboxJob] sends it at most once a day, through the same file as 보내기
- * (CompanyShare.exportForServer: no amounts, no names, nothing personal). 설정 > 데이터·개인정보 turns it off.
+ * (CompanyShare.exportForServer: no amounts, no names, nothing personal). 설정 › 개인정보·앱 정보 turns it off.
  */
 class AutoShare(private val c: AppContainer) {
     /** The one-time ask on screen: the company it is about. */

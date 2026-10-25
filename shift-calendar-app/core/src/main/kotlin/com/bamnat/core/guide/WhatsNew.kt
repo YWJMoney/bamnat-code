@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.26.0 (묶음마다 한 줄, 통합이 합쳐요).
+        Release(37, "1.26.0", listOf(
+            // AF (계획/1.26-AF-개발계획.md): 결정 D79.
+            Line("다니는 회사 광장에 근무 순서·계산 방식을 한 번 허락하면 저절로 나누고, 참여한 회사에서는 다른 분들이 바꾼 값만 골라 써요", "plaza.room"),
+        )),
         // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
         Release(36, "1.25.0", listOf(
             // [READ-02][READ-05][READ-06] Bundle U.

@@ -316,6 +316,8 @@ fun CompanyDetailScreen(
     var choosing by remember { mutableStateOf<Pair<SharedSetup, Phases>?>(null) }
     var applying by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // [PLAZA-09] What 이 값 쓰기 changed, said once.
+    var notice by remember { mutableStateOf<String?>(null) }
     val page = (state as? CompanyDetailViewModel.State.Loaded)?.page
     // [PLAZA-02] 다른 점 말하기 on one rule set, with this phone's own setup for "내 설정으로 채우기".
     var proposing by remember { mutableStateOf<SharedSetup?>(null) }
@@ -328,7 +330,7 @@ fun CompanyDetailScreen(
 
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; error = it })
+        vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; choosing = null; error = it })
     }
     fun start(p: CompanyPage, s: SharedSetup) {
         if (onPick != null) return onPick(p, s)
@@ -377,7 +379,9 @@ fun CompanyDetailScreen(
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
                     // [PLAZA-09] 결정 D79: a member's room, only what the others changed, each value to take alone.
-                    room?.takeIf { onPick == null }?.let { r -> RoomSection(r, onTake = { card -> vm.take(card) { msg -> error = msg } }) }
+                    room?.takeIf { onPick == null }?.let { r ->
+                        RoomSection(r, onTake = { card -> vm.take(card) { msg, ok -> if (ok) { error = null; notice = msg } else error = msg } })
+                    }
                     // [PLAZA-08] Not a member: shift times and their order only; the pay way shows after joining.
                     if (!p.member && p.setups.any { it.payHidden }) {
                         Text(if (p.limited) "오늘은 많이 봐서 근무 시각·순서만 보여요. 내일 다시 보여요."
@@ -432,6 +436,15 @@ fun CompanyDetailScreen(
                         }
                     }
                     Spacer(Modifier.height(24.dp))
+                }
+            }
+            notice?.takeIf { error == null }?.let { msg ->
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).navigationBarsPadding()) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(msg, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { notice = null }) { Text("닫기") }
+                    }
                 }
             }
             error?.let { msg ->

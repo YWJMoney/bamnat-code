@@ -175,6 +175,10 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     }
     val hasPay: Boolean get() = c.payStore.profile.value != null
 
+    // [PLAZA-09] Before init: load() fills it.
+    private val _room = MutableStateFlow<Room?>(null)
+    val room: StateFlow<Room?> = _room.asStateFlow()
+
     init {
         load()
     }
@@ -197,9 +201,6 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
      */
     data class Room(val page: com.bamnat.app.company.RoomPage, val cards: List<com.bamnat.core.plaza.RoomCard>, val taken: Set<String> = emptySet())
 
-    private val _room = MutableStateFlow<Room?>(null)
-    val room: StateFlow<Room?> = _room.asStateFlow()
-
     private suspend fun loadRoom() {
         val page = (_state.value as? State.Loaded)?.page ?: return
         if (!page.member) { _room.value = null; return }
@@ -215,7 +216,7 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     }
 
     /** 이 값 쓰기: one value of the version behind [card], the rest of the user's setup as it was. */
-    fun take(card: com.bamnat.core.plaza.RoomCard, done: (String) -> Unit) {
+    fun take(card: com.bamnat.core.plaza.RoomCard, done: (String, Boolean) -> Unit) {
         val room = _room.value ?: return
         val from = (room.page.others + listOfNotNull(room.page.base)).firstOrNull { it.setup == card.from } ?: return
         viewModelScope.launch {
@@ -232,7 +233,7 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
                 c.autoShare.saved()
                 _room.value = Room(room.page, roomCards(room.page), room.taken + "${card.key}=${card.after}")
             }
-            done(if (ok) "${card.label}${com.bamnat.app.ui.Fmt.obj(card.label)} 바꿨어요" else "이 값은 따로 쓸 수 없어요. 판 전체를 쓰면 바뀌어요")
+            done(if (ok) "${card.label}${com.bamnat.app.ui.Fmt.obj(card.label)} 바꿨어요. 내 금액은 그대로예요" else "이 값은 따로 쓸 수 없어요. 판 전체를 쓰면 바뀌어요", ok)
         }
     }
 
