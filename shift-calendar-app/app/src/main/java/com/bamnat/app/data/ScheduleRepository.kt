@@ -177,6 +177,64 @@ class ScheduleRepository(
      */
     suspend fun deleteShiftType(id: Long) {
         db.withTransaction {
+            removeShiftType(id)
+        }
+    }
+
+    /** [SHFT-09] Where shift type [id] is used: days it was put on by hand, and whether a work order has it. */
+    data class ShiftTypeUse(val days: Int, val inPattern: Boolean)
+
+    /** [SHFT-09] How much deleting shift type [id] touches, said before it goes. */
+    suspend fun shiftTypeUse(id: Long): ShiftTypeUse = db.withTransaction {
+        ShiftTypeUse(
+            days = dayEntryDao.withOverride(id).size,
+            inPattern = patternDao.getAll().any { p -> decodeSteps(p.steps).any { it == id } },
+        )
+    }
+
+    /** [SHFT-09] What a delete changed, to put back exactly with [restoreShiftType]. */
+    class ShiftTypeRemoval internal constructor(
+        internal val type: com.bamnat.app.data.db.ShiftTypeEntity,
+        internal val patterns: List<com.bamnat.app.data.db.PatternEntity>,
+        internal val days: List<com.bamnat.app.data.db.DayEntryEntity>,
+        internal val extras: List<com.bamnat.app.data.db.DayExtraEntity>,
+    ) {
+        val name: String get() = type.name
+    }
+
+    /**
+     * [SHFT-09] 1.25 Z (U25-가): deletes shift type [id], its days and work-order steps going to [replaceWith] when one is
+     * given (모닝 → 주간) or emptied as [deleteShiftType] does. Returns what it changed, for 되돌리기; null when there is no such type.
+     */
+    suspend fun deleteShiftTypeUndoable(id: Long, replaceWith: Long? = null): ShiftTypeRemoval? = db.withTransaction {
+        val type = shiftTypeDao.getAll().firstOrNull { it.id == id } ?: return@withTransaction null
+        val removal = ShiftTypeRemoval(type, patternDao.getAll(), dayEntryDao.withOverride(id), extraDao.covering(id))
+        val with = replaceWith?.takeIf { w -> w != id && shiftTypeDao.getAll().any { it.id == w } }
+        if (with == null) removeShiftType(id)
+        else {
+            for (p in removal.patterns) {
+                val steps = decodeSteps(p.steps)
+                if (steps.any { it == id }) patternDao.save(p.copy(steps = encodeSteps(steps.map { if (it == id) with else it })))
+            }
+            for (e in removal.days) dayEntryDao.upsert(e.copy(overrideShiftTypeId = with))
+            if (removal.extras.isNotEmpty()) extraDao.updateAll(removal.extras.map { it.copy(coveredShiftTypeId = with) })
+            shiftTypeDao.delete(id)
+        }
+        removal
+    }
+
+    /** [SHFT-09] Puts a deleted shift type back with its id, and every day, step and 대근 it had. */
+    suspend fun restoreShiftType(removal: ShiftTypeRemoval) {
+        db.withTransaction {
+            if (shiftTypeDao.getAll().none { it.id == removal.type.id }) shiftTypeDao.insert(removal.type)
+            patternDao.saveAll(removal.patterns)
+            removal.days.forEach { dayEntryDao.upsert(it) }
+            if (removal.extras.isNotEmpty()) extraDao.updateAll(removal.extras)
+        }
+    }
+
+    private suspend fun removeShiftType(id: Long) {
+        run {
             for (p in patternDao.getAll()) {
                 val steps = decodeSteps(p.steps).map { if (it == id) null else it }
                 patternDao.save(p.copy(steps = encodeSteps(steps)))

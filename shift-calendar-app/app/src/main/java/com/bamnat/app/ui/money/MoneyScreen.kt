@@ -401,6 +401,10 @@ fun MoneyScreen(
     val page by vm.page.collectAsStateWithLifecycle()
     val view by vm.view.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsStateWithLifecycle()
+    // [NAV-02] 1.25 Z (U4): back from 내역 or 분석 is 요약 of this tab, not the calendar (choosing in 내역 takes back first).
+    androidx.activity.compose.BackHandler(enabled = page != MoneyViewModel.Page.SUMMARY && selection.isEmpty()) {
+        vm.showPage(MoneyViewModel.Page.SUMMARY)
+    }
     var adding by remember { mutableStateOf<MoneyKind?>(null) }
     var addRound by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
