@@ -371,6 +371,16 @@ shift-calendar-app/
 - **5월 신고 알림(INV-41)** `InvestTaxes.reportReminders`: 지난해 해외 주식 이익(먼저 산 것부터, ISA·연금 뺌)이 250만 원을 넘으면 5월 1일·마감(주말·공휴일이면 다음 평일) 일주일 전 08:30. 저장하지 않는 일정(id < 0)으로 `InvestNotices.withReports`가 계획에 섞음.
 - 시험: core `TaxForecastTest`·`BusinessTaxTest`·`FillCaptureTest`·`InvestReportTest`, 앱 `tax/WTaxFlowTest`(끝에서 끝 9개), 사진 `WScreenshotTest` 850~869.
 
+### 6-11. 유형 맞춤 화면·프로 표시·설정 색·하는 일 묻기 (1.25.0 묶음 Y, FIT-01~03·TIER-06~07·VIS-06)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-Y-개발계획.md`, 조사는 `research/1.25-Y-조사.md`.
+
+- **유형별 표** `core/guide/FitTable`: 달력 꾸미기 부품(CALENDAR_PARTS)·달력 도구(CALENDAR_TOOLS)·통계 부품(STATS_PARTS)·돈 부품(MONEY_PARTS)마다 어느 `WorkStyle`에 맞는지 한 곳. 표에 없는 id는 늘 보여요(다음 판 부품이 사라지지 않게). 유형이 없는 옛 기본 달력은 교대(SHIFT)로 봐요. 새 부품·도구를 더하면 이 표에 한 줄 넣고 `FitTableTest.everyKindOfWorkSeesItsOwnList`의 기대값을 고치세요.
+- **사용자가 더한 것**: 꾸미기·도구 시트 끝의 "이 달력에 안 맞아 숨긴 기능(도구) n개 · 더 보기"(`ui/components/PageEditSheet.FitMore`)에서 더하기/빼기. `GuideStore.setAdded` → `"달력id/SURFACE:id"`로 그 달력에만, 백업은 `featuresAdded`. 숨긴 것은 지우지 않고 숨기기만 해요(Y-D1).
+- **프로 배지** `ui/components/ProBadge`: 정식 출시 전에도 늘 "프로"를 보이고, 잠기면 자물쇠와 "프로 기능, 잠겨 있어요"(TalkBack). 새 프로 기능은 그 자리에 `ProBadge(locked = gate.locked(Feature.X))` 또는 `SwitchRow(pro = true, proLocked = …)`.
+- **프로 기능 모아보기** `ui/pro/ProCollection` + `core/guide/ProCatalog.tiers`(기능 사전 id → `Feature`): 설정 › 프로 맨 위, 그 달력 유형에 맞는 것 먼저, 누르면 `FeatureLinks.open`으로 그 자리. **새 프로 기능은 `ProCatalog.tiers`에 한 줄**만 더하면 모아보기·기능 찾기·기능 켜고 끄기에 배지가 붙어요(`ProCatalogTest`가 모든 `Feature`가 실려 있는지 봐요).
+- **설정 색** `ui/theme/SettingsTones`: 7묶음은 그대로, 색 4가지(일=파랑: 내 근무·급여, 알림=주황: 알람·알림, 화면=보라: 달력과 화면, 데이터=초록: 데이터·개인정보). 원·아이콘 색과 왼쪽 4dp 띠, 라이트·다크 따로, `ContrastTest.settingsGroupColoursAreReadable`이 대비 4.5:1·3:1을 봐요. 새 묶음은 `SettingsPage.kind`를 정하세요.
+- **하는 일 묻기** `core/work/JobDictionary`(직업 127개, 별칭·초성·오타 거리) + `ui/setup/JobAsk`: 첫 화면 "어떤 일을 하고 계신가요?"와 새 달력 "‘이름’ 달력으로 어떤 일의 일정을 관리하고 싶으세요?". 모두 기기 안에서만 읽고 서버로 안 보내요. 못 찾으면 유형 카드로 고르게 해요.
 ### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
 
 - 모두 회사 서버 안(`server/company-worker`). 앱(Kotlin)·DB 판·서버로 오는 정보는 바뀌지 않음. 회사 서버 재배포가 있어야 관리자 앱에 보여요.

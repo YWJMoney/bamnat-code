@@ -372,7 +372,7 @@ private fun PayoutCard(
         if (hire != null && leaving != null) LeaveAccrual.fiscalShortfall(hire, profile.rules.leave, leaving) else 0.0
     }
     ProLock(Feature.LEAVE_PAYOUT, gate) {
-        SectionCard(title = "못 쓴 연차, 돈으로는") {
+        SectionCard(title = "못 쓴 연차, 돈으로는", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.LEAVE_PAYOUT)) }) {
             ValueLine(lapse?.let { "${Fmt.shortDate(it.first)}에 없어질 ${LeaveAccrual.days(days)}" } ?: "남은 ${LeaveAccrual.days(days)}",
                 "약 ${Fmt.won(estimate.amount)}", strong = true)
             Hint("${estimate.formula}로 셌어요. 회사가 쓰라고 제대로 알렸는데도(근로기준법 제61조) 안 쓴 날은 돈으로 받지 못할 수 있어요. " +

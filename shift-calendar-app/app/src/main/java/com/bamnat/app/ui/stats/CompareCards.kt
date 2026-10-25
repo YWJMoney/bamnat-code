@@ -50,7 +50,7 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
     val s = sides ?: return
     val (now, last, lastYear) = s
     ProLock(Feature.WORK_COMPARE, gate) {
-        SectionCard(title = "${month.monthValue}월 비교") {
+        SectionCard(title = "${month.monthValue}월 비교", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
             CompareTable(now, last, "지난달 ${last.month.monthValue}월")
             HorizontalDivider(Modifier.padding(vertical = 10.dp))
             if (lastYear.empty) {
@@ -107,7 +107,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
     val y = year ?: return
     val now = Today.month()
     ProLock(Feature.WORK_COMPARE, gate) {
-        SectionCard(title = "${y.year}년 근무·급여") {
+        SectionCard(title = "${y.year}년 근무·급여", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
             y.months.forEach { s ->
                 val ahead = s.month.isAfter(now)
                 val color = if (ahead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface

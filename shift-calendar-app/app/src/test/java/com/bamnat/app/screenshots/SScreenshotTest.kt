@@ -55,7 +55,7 @@ class SScreenshotTest : ScreenshotBase() {
 
     // ---- 357 [SETUP-15] ----
     @Test fun firstStyleFolded() = shoot("780_s_first_style", FOLDED, firstScreen {
-        assertTrue(shows("무슨 일 하세요?"))
+        assertTrue(shows("어떤 일을 하고 계신가요?"))
         assertTrue("the setup's own question is not on screen", !shows("어떻게 일하세요?"))
     })
     @Test fun firstStyleSmallPhone() = shoot("781_s_first_style_small", SMALL_PHONE, firstScreen())
@@ -117,7 +117,7 @@ class SScreenshotTest : ScreenshotBase() {
     @Test fun backFromRecommendedAsksAgain() = shoot("791_s_back_to_first_style", FOLDED, firstScreen {
         tapText("평일 근무", exact = true)
         back()
-        assertTrue(shows("무슨 일 하세요?"))
+        assertTrue(shows("어떤 일을 하고 계신가요?"))
     })
 
     // ---- 358/359 [COMM-12][COMM-13][COMM-14] ----

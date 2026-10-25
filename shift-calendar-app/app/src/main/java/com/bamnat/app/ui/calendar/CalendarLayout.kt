@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.unit.dp
+import com.bamnat.core.guide.FitSurface
+import com.bamnat.core.guide.FitTable
 import com.bamnat.core.layout.PageLayout
 
 /**
@@ -47,6 +49,14 @@ internal fun AppSettings.calendarParts(): List<PageLayout.Placed<CalendarPart>> 
     }
 }
 
+/** [FIT-01] Whether [part] belongs on this calendar: it suits its kind of work, or the user added it ([added]). */
+internal fun AppSettings.partFits(part: CalendarPart, added: Set<String>): Boolean =
+    FitTable.visible(FitSurface.CALENDAR_PARTS, part.id, workStyle, added)
+
+/** [FIT-01] [calendarParts] on screen: a part that does not suit this calendar is not shown, unless added. */
+internal fun AppSettings.calendarParts(added: Set<String>): List<PageLayout.Placed<CalendarPart>> =
+    calendarParts().map { if (it.shown && !partFits(it.part, added)) it.copy(shown = false) else it }
+
 /** [CUST-01] [shown] for [part]: the three with their own switch change that switch, the rest the layout line. */
 internal fun AppSettings.withPartShown(part: CalendarPart, shown: Boolean): AppSettings = when (part) {
     CalendarPart.DAY_CARD -> copy(showDayCard = shown)
@@ -69,8 +79,8 @@ internal fun AppSettings.withPartMoved(part: CalendarPart, by: Int): AppSettings
     return copy(calendarLayout = PageLayout.of(next) { it.id }.encode())
 }
 
-internal fun calendarEditGroups(placed: List<PageLayout.Placed<CalendarPart>>): List<EditGroup> {
-    fun rows(above: Boolean) = placed.filter { it.part.above == above }.sortedBy { if (it.part.movable) 0 else 1 }.map {
+internal fun calendarEditGroups(placed: List<PageLayout.Placed<CalendarPart>>, fits: (CalendarPart) -> Boolean = { true }): List<EditGroup> {
+    fun rows(above: Boolean) = placed.filter { it.part.above == above && fits(it.part) }.sortedBy { if (it.part.movable) 0 else 1 }.map {
         EditRow(it.part.id, it.part.label, it.part.what, it.shown, it.part.movable, it.isNew)
     }
     return listOf(EditGroup("위쪽 (달력 위)", rows(true)), EditGroup("아래쪽 (달력 아래)", rows(false)))
@@ -81,11 +91,21 @@ internal fun calendarEditGroups(placed: List<PageLayout.Placed<CalendarPart>>): 
  * (첫 요일, 칸의 시간, 음력, 날짜를 누르면) that used to be only in 설정 › 달력 화면.
  */
 @androidx.compose.runtime.Composable
-internal fun CalendarEditSheet(settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onDismiss: () -> Unit) {
+internal fun CalendarEditSheet(
+    settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onDismiss: () -> Unit,
+    /** [FIT-02] The calendar on screen, whose added parts '더 보기' keeps. */
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) {
     val placed = settings.calendarParts()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val added = com.bamnat.app.ui.guide.rememberFitAdded(calendar)
     com.bamnat.app.ui.components.PageEditSheet(
         title = "달력 화면 꾸미기",
-        groups = calendarEditGroups(placed),
+        groups = calendarEditGroups(placed) { settings.partFits(it, added) },
+        others = com.bamnat.app.ui.guide.fitOthers(FitSurface.CALENDAR_PARTS, settings.workStyle, added) { id ->
+            CalendarPart.byId(id)?.let { it.label to it.what }
+        },
+        onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, FitSurface.CALENDAR_PARTS, id, on) },
         middle = "이번 달 달력",
         onShow = { id, shown -> CalendarPart.byId(id)?.let { p -> update { it.withPartShown(p, shown) } } },
         onMove = { id, by -> CalendarPart.byId(id)?.let { p -> update { it.withPartMoved(p, by) } } },
@@ -95,7 +115,7 @@ internal fun CalendarEditSheet(settings: AppSettings, update: ((AppSettings) -> 
             com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
         },
         onDismiss = onDismiss,
-    ) {
+        options = {
         androidx.compose.material3.Text("달력 보기", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
         OptionChips("한 주의 시작", listOf(java.time.DayOfWeek.SUNDAY to "일요일", java.time.DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
             update { it.copy(weekStart = d) }
@@ -105,7 +125,8 @@ internal fun CalendarEditSheet(settings: AppSettings, update: ((AppSettings) -> 
         OptionSwitch("날짜 칸에 근무 시간", settings.showHoursInCells) { on -> update { it.copy(showHoursInCells = on) } }
         OptionSwitch("음력 날짜", settings.showLunar) { on -> update { it.copy(showLunar = on) } }
         OptionSwitch("날짜 밑에 메모 첫 글자", settings.memoInCells) { on -> update { it.copy(memoInCells = on, calendarMemos = it.calendarMemos || on) } }
-    }
+        },
+    )
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

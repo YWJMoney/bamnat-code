@@ -26,7 +26,13 @@ data class GuideState(
     val tipId: String? = null,
     val tipClosed: Boolean = false,
     val checklists: Map<String, ChecklistState> = emptyMap(),
+    /** [FIT-02] Parts and tools added under '더 보기' to a calendar they do not suit: "calendar/CALENDAR_TOOLS:pattern". */
+    val added: Set<String> = emptySet(),
 ) {
+    /** [FIT-02] The [FitItem.key]s added to [calendar]. */
+    fun addedTo(calendar: String): Set<String> =
+        added.filter { it.startsWith("$calendar/") }.map { it.removePrefix("$calendar/") }.toSet()
+
     /**
      * [GUIDE-05] Turned off with the app's own switch for [calendar], or the feature it belongs to is. A
      * switch kept elsewhere ([Off.ELSEWHERE]) is the app's to read; it is never "off" here.

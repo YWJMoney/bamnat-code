@@ -529,7 +529,7 @@ private fun PayResult(
                 }
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT)) importing = true else openPro() }) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
-                    if (gate.locked(Feature.PAY_RULE_IMPORT)) { Spacer(Modifier.width(6.dp)); ProPill() }
+                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAY_RULE_IMPORT)) // [TIER-06]
                 }
                 if (undo != null) {
                     TextButton(onClick = vm::undo) { Icon(Icons.Filled.Undo, null); Text(" 방금 바꾼 것 되돌리기") }
@@ -570,7 +570,7 @@ private fun PayResult(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() }) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
-                    if (gate.locked(Feature.PAYSLIP_MATCH)) { Spacer(Modifier.width(6.dp)); ProPill() }
+                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAYSLIP_MATCH)) // [TIER-06]
                 }
                 // [PAYS-14] 명세서 + 회사 계산 방법 사진 → 회사 규칙, free like the setup it belongs to.
                 OutlinedButton(onClick = { slipRules = true }) { Text("사진으로 회사 방식 맞추기") }
