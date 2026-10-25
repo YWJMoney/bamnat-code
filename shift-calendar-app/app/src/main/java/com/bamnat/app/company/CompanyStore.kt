@@ -121,6 +121,39 @@ class CompanyStore(context: Context) {
         prefs.edit().putBoolean("hand_made", on).apply()
     }
 
+    /**
+     * [PLAZA-07] 결정 D79: whether the work order and pay way go to the company's plaza by themselves after each change
+     * (amounts and names left out). Null until the user answered the one-time ask; false also after 설정 turned it off.
+     */
+    private val _autoShare = MutableStateFlow(if (prefs.contains("auto_share")) prefs.getBoolean("auto_share", false) else null)
+    val autoShare: StateFlow<Boolean?> = _autoShare.asStateFlow()
+
+    fun setAutoShare(on: Boolean) {
+        _autoShare.value = on
+        prefs.edit().putBoolean("auto_share", on).apply { if (!on) putBoolean("auto_dirty", false) }.apply()
+    }
+
+    /** A change waits to be shared, at most once a day ([autoSentAt] the last time, epoch ms). */
+    var autoDirty: Boolean
+        get() = prefs.getBoolean("auto_dirty", false)
+        set(v) = prefs.edit().putBoolean("auto_dirty", v).apply()
+    var autoSentAt: Long
+        get() = prefs.getLong("auto_sent_at", 0)
+        set(v) = prefs.edit().putLong("auto_sent_at", v).apply()
+
+    private val _member = MutableStateFlow(readMember())
+    /** [PLAZA-07] The company this phone's main calendar joined, as the server last said: (id, name). */
+    val member: StateFlow<Pair<String, String>?> = _member.asStateFlow()
+
+    private fun readMember(): Pair<String, String>? = prefs.getString("member", null)?.let { s ->
+        runCatching { JSONObject(s).let { it.getString("id") to it.optString("name") } }.getOrNull()
+    }
+
+    fun setMember(id: String?, name: String = "") {
+        _member.value = id?.let { it to name }
+        prefs.edit().putString("member", id?.let { JSONObject().put("id", it).put("name", name).toString() }).apply()
+    }
+
     /** [BAK-01] After a restore wrote the file anew: what travels in a backup is read again. */
     fun reload() {
         _sent.value = readSent()
@@ -140,6 +173,8 @@ class CompanyStore(context: Context) {
     fun forgetSent() {
         writeSent(emptyList())
         _applied.value?.let { setApplied(it.copy(vote = null)) }
+        // [PLAZA-07] The server forgot the companies joined with everything else.
+        setMember(null)
     }
 
     fun setApplied(a: AppliedSetup?) {

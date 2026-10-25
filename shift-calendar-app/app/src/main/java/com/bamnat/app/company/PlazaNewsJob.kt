@@ -155,7 +155,7 @@ class PlazaNewsJob : JobService() {
             kind = i.optString("kind"), company = i.optJSONObject("company")?.optString("name"), dept = i.optStringOrNull("dept"),
             version = if (i.has("version") && !i.isNull("version")) i.optInt("version") else null, trade = i.optStringOrNull("trade"),
             atMillis = runCatching { Instant.parse(i.optString("at")).toEpochMilli() }.getOrDefault(0L),
-            result = i.optStringOrNull("result"), post = i.optStringOrNull("post"),
+            result = i.optStringOrNull("result"), post = i.optStringOrNull("post"), count = i.optInt("count"),
         )
 
         /**

@@ -113,10 +113,16 @@ class ShiftsViewModel(
     val history: StateFlow<List<WorkPattern>> =
         active.flatMapLatest { it.patterns }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** [PLAZA-07] 결정 D79: the main calendar's work order is shared by itself after the one-time yes, which this may ask. */
+    private fun shared() {
+        if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) container.autoShare.saved()
+    }
+
     /** First pattern: also fills the last two years. */
     fun saveFirstPattern(pattern: WorkPattern, onDone: () -> Unit) {
         viewModelScope.launch {
             repo.setFirstPattern(pattern)
+            shared()
             container.settingsRepository.update { if (it.reviewAsked) it else it.copy(reviewDue = true) }
             onDone()
         }
@@ -126,6 +132,7 @@ class ShiftsViewModel(
     fun changePatternFrom(pattern: WorkPattern, from: LocalDate, onDone: () -> Unit) {
         viewModelScope.launch {
             repo.changePatternFrom(pattern, from)
+            shared()
             onDone()
         }
     }
@@ -134,6 +141,7 @@ class ShiftsViewModel(
     fun fixCurrentPattern(pattern: WorkPattern, onDone: () -> Unit) {
         viewModelScope.launch {
             repo.replaceCurrentPattern(pattern)
+            shared()
             onDone()
         }
     }
