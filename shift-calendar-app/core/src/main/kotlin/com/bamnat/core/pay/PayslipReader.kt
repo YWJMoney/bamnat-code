@@ -130,6 +130,7 @@ data class PayslipRead(
 object PayslipReader {
     private val numberRe = Regex("""(?<![\d.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(원|시간|hr|h|H|분|%|배|일|회|월|년)?""")
     private val monthRe = Regex("""(20\d{2})\s*(?:년|[./-])\s*(\d{1,2})\s*(?:월|\b)""")
+    private val dottedThousands = Regex("""(?<![\d.,])\d{1,3}(?:\.\d{3})+(?![\d.])(?!\s*(?:시간|hr|h|H|%|배))""")
     private val wordRe = Regex("""[가-힣A-Za-z][가-힣A-Za-z()·\s]*""")
 
     /** Words that head a section or a column, never a line of pay. */
@@ -196,6 +197,8 @@ object PayslipReader {
         for ((li, raw) in lines.withIndex()) {
             // Dates are not amounts.
             val line = monthRe.replace(raw, " ").replace(Regex("""\d{4}[./-]\d{1,2}[./-]\d{1,2}"""), " ")
+                // 1.25 통합 직접 시험: a photo often reads the comma of "2,850,000" as a dot; three digits after a dot are thousands.
+                .replace(dottedThousands) { it.value.replace(".", "") }
             val eq = line.lastIndexOf('=')
             if (eq > 0 && pending.isEmpty() || eq > 0 && wordRe.find(line)?.let { roleOf(it.value) } != null) {
                 // A 계산 방법 line: "연장근로수당 16시간 × 12,000 × 1.5 = 288,000".
@@ -217,6 +220,8 @@ object PayslipReader {
                         val name = part.replace(Regex("""\s+"""), " ").trim().trimEnd('(', '·').trim()
                         val compact = ocrFix(name.filterNot { it.isWhitespace() })
                         if (compact.isEmpty() || headers.any { compact == it || compact.startsWith(it) && compact.length <= it.length + 2 }) continue
+                        // "지급내역 공제내역" one space apart: two column heads, not a 공제 line taking the first amount.
+                        if (name.split(' ').all { w -> ocrFix(w).let { c -> headers.any { c == it } } }) continue
                         // A long run of words is a sentence or a heading, not a pay line.
                         if (compact.length > 14 || roleOf(name) == null) continue
                         pending.addLast(name to raw)
