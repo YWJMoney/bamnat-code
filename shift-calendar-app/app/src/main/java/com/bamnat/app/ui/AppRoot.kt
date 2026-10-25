@@ -695,8 +695,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             )
                         }
                     }
-                    // [NAV-06] The rail's empty part is "somewhere else" too.
-                    if (tabEdit.editing) TabEditCatcher(saveTabs, Modifier.fillMaxWidth().weight(1f))
                 }
             }
             Scaffold(
@@ -744,12 +742,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             start = startTab,
                             modifier = Modifier.weight(1f),
                         )
-                        if (wide && showNav) {
-                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs) else AdSlot(topLevel.adPlace())
-                        }
+                        if (wide && showNav) AdSlot(topLevel.adPlace())
                     }
-                    // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else.
-                    if (tabEdit.editing) TabEditCatcher(saveTabs, Modifier.matchParentSize())
+                    // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else. Beside the
+                    // rail the line about it lies over the bottom of the screen, which keeps its size.
+                    if (tabEdit.editing) {
+                        TabEditCatcher(saveTabs, Modifier.matchParentSize())
+                        if (wide) TabEditHint(tabEdit.said, saveTabs, Modifier.align(Alignment.BottomCenter))
+                    }
                 }
             }
         }

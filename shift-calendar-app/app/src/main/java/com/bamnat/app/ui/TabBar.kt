@@ -62,7 +62,9 @@ import androidx.compose.ui.zIndex
 import com.bamnat.core.layout.TabOrder
 
 /** [NAV-06] The line shown while the tabs are being moved. */
-internal const val TAB_EDIT_HINT = "맨 앞 메뉴가 앱을 켤 때 첫 화면이에요 · 다른 곳을 누르면 저장"
+internal const val TAB_EDIT_HINT_TOP = "맨 앞 메뉴가 앱을 켤 때 첫 화면이에요"
+internal const val TAB_EDIT_HINT_SAVE = "다른 곳을 누르면 저장"
+internal const val TAB_EDIT_HINT = "$TAB_EDIT_HINT_TOP · $TAB_EDIT_HINT_SAVE"
 
 /** [NAV-06] TalkBack's names for what a tab can do about the order. */
 internal const val TAB_EDIT_ACTION = "메뉴 순서 바꾸기"
@@ -118,7 +120,10 @@ internal class TabEdit {
         offset = 0f
     }
 
-    /** The dragged tab follows the finger and takes a neighbour's place once its middle is past the neighbour's. */
+    /**
+     * The dragged tab follows the finger and takes a neighbour's place once its middle is a third into the neighbour
+     * (a finger let go on a tab's middle has moved there; swapped, it is far from swapping back).
+     */
     fun dragBy(delta: Float, label: (String) -> String) {
         val key = dragging ?: return
         offset += delta
@@ -126,11 +131,11 @@ internal class TabEdit {
         if (i < 0) return
         val middle = slotStart[i] + slotSize[i] / 2 + offset
         val moved = when {
-            i < order.lastIndex && middle > slotStart[i + 1] + slotSize[i + 1] / 2 -> {
+            i < order.lastIndex && middle > slotStart[i + 1] + slotSize[i + 1] * PAST -> {
                 offset -= (slotStart[i + 1] + slotSize[i + 1]) - (slotStart[i] + slotSize[i])
                 i + 1
             }
-            i > 0 && middle < slotStart[i - 1] + slotSize[i - 1] / 2 -> {
+            i > 0 && middle < slotStart[i - 1] + slotSize[i - 1] * (1 - PAST) -> {
                 offset -= slotStart[i - 1] - slotStart[i]
                 i - 1
             }
@@ -155,6 +160,7 @@ internal class TabEdit {
 
     private companion object {
         const val MAX_TABS = 8
+        const val PAST = 0.3f
     }
 }
 
@@ -312,7 +318,11 @@ internal fun TabEditHint(said: String, onSave: () -> Unit, modifier: Modifier = 
         Row(Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.SwapHoriz, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
-            Text(TAB_EDIT_HINT, style = MaterialTheme.typography.bodyMedium)
+            // Two lines of their own, so a narrow screen does not break the sentence in the middle.
+            androidx.compose.foundation.layout.Column {
+                Text(TAB_EDIT_HINT_TOP, style = MaterialTheme.typography.bodyMedium)
+                Text(TAB_EDIT_HINT_SAVE, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
