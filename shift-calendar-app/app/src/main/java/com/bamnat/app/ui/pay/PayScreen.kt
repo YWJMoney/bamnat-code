@@ -589,11 +589,12 @@ private fun PayResult(
         RaiseDialog(vm, profile, target, onDismiss = { raiseTarget = null })
     }
     if (importing) RuleImportDialog(vm, month, onDismiss = { importing = false })
+    val slipSettings by vm.settings.collectAsStateWithLifecycle()
     if (slipRules) SlipRulesDialog(
         infer = { read, rules -> vm.slipRules(profile, snapshot, read, rules) },
         shiftTypes = snapshot.shiftTypes,
         fiveOrMore = profile.fiveOrMoreEmployees,
-        kinds = vm.settings.value.extraKinds.kinds,
+        kinds = slipSettings.extraKinds.kinds,
         onDismiss = { slipRules = false },
         onApply = { r -> vm.applySlipRules(r); slipRules = false; if (onShareWay != null && r.changes.isNotEmpty()) plazaAsk = true },
     )
