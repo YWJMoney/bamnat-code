@@ -317,7 +317,11 @@ internal fun BusinessTaxSheet(
                     if (o.why.isNotBlank()) Muted("  " + o.why)
                 }
                 if (y.withheld > 0) Muted("  일감에서 지금까지 뗀 3.3% ${Fmt.won(y.withheld)}는 한 해로 늘려 빼고 계산했어요")
-                TaxLine("종합소득세 낼 돈 (지방세 포함)", Fmt.won(y.incomeTaxDue))
+                // 1.25 통합 직접 시험: 3.3%로 미리 뗀 돈이 세금보다 많으면 "낼 돈 -530,427원"으로 보였어요 → 돌려받을 돈.
+                if (y.incomeTaxDue < 0) {
+                    TaxLine("종합소득세 돌려받을 돈 (지방세 포함)", Fmt.won(-y.incomeTaxDue))
+                    Muted("  미리 뗀 3.3%가 올해 세금보다 많아요. 5월 확정신고를 하면 돌려받아요")
+                } else TaxLine("종합소득세 낼 돈 (지방세 포함)", Fmt.won(y.incomeTaxDue))
                 TaxLine("부가가치세", if (y.vatExempt) "면제 (연 4,800만 원 미만)" else Fmt.won(y.vat))
                 TaxLine("매달 모아 둘 돈", Fmt.won(y.perMonth))
                 Text("내는 날", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
@@ -365,6 +369,16 @@ private fun SwitchRow(label: String, on: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun TaxLine(label: String, value: String, muted: Boolean = false, strong: Boolean = false) {
     val color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+    // 1.25 통합 직접 시험 (855): at the largest text sizes the amount left the name a few letters a line ("세후 / 예상 /
+    // (실수 / 령)"); there the amount goes under the name, as the other cards do (VIS-05).
+    if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+            Text(label, style = if (muted) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge, color = color)
+            Text(value, style = if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge, color = color,
+                fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.align(Alignment.End))
+        }
+        return
+    }
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(label, style = if (muted) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge, color = color,
             modifier = Modifier.weight(1f))

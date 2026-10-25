@@ -75,6 +75,10 @@ class BusinessTaxTest {
         assertEquals(329_560 - 660_000, y.incomeTaxDue)
         assertEquals(0, y.total)
         assertEquals(1_424_500, y.options.first { it.method == Method.BOOK }.tax)
+        // 1.25 통합: the 5월 확정신고 says what comes back instead of showing 0 alone.
+        val may = y.dues.single { it.name == "종합소득세 확정신고" }
+        assertEquals(0L, may.amount)
+        assertTrue(may.note, may.note.contains("330,440원을 돌려받아요"))
     }
 
     @Test fun standardExpenseRateWhenSimpleIsNotAllowed() {

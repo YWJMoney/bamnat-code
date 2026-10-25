@@ -221,7 +221,9 @@ object BusinessTax {
             "지난해 종합소득세의 절반을 11월에 고지해요 (소득세법 제65조)" + if (p.lastYearTax == null) ". 지난해 세금을 적으면 금액이 나와요" else "")
         val prepaid = if (p.newBusiness) 0L else p.lastYearTax?.let { it / 2 / 1000 * 1000 } ?: 0L
         list += Due(w(LocalDate.of(year + 1, 5, 31)), "종합소득세 확정신고", (incomeTax - prepaid).coerceAtLeast(0),
-            "올해 소득을 다음 해 5월에 신고·납부해요 (소득세법 제70조)" + if (prepaid > 0) ". 11월 중간예납분을 뺐어요" else "")
+            "올해 소득을 다음 해 5월에 신고·납부해요 (소득세법 제70조)" + (if (prepaid > 0) ". 11월 중간예납분을 뺐어요" else "") +
+                // Withheld 3.3% or 중간예납 above the year's tax comes back after this 신고.
+                if (incomeTax - prepaid < 0) ". 미리 낸 돈이 더 많아 약 ${won(prepaid - incomeTax)}을 돌려받아요" else "")
         return list.sortedBy { it.date }
     }
 

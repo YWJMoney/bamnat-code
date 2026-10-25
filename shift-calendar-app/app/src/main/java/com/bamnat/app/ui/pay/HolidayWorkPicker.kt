@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,8 @@ internal fun HolidayWorkPicker(rules: CompanyRules, shiftTypes: List<ShiftType>,
             if (working.isNotEmpty()) {
                 Label("빨간날 근무 1회 금액")
                 working.forEach { t ->
+                    // 1.25 통합 직접 시험: the rows had no name on screen, only for TalkBack — which shift is which?
+                    Text(t.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                     QuickDecimalChips(
                         value = rules.holidayShiftPay(t.id).toDouble(),
                         onChange = { onChange(rules.withHolidayShiftPay(t.id, it.toLong())) },
