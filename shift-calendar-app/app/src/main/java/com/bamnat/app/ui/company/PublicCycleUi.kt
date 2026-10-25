@@ -461,7 +461,10 @@ private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onSh
             (if (items.isNotEmpty()) " ${cycle.industry.ifEmpty { "이 일" }}에서 흔한 ${items.joinToString("·")}도 미리 넣어 둘게요." else " 기본급만 넣으면 돼요.") +
             " 금액은 내 명세서대로 고쳐요.", style = MaterialTheme.typography.bodyMedium)
         Button(onClick = onPay, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("급여도 넣기") }
-    } else {
+        // [SPAT-05] The cycle alone goes up too, without the reward (사용자 2026-10-25 14:05).
+        if (c.companyApi.enabled) TextButton(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("급여 없이 근무주기만 올리기") }
+    } else if (c.companyApi.enabled) {
+        RewardPill(publicReward(null))
         Text("급여 설정이 이미 있어요. 같은 회사 분들이 쓰게 광장에 올려 주실래요?", style = MaterialTheme.typography.bodyMedium)
         Button(onClick = onShare, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("광장에 올리기") }
     }

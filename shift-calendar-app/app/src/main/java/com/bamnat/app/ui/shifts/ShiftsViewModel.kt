@@ -183,6 +183,15 @@ class PatternDraft {
     /** [SCHED-04] 요일 고정: a Saturday that is worked when Saturdays alternate; null when every Saturday is the same. */
     var altSaturday: LocalDate? by mutableStateOf(null)
 
+    /** [SPAT-03] Unsaved edits dropped: the next screen loads the saved pattern again (a company's cycle put in meanwhile). */
+    fun forget() {
+        initialized = false
+        rotation.clear()
+        for (i in 0 until 7) weekly[i] = null
+        holidaysOff = false
+        altSaturday = null
+    }
+
     /** Loads the saved pattern once; later calls keep the user's unsaved edits. */
     fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null) {
         if (initialized) return

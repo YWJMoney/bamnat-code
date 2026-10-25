@@ -121,6 +121,9 @@ object PublicCycleFiles {
     }
 
     fun remember(c: AppContainer, cycle: PublicCycle, codes: String) {
+        // One invitation: this row's way on, not the hand-made one's as well.
+        c.companyStore.setDraft(null)
+        c.companyStore.setHandMade(false)
         c.companyStore.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, picked(cycle, codes), Today.millis()))
     }
 }

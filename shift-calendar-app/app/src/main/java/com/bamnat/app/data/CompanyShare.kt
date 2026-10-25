@@ -116,8 +116,10 @@ class CompanyShare(
      * allowance amounts, and the won amounts typed into extra-work rules (1회·시간당 정액, 1회 수당) at 0.
      * The server refuses a file with any amount in it rather than dropping it, so none may slip through.
      */
-    suspend fun exportForServer(): JSONObject {
+    suspend fun exportForServer(cycleOnly: Boolean = false): JSONObject {
         val root = JSONObject(export("", withAmounts = false))
+        // [SPAT-05] 근무주기만 올리기: the shifts and the order, no pay part at all (사용자 2026-10-25 14:05).
+        if (cycleOnly) root.remove("pay")
         root.optJSONObject("pay")?.optJSONObject("rules")?.let { r ->
             r.optJSONObject("extra")?.let(::withoutAmounts)
             r.optJSONObject("extraByShift")?.let { by -> by.keys().forEach { k -> by.optJSONObject(k)?.let(::withoutAmounts) } }

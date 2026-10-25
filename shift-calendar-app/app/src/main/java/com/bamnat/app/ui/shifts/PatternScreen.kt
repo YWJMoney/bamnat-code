@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -89,6 +90,8 @@ fun PatternScreen(
     setup: Boolean = false,
     /** Where to go after the first pattern is saved; null goes back. */
     onSaved: (() -> Unit)? = null,
+    /** [SPAT-02] 회사 근무주기 찾기: the public cycles (and the coworkers' setups) in place of this screen. */
+    onFindCompany: (() -> Unit)? = null,
 ) {
     val typesOrNull by vm.shiftTypes.collectAsStateWithLifecycle()
     val patternState by vm.pattern.collectAsStateWithLifecycle()
@@ -193,6 +196,13 @@ fun PatternScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (onFindCompany != null) {
+                OutlinedButton(onClick = onFindCompany, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Icon(Icons.Filled.Search, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("회사 이름으로 근무주기 찾기", maxLines = 2)
+                }
+            }
 
             if (kind == PatternKind.ROTATION) {
                 SectionCard(

@@ -1066,6 +1066,12 @@ fun CalendarScreen(
             if (paint == null && viewingReceived == null) add(Notice("plazaShare", "광장에 올리기") {
                 com.bamnat.app.ui.company.ShareInviteNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
             })
+            // [SPAT-04][SPAT-05] After a public cycle went in: the pay, then the plaza (14·30·90일 간격, 그만 볼게요).
+            if (paint == null && viewingReceived == null && activeCalendar.id == com.bamnat.app.data.PersonalCalendar.MAIN) add(Notice("publicCycle", "근무주기 다음 단계") {
+                com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) },
+                    onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) })
+            })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             if (guideHere) add(Notice("guide", "오늘의 팁") {

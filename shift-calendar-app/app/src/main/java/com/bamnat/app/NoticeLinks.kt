@@ -71,6 +71,8 @@ object NoticeLinks {
         SETUP_AGAIN,
         /** [TAX-02] 1.25 W: the money tab with 세금·실수령 open. */
         TAX,
+        /** [SPAT-04] The main calendar's pay setup, from the card after a public cycle went in. */
+        PAY,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

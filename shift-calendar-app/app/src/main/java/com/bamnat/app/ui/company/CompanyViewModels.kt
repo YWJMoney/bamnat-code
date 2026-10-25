@@ -7,6 +7,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyDraft
+import com.bamnat.app.company.PublicUse
+import com.bamnat.core.plaza.PublicSetup
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyHit
 import com.bamnat.app.company.CompanyPage
@@ -43,6 +45,9 @@ import com.bamnat.core.time.Today
 private object TermsCache {
     @Volatile var value: CompanyTerms? = null
 }
+
+/** [SPAT-05] The terms last read, for a card that does not ask the server itself. */
+internal fun cachedTerms(): CompanyTerms? = TermsCache.value
 
 private suspend fun AppContainer.loadTerms(): CompanyTerms? =
     TermsCache.value ?: runCatching { companyApi.terms() }.getOrNull()?.also { TermsCache.value = it }
@@ -843,16 +848,38 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     private val _offline = MutableStateFlow(false)
     val offline: StateFlow<Boolean> = _offline.asStateFlow()
 
+    /**
+     * [SPAT-05] The public row this phone's cycle came from, while nothing went up from it: the form starts from its
+     * company and goes as '공개 자료 확인·고침' with the order the user chose (or '처음 제공' for a company not in it).
+     */
+    val publicUse: PublicUse? = c.companyStore.publicUse.value?.takeIf { it.sentId == null }
+    /** Whether a pay setup is there to go with the cycle; without one only the cycle can go. */
+    val hasPay: Boolean get() = c.payStore.profile.value != null
+    private val _cycleOnly = MutableStateFlow(!hasPay)
+    /** [SPAT-05] 근무주기만 올리기: no pay part, and so no reward (사용자 2026-10-25 14:05). */
+    val cycleOnly: StateFlow<Boolean> = _cycleOnly.asStateFlow()
+
     init {
         viewModelScope.launch { _terms.value = c.loadTerms() }
         viewModelScope.launch {
-            _preview.value = runCatching { c.companyShare.summarize(c.companyShare.exportForServer().toString()) }.getOrNull()
+            _cycleOnly.collect { only ->
+                _preview.value = runCatching { c.companyShare.summarize(c.companyShare.exportForServer(only).toString()) }.getOrNull()
+            }
         }
     }
 
-    /** Where the form starts: the company typed during setup or corrected, else the setup in use. */
+    fun setCycleOnly(only: Boolean) {
+        // Pay that is not there cannot go.
+        _cycleOnly.value = only || !hasPay
+    }
+
+    /** Where the form starts: the company typed during setup or corrected, else the setup in use, else the public row's. */
     val start: CompanyDraft? = c.companyStore.draft.value
         ?: c.companyStore.applied.value?.let { CompanyDraft(it.company, it.dept) }
+        ?: publicUse?.let { u -> CompanyDraft(u.company, u.cycle?.site.orEmpty().take(20)) }
+
+    /** [SPAT-05] The note a setup from a public row starts with; the user may add to it. */
+    val startNote: String = publicUse?.let { PublicSetup.note(it.cycle, it.codes, it.picked) }.orEmpty()
 
     /** Sends the setup; a text with an amount, phone or mail address is caught here before it goes. */
     fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false) {
@@ -866,15 +893,17 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
         _sending.value = Sending.Busy
         viewModelScope.launch {
             _sending.value = try {
-                val setup = c.companyShare.exportForServer()
+                val setup = c.companyShare.exportForServer(_cycleOnly.value)
                 // [PLZ-12][PLZ-13] Its job plaza and 시·도, or a rule for a whole job rather than one place.
                 val status = if (job.isEmpty() && region.isEmpty() && !topic) c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup)
                     else c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup, job, region, topic)
                 c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
                 _statuses.value = _statuses.value + (status.id to status)
                 c.companyStore.setDraft(null)
-                c.telemetry.event("company_report", listOf(if (verified) "verified" else "plain", if (start?.fix == true) "fix" else "share",
-                    if (status.again) "again" else "new").joinToString(","))
+                // [SPAT-05] The way on from a public row ends here; the plaza page it went to opens next.
+                if (publicUse != null) c.companyStore.updatePublicUse { it.copy(sentId = status.id, companyId = status.companyId) }
+                c.telemetry.event("company_report", listOfNotNull(if (verified) "verified" else "plain", if (start?.fix == true) "fix" else "share",
+                    if (status.again) "again" else "new", "public".takeIf { publicUse != null }, "cycle".takeIf { _cycleOnly.value }).joinToString(","))
                 Sending.Sent(status)
             } catch (e: CompanyException) {
                 Sending.Failed(e.code, e.field)

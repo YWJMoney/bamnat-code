@@ -43,6 +43,8 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.company.HowAdopted
 import com.bamnat.core.pay.HolidayWork
+import com.bamnat.core.plaza.PublicCycle
+import com.bamnat.core.plaza.PublicPay
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.PayRange
@@ -87,12 +89,18 @@ fun PayQuickSetup(
     startAt: String? = null,
     /** Screenshots and tests only: a form already picked. */
     startForm: WorkForm? = null,
+    /**
+     * [SPAT-04] The public cycle just put on the calendar, with its order: its form picked and its 업종's usual allowances
+     * in, marked 확인 필요, for a first pay setup.
+     */
+    fromCycle: Pair<PublicCycle, String>? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
     val pattern = remember(snapshot) { PatternTimeline.current(snapshot.patterns, today) }
     val guessed = remember(snapshot, initial) { WorkForms.guess(snapshot.shiftTypes, pattern, initial) }
-    var form by remember { mutableStateOf(startForm ?: initial?.let { guessed }) }
+    val cycleStart = fromCycle?.takeIf { initial == null }
+    var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: initial?.let { guessed }) }
     var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
     var holiday by remember { mutableStateOf(initial?.rules?.holidayWork) }
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
@@ -106,7 +114,8 @@ fun PayQuickSetup(
     fun draftOf(f: WorkForm?, a: Long?, h: HolidayWork?): PayProfile? {
         fromSlip?.let { return it }
         val chosen = f ?: return initial
-        return WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
+        val p = WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
+        return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
     val draft = draftOf(form, amount, holiday)
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
@@ -148,6 +157,7 @@ fun PayQuickSetup(
             when (step) {
                 FORM -> {
                     StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
+                    cycleStart?.let { FromCycleNote(it.first, it.second) }
                     SlipEntry { slipOpen = true }
                     val ordered = listOfNotNull(guessed) + WorkForm.entries.filter { it != guessed }
                     ordered.forEach { f ->
@@ -206,6 +216,20 @@ fun PayQuickSetup(
                 ) { Text(if (step == CONFIRM) "이대로 계산" else "다음") }
             }
         }
+    }
+}
+
+/** [SPAT-04] Why a form is already picked: the company's cycle, and the allowances put in with it. */
+@Composable
+private fun FromCycleNote(cycle: PublicCycle, codes: String) {
+    val items = remember(cycle) { PublicPay.usualItems(cycle) }
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "‘${cycle.company}’ 근무주기에 맞춰 ${PublicPay.form(cycle, codes).label}로 골라 두었어요." +
+                (if (items.isNotEmpty()) " ${cycle.industry.ifEmpty { "이 일" }}에서 흔한 ${items.joinToString("·")}도 넣어 둘게요. 금액은 ‘확인 필요’로 두니 명세서대로 고쳐요." else ""),
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(12.dp),
+        )
     }
 }
 

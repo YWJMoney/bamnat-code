@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.company.PublicUse
 import com.bamnat.app.company.ReportStatus
 import com.bamnat.app.company.SentReport
 import com.bamnat.app.data.CompanySummary
@@ -79,7 +80,14 @@ internal const val COMPANY_SEND_NOTICE =
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: () -> Unit, onOpenSent: () -> Unit) {
+fun CompanyReportScreen(
+    vm: CompanyReportViewModel,
+    onBack: () -> Unit,
+    onDone: () -> Unit,
+    onOpenSent: () -> Unit,
+    /** [SPAT-05] The company's plaza page, opened after a setup from a public row went up. */
+    onOpenCompany: (String) -> Unit = {},
+) {
     val sending by vm.sending.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
@@ -88,7 +96,9 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
     var dept by rememberSaveable { mutableStateOf(vm.start?.dept.orEmpty()) }
     val payslipMonth = vm.payslipMonth
     var verified by rememberSaveable { mutableStateOf(payslipMonth != null) }
-    var note by rememberSaveable { mutableStateOf("") }
+    var note by rememberSaveable { mutableStateOf(vm.startNote) }
+    val cycleOnly by vm.cycleOnly.collectAsStateWithLifecycle()
+    val public = vm.publicUse
     var job by rememberSaveable { mutableStateOf("") }
     var region by rememberSaveable { mutableStateOf("") }
     var topic by rememberSaveable { mutableStateOf(false) }
@@ -109,7 +119,8 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
             ) { sent ->
                 val s = sending
                 if (sent && s is CompanyReportViewModel.Sending.Sent) {
-                    SentPanel(s.status, onDone = onDone, onOpenSent = onOpenSent)
+                    SentPanel(s.status, onDone = onDone, onOpenSent = onOpenSent,
+                        onOpenCompany = if (public != null && s.status.companyId.isNotEmpty()) ({ onOpenCompany(s.status.companyId) }) else null)
                 } else {
                     Column(
                         Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -118,6 +129,8 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
                         HeroIcon(Icons.Outlined.VolunteerActivism)
                         Text(if (fix) "정답을 알려 주셔서 고마워요" else "같은 회사 분들의 길잡이가 되어 주세요",
                             style = MaterialTheme.typography.headlineSmall)
+                        // [SPAT-05] The reward first, as the user asked (2026-10-25 14:05): only with the pay, once it is up.
+                        if (public != null) PublicReportHead(public, cycleOnly, vm.hasPay, rewardLine(terms), onCycleOnly = vm::setCycleOnly)
                         Text(
                             if (fix) "고친 설정을 보내 주시면, 같은 회사 분들이 확인한 뒤 회사 찾기의 설정이 바로잡혀요."
                             else "내 근무표와 급여 계산 방식을 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",
@@ -240,7 +253,7 @@ internal fun HowAdopted(threshold: Int, reward: String?) {
 }
 
 @Composable
-private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -> Unit) {
+private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -> Unit, onOpenCompany: (() -> Unit)? = null) {
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val (label, tone) = status.label()
@@ -272,8 +285,44 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
         }
         Text("같은 회사 동료에게 밤낮을 알려 주면 더 빨리 채택돼요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        Button(onClick = onDone, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("확인") }
-        OutlinedButton(onClick = onOpenSent, modifier = Modifier.fillMaxWidth()) { Text("내가 보낸 정보 보기") }
+        if (onOpenCompany != null) {
+            Button(onClick = onOpenCompany, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("‘${status.company}’ 광장 보기") }
+            OutlinedButton(onClick = onOpenSent, modifier = Modifier.fillMaxWidth()) { Text("내가 보낸 정보 보기") }
+            TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
+        } else {
+            Button(onClick = onDone, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("확인") }
+            OutlinedButton(onClick = onOpenSent, modifier = Modifier.fillMaxWidth()) { Text("내가 보낸 정보 보기") }
+        }
+    }
+}
+
+/**
+ * [SPAT-05] Above the form when the setup came from a public row: the reward rule first, what kind of report it is
+ * ('공개 자료 확인·고침' or '처음 제공'), and 근무주기만 올리기 (no pay part, no reward) for a user who wants only that.
+ */
+@Composable
+private fun PublicReportHead(use: PublicUse, cycleOnly: Boolean, hasPay: Boolean, reward: String?, onCycleOnly: (Boolean) -> Unit) {
+    SoftCard(highlighted = true) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            RewardPill(publicReward(reward))
+            Text(if (use.cycleId.isEmpty()) "처음 제공 · ${use.company}" else "공개 자료 확인·고침 · ${use.company}",
+                style = MaterialTheme.typography.titleSmall)
+            Text(if (use.picked) "내가 고른 순서로 올라가요. 같은 회사 분들이 찾아서 바로 맞춰요."
+                else "공개 자료의 순서가 맞다고 올라가요. 같은 회사 분들이 찾아서 바로 맞춰요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
+                    .clickable(enabled = hasPay, role = Role.Checkbox) { onCycleOnly(!cycleOnly) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = cycleOnly, onCheckedChange = null, enabled = hasPay, modifier = Modifier.padding(horizontal = 8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("근무주기만 올리기", style = MaterialTheme.typography.bodyLarge)
+                    Text(if (hasPay) "급여 계산 방식은 빼고 올려요. 이때는 보상이 없어요" else "급여 설정이 아직 없어서 근무주기만 올라가요. 보상은 없어요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 

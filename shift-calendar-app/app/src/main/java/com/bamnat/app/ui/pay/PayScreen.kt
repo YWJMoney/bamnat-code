@@ -144,6 +144,8 @@ fun PayScreen(
     onShareWay: (() -> Unit)? = null,
     /** [PAYS-10] The ‘?’ in the top bar: pay help first, then 문의. Null leaves it out. */
     onHelp: (() -> Unit)? = null,
+    /** [SPAT-04] A public cycle just put in, for the first pay setup to start from. */
+    fromCycle: Pair<com.bamnat.core.plaza.PublicCycle, String>? = null,
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -233,6 +235,7 @@ fun PayScreen(
                         },
                         onDetailed = { detailedFrom = DetailedStart(it) },
                         onCancel = if (profile != null) ({ editingSetup = false }) else null,
+                        fromCycle = fromCycle,
                     ) else PayWizard(
                         initial = detailed.from ?: profile,
                         onCancel = { detailedFrom = null },
