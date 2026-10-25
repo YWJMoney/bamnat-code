@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,8 +44,8 @@ import com.bamnat.app.ui.components.FormSheet
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.invest.DecimalField
 import com.bamnat.app.ui.pay.ScanButtons
+import com.bamnat.core.pay.PayPhotos
 import com.bamnat.core.pay.PayslipReader
-import com.bamnat.core.pay.SlipRole
 import com.bamnat.core.tax.BusinessTax
 import com.bamnat.core.tax.IncomeKind
 import com.bamnat.core.tax.PayObservation
@@ -211,6 +212,7 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
     var days by remember { mutableStateOf("") }
     var source by remember { mutableStateOf(PayObservation.Source.TYPED) }
     var read by remember { mutableStateOf<String?>(null) }
+    val texts = remember { mutableStateListOf<String>() }
     val g: Long? = when (kind) {
         IncomeKind.HOURLY -> hours.toDoubleOrNull()?.let { h -> rate.toLongOrNull()?.let { (h * it).roundToLong() } } ?: gross.toLongOrNull()
         IncomeKind.DAILY -> days.toIntOrNull()?.let { d -> rate.toLongOrNull()?.let { d * it } } ?: gross.toLongOrNull()
@@ -244,16 +246,23 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
                     Text("${Fmt.month(month)}분", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     IconButton(onClick = { month = month.plusMonths(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
                 }
-                // [D68] The photo is read on the phone; nothing is sent anywhere.
-                Text("명세서 사진으로 채우기", style = MaterialTheme.typography.labelLarge)
+                // [D68] The photo is read on the phone (U의 ImagePrep를 지남); nothing is sent anywhere.
+                // [READ-08] A payslip and the company's 계산 방법 can come as two photos in either order: [PayPhotos] takes
+                // the one that reads as a payslip, and its 공제·실수령 (worked out when the photo cut the bottom line) fill this month.
+                Text("명세서 사진으로 채우기 (회사 계산 방법 사진도 같이 넣어도 돼요)", style = MaterialTheme.typography.labelLarge)
                 ScanButtons(onText = { text ->
-                    val r = PayslipReader.read(text)
-                    r.gross?.let { gross = it.toString() }
-                    r.amount(SlipRole.NET)?.let { net = it.toString() }
+                    texts += text
+                    val photos = PayPhotos.read(texts.toList())
+                    val r = photos.slip ?: PayslipReader.read(text)
+                    val g0 = r.gross
+                    val n0 = r.net ?: photos.deductionRate?.let { cut -> g0?.let { (it * (1 - cut)).roundToLong() } }
+                    g0?.let { gross = it.toString() }
+                    n0?.let { net = it.toString() }
                     r.month?.let { month = it }
                     source = PayObservation.Source.PAYSLIP
-                    read = if (r.gross == null && r.amount(SlipRole.NET) == null) "세전·실수령을 찾지 못했어요. 직접 적어 주세요."
-                    else "명세서에서 읽었어요. 숫자가 맞는지 보고 다르면 고쳐 주세요."
+                    read = if (g0 == null && n0 == null) "세전·실수령을 찾지 못했어요. 명세서 사진을 한 장 더 넣거나 직접 적어 주세요."
+                    else listOfNotNull("명세서에서 읽었어요", r.deducted?.let { "공제 ${Fmt.won(it)}" }).joinToString(" · ") +
+                        ". 숫자가 맞는지 보고 다르면 고쳐 주세요."
                 })
                 read?.let { Muted(it) }
                 when (kind) {

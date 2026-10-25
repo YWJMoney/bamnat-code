@@ -183,6 +183,30 @@ object InvestTaxes {
         return SellPreview(after - before, after, tax(before), tax(after), (FOREIGN_DEDUCTION - after).coerceIn(0, FOREIGN_DEDUCTION))
     }
 
+    /**
+     * [INV-41] 해외 주식 양도소득세 신고 (5월 1~31일, 소득세법 제110조; 마감이 주말·공휴일이면 다음 평일): a reminder on 5월 1일 and
+     * a week before the deadline, when last year's 해외 주식 이익 (oldest first, ISA·연금 빼고) is over the 250만 원 공제, so
+     * there is tax to report. Shown as dates of the investor calendar (ids below zero, never saved): the coming May only.
+     */
+    fun reportReminders(book: InvestBook, today: LocalDate): List<InvestEvent> {
+        val thisYear = com.bamnat.core.money.TaxDeadlines.workday(LocalDate.of(today.year, 5, 31))
+        val due = if (today.isAfter(thisYear)) com.bamnat.core.money.TaxDeadlines.workday(LocalDate.of(today.year + 1, 5, 31)) else thisYear
+        val year = due.year - 1
+        val sheltered = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
+        val gain = Portfolio.fifo(book.trades).filter { it.market.foreign && it.date.year == year && it.accountId !in sheltered }
+            .sumOf { it.pnlWon }.roundToLong()
+        val taxable = (gain - FOREIGN_DEDUCTION).coerceAtLeast(0)
+        if (taxable <= 0) return emptyList()
+        val tax = (taxable * CAPITAL_GAINS_RATE).roundToLong()
+        val memo = "${year}년 해외 주식 이익 ${"%,d".format(gain)}원 → 예상 세금 ${"%,d".format(tax)}원(250만 원 공제 뒤 22%). ${due.monthValue}월 ${due.dayOfMonth}일까지 홈택스나 증권사 신고 대행으로 신고해요. 자료는 투자 › 내보내기 › 해외 주식 세금 신고 자료"
+        return listOf(LocalDate.of(due.year, 5, 1) to "해외 주식 양도소득세 신고 시작", due.minusDays(7) to "해외 주식 양도소득세 신고 일주일 남음")
+            .filter { (d, _) -> !d.isBefore(today) }
+            .mapIndexed { i, (d, title) -> InvestEvent(id = REPORT_EVENT_ID - i, date = d, kind = EventKind.OTHER, title = title, memo = memo) }
+    }
+
+    /** [INV-41] Ids of [reportReminders]: below zero, apart from saved dates. */
+    const val REPORT_EVENT_ID = -5_31_000L
+
     /** [INV-39] Said under 국내 주식 sells. */
     const val DOMESTIC_NOTE = "국내 상장주식은 대주주(종목당 50억 원 이상 등)가 아니면 양도소득세가 없어요. 거래세는 위에 넣었어요."
 

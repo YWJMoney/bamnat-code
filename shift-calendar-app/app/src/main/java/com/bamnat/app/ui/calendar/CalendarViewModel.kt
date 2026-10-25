@@ -244,6 +244,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         return runCatching { monthPay(profile.named(snapshot.kinds), snapshot, month).total }.getOrNull()
     }
 
+    /** [TAX-02] 세후 예상 for the summary's 예상 급여 (프로, 순번 380); null when locked. */
+    suspend fun takeHome(profile: PayProfile?, gross: Long?, month: YearMonth): Long? =
+        com.bamnat.app.tax.TakeHomeLine.forecast(container, container.calendars.active.value, profile, gross, month)?.net
+
     val memoDates: StateFlow<Set<LocalDate>> =
         // [NOTE-01] Only the memos that show on the calendar on screen.
         container.calendars.active.flatMapLatest { memoRepo.datesWithMemos(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())

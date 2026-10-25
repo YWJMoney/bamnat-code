@@ -89,13 +89,18 @@ object InvestNotices {
         list.filter { c.calendars.styleOf(it.id, main) == WorkStyle.INVEST }
     }.flatMapLatest { cals ->
         if (cals.isEmpty()) flowOf(emptyList())
-        else combine(cals.map { cal -> c.invest(cal.id).let { r -> combine(r.alarms, r.events) { a, e -> Plan(cal.id, cal.name, a, e) } } }) { it.toList() }
+        // [INV-41] With the 5월 해외 주식 신고 reminders the trades call for.
+        else combine(cals.map { cal -> c.invest(cal.id).let { r -> combine(r.alarms, r.book) { a, b -> Plan(cal.id, cal.name, a, withReports(b, b.events)) } } }) { it.toList() }
     }.debounce(300)
 
     suspend fun plansNow(c: AppContainer): List<Plan> = c.investCalendars().map { cal ->
         val book = c.invest(cal.id).now()
-        Plan(cal.id, cal.name, book.alarms, book.events)
+        Plan(cal.id, cal.name, book.alarms, withReports(book, book.events))
     }
+
+    /** [INV-41] [events] and the 해외 주식 양도소득세 신고 reminders [book]'s trades call for (never saved). */
+    internal fun withReports(book: com.bamnat.core.invest.InvestBook, events: List<InvestEvent>, today: java.time.LocalDate = Today.date()): List<InvestEvent> =
+        events + com.bamnat.core.invest.InvestTaxes.reportReminders(book, today)
 
     fun reschedule(context: Context, plans: List<Plan>, after: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
@@ -153,7 +158,7 @@ object InvestNotices {
                 post(context, cal.id, named, a, book, at.toLocalDate())
                 if (a.ring) ringing += a.title
             }
-            InvestAlarms.eventsAt(book.events, at).forEach { postEvent(context, cal.id, named, it) }
+            InvestAlarms.eventsAt(withReports(book, book.events, at.toLocalDate()), at).forEach { postEvent(context, cal.id, named, it) }
         }
         if (ringing.isEmpty()) return
         val ring = RingRequest(
@@ -211,8 +216,10 @@ object InvestNotices {
         val n = NotificationCompat.Builder(context, Notifications.INVEST_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentTitle(listOfNotNull(calendarName, "오늘 ${e.kind.label}").joinToString(" · "))
-            .setContentText(listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · "))
+            // [INV-41] A 신고 reminder (id below zero) says what it is in its title and the sum in its text.
+            .setContentTitle(listOfNotNull(calendarName, if (e.id < 0) e.title else "오늘 ${e.kind.label}").joinToString(" · "))
+            .setContentText(if (e.id < 0) e.memo else listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · "))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(if (e.id < 0) e.memo else listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · ")))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.INVEST, REQUEST_OPEN + EVENT_BASE, calendarId))
             .setAutoCancel(true)
             .build()

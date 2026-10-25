@@ -493,6 +493,9 @@ object FeatureRegistry {
         f("invest.priceFill", "INV-40", "체결 내역 캡처로 단가 채우기", "단가 없이 온 체결 알림은 금액 ÷ 수량, 이어 온 알림 묶기로 채우고, 그래도 없으면 증권사 체결 내역 캡처를 휴대폰 안에서 읽어 채워요. 안 맞는 숫자는 노랗게 물어요",
             setOf(INVEST), "${tab(INVEST)} › 한눈에 › 알림으로 찾은 거래 › 체결 내역 캡처로 채우기", at(Place.STATS, "invest.overview"),
             "단가 없음", "체결 내역", "캡처", "스크린샷", "평균 단가", "나눠 체결", under = "invest.alerts"),
+        f("invest.taxRemind", "INV-41", "해외 주식 5월 신고 알림", "지난해 해외 주식 이익이 250만 원 공제를 넘으면 5월 1일과 신고 마감 일주일 전에 예상 세금과 함께 알려 줘요",
+            setOf(INVEST), "${tab(INVEST)} › 통계 › 세금 미리 보기", at(Place.STATS, "invest.stats"), "5월 신고", "양도소득세 신고", "해외 주식 신고",
+            "신고 알림", under = "invest.tax"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

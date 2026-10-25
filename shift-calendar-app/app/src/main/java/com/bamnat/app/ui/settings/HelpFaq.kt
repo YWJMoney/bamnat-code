@@ -365,6 +365,7 @@ internal object HelpFaq {
             listOf("명세서", "사진", "인식", "두 장", "회사 계산", "계산 방법", "취업규칙", "수당표", "실수령", "공제", "세금"),
             listOf("급여", "명세서"),
             "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
+        ),
         // ---- 1.25 묶음 W ----
         // [TAX-01][TAX-02] U9-다: 들어온 월급은 관측, 세후 예상.
         HelpTopic(

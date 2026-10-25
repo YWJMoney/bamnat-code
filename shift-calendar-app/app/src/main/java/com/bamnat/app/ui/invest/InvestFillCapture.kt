@@ -99,6 +99,7 @@ internal fun FillCaptureSheet(
     LaunchedEffect(shared) {
         val uri = shared ?: return@LaunchedEffect
         try {
+            // [READ-09] Through U's ImagePrep (upright, sized for reading), on the phone only (결정 D68).
             take(com.bamnat.app.pay.PayslipScanner.read(context, uri))
         } catch (e: CancellationException) {
             throw e

@@ -229,4 +229,74 @@ class WTaxFlowTest {
         assertFalse(repo.pendingAlerts.first().isNotEmpty())
         assertNotNull(repo.now().trades.single())
     }
+
+    /**
+     * [TAX-02][TAX-04][READ-08] After U: a payslip read on the pay screen (with the company's 계산 방법 as the other photo, in
+     * either order) is that month's record for the estimate, and the pay screen and the calendar get 세후 beside 세전.
+     */
+    @Test fun aPayslipReadOnThePayScreenTeachesTheEstimateAndTakeHomeShows() = runBlocking {
+        val profile = withPay()
+        val rules = "제12조(연장근로수당) 연장근로에 대하여는 통상임금의 50%를 가산하여 지급한다.\n제13조(야간근로수당) 야간근로는 통상임금의 50%를 가산한다."
+        val slip = "2026년 9월 급여명세서\n기본급 2,800,000\n식대 200,000\n지급합계 3,000,000\n국민연금 126,000\n건강보험 99,260\n" +
+            "고용보험 25,200\n소득세 74,350\n지방소득세 7,430\n공제합계 332,240\n실수령액 2,667,760"
+        val photos = com.bamnat.core.pay.PayPhotos.read(listOf(rules, slip))
+        assertEquals("명세서가 둘째 사진이어도 명세서로 골라요", 1, photos.slipIndex)
+        val read = photos.slip!!
+        assertEquals(3_000_000L, read.gross)
+        assertEquals(332_240L, read.deducted)
+        assertEquals(2_667_760L, read.net)
+        assertEquals(332_240.0 / 3_000_000, photos.deductionRate!!, 1e-9)
+
+        val vm = PayViewModel(c)
+        vm.observePayslip(read, YearMonth.of(2026, 8))
+        val tax = c.tax(PersonalCalendar.MAIN)
+        val end = System.currentTimeMillis() + 10_000
+        while (tax.allObservations().isEmpty()) {
+            check(System.currentTimeMillis() < end) { "the payslip was not kept" }
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        val o = tax.allObservations().single()
+        assertEquals("명세서에 적힌 달", YearMonth.of(2026, 9), o.payMonth)
+        assertEquals(2_667_760L, o.net)
+        assertEquals(3_000_000L, o.gross)
+        assertEquals(PayObservation.Source.PAYSLIP, o.source)
+
+        // 급여 화면·달력 요약: 세후 beside 세전, from the table × what the record taught.
+        val month = YearMonth.from(Today.date())
+        val f = vm.takeHome(profile, 3_000_000, month)!!
+        assertTrue(f.net in 2_000_000 until 3_000_000)
+        assertEquals(f.net, com.bamnat.app.ui.calendar.CalendarViewModel(c).takeHome(profile, 3_000_000, month))
+        assertTrue(TakeHomeLine.text(f) { "%,d원".format(it) }.startsWith("세후 예상 "))
+        // A payslip with no 실수령 to read keeps nothing.
+        vm.observePayslip(com.bamnat.core.pay.PayslipReader.read("기본급 2,800,000"), month)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, tax.allObservations().size)
+    }
+
+    /** [INV-41] 해외 주식 이익 over the 250만 원 공제 last year: the investor calendar reminds on 5월 1일 and a week before 5월 신고 마감. */
+    @Test fun foreignStockGainsBringAMayReportReminder() = runBlocking {
+        val repo = investor()
+        val acc = repo.ensureAccount()
+        val base = com.bamnat.core.invest.Trade(accountId = acc, date = java.time.LocalDate.of(2026, 2, 10), symbol = "AAPL", name = "Apple",
+            market = com.bamnat.core.invest.Market.US_STOCK, side = Side.BUY, quantity = 10.0, price = 100.0, fxRate = 1_400.0)
+        repo.saveTrade(base)
+        val today = Today.date()
+        assertTrue("산 것만으로는 신고할 것이 없어요", com.bamnat.core.invest.InvestTaxes.reportReminders(repo.now(), today).isEmpty())
+        repo.saveTrade(base.copy(date = java.time.LocalDate.of(2026, 6, 10), side = Side.SELL, price = 400.0))
+        // 2026 gain 10 × 300 USD × 1,400 = 4,200,000원: 2027년 5월 31일(월)까지 신고.
+        val events = com.bamnat.app.invest.InvestNotices.withReports(repo.now(), emptyList(), today)
+        assertEquals(listOf(java.time.LocalDate.of(2027, 5, 1), java.time.LocalDate.of(2027, 5, 24)), events.map { it.date })
+        assertTrue(events.all { it.id < 0 && "4,200,000" in it.memo && "374,000" in it.memo })
+        val plan = com.bamnat.app.invest.InvestNotices.plansNow(c).single()
+        val first = com.bamnat.core.invest.InvestAlarms.nextAny(plan.alarms, plan.events, Today.dateTime())
+        assertEquals(java.time.LocalDate.of(2027, 5, 1).atTime(8, 30), first)
+
+        // The notice itself, the morning it comes.
+        shadowOf(app).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val at = first!!.atZone(Today.zone()).toInstant().toEpochMilli()
+        com.bamnat.app.invest.InvestNotices.handle(app, c, at, now = at)
+        val nm = app.getSystemService(android.app.NotificationManager::class.java)
+        val shown = shadowOf(nm).allNotifications.map { it.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString() }
+        assertTrue(shown.toString(), shown.any { "해외 주식 양도소득세 신고 시작" in it })
+    }
 }

@@ -344,7 +344,7 @@ shift-calendar-app/
 - 시험 표본은 `tools/roster_fixtures.py`·`tools/payslip_fixtures.py`가 이 컴퓨터의 실제 OCR(RapidOCR PP-OCRv4 + 한국어)로 만들어요(`core/src/test/resources/roster-photos`·`payslip-photos`). 새 양식이 나오면 `CASES`에 더하고 다시 만든 뒤 `RosterPhotoFixturesTest`를 보세요. ML Kit은 Robolectric에서 안 돌아서 앱 시험은 `RosterScanner.fake`(·`fakeImage`)로 단어를 줘요.
 - 새 화면이 사진을 읽으면 `ImagePrep.load`를 지나게 하세요(큰 사진·EXIF).
 
-### 6-9. 세금 예측·실수령·사업자 세금·투자 수수료와 단가 채우기 (1.25.0 묶음 W, TAX-01~07·INV-38~40)
+### 6-9. 세금 예측·실수령·사업자 세금·투자 수수료와 단가 채우기 (1.25.0 묶음 W, TAX-01~07·INV-38~41)
 
 계획은 프로젝트 파일(git 밖)의 `계획/1.25-W-개발계획.md`, 근거(법령 원문 출처)는 `research/1.25-W-조사.md`.
 
@@ -356,7 +356,10 @@ shift-calendar-app/
 - **투자 수수료(379)**: `InvestSettings.buyFeeRate/sellFeeRate`(기본 0.05%, invest_settings `buyFee`·`sellFee`), 우선순위 계좌 시장별 → 계좌 → 달력 기본 → 시장 기본. 매매 시트는 `InvestFees.shown`으로 값이 바뀔 때마다 다시 계산(직접 친 칸은 그대로), 해외 매도 미리 보기 `InvestTaxes.sellPreview`.
 - **단가 채우기(409, 결정 D77)**: A `TradeAlertParser`가 체결 금액(`AMOUNT`)을 따로 읽어 단가로 잘못 읽지 않고 금액 ÷ 수량, 금액과 안 맞으면 `Pending.checked == false`라 바로 적기 안 함. B `TradeAlerts.add`가 10분 안 같은 주문 알림을 묶음(같은 수량+단가 없음 = 같은 체결, 다른 수량 = 나눠 체결 평균). C `core/invest/FillCapture.kt`(`FillSheetReader`·`FillMatcher`)가 체결 내역 캡처 글자를 행마다 읽고 수량×단가≈금액으로 맞춰 봄, 확실하지 않은 칸은 `unsure`; 화면 `ui/invest/InvestFillCapture.kt`(처음 한 번 안내, 노란 칸 확인 전엔 채우기 막힘). 투자 달력을 보고 있을 때 갤러리 공유 사진은 `invest/IncomingFills`로 투자 탭에. 사진 읽기는 지금 `PayslipScanner`, U의 `ImagePrep`이 합쳐지면 그쪽으로.
 - **캡처 표본** `core/src/test/resources/fill-captures/`: 지어낸 배치 예시 12장(실제 캡처 아님). 실제 캡처 글자를 같은 틀로 더하면 `FillCaptureTest`가 바로 시험해요.
-- 시험: core `TaxForecastTest`·`BusinessTaxTest`·`FillCaptureTest`, 앱 `tax/WTaxFlowTest`(끝에서 끝 7개), 사진 `WScreenshotTest` 850~869.
+- **세후 한 줄** `app/tax/TakeHomeLine`: 급여 화면 합계 아래(`PayScreen`, `PayViewModel.takeHome`)와 달력 요약 '예상 급여' 밑 '세전 · 세후 ○'(`CalendarViewModel.takeHome` → `MonthSummaryBar(takeHome)`). 프로가 아니면 null이라 화면이 전과 같음.
+- **U와 이음**: 명세서 사진은 U의 `PayslipScanner`(→ `ImagePrep`)로 읽고, '지난 월급 적기'는 `PayPhotos.read`로 여러 장 중 명세서를 골라 `PayslipRead.gross`·`net`(사진이 끝자리를 잘라도 지급−공제로)·`deducted`, 없으면 `deductionRate`로 실수령. 급여 › 명세서로 맞춰 보기에서 채운 명세서도 `PayViewModel.observePayslip`로 그 달 관측이 됨. 공유 사진은 투자 달력일 때만 `IncomingFills`로, 한 달 근무 넣기 화면이 열려 있으면 U 쪽으로.
+- **5월 신고 알림(INV-41)** `InvestTaxes.reportReminders`: 지난해 해외 주식 이익(먼저 산 것부터, ISA·연금 뺌)이 250만 원을 넘으면 5월 1일·마감(주말·공휴일이면 다음 평일) 일주일 전 08:30. 저장하지 않는 일정(id < 0)으로 `InvestNotices.withReports`가 계획에 섞음.
+- 시험: core `TaxForecastTest`·`BusinessTaxTest`·`FillCaptureTest`·`InvestReportTest`, 앱 `tax/WTaxFlowTest`(끝에서 끝 9개), 사진 `WScreenshotTest` 850~869.
 
 ### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
 

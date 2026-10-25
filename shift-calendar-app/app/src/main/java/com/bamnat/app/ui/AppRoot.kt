@@ -443,15 +443,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
     val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
     LaunchedEffect(sharedRoster) {
-        // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab.
+        // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
+        // 한 달 근무 넣기 (U, ROST-09) is open stays that screen's.
+        val rosterOpen = nav.currentBackStackEntry?.destination?.route in setOf(Routes.DUTY_ROSTER, Routes.DUTY_ROSTER_MONTH)
         val shot = sharedRoster as? com.bamnat.app.IncomingRoster.Shared.Photo
-        if (shot != null && activeStyle == WorkStyle.INVEST) {
+        if (shot != null && activeStyle == WorkStyle.INVEST && !rosterOpen) {
             com.bamnat.app.IncomingRoster.take()
             com.bamnat.app.invest.IncomingFills.put(shot.uri)
             NoticeLinks.open(NoticeLinks.Target.INVEST, activeCalendarId)
             return@LaunchedEffect
         }
-        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route !in setOf(Routes.DUTY_ROSTER, Routes.DUTY_ROSTER_MONTH)) {
+        if (sharedRoster != null && !rosterOpen) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
     }
