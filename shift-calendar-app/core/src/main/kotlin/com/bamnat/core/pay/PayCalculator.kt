@@ -456,13 +456,23 @@ class PayCalculator(
             }
             day.leave?.let { leave ->
                 val mins = day.leaveMinutes
+                // [HOLI-02] Leave on a 공휴일 that is a working day on the roster: the day counts as attended and is paid once,
+                // by the paid holiday (월급제: in the salary; 시급·일당제: the 유급휴일 line), with no night or holiday premium, since
+                // no work was done. A 휴일 has no duty to work, so leave on it adds no pay of its own (근로기준법 제55조 제2항·제62조,
+                // research/1.25-V-조사.md 3장). Before 1.25 hourly pay paid both the 유급휴일 and the leave: the day twice.
+                val onHoliday = publicHoliday(day.date)
+                val covered = if (leave.kind.paid && byHour) (paidHolidayMinutes(day) - day.scheduledMinutes).coerceIn(0, mins) else 0
+                val holidayNote = if (onHoliday) " · 공휴일이라 근무일로 인정, 야간·휴일 가산 없음" else ""
                 val (amount, formula) = when {
-                    leave.kind.paid && byHour -> money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} (유급)"
-                    leave.kind.paid -> 0L to "기본급에 포함 (유급, ${hours(mins)})"
+                    leave.kind.paid && byHour && covered >= mins -> 0L to "공휴일 유급휴일로 받아요 (${hours(mins)})$holidayNote"
+                    leave.kind.paid && byHour -> money(mins - covered, 1.0) to "${hours(mins - covered)} × ${won(hourly)} (유급)$holidayNote"
+                    leave.kind.paid -> 0L to "기본급에 포함 (유급, ${hours(mins)})$holidayNote"
+                    // A paid holiday is paid whatever leave is marked on it, so unpaid leave takes nothing off.
+                    onHoliday && profile.wageType == WageType.MONTHLY -> 0L to "공휴일은 유급휴일이라 빼지 않아요 (${hours(mins)})"
                     profile.wageType == WageType.MONTHLY -> -money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} 공제 (무급)"
                     else -> 0L to "무급 ${hours(mins)}"
                 }
-                if (leave.kind.paid) paidLeave += mins else unpaidLeave += mins
+                if (leave.kind.paid) paidLeave += mins - covered else if (!(onHoliday && profile.wageType == WageType.MONTHLY)) unpaidLeave += mins
                 parts += DayPart(LineKind.LEAVE, leave.label, amount, formula)
             }
             // [SHFT-01] The shift kind's own premium on the hours worked on it, on top of the company's rules.

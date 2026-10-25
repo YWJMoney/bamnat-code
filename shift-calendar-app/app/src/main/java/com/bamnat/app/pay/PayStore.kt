@@ -20,6 +20,7 @@ import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.WeeklyHoliday
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.HolidayPayMode
+import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.pay.Occupation
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
@@ -392,6 +393,8 @@ object PayCodec {
         .apply { if (r.wonRounding != WonRounding.HOURLY_FIRST) put("wonRounding", r.wonRounding.name) }
         .apply { if (r.hoursException != HoursException.NONE) put("hoursException", r.hoursException.name) }
         .apply { if (r.partTimePremium) put("partTime50", true) }
+        // [HOLI-01] 1.25: only the 교대제라 상관없음 choice needs keeping; the others follow from the fields above.
+        .apply { r.holidayWorkChoice?.let { put("holidayWork", it.name) } }
         // [EXTRA-03] Keyed by kind id; 1.8 and earlier used OVERTIME / SPECIAL / COVER.
         .put("extraByShift", JSONObject().apply {
             r.extraByShift.forEach { (kind, byType) ->
@@ -431,6 +434,7 @@ object PayCodec {
         wonRounding = o.optString("wonRounding").let { n -> WonRounding.entries.firstOrNull { it.name == n } } ?: WonRounding.HOURLY_FIRST,
         hoursException = HoursException.of(o.optString("hoursException")),
         partTimePremium = o.optBoolean("partTime50", false),
+        holidayWorkChoice = o.optString("holidayWork").let { n -> HolidayWork.entries.firstOrNull { it.name == n } },
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = kindId(key) ?: return@mapNotNull null
