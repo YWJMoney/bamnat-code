@@ -331,7 +331,7 @@ private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
     val tool by vm.paintTool.collectAsStateWithLifecycle()
     val month by vm.paintMonth.collectAsStateWithLifecycle()
     val canUndo by vm.canUndoPaint.collectAsStateWithLifecycle()
-    RosterSource(vm)
+    RosterSource(vm, d)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         d.types.forEach { t ->
             val stamp = PaintTool.Shift(t.id)
@@ -390,7 +390,7 @@ private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RosterSource(vm: SetupViewModel) {
+private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val roster by vm.roster.collectAsStateWithLifecycle()
     val reading by vm.rosterReading.collectAsStateWithLifecycle()
@@ -419,12 +419,35 @@ private fun RosterSource(vm: SetupViewModel) {
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
     }
     if (reading) Text("듀티표를 읽고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // [READ-04][READ-05] The photo itself: tapped when it read nothing or the wrong thing, or looked at to see what was read.
+    var tapping by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var seeing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    roster?.scan?.let { scan ->
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (scan.image != null) FilterChip(selected = false, enabled = !reading, onClick = { tapping = true }, label = { Text("사진 위에서 누르기") })
+            FilterChip(selected = false, onClick = { seeing = true }, label = { Text("무엇을 읽었는지 보기") })
+        }
+        if (tapping) com.bamnat.app.ui.imports.PhotoTapDialog(scan, onDismiss = { tapping = false }) { hint -> tapping = false; vm.readRosterTapped(hint) }
+        if (seeing) com.bamnat.app.ui.imports.ReadDiagnosisDialog(scan, roster?.rows.orEmpty(), onDismiss = { seeing = false })
+    }
     val rows = roster?.rows.orEmpty()
-    if (rows.size > 1) {
-        Text("내 줄을 골라 주세요", style = MaterialTheme.typography.bodyMedium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            rows.forEachIndexed { i, r ->
-                FilterChip(selected = false, onClick = { vm.useRosterRow(i) }, label = { Text(r.label.ifBlank { "${i + 1}번째 줄" } + " · ${r.cells.size}일") })
+    if (rows.size > 1) com.bamnat.app.ui.imports.WhichLine(rows, d.types, onPick = vm::useRosterRow)
+    // [SETUP-15] A code the setup's kinds do not cover: asked here, one at a time, so it goes in with the setup.
+    val asks by vm.rosterAsks.collectAsStateWithLifecycle()
+    asks.firstOrNull()?.let { (ask, days) ->
+        androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("‘${ask.raw}’(${days.size}일)는 무엇인가요?", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!ask.leave) d.types.forEach { t ->
+                        FilterChip(selected = false, onClick = { vm.answerRosterCode(ask.raw, com.bamnat.core.imports.DutyCell.Shift(t.id)) }, label = { Text(t.name) })
+                    }
+                    com.bamnat.core.model.LeaveKind.entries.forEach { k ->
+                        FilterChip(selected = false, onClick = { vm.answerRosterCode(ask.raw, com.bamnat.core.imports.DutyCell.Leave(k)) }, label = { Text(k.label) })
+                    }
+                    FilterChip(selected = false, onClick = { vm.answerRosterCode(ask.raw, null) }, label = { Text("넣지 않기") })
+                }
             }
         }
     }

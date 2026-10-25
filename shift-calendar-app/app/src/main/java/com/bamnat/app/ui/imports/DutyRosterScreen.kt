@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.outlined.Backspace
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -134,7 +135,11 @@ import java.time.YearMonth
  * which says first what it overwrites, and can be taken back after.
  * [SHFT-06][IMPORT-03][NURS-04] The photo, file and text reading of 1.18~1.23, and the doubtful cells to look at.
  */
-class DutyRosterViewModel(private val container: AppContainer, val calendarId: String) : ViewModel() {
+class DutyRosterViewModel(
+    private val container: AppContainer, val calendarId: String,
+    /** [READ-10] The month the calendar was on when 이번 달 전부 넣기 opened this screen. */
+    month: YearMonth? = null,
+) : ViewModel() {
     private val schedule get() = container.calendars.repository(calendarId)
 
     data class Ui(
@@ -157,8 +162,15 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         /** [ROST-04] The month the roster named, when it did. */
         val named: YearMonth? = null,
         val history: List<Map<Int, DutyCell?>> = emptyList(),
+        /**
+         * [READ-05] False while a roster of several lines waits for "어느 줄(조)이 내 것인가요?": nothing goes on the calendar
+         * before the user says which line is theirs (사용자 2026-10-25 "어느조에 해당하는지 물어보지도 않고").
+         */
+        val chosen: Boolean = true,
+        /** [READ-04] The photo last read, for 사진 위에서 누르기 and 무엇을 읽었는지 보기; in memory only. */
+        val scan: com.bamnat.app.imports.RosterScanner.Scan? = null,
     ) {
-        val row: RosterRow? get() = rows?.getOrNull(picked)
+        val row: RosterRow? get() = if (chosen) rows?.getOrNull(picked) else null
         private val days: Int get() = month.lengthOfMonth()
 
         val cells: Map<Int, DutyCell>
@@ -184,7 +196,7 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
     }
 
     private val today = Today.date()
-    private val start = container.shownMonth.month.value.let { shown ->
+    private val start = month ?: container.shownMonth.month.value.let { shown ->
         // After the middle of a month the roster on the wall is usually next month's.
         if (shown == YearMonth.from(today) && today.dayOfMonth >= 15) shown.plusMonths(1) else shown
     }
@@ -266,16 +278,29 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
 
     fun readText(text: String) = read { c -> RosterReader.text(text, c, today) }
 
+    /** [READ-04] The last photo read again along the lines the user tapped on it. */
+    fun readTapped(hint: com.bamnat.core.imports.RosterHint) {
+        val scan = _ui.value.scan ?: return
+        read { c -> RosterReader.tapped(scan, c, hint, _ui.value.month.atDay(1)) }
+    }
+
     private fun read(how: suspend (DutyCodes) -> RosterResult) {
         _ui.update { it.copy(reading = true, error = null, applied = null) }
         viewModelScope.launch {
             val r = how(codes())
+            // [READ-05] The table's own order, top to bottom, to choose from.
+            val rows = r.rows.sortedBy { it.line }
+            // [READ-06] The line picked on last month's roster, found again by its name or 조.
+            val mine = container.dutyCodes.mine(calendarId)?.let { m -> rows.indexOfFirst { it.label == m } }?.takeIf { it >= 0 }
             _ui.update {
                 it.copy(
-                    reading = false, rows = r.rows.takeIf { rows -> rows.isNotEmpty() } ?: it.rows, picked = 0,
-                    edits = if (r.rows.isEmpty()) it.edits else emptyMap(), error = r.error, from = r.from,
+                    reading = false, rows = rows.takeIf { rs -> rs.isNotEmpty() } ?: it.rows,
+                    picked = if (rows.isEmpty()) it.picked else mine ?: 0,
+                    chosen = if (rows.isEmpty()) it.chosen else rows.size == 1 || mine != null,
+                    edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error, from = r.from,
                     // [ROST-04] The month the roster names wins over the one on screen (중-6).
                     month = r.month ?: it.month, named = r.month, cursor = 1, history = emptyList(),
+                    scan = r.scan ?: it.scan.takeIf { r.from == RosterFrom.PHOTO },
                 )
             }
         }
@@ -295,7 +320,11 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         _ui.value.rows == null && !_ui.value.reading && RosterReader.looksLikeRoster(text, DutyCodes(
             types.value.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.isNight) }, container.dutyCodes.of(calendarId)))
 
-    fun pick(i: Int) = _ui.update { it.copy(picked = i, edits = emptyMap(), cursor = 1, history = emptyList()) }
+    fun pick(i: Int) {
+        _ui.update { it.copy(picked = i, chosen = true, edits = emptyMap(), cursor = 1, history = emptyList()) }
+        // [READ-06] Remembered for next month's roster; a line with no name ("3번째 줄") says nothing about next month.
+        _ui.value.rows?.getOrNull(i)?.label?.takeIf { it.isNotBlank() }?.let { container.dutyCodes.rememberMine(calendarId, it) }
+    }
 
     /** A cell fixed in place. */
     fun edit(day: Int, cell: DutyCell?) = _ui.update { u -> change(u, u.edits + (day to cell)) }
@@ -333,7 +362,7 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         }
     }
 
-    fun apply() = WriteGate.request(container, WriteKind.SHIFT) { write() }
+    fun apply() { if (_ui.value.chosen) WriteGate.request(container, WriteKind.SHIFT) { write() } }
 
     private fun write() {
         val u = _ui.value
@@ -351,11 +380,16 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
             // A roster whose common codes were matched to the user's kinds says something about those kinds.
             if (u.from != RosterFrom.TYPED && u.row?.guessed.orEmpty().any { it in cells && it !in u.edits }) markShiftsInferred()
             _ui.update { it.copy(applied = cells.size, history = emptyList()) }
-            _messages.emit(UndoMessage("${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요") {
+            val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요"
+            val undo: suspend () -> Unit = {
                 before.forEach { (d, e) -> repo.restoreDay(d, e) }
                 if (memos.isNotEmpty()) container.memoRepository.delete(memos, offerUndo = false)
                 _ui.update { it.copy(applied = null) }
-            })
+            }
+            // [READ-11] Also from the calendar's 도구 once this screen is closed.
+            com.bamnat.app.ui.RecentFill.record(text, calendarId, container.appScope, undo)
+            val recent = com.bamnat.app.ui.RecentFill.entry.value
+            _messages.emit(UndoMessage(text) { com.bamnat.app.ui.RecentFill.clear(recent); undo() })
         }
     }
 
@@ -399,6 +433,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<Int?>(null) }
     var newKindFor by remember { mutableStateOf<String?>(null) }
     var others by rememberSaveable { mutableStateOf(false) }
+    var tapping by remember { mutableStateOf(false) }
+    var seeing by remember { mutableStateOf(false) }
     // The system photo picker: no storage permission, only the photo the user picks is shared with the app.
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::readPhoto) }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::readFile) }
@@ -461,9 +497,19 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             if (ui.rows == null && !ui.reading) ClipboardHint("근무표", fits = vm::fitsClip, onPaste = vm::readText)
             if (ui.reading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             ui.error?.let { e -> Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            // [READ-04][READ-05] A photo that read nothing, or not what the user sees: tap it, or see what was read.
+            ui.scan?.let { scan ->
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (scan.image != null) OutlinedButton(onClick = { tapping = true }, enabled = !ui.reading, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.TouchApp, null, Modifier.size(18.dp)); Text(" 사진 위에서 누르기", maxLines = 1)
+                    }
+                    TextButton(onClick = { seeing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("무엇을 읽었는지 보기", maxLines = 1) }
+                }
+            }
             val rows = ui.rows.orEmpty()
-            if (rows.size > 1) {
-                Text("내 줄을 골라 주세요", style = MaterialTheme.typography.titleSmall)
+            if (rows.size > 1 && !ui.chosen) WhichLine(rows, types, onPick = vm::pick)
+            else if (rows.size > 1) {
+                Text("내 줄", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     rows.forEachIndexed { i, r ->
                         FilterChip(selected = ui.picked == i, onClick = { vm.pick(i) },
@@ -508,6 +554,10 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
       }
     }
     if (pasting) PasteDialog(onDismiss = { pasting = false }) { pasting = false; vm.readText(it) }
+    ui.scan?.let { scan ->
+        if (tapping) PhotoTapDialog(scan, onDismiss = { tapping = false }) { hint -> tapping = false; vm.readTapped(hint) }
+        if (seeing) ReadDiagnosisDialog(scan, ui.rows.orEmpty(), onDismiss = { seeing = false })
+    }
     editing?.let { day ->
         CellDialog(ui.month.atDay(day), types, onDismiss = { editing = null }) { cell -> vm.edit(day, cell); editing = null }
     }
@@ -632,9 +682,14 @@ private fun Keypad(
             }
             HorizontalDivider()
             val n = ui.writable.size
-            Button(onClick = vm::apply, enabled = n > 0 && ui.applied == null,
+            Button(onClick = vm::apply, enabled = n > 0 && ui.applied == null && ui.chosen,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp)) {
-                Text(if (ui.applied != null) "넣었어요" else if (n == 0) "키를 눌러 하루씩 넣어요" else "${ui.month.monthValue}월에 ${n}일 넣기", maxLines = 1)
+                Text(when {
+                    ui.applied != null -> "넣었어요"
+                    !ui.chosen -> "먼저 내 줄을 골라 주세요"
+                    n == 0 -> "키를 눌러 하루씩 넣어요"
+                    else -> "${ui.month.monthValue}월에 ${n}일 넣기"
+                }, maxLines = 1)
             }
         }
     }

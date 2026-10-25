@@ -12,6 +12,12 @@ object WhatsNew {
     val releases: List<Release> = listOf(
         // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
         Release(36, "1.25.0", listOf(
+            // [READ-02][READ-05][READ-06] Bundle U.
+            Line("듀티표 사진을 다시 만들었어요. 기울게 찍어도 날짜에 맞춰 읽고, 줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 사진 위 날짜 줄과 내 줄만 눌러 주세요", "shift.roster"),
+            // [READ-08][READ-10][READ-11] Bundle U.
+            Line("명세서와 회사 계산 방법 사진을 함께 넣으면 금액과 규칙을 같이 읽어요. ‘이번 달 전부 넣기’는 사진·엑셀도 되고, 넣은 뒤 도구에서 ‘방금 넣은 것 되돌리기’", "shift.dutyTyping"),
+            // [ALRM-07][ALRM-08][ALRM-09] Bundle AB.
+            Line("알람이 울리면 소리·전원 버튼으로 끄고, ‘오늘 남은 알람 모두 끄기’ 한 번이면 오늘은 더 안 울려요. 잠금 화면에 안 뜨게 막는 설정도 알람 점검이 찾아 줘요", "alarm.allOff"),
             // [FIT-01][FIT-03][TIER-07][VIS-06] Bundle Y.
             Line("달력마다 하는 일에 맞는 기능만 보이고, 숨긴 건 ‘더 보기’에서 더해요. 새 달력은 ‘어떤 일을 하고 계신가요?’로 시작하고, 프로 기능엔 ‘프로’ 표시와 모아보기, 설정은 색으로 묶였어요", "pro.collection"),
         )),

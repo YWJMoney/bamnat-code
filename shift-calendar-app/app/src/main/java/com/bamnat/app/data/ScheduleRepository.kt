@@ -231,10 +231,10 @@ class ScheduleRepository(
                 else -> changePatternFrom(pattern, today)
             }
         }
-        // Painted days are the roster as given, not changes to it: no change log.
+        // Painted days are the roster as given, not changes to it: no change log. [SETUP-15] Its leave goes in with them.
         for (day in saved.paintedEntries()) {
-            val before = readDay(day.date.toEpochDay())
-            writeDay((before ?: DayEntry(day.date)).copy(override = day.override))
+            val before = readDay(day.date.toEpochDay()) ?: DayEntry(day.date)
+            writeDay(before.copy(override = if (day.date in saved.painted) day.override else before.override, leave = day.leave ?: before.leave))
         }
         saved
     }

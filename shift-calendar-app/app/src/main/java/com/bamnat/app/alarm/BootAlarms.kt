@@ -30,6 +30,8 @@ object BootAlarms {
         val shiftMissions: Map<Long, AlarmMission> = emptyMap(),
         /** [PROV-07] 0 without 프로 or when off. */
         val wakeCheckMinutes: Int = 0,
+        /** [ALRM-08] What the volume and power buttons do while it rings. */
+        val buttons: AlarmButtons.Action = AlarmButtons.Action.DISMISS,
     ) {
         /** [PROV-06] What turning [ring] off asks for. */
         fun missionFor(ring: RingRequest): AlarmMission = AlarmMission.forAlarm(mission, shiftMissions, ring.shiftTypeId)
@@ -41,6 +43,7 @@ object BootAlarms {
                 mission = if (sure) AlarmMission.of(s.alarmMission) else AlarmMission.NONE,
                 shiftMissions = if (sure) s.shiftMissions.mapValues { AlarmMission.of(it.value) } else emptyMap(),
                 wakeCheckMinutes = if (sure) s.wakeCheckMinutes.coerceIn(0, 30) else 0,
+                buttons = AlarmButtons.Action.of(s.alarmButtonAction),
             )
         }
     }
@@ -67,6 +70,7 @@ object BootAlarms {
             .putString(K_MISSION, settings.mission.key)
             .putString(K_SHIFT_MISSIONS, com.bamnat.app.data.encodeShiftMissions(settings.shiftMissions.mapValues { it.value.key }))
             .putInt(K_WAKE_CHECK, settings.wakeCheckMinutes)
+            .putString(K_BUTTONS, settings.buttons.key)
             .apply()
     }
 
@@ -81,7 +85,8 @@ object BootAlarms {
             p.getInt(K_SNOOZE_MIN, 5), p.getInt(K_RING_MIN, 10),
             AlarmMission.of(p.getString(K_MISSION, null)),
             com.bamnat.app.data.decodeShiftMissions(p.getString(K_SHIFT_MISSIONS, null).orEmpty()).mapValues { AlarmMission.of(it.value) },
-            p.getInt(K_WAKE_CHECK, 0))
+            p.getInt(K_WAKE_CHECK, 0),
+            AlarmButtons.Action.of(p.getString(K_BUTTONS, null)))
     }
 
     /** The settings for a ringing alarm: the real ones when unlocked, the copy before that. */
@@ -126,6 +131,7 @@ object BootAlarms {
     private const val K_MISSION = "mission"
     private const val K_SHIFT_MISSIONS = "shift_missions"
     private const val K_WAKE_CHECK = "wake_check_minutes"
+    private const val K_BUTTONS = "button_action"
     private const val K_SNOOZE = "snooze"
     private const val K_SNOOZE_AT = "snooze_at"
 }

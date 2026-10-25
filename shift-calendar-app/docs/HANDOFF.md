@@ -326,6 +326,24 @@ shift-calendar-app/
 - **크기 검사** `test/.../screenshots/LayoutCheck`: 그려진 화면에서 아래·옆 잘림, 말줄임, 한 글자씩 쪼개짐, 하단 바 위에 보이는 온전한 주 수를 셉니다. `RScreenshotTest`의 `audit*`가 점검 보고서의 13가지 크기를 `build/screenshots/r-audit/`에 적고, 760~779는 잘림 0·주 수 하한을 시험해요.
 - 시트 손잡이 이름은 `res/values(-ko)/sheet_strings.xml`이 라이브러리 글을 덮어써요("끌어서 옮기기", "닫기").
 
+
+### 6-7. 사진·표 읽기 (1.25.0 묶음 U, READ-01~11)
+
+1.24까지 듀티표 사진은 단어 y값으로 줄을 묶어서, 휴대폰 사진이 1~3° 기울면 줄이 섞이고 2°부터 0줄이었어요(사용자 "실행 자체를 못 함"). 1.25는 기울기를 재고 바로 세운 뒤 읽어요. 사진은 휴대폰 안에서만(D68), 원본·글자는 저장하지 않아요. 개발계획 `계획/1.25-U-개발계획.md`(원인 표·결정 U-D1~D4), 조사 `research/1.25-U-조사.md`.
+
+| 층 | core | app | 하는 일 |
+|---|---|---|---|
+| 기하 | `imports/RosterGeometry`(`tilt`·`level`·`lines`·`days`·`fit`) | — | 투영으로 기울기(±10°), 바로 세운 좌표에서 왼→오 줄 잇기, 붙은 날짜(1213) 나누기, 날짜 열 `x = a + b·날짜` 직선 |
+| 읽기 | `DutyRoster.analyse`(→ `RosterPhotoRead`: 줄·기울기·줄마다 종류·못 읽은 까닭), `RosterHint`(두 번 누르기), `RosterRow.unsure`·`line` | `ui/imports/RosterReader.photo`·`tapped`·`problem` | 가로·세로·목록 후보, 줄마다 간격 다시 맞춤(원근), 열에서 벗어난 칸은 노란 칸 |
+| 사진 | — | `imports/ImagePrep`, `RosterScanner.scan`(`Scan`: 단어·결과·화면용 사진), `pay/PayslipScanner` | EXIF 방향, 3200px 축소, 기울면 바로 세우고 대비 높여 한 번 더 읽어 나은 쪽. ML Kit `Line.angle`을 `RosterWord.angle`·`OcrLine.angle`로 |
+| 화면 | — | `RosterPhotoViews`(`WhichLine`·`PhotoTapDialog`·`ReadDiagnosisDialog`), `DutyRosterViewModel.Ui.chosen`·`readTapped` | 여러 줄이면 고르기 전엔 넣지 않음, 고른 줄은 `DutyCodeBook.mine`(키 `mine:<달력>`, 백업 `dutyCodes`에 함께)로 다음 달 자동 |
+| 첫 설정 | `SetupDraft.leaves` | `SetupViewModel.useRosterRow`·`answerRosterCode`·`readRosterTapped`, `SetupDraftCodec` `leaves`, `ScheduleRepository.applySetup` | 휴가도 저장, 모르는 글자는 그 자리에서 묻고 칠함 |
+| 넣기·되돌리기 | — | `Routes.DUTY_ROSTER_MONTH`(`CalendarScreen.onFillMonth`), `ui/RecentFill`, `DutyTypingSheet` 덮어쓰기 줄 | '이번 달 전부 넣기'는 그 달의 한 달 근무 넣기로(펼친 폴더블은 옆 판), 넣은 뒤 10분 안엔 도구 '방금 넣은 것 되돌리기'(메모리에만) |
+| 명세서 | `pay/OcrRows.join`(기울기), `PayslipReader.ocrFix`·`deducted`·`net`, `RuleText.tidy`, `PayPhotos` | `ui/pay/PayslipImport.PayslipFillDialog(rules = RuleTarget)` | 명세서 + 회사 계산 방법 두 칸, 어느 쪽이 명세서인지 가림, 규칙은 체크해서 급여 설정에(맞춰 보기: 바로, 간편 설정: 마칠 때) |
+
+- 시험 표본은 `tools/roster_fixtures.py`·`tools/payslip_fixtures.py`가 이 컴퓨터의 실제 OCR(RapidOCR PP-OCRv4 + 한국어)로 만들어요(`core/src/test/resources/roster-photos`·`payslip-photos`). 새 양식이 나오면 `CASES`에 더하고 다시 만든 뒤 `RosterPhotoFixturesTest`를 보세요. ML Kit은 Robolectric에서 안 돌아서 앱 시험은 `RosterScanner.fake`(·`fakeImage`)로 단어를 줘요.
+- 새 화면이 사진을 읽으면 `ImagePrep.load`를 지나게 하세요(큰 사진·EXIF).
+
 ### 6-11. 유형 맞춤 화면·프로 표시·설정 색·하는 일 묻기 (1.25.0 묶음 Y, FIT-01~03·TIER-06~07·VIS-06)
 
 계획은 프로젝트 파일(git 밖)의 `계획/1.25-Y-개발계획.md`, 조사는 `research/1.25-Y-조사.md`.
@@ -336,6 +354,24 @@ shift-calendar-app/
 - **프로 기능 모아보기** `ui/pro/ProCollection` + `core/guide/ProCatalog.tiers`(기능 사전 id → `Feature`): 설정 › 프로 맨 위, 그 달력 유형에 맞는 것 먼저, 누르면 `FeatureLinks.open`으로 그 자리. **새 프로 기능은 `ProCatalog.tiers`에 한 줄**만 더하면 모아보기·기능 찾기·기능 켜고 끄기에 배지가 붙어요(`ProCatalogTest`가 모든 `Feature`가 실려 있는지 봐요).
 - **설정 색** `ui/theme/SettingsTones`: 7묶음은 그대로, 색 4가지(일=파랑: 내 근무·급여, 알림=주황: 알람·알림, 화면=보라: 달력과 화면, 데이터=초록: 데이터·개인정보). 원·아이콘 색과 왼쪽 4dp 띠, 라이트·다크 따로, `ContrastTest.settingsGroupColoursAreReadable`이 대비 4.5:1·3:1을 봐요. 새 묶음은 `SettingsPage.kind`를 정하세요.
 - **하는 일 묻기** `core/work/JobDictionary`(직업 127개, 별칭·초성·오타 거리) + `ui/setup/JobAsk`: 첫 화면 "어떤 일을 하고 계신가요?"와 새 달력 "‘이름’ 달력으로 어떤 일의 일정을 관리하고 싶으세요?". 모두 기기 안에서만 읽고 서버로 안 보내요. 못 찾으면 유형 카드로 고르게 해요.
+### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
+
+- 모두 회사 서버 안(`server/company-worker`). 앱(Kotlin)·DB 판·서버로 오는 정보는 바뀌지 않음. 회사 서버 재배포가 있어야 관리자 앱에 보여요.
+- `src/index.js`의 `// AA 1.25 시작 … // AA 1.25 끝` 묶음: `metricRange`(7~90일 또는 from·to 최대 180일), `inquiryStats`(첫 답 중앙값·90%·목표 지킴률), `countError`(500마다 `counters`의 `errors|날짜`), `playVitals`(Play Developer Reporting API, 6시간 보관, 403이면 "denied"), `REMOTE`·`remoteState`(GitHub Pages 원격 파일 8종을 받아 Ed25519 확인, 공개 키는 `core/remote/RemoteKeys.kt`와 같아야 함 — 시험이 비교), `inbox`·`inboxItems`(받은함, 기한 규칙은 `INBOX`·SLA·30일·말일), `versions`·`promote`(여러 판, `POST /api/admin/rules/:id/promote`는 이전 판 설정을 새 판으로 올리고 쓰던 판을 이전 판으로), `plazaBulk`(`/posts/bulk`·`/rates/bulk`, 100개까지), `wilson`.
+- `metrics()`는 기존 필드를 그대로 두고 `active`·`plaza`·`inquiries`·`errors`·`dayList`를 더함. 앱 판 이름 → versionCode는 `APP_CODES`(판을 올릴 때 한 줄 더하기) + 문의의 "x.y.z (N)"에서 배움.
+- 화면(`src/admin-app.js`): `#/inbox`(메뉴 숫자 = 기한 넘김, 아래 탭 기본 첫 칸이 받은함), `#/versions`(메뉴 숫자 = 여러 판인 부서), 지표 날짜 칸·카드 5개, 토론·임금표 여러 개 고르기. 키 `g b` 받은함, `g v` 여러 판.
+- 시험: `test/admin-complete.test.mjs`(서버 끝에서 끝), `test/ui/admin-ui.test.mjs` 끝 4개(화면 → 서버). 사진 `server/company-worker/docs/screenshots/admin-1.25/930~939`.
+- 선택 변수 `REMOTE_BASE_URL`. Play 통계는 `PLAY_SERVICE_ACCOUNT`에 Play Console 권한 "앱 정보 보기"와 Google Cloud의 Reporting API 사용(README '지표의 Play 통계와 원격 갱신').
+- 결정 AA-D1~D3: `계획/1.25-AA-개발계획.md` 7장.
+
+### 6-14. 알람: 잠금 화면·버튼으로 끄기·오늘 모두 끄기 (1.25.0 묶음 AB, ALRM-07~09)
+
+- **알림 단추 셋** `AlarmService.buildNotification`: 다시 울림·끄기·오늘 모두 끄기, 모두 잠금 해제 없이. 휴대폰을 쓰는 중이거나 Android 14+ 전체 화면 알림이 꺼져 있으면 Android는 알람 화면 대신 위에 뜨는 알림만 보여 줘요(공식 동작) → 그 알림만으로 다 끌 수 있게. 미션 알람의 끄기·오늘 모두 끄기는 미션 화면을 열어요(`EXTRA_ALL_OFF`).
+- **잠금 화면을 막는 것** `Notifications.alarmChannelTrouble`(근무 알람 채널이 HIGH 미만·잠금 화면 숨김), `dndBlocksAlarms`(완전히 무음), `makerLockScreenPermission`(샤오미·오포·비보 등, 앱 정보로 안내). 알람 점검 줄과 달력 경고. 화면 없이 알림으로만 울렸으면(`screenShownAt == 0` + 권한 없음) 끝난 뒤 `postFullScreenOff`.
+- **버튼** `alarm/AlarmButtons.kt`: 볼륨 키는 `AlarmActivity.onKeyDown`, 전원 버튼은 울리는 동안만 등록하는 `ACTION_SCREEN_OFF` 수신기 + `screenOffIsPress`(알람 화면이 앞에 있을 때만, 뜬 지 1초 안은 무시). 설정 `alarmButtonAction`(dismiss 기본·snooze·none, 백업 `alarmButton`, 잠긴 재부팅 복사본 `button_action`). 미션 알람은 `quietBriefly`(30초 소리 0.05·진동 멈춤). 화면 밖(위에 뜨는 알림만)의 볼륨 키는 받지 않아요(MediaSession 흉내는 쓰지 않음, 조사 3장).
+- **오늘 모두 끄기** `alarm/AlarmsOff.kt`: 기기 보호 저장소 `alarms_off`에 끝 시각(다음 자정, 울리던 근무 시작이 더 늦으면 그때). 켜져 있는 동안 `AlarmService` ACTION_START가 시험 알람 말고는 울리지 않고, `AlarmScheduler.reschedule`·`verify`가 `AlarmsOff.planFrom`으로 그 뒤 첫 알람을 걸어요. 다시 울림·일어났나요?는 끌 때 지움, 메모 일정 울림은 조용한 알림으로. 백업하지 않음. 되돌리기는 알림 '다시 켜기'(`AlarmsOff.ACTION_ON`)와 달력 경고 줄. `JournalKind.ALARMS_OFF`.
+- **알람 화면** `RingingScreen`: 480dp 아래로 낮은 가로 화면은 시계·버튼을 옆으로 나란히(전에는 버튼이 시계를 덮었음), 세로는 글이 길면 스크롤.
+- 시험 `AlarmButtonsAllOffTest`(12개, 끝에서 끝), `M7AppTest`(단추 3개), 사진 `ABScreenshotTest` 960~969. 결정 AB-1~AB-4: `계획/1.25-AB-개발계획.md`.
 
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 

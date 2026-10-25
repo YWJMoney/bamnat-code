@@ -25,6 +25,8 @@ data class RosterWord(
     val bottom: Int,
     /** [ROST-03] Split off a name it was stuck to ("김민지D*"): its day is one to look at. */
     val doubt: Boolean = false,
+    /** [READ-02] The slope of the OCR's line this word was on, in degrees (ML Kit `Text.Line.angle`): 0 when unknown. */
+    val angle: Float = 0f,
 ) {
     val centerX: Int get() = (left + right) / 2
     val centerY: Int get() = (top + bottom) / 2
@@ -75,6 +77,10 @@ data class RosterRow(
      * ("N-O") or a time before it ("11D" → "11"). Kept as the day's memo so nothing written on the roster is lost.
      */
     val notes: Map<Int, String> = emptyMap(),
+    /** [READ-03] Days whose cell stood off its column's middle in the photo: maybe the next day's, so looked at. */
+    val unsure: Set<Int> = emptySet(),
+    /** [READ-04] The line of the table it was read from, top to bottom: the order people are listed, and where a tap lands. */
+    val line: Int = 0,
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
 
@@ -86,8 +92,24 @@ data class RosterRow(
         val days = cells.keys.filter { it <= lastDay }
         if (days.isEmpty()) return emptySet()
         val missing = (days.min()..days.max()).filter { it !in cells }
-        return (cells.filter { it.value is DutyCell.Unknown }.keys + guessed + missing).filter { it <= lastDay }.toSortedSet()
+        return (cells.filter { it.value is DutyCell.Unknown }.keys + guessed + unsure + missing).filter { it <= lastDay }.toSortedSet()
     }
+}
+
+/**
+ * [READ-04] Where the user pointed on the photo, in its pixels: the row of days and their own line. Given when the photo
+ * read nothing (or the wrong thing) by itself, so any table can be read with two taps.
+ */
+data class RosterHint(val dayRow: Pair<Int, Int>? = null, val myRow: Pair<Int, Int>? = null)
+
+/**
+ * [READ-05] What the reader made of a photo: the lines, the tilt it took out, each line of the photo and what it was taken
+ * for (shown under "무엇을 읽었는지 보기"), and why nothing came out.
+ */
+data class RosterPhotoRead(val rows: List<RosterRow>, val tilt: Double, val lines: List<Line>, val problem: Problem?) {
+    enum class Kind { DAYS, WEEKDAYS, DUTIES, OTHER }
+    enum class Problem { NO_TEXT, NO_DAYS, NO_DUTIES }
+    data class Line(val text: String, val kind: Kind, val left: Int, val top: Int, val right: Int, val bottom: Int)
 }
 
 /**
@@ -272,14 +294,58 @@ object DutyRoster {
     /**
      * [SHFT-06] Reads a roster from recognised words with their boxes: each person's line under the
      * nearest row of day numbers, each code under the day it sits beneath. Most cells first.
+     * [READ-02] The photo's tilt is taken out first and lines are followed word to word ([RosterGeometry]); [hint] is
+     * where the user pointed at the row of days and at their own line when nothing was read without it.
      */
-    fun read(words: List<RosterWord>, codes: DutyCodes): List<RosterRow> {
-        val rows = lines(words.filter { it.text.isNotBlank() }).map { line -> line.flatMapIndexed { i, w -> explode(w, codes, first = i == 0) } }
-        val headers = rows.withIndex().filter { (_, r) -> isDayRow(r) }
-        val read = if (headers.isEmpty()) emptyList() else gridRows(rows, headers.map { it.index }, codes)
-        return (merge(read) + listOfNotNull(listRow(rows, codes))).filter { it.cells.size >= MIN_CELLS }
+    fun read(words: List<RosterWord>, codes: DutyCodes, hint: RosterHint? = null): List<RosterRow> = analyse(words, codes, hint).rows
+
+    /** [READ-05] [read], with what was seen on the way: the tilt, each line and what it was taken for, and why nothing came out. */
+    fun analyse(words: List<RosterWord>, codes: DutyCodes, hint: RosterHint? = null): RosterPhotoRead {
+        val clean = words.filter { it.text.isNotBlank() }
+        if (clean.isEmpty()) return RosterPhotoRead(emptyList(), 0.0, emptyList(), RosterPhotoRead.Problem.NO_TEXT)
+        val tilt = RosterGeometry.tilt(clean)
+        val lines = RosterGeometry.lines(RosterGeometry.level(clean, tilt)).map { line -> line.flatMapIndexed { i, w -> explode(w, codes, first = i == 0) } }
+        val nearest = { at: Pair<Int, Int> ->
+            val (_, y) = RosterGeometry.level(at.first, at.second, tilt)
+            lines.indices.minByOrNull { i -> abs(lines[i].sumOf { it.y } / lines[i].size - y) }
+        }
+        val fits = HashMap<Int, DayFit>()
+        val tapped = hint?.dayRow?.let(nearest)
+        if (tapped != null) {
+            // [READ-04] The line the user said is the row of days: its numbers, or its words one day each from the first.
+            val line = lines[tapped]
+            (RosterGeometry.fit(RosterGeometry.days(line, ::dayOf), 2) ?: sequence(line))?.let { fits[tapped] = extend(it, line, lines) }
+        } else {
+            lines.forEachIndexed { i, line -> dayFit(line)?.let { fits[i] = extend(it, line, lines) } }
+        }
+        val read = if (fits.isEmpty()) emptyList() else gridRows(lines, fits, codes)
+        val columns = if (read.isEmpty()) columnRows(lines, fits.keys, codes) else emptyList()
+        val list = listRow(lines, codes)?.takeIf { l -> columns.none { it.cells.size >= l.cells.size } }
+        var rows = (merge(read) + columns + listOfNotNull(list)).filter { it.cells.size >= MIN_CELLS }
             .sortedWith(compareByDescending<RosterRow> { it.cells.size - it.unknown }.thenBy { it.unknown })
             .distinctBy { it.label to it.cells }
+        hint?.myRow?.let(nearest)?.let { mine ->
+            // [READ-04] The user's own line: that one only, read even when short, in order from the 1st when no row of days is known.
+            rows = rows.filter { it.line == mine }.ifEmpty {
+                listOfNotNull(if (fits.isNotEmpty()) gridRows(lines, fits, codes, only = mine, min = 1).firstOrNull() else sequenceRow(lines[mine], codes, mine))
+            }
+        }
+        val kinds = lines.mapIndexed { i, line ->
+            val kind = when {
+                i in fits -> RosterPhotoRead.Kind.DAYS
+                isWeekdayRow(line) -> RosterPhotoRead.Kind.WEEKDAYS
+                rows.any { it.line == i } -> RosterPhotoRead.Kind.DUTIES
+                else -> RosterPhotoRead.Kind.OTHER
+            }
+            RosterPhotoRead.Line(line.joinToString(" ") { it.text }, kind, line.minOf { it.word.left }, line.minOf { it.word.top },
+                line.maxOf { it.word.right }, line.maxOf { it.word.bottom })
+        }
+        val problem = when {
+            rows.isNotEmpty() -> null
+            fits.isEmpty() && columns.isEmpty() -> RosterPhotoRead.Problem.NO_DAYS
+            else -> RosterPhotoRead.Problem.NO_DUTIES
+        }
+        return RosterPhotoRead(rows, tilt, kinds, problem)
     }
 
     /**
@@ -361,128 +427,240 @@ object DutyRoster {
     private fun dayOf(token: String): Int? =
         DAY_TOKEN.matchEntire(DutyCodes.fold(token).trim().trimEnd('.', ','))?.groupValues?.get(2)?.toIntOrNull()?.takeIf { it in 1..31 }
 
-    /** Words on the same height make one line, left to right. */
-    private fun lines(words: List<RosterWord>): List<List<RosterWord>> {
-        val rows = mutableListOf<MutableList<RosterWord>>()
-        for (w in words.sortedBy { it.centerY }) {
-            val row = rows.lastOrNull()
-            if (row != null && abs(w.centerY - row.map { it.centerY }.average()) <= minOf(w.height, row.minOf { it.height }) / 2.0) row += w
-            else rows += mutableListOf(w)
-        }
-        return rows.map { r -> r.sortedBy { it.left } }
-    }
-
     /**
      * A word that holds several cells ("1 2 3", "DDEN") becomes one word per cell across its box. The
      * [first] word of a line may be a name, so there only letters A–Z are taken apart (주연 stays a name).
      */
-    private fun explode(w: RosterWord, codes: DutyCodes, first: Boolean = false): List<RosterWord> {
-        val parts = w.text.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
-            .flatMap { p -> (if (first && !codes.mergedLatin(p)) null else codes.split(p)) ?: listOf(p) }
-        if (parts.size <= 1) return listOf(w)
-        val width = (w.right - w.left).coerceAtLeast(parts.size)
-        val step = width / parts.size
-        return parts.mapIndexed { i, p -> RosterWord(p, w.left + i * step, w.top, w.left + (i + 1) * step, w.bottom) }
+    private fun explode(p: Placed, codes: DutyCodes, first: Boolean = false): List<Placed> {
+        val parts = p.text.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+            .flatMap { s -> (if (first && !codes.mergedLatin(s)) null else codes.split(s)) ?: listOf(s) }
+        if (parts.size <= 1) return listOf(p)
+        val step = p.w / parts.size
+        return parts.mapIndexed { i, s ->
+            val w = p.word
+            val l = w.left + ((w.right - w.left) * i / parts.size)
+            val r = w.left + ((w.right - w.left) * (i + 1) / parts.size)
+            Placed(RosterWord(s, l, w.top, r, w.bottom, w.doubt, w.angle), p.left + step * (i + 0.5), p.y, step, p.h)
+        }
     }
 
-    private fun isDayRow(row: List<RosterWord>): Boolean {
-        val days = row.mapNotNull { dayOf(it.text) }
-        if (days.size < MIN_DAYS || days.size * 10 < row.size * 7) return false
-        val steps = days.zipWithNext().count { (a, b) -> b == a + 1 }
-        return steps * 10 >= (days.size - 1) * 7
+    /** [READ-03] The columns of a row of days: mostly day numbers, at least [MIN_DAYS] of them on one straight line. */
+    private fun dayFit(line: List<Placed>): DayFit? {
+        val numbers = line.count { dayOf(it.text) != null || RosterGeometry.days(listOf(it), ::dayOf).isNotEmpty() }
+        if (numbers < MIN_DAYS || numbers * 10 < line.size * 6) return null
+        return RosterGeometry.fit(RosterGeometry.days(line, ::dayOf), MIN_DAYS)
     }
 
-    private fun isWeekdayRow(row: List<RosterWord>): Boolean =
+    /** [READ-04] A line the user called the row of days with no numbers on it: its words one day each, from the 1st. */
+    private fun sequence(line: List<Placed>): DayFit? {
+        if (line.size < 2) return null
+        val (a, b) = RosterGeometry.leastSquares(line.sortedBy { it.x }.mapIndexed { i, p -> (i + 1) to p.x }) ?: return null
+        return DayFit(a, b, 1, line.size.coerceAtMost(31))
+    }
+
+    /**
+     * [READ-03] The first and last days of a row of days whose numbers the photo lost (31 cut at the edge, 1 under a
+     * thumb): a column more on either side while words stand under it and no other number is there (the next month's).
+     */
+    private fun extend(fit: DayFit, header: List<Placed>, lines: List<List<Placed>>): DayFit {
+        val others = lines.filter { it !== header }.flatten()
+        val numbers = RosterGeometry.days(header, ::dayOf)
+        fun free(d: Int): Boolean {
+            val x = fit.x(d)
+            return numbers.none { (n, nx) -> n != d && abs(nx - x) < 0.45 * fit.b } && others.any { abs(it.x - x) < 0.4 * fit.b }
+        }
+        var first = fit.first
+        var last = fit.last
+        while (first > 1 && fit.first - first < 3 && free(first - 1)) first--
+        while (last < 31 && last - fit.last < 3 && free(last + 1)) last++
+        return fit.copy(first = first, last = last)
+    }
+
+    private fun isWeekdayRow(row: List<Placed>): Boolean =
         row.size >= MIN_DAYS && row.count { DutyCodes.norm(it.text) in WEEKDAYS } * 10 >= row.size * 7
 
-    private fun gridRows(rows: List<List<RosterWord>>, headers: List<Int>, codes: DutyCodes): List<RosterRow> {
+    /**
+     * Each person's line under its row of days. [READ-03] A line is read with the columns of the line read before it
+     * under the same row of days, fitted again to where its own cells stand, so a table the camera saw at an angle (wider
+     * at the bottom) keeps every cell on its day. [only] reads that line alone, with [min] cells enough.
+     */
+    private fun gridRows(lines: List<List<Placed>>, headers: Map<Int, DayFit>, codes: DutyCodes, only: Int? = null, min: Int = MIN_CELLS): List<RosterRow> {
         val out = mutableListOf<RosterRow>()
-        rows.forEachIndexed { i, row ->
-            if (i in headers || isWeekdayRow(row)) return@forEachIndexed
+        val carried = HashMap<Int, DayFit>()
+        lines.forEachIndexed { i, row ->
+            if (i in headers || isWeekdayRow(row) || (only != null && i != only)) return@forEachIndexed
             // The row of days this line belongs under: the nearest above, or below for a table drawn upside down.
-            val h = headers.lastOrNull { it < i } ?: headers.first()
-            val columns = monthColumns(rows[h].mapNotNull { w -> dayOf(w.text)?.let { it to w.centerX } })
-            val spacing = columns.zipWithNext().map { (a, b) -> abs(b.second - a.second) }.sorted().let { it.getOrNull(it.size / 2) } ?: return@forEachIndexed
-            val firstX = columns.minOf { it.second }
-            val cells = LinkedHashMap<Int, DutyCell>()
-            val guessed = HashSet<Int>()
-            val notes = HashMap<Int, String>()
-            val label = StringBuilder()
-            for (w in row) {
-                val near = columns.minByOrNull { abs(it.second - w.centerX) } ?: continue
-                val leftOfDays = w.centerX < firstX - spacing / 2
-                val aligned = !leftOfDays && abs(near.second - w.centerX) * 10 <= spacing * 6
-                // [ROST-03] A name with a code stuck to it, in a photo's one word: doubtful, so the day is looked at.
-                val stuck = if (leftOfDays) codes.splitName(w.text) else null
-                if (stuck != null) {
-                    label.append(stuck.first)
-                    val first = columns.minBy { it.second }.first
-                    val code = stuck.second?.let(codes::read)
-                    if (code != null && cells.putIfAbsent(first, code.first) == null) {
-                        guessed += first
-                        code.second?.let { notes[first] = it }
-                    }
-                    continue
-                }
-                val read = codes.read(w.text)
-                val cell = read?.first ?: if (codes.looksLikeCode(w.text) && aligned) DutyCell.Unknown(w.text.trim()) else null
-                when {
-                    cell != null && aligned -> if (cells.putIfAbsent(near.first, cell) == null) {
-                        if (w.doubt || codes.guessedWork(w.text, cell)) guessed += near.first
-                        read?.second?.let { notes[near.first] = it }
-                    }
-                    leftOfDays && dayOf(w.text) == null && DutyCodes.norm(w.text) !in DutyCodes.RANKS -> label.append(w.text.trim())
-                }
+            val h = headers.keys.filter { it < i }.maxOrNull() ?: headers.keys.min()
+            val start = carried[h] ?: headers.getValue(h)
+            val first = readLine(row, start, codes)
+            var read = first.first
+            var fit = first.second
+            // The columns again, from where this line's own cells stand.
+            val own = RosterGeometry.leastSquares(read.positions)
+            if (own != null && read.positions.size >= 5 && own.second in start.b * 0.8..start.b * 1.25) {
+                val refit = start.copy(a = own.first, b = own.second)
+                readLine(row, refit, codes).first.let { again -> if (again.cells.size >= read.cells.size) { read = again; fit = refit } }
             }
-            if (cells.size >= MIN_CELLS) out += RosterRow(label.toString(), cells.toSortedMap(), guessed, notes)
+            if (read.cells.size >= min) {
+                carried[h] = fit
+                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i)
+            }
         }
         return out
     }
 
+    private class LineRead(val label: String, val cells: Map<Int, DutyCell>, val guessed: Set<Int>, val notes: Map<Int, String>, val unsure: Set<Int>, val positions: List<Pair<Int, Double>>)
+
+    private fun readLine(row: List<Placed>, fit: DayFit, codes: DutyCodes): Pair<LineRead, DayFit> {
+        val cells = LinkedHashMap<Int, DutyCell>()
+        val off = HashMap<Int, Double>()
+        val at = HashMap<Int, Double>()
+        val guessed = HashSet<Int>()
+        val notes = HashMap<Int, String>()
+        val label = StringBuilder()
+        val firstX = fit.x(fit.first)
+        for (w in row) {
+            val leftOfDays = w.x < firstX - fit.b / 2
+            // [ROST-03] A name with a code stuck to it, in a photo's one word: doubtful, so the day is looked at.
+            val stuck = if (leftOfDays) codes.splitName(w.text) else null
+            if (stuck != null) {
+                label.append(stuck.first)
+                val code = stuck.second?.let(codes::read)
+                if (code != null && cells.putIfAbsent(fit.first, code.first) == null) {
+                    guessed += fit.first
+                    off[fit.first] = 1.0
+                    code.second?.let { notes[fit.first] = it }
+                }
+                continue
+            }
+            val near = if (leftOfDays) null else fit.day(w.x)
+            val aligned = near != null && near.second <= 0.45
+            val read = codes.read(w.text)
+            val cell = read?.first ?: if (codes.looksLikeCode(w.text) && aligned) DutyCell.Unknown(w.text.trim()) else null
+            when {
+                cell != null && aligned -> {
+                    val (d, miss) = near!!
+                    // Two words on one day: the one nearer its middle.
+                    if (d !in cells || miss < off.getValue(d)) {
+                        cells[d] = cell
+                        off[d] = miss
+                        at[d] = w.x
+                        if (w.word.doubt || codes.guessedWork(w.text, cell)) guessed += d else guessed -= d
+                        read?.second?.let { notes[d] = it } ?: notes.remove(d)
+                    }
+                }
+                leftOfDays && dayOf(w.text) == null && DutyCodes.norm(w.text) !in DutyCodes.RANKS -> label.append(w.text.trim())
+            }
+        }
+        // [READ-03] A cell far from its column's middle may be the next day's: one to look at.
+        val unsure = off.filter { (d, miss) -> miss > 0.3 && d in cells }.keys
+        return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }) to fit
+    }
+
     /**
-     * [NURS-03] A roster that starts in the month before (…29 30 31 1 2 3…) or runs into the next: only the
-     * longer run of days is one month, so the other side's numbers never land on this month's same dates.
+     * [READ-04] The user's own line when no row of days is known: its codes one day each from the 1st, left to right.
+     * Every day is one to look at.
      */
-    internal fun monthColumns(cols: List<Pair<Int, Int>>): List<Pair<Int, Int>> {
-        val sorted = cols.sortedBy { it.second }
-        val wrap = sorted.zipWithNext().indexOfFirst { (a, b) -> b.first < a.first - 20 }
-        if (wrap < 0) return cols
-        val before = sorted.subList(0, wrap + 1)
-        val after = sorted.subList(wrap + 1, sorted.size)
-        return if (after.size >= before.size) after else before
+    private fun sequenceRow(line: List<Placed>, codes: DutyCodes, index: Int): RosterRow? {
+        val read = line.sortedBy { it.x }.mapNotNull { w -> codes.read(w.text) }
+        if (read.isEmpty()) return null
+        val cells = read.take(31).mapIndexed { i, (c, _) -> (i + 1) to c }.toMap().toSortedMap()
+        val label = line.sortedBy { it.x }.takeWhile { codes.read(it.text) == null }.joinToString("") { it.text.trim() }
+        return RosterRow(label, cells, unsure = cells.keys, line = index)
+    }
+
+    /** [READ-06] The day a line of a table with the days down its side starts with: "1(월)", or "1(" "5원" as a photo reads them. */
+    private fun leadDay(token: String): Int? = dayOf(token)
+        ?: Regex("""^(\d{1,2})\s*(?:\(.{0,2}\)?|[^\d\s월]{1,2})$""").matchEntire(DutyCodes.fold(token).trim())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..31 }
+
+    /**
+     * [READ-06] A table with the days down its side (1(월) D E N … a line per day) and the people across: each column of
+     * codes is a person, named by the word over it. Lines starting with a day are the table's lines; the columns are
+     * followed down the page, so a table seen at an angle stays in its columns.
+     */
+    private fun columnRows(lines: List<List<Placed>>, headers: Set<Int>, codes: DutyCodes): List<RosterRow> {
+        fun codesOf(words: List<Placed>) = words.filter { DutyCodes.norm(it.text) !in WEEKDAYS && !it.text.trim().matches(Regex("""\([^)]*\)""")) }
+            .filter { codes.read(it.text) != null || codes.looksLikeCode(it.text) }
+        val dated = lines.withIndex().mapNotNull { (i, line) ->
+            val first = line.firstOrNull() ?: return@mapNotNull null
+            val day = leadDay(first.text) ?: return@mapNotNull null
+            Triple(i, day, codesOf(line.drop(1)))
+        }
+        // The longest run of lines whose days go up one by one with the lines (a line whose day the photo lost counts
+        // as its place says): a title's "10월" or a stray number is left out.
+        val chains = dated.map { start -> dated.filter { it.first >= start.first && it.second - start.second == it.first - start.first } }
+        val chain = chains.maxByOrNull { it.size } ?: return emptyList()
+        if (chain.size < MIN_DAYS) return emptyList()
+        val (top, firstDay) = chain.first().first to chain.first().second
+        val led = (top..chain.last().first).mapNotNull { i ->
+            val day = firstDay + (i - top)
+            chain.firstOrNull { it.first == i } ?: lines[i].let { line ->
+                // Its day lost: the line's own codes, when it starts with one.
+                line.takeIf { it.isNotEmpty() && codes.read(it.first().text) != null }?.let { Triple(i, day, codesOf(it)) }
+            }
+        }.filter { it.second in 1..31 }
+        if (led.count { it.third.isNotEmpty() } < MIN_DAYS) return emptyList()
+        val h = RosterGeometry.median(led.flatMap { it.third }.map { it.h }).coerceAtLeast(1.0)
+        // The people's names: the line over the first day, when it is no row of days itself.
+        val head = lines.getOrNull(led.first().first - 1)?.takeIf { led.first().first - 1 !in headers && it.none { w -> dayOf(w.text) != null } }
+        val template = led.maxBy { it.third.size }.third
+        val columns = (head?.takeIf { it.size >= template.size }?.map { it.x } ?: template.map { it.x }).toMutableList()
+        val labels = columns.map { x -> head?.minByOrNull { abs(it.x - x) }?.takeIf { abs(it.x - x) < 2 * h }?.text?.trim().orEmpty() }
+        val spacing = columns.sorted().zipWithNext { a, b -> b - a }.minOrNull() ?: (h * 8)
+        val cells = List(columns.size) { sortedMapOf<Int, DutyCell>() }
+        val guessed = List(columns.size) { HashSet<Int>() }
+        val notes = List(columns.size) { HashMap<Int, String>() }
+        for ((_, day, words) in led) {
+            for (w in words) {
+                val c = columns.indices.minBy { abs(columns[it] - w.x) }
+                if (abs(columns[c] - w.x) > spacing * 0.5) continue
+                val (cell, note) = codes.read(w.text) ?: (DutyCell.Unknown(w.text.trim()) to null)
+                if (cells[c].putIfAbsent(day, cell) == null) {
+                    if (codes.guessedWork(w.text, cell)) guessed[c] += day
+                    note?.let { notes[c][day] = it }
+                    // Followed down the page: a column drifts with the camera's angle.
+                    columns[c] = columns[c] * 0.7 + w.x * 0.3
+                }
+            }
+        }
+        return columns.indices.map { c -> RosterRow(labels[c], cells[c], guessed[c], notes[c], line = top) }
     }
 
     /** Lines of the same person under the 1–15 and 16–31 rows of days become one. */
     private fun merge(rows: List<RosterRow>): List<RosterRow> {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
             RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
-                parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes })
+                parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes },
+                parts.flatMap { it.unsure }.toSet(), line = parts.first().line)
         }
         val blank = rows.filter { it.label.isBlank() }
         // Two blank lines whose days do not overlap are one person's two halves.
         val joined = if (blank.size == 2 && blank[0].cells.keys.intersect(blank[1].cells.keys).isEmpty()) {
-            listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap(), blank[0].guessed + blank[1].guessed, blank[0].notes + blank[1].notes))
+            listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap(), blank[0].guessed + blank[1].guessed, blank[0].notes + blank[1].notes,
+                blank[0].unsure + blank[1].unsure, line = blank[0].line))
         } else blank
         return named + joined
     }
 
     /** A roster written as a list, one day per line: "1 D", "10/3 N", "3일 주간". */
-    private fun listRow(rows: List<List<RosterWord>>, codes: DutyCodes): RosterRow? {
+    private fun listRow(rows: List<List<Placed>>, codes: DutyCodes): RosterRow? {
         val cells = sortedMapOf<Int, DutyCell>()
         val guessed = HashSet<Int>()
         val notes = HashMap<Int, String>()
         val dated = Regex("""^(?:\d{1,2}[/.월-])?(\d{1,2})일?(?:\([^)]*\))?$""")
-        for (row in rows) {
-            if (row.size < 2 || row.size > 4) continue
-            val day = dated.matchEntire(row[0].text.trim())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..31 } ?: continue
+        var first: Int? = null
+        rows.forEachIndexed { i, row ->
+            if (row.size < 2 || row.size > 4) return@forEachIndexed
+            val day = dated.matchEntire(row[0].text.trim())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..31 } ?: return@forEachIndexed
             val rest = row.drop(1).filter { DutyCodes.norm(it.text) !in WEEKDAYS && !it.text.trim().matches(Regex("""\([^)]*\)""")) }
-            val word = rest.firstOrNull { codes.read(it.text) != null } ?: continue
+            val word = rest.firstOrNull { codes.read(it.text) != null } ?: return@forEachIndexed
             val (cell, note) = codes.read(word.text)!!
             if (cells.putIfAbsent(day, cell) == null) {
+                if (first == null) first = i
                 if (codes.guessedWork(word.text, cell)) guessed += day
                 note?.let { notes[day] = it }
             }
         }
-        return RosterRow("", cells, guessed, notes).takeIf { cells.size >= MIN_CELLS }
+        return RosterRow("", cells, guessed, notes, line = first ?: 0).takeIf { cells.size >= MIN_CELLS }
     }
 }

@@ -147,6 +147,8 @@ data class AppSettings(
     val shiftMissions: Map<Long, String> = emptyMap(),
     /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
     val wakeCheckMinutes: Int = 0,
+    /** [ALRM-08] What 소리 줄이기·키우기·전원 버튼 do while an alarm rings (결정 D78): [com.bamnat.app.alarm.AlarmButtons.Action.key]. */
+    val alarmButtonAction: String = "dismiss",
     /** [DAILY-01] The day's first memo line on the 오늘·내일 widget; on, and off from 설정 › 달력 화면 since a home screen is seen by others. */
     val widgetMemo: Boolean = true,
     /** [BACK-01] Receipt and contract photos go in the backup file (결정 D13: on, off from the backup screen). */
@@ -279,6 +281,7 @@ class SettingsRepository(context: Context) {
             alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
             shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
             wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
+            alarmButtonAction = prefs.getString(K_ALARM_BUTTON, null) ?: d.alarmButtonAction,
             widgetMemo = prefs.getBoolean(K_WIDGET_MEMO, d.widgetMemo),
             backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
@@ -349,6 +352,7 @@ class SettingsRepository(context: Context) {
             .putString(K_ALARM_MISSION, s.alarmMission)
             .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
             .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
+            .putString(K_ALARM_BUTTON, s.alarmButtonAction)
             .putBoolean(K_WIDGET_MEMO, s.widgetMemo)
             .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
@@ -376,6 +380,7 @@ class SettingsRepository(context: Context) {
         const val K_ALARM_MISSION = "alarm_mission"
         const val K_SHIFT_MISSIONS = "shift_missions"
         const val K_WAKE_CHECK = "wake_check_minutes"
+        const val K_ALARM_BUTTON = "alarm_button_action"
         const val K_WIDGET_MEMO = "widget_memo"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"

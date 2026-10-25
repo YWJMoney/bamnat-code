@@ -163,6 +163,19 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
                 "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
             if (Build.VERSION.SDK_INT >= 34) add(AlarmCheck("잠금 화면 알람", Notifications.canUseFullScreen(context),
                 "허용하면 화면이 꺼져 있어도 알람 화면이 바로 떠요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))))
+            // [ALRM-07] 1.25 AB: the other reasons a ringing screen does not show on the lock screen.
+            if (Notifications.canPost(context) && Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
+                val trouble = Notifications.alarmChannelTrouble(context)
+                add(AlarmCheck("잠금 화면에 알람 보이기", trouble == null,
+                    (trouble ?: "‘근무 알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
+                    "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
+            }
+            if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,
+                "‘완전히 무음’ 방해 금지가 켜져 있어 알람도 울리지 않아요. 알람은 허용하는 방해 금지로 바꿔 주세요.", "방해 금지 설정 열기",
+                Fix.OpenFirst(listOf(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS), Intent(Settings.ACTION_SETTINGS)))))
+            if (Notifications.makerLockScreenPermission()) add(AlarmCheck("제조사 잠금 화면 표시", null,
+                "이 휴대폰은 ‘잠금 화면에 표시’·‘백그라운드에서 팝업 창 표시’ 권한이 따로 있어요. 앱 정보 › 권한(기타 권한)에서 둘 다 허용해 주세요.",
+                "앱 정보 열기", Fix.Open(details)))
             // [ALRM-01] R10: asked straight away (Play allows it for alarm apps), the list as a fallback.
             add(AlarmCheck("배터리 최적화 제외", power?.isIgnoringBatteryOptimizations(context.packageName) == true,
                 "밤낮을 배터리 최적화에서 빼면 오래 안 써도 알람이 늦지 않아요.", "제외하기",
