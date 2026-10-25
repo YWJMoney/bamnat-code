@@ -529,6 +529,11 @@ const COLUMNS = [
   "ALTER TABLE reply_templates ADD COLUMN topic TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE reply_templates ADD COLUMN uses INTEGER NOT NULL DEFAULT 0",
   // H 1.23 끝
+  // X 1.25 시작
+  // [PLAZA-03] The 초성 of a name ("ㅅㅅㅈㅈ"), filled by search when empty, so 초성 alone finds a company.
+  "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
+  // X 1.25 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -837,6 +842,14 @@ export function cleanSetup(raw, texts = []) {
     if (steps.length === 0) refuse("setup", "rotation");
     setup.rotation = { anchor: date(r.anchor, "rotation"), steps };
   }
+  // [PLAZA-01] Weekday and part-time work by the day of the week (Monday first), and a roster that comes every
+  // month (간호): kept only when sent, so every setup from before keeps its fingerprint.
+  if (given(raw.weekly)) {
+    const w = list(raw.weekly, 7, "weekly");
+    if (w.length !== 7) refuse("setup", "weekly");
+    setup.weekly = w.map((s) => (s === null ? null : names.has(s) ? s : refuse("setup", "weekly")));
+  }
+  if (bool(raw.roster ?? false, "roster")) setup.roster = true;
 
   if (given(raw.pay)) {
     const p = object(raw.pay, "pay");
@@ -1092,6 +1105,9 @@ function canonical(setup) {
   const r = p?.rules;
   return {
     cycle: smallestRotation((setup.rotation?.steps ?? []).map(sig)),
+    // [PLAZA-01] Only when there, so a setup without them reads as it always did.
+    ...(setup.weekly ? { weekly: setup.weekly.map(sig) } : {}),
+    ...(setup.roster ? { roster: true } : {}),
     kinds: kinds.map((k) => ({ key: kindOf(k.id), ...k.sig })).sort((a, b) => cmp(a.key, b.key)),
     pay: p ? {
       fiveOrMore: p.fiveOrMore,
@@ -1176,6 +1192,9 @@ export function describe(setup) {
   add("근무", setup.shiftTypes.map((t) => (t.off ? `${t.name}(쉬는 날)`
     : `${t.name} ${t.start ?? "?"}~${t.end ?? "?"}${t.break ? ` 휴게 ${t.break}분` : ""}`)).join(" · "));
   if (setup.rotation) add(`순서 ${setup.rotation.steps.length}일`, setup.rotation.steps.map((s) => s ?? "빈 날").join(" "));
+  // [PLAZA-01] The same words as the app's SetupFacts.
+  if (setup.weekly) add("요일별 근무", setup.weekly.map((s, i) => `${"월화수목금토일"[i]} ${s ?? "쉼"}`).join(" · "));
+  if (setup.roster) add("근무표", "매달 근무표(순서 없음)");
   const kinds = kindLines(setup);
   const kindName = (id) => kinds.find((k) => k.id === String(id))?.name ?? KIND_NAMES[id] ?? `종류 ${id}`;
   add("연장·휴무일 근무", kinds.filter((k) => !k.hidden).map((k) => `${k.name}(${timingText(k)})`).join(" · "));
@@ -1265,7 +1284,9 @@ async function terms(env) {
 }
 
 async function search(env, url) {
-  const q = normName(url.searchParams.get("q")).slice(0, 40);
+  const raw = String(url.searchParams.get("q") ?? "");
+  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) });
+  const q = normName(raw).slice(0, 40);
   if (q.length < 2) return json({ companies: [] });
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await all(env, `
@@ -1287,6 +1308,63 @@ async function search(env, url) {
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending }));
   return json({ companies });
+}
+
+// ---- [PLAZA-03] 초성 찾기 ----
+
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+
+/**
+ * The 초성 of each Hangul syllable of [s] (U+AC00..U+D7A3 is (초성 × 21 + 중성) × 28 + 종성, so 초성 = (code − 0xAC00) / 588,
+ * The Unicode Standard 3.12); other letters and digits as they are. The app's core Choseong is the same rule.
+ */
+export function choseong(s) {
+  let out = "";
+  for (const ch of String(s ?? "")) {
+    const c = ch.codePointAt(0);
+    if (c >= 0xac00 && c <= 0xd7a3) out += CHO[Math.floor((c - 0xac00) / 588)];
+    else if (CHO.includes(ch)) out += ch;
+    else if (/[\p{L}\p{N}]/u.test(ch)) out += ch.toLowerCase();
+  }
+  return out;
+}
+
+/** Whether [q] is 초성 only (two or more), typed as compatibility jamo (ㅅ is U+3145). */
+export function isChoseong(q) {
+  const t = String(q ?? "").replace(/\s/g, "");
+  return t.length >= 2 && [...t].every((ch) => CHO.includes(ch));
+}
+
+/** Names whose 초성 were not worked out yet (new, renamed, or from before 1.25) get them, a batch at a time. */
+async function fillChoseong(env) {
+  const [cs, as] = await Promise.all([
+    all(env, "SELECT id, norm FROM companies WHERE cho = '' LIMIT 500"),
+    all(env, "SELECT norm FROM aliases WHERE cho = '' LIMIT 500"),
+  ]);
+  if (!cs.length && !as.length) return;
+  await batch(env, [
+    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ? WHERE id = ?", choseong(c.norm) || "-", c.id)),
+    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ? WHERE norm = ?", choseong(a.norm) || "-", a.norm)),
+  ]);
+}
+
+async function searchChoseong(env, q) {
+  await fillChoseong(env);
+  const like = `%${q}%`;
+  const rows = await all(env, `
+    SELECT c.id, c.name, c.cho,
+      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1 LIMIT 1) AS alias,
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+    FROM companies c
+    WHERE c.hidden = 0 AND c.merged_into IS NULL
+      AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
+    LIMIT 200`, like);
+  // 초성 are a guess by nature: only companies with a rule in use, those starting with them first.
+  return rows.filter((c) => c.adopted > 0)
+    .sort((a, b) => b.cho.startsWith(q) - a.cho.startsWith(q) || a.name.length - b.name.length || a.name.localeCompare(b.name, "ko"))
+    .slice(0, 20)
+    .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending }));
 }
 
 async function company(env, id) {
@@ -1346,7 +1424,19 @@ async function state(env, companyId, grp, threshold, adopted) {
       UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
     ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
+    // [PLAZA-05] What decides the 대표 판 of a department (D74): phones using it, people behind it, less 달라요.
+    support: support(s, who.uses),
     ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
+}
+
+/** [PLAZA-05] 지지 (결정 D74, X-D3): phones that use a rule set plus the people who sent it or said 맞았어요, less those who said 달라요. */
+export const support = (s, uses) => uses + s.persons - s.bad;
+
+/** [PLAZA-05] Whether [grp] has more 지지 than [active], the department's 대표 판; a tie keeps the one in use. */
+async function outweighs(env, companyId, grp, active) {
+  const uses = (g) => one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", companyId, g);
+  const [mine, theirs, mineUses, theirUses] = await Promise.all([score(env, companyId, grp), score(env, companyId, active.grp), uses(grp), uses(active.grp)]);
+  return support(mine, mineUses.n) > support(theirs, theirUses.n);
 }
 
 /**
@@ -1519,7 +1609,20 @@ async function settle(env, companyId, grp, now) {
   const active = await activeRule(env, companyId, rep.dept_norm);
   const amends = await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND amends = ? LIMIT 1`,
     companyId, grp, active?.id ?? "");
-  if (amends) await adopt(env, companyId, grp, "amend", now);
+  if (amends) return adopt(env, companyId, grp, "amend", now);
+  // [PLAZA-05] Another setup for the same department (U26: "같은 회사 2개") becomes its 대표 판 once it is adopted
+  // by its own right and more people stand behind it than behind the one in use (결정 D74). The one it replaces
+  // is kept as an earlier version in the history, never deleted, and its users hear of it in 광장 소식.
+  if (!active || s.persons < adoptPersons || await turnedDown(env, companyId, grp)) return;
+  if (await outweighs(env, companyId, grp, active)) await adopt(env, companyId, grp, "rival", now);
+}
+
+/** [PLAZA-05] The developer took this setup down or turned it down: it never takes a department over by itself. */
+async function turnedDown(env, companyId, grp) {
+  const row = await one(env, `SELECT
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 1) AS withdrawn,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'rejected') AS rejected`, companyId, grp);
+  return Boolean(row.withdrawn || row.rejected);
 }
 
 /**
@@ -2142,6 +2245,8 @@ async function history(env, companyId, url) {
       version: r.version, setup: r.grp, source: r.source, adoptedAt: iso(r.adopted_at),
       state: r.withdrawn ? "withdrawn" : r.superseded ? "superseded" : "active",
       senders: senders.n, post: proposed?.post_id ?? null,
+      // [PLAZA-05] What the version was, so the app can compare it and put it back on a phone.
+      body: shared(r.setup, c.name),
       changes: before ? diffLines(describe(before), describe(setup)) : [],
     });
     before = setup;
@@ -4777,7 +4882,7 @@ async function updateCompany(request, env, id, now) {
     // The old name keeps finding the company.
     if (norm !== c.norm) stmts.push(stmt(env, "INSERT OR IGNORE INTO aliases (norm, company_id, name) VALUES (?, ?, ?)", c.norm, id, c.name));
     stmts.push(stmt(env, "DELETE FROM aliases WHERE norm = ? AND company_id = ?", norm, id));
-    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ? WHERE id = ?", name, norm, id));
+    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '' WHERE id = ?", name, norm, id));
   }
   if (body.hidden !== undefined) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
