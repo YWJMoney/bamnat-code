@@ -221,7 +221,7 @@ private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit, l
                     Text(listOfNotNull(label, item.dept.ifEmpty { "회사 전체" }, item.cycle, if (item.pay) "급여 계산 포함" else "근무표만").filter { it.isNotEmpty() }.joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (item.adopted) StatusChip("채택${item.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
+                if (item.adopted) StatusChip("대표 판${item.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
             }
             // [PLZ-12] Its plaza and region, and whether it is a whole job's rule rather than one place's.
             val place = listOfNotNull(

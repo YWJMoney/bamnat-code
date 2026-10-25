@@ -410,7 +410,7 @@ fun ColumnScope.CompanySettingsRows(
                 Text("지금 쓰는 회사 설정", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(a.company + " · " + a.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    if (a.adopted) StatusChip("채택${a.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
+                    if (a.adopted) StatusChip("대표 판${a.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
                 }
                 when (a.vote) {
                     true -> Text("‘맞았어요’라고 알려 주셨어요. 고마워요!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -275,6 +275,22 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     fun closeHistory() {
         _history.value = null
     }
+
+    /** [PLAZA-02] This phone's own setup (amounts left out), for "내 설정으로 채우기"; null when there is none to read. */
+    suspend fun mine(): String? = runCatching { c.companyShare.exportForServer().toString() }.getOrNull()
+
+    /**
+     * [PLAZA-02] 다른 점 말하기 sent: a proposal on [setup] with the [lines] that changed and the edited [text] as the
+     * rule people vote on. The talk opens on it, so the user sees it went up.
+     */
+    fun propose(page: CompanyPage, setup: SharedSetup, lines: List<com.bamnat.app.company.ChangeLine>, text: String, why: String, done: (String?) -> Unit) {
+        talk.show(page.id, setup.id, "${page.name} · ${setup.dept.ifEmpty { "회사 전체" }}")
+        val body = proposalBody(com.bamnat.core.plaza.SetupCompare.rows(setup.text, text), why)
+        talk.send(body, kind = "proposal", change = lines, setupText = text) { e ->
+            if (e == null) c.telemetry.event("plaza_diff", "sent") else talk.close()
+            done(e)
+        }
+    }
 }
 
 data class HistoryState(val title: String, val versions: List<com.bamnat.app.company.RuleVersion>?, val error: String? = null)
@@ -377,6 +393,7 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         kind: String = "talk",
         change: List<com.bamnat.app.company.ChangeLine> = emptyList(),
         withSetup: Boolean = false,
+        setupText: String? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
@@ -388,7 +405,9 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         if (!com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         scope.launch {
             val error = try {
-                val setup = if (kind == "proposal" && withSetup) c.companyShare.exportForServer() else null
+                // [PLAZA-02] 다른 점 말하기 sends the company's setup as edited, not this phone's own.
+                val setup = if (kind != "proposal") null
+                else setupText?.let { org.json.JSONObject(it) } ?: if (withSetup) c.companyShare.exportForServer() else null
                 if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")

@@ -196,14 +196,16 @@ data class SetupDraft(
      * [COMM-01][SETUP-02] Starts the draft from a shared setup: its shifts and the order as the file
      * names them. The roles are guessed from the times, so the order can still be changed later.
      */
-    fun withShared(source: SetupSource, shifts: List<ShiftType>, order: List<String?>): SetupDraft {
+    fun withShared(source: SetupSource, shifts: List<ShiftType>, order: List<String?>, weekly: List<String?> = emptyList()): SetupDraft {
         val types = shifts.mapIndexed { i, t -> t.copy(id = -(i + 1L), sortOrder = i) }
         val byName = types.associateBy { it.name }
         val day = types.firstOrNull { !it.isOff && it.hasTimes }?.id
         return copy(
             bundle = null, source = source, types = types, roles = types.associate { it.id to ShiftRole.guess(it) },
             timesConfirmed = false, rotation = order.map { name -> name?.let { byName[it]?.id } },
-            weekly = DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
+            // [PLAZA-01] The company's own days when it gave them, else Monday to Friday for weekday work.
+            weekly = if (weekly.size == 7) weekly.map { name -> name?.let { byName[it]?.id } }
+            else DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
             painted = emptyMap(), leaves = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
         )
     }
