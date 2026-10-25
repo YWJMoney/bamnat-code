@@ -518,9 +518,13 @@ object DutyRoster {
         val guessed = HashSet<Int>()
         val notes = HashMap<Int, String>()
         val label = StringBuilder()
+        // 1.25 통합 직접 시험: a table with its names at the right end (after the last day) read every cell but no name.
+        val rightLabel = StringBuilder()
         val firstX = fit.x(fit.first)
+        val lastX = fit.x(fit.last)
         for (w in row) {
             val leftOfDays = w.x < firstX - fit.b / 2
+            val rightOfDays = w.x > lastX + fit.b / 2
             // [ROST-03] A name with a code stuck to it, in a photo's one word: doubtful, so the day is looked at.
             val stuck = if (leftOfDays) codes.splitName(w.text) else null
             if (stuck != null) {
@@ -545,13 +549,17 @@ object DutyRoster {
                         cells[d] = cell
                         off[d] = miss
                         at[d] = w.x
-                        if (w.word.doubt || codes.guessedWork(w.text, cell)) guessed += d else guessed -= d
+                        // 1.25 통합 직접 시험: a lone "0" is O to the reader, but OCR also makes it of D: looked at, never taken quietly.
+                        if (w.word.doubt || codes.guessedWork(w.text, cell) || w.text.trim() == "0") guessed += d else guessed -= d
                         read?.second?.let { notes[d] = it } ?: notes.remove(d)
                     }
                 }
                 leftOfDays && dayOf(w.text) == null && DutyCodes.norm(w.text) !in DutyCodes.RANKS -> label.append(w.text.trim())
+                rightOfDays && read == null && dayOf(w.text) == null && DutyCodes.norm(w.text) !in DutyCodes.RANKS &&
+                    w.text.any { it.isLetter() } -> rightLabel.append(w.text.trim())
             }
         }
+        if (label.isBlank()) label.append(rightLabel)
         // [READ-03] A cell far from its column's middle may be the next day's: one to look at.
         val unsure = off.filter { (d, miss) -> miss > 0.3 && d in cells }.keys
         return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }) to fit
