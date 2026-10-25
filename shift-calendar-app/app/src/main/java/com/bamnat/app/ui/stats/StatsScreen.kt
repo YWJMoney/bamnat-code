@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Dashboard
@@ -107,6 +108,12 @@ class StatsViewModel(
 
     /** [LEDG-15] The calendar's money: field work counts its jobs here and a shop its sales, not hours. */
     val book: StateFlow<MoneyBook?> = scope.money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** [PAYX-48] 들어온 급여 적기 on the 월급날 비교 card: a 급여 line in 돈, the one the card compares. */
+    fun addPay(date: java.time.LocalDate, amount: Long) = viewModelScope.launch {
+        scope.money.save(com.bamnat.core.money.MoneyEntry(date = date, kind = com.bamnat.core.money.MoneyKind.INCOME, amount = amount,
+            category = com.bamnat.core.money.MoneyCategories.SALARY, note = "급여"))
+    }
 }
 
 @Composable
@@ -264,7 +271,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
         if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
-        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book, payFree)
+        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book, payFree,
+            onOpenPay = onOpenPay, onAddPay = vm::addPay)
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
         // [PAYX-29] The company's 52시간 exception sets the week's limit (none for 선택적·특례·감시단속), and 특례 업종 checks the

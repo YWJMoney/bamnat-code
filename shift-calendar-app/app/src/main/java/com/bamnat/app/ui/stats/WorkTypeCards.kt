@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import com.bamnat.app.ui.components.CountStepper
 import com.bamnat.app.ui.components.StepperRow
 import com.bamnat.app.ui.components.FilterChip
@@ -99,9 +103,15 @@ internal fun WorkTypeMoreCards(
     profile: PayProfile?,
     book: MoneyBook?,
     nonTaxable: Long? = null,
+    /** [PAYX-48] The pay screen, for 월급날 비교 before pay is set up. */
+    onOpenPay: () -> Unit = {},
+    /** [PAYX-48] 들어온 급여 적기: a 급여 line in 돈 on that day. */
+    onAddPay: (LocalDate, Long) -> Unit = { _, _ -> },
 ) {
     // [GUIDE-05] Each card can be turned off for its calendar.
-    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable) }
+    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) {
+        PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable, onOpenPay, onAddPay)
+    }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
     if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot, calendarId) }
@@ -274,47 +284,108 @@ private fun TaxModeChips(mode: TaxMode, onChange: (TaxMode) -> Unit) {
 }
 
 /**
- * [SHFT-04] Once the month's 급여 came in (a 급여 line in 돈, around the pay day when one is set), how far it
- * was from the estimate after tax.
+ * [SHFT-04][PAYX-48] 월급날 비교: once the month's 급여 came in (a 급여 line in 돈, around the pay day when one is set), how far it
+ * was from the estimate after tax. Always on screen (U9-나: '사용하러 가기' used to land on nothing when no 급여 line was there):
+ * before pay is set up it leads to the setup, before the pay comes in it takes the amount right here.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?, nonTaxable: Long? = null) {
+private fun PayGapCard(
+    calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?,
+    nonTaxable: Long? = null, onOpenPay: () -> Unit = {}, onAddPay: (LocalDate, Long) -> Unit = { _, _ -> },
+) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
     val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
         nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
-    val gap = remember(book, month, expected, profile) {
-        book?.let { PayGaps.of(month, expected, profile?.period?.payDate(month), it.entries) }
-    } ?: return
+    val payDate = profile?.period?.payDate(month)
+    val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
+    var adding by remember { mutableStateOf(false) }
+    // [PAYX-48] Opened from 기능 찾기, a tip or 새 기능: the card comes into view and, with pay set up, asks the amount.
+    val bring = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    com.bamnat.app.ui.guide.FocusedTool("pay.gap", "pay.gap") {
+        scope.launch { bring.bringIntoView() }
+        if (profile != null && gap == null) adding = true
+    }
     val cal = LocalCalendarColors.current
-    SectionCard(title = "${month.monthValue}월 급여 들어온 돈") {
-        Text(
-            gap.text,
-            style = MaterialTheme.typography.titleMedium,
-            color = when {
-                gap.matches -> MaterialTheme.colorScheme.primary
-                gap.diff < 0 -> cal.warning
-                else -> MaterialTheme.colorScheme.onSurface
-            },
-        )
-        Text(
-            "들어온 돈 ${Fmt.won(gap.received)} (${gap.dates.joinToString(", ") { Fmt.shortDate(it) }}) · " +
-                "예상 ${Fmt.won(gap.expected)} (" + when (mode) {
-                    TaxMode.INSURANCE_4 -> "4대보험·세금 뺀 참고값"
-                    TaxMode.WITHHOLDING_3_3 -> "3.3% 뺀 값"
-                    TaxMode.NONE -> "세전"
-                } + ")",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        if (!gap.matches && gap.diff < 0) {
-            Text("명세서와 근무 기록을 맞춰 보세요. 빠진 수당이나 공제가 있을 수 있어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp))
+    SectionCard(title = "${month.monthValue}월 월급날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
+        when {
+            profile == null || expected == null -> {
+                Text("급여 계산을 먼저 맞추면, 들어온 급여와 계산한 급여의 차이를 알려 드려요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onOpenPay, modifier = Modifier.padding(top = 8.dp)) { Text("급여 계산 맞추기") }
+            }
+            gap == null -> {
+                Text("예상 ${Fmt.won(expected)} (" + mode.gapLabel() + ")", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
+                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 돈 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp))
+                Button(onClick = { adding = true }, modifier = Modifier.padding(top = 8.dp)) { Text("들어온 급여 적기") }
+            }
+            else -> {
+                Text(
+                    gap.text,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = when {
+                        gap.matches -> MaterialTheme.colorScheme.primary
+                        gap.diff < 0 -> cal.warning
+                        else -> MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                Text(
+                    "들어온 돈 ${Fmt.won(gap.received)} (${gap.dates.joinToString(", ") { Fmt.shortDate(it) }}) · " +
+                        "예상 ${Fmt.won(gap.expected)} (" + mode.gapLabel() + ")",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (!gap.matches && gap.diff < 0) {
+                    Text("명세서와 근무 기록을 맞춰 보세요. 빠진 수당이나 공제가 있을 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp))
+                }
+                TextButton(onClick = { adding = true }) { Text("더 들어온 급여 적기") }
+            }
         }
     }
+    if (adding) AddPayDialog(
+        start = payDate?.takeIf { !it.isAfter(Today.date()) } ?: Today.date(),
+        onDismiss = { adding = false },
+        onSave = { date, amount -> onAddPay(date, amount); adding = false },
+    )
+}
+
+private fun TaxMode.gapLabel(): String = when (this) {
+    TaxMode.INSURANCE_4 -> "4대보험·세금 뺀 참고값"
+    TaxMode.WITHHOLDING_3_3 -> "3.3% 뺀 값"
+    TaxMode.NONE -> "세전"
+}
+
+/** [PAYX-48] 들어온 급여: the amount that reached the account and the day, kept as a 급여 line in 돈. */
+@Composable
+private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (LocalDate, Long) -> Unit) {
+    var amount by remember { mutableStateOf<Long?>(null) }
+    var date by remember { mutableStateOf(start) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("들어온 급여 적기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("통장에 실제로 들어온 금액이에요(세금·4대보험 뺀 금액).", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.pay.MoneyField("들어온 급여", amount, onChange = { amount = it })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { date = date.minusDays(1) }) { Text("‹") }
+                    Text(Fmt.shortDate(date), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { date = date.plusDays(1) }, enabled = date.isBefore(Today.date())) { Text("›") }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(date, amount!!) }, enabled = (amount ?: 0) > 0) { Text("저장") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 /** [DAYW-05] This month's extra hours against the monthly 시간외 상한, set here. */

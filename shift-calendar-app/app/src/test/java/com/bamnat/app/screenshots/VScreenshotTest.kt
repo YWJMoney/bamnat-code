@@ -3,6 +3,11 @@ package com.bamnat.app.screenshots
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.pay.PayScreen
+import com.bamnat.app.ui.pay.PayViewModel
+import com.bamnat.core.money.MoneyCategories
+import com.bamnat.core.money.MoneyKind
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.pay.Occupation
@@ -209,5 +214,42 @@ class VScreenshotTest : ScreenshotBase() {
         val p = saved!!
         assertEquals(2_850_000L, p.base.on(java.time.YearMonth.of(2026, 9)).value)
         assertTrue(p.items.any { it.name == "교대수당" })
+    })
+
+    // ---- 377 [PAYX-48] 월급날 비교: '사용하러 가기' opens the card, and the amount is typed right there ----
+    private fun withPay() = runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+    private fun Screen.openPayGap() {
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRegistry.get("pay.gap")!!)
+        settle()
+        waitFor(400)
+    }
+
+    /** From 기능 찾기 or a tip: the stats tab, the card in view and the amount asked; saving puts a 급여 line in 돈. */
+    @Test fun payGapEndToEnd() = shoot("843_v_pay_gap_add", FOLDED, {
+        withPay()
+        settle()
+        openPayGap()
+        assertTrue("the amount is asked at once", shows("들어온 급여 적기", exact = true))
+        typeInto("들어온 급여", "3200000")
+        tapText("저장", exact = true)
+        waitFor(400)
+        val lines = runBlocking { c.moneyRepository.book.first().entries }
+        assertTrue(lines.any { it.kind == MoneyKind.INCOME && it.amount == 3_200_000L && it.category == MoneyCategories.SALARY })
+        reveal("10월 월급날 비교", exact = true)
+        assertTrue(shows("들어온 돈 3,200,000원"))
+    })
+    @Test fun payGapBeforeTheMoney() = shoot("844_v_pay_gap_waiting", FOLDED_NIGHT, {
+        withPay()
+        settle()
+        tab(3, wide = false)
+        reveal("10월 월급날 비교", exact = true)
+        assertTrue(shows("들어온 급여 적기", exact = true))
+    })
+    @Test fun payGapBeforeSetup() = shoot("845_v_pay_gap_no_setup", FOLDED, {
+        runBlocking { c.payStore.save(null, keepUndo = false) }
+        settle()
+        openPayGap()
+        reveal("10월 월급날 비교", exact = true)
+        assertTrue(shows("급여 계산 맞추기", exact = true))
     })
 }
