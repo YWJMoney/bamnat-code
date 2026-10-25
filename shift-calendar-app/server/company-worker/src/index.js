@@ -32,6 +32,9 @@
 // POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
 // GET    /api/plaza/news?since=   [COMM-10] header X-Device: my rule changed, my rule or proposal adopted
 // GET    /api/inquiries/:id/photos/:n  [SRV-06] header X-Device: a photo sent with one's own question
+// GET    /api/invites             [INVITE-05] header X-Device: my invite code, friends and months; POST /code makes the code,
+//                                 /use reports the code this phone came by, /seen its next day [INVITE-02][INVITE-03]
+// GET    /i/:code                 [INVITE-02] the invite link: on to the Play listing with the code as install referrer
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
 // cleaned. No IP address is stored: limits and "the same network within an hour" use hashes salted
@@ -201,6 +204,9 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
+    // [INVITE-04] An invite never counted goes after 30 days; a counted one after a year (its cap and the same phone).
+    stmt(env, "DELETE FROM invite_uses WHERE status NOT IN ('credited', 'capped') AND created_at < ?", now - INVITE.secondDayWithin),
+    stmt(env, "DELETE FROM invite_uses WHERE status IN ('credited', 'capped') AND created_at < ?", now - INVITE.keepCredited),
     // [STAT-01] Day totals after 400 days (a year and its month before, to compare); [SRV-06] a closed
     // question's photos 90 days after it closed, its words stay until the question goes.
     stmt(env, "DELETE FROM usage_days WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
@@ -291,6 +297,8 @@ async function routeOnce(request, env, url) {
   }
   if (path === "/admin") return Response.redirect(`${url.origin}/admin/`, 301);
   if (path.startsWith("/admin/")) return adminFile(path, request);
+  // AE 1.26: the invite link needs no database.
+  if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
   if (path === "/api/admin/health" && method === "GET") return json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
@@ -333,6 +341,7 @@ async function routeOnce(request, env, url) {
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
     return money(request, env, path);
   }
+  if (path === "/api/invites" || path.startsWith("/api/invites/")) return invites(request, env, path, url);
   return json({ error: "not_found" }, 404);
 }
 
@@ -488,6 +497,15 @@ const SCHEMA = [
     auth TEXT NOT NULL, kinds TEXT NOT NULL, quiet_from INTEGER, quiet_to INTEGER, created_at INTEGER NOT NULL, sent_at INTEGER)`,
   "CREATE INDEX IF NOT EXISTS push_subscriptions_admin ON push_subscriptions (admin)",
   // H 1.23 끝
+  // AE 1.26 시작
+  // [INVITE-02] One invite code per install, with the phone mark of the phone that made it (to see a self-invite).
+  "CREATE TABLE IF NOT EXISTS invite_codes (code TEXT PRIMARY KEY, device TEXT NOT NULL UNIQUE, phone TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",
+  // [INVITE-03][INVITE-04] A phone that came by an invite, once per install and once per phone mark: waiting for
+  // its second day, credited, capped (the inviter had the year's months) or refused (self).
+  `CREATE TABLE IF NOT EXISTS invite_uses (invitee TEXT PRIMARY KEY, phone TEXT NOT NULL UNIQUE, code TEXT NOT NULL, inviter TEXT NOT NULL,
+    source TEXT NOT NULL, first_day TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, decided_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS invite_uses_inviter ON invite_uses (inviter, status)",
+  // AE 1.26 끝
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -1702,7 +1720,8 @@ async function payOut(env, ruleId, now) {
 async function payEach(env, owed, { rewardCapMonths, rewardCapDays }, now) {
   for (const w of owed) {
     if (w.device.startsWith("gone")) continue;
-    const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ?",
+    // [INVITE-04] Invites have their own cap and do not use this one up.
+    const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ? AND rule_id != 'invite'",
       w.device, now - rewardCapDays * DAY);
     if (got.m + w.months > rewardCapMonths) continue;
     let deferred = null;
@@ -1811,6 +1830,12 @@ async function forgetMine(request, env) {
     // law's record of a sale until they expire (처리방침 보관 기간).
     stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
     stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
+    // [INVITE-04] Its invite code and an invite not yet counted go; a counted one keeps only the phone mark for its
+    // year, so the same phone does not count again (처리방침 1-12).
+    stmt(env, "DELETE FROM invite_codes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM invite_uses WHERE invitee = ? AND status NOT IN ('credited', 'capped')", dev),
+    stmt(env, "UPDATE invite_uses SET invitee = ? WHERE invitee = ?", `${gone}i`, dev),
+    stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", gone, dev),
   ]);
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
 }
@@ -2520,7 +2545,7 @@ async function activity(request, env) {
     proposals: posts.map((p) => ({ id: p.id, company: { id: p.company_id, name: p.name }, setup: p.grp, body: p.body,
       agree: p.agree, disagree: p.disagree, ...postTrust(p), at: iso(p.created_at) })),
     rates: mine.map((r) => rateView(r, dev, new Map(), new Map())),
-    rewards: rewardRows.map((w) => ({ months: w.months, status: w.status, why: w.rule_id === "rate" ? "rate" : w.rule_id ? "rule" : "idea",
+    rewards: rewardRows.map((w) => ({ months: w.months, status: w.status, why: rewardWhy(w.rule_id),
       at: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null })),
   });
 }
@@ -4997,16 +5022,20 @@ async function rewards(env, status, params = new URLSearchParams()) {
     FROM rewards w LEFT JOIN reports p ON p.id = w.report_id LEFT JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
       LEFT JOIN rates t ON t.id = w.report_id
     WHERE w.status = ?1 AND (?2 = '' OR c.norm LIKE ?2 ESCAPE '\\') ORDER BY w.created_at DESC LIMIT ?3 OFFSET ?4`, wanted, like, pg.limit + 1, pg.after);
-  const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status");
+  // [INVITE-06] How invites went, beside the rewards they gave, in the same trip as the counts.
+  const [counts, invites] = await rewardCounts(env, !params.get("after"), Date.now());
   const { items, next } = sqlPage(rows, pg);
   return {
+    invites,
     status: wanted,
     next,
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
     rewards: items.map((w) => ({
       id: w.id, months: w.months, status: w.status, memo: w.memo,
       // [PLZ-14] A rate's reward names the rate instead of a company.
-      company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` } : { id: w.company_id, name: w.company ?? "" },
+      company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` }
+        : w.rule_id === "invite" ? { id: "", name: "친구 초대" } : { id: w.company_id, name: w.company ?? "" },
+      invite: w.rule_id === "invite",
       dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
       version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
     })),
@@ -5394,7 +5423,7 @@ async function passes(env, dev, now) {
   return {
     until: p.until ? iso(p.until) : null,
     waitingMonths: p.waiting,
-    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: r.rule_id === "rate" ? "rate" : r.rule_id ? "rule" : "idea" })),
+    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     admin: link ? { status: link.status, name: link.admin_name } : null,
     code: Boolean(code),
@@ -5434,6 +5463,9 @@ async function money(request, env, path) {
       await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
+        // [INVITE-02] The invite code moves with them, so links already sent count here.
+        stmt(env, "UPDATE OR IGNORE invite_codes SET device = ? WHERE device = ?", dev, row.device),
+        stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", dev, row.device),
       ]);
       await audit(env, now, "pass_move", dev.slice(0, 8), row.device.slice(0, 8));
     }
@@ -5448,6 +5480,217 @@ async function money(request, env, path) {
   if (path === "/api/consents" && method === "POST") return consent(request, env, dev, now);
   return json({ error: "not_found" }, 404);
 }
+
+// AE 1.26 시작
+// ---- 친구 초대 [INVITE-02][INVITE-03][INVITE-04] ----
+// The person who invited gets a month of 프로 once a friend's phone installed the app, finished its first
+// setup and opened it again on another day (research/1.26-AE-초대-조사.md, 결정 D81). The friend gets nothing,
+// and a store rating or review is never part of it (Play: User Ratings, Reviews, and Installs).
+
+const INVITE = {
+  months: 1,
+  // [INVITE-04] At most 12 months in any 365 days for one inviter; more friends still count, without months.
+  capMonths: 12,
+  capDays: 365,
+  // The second day has to come within 30 days of the first; a credited friend's phone mark is kept a year.
+  secondDayWithin: 30 * DAY,
+  keepCredited: 365 * DAY,
+  codesPerDay: 5,
+  usesPerHour: 10,
+  usesPerDevice: 5,
+  seenPerDay: 30,
+  package: "com.bamnat.app",
+};
+// No 0/O, 1/I: a code read out or typed by hand. 32 letters, so a random byte maps evenly.
+const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const INVITE_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
+/** What the app sends as the phone mark: SHA-256 of the app-scoped Android ID, never the id itself. */
+const PHONE_MARK = /^[0-9a-f]{64}$/;
+
+const inviteCode = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => INVITE_CHARS[b % 32]).join("");
+
+/** A code as a person may type it: "abcd-2345" is ABCD2345. */
+export const inviteCodeOf = (v) => {
+  const c = typeof v === "string" ? v.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+  return INVITE_CODE.test(c) ? c : null;
+};
+
+/** The phone mark as the server keeps it: hashed again with the server's secret salt. */
+async function phoneMark(env, v) {
+  if (typeof v !== "string" || !PHONE_MARK.test(v)) return null;
+  return (await sha256(`${await salt(env)}|phone|${v}`)).slice(0, 40);
+}
+
+/** [INVITE-02] The Play listing with the code as the install referrer (Play Install Referrer API). */
+export function storeLink(code) {
+  const referrer = `utm_source=bamnat_invite&utm_content=${code}`;
+  return `https://play.google.com/store/apps/details?id=${INVITE.package}&referrer=${encodeURIComponent(referrer)}`;
+}
+
+/** Why a reward was given, as the app names it. */
+const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
+
+/**
+ * [INVITE-02] /i/<code>: a small page that sends an Android phone on to the Play listing with the code, and
+ * shows the code elsewhere. It keeps nothing and does not look the code up, so it tells nobody which codes exist.
+ */
+function invitePage(raw) {
+  const code = inviteCodeOf(raw);
+  if (!code) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+  const store = storeLink(code);
+  const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>밤낮 초대</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;padding:32px 16px;background:#f6f7fb;color:#1b1d24}main{max-width:420px;margin:auto}
+a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
+code{font-size:1.4em;letter-spacing:.08em}@media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head>
+<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. Play 스토어에서 받아 첫 설정을 마치면 친구에게 알릴 수 있어요.</p>
+<p><a class="b" href="${store}">Play 스토어에서 받기</a></p>
+<p>안드로이드 휴대폰에서 열어 주세요. 링크로 받지 못했다면 설치하고 7일 안에 앱의 설정 › 프로 › ‘초대 코드 넣기’에 <code>${shown}</code>를 넣어 주세요.</p>
+<p><small>이 페이지는 아무것도 저장하지 않아요.</small></p></main>
+<script>if(/Android/i.test(navigator.userAgent))location.replace(${JSON.stringify(store)});</script></body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600", "referrer-policy": "no-referrer" } });
+}
+
+/** Months the inviter was given for invites since [since]. */
+async function inviteMonths(env, dev, since = 0) {
+  const r = await one(env, `SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND rule_id = 'invite' AND status = 'paid'
+    AND paid_at > ?`, dev, since);
+  return r.m;
+}
+
+/** [INVITE-05] What the inviter sees: the code and link, friends counted, months given, friends still to come back. */
+async function inviteView(env, dev, origin, now) {
+  const [mine, counts, months, recent, used] = await Promise.all([
+    one(env, "SELECT code FROM invite_codes WHERE device = ?", dev),
+    all(env, "SELECT status, COUNT(*) AS n FROM invite_uses WHERE inviter = ? GROUP BY status", dev),
+    inviteMonths(env, dev),
+    inviteMonths(env, dev, now - INVITE.capDays * DAY),
+    one(env, "SELECT status FROM invite_uses WHERE invitee = ?", dev),
+  ]);
+  const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
+  return {
+    code: mine?.code ?? null,
+    link: mine ? `${origin}/i/${mine.code}` : null,
+    friends: n("credited") + n("capped"),
+    months,
+    waiting: n("waiting"),
+    capMonths: INVITE.capMonths,
+    capReached: recent >= INVITE.capMonths,
+    // The invite this phone itself came by, as this phone reported it.
+    used: used?.status ?? null,
+  };
+}
+
+/** [INVITE-03] A friend's second day: the month for the inviter, unless the cap is reached. */
+async function creditInvite(env, row, now) {
+  const recent = await inviteMonths(env, row.inviter, now - INVITE.capDays * DAY);
+  const capped = recent + INVITE.months > INVITE.capMonths || row.inviter.startsWith("gone");
+  const status = capped ? "capped" : "credited";
+  const took = await run(env, "UPDATE invite_uses SET status = ?, decided_at = ? WHERE invitee = ? AND status = 'waiting'", status, now, row.invitee);
+  if (!took.meta.changes) return (await one(env, "SELECT status FROM invite_uses WHERE invitee = ?", row.invitee))?.status ?? status;
+  if (capped) {
+    await audit(env, now, "invite_capped", row.code, row.inviter.slice(0, 8));
+    return status;
+  }
+  let deferred = null;
+  try {
+    deferred = await deferFor(env, row.inviter, INVITE.months, now);
+  } catch (e) {
+    console.error(`defer invite: ${e?.code ?? e}`);
+  }
+  const id = `i${randomId(21)}`;
+  await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
+    VALUES (?, ?, 'invite', ?, ?, 'paid', ?, ?, ?, ?)`, id, `invite:${id}`, row.inviter, INVITE.months,
+    deferred ? `친구 초대 · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : "친구 초대", now, now, deferred ? 1 : 0);
+  await audit(env, now, "invite_credit", row.code, row.inviter.slice(0, 8));
+  return status;
+}
+
+/** [INVITE-02][INVITE-03] /api/invites, /api/invites/code, /api/invites/use and /api/invites/seen, all for one install. */
+async function invites(request, env, path, url) {
+  const method = request.method;
+  const now = Date.now();
+  const dev = await installOf(request);
+  if (path === "/api/invites" && method === "GET") return json(await inviteView(env, dev, url.origin, now));
+  if (path === "/api/invites/code" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const mark = await phoneMark(env, body.phone);
+    if (!mark) refuse("phone", "phone");
+    if (!(await allow(env, `invitecode|${dev}`, INVITE.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+    // One code per install, kept as it is: a link already sent keeps working.
+    const had = await one(env, "SELECT code FROM invite_codes WHERE device = ?", dev);
+    if (had) {
+      await run(env, "UPDATE invite_codes SET phone = ? WHERE device = ?", mark, dev);
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const r = await run(env, "INSERT OR IGNORE INTO invite_codes (code, device, phone, created_at) VALUES (?, ?, ?, ?)", inviteCode(), dev, mark, now);
+        if (r.meta.changes) break;
+      }
+    }
+    return json(await inviteView(env, dev, url.origin, now), had ? 200 : 201);
+  }
+  if (path === "/api/invites/use" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const net = await network(request, env, now);
+    if (!(await allow(env, `inviteuse|${net.day}`, INVITE.usesPerHour, HOUR, now)) ||
+        !(await allow(env, `inviteuse|${dev}`, INVITE.usesPerDevice, DAY, now))) {
+      return json({ error: "rate_limited" }, 429);
+    }
+    const code = inviteCodeOf(body.code);
+    if (!code) refuse("code", "code");
+    if (!["referrer", "typed"].includes(body.source)) refuse("source", "source");
+    const mark = await phoneMark(env, body.phone);
+    if (!mark) refuse("phone", "phone");
+    const before = await one(env, "SELECT status, reason FROM invite_uses WHERE invitee = ?", dev);
+    if (before) return json({ status: before.status, reason: before.reason || null });
+    const owner = await one(env, "SELECT device, phone FROM invite_codes WHERE code = ?", code);
+    if (!owner) return json({ error: "code", field: "code" }, 404);
+    // [INVITE-04] A phone counts once, whoever invited it and however often the app was installed again.
+    if (await one(env, "SELECT 1 FROM invite_uses WHERE phone = ?", mark)) {
+      await audit(env, now, "invite_refused", code, "phone");
+      return json({ status: "refused", reason: "phone" });
+    }
+    const self = owner.device === dev || owner.phone === mark;
+    await run(env, `INSERT OR IGNORE INTO invite_uses (invitee, phone, code, inviter, source, first_day, status, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, dev, mark, code, owner.device, body.source, kstDay(now), self ? "refused" : "waiting", self ? "self" : "", now);
+    if (self) await audit(env, now, "invite_refused", code, "self");
+    return json({ status: self ? "refused" : "waiting", reason: self ? "self" : null }, 201);
+  }
+  if (path === "/api/invites/seen" && method === "POST") {
+    if (!(await allow(env, `inviteseen|${dev}`, INVITE.seenPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+    const row = await one(env, "SELECT * FROM invite_uses WHERE invitee = ?", dev);
+    if (!row) return json({ error: "not_found" }, 404);
+    if (row.status !== "waiting") return json({ status: row.status, reason: row.reason || null });
+    if (now - row.created_at > INVITE.secondDayWithin) return json({ status: "expired", reason: null });
+    // [INVITE-03] Another day by the server's clock (Korean date): a phone's own clock does not count.
+    if (kstDay(now) === row.first_day) return json({ status: "waiting", reason: null });
+    return json({ status: await creditInvite(env, row, now), reason: null });
+  }
+  return json({ error: "not_found" }, 404);
+}
+
+/**
+ * [INVITE-06] For the developer app's 보상 screen: the rewards by status and, when [withInvites], how invites went and
+ * the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
+ */
+async function rewardCounts(env, withInvites, now) {
+  const [rewardRows, counts, refused, top, codes] = (await batch(env, [
+    stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
+    stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
+    stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
+    stmt(env, `SELECT code, COUNT(*) AS friends, SUM(status = 'credited') AS credited, SUM(status = 'waiting') AS waiting FROM invite_uses
+      WHERE status IN ('credited', 'capped', 'waiting') GROUP BY code ORDER BY friends DESC LIMIT 5`),
+    stmt(env, "SELECT COUNT(*) AS n FROM invite_codes"),
+  ])).map((r) => r.results ?? []);
+  const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
+  return [rewardRows, withInvites ? {
+    codes: codes[0]?.n ?? 0, credited: n("credited"), capped: n("capped"), waiting: n("waiting"),
+    refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
+    top: top.map((t) => ({ code: t.code, friends: t.friends, credited: t.credited ?? 0, waiting: t.waiting ?? 0 })),
+  } : undefined];
+}
+// AE 1.26 끝
 
 // ---- 관리자 휴대폰 [MON-09] ----
 

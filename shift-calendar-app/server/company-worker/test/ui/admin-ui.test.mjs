@@ -433,3 +433,25 @@ test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on
   assert.deepEqual(DB.db.prepare("SELECT status FROM posts").all().map((p) => p.status), ["hidden", "hidden"]);
   assert.deepEqual(u.errors, []);
 });
+
+// AE 1.26 시작
+test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", async () => {
+  const { call, env, DB } = await world();
+  const mark = (n) => String(n).repeat(64);
+  const made = await call("POST", "/api/invites/code", { phone: mark(1) }, { "x-device": device(1) });
+  await call("POST", "/api/invites/use", { code: made.data.code, source: "referrer", phone: mark(2) }, { "x-device": device(2), ...from(2) });
+  // The friend's first day was yesterday by the server's clock.
+  DB.db.prepare("UPDATE invite_uses SET first_day = '2000-01-01'").run();
+  assert.equal((await call("POST", "/api/invites/seen", {}, { "x-device": device(2) })).data.status, "credited");
+  const t = await signedIn(env);
+  await t.go("#/rewards");
+  await t.click('[data-act="reward-tab"][data-key="paid"]');
+  await t.settle(30);
+  const main = t.$("#main").textContent;
+  assert.match(main, /친구 초대/);
+  assert.match(main, /친구가 두 날 씀/);
+  assert.match(main, /인정 1명/);
+  assert.ok(main.includes(made.data.code), "the code most friends came by");
+  assert.deepEqual(t.errors, []);
+});
+// AE 1.26 끝

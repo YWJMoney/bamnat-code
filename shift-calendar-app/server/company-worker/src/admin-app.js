@@ -2207,7 +2207,7 @@ function adminApp(L, BUILD) {
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
+          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구가 두 날 씀" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
         ${edit ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
@@ -2216,8 +2216,23 @@ function adminApp(L, BUILD) {
       </li>`).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
     return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="회사나 부서로 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${csvButton("rewards", r?.status === S.rewardTab ? r.rewards : null)}</div>
+      ${inviteSummaryView(r?.invites)}
       <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요.</p>${body}`;
   }
+
+  // AE 1.26 시작
+  /** [INVITE-06] 친구 초대 at a glance: counted, waiting, stopped and why, and the codes most friends came by. */
+  function inviteSummaryView(v) {
+    if (!v) return "";
+    const why = { self: "자기 초대", phone: "같은 휴대폰" };
+    const refused = Object.entries(v.refused ?? {}).map(([k, n]) => `${why[k] ?? k} ${n}`).join(" · ") || "없음";
+    const top = v.top.length ? `<ul class="rows">${v.top.map((t) => `<li class="item"><div class="row-main"><b>${esc(t.code)}</b>
+      <small>친구 ${t.friends}명 · 인정 ${t.credited} · 기다림 ${t.waiting}</small></div></li>`).join("")}</ul>` : "";
+    return `<section class="card" aria-label="친구 초대"><h3>친구 초대</h3>
+      <p>초대 코드 ${v.codes}개 · 인정 ${v.credited}명 · 상한 넘음 ${v.capped}명 · 두 번째 날 기다림 ${v.waiting}명</p>
+      <p class="hint">최근 30일 막음: ${refused}. 친구가 첫 설정 뒤 다른 날 다시 열면 저절로 1개월을 드려요(1년 12개월까지). 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${top}</section>`;
+  }
+  // AE 1.26 끝
 
   // ---- admins (the owner only) ----
 

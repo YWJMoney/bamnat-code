@@ -821,3 +821,10 @@ PLAZA-06,"순번 390 U25-나 첫 설정 다시 받기(설정 도움말·달력 �
 NAV-04,"Z 후속: 남은 뒤로 가기 — 근무 직접 치기(시트·옆 패널) 친 것 버리기 전에 묻기, 한 달 근무 넣기 확인 없이 닫힘 막기, 무슨 일 하세요·첫 설정 첫 질문 뒤로 = 앱 닫힘 → 2초 안 두 번, 받을 돈 검색 뒤로 = 검색 닫기",2 (1.25.0),완료,,"2026-10-25 TypingGuard(confirmValueChange·BackHandler·닫기), DutyRosterScreen Ui.unsaved 묻기, ui/ExitGuard(달력·첫 화면·첫 질문 공용), OwedScreen BackHandler. 끝에서 끝 ZScreenshotTest typingSheetAsksBeforeTypedDaysGo(923)·widePanelAsksBeforeTypedDaysGo·rosterScreenAsksBeforeLeaving(924)·theFirstSetupClosesOnlyOnASecondBack·owedSearchClosesBeforeLeaving"
 BAK-02,"Z 후속: 복원한 달력 보기 설정(calendar_view: 목록 보기·오늘의 흐름 접기·공휴일 답) 앱 다시 열지 않고 즉시 반영",2 (1.25.0),완료,,"2026-10-25 CalendarViewModel이 calendar_view 바뀜을 들어 다시 읽음. 끝에서 끝 ZScreenshotTest.aRestoredListViewShowsAtOnce(열린 달력에서 백업 복원 → 바로 목록)"
 QA-09,"Z 후속: 전체 실행에서만 깨지던 시험 원인 찾아 고치기(건너뛰기 없음) — StartupBudgetTest 2개, OperationsAppTest.usageStatsAreSentOnceADayOnlyWithAYes, 사진 시험 못 찾음",2 (1.25.0),완료,,"2026-10-25 원인 ① 시험 사이 버려진 Compose dispatcher 예약(앞에 Compose 화면 시험이 있으면 늘 재현) → rules/ComposeMainReset(ScreenshotBase·AccessibilityCheckTest·StartupBudgetTest), ② 앱 시작 스레드의 forgetUnless가 시험이 쓴 통계를 지움 → 컨테이너를 먼저 기다림. AlarmButtonsAllOffTest 알람 화면 닫기, StartupBudgetTest 실패 메시지에 화면·상태"
+INVITE-01,"AE 초대 조사: Play 정책(평점·리뷰·설치, 결제), Install Referrer, 악용 막기, 개인정보 → 설계",2 (1.26.0),진행 중,,"research/1.26-AE-초대-조사.md"
+INVITE-02,"AE 초대 링크: 프로 화면·설정에서 한 줄 동의 뒤 회사 서버 초대 코드(설치 번호에 묶임) + /i/<코드> → Play 스토어(referrer), 공유 시트 문구",2 (1.26.0),진행 중,,
+INVITE-03,"AE 설치 인정: 초대받은 휴대폰이 첫 설정 뒤 설치 referrer(또는 설치 7일 안 손으로 코드)를 한 줄 동의 뒤 알리고, 서버 시계로 다른 날 다시 열면 초대한 사람에게 프로 1개월(PASS why invite, 출시 전 기다림)",2 (1.26.0),진행 중,,
+INVITE-04,"AE 악용 막기: 같은 휴대폰 한 번(앱마다 다른 Android ID 해시), 자기 초대 막기, 365일 12개월 상한, 30일 기한, 코드 넣기 시간당 제한",2 (1.26.0),진행 중,,
+INVITE-05,"AE 초대한 사람 화면: 초대한 친구 n명 · 프로 n개월 · 기다리는 친구, 이용권 목록에 '친구 초대'",2 (1.26.0),진행 중,,
+INVITE-06,"AE 처리방침 3.0(1-12 친구 초대, 권한 한 줄), 데이터 보안 1.26.0, 관리자 앱 보상 화면 친구 초대 요약",2 (1.26.0),진행 중,,
+INVITE-07,"AE 도움말·설정 찾기·기능 목록·WhatsNew·HANDOFF 6-17·화면 사진 1040~1059",2 (1.26.0),진행 중,,

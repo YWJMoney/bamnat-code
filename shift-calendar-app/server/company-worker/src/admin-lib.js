@@ -11,6 +11,8 @@ export function adminLib() {
    */
   const ERRORS = {
     action: "이 항목에는 할 수 없는 일이에요",
+    // AE 1.26: the app's invite report (never sent by the developer app; ADMIN-18 lists every code).
+    source: "초대를 어디서 받았는지 알 수 없어요",
     // L 1.23: the notice form's audience, and a question the asker hid the writer of (public side).
     audience: "보일 휴대폰 조건이 맞지 않아요. 제조사·안드로이드 판·일하는 방식·기능을 다시 골라 주세요",
     hidden_by_you: "이 휴대폰에서 가린 사람의 글이에요",

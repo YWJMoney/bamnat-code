@@ -164,7 +164,23 @@ async function seedAdmins(cookie) {
 
 if (args.includes("--seed")) await seed();
 
+// AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
+// friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.
+const testClock = args.includes("--test-clock");
+if (testClock) {
+  const realNow = Date.now.bind(Date);
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  globalThis.__moveClock = (days) => { offset += days * 24 * 60 * 60 * 1000; };
+}
+
 http.createServer(async (req, res) => {
+  if (testClock && req.method === "POST" && req.url.startsWith("/__test/clock")) {
+    globalThis.__moveClock(Number(new URL(req.url, "http://x").searchParams.get("days") || 1));
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const chunks = [];
   for await (const c of req) chunks.push(c);
   const headers = new Headers();
