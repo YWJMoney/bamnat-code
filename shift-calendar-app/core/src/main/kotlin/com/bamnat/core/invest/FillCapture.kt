@@ -69,7 +69,7 @@ object FillSheetReader {
     private val AMOUNT = Regex("(?:(?:체결|약정|거래|정산|결제|매수|매도|구매|판매)\\s*(?:금액|대금)|총\\s*(?:체결\\s*)?(?:금액|액)|총액|합계|금액|총)\\s*[:：]?\\s*\\$?\\s*$NUM")
     private val FEE = Regex("(?:수수료|제세금|세금|거래세|농특세|정산\\s*수수료)\\s*[:：]?\\s*\\$?\\s*$NUM")
     private val TIME = Regex("(?<![\\d:])([01]?\\d|2[0-3]):([0-5]\\d)(?::([0-5]\\d))?(?![\\d:])")
-    private val DATE = Regex("(?<!\\d)(20\\d{2})[./\\-년]\\s*(\\d{1,2})[./\\-월]\\s*(\\d{1,2})일?|(?<![\\d.])(\\d{1,2})[./](\\d{1,2})(?![\\d.])")
+    private val DATE = Regex("(?<!\\d)(20\\d{2})[./\\-년]\\s*(\\d{1,2})[./\\-월]\\s*(\\d{1,2})일?|(?<![\\d.,$])(0?[1-9]|1[0-2])[./](0?[1-9]|[12]\\d|3[01])(?![\\d.,])")
     private val CODE_KR = Regex("(?<![\\d,.])(\\d{6})(?![\\d,.])")
     private val CODE_COIN = Regex("([A-Z0-9]{2,10})[-/](?:KRW|USDT)|(?:KRW|USDT)[-/]([A-Z0-9]{2,10})")
     private val TICKER = Regex("(?<![A-Za-z])([A-Z]{1,5})(?![A-Za-z])")
@@ -90,7 +90,16 @@ object FillSheetReader {
         var t = text.replace('，', ',').replace('．', '.').replace(' ', ' ').replace('＄', '$')
         t = Regex("(?<=\\d)[Oo](?=[\\d,])|(?<=[\\d,])[Oo](?=\\d)").replace(t, "0")
         t = Regex("(?<=\\d)[lI|](?=[\\d,])|(?<=[\\d,])[lI|](?=\\d)").replace(t, "1")
+        // An O or l closing a number ("6,118,0O0" read as "6,118,0O") is a 0 or 1 too.
+        t = Regex("(?<=\\d)[Oo](?![A-Za-z가-힣])").replace(t, "0")
+        t = Regex("(?<=,\\d{1,2})[lI|](?![A-Za-z가-힣])").replace(t, "1")
         t = Regex("(?<=\\d),\\s+(?=\\d{3}(?!\\d))").replace(t, ",")
+        // On a line in 원 (no $, no coin), "185.750" is 185,750: a Korean share's price and amount have no decimals.
+        // A wrong guess here still has to agree with 수량 × 단가 = 금액, or the fill is asked about.
+        t = t.lines().joinToString("\n") { line ->
+            if (Regex("[$]|USD|달러|USDT|BTC|ETH|XRP|SOL|DOGE|개|[A-Z]{2,10}[-/]KRW|KRW[-/][A-Z]").containsMatchIn(line)) line
+            else Regex("(?<![\\d.,$])([1-9]\\d{0,2}(?:\\.\\d{3})+)(?![\\d.])(?!\\s*(?:%|배))").replace(line) { it.value.replace(".", ",") }
+        }
         // A period between groups of three, with no other decimal after it, is a thousands mark in 원.
         t = Regex("(?<![\\d.])(\\d{1,3}(?:\\.\\d{3}){1,3})(?=\\s*(?:원|KRW))").replace(t) { it.value.replace(".", ",") }
         return t
@@ -191,8 +200,12 @@ object FillSheetReader {
                 q != null && p == null && a != null -> pool.firstOrNull { FillMath.agrees(q!!, it, a!!) }?.let { p = it; take(it) }
                 q == null && p != null && a != null -> pool.firstOrNull { FillMath.agrees(it, p!!, a!!) }?.let { q = it; take(it) }
                 q != null && p == null && a == null -> pairFor(pool, q!!)?.let { (pp, aa) -> p = pp; a = aa; guessed += setOf(Field.PRICE, Field.AMOUNT) }
-                q == null && p == null && a == null -> tripleAny(pool)?.let { (qq, pp, aa) ->
-                    q = qq; p = pp; a = aa; guessed += setOf(Field.QUANTITY, Field.PRICE, Field.AMOUNT)
+                q == null && p == null && a == null -> {
+                    val t = tripleAny(pool)
+                    if (t != null) { q = t.first; p = t.second; a = t.third }
+                    // Nothing agrees: the row still shows, its numbers in screen order, every one asked about.
+                    else if (pool.size >= 2) { q = pool[0]; p = pool[1]; a = pool.getOrNull(2) }
+                    guessed += setOf(Field.QUANTITY, Field.PRICE, Field.AMOUNT)
                 }
             }
             // Agreeing numbers found by the check are as good as labelled ones; anything else stays a guess.
