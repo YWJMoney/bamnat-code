@@ -118,7 +118,9 @@ class ACScreenshotTest : ScreenshotBase() {
     @Test fun setupFirstProviderGivesTheCycle() = shoot("1003_ac_setup_first_provider", PHONE_393, fresh(null) {
         setupSearch("한별정밀")
         assertTrue(shows("처음으로 회사 정보를 제공해 주세요!", exact = true))
-        assertTrue(shows("근무주기만 올리면 보상은 없어요", exact = false))
+        // Without the company server: no plaza or reward words, only the cycle put in.
+        assertFalse(shows("보상", exact = false))
+        assertTrue(shows("흔한 순서부터 보여 드려요", exact = false))
         tapText("4조 2교대", exact = true)
         tapText("‘한별정밀’ 근무주기 넣기")
         assertTrue(shows("공개 자료에는 순서가 없어요", exact = false))
@@ -134,7 +136,11 @@ class ACScreenshotTest : ScreenshotBase() {
         assertEquals(8, pattern().steps.size)
     })
 
-    @Test fun firstProviderCard() = shoot("1004_ac_first_provider_card", PHONE_393, fresh(null) { setupSearch("한별정밀") })
+    @Test fun firstProviderCard() = shoot("1004_ac_first_provider_card", PHONE_393, fresh(null) {
+        companyOn()
+        setupSearch("한별정밀")
+        assertTrue(shows("근무주기만 올리면 보상은 없어요", exact = false))
+    })
 
     // ---- 415 [SPAT-03] 근무 주기 › 회사 이름으로 근무주기 찾기: a row with no public order, today picked, the calendar written ----
     @Test fun patternScreenFindsAndAppliesAFormOnlyRow() = shoot("1005_ac_pattern_apply_form_only", PHONE_393) {
@@ -254,8 +260,8 @@ class ACScreenshotTest : ScreenshotBase() {
         settle()
         tapText("6번째 날 야간", exact = true)
     }
-    @Test fun firstProviderDark() = shoot("1013_ac_first_provider_dark", PHONE_393_NIGHT, fresh(null) { setupSearch("한별정밀") })
-    @Test fun firstProviderLargeText() = shoot("1014_ac_first_provider_200", PHONE_393, 2f, fresh(null) { setupSearch("한별정밀") })
+    @Test fun firstProviderDark() = shoot("1013_ac_first_provider_dark", PHONE_393_NIGHT, fresh(null) { companyOn(); setupSearch("한별정밀") })
+    @Test fun firstProviderLargeText() = shoot("1014_ac_first_provider_200", PHONE_393, 2f, fresh(null) { companyOn(); setupSearch("한별정밀") })
     @Test fun reportHeadSmall() = shoot("1015_ac_report_head_320", SMALL_PHONE) {
         companyOn()
         withPay()
@@ -277,6 +283,28 @@ class ACScreenshotTest : ScreenshotBase() {
         settle()
         openWayCard("급여도 넣어 볼까요?")
         tapText("급여 넣기", exact = true)
+    }
+
+    // ---- 414 [SPAT-02] 회사 규칙 광장's search: the public rows under the plaza's own ----
+    @Test fun boardSearchShowsPublicRows() = shoot("1018_ac_board_public", PHONE_393) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn()).apply { query.value = "포스코" }
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+        waitFor(400)
+        reveal(PublicCycles.BADGE)
+        assertTrue(shows("포스코", exact = true))
+    }
+
+    // ---- 418 [SPAT-06] 도움말 finds the answer and opens 근무 주기 ----
+    @Test fun helpAnswersAndOpensThePattern() = shoot("1019_ac_help_answer", PHONE_393) {
+        inquiriesOn()
+        tab(4, wide = false)
+        tapText("도움말과 문의", exact = true)
+        typeInto("기능과 도움말 찾기", "회사 근무주기")
+        tapText("우리 회사 근무주기를 이름으로 찾을 수 있나요?", exact = true)
+        reveal("근무 주기 열기", exact = true)
+        assertTrue(shows("처음으로 회사 정보를 제공해 주세요!", exact = false))
+        tapText("근무 주기 열기", exact = true)
+        assertTrue(shows("회사 이름으로 근무주기 찾기", exact = true))
     }
 
     private companion object {

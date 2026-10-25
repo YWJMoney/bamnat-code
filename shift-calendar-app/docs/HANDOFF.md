@@ -444,6 +444,15 @@ shift-calendar-app/
 - **알람 화면** `RingingScreen`: 480dp 아래로 낮은 가로 화면은 시계·버튼을 옆으로 나란히(전에는 버튼이 시계를 덮었음), 세로는 글이 길면 스크롤.
 - 시험 `AlarmButtonsAllOffTest`(12개, 끝에서 끝), `M7AppTest`(단추 3개), 사진 `ABScreenshotTest` 960~969. 결정 AB-1~AB-4: `계획/1.25-AB-개발계획.md`.
 
+### 6-15. 회사 근무주기 찾기 → 급여 → 광장 (1.26.0 묶음 AC, SPAT-01~06)
+
+- **자료** `tools/data/company-cycles.csv`(조사 148줄 그대로) → `tools/cycles_build.py` → `remote/v1/cycles.json`(원격 파일 kind `cycles`, `RemoteFiles.KINDS`). 순서·시간 글을 주기 코드(D 주간·E 오후·N 야간·X 당번·B 비번·O 휴무)와 근무 시각으로 바꿔요. 순서 상태 EXACT 36·USUAL 28(“6근2휴”처럼 셈만 있어 흔한 순서를 채움)·NONE 84(형태만, 그중 매달 근무표 6), 근무 시각 있는 줄 139. 고친 자료는 `--check`로 파일과 맞는지 보고, 서명은 통합이 `tools/remote_sign.py`로(개인 키는 저장소 밖).
+- **core** `plaza/PublicCycles.kt`(읽기·검색: 이름·초성·업종·근무형태, 2글자부터, 칩만으로도), `CycleOrders.kt`(형태별 흔한 순서 후보·하루씩 고치기), `PublicSetup.kt`(줄 + 고른 순서 → 회사 설정 파일의 근무·순서, 보낼 쪽지 '공개 자료 확인·고침 (cNNN)'/'처음 제공', `PublicPay` 업종 → 간편 급여 형태·흔한 수당 추정).
+- **앱** `company/PublicCycleApply.kt`: 줄을 회사 설정 파일 글로 만들어 `CompanyShare.apply`(동료 파일과 같은 길, 오늘부터·지난날 그대로), `PublicUse`(어느 줄·고른 순서·급여 권유 닫음·올리기 권유 간격·보낸 id)를 `company` 설정에 — 이 휴대폰에만(백업 안 함). 화면 `ui/company/PublicCycleUi.kt`(카드·공개 자료 줄·적용 시트·처음 제공 카드), `PublicCycleNudges.kt`(달력·급여 화면의 다음 단계 카드: 급여 → 광장).
+- **길** 첫 설정 회사 찾기(서버 없어도 열림) → 시트에서 순서만 고름(`pickPublic`, `SetupSource.Kind.PUBLIC`) → 시간·오늘·저장, `FirstSetup.save`가 `PublicUse`를 남기고 손으로 만든 설정 초대는 끔. 설정 › 내 근무 › 근무 주기 › ‘회사 이름으로 근무주기 찾기’ → 회사 찾기 → 시트에서 순서·오늘 → `WriteGate` → 달력. 회사 찾기·광장 검색은 서버 결과 아래 공개 자료, 둘 다 없으면 ‘처음으로 회사 정보를 제공해 주세요!’.
+- **급여·광장** 급여 화면 `PayQuickSetup(fromCycle)`: 형태를 미리 고르고 업종 흔한 수당을 ‘확인 필요’로. 급여가 있거나 급여 권유를 닫으면 올리기 권유(보상 먼저, 보낼 것·안 보낼 것, 다음에 14·30·90일, 그만 볼게요). 제보 화면은 쪽지를 미리 채우고 ‘근무주기만 올리기’(급여 부분 빼고, 보상 없음)를 고를 수 있어요. 보낸 뒤 ‘광장 보기’로 그 회사 화면. 서버 쪽(근무주기만 들어온 첫 제보 검색, 보상 규칙)은 묶음 AF.
+- 시험 core `PublicCyclesTest`(9), 앱 끝에서 끝 `ACScreenshotTest`(20, 사진 1000~1019). 결정 AC-1~AC-7: `계획/1.26-AC-개발계획.md`.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
