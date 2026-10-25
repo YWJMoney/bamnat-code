@@ -130,7 +130,7 @@ fun CompanyReportScreen(
                         Text(if (fix) "정답을 알려 주셔서 고마워요" else "같은 회사 분들의 길잡이가 되어 주세요",
                             style = MaterialTheme.typography.headlineSmall)
                         // [SPAT-05] The reward first, as the user asked (2026-10-25 14:05): only with the pay, once it is up.
-                        if (public != null) PublicReportHead(public, cycleOnly, vm.hasPay, rewardLine(terms), onCycleOnly = vm::setCycleOnly)
+                        if (public != null) PublicReportHead(public, cycleOnly, vm.hasPay, rewardShort(terms), onCycleOnly = vm::setCycleOnly)
                         Text(
                             if (fix) "고친 설정을 보내 주시면, 같은 회사 분들이 확인한 뒤 회사 찾기의 설정이 바로잡혀요."
                             else "내 근무표와 급여 계산 방식을 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",

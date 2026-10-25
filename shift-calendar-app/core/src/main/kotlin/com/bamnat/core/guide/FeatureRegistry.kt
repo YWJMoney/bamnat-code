@@ -527,6 +527,10 @@ object FeatureRegistry {
         f("data.movePhone", "BAK-01", "새 휴대폰으로 옮기기", "기록과 모든 설정을 백업 파일 하나로 옮겨요. 이 휴대폰에만 남는 것(지도 위치·알람 소리 등)도 알려 줘요",
             ALL, "설정 › 데이터 › 새 휴대폰으로 옮기기", at(Place.SETTINGS_DATA, "새 휴대폰으로 옮기기"), "새 휴대폰", "기기 변경", "옮기기", "모든 설정",
             under = "data.backup"),
+        // ---- 1.26 묶음 AC (계획/1.26-AC-개발계획.md 414·417) ----
+        f("plaza.cycles", "SPAT-02", "회사 근무주기 찾기", "회사 이름·초성·업종·근무형태로 공개 자료의 근무주기를 찾아 순서와 오늘 날짜만 맞추면 달력에 넣어요. 없으면 처음으로 넣어 광장에 올려요",
+            setOf(SHIFT), "설정 › 내 근무 › 근무 주기 › 회사 이름으로 근무주기 찾기", at(Place.PATTERN), "회사 근무주기", "공개 자료",
+            "근무주기 찾기", "회사 검색", "4조 2교대", "교대 주기", "처음 제공"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

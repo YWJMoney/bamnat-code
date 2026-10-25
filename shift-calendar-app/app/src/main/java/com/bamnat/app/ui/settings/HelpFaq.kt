@@ -505,13 +505,24 @@ internal object HelpFaq {
             listOf("데이터"),
             "새 휴대폰으로 옮기기 열기" to HelpAction.Page(SettingsPage.DATA, MOVE_ROW),
         ),
+        // ---- 1.26 묶음 AC [SPAT-02][SPAT-05] ----
+        HelpTopic(
+            "publicCycles", "근무", "우리 회사 근무주기를 이름으로 찾을 수 있나요?",
+            "네. 첫 설정의 회사 찾기나 설정 › 내 근무 › 근무 주기 › ‘회사 이름으로 근무주기 찾기’에서 회사 이름·초성·업종·4조 2교대 같은 근무형태로 찾아요. " +
+                "기사·채용 공고·노무 사이트에 나온 ‘공개 자료 기반’ 근무주기라서 회사가 확인한 정보는 아니에요. 카드마다 신뢰도·출처·시점이 있어요. " +
+                "순서가 없는 회사는 흔한 순서를 골라 맞추고, ‘오늘이 주기의 몇 번째 날인가요?’를 고르면 오늘부터 달력에 들어가요. " +
+                "아무 곳에도 없으면 ‘처음으로 회사 정보를 제공해 주세요!’에서 직접 넣고 광장에 올릴 수 있어요. 급여 정보까지 함께 올려 채택되면 보상을 드리고, 근무주기만 올리면 보상은 없어요.",
+            listOf("회사 근무주기", "공개 자료", "근무주기 찾기", "회사 검색", "교대 주기", "4조 2교대", "처음 제공", "보상", "근무주기만"),
+            listOf("근무 주기", "회사 찾기", "광장"),
+            "근무 주기 열기" to HelpAction.Go(SettingsGo.PATTERN),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
     private val BY_TOPIC = mapOf(
         "alarm" to listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"),
         "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
-        "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import"),
+        "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import", "publicCycles"),
         "share" to listOf("share", "receive"),
         "company" to listOf("plaza"),
         "backup" to listOf("backup", "movePhone", "phoneCalendar"),

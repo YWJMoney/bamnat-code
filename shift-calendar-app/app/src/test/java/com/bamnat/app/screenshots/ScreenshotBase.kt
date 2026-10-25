@@ -1479,8 +1479,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
 
     override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
 
+    /** [SPAT-05] What was sent: the note and the setup file, to check that no amount went. */
+    val reports = mutableListOf<Pair<String, org.json.JSONObject>>()
+
     override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: org.json.JSONObject, ask: Boolean) =
-        status("r9", if (ask) "ask" else "pending", company, dept, if (verified) 2 else 1, 1, ask = ask)
+        status("r9".also { reports += note to setup }, if (ask) "ask" else "pending", company, dept, if (verified) 2 else 1, 1, ask = ask)
 
     override suspend fun status(id: String) = mine.firstOrNull { it.id == id }
     override suspend fun takeBack(device: String, id: String) = Unit

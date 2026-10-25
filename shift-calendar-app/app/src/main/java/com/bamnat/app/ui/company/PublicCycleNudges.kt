@@ -52,7 +52,7 @@ fun PublicWayNotice(modifier: Modifier = Modifier, onPay: () -> Unit, onShare: (
         when (publicStep(c, u, profile != null)) {
             PublicStep.PAY -> PublicPayCard(cycle, u.codes, onPay = onPay, onLater = { c.companyStore.updatePublicUse { it.copy(payClosed = true) } })
             PublicStep.SHARE -> PublicShareCard(
-                u, cycle, hasPay = profile != null, reward = rewardLine(cachedTerms()), onShare = onShare,
+                u, cycle, hasPay = profile != null, reward = rewardShort(cachedTerms()), onShare = onShare,
                 onLater = { c.companyStore.updatePublicUse { it.later() } },
                 onNever = { c.companyStore.updatePublicUse { it.copy(inviteNever = true) } },
             )

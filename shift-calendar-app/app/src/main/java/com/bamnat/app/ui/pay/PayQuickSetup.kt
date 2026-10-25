@@ -159,9 +159,16 @@ fun PayQuickSetup(
                     StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
                     SlipEntry { slipOpen = true }
-                    val ordered = listOfNotNull(guessed) + WorkForm.entries.filter { it != guessed }
+                    // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
+                    val first = cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed
+                    val ordered = listOfNotNull(first) + WorkForm.entries.filter { it != first }
                     ordered.forEach { f ->
-                        AnswerCard(f.label + if (f == guessed) " · 달력을 보면 이것 같아요" else "", f.detail, form == f) { pick { form = f } }
+                        val why = when {
+                            f != first -> ""
+                            cycleStart != null -> " · 회사 근무주기에서 골랐어요"
+                            else -> " · 달력을 보면 이것 같아요"
+                        }
+                        AnswerCard(f.label + why, f.detail, form == f) { pick { form = f } }
                     }
                 }
                 AMOUNT -> {

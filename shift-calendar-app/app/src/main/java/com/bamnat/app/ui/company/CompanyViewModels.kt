@@ -64,6 +64,8 @@ class CompanyFindViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     val query = MutableStateFlow("")
+    /** [SPAT-02] Whether coworkers' setups are searched too; without it only the public cycles are. */
+    val server: Boolean get() = c.companyApi.enabled
     private val again = MutableStateFlow(0)
     private val _result = MutableStateFlow<Result>(Result.Idle)
     val result: StateFlow<Result> = _result.asStateFlow()

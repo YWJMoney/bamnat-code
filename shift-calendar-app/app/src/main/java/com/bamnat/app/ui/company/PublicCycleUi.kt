@@ -201,13 +201,15 @@ fun PublicCycleSection(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FirstProviderCard(name: String, reward: String?, onStart: (String) -> Unit, modifier: Modifier = Modifier) {
+fun FirstProviderCard(name: String, reward: String?, onStart: (String) -> Unit, modifier: Modifier = Modifier, plaza: Boolean = true) {
     var form by rememberSaveable(name) { mutableStateOf<String?>(null) }
     SoftCard(modifier, highlighted = true) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("처음으로 회사 정보를 제공해 주세요!", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-            RewardPill(publicReward(reward))
-            Text("‘$name’의 근무주기를 넣어 주시면 같은 회사 분들이 검색해서 바로 맞춰요. 근무주기만 넣어도 올라가요.",
+            if (plaza) RewardPill(publicReward(reward))
+            Text(
+                if (plaza) "‘$name’의 근무주기를 넣어 주시면 같은 회사 분들이 검색해서 바로 맞춰요. 근무주기만 넣어도 올라가요."
+                else "‘$name’의 근무주기를 직접 넣어요. 근무형태를 고르면 흔한 순서부터 보여 드려요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("어떤 근무형태예요?", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -228,7 +230,7 @@ fun FirstProviderCard(name: String, reward: String?, onStart: (String) -> Unit, 
  * earns it; the server's own months when it says them. The rule itself is the company server's (묶음 AF).
  */
 internal fun publicReward(reward: String?): String =
-    "급여 정보까지 넣어 광장에 올리면 보상을 드려요" + (reward?.let { " · $it" } ?: "") + ". 근무주기만 올리면 보상은 없어요"
+    "급여 정보까지 넣어 광장에 올리면 보상을 드려요" + (reward?.let { " ($it)" } ?: "") + ". 근무주기만 올리면 보상은 없어요"
 
 /**
  * [SPAT-03] 근무주기 맞추기 outside the first setup: the order (the row's own, or one of the form's usual ones, or changed day by

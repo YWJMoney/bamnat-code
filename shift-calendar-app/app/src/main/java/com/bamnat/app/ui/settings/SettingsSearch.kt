@@ -231,6 +231,9 @@ internal object SettingsIndex {
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
         // ---- 1.25 묶음 X [PLAZA-06] ----
         row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
+        // ---- 1.26 묶음 AC [SPAT-02] ----
+        screen("${W.title} › 근무 주기", "회사 이름으로 근무주기 찾기", SettingsGo.PATTERN, "회사 근무주기", "공개 자료", "근무주기 검색", "회사 검색",
+            "4조 2교대", "3조 2교대", "교대 주기", "처음 제공"),
     )
 
     /** The best fits for [query], best first. */

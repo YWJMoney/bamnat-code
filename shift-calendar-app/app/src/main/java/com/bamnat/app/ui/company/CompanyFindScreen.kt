@@ -159,7 +159,9 @@ fun CompanyFindScreen(
                 HeroIcon(Icons.Outlined.Apartment)
                 Text(if (setup) "다니는 회사를 찾아볼까요?" else "회사 이름으로 찾아요", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "같은 회사 분들이 맞춰 둔 근무표와 급여 계산 방식을 그대로 가져와요. 금액은 각자 넣어요.",
+                    if (vm.server) "같은 회사 분들이 맞춰 둔 근무표와 급여 계산 방식을 그대로 가져와요. 금액은 각자 넣어요."
+                    // [SPAT-02] Without the company server: the public cycles only.
+                    else "기사·채용 공고·노무 사이트에 나온 회사 근무주기를 찾아요. 고른 뒤 내 근무와 맞춰 봐요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
@@ -191,14 +193,18 @@ fun CompanyFindScreen(
                         is CompanyFindViewModel.Result.Found -> if (r.hits.isEmpty()) {
                             if (PublicCycles.search(r.query).isEmpty()) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FirstProviderCard(r.query.trim(), rewardLine(terms), onStart = { form ->
+                                    FirstProviderCard(r.query.trim(), rewardShort(terms), onStart = { form ->
                                         keyboard?.hide()
                                         providing = PublicCycles.provided(r.query.trim(), form)
-                                    })
+                                    }, plaza = vm.server)
                                     if (setup) TextButton(onClick = { byHand(r.query) }) { Text("‘${r.query.trim()}’ 근무를 처음부터 직접 정할게요") }
+                                    else if (ready && vm.server) TextButton(onClick = { byHand(r.query) }) { Text("지금 쓰는 내 설정을 ‘${r.query.trim()}’로 나눌게요") }
                                 }
                             } else {
-                                NotFound(r.query, rewardLine(terms), ready) { byHand(r.query) }
+                                // [SPAT-02] The public rows below are the answer; the way to set it by hand stays one line.
+                                TextButton(onClick = { byHand(r.query) }) {
+                                    Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
+                                }
                             }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -276,22 +282,6 @@ private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
-        }
-    }
-}
-
-@Composable
-private fun NotFound(query: String, reward: String?, ready: Boolean, onByHand: () -> Unit) {
-    SoftCard(highlighted = true) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("아직 ‘$query’ 설정이 없어요", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (ready) "지금 쓰는 설정을 금액 없이 나눠 주시면, 같은 회사 분들은 다음부터 1분이면 끝나요. 처음 길을 내는 분이 되어 주세요!"
-                else "직접 맞춘 뒤 나눠 주시면, 같은 회사 분들은 다음부터 1분이면 끝나요. 처음 길을 내는 분이 되어 주세요!",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            reward?.let { RewardPill(it) }
-            Button(onClick = onByHand, modifier = Modifier.fillMaxWidth()) { Text(if (ready) "‘$query’로 내 설정 나누기" else "‘$query’ 설정 직접 하기") }
         }
     }
 }

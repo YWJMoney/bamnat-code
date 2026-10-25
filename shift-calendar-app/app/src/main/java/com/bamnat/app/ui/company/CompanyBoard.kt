@@ -204,6 +204,11 @@ fun CompanyBoardScreen(
                         else -> Unit
                     }
                 }
+                // [SPAT-02] The public cycles of the name searched, under the plaza's own and never like one of them (D79).
+                if (query.trim().length >= 2) item(key = "public-cycles") {
+                    PublicCycleSection(query, Modifier.padding(vertical = 8.dp), limit = 3,
+                        onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) }, onShare = onShare)
+                }
             }
         }
     }
