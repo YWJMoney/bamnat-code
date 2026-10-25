@@ -16,7 +16,7 @@ class RecurringMarks(private val file: File?) {
 
     @Synchronized
     fun all(): Map<Long, LocalDate> {
-        val stamp = file?.takeIf { it.exists() }?.lastModified() ?: 0L
+        val stamp = stampOf(file)
         if (stamp != readStamp) marks = null
         return marks ?: load().also { marks = it; readStamp = stamp }
     }
@@ -34,9 +34,12 @@ class RecurringMarks(private val file: File?) {
             val tmp = File(f.parentFile, f.name + ".tmp")
             tmp.writeText(o.toString())
             tmp.renameTo(f)
-            readStamp = f.lastModified()
+            readStamp = stampOf(f)
         }
     }
+
+    /** When and how long: a file system that keeps whole seconds still tells a restore's file from the one before. */
+    private fun stampOf(f: File?): Long = f?.takeIf { it.exists() }?.let { it.lastModified() * 31 + it.length() } ?: 0L
 
     private fun load(): Map<Long, LocalDate> = runCatching {
         val f = file?.takeIf { it.exists() } ?: return emptyMap()

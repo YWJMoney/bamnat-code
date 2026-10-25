@@ -16,7 +16,12 @@ import java.io.File
  * place on the map, the automatic backup's folder and key, consent records, alarm scheduling, other people's
  * calendars received, the phone calendars chosen (their ids are this phone's own) and what 밤낮 did here.
  */
-class SettingsFilesBackup(private val context: Context, private val calendarIds: () -> List<String> = { emptyList() }) {
+class SettingsFilesBackup(
+    private val context: Context,
+    private val calendarIds: () -> List<String> = { emptyList() },
+    /** Stores that keep these files in memory read them again, so a restore shows without restarting the app. */
+    private val onRestored: () -> Unit = {},
+) {
 
     /** One preferences file: all of its keys, or only [keys]. */
     internal class Part(val name: String, val keys: Set<String>? = null)
@@ -64,6 +69,7 @@ class SettingsFilesBackup(private val context: Context, private val calendarIds:
                 }
             }
         }
+        onRestored()
     }
 
     private fun marksFile(id: String): File =
@@ -104,16 +110,53 @@ class SettingsFilesBackup(private val context: Context, private val calendarIds:
             Part("calendar_import", keys = setOf("auto")),
         )
 
-        /** [BAK-01] Kept on this phone on purpose, with why (Z-D3); the test holds every preferences file to one list or the other. */
+        /**
+         * [BAK-01] [AppSettings] fields that stay on this phone, with why. Every other field goes in the backup's
+         * "settings"; a test fails when a new field is in neither.
+         */
+        val SETTINGS_ON_PHONE = mapOf(
+            "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
+            "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",
+            "previewTier" to "개발용 등급 미리 보기",
+            "swapCoversAnswered" to "옛 대근 고치기 질문, 복원한 기록에는 다시 물어요",
+            "reviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
+            "reviewAsked" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
+            "reviewAskedDay" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
+            "payReviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
+            "payReviewAsked" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
+            "monthRecapSeen" to "이 휴대폰에서 본 달 돌아보기",
+            "alarmSuggestMemory" to "알람 제안에 이 휴대폰에서 답한 것",
+        )
+
+        /** [BAK-01] Preferences files the backup already carries in parts of its own (설정, 기능 끄기, 조, 듀티 약어, 프로, 공유 링크). */
+        val ELSEWHERE = setOf("settings", "guide", "team_rosters", "duty_codes", "pro", "share_link")
+
+        /**
+         * [BAK-01] Kept on this phone on purpose, with why (Z-D3). "file:key" is one key of a file whose other keys
+         * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
+         */
         val DEVICE_ONLY = mapOf(
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
+            "inquiry" to "문의 기록은 이 휴대폰의 설치 번호로 열려요",
             "commute" to "출퇴근 장소의 지도 위 좌표는 다니는 파일에 넣지 않아요",
             "auto_backup" to "자동 백업 폴더와 열쇠(비밀값)",
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
+            "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
+            "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
+            "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",
             "calendar_import:chosen" to "고른 휴대폰 캘린더 번호는 이 휴대폰의 것",
+            "launch_config" to "회사 서버가 알려 주는 출시 설정, 새 휴대폰이 다시 받아요",
+            "ask" to "질문 카드가 오늘 몇 번 물었는지(답한 사실은 프로필로 가요)",
+            "browse" to "예시 달력 둘러보기, 새 휴대폰은 예시 없이 시작",
+            "app_notices" to "이 휴대폰에서 닫은 안내",
+            "hints" to "이 휴대폰에서 본 도움말 한 줄",
+            "clip_hint" to "이 휴대폰에서 본 붙여넣기 안내",
+            "share_way" to "이 휴대폰에서 본 나누기 권유",
+            "plaza_news" to "이 휴대폰이 받은 광장 소식",
+            "app_state" to "앱을 마지막으로 연 때(화면 되살리기)",
         )
     }
 }
