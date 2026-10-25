@@ -400,6 +400,17 @@ abstract class ScreenshotBase {
             if (y > to + 80) scrollUp((y - to).toInt(), across)
         }
 
+        /**
+         * [QA-10] Like [reveal], for what arrives a moment after the screen is still (the home's question card waits
+         * on the profile read off the main thread): waits for it where it will show before scrolling, so a busy CI
+         * runner does not scroll the top of the screen away while it is on its way (askHomeFolded, CI on 4b23652).
+         */
+        fun revealWhenReady(text: String, exact: Boolean = false) {
+            val end = System.nanoTime() + REACH_WAIT_NANOS
+            while (find(text, exact, prefix = false) == null && System.nanoTime() < end) settle()
+            reveal(text, exact)
+        }
+
         /** [DAY-02] Opens a day group when it is closed; a group with something to say may already be open. */
         fun openGroup(title: String) {
             val node = reach(title, exact = true, prefix = false, scrolls = 10, across = 0.5f)
