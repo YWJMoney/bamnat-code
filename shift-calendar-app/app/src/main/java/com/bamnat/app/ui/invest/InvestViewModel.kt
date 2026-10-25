@@ -221,6 +221,18 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         say("${p.title} ${p.side.label} 알림을 넘겼어요") { repo.addAlert(p) }
     }
 
+    /** [INV-40] Prices read from a 체결 내역 capture filled in; the lines still wait for 적기 (결정 D37). */
+    fun fillFromCapture(matches: List<com.bamnat.core.invest.FillMatcher.Match>, extra: List<com.bamnat.core.invest.TradeAlerts.Pending>) =
+        viewModelScope.launch {
+            val before = repo.alertsNow()
+            repo.fillAlerts(matches, extra)
+            val words = listOfNotNull(matches.size.takeIf { it > 0 }?.let { "단가 ${it}건을 채웠어요" }, extra.size.takeIf { it > 0 }?.let { "새 체결 ${it}건을 넣었어요" })
+            say(words.joinToString(", ") + ". 맞는지 보고 적기를 눌러 주세요") { repo.restoreAlerts(before) }
+        }
+
+    val fillGuideSeen: StateFlow<Boolean> = repo.fillGuideSeen.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun fillGuideShown() = viewModelScope.launch { repo.setFillGuideSeen() }
+
     /** The sheet saved the trade a found one opened; it no longer waits. */
     fun alertSaved(at: Long) = viewModelScope.launch { repo.dropAlert(at) }
 
@@ -335,7 +347,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         val qty = d.quantity ?: return false
         val price = d.price ?: return false
         val account = d.accountId?.takeIf { s.full.account(it)?.hidden == false } ?: 0L
-        val fees = com.bamnat.core.invest.InvestFees.suggest(d.market, d.side, qty, price, s.full.account(account))
+        val fees = com.bamnat.core.invest.InvestFees.suggest(d.market, d.side, qty, price, s.full.account(account), s.full.settings)
         saveTrade(Trade(accountId = account, date = s.today, symbol = d.symbol, name = d.name, market = d.market, side = d.side,
             quantity = qty, price = price, fxRate = if (d.market.foreign) s.settings.usdKrw else 1.0, fee = fees.fee, tax = fees.tax,
             tags = listOf(if (a.kind == com.bamnat.core.invest.AlarmKind.PLAN) "정기 적립" else a.kind.label), alarmId = a.id), null)

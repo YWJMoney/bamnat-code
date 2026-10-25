@@ -125,7 +125,12 @@ class AppContainer(context: Context) {
     suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
         captureInto(text, pkg, app, postedAt, fromMessenger).also {
             // [OBS-01] 기록 지점 9: how many, never what or how much.
-            if (it == MoneyRepository.Outcome.SAVED) journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+            if (it == MoneyRepository.Outcome.SAVED) {
+                journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+                // [TAX-01] A pay deposit just written becomes 월급 관측 (and 급여, so it is not added on top of the estimate).
+                runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt)) }
+                    .onFailure { e -> if (e is kotlinx.coroutines.CancellationException) throw e }
+            }
         }
 
     private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
@@ -170,6 +175,9 @@ class AppContainer(context: Context) {
     val payStore = PayStore(appContext)
     /** [LEAVE-01] The main calendar's 연차 원장. */
     val leaveRepository by lazy { com.bamnat.app.leave.LeaveRepository(database, scheduleRepository, payStore) }
+    /** [TAX-01][TAX-06] Calendar [id]'s 월급 관측 and tax answers, in its own database; the main one's otherwise. */
+    fun tax(id: String): com.bamnat.app.data.TaxRepository = com.bamnat.app.data.TaxRepository.of(
+        if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) database else calendars.database(id))
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },

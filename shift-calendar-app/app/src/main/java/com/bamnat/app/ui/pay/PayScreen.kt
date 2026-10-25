@@ -319,6 +319,17 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
+        val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
+        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
+            value = vm.takeHome(profile, shown.total, month)
+        }
+        takeHome?.let { f ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(com.bamnat.app.tax.TakeHomeLine.text(f, ::won), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.money.ProPill()
+            }
+        }
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
         if (closedSnap == null) Estimates.breakNote(result)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
