@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { Window } from "happy-dom";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
-import { server, signIn, report, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
 
 const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
@@ -102,7 +102,7 @@ async function signedIn(env) {
 test("[ADMUX-01] every screen opens without an error and without a style attribute", async () => {
   const { env } = await world();
   const t = await signedIn(env);
-  for (const s of ["home", "review", "inquiries", "dev", "companies", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings", "account", "more"]) {
+  for (const s of ["home", "inbox", "versions", "review", "inquiries", "dev", "companies", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings", "account", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -231,8 +231,9 @@ test("[ADMUX-03] this device's choices: colours, text size, bottom tabs", async 
   };
   // Home and three: a fourth takes the place of the one there longest.
   await flip("audit", true);
-  assert.match(t.text("#toast"), /3개까지라 검토 대신 활동 기록/);
-  assert.ok(!t.$('.tabs [data-nav="review"]'));
+  // [ADMUX-17] 받은함 is the first tab after home since 1.25, so it is the one that makes room.
+  assert.match(t.text("#toast"), /3개까지라 받은함 대신 활동 기록/);
+  assert.ok(!t.$('.tabs [data-nav="inbox"]'));
   assert.ok(t.$('.tabs [data-nav="audit"]'), "활동 기록 is a bottom tab now");
 });
 
@@ -321,4 +322,182 @@ test("[ADMUX-04] the palette offers what was opened last, and home the saved vie
   const chip = t.$('nav[aria-label="저장한 보기"] a');
   assert.ok(chip, "the saved view is on home");
   assert.equal(chip.getAttribute("href"), "#/inquiries?status=answered");
+});
+
+// ---- 1.25 묶음 AA: 받은함, 여러 판, 지표 기간, 광장 일괄 (끝에서 끝: 화면의 단추 → 서버가 가진 것) ----
+
+/** Remote files and Play are not reachable from a test; the page must still draw. */
+function offline(t) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response("", { status: 404 });
+  t.after(() => { globalThis.fetch = real; });
+}
+
+async function asOwner(env, t) {
+  const s = await signedIn(env);
+  const call = (m, p, body) => worker.fetch(new Request(ORIGIN + p, { method: m, headers: { cookie: s.jar.cookie, origin: ORIGIN, "x-admin": "1", "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined }), env).then((r) => r.json());
+  return { ...s, api: call };
+}
+
+test("[ADMUX-17] 받은함 lists what waits, 맡기 takes the question, 내일 볼게요 hides it on this device only", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/inbox");
+  assert.ok(u.$$("#main .rows.inbox li").length >= 4, "questions and the report wait");
+  assert.match(u.text("#main .rows.inbox"), /아무도 안 맡음/);
+  await u.click('#main [data-act="inbox-assign"]');
+  assert.match(u.text("#toast"), /내가 맡았어요/);
+  const mine = (await u.api("GET", "/api/admin/inquiries?who=mine")).inquiries;
+  assert.equal(mine.length, 1, "the server now holds the question as mine");
+  const before = u.$$("#main .rows.inbox li").length;
+  await u.click('#main [data-act="inbox-snooze"]');
+  assert.equal(u.$$("#main .rows.inbox li").length, before - 1);
+  assert.match(u.window.localStorage.getItem("bamnat-admin-snooze"), /:/);
+  await u.click("#toast [data-undo]");
+  assert.equal(u.$$("#main .rows.inbox li").length, before);
+  // Home sends 지금 할 일 to 받은함.
+  await u.go("#/home");
+  assert.ok(u.$('#main a[href="#/inbox"]'));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-18] 여러 판: 다시 대표로 asks first, then the earlier version is the rule again", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const owner = await signIn(call);
+  const v1 = await call("POST", "/api/reports", report(1), from(1));
+  await call("POST", "/api/reports", report(2), from(2));
+  await call("POST", "/api/reports", report(6), from(6));
+  const twelve = setup();
+  twelve.pay.rules.extra[3].percent = 0.12;
+  const v2 = await call("POST", "/api/reports", report(3, { setup: twelve }), from(3));
+  await call("POST", `/api/admin/groups/${v2.data.company.id}/${v2.data.setup}/adopt`, {}, owner);
+  const u = await asOwner(env, t);
+  await u.go("#/versions?show=history");
+  const btn = u.$('#main [data-act="version-promote"]');
+  assert.ok(btn, "the earlier version can come back");
+  await u.click(btn);
+  assert.match(u.text("dialog"), /v1을 다시 대표로 할까요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /다시 대표로 했어요/);
+  const live = DB.db.prepare("SELECT version, grp, source FROM rules WHERE superseded = 0").get();
+  assert.deepEqual([live.version, live.grp, live.source], [3, v1.data.setup, "promote"]);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-13] 지표: two dates ask the server for that period and the numbers follow", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/metrics");
+  assert.match(u.text("#main .meta"), /\(28일\)/);
+  for (const sec of ["활성", "광장", "문의", "오류", "원격 갱신"]) assert.match(u.text("#main"), new RegExp(sec), `${sec} section`);
+  const to = u.$("#mt-to").value;
+  const from = new Date(Date.parse(to) - 2 * 864e5).toISOString().slice(0, 10);
+  const el = u.$("#mt-from");
+  el.value = from;
+  el.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  await u.settle(30);
+  assert.match(u.text("#main .meta"), /\(3일\)/);
+  assert.match(u.window.location.hash, new RegExp(`from=${from}`));
+  assert.ok(u.$('#main [data-act="metric-clear"]'));
+  await u.click('#main [data-act="metric-clear"]');
+  await u.settle(30);
+  assert.match(u.text("#main .meta"), /\(28일\)/);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on the server", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const { call, env, DB } = s;
+  const a = await call("POST", "/api/reports", report(1), from(1));
+  for (const [n, body] of [[2, "첫 글이에요"], [3, "둘째 글이에요"]]) {
+    await call("POST", "/api/posts", { device: device(n), company: a.data.company.id, setup: a.data.setup, body }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/community?show=all");
+  await u.click('#main [data-act="post-pick"]');
+  await u.click('#main [data-act="post-pick-all"]');
+  assert.equal(u.$$("#main [data-pick-post]:checked").length, 2);
+  await u.click('#main [data-act="post-bulk"][data-key="hide"]');
+  assert.match(u.text("dialog"), /글 2개를 가릴까요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /2개 처리했어요/);
+  assert.deepEqual(DB.db.prepare("SELECT status FROM posts").all().map((p) => p.status), ["hidden", "hidden"]);
+  assert.deepEqual(u.errors, []);
+});
+
+// AE 1.26 시작
+test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", async () => {
+  const { call, env, DB } = await world();
+  const mark = (n) => String(n).repeat(64);
+  const made = await call("POST", "/api/invites/code", { phone: mark(1) }, { "x-device": device(1) });
+  await call("POST", "/api/invites/use", { code: made.data.code, source: "referrer", phone: mark(2) }, { "x-device": device(2), ...from(2) });
+  // [INVITE-08] One friend is enough here, and its first day was long ago by the server's clock.
+  DB.db.prepare("INSERT INTO settings (key, value) VALUES ('invite_friends', '1')").run();
+  DB.db.prepare("UPDATE invite_uses SET first_day = '2000-01-01'").run();
+  assert.equal((await call("POST", "/api/invites/seen", {}, { "x-device": device(2) })).data.status, "credited");
+  const t = await signedIn(env);
+  await t.go("#/rewards");
+  await t.click('[data-act="reward-tab"][data-key="paid"]');
+  await t.settle(30);
+  const main = t.$("#main").textContent;
+  assert.match(main, /친구 초대/);
+  assert.match(main, /보상 받음 1명/);
+  assert.match(main, /친구 1명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.ok(main.includes(made.data.code), "the code most friends came by");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends, days, months and the cap", async () => {
+  const { env, DB } = await world();
+  const t = await signedIn(env);
+  await t.go("#/settings");
+  await t.settle(30);
+  const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
+  assert.ok(card(), "the 친구 초대 card");
+  assert.match(card().textContent, /친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.match(card().textContent, /1년 상한\s+−\s+없음/);
+  const step = async (key, d) => {
+    t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
+    await t.settle();
+  };
+  await step("friends", -1);
+  await step("friends", -1);
+  await step("days", 1);
+  await step("capMonths", 1);
+  assert.match(card().textContent, /친구 3명이 8일 넘게 쓸 때마다 프로 1개월 · 1년에 1개월까지/);
+  card().querySelector('[data-act="save-friend"]').click();
+  await t.settle(30);
+  const rows = Object.fromEntries(DB.db.prepare("SELECT key, value FROM settings WHERE key LIKE 'invite_%'").all().map((r) => [r.key, r.value]));
+  assert.deepEqual(rows, { invite_friends: "3", invite_days: "8", invite_months: "1", invite_cap_months: "1" });
+  assert.match(t.text("#toast"), /친구 초대 규칙을 저장했어요/);
+  assert.deepEqual(t.errors, []);
+});
+// AE 1.26 끝
+
+test("[PLAZA-13] 회사·규칙: how many phones joined a company, and 안정 on a rule that settled (결정 D79)", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const a = await call("POST", "/api/reports", report(1, { company: "참여화학", verified: true }), from(1));
+  await call("POST", "/api/reports", report(2, { company: "참여화학" }), from(2));
+  for (const n of [3, 4, 5]) await call("POST", "/api/uses", { device: device(n), company: a.data.company.id, setup: a.data.setup }, from(n));
+  DB.db.prepare("UPDATE reports SET created_at = created_at - ?").run(31 * 24 * 60 * 60 * 1000);
+  DB.db.prepare("UPDATE rules SET adopted_at = adopted_at - ?").run(31 * 24 * 60 * 60 * 1000);
+  const u = await asOwner(env, t);
+  await u.go("#/companies");
+  assert.match(u.text("#main"), /참여화학.*참여 5/);
+  await u.go(`#/companies/${a.data.company.id}`);
+  await u.settle(20);
+  assert.match(u.text("#main"), /참여한 휴대폰 5대/);
+  assert.ok(u.$$("#main .pill.ok").some((p) => p.textContent === "안정"), "a settled rule says so");
+  assert.deepEqual(u.errors, []);
 });

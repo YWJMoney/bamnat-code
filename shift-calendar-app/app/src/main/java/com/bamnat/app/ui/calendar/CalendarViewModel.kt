@@ -190,6 +190,18 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
     }
 
+    /**
+     * [BAK-02] 1.25 Z: a backup brought back rewrites this file under the open calendar, so what it says is read
+     * again at once (목록 보기, 오늘의 흐름 접기, 공휴일 답) instead of after the app is closed and opened.
+     */
+    private val viewChanged = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, _ ->
+        runCatching {
+            _listView.value = p.getBoolean(K_LIST, false)
+            _flowFolded.value = if (p.contains(K_FLOW_FOLDED)) p.getBoolean(K_FLOW_FOLDED, false) else null
+            _holidaysKept.value = p.getStringSet(K_HOLIDAYS, emptySet())!!.toSet()
+        }
+    }
+
     /** [CAL-17] A tip said once in the snackbar, closed with 알겠어요; nothing to undo. */
     fun tip(text: String) {
         _messages.tryEmit(UndoMessage(text, actionLabel = "알겠어요") {})
@@ -197,6 +209,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [CAL-07] Months whose holidays the user works on purpose, per calendar: not asked again. */
     private val _holidaysKept = MutableStateFlow(runCatching { viewPrefs.getStringSet(K_HOLIDAYS, emptySet())!!.toSet() }.getOrDefault(emptySet()))
+
+    init { viewPrefs.registerOnSharedPreferenceChangeListener(viewChanged) }
+
+    override fun onCleared() {
+        viewPrefs.unregisterOnSharedPreferenceChangeListener(viewChanged)
+        super.onCleared()
+    }
 
     /**
      * [CAL-07] Public holidays the weekly pattern turns into work this month, for work by weekday
@@ -243,6 +262,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         if (profile == null) return null
         return runCatching { monthPay(profile.named(snapshot.kinds), snapshot, month).total }.getOrNull()
     }
+
+    /** [TAX-02] 세후 예상 for the summary's 예상 급여 (프로, 순번 380); null when locked. */
+    suspend fun takeHome(profile: PayProfile?, gross: Long?, month: YearMonth): Long? =
+        com.bamnat.app.tax.TakeHomeLine.forecast(container, container.calendars.active.value, profile, gross, month)?.net
 
     val memoDates: StateFlow<Set<LocalDate>> =
         // [NOTE-01] Only the memos that show on the calendar on screen.
@@ -720,15 +743,16 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule
             val before = schedule.updateDays(changes.keys.toList()) { entry -> changes[entry.date]?.let { nextShift(entry, it) } ?: entry }
-            _lastPaint.value = PaintUndo(
-                "${changes.size}일 근무를 넣었어요",
-                undo = {
-                    schedule.updateDays(before.keys.toList()) { now ->
-                        val was = before[now.date] ?: DayEntry(now.date)
-                        now.copy(override = was.override, customStart = was.customStart, customEnd = was.customEnd, customBreakMinutes = was.customBreakMinutes)
-                    }
-                },
-            )
+            val undo: suspend () -> Unit = {
+                schedule.updateDays(before.keys.toList()) { now ->
+                    val was = before[now.date] ?: DayEntry(now.date)
+                    now.copy(override = was.override, customStart = was.customStart, customEnd = was.customEnd, customBreakMinutes = was.customBreakMinutes)
+                }
+            }
+            // [READ-11] 방금 넣은 것 되돌리기 in 도구 too, after the bar is closed.
+            com.bamnat.app.ui.RecentFill.record("${changes.size}일 근무를 넣었어요", container.calendars.active.value, container.appScope, undo)
+            val recent = com.bamnat.app.ui.RecentFill.entry.value
+            _lastPaint.value = PaintUndo("${changes.size}일 근무를 넣었어요", undo = { com.bamnat.app.ui.RecentFill.clear(recent); undo() })
             // The bar says it and holds 되돌리기, so it is opened if it was not.
             if (_paint.value == null) _paint.value = PaintTool.Pick
         }

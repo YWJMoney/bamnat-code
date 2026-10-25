@@ -95,6 +95,8 @@ data class SettingEntry(
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
 /** [SET-05] The alarm page's row that moves every shift's alarms at once. */
 internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+/** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
+internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -201,6 +203,7 @@ internal object SettingsIndex {
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
         row(V, "사용 통계 보내기", "통계", "사용 기록", "익명", "보낼 내용"), // [STAT-01]
+        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board }, // [PLAZA-07]
         row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
@@ -218,6 +221,25 @@ internal object SettingsIndex {
         row(V, "앱 버전", "버전", "업데이트", row = "버전"),
         // O 1.23 (I)
         row(A, "알람 제안", "스마트 알람", "알람 추천", "늦게 끔", "알람 시간", "숨긴 제안", "다시 보기"), // [ALRM-03]
+        // [READ-04][READ-05][READ-08] 1.25 U: reading a roster or payslip photo, and its ways out.
+        screen(W.title, "근무표 사진이 안 읽힐 때", SettingsGo.DUTY_ROSTER, "사진 인식", "인식 안 돼", "어느 줄", "내 조", "사진 위에서 누르기", "무엇을 읽었는지", "기울어진 사진"),
+        screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
+        // 1.25 묶음 AB
+        row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
+        // ---- 1.25 묶음 Y [TIER-07] ----
+        screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),
+        // 1.25 Z
+        row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
+        // ---- 1.25 묶음 X [PLAZA-06] ----
+        row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
+        // ---- 1.26 묶음 AD [NAV-07] ----
+        row(C, TAB_ORDER_ROW, "첫 화면", "메뉴 순서", "시작 화면", "탭", "탭 순서", "메인 화면", "처음 화면", "메뉴 바꾸기", "메모부터"),
+        // ---- 1.26 묶음 AC [SPAT-02] ----
+        screen("${W.title} › 근무 주기", "회사 이름으로 근무주기 찾기", SettingsGo.PATTERN, "회사 근무주기", "공개 자료", "근무주기 검색", "회사 검색",
+            "4조 2교대", "3조 2교대", "교대 주기", "처음 제공"),
+        // ---- 1.26 묶음 AE [INVITE-02][INVITE-03] ----
+        screen("설정 › 프로", "친구 초대", SettingsGo.PRO, "초대", "초대 링크", "추천", "친구", "프로 한 달", "공짜 프로", "초대한 친구"),
+        screen("설정 › 프로", "초대 코드 넣기", SettingsGo.PRO, "초대 코드", "받은 코드", "친구 코드", "추천 코드", "코드 입력"),
     )
 
     /** The best fits for [query], best first. */

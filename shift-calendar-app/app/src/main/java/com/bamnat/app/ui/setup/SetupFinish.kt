@@ -85,7 +85,7 @@ internal fun AlarmStep(vm: SetupViewModel, d: SetupDraft) {
                     Text(ringLine(t, minutes), style = MaterialTheme.typography.bodyMedium,
                         color = if (minutes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (perShift) AlarmChoices(minutes, "${t.name} 알람", onPick = { vm.setAlarmFor(t.id, it) })
+                if (perShift) AlarmChoices(minutes, "${t.name} 알람", start = t.start, onPick = { vm.setAlarmFor(t.id, it) })
             }
         }
     }
@@ -103,7 +103,7 @@ internal fun AlarmStep(vm: SetupViewModel, d: SetupDraft) {
 /** 안 써요, 30분 … 2시간 전, or minutes typed in. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AlarmChoices(minutes: Int?, title: String, onPick: (Int?) -> Unit) {
+private fun AlarmChoices(minutes: Int?, title: String, start: java.time.LocalTime? = null, onPick: (Int?) -> Unit) {
     var typing by remember { mutableStateOf(false) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         FilterChip(selected = minutes == null, onClick = { onPick(null) }, label = { Text("안 써요") })
@@ -113,7 +113,19 @@ private fun AlarmChoices(minutes: Int?, title: String, onPick: (Int?) -> Unit) {
         val own = minutes != null && minutes !in SetupDraft.ALARM_CHOICES
         FilterChip(selected = own, onClick = { typing = true }, label = { Text(if (own) Fmt.offset(minutes!!) else "직접") })
     }
-    if (typing) {
+    // [ALRM-06] 1.25 Z (U14): one shift's alarm on the clock wheels, like the shift editor; all shifts at once by hours before.
+    if (typing && start != null) {
+        com.bamnat.app.ui.components.AlarmOffsetDialog(
+            title = title,
+            start = start,
+            initialMinutes = minutes ?: SetupDraft.DEFAULT_ALARM_MINUTES,
+            onDismiss = { typing = false },
+            onPick = {
+                typing = false
+                onPick(it)
+            },
+        )
+    } else if (typing) {
         DurationDialog(
             title = "$title · 출근 몇 분 전",
             initialMinutes = minutes ?: SetupDraft.DEFAULT_ALARM_MINUTES,
@@ -209,6 +221,10 @@ private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList
         SetupSource.Kind.TEMPLATE -> add("${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
         SetupSource.Kind.SERVER -> add("같은 회사 설정: ${source.name}${source.dept.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}")
         SetupSource.Kind.FILE -> add("동료가 보낸 설정" + source.name.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
+        SetupSource.Kind.PUBLIC -> add(
+            (if (source.id.isNullOrEmpty()) "처음 제공: " else "${com.bamnat.core.plaza.PublicCycles.BADGE}: ") +
+                "${source.name} · ${com.bamnat.core.plaza.PublicCycles.formName(source.dept)}",
+        )
         null -> Unit
     }
 }.joinToString("\n")

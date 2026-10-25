@@ -1336,6 +1336,12 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
                 }
             }
+            // [PLAZA-06] U25-나: the first setup, skipped or rushed, is one tap away where people ask too.
+            if (query.isBlank()) {
+                TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("처음 설정을 놓치셨나요? 처음 설정 다시 받기")
+                }
+            }
         }
     }
 }

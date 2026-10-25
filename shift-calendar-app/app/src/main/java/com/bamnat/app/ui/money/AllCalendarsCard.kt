@@ -40,9 +40,10 @@ import java.time.YearMonth
 internal fun rememberAllCalendarsMonth(month: YearMonth): AllCalendarsMonth? {
     val c = LocalContext.current.appContainer
     val parts by remember(c) { EveryCalendar.parts(c) }.collectAsStateWithLifecycle(null)
-    val all by produceState<AllCalendarsMonth?>(null, parts, month) {
-        val p = parts ?: return@produceState
-        value = withContext(Dispatchers.Default) { EveryCalendar.month(p, month) }
+    // [UX-10] 1.25 Z (U7): the last sum from the first frame.
+    val all by com.bamnat.app.ui.rememberLast("all:$month", parts, month) {
+        val p = parts ?: return@rememberLast com.bamnat.app.ui.LastValues.value("all:$month") as AllCalendarsMonth?
+        withContext(Dispatchers.Default) { EveryCalendar.month(p, month) }
     }
     return all
 }

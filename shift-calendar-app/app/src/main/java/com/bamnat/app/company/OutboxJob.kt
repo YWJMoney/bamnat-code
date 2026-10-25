@@ -25,7 +25,8 @@ class OutboxJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val c = applicationContext.appContainer
         running = c.appScope.launch {
-            val done = runCatching { send(c) }.getOrDefault(false)
+            // [PLAZA-07] The daily share has a job of its own (it waits for its day); the rest goes as soon as online.
+            val done = runCatching { if (params.jobId == SHARE_ID) c.autoShare.flush() else send(c) }.getOrDefault(false)
             jobFinished(params, !done)
         }
         return true
@@ -38,6 +39,8 @@ class OutboxJob : JobService() {
 
     companion object {
         private const val ID = 4403
+        /** [PLAZA-07] 결정 D79: the setup shared by itself, once a day at most. */
+        private const val SHARE_ID = 4404
         private val BACKOFF = TimeUnit.MINUTES.toMillis(15)
 
         fun schedule(context: Context) {
@@ -52,17 +55,36 @@ class OutboxJob : JobService() {
             )
         }
 
+        /**
+         * [PLAZA-07] The work order and pay way to share by themselves, not before [delayMs] (a day after the last). A
+         * one-off job like the rest, only while a change waits, so nothing runs at start.
+         */
+        fun scheduleShare(context: Context, delayMs: Long) {
+            val jobs = context.getSystemService(JobScheduler::class.java) ?: return
+            if (jobs.getPendingJob(SHARE_ID) != null) return
+            jobs.schedule(
+                JobInfo.Builder(SHARE_ID, ComponentName(context, OutboxJob::class.java))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setMinimumLatency(delayMs.coerceAtLeast(0))
+                    .setBackoffCriteria(BACKOFF, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
+                    .setPersisted(true)
+                    .build(),
+            )
+        }
+
         /** How many things wait to be sent, for 서버 연결 점검. */
         fun waiting(c: AppContainer): Int =
             (if (c.proStore.current.pendingConsent != null) 1 else 0) + c.inquiryStore.outbox.value.size +
-                c.calendars.calendars.value.filterNot { it.isExample }.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.count { c.shareLinksOf(it).unsent.value }
+                c.calendars.calendars.value.filterNot { it.isExample }.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.count { c.shareLinksOf(it).unsent.value } +
+                (if (c.autoShare.waiting) 1 else 0)
 
         /** Sends everything waiting; true when nothing is left. */
         suspend fun send(c: AppContainer): Boolean {
             val consent = c.sendConsent()
             val questions = InquiryOutbox.flush(c)
             val links = if (c.shareApi.enabled) c.shareSync.sendUnsent() else true
-            return consent && questions && links
+            val share = c.autoShare.flush()
+            return consent && questions && links && share
         }
     }
 }

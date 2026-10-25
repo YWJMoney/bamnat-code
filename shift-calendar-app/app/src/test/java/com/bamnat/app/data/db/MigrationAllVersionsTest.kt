@@ -234,6 +234,10 @@ class MigrationAllVersionsTest(private val from: Int) {
                 "yearStartEpochDay" to null, "note" to "이월", "pool" to "ANNUAL", "createdAt" to 1),
             // [LEAVE-11] Version 20's 연차 사용 촉진 기록, likewise new.
             "leave_notices" to mapOf("id" to 1, "lapseEpochDay" to 20818, "step" to "FIRST_NOTICE", "epochDay" to 20636, "note" to "메일", "createdAt" to 1),
+            // [TAX-01][TAX-06] Version 21's 월급 관측과 세금 설정, likewise new.
+            "pay_observations" to mapOf("id" to 1, "payMonth" to 202609, "net" to 2_812_340, "gross" to 3_200_000, "epochDay" to 20736,
+                "source" to "DEPOSIT", "kind" to "SALARY", "entryId" to 1, "hours" to null, "days" to null, "note" to "", "createdAt" to 1),
+            "tax_settings" to mapOf("key" to "biz.vat", "value" to "SIMPLE"),
         )
 
         /**

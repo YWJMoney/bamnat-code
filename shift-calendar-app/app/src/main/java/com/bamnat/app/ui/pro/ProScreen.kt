@@ -79,8 +79,10 @@ val PRO_PILLARS = listOf(
     Pillar("월급을 증명해요",
         listOf("급여 명세서 사진으로 맞춰 보고 다른 곳 짚기", "회사 임금 규칙 글로 자동 채우기", "기간을 골라 값 한 번에 바꾸기, 연도별 인상 계산",
             "월·연 급여 리포트 PDF·CSV(어떻게 계산했는지까지)", "지난달·작년 같은 달과 비교, 1년 급여·근무 흐름",
-            "못 쓴 연차가 돈으로 얼마인지(미사용 연차수당)"),
-        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE, Feature.LEAVE_PAYOUT)),
+            "못 쓴 연차가 돈으로 얼마인지(미사용 연차수당)",
+            "들어온 월급으로 맞춘 세전·세후 예상, 사업자 올해 세금과 내는 날"),
+        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE, Feature.LEAVE_PAYOUT,
+            Feature.TAX_FORECAST)),
     Pillar("근무를 어디서나",
         listOf("휴대폰 캘린더(삼성·구글 캘린더 앱)에 근무 자동 쓰기", "다른 캘린더 앱이 따라오는 구독 주소", "매일 자동 암호 백업(드라이브 같은 고른 파일에)",
             "달력마다 공유 링크 5개까지, 180일·1년", "근무표 PDF(한 달·1년, 인쇄용)"),
@@ -104,6 +106,7 @@ val PRO_COMPARE = listOf(
     Triple("백업 파일 저장, 앱 잠금, 화면 꾸미기, 문의", true, true),
     Triple("명세서 대조, 규칙 자동 인식, 값 일괄 적용", false, true),
     Triple("급여 리포트 PDF·CSV, 지난달·작년 비교", false, true),
+    Triple("세금 예측·실수령(세전·세후, 사업자 세금)", false, true),
     Triple("휴대폰 캘린더 쓰기, 캘린더 구독 주소", false, true),
     Triple("매일 자동 백업, 링크 5개·1년, 근무표 PDF", false, true),
     Triple("끄기 미션, 일어났는지 확인", false, true),
@@ -170,6 +173,9 @@ fun ProScreen(onBack: () -> Unit) {
                 StatusCard(gate, pro, zone)
                 ConsentWaiting(c, pro, onMessage = { message = it })
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
+                val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+                ProCollectionCard(gate, settings)
 
                 SectionCard(title = "프로가 더해 주는 것") {
                     PRO_PILLARS.forEachIndexed { i, p ->
@@ -208,6 +214,9 @@ fun ProScreen(onBack: () -> Unit) {
                 }
 
                 DayPassButton(gate)
+
+                // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 and 초대 코드 넣기.
+                InviteCard(c, onMessage = { message = it })
 
                 if (c.tierApi.enabled) {
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
@@ -324,10 +333,10 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     var code by rememberSaveable { mutableStateOf("") }
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되면 프로 이용권을 드려요. 받을수록 기간이 이어져요.",
+        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
-            Text("• 프로 ${item.months}개월 (${if (item.why == "rule") "회사 방식 채택" else "제안 반영"}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
+            Text("• 프로 ${item.months}개월 (${passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
                 style = MaterialTheme.typography.bodyMedium)
         }
         passes?.until?.let { Text("이용권은 ${dateWords(it.atZone(zone).toLocalDate())}까지예요.", style = MaterialTheme.typography.bodyMedium) }
@@ -427,6 +436,14 @@ private suspend fun runServer(onMessage: (String) -> Unit, block: suspend () -> 
     } catch (e: Exception) {
         onMessage(serverProblem("bad_response"))
     }
+}
+
+/** [MON-08][INVITE-05] Why a reward pass was given, as the server names it. */
+fun passWhy(why: String): String = when (why) {
+    "rule" -> "회사 방식 채택"
+    "rate" -> "임금표 채택"
+    "invite" -> "친구 초대"
+    else -> "제안 반영"
 }
 
 /** What to tell the user about a refusal from the company server here. */

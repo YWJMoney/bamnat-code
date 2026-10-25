@@ -1,5 +1,14 @@
 package com.bamnat.app.ui.memo
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import android.content.Intent
 import androidx.compose.foundation.background
@@ -22,7 +31,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -117,6 +125,21 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val bodyTools = remember { MemoBodyTools() }
     val background = memoBackground(memo.colorIndex)
+    // [UX-11] 1.25 Z (U10): the line being typed is kept in view by moving this scroll only, never the window.
+    val bodyScroll = rememberScrollState()
+    val follow = remember { CaretFollow() }
+    val editorScope = rememberCoroutineScope()
+    val caretRoom = with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() }
+    val onCaret: (androidx.compose.ui.layout.LayoutCoordinates, androidx.compose.ui.geometry.Rect, Boolean) -> Unit = { field, caret, animate ->
+        val content = follow.content
+        if (content != null && content.isAttached && field.isAttached) {
+            val top = content.localPositionOf(field, androidx.compose.ui.geometry.Offset(0f, caret.top)).y
+            val bottom = content.localPositionOf(field, androidx.compose.ui.geometry.Offset(0f, caret.bottom)).y
+            com.bamnat.core.memo.CaretScroll.target(bodyScroll.value, follow.viewport, top, bottom, caretRoom)?.let { to ->
+                editorScope.launch { if (animate) bodyScroll.animateScrollTo(to) else bodyScroll.scrollTo(to) }
+            }
+        }
+    }
 
     Scaffold(
         containerColor = background,
@@ -239,11 +262,31 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
+            // [UX-12] 1.25 Z (U19): a long memo's 맨 밑으로 / 맨 위로, shown while it is scrolled and gone 2 s after.
+            var jumpShown by remember { mutableStateOf(false) }
+            LaunchedEffect(bodyScroll.isScrollInProgress) {
+                if (bodyScroll.isScrollInProgress) jumpShown = true
+                else { kotlinx.coroutines.delay(JUMP_SHOWN_MILLIS); jumpShown = false }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
             Column(
                 Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .fillMaxSize()
+                    .onSizeChanged { size ->
+                        val before = follow.viewport
+                        follow.viewport = size.height
+                        // The keyboard opening shrinks this: the caret's line comes back over it. Closing, nothing moves.
+                        if (before > 0 && com.bamnat.core.memo.CaretScroll.followResize(before, size.height)) follow.again?.invoke()
+                    }
+                    .semantics {
+                        // [UX-12] Without the button's moment on screen, TalkBack can still go to either end.
+                        customActions = listOf(
+                            androidx.compose.ui.semantics.CustomAccessibilityAction("맨 밑으로") { editorScope.launch { bodyScroll.animateScrollTo(bodyScroll.maxValue) }; true },
+                            androidx.compose.ui.semantics.CustomAccessibilityAction("맨 위로") { editorScope.launch { bodyScroll.animateScrollTo(0) }; true },
+                        )
+                    }
+                    .verticalScroll(bodyScroll)
+                    .onGloballyPositioned { follow.content = it }
                     .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
                 PlainField(
@@ -266,7 +309,24 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         modifier = Modifier.heightIn(min = 240.dp),
                         autoFocus = memo.id == 0L && memo.title.isEmpty(),
                         tools = bodyTools,
+                        follow = follow,
+                        onCaret = onCaret,
                     )
+                }
+            }
+                val long = bodyScroll.maxValue > follow.viewport / 2
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = jumpShown && long,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                ) {
+                    val down = bodyScroll.canScrollForward
+                    androidx.compose.material3.SmallFloatingActionButton(onClick = {
+                        editorScope.launch { if (down) bodyScroll.animateScrollTo(bodyScroll.maxValue) else bodyScroll.animateScrollTo(0) }
+                    }) {
+                        Icon(if (down) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward, if (down) "맨 밑으로" else "맨 위로")
+                    }
                 }
             }
             offer?.let { found ->
@@ -418,6 +478,9 @@ private fun MemoBodyField(
     modifier: Modifier = Modifier,
     autoFocus: Boolean = false,
     tools: MemoBodyTools? = null,
+    follow: CaretFollow? = null,
+    /** [UX-11] The caret's line in the field ([LayoutCoordinates]) to keep in view; animated when typing moved it. */
+    onCaret: ((androidx.compose.ui.layout.LayoutCoordinates, androidx.compose.ui.geometry.Rect, Boolean) -> Unit)? = null,
 ) {
     val focus = remember { FocusRequester() }
     if (autoFocus) {
@@ -428,14 +491,25 @@ private fun MemoBodyField(
     if (field.text != value) field = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))
     var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     var focused by remember { mutableStateOf(false) }
-    val caretView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
-    val room = with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() }
-    LaunchedEffect(field.selection, field.text, layout, focused) {
-        val l = layout ?: return@LaunchedEffect
+    var coords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    // [UX-11] 1.25 Z (U10): the caret is followed when the text or the caret moves, not when the text is laid out
+    // again or the focus changes (the moments the keyboard and the opening screen were still moving).
+    fun caretNow(): Pair<androidx.compose.ui.layout.LayoutCoordinates, androidx.compose.ui.geometry.Rect>? {
+        val l = layout ?: return null
+        val c = coords ?: return null
+        return c to l.getCursorRect(field.selection.end.coerceIn(0, l.layoutInput.text.length))
+    }
+    LaunchedEffect(field.selection, field.text) {
         if (!focused) return@LaunchedEffect
-        val at = field.selection.end.coerceIn(0, l.layoutInput.text.length)
-        val caret = l.getCursorRect(at)
-        runCatching { caretView.bringIntoView(caret.copy(top = caret.top - room / 2, bottom = caret.bottom + room)) }
+        // One frame, so the new line is laid out before it is looked for.
+        androidx.compose.runtime.withFrameNanos { }
+        caretNow()?.let { (c, r) -> onCaret?.invoke(c, r, true) }
+    }
+    if (follow != null) {
+        DisposableEffect(follow) {
+            follow.again = { if (focused) caretNow()?.let { (c, r) -> onCaret?.invoke(c, r, false) } }
+            onDispose { follow.again = null }
+        }
     }
     if (tools != null) {
         // [NOTE-07] The bar's taps change the text where the caret is, like typing would.
@@ -483,7 +557,7 @@ private fun MemoBodyField(
             .fillMaxWidth()
             .focusRequester(focus)
             .onFocusChanged { focused = it.isFocused }
-            .bringIntoViewRequester(caretView),
+            .onGloballyPositioned { coords = it },
         textStyle = textStyle.copy(color = color),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -623,3 +697,14 @@ private fun shareText(memo: Memo): String = buildString {
         append(memo.body)
     }
 }.trimEnd()
+
+/** [UX-11] What the memo's scroll and its body field share to keep the caret's line in view. */
+internal class CaretFollow {
+    var content: androidx.compose.ui.layout.LayoutCoordinates? = null
+    var viewport = 0
+    /** Brings the caret back into view now (the keyboard opened); set by the body field while it is there. */
+    var again: (() -> Unit)? = null
+}
+
+/** [UX-12] How long 맨 밑으로 stays after the scroll stops. */
+private const val JUMP_SHOWN_MILLIS = 2_000L

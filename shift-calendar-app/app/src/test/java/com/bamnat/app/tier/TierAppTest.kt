@@ -111,6 +111,8 @@ class TierAppTest {
                 "AUTO_BACKUP" to Tier.PRO, "MORE_LINKS" to Tier.PRO, "ROSTER_PDF" to Tier.PRO, "SURE_ALARM" to Tier.PRO,
                 // [LEAVE-05] 1.22.0.
                 "LEAVE_PAYOUT" to Tier.PRO,
+                // [TAX-02] 1.25.0 W (결정 W-D4).
+                "TAX_FORECAST" to Tier.PRO,
                 "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },

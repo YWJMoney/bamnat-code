@@ -142,6 +142,7 @@ class RemoteFilesStore(
                 RemoteFiles.HOLIDAYS -> com.bamnat.core.holiday.KoreanHolidays.use(f)
                 RemoteFiles.TAXES -> com.bamnat.core.invest.InvestTaxes.use(f)
                 RemoteFiles.ALARM_GUIDE -> com.bamnat.core.remote.AlarmGuides.use(f)
+                RemoteFiles.CYCLES -> com.bamnat.core.plaza.PublicCycles.use(f)
             }
         }
     }

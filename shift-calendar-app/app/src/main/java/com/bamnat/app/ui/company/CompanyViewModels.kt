@@ -3,8 +3,12 @@ package com.bamnat.app.ui.company
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyDraft
+import com.bamnat.app.company.PublicUse
+import com.bamnat.core.plaza.PublicSetup
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyHit
 import com.bamnat.app.company.CompanyPage
@@ -42,6 +46,9 @@ private object TermsCache {
     @Volatile var value: CompanyTerms? = null
 }
 
+/** [SPAT-05] The terms last read, for a card that does not ask the server itself. */
+internal fun cachedTerms(): CompanyTerms? = TermsCache.value
+
 private suspend fun AppContainer.loadTerms(): CompanyTerms? =
     TermsCache.value ?: runCatching { companyApi.terms() }.getOrNull()?.also { TermsCache.value = it }
 
@@ -57,6 +64,8 @@ class CompanyFindViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     val query = MutableStateFlow("")
+    /** [SPAT-02] Whether coworkers' setups are searched too; without it only the public cycles are. */
+    val server: Boolean get() = c.companyApi.enabled
     private val again = MutableStateFlow(0)
     private val _result = MutableStateFlow<Result>(Result.Idle)
     val result: StateFlow<Result> = _result.asStateFlow()
@@ -75,7 +84,8 @@ class CompanyFindViewModel(private val c: AppContainer) : ViewModel() {
                 delay(300)
                 _result.value = Result.Searching
                 _result.value = try {
-                    Result.Found(q, c.companyApi.search(q))
+                    // [SPAT-02] Without the company server the public rows are still searched, on the screen.
+                    Result.Found(q, if (c.companyApi.enabled) c.companyApi.search(q) else emptyList())
                 } catch (e: CompanyException) {
                     Result.Failed(q, e.code)
                 }
@@ -173,6 +183,10 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     }
     val hasPay: Boolean get() = c.payStore.profile.value != null
 
+    // [PLAZA-09] Before init: load() fills it.
+    private val _room = MutableStateFlow<Room?>(null)
+    val room: StateFlow<Room?> = _room.asStateFlow()
+
     init {
         load()
     }
@@ -185,6 +199,49 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
             } catch (e: CompanyException) {
                 State.Failed(e.code)
             }
+            loadRoom()
+        }
+    }
+
+    /**
+     * [PLAZA-09] 회사 방 for a member (결정 D79): the version in use with its state (제보 1 · 확인 중, 대표 판, 안정) and only what
+     * the others changed against this phone's own setup, as cards with 이 값 쓰기.
+     */
+    data class Room(val page: com.bamnat.app.company.RoomPage, val cards: List<com.bamnat.core.plaza.RoomCard>, val taken: Set<String> = emptySet())
+
+    private suspend fun loadRoom() {
+        val page = (_state.value as? State.Loaded)?.page ?: return
+        if (!page.member) { _room.value = null; return }
+        val r = runCatching { c.companyApi.room(c.companyStore.device, page.id) }.getOrNull() ?: run { _room.value = null; return }
+        _room.value = Room(r, roomCards(r), _room.value?.taken.orEmpty())
+    }
+
+    private suspend fun roomCards(r: com.bamnat.app.company.RoomPage): List<com.bamnat.core.plaza.RoomCard> {
+        val mine = runCatching { c.companyShare.exportForServer().toString() }.getOrNull() ?: return emptyList()
+        val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
+            .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
+        return com.bamnat.core.plaza.RoomCards.cards(mine, versions)
+    }
+
+    /** 이 값 쓰기: one value of the version behind [card], the rest of the user's setup as it was. */
+    fun take(card: com.bamnat.core.plaza.RoomCard, done: (String, Boolean) -> Unit) {
+        val room = _room.value ?: return
+        val from = (room.page.others + listOfNotNull(room.page.base)).firstOrNull { it.setup == card.from } ?: return
+        viewModelScope.launch {
+            val ok = try {
+                c.companyShare.takeOne(from.text, card.key)
+            } catch (e: BackupException) {
+                false
+            } catch (e: org.json.JSONException) {
+                false
+            }
+            if (ok) {
+                c.telemetry.event("plaza_take", card.key.substringBefore(':'))
+                // [PLAZA-07] A change of the user's own goes to the plaza too, after the one-time yes.
+                c.autoShare.saved()
+                _room.value = Room(room.page, roomCards(room.page), room.taken + "${card.key}=${card.after}")
+            }
+            done(if (ok) "${card.label}${com.bamnat.app.ui.Fmt.obj(card.label)} 바꿨어요. 내 금액은 그대로예요" else "이 값은 따로 쓸 수 없어요. 판 전체를 쓰면 바뀌어요", ok)
         }
     }
 
@@ -198,16 +255,32 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val result = c.companyShare.apply(setup.text, rotation = true, todayStep = todayStep)
+                // [PLAZA-07] 결정 D79: applying is joining. The pay way comes only then, so the page is read again as a member.
+                var text = setup.text
+                if (setup.payHidden || !page.member) {
+                    val m = c.companyApi.join(c.companyStore.device, page.id, com.bamnat.app.company.AutoShare.CAL)
+                    if (!m.joined) {
+                        failed(companyProblem(m.error ?: "member"))
+                        return@launch
+                    }
+                    c.companyStore.setMember(page.id, page.name)
+                    val again = c.companyApi.company(page.id)
+                    _state.value = State.Loaded(again)
+                    again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
+                }
+                val result = c.companyShare.apply(text, rotation = true, todayStep = todayStep)
                 // [PLZ-08] 쓰는 사람: this phone now uses this rule set, and no longer the one before.
                 val before = c.companyStore.applied.value
                 if (before != null && before.setup != setup.id) launch { runCatching { c.companyApi.use(c.companyStore.device, before.company, before.setup, false) } }
-                launch { runCatching { c.companyApi.use(c.companyStore.device, page.id, setup.id, true) } }
+                launch { runCatching { c.companyApi.use(c.companyStore.device, page.id, setup.id, true, com.bamnat.app.company.AutoShare.CAL) } }
                 c.companyStore.setApplied(AppliedSetup(page.id, page.name, setup.dept, setup.id, setup.version, setup.adopted, Today.instant()))
                 c.companyStore.setDraft(null)
-                c.companyStore.pendingPay = if (result.pendingPay) setup.text else null
+                c.companyStore.pendingPay = if (result.pendingPay) text else null
                 c.telemetry.event("company_apply", if (setup.adopted) "adopted" else "pending")
+                loadRoom()
                 done(result)
+            } catch (e: CompanyException) {
+                failed(companyProblem(e.code, e.field))
             } catch (e: BackupException) {
                 failed(e.message ?: "설정을 넣지 못했어요")
             } catch (e: org.json.JSONException) {
@@ -274,6 +347,22 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
 
     fun closeHistory() {
         _history.value = null
+    }
+
+    /** [PLAZA-02] This phone's own setup (amounts left out), for "내 설정으로 채우기"; null when there is none to read. */
+    suspend fun mine(): String? = runCatching { c.companyShare.exportForServer().toString() }.getOrNull()
+
+    /**
+     * [PLAZA-02] 다른 점 말하기 sent: a proposal on [setup] with the [lines] that changed and the edited [text] as the
+     * rule people vote on. The talk opens on it, so the user sees it went up.
+     */
+    fun propose(page: CompanyPage, setup: SharedSetup, lines: List<com.bamnat.app.company.ChangeLine>, text: String, why: String, done: (String?) -> Unit) {
+        talk.show(page.id, setup.id, "${page.name} · ${setup.dept.ifEmpty { "회사 전체" }}")
+        val body = proposalBody(com.bamnat.core.plaza.SetupCompare.rows(setup.text, text), why)
+        talk.send(body, kind = "proposal", change = lines, setupText = text) { e ->
+            if (e == null) c.telemetry.event("plaza_diff", "sent") else talk.close()
+            done(e)
+        }
     }
 }
 
@@ -377,6 +466,7 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         kind: String = "talk",
         change: List<com.bamnat.app.company.ChangeLine> = emptyList(),
         withSetup: Boolean = false,
+        setupText: String? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
@@ -388,7 +478,9 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         if (!com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         scope.launch {
             val error = try {
-                val setup = if (kind == "proposal" && withSetup) c.companyShare.exportForServer() else null
+                // [PLAZA-02] 다른 점 말하기 sends the company's setup as edited, not this phone's own.
+                val setup = if (kind != "proposal") null
+                else setupText?.let { org.json.JSONObject(it) } ?: if (withSetup) c.companyShare.exportForServer() else null
                 if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
@@ -724,14 +816,46 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
 
 /** [COMM-01] The first pay setup from a shared setup: only the user's own amounts are asked. */
 class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
-    val text: String? = c.companyStore.pendingPay
+    /** The company's setup the pay is made from; [PLAZA-03] the user's own corrections replace it ([useEdited]). */
+    var text: String? by androidx.compose.runtime.mutableStateOf(c.companyStore.pendingPay)
+        private set
     val company: String = c.companyStore.applied.value?.company.orEmpty()
+    /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
+    private val applied: AppliedSetup? = c.companyStore.applied.value
+    val canPropose: Boolean get() = applied != null
+    /** [PLAZA-03] What the user changed before the pay was made, so the screen can say their pay uses it. */
+    var edited: Boolean by androidx.compose.runtime.mutableStateOf(false)
+        private set
     /** [COMM-13] 입사일 if a pay profile (an earlier one, or one restored) already knows it. */
     val hireDate: java.time.LocalDate? = c.payStore.profile.value?.hireDate
-    val needs: List<CompanyShare.AmountNeed> = text?.let { runCatching { c.companyShare.amountNeeds(it) }.getOrNull() }.orEmpty()
-    val summary: CompanySummary? = text?.let { runCatching { c.companyShare.summarize(it) }.getOrNull() }
+    val needs: List<CompanyShare.AmountNeed> get() = text?.let { runCatching { c.companyShare.amountNeeds(it) }.getOrNull() }.orEmpty()
+    val summary: CompanySummary? get() = text?.let { runCatching { c.companyShare.summarize(it) }.getOrNull() }
+    /** [PLAZA-03] Whether the company's setup has pay rules to ask "이 회사 급여 설정을 쓸까요?" about. */
+    val hasRules: Boolean get() = summary?.hasRules == true
+    /** [PLAZA-03] The talk the 다른 점 proposal goes to. */
+    val talk = TalkHolder(c, viewModelScope)
+
+    /**
+     * [PLAZA-03] U26 "우리 급여는 달라요": the user's corrected [setup] becomes this phone's (the pay is made from it), and the
+     * same goes to the company's talk as a proposal with the changed [lines], so the next coworker finds it right.
+     */
+    fun useEdited(lines: List<com.bamnat.app.company.ChangeLine>, setup: String, why: String, done: (String?) -> Unit) {
+        val a = applied ?: return done(null)
+        val base = text ?: return done(null)
+        talk.show(a.companyId, a.setup, "${a.company} · ${a.dept.ifEmpty { "회사 전체" }}")
+        talk.send(proposalBody(com.bamnat.core.plaza.SetupCompare.rows(base, setup), why), kind = "proposal", change = lines, setupText = setup) { e ->
+            talk.close()
+            // Their own pay uses what they said, sent or not: a refused post (rules, limits) never blocks the pay.
+            text = setup
+            edited = true
+            c.companyStore.pendingPay = setup
+            c.telemetry.event("plaza_diff", if (e == null) "pay_sent" else "pay_kept")
+            done(e)
+        }
+    }
+
     /** A share of 기본급 bonus, e.g. 상여 짝수 달 100%: said so the user does not look for its amount. */
-    val bonusNote: String? = text?.let { t ->
+    val bonusNote: String? get() = text?.let { t ->
         runCatching {
             JSONObject(t).optJSONObject("pay")?.optJSONArray("items")?.let { a ->
                 (0 until a.length()).map { a.getJSONObject(it) }
@@ -789,16 +913,38 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     private val _offline = MutableStateFlow(false)
     val offline: StateFlow<Boolean> = _offline.asStateFlow()
 
+    /**
+     * [SPAT-05] The public row this phone's cycle came from, while nothing went up from it: the form starts from its
+     * company and goes as '공개 자료 확인·고침' with the order the user chose (or '처음 제공' for a company not in it).
+     */
+    val publicUse: PublicUse? = c.companyStore.publicUse.value?.takeIf { it.sentId == null }
+    /** Whether a pay setup is there to go with the cycle; without one only the cycle can go. */
+    val hasPay: Boolean get() = c.payStore.profile.value != null
+    private val _cycleOnly = MutableStateFlow(!hasPay)
+    /** [SPAT-05] 근무주기만 올리기: no pay part, and so no reward (사용자 2026-10-25 14:05). */
+    val cycleOnly: StateFlow<Boolean> = _cycleOnly.asStateFlow()
+
     init {
         viewModelScope.launch { _terms.value = c.loadTerms() }
         viewModelScope.launch {
-            _preview.value = runCatching { c.companyShare.summarize(c.companyShare.exportForServer().toString()) }.getOrNull()
+            _cycleOnly.collect { only ->
+                _preview.value = runCatching { c.companyShare.summarize(c.companyShare.exportForServer(only).toString()) }.getOrNull()
+            }
         }
     }
 
-    /** Where the form starts: the company typed during setup or corrected, else the setup in use. */
+    fun setCycleOnly(only: Boolean) {
+        // Pay that is not there cannot go.
+        _cycleOnly.value = only || !hasPay
+    }
+
+    /** Where the form starts: the company typed during setup or corrected, else the setup in use, else the public row's. */
     val start: CompanyDraft? = c.companyStore.draft.value
         ?: c.companyStore.applied.value?.let { CompanyDraft(it.company, it.dept) }
+        ?: publicUse?.let { u -> CompanyDraft(u.company, u.cycle?.site.orEmpty().take(20)) }
+
+    /** [SPAT-05] The note a setup from a public row starts with; the user may add to it. */
+    val startNote: String = publicUse?.let { PublicSetup.note(it.cycle, it.codes, it.picked) }.orEmpty()
 
     /** Sends the setup; a text with an amount, phone or mail address is caught here before it goes. */
     fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false) {
@@ -812,15 +958,19 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
         _sending.value = Sending.Busy
         viewModelScope.launch {
             _sending.value = try {
-                val setup = c.companyShare.exportForServer()
+                val setup = c.companyShare.exportForServer(_cycleOnly.value)
                 // [PLZ-12][PLZ-13] Its job plaza and 시·도, or a rule for a whole job rather than one place.
                 val status = if (job.isEmpty() && region.isEmpty() && !topic) c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup)
                     else c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup, job, region, topic)
                 c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
+                // [PLAZA-07] Sending a company's setup joins it (결정 D79).
+                status.member?.takeIf { it.joined }?.let { c.companyStore.setMember(status.companyId, status.company) }
                 _statuses.value = _statuses.value + (status.id to status)
                 c.companyStore.setDraft(null)
-                c.telemetry.event("company_report", listOf(if (verified) "verified" else "plain", if (start?.fix == true) "fix" else "share",
-                    if (status.again) "again" else "new").joinToString(","))
+                // [SPAT-05] The way on from a public row ends here; the plaza page it went to opens next.
+                if (publicUse != null) c.companyStore.updatePublicUse { it.copy(sentId = status.id, companyId = status.companyId) }
+                c.telemetry.event("company_report", listOfNotNull(if (verified) "verified" else "plain", if (start?.fix == true) "fix" else "share",
+                    if (status.again) "again" else "new", "public".takeIf { publicUse != null }, "cycle".takeIf { _cycleOnly.value }).joinToString(","))
                 Sending.Sent(status)
             } catch (e: CompanyException) {
                 Sending.Failed(e.code, e.field)
@@ -895,10 +1045,29 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
         a?.takeIf { enabled && it.vote == null && Today.millis() >= later }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** A setup made or corrected by hand under a company's name and not shared yet. */
-    val invite: StateFlow<CompanyDraft?> = combine(c.companyStore.draft, c.companyStore.inviteClosed) { d, closed ->
-        d?.takeIf { enabled && !closed }
+    /**
+     * A setup made or corrected by hand under a company's name and not shared yet; [PLAZA-04] or one made by hand with no
+     * company (a draft with no name), until something is sent. Asked again 14, 30 and 90 days after each "다음에".
+     */
+    val invite: StateFlow<CompanyDraft?> = combine(c.companyStore.draft, c.companyStore.handMade, c.companyStore.inviteDue, c.companyStore.inviteNever,
+        c.companyStore.sent) { d, hand, due, never, sent ->
+        val draft = d ?: CompanyDraft("").takeIf { hand && sent.isEmpty() && c.companyStore.applied.value == null }
+        draft?.takeIf { enabled && com.bamnat.core.plaza.ShareAsk.due(never, due, Today.millis(), usesCompanySetup = false) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** [PLAZA-04] What would go, in the plaza's words and without amounts, so the user sees it before deciding. */
+    private val _preview = MutableStateFlow<List<String>>(emptyList())
+    val preview: StateFlow<List<String>> = _preview.asStateFlow()
+
+    fun loadPreview() {
+        if (_preview.value.isNotEmpty()) return
+        viewModelScope.launch {
+            _preview.value = runCatching {
+                com.bamnat.core.plaza.SetupFacts.read(c.companyShare.exportForServer().toString())
+                    .groupBy { it.group }.map { (g, f) -> "${g.title}: " + f.take(2).joinToString(" · ") { "${it.label} ${it.value}" } + if (f.size > 2) " 외 ${f.size - 2}가지" else "" }
+            }.getOrDefault(emptyList())
+        }
+    }
 
     init {
         if (enabled) viewModelScope.launch { _terms.value = c.loadTerms() }
@@ -927,9 +1096,10 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
         c.telemetry.event("company_fix_start")
     }
 
-    fun closeInvite() {
-        c.companyStore.closeInvite()
-        c.telemetry.event("company_invite_close")
+    /** [PLAZA-04] "다음에" (14, 30, then 90 days) or, with [never], "그만 볼게요". */
+    fun closeInvite(never: Boolean = false) {
+        if (never) c.companyStore.inviteNever() else c.companyStore.inviteLater(Today.millis())
+        c.telemetry.event("company_invite_close", if (never) "never" else "later")
     }
 }
 

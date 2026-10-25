@@ -18,6 +18,7 @@ import com.bamnat.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AlarmAdd
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -103,7 +104,6 @@ import com.bamnat.app.ui.components.rememberNotificationAsk
 import com.bamnat.app.ui.settings.WarningLine
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.ui.Fmt
-import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.MinutesStepper
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.ShiftBadge
@@ -128,8 +128,18 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
     }
     var deleting by remember { mutableStateOf<ShiftType?>(null) }
     var addingSet by remember { mutableStateOf<ShiftTypeSet?>(null) }
+    // [SHFT-09] 1.25 Z (U25-가): a delete says what it changed and offers 되돌리기.
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(vm) {
+        vm.removed.collect { removal ->
+            val r = snackbar.showSnackbar("‘${removal.name}’ 근무를 삭제했어요", actionLabel = "되돌리기",
+                duration = androidx.compose.material3.SnackbarDuration.Long)
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.restore(removal)
+        }
+    }
 
     Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { CalendarTitle("근무 종류와 시간", vm) },
@@ -190,6 +200,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     canMoveUp = index > 0,
                     canMoveDown = index < list.lastIndex,
                     onClick = { editing = type },
+                    // [SHFT-09] Any kind can go while another is left; the last one cannot.
+                    onDelete = if (list.size > 1) ({ deleting = type }) else null,
                     onMoveUp = { vm.move(type.id, -1) },
                     onMoveDown = { vm.move(type.id, 1) },
                     modifier = Modifier.animateItem(),
@@ -263,14 +275,13 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         )
     }
     deleting?.let { type ->
-        ConfirmDialog(
-            title = "‘${type.name}’ 근무를 삭제할까요?",
-            message = "패턴에서 이 근무가 들어간 칸은 쉬는 날이 되고, 이 근무로 바꿔 둔 날은 패턴대로 돌아가요.",
-            confirmLabel = "삭제",
-            destructive = true,
+        DeleteShiftTypeDialog(
+            type = type,
+            others = types.orEmpty().filter { it.id != type.id },
+            use = { vm.use(type.id) },
             onDismiss = { deleting = null },
-            onConfirm = {
-                vm.delete(type.id)
+            onDelete = { replaceWith ->
+                vm.deleteUndoable(type.id, replaceWith)
                 deleting = null
             },
         )
@@ -286,6 +297,7 @@ private fun ShiftTypeRow(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     modifier: Modifier = Modifier,
+    onDelete: (() -> Unit)? = null,
 ) {
     Surface(
         onClick = onClick,
@@ -330,6 +342,12 @@ private fun ShiftTypeRow(
                     }
                 }
             }
+            // [SHFT-09] 1.25 Z (U25-가): deleting was only at the bottom of the editor, where people did not find it.
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.DeleteOutline, "${type.name} 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             // [DAILY-08] Drag the handle up or down: one place for each row's height passed.
             val step = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
             val up by androidx.compose.runtime.rememberUpdatedState(onMoveUp)
@@ -356,6 +374,65 @@ private fun ShiftTypeRow(
             }
         }
     }
+}
+
+/**
+ * [SHFT-09] 1.25 Z (U25-가): deleting a kind of shift says where it is used and asks what those days become: another
+ * kind (모닝 → 주간, the work order too) or empty (the order's step is a day off, a day put on by hand follows the order).
+ * The snackbar after it takes everything back.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DeleteShiftTypeDialog(
+    type: ShiftType,
+    others: List<ShiftType>,
+    use: suspend () -> com.bamnat.app.data.ScheduleRepository.ShiftTypeUse,
+    onDismiss: () -> Unit,
+    onDelete: (replaceWith: Long?) -> Unit,
+) {
+    val used by androidx.compose.runtime.produceState<com.bamnat.app.data.ScheduleRepository.ShiftTypeUse?>(null, type.id) { value = use() }
+    var replaceWith by rememberSaveable(type.id) { mutableStateOf<Long?>(null) }
+    val u = used
+    val inUse = u != null && (u.days > 0 || u.inPattern)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("‘${type.name}’ 근무를 삭제할까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    when {
+                        u == null -> "쓰인 곳을 보고 있어요…"
+                        !inUse -> "달력에 쓰인 곳이 없어요."
+                        else -> listOfNotNull(
+                            "달력에 따로 넣은 날 ${u.days}일".takeIf { u.days > 0 },
+                            "근무 주기에 들어 있어요".takeIf { u.inPattern },
+                        ).joinToString(" · ") + ". 그 날들을 어떻게 할까요?"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (inUse) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        com.bamnat.app.ui.components.FilterChip(selected = replaceWith == null, onClick = { replaceWith = null },
+                            label = { Text("비우기") })
+                        for (o in others) {
+                            com.bamnat.app.ui.components.FilterChip(selected = replaceWith == o.id, onClick = { replaceWith = o.id },
+                                label = { Text("${o.name}${Fmt.ro(o.name)} 바꾸기") })
+                        }
+                    }
+                    Text(
+                        if (replaceWith == null) "근무 주기의 이 칸은 쉬는 날이 되고, 따로 넣은 날은 주기대로 돌아가요."
+                        else others.firstOrNull { it.id == replaceWith }?.name.orEmpty().let { n -> "근무 주기와 따로 넣은 날이 모두 ‘$n’${Fmt.ro(n)} 바뀌어요." },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text("삭제한 뒤에도 바로 되돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onDelete(replaceWith) }, enabled = u != null) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 private val OffsetChoices = listOf(0, 10, 30, 60, 90, 120, 180)
@@ -412,41 +489,15 @@ private fun OffsetPickerDialog(
     initial: Int? = null,
     onPick: (Int) -> Unit,
 ) {
-    var minutes by remember { mutableIntStateOf(initial ?: OffsetChoices.firstOrNull { it !in existing } ?: 45) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial != null) "알람 시각 바꾸기" else "알람 추가") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("근무 시작 몇 분 전에 울릴까요? 1분 단위로 정할 수 있어요.", style = MaterialTheme.typography.bodyMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (m in OffsetChoices) {
-                        FilterChip(
-                            selected = minutes == m,
-                            onClick = { minutes = m },
-                            enabled = m !in existing,
-                            label = { Text(Fmt.offset(m)) },
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("직접 입력", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    // [UX-01] To the minute: tap for 1분, hold to run, or tap the value to type it.
-                    MinutesStepper(minutes = minutes, onChange = { minutes = it }, step = 1, max = 24 * 60,
-                        dialogTitle = "몇 분 전에 울릴까요?")
-                }
-                if (minutes in existing) {
-                    Text("이미 있는 알람이에요", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                } else {
-                    Text("${Fmt.time(start.minusMinutes(minutes.toLong()))}에 울려요", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onPick(minutes) }, enabled = minutes !in existing) { Text(if (initial != null) "바꾸기" else "추가") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    // [ALRM-06] 1.25 Z (U14): the same hour and minute wheels as every other time, as a clock time or hours before.
+    com.bamnat.app.ui.components.AlarmOffsetDialog(
+        title = if (initial != null) "알람 시각 바꾸기" else "알람 추가",
+        start = start,
+        initialMinutes = initial ?: OffsetChoices.firstOrNull { it != 0 && it !in existing } ?: 45,
+        existing = existing,
+        confirmLabel = if (initial != null) "바꾸기" else "추가",
+        onDismiss = onDismiss,
+        onPick = onPick,
     )
 }
 

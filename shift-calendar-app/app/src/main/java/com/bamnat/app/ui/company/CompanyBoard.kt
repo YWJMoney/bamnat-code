@@ -108,6 +108,8 @@ fun CompanyBoardScreen(
     val diffs by vm.diffs.collectAsStateWithLifecycle()
     // [STAB-01] Read on the key's own frame, or half-built Korean letters double or drop.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+    // [NAV-02][PLAZA-03] Back first clears the search, as 메모·설정 do (1.25 Z), and only then leaves the screen.
+    androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) { vm.query.value = "" }
     val keyboard = LocalSoftwareKeyboardController.current
     val tab = if (adopted) chosen else voting
     val list = rememberLazyListState()
@@ -202,6 +204,11 @@ fun CompanyBoardScreen(
                         else -> Unit
                     }
                 }
+                // [SPAT-02] The public cycles of the name searched, under the plaza's own and never like one of them (D79).
+                if (query.trim().length >= 2) item(key = "public-cycles") {
+                    PublicCycleSection(query, Modifier.padding(vertical = 8.dp), limit = 3,
+                        onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) }, onShare = onShare)
+                }
             }
         }
     }
@@ -221,7 +228,7 @@ private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit, l
                     Text(listOfNotNull(label, item.dept.ifEmpty { "회사 전체" }, item.cycle, if (item.pay) "급여 계산 포함" else "근무표만").filter { it.isNotEmpty() }.joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (item.adopted) StatusChip("채택${item.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
+                if (item.adopted) StatusChip("대표 판${item.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
             }
             // [PLZ-12] Its plaza and region, and whether it is a whole job's rule rather than one place's.
             val place = listOfNotNull(

@@ -31,7 +31,15 @@
 // POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
 // POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
 // GET    /api/plaza/news?since=   [COMM-10] header X-Device: my rule changed, my rule or proposal adopted
+// *      /api/members             [PLAZA-07] header X-Device (GET) or body device: the companies this phone joined; POST joins, DELETE leaves
+// GET    /api/companies/:id/room  [PLAZA-09] header X-Device, members only: my version, the department's others, 안정
+//                                 [PLAZA-08] GET /api/companies/:id, its history and talk give pay only to members (X-Device)
 // GET    /api/inquiries/:id/photos/:n  [SRV-06] header X-Device: a photo sent with one's own question
+// GET    /api/invites             [INVITE-05] header X-Device: my invite code, the rules and how far my friends are; POST /code
+//                                 makes the code, /use reports the code this phone came by, /seen once a day it is opened
+//                                 [INVITE-02][INVITE-03]; GET /api/invites/rules the rules, with no install [INVITE-08]
+// GET/POST /api/admin/settings/invite [INVITE-08] the developer app's 친구 초대 rules
+// GET    /i/:code                 [INVITE-02] the invite link: on to the Play listing with the code as install referrer
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
 // cleaned. No IP address is stored: limits and "the same network within an hour" use hashes salted
@@ -80,7 +88,9 @@ const LIMITS = {
 
 /** Until changed in the developer app. */
 // [COMM-07] adoptAgree: the share of 맞았어요 among everyone who voted that a rule set needs to be adopted on its own.
-const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90 };
+// [PLAZA-10] firstMonths: the pass for a company's or department's first setup with its pay; at most firstCapYear a year.
+const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90,
+  firstMonths: 1, firstCapYear: 3 };
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
@@ -156,6 +166,8 @@ export default {
     } catch (e) {
       if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
       console.error(e && e.stack ? e.stack : String(e));
+      // [ADMUX-16] 지표 › 오류 counts these; a count that cannot be written changes nothing.
+      if (env.DB) await countError(env).catch(() => {});
       return json({ error: "server" }, 500);
     } finally {
       if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
@@ -176,6 +188,7 @@ export default {
  * and the admin log after a year, usage totals after 400 days and a closed question's photos after 90.
  */
 export async function prune(env, now) {
+  const invite = await inviteSettings(env);
   await batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
@@ -192,6 +205,8 @@ export async function prune(env, now) {
     stmt(env, "INSERT INTO plaza_results (device, kind, post_id, result, company_id, at) SELECT device, 'unmuted', NULL, 'ended', NULL, until FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM plaza_results WHERE at < ?", now - 30 * DAY),
+    // [PLAZA-07] A company left is forgotten once its 30 days are over.
+    stmt(env, "DELETE FROM members WHERE left = 1 AND since < ?", now - MEMBER.waitDays * DAY),
     stmt(env, "DELETE FROM requests WHERE expires < ?", now),
     stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
     // [MON-03][MON-09] Spent link codes, and purchases 30 days after they ended.
@@ -199,6 +214,10 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
+    // [INVITE-04][INVITE-08] An invite never counted goes 30 days after its period of use could end; a counted one after
+    // a year (so the same phone is not counted again, and a cap).
+    stmt(env, "DELETE FROM invite_uses WHERE status NOT IN ('credited', 'capped', 'qualified') AND created_at < ?", now - inviteDeadline(invite)),
+    stmt(env, "DELETE FROM invite_uses WHERE status IN ('credited', 'capped', 'qualified') AND created_at < ?", now - INVITE.keepCounted),
     // [STAT-01] Day totals after 400 days (a year and its month before, to compare); [SRV-06] a closed
     // question's photos 90 days after it closed, its words stay until the question goes.
     stmt(env, "DELETE FROM usage_days WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
@@ -289,6 +308,8 @@ async function routeOnce(request, env, url) {
   }
   if (path === "/admin") return Response.redirect(`${url.origin}/admin/`, 301);
   if (path.startsWith("/admin/")) return adminFile(path, request);
+  // AE 1.26: the invite link needs no database.
+  if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
   if (path === "/api/admin/health" && method === "GET") return json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
@@ -296,7 +317,11 @@ async function routeOnce(request, env, url) {
   if (path === "/api/companies" && method === "GET") return search(env, url);
   if (path === "/api/terms" && method === "GET") return json(await terms(env));
   let m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})$/);
-  if (m && method === "GET") return company(env, m[1]);
+  if (m && method === "GET") return company(env, m[1], request);
+  // [PLAZA-07][PLAZA-09] 회사 참여 and the company's room.
+  if (path === "/api/members") return members(request, env);
+  m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/room$/);
+  if (m && method === "GET") return room(request, env, m[1]);
   if (path === "/api/reports" && method === "POST") return report(request, env);
   m = path.match(/^\/api\/reports\/([A-Za-z0-9]{22})$/);
   if (m && method === "GET") return reportStatus(env, m[1]);
@@ -316,7 +341,7 @@ async function routeOnce(request, env, url) {
   if (path === "/api/nick" && method === "POST") return setNick(request, env);
   if (path === "/api/plazas" && method === "GET") return json(await plazas(env));
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/history$/);
-  if (m && method === "GET") return history(env, m[1], url);
+  if (m && method === "GET") return history(env, m[1], url, request);
   if (path === "/api/rates" && method === "GET") return rates(request, env, url);
   if (path === "/api/rates" && method === "POST") return addRate(request, env);
   m = path.match(/^\/api\/rates\/([A-Za-z0-9]{22})(\/vote)?$/);
@@ -331,6 +356,7 @@ async function routeOnce(request, env, url) {
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
     return money(request, env, path);
   }
+  if (path === "/api/invites" || path.startsWith("/api/invites/")) return invites(request, env, path, url);
   return json({ error: "not_found" }, 404);
 }
 
@@ -486,6 +512,24 @@ const SCHEMA = [
     auth TEXT NOT NULL, kinds TEXT NOT NULL, quiet_from INTEGER, quiet_to INTEGER, created_at INTEGER NOT NULL, sent_at INTEGER)`,
   "CREATE INDEX IF NOT EXISTS push_subscriptions_admin ON push_subscriptions (admin)",
   // H 1.23 끝
+  // AE 1.26 시작
+  // [INVITE-02] One invite code per install, with the phone mark of the phone that made it (to see a self-invite).
+  "CREATE TABLE IF NOT EXISTS invite_codes (code TEXT PRIMARY KEY, device TEXT NOT NULL UNIQUE, phone TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",
+  // [INVITE-03][INVITE-04][INVITE-08] A phone that came by an invite, once per install and once per phone mark: waiting
+  // (in its period of use), qualified (used it, counting toward the inviter's next months), credited or capped (in a
+  // group that gave months, or over the cap; batch is that reward's id), expired (never came back) or refused (self).
+  `CREATE TABLE IF NOT EXISTS invite_uses (invitee TEXT PRIMARY KEY, phone TEXT NOT NULL UNIQUE, code TEXT NOT NULL, inviter TEXT NOT NULL,
+    source TEXT NOT NULL, first_day TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, decided_at INTEGER,
+    batch TEXT)`,
+  "CREATE INDEX IF NOT EXISTS invite_uses_inviter ON invite_uses (inviter, status)",
+  // AE 1.26 끝
+  // AF 1.26 시작
+  // [PLAZA-07] The companies a phone joined (결정 D79): one per calendar (cal is the app's own calendar id, or "app" from an
+  // app before 1.26), changed again only 30 days after [since], two at a time. [left] keeps the 30 days after leaving.
+  `CREATE TABLE IF NOT EXISTS members (device TEXT NOT NULL, cal TEXT NOT NULL, company_id TEXT NOT NULL, since INTEGER NOT NULL,
+    left INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (device, cal))`,
+  "CREATE INDEX IF NOT EXISTS members_company ON members (company_id, left)",
+  // AF 1.26 끝
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -527,6 +571,11 @@ const COLUMNS = [
   "ALTER TABLE reply_templates ADD COLUMN topic TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE reply_templates ADD COLUMN uses INTEGER NOT NULL DEFAULT 0",
   // H 1.23 끝
+  // X 1.25 시작
+  // [PLAZA-03] The 초성 of a name ("ㅅㅅㅈㅈ"), filled by search when empty, so 초성 alone finds a company.
+  "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
+  // X 1.25 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -615,7 +664,7 @@ export async function flushMeter(env, now, force = false) {
     ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
 }
 
-const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days'";
+const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year'";
 
 async function settings(env) {
   return readSettings(await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`));
@@ -632,7 +681,9 @@ function readSettings(rows) {
     adoptPersons: read("adopt_persons", DEFAULTS.adoptPersons), amendPersons: read("amend_persons", DEFAULTS.amendPersons),
     // [PLZ-03] Rewards go out as passes by themselves, up to a cap per phone (결정 D33).
     autoReward: read("auto_reward", DEFAULTS.autoReward), rewardCapMonths: read("reward_cap_months", DEFAULTS.rewardCapMonths),
-    rewardCapDays: read("reward_cap_days", DEFAULTS.rewardCapDays) };
+    rewardCapDays: read("reward_cap_days", DEFAULTS.rewardCapDays),
+    // [PLAZA-10] The new-information pass (결정 D79, AF-D5).
+    firstMonths: read("first_months", DEFAULTS.firstMonths), firstCapYear: read("first_cap_year", DEFAULTS.firstCapYear) };
 }
 
 async function salt(env) {
@@ -835,6 +886,14 @@ export function cleanSetup(raw, texts = []) {
     if (steps.length === 0) refuse("setup", "rotation");
     setup.rotation = { anchor: date(r.anchor, "rotation"), steps };
   }
+  // [PLAZA-01] Weekday and part-time work by the day of the week (Monday first), and a roster that comes every
+  // month (간호): kept only when sent, so every setup from before keeps its fingerprint.
+  if (given(raw.weekly)) {
+    const w = list(raw.weekly, 7, "weekly");
+    if (w.length !== 7) refuse("setup", "weekly");
+    setup.weekly = w.map((s) => (s === null ? null : names.has(s) ? s : refuse("setup", "weekly")));
+  }
+  if (bool(raw.roster ?? false, "roster")) setup.roster = true;
 
   if (given(raw.pay)) {
     const p = object(raw.pay, "pay");
@@ -909,6 +968,8 @@ function rules(raw, names, kindIds, say) {
   // [PAYS-03] Kept only when set, so a setup without them keeps its fingerprint and reads as before.
   if (bool(r.supervisory ?? false, "rules")) out.supervisory = true;
   if (bool(r.holidaysU5 ?? false, "rules")) out.holidaysU5 = true;
+  // [HOLI-01][PLAZA-01] 1.25 V: 교대제라 상관없음 is told from 대체휴일 (both unpaid 빨간날) only by this, kept only then.
+  if (out.publicHolidays === false && r.holidayWork === "SHIFT_NORMAL") out.holidayWork = "SHIFT_NORMAL";
   const breakPay = oneOf(r.breakPay ?? "UNPAID", BREAK_PAY, "rules");
   if (breakPay !== "UNPAID") out.breakPay = breakPay;
   if (given(r.publicHolidayAs)) {
@@ -1090,6 +1151,9 @@ function canonical(setup) {
   const r = p?.rules;
   return {
     cycle: smallestRotation((setup.rotation?.steps ?? []).map(sig)),
+    // [PLAZA-01] Only when there, so a setup without them reads as it always did.
+    ...(setup.weekly ? { weekly: setup.weekly.map(sig) } : {}),
+    ...(setup.roster ? { roster: true } : {}),
     kinds: kinds.map((k) => ({ key: kindOf(k.id), ...k.sig })).sort((a, b) => cmp(a.key, b.key)),
     pay: p ? {
       fiveOrMore: p.fiveOrMore,
@@ -1174,6 +1238,9 @@ export function describe(setup) {
   add("근무", setup.shiftTypes.map((t) => (t.off ? `${t.name}(쉬는 날)`
     : `${t.name} ${t.start ?? "?"}~${t.end ?? "?"}${t.break ? ` 휴게 ${t.break}분` : ""}`)).join(" · "));
   if (setup.rotation) add(`순서 ${setup.rotation.steps.length}일`, setup.rotation.steps.map((s) => s ?? "빈 날").join(" "));
+  // [PLAZA-01] The same words as the app's SetupFacts.
+  if (setup.weekly) add("요일별 근무", setup.weekly.map((s, i) => `${"월화수목금토일"[i]} ${s ?? "쉼"}`).join(" · "));
+  if (setup.roster) add("근무표", "매달 근무표(순서 없음)");
   const kinds = kindLines(setup);
   const kindName = (id) => kinds.find((k) => k.id === String(id))?.name ?? KIND_NAMES[id] ?? `종류 ${id}`;
   add("연장·휴무일 근무", kinds.filter((k) => !k.hidden).map((k) => `${k.name}(${timingText(k)})`).join(" · "));
@@ -1190,13 +1257,20 @@ export function describe(setup) {
       if (r.nightStart && r.nightEnd) add("야간 시간", `${r.nightStart}~${r.nightEnd}`);
       add("쉬는 날 근무", { LAW: "법대로", HOLIDAY: "휴일근로로", OVERTIME: "연장근로로" }[r.restDay]);
       add("주휴일", r.weeklyHolidayDay === "FIRST_REST" ? "쉬는 날 중 첫날" : WEEKDAYS[r.weeklyHolidayDay] ? `${WEEKDAYS[r.weeklyHolidayDay]}요일` : "");
-      if (r.publicHolidayAs) add("공휴일 근무", `${kindName(r.publicHolidayAs)} 방식`);
+      // [HOLI-01] 빨간날 근무, one of four ways; the same words as the app's SetupFacts.holidayText.
+      if (p.fiveOrMore || r.publicHolidayAs) add("빨간날 근무", holidayText(r, r.publicHolidayAs ? kindName(r.publicHolidayAs) : null));
       for (const [k, e] of Object.entries(r.extra)) add(kindName(k), ruleText(e));
       for (const [k, by] of Object.entries(r.extraByShift)) for (const [n, e] of Object.entries(by)) add(`${kindName(k)} · ${n}`, ruleText(e));
     }
     if (p.items.length) add("수당", p.items.map(itemText).join(" · "));
   }
   return lines;
+}
+
+function holidayText(r, kind) {
+  const mode = r.publicHolidays === false ? (r.holidayWork === "SHIFT_NORMAL" ? "SHIFT_NORMAL" : "SUBSTITUTE") : r.publicHolidayAs ? "AS_EXTRA" : "PREMIUM";
+  const head = { PREMIUM: "휴일 근무 가산", AS_EXTRA: `${kind ?? "특근"}처럼`, SUBSTITUTE: "대체휴일", SHIFT_NORMAL: "교대제라 상관없음" }[mode];
+  return head + (r.holidayByStart && (mode === "PREMIUM" || mode === "AS_EXTRA") ? ", 밤샘은 시작한 날로" : "");
 }
 
 function timingText(k) {
@@ -1258,12 +1332,15 @@ function diffLines(before, after) {
 
 /** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
 async function terms(env) {
-  const { adoptPoints, rewardMonths, adoptAgree } = await settings(env);
-  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree };
+  const { adoptPoints, rewardMonths, adoptAgree, firstMonths } = await settings(env);
+  // [PLAZA-10] firstMonths: what a company's first setup with its pay earns, said on the app's 나누기 card.
+  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree, firstMonths };
 }
 
 async function search(env, url) {
-  const q = normName(url.searchParams.get("q")).slice(0, 40);
+  const raw = String(url.searchParams.get("q") ?? "");
+  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) });
+  const q = normName(raw).slice(0, 40);
   if (q.length < 2) return json({ companies: [] });
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await all(env, `
@@ -1278,26 +1355,92 @@ async function search(env, url) {
     LIMIT 200`, like, q);
   const exact = (c) => (c.norm === q || c.alias_exact === 1 ? 1 : 0);
   const companies = rows
-    // One that coworkers are still checking shows up for its exact name, never as a guess.
-    .filter((c) => c.adopted > 0 || (exact(c) && c.pending > 0))
+    // [PLAZA-10] One that coworkers are still checking shows up too (결정 D79): a company's first setup, even with only its
+    // shifts, is there for the next person to find and use at once.
+    .filter((c) => c.adopted > 0 || c.pending > 0)
     .sort((a, b) => exact(b) - exact(a) || (b.adopted > 0) - (a.adopted > 0) || b.norm.startsWith(q) - a.norm.startsWith(q) ||
       a.name.length - b.name.length || a.name.localeCompare(b.name, "ko"))
     .slice(0, 20)
-    .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending }));
+    .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
+      ...(c.adopted === 0 ? { first: true } : {}) }));
   return json({ companies });
 }
 
-async function company(env, id) {
+// ---- [PLAZA-03] 초성 찾기 ----
+
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+
+/**
+ * The 초성 of each Hangul syllable of [s] (U+AC00..U+D7A3 is (초성 × 21 + 중성) × 28 + 종성, so 초성 = (code − 0xAC00) / 588,
+ * The Unicode Standard 3.12); other letters and digits as they are. The app's core Choseong is the same rule.
+ */
+export function choseong(s) {
+  let out = "";
+  for (const ch of String(s ?? "")) {
+    const c = ch.codePointAt(0);
+    if (c >= 0xac00 && c <= 0xd7a3) out += CHO[Math.floor((c - 0xac00) / 588)];
+    else if (CHO.includes(ch)) out += ch;
+    else if (/[\p{L}\p{N}]/u.test(ch)) out += ch.toLowerCase();
+  }
+  return out;
+}
+
+/** Whether [q] is 초성 only (two or more), typed as compatibility jamo (ㅅ is U+3145). */
+export function isChoseong(q) {
+  const t = String(q ?? "").replace(/\s/g, "");
+  return t.length >= 2 && [...t].every((ch) => CHO.includes(ch));
+}
+
+/** Names whose 초성 were not worked out yet (new, renamed, or from before 1.25) get them, a batch at a time. */
+async function fillChoseong(env) {
+  const [cs, as] = await Promise.all([
+    all(env, "SELECT id, norm FROM companies WHERE cho = '' LIMIT 500"),
+    all(env, "SELECT norm FROM aliases WHERE cho = '' LIMIT 500"),
+  ]);
+  if (!cs.length && !as.length) return;
+  await batch(env, [
+    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ? WHERE id = ?", choseong(c.norm) || "-", c.id)),
+    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ? WHERE norm = ?", choseong(a.norm) || "-", a.norm)),
+  ]);
+}
+
+async function searchChoseong(env, q) {
+  await fillChoseong(env);
+  const like = `%${q}%`;
+  const rows = await all(env, `
+    SELECT c.id, c.name, c.cho,
+      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1 LIMIT 1) AS alias,
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+    FROM companies c
+    WHERE c.hidden = 0 AND c.merged_into IS NULL
+      AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
+    LIMIT 200`, like);
+  // [PLAZA-10] 초성 are a guess, so companies with a rule in use come first; a first setup still being checked is found too.
+  return rows.filter((c) => c.adopted > 0 || c.pending > 0)
+    .sort((a, b) => (b.adopted > 0) - (a.adopted > 0) || b.cho.startsWith(q) - a.cho.startsWith(q) || a.name.length - b.name.length ||
+      a.name.localeCompare(b.name, "ko"))
+    .slice(0, 20)
+    .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
+      ...(c.adopted === 0 ? { first: true } : {}) }));
+}
+
+async function company(env, id, request) {
   const c = await one(env, "SELECT * FROM companies WHERE id = ?", id);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   if (c.merged_into) return json({ mergedInto: c.merged_into });
+  // [PLAZA-08] Pay only for a phone that joined this company; anyone else (an app before 1.26 too) gets the shifts.
+  const who = await viewer(request, env, c.id);
+  const view = (text) => (who.member ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
+  const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
+  const now = Date.now();
   const { adoptPoints } = await settings(env);
   const aliases = (await all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", c.id)).map((a) => a.name);
   const setups = [];
   const rules = await all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id);
   for (const r of rules) {
     setups.push({ ...(await state(env, c.id, r.grp, adoptPoints, true)), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at),
-      setup: shared(r.setup, c.name), lines: describe(JSON.parse(r.setup)) });
+      setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...(await payMark(env, c.id, r.dept_norm, r.grp, r.setup, who, now)) });
   }
   const groups = await all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
     GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id);
@@ -1319,12 +1462,216 @@ async function company(env, id) {
     const n = shown.get(rep.dept_norm) ?? 0;
     if (n >= 3) continue;
     shown.set(rep.dept_norm, n + 1);
-    setups.push({ ...s, dept: rep.dept, setup: shared(rep.setup, c.name), lines: describe(JSON.parse(rep.setup)) });
+    setups.push({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
+      ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) });
   }
-  return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups });
+  return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups,
+    member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } });
 }
 
 const shared = (text, name) => ({ ...JSON.parse(text), company: name });
+
+// AF 1.26 시작
+// ---- [PLAZA-07][PLAZA-08][PLAZA-09][PLAZA-10] 회사별 광장 (결정 D79) ----
+//
+// A company's pay way is for the people who picked that company: they joined it by applying its setup, sending their
+// own or saying so. Joining is a threshold, not a lock (anyone may pick a company), so it is kept high: one company
+// per calendar, another only 30 days later, two per phone, and a phone reading too much gets the shifts only for the
+// day. Everyone else, and apps before 1.26, still get shift times and their order, with "급여 방식 있음 · 확인 n명".
+
+const MEMBER = { perPhone: 2, waitDays: 30, readsPerDay: 120, joinsPerNetworkDay: 30, stablePhones: 3, stableDays: 30 };
+const CAL = /^[A-Za-z0-9_-]{1,24}$/;
+/** What a calendar is called here: the app's own id for it, or "app" from an app that does not say. */
+const calOf = (v) => (typeof v === "string" && CAL.test(v) ? v : "app");
+
+/** The lines of describe() that are about shifts and their order, never pay. */
+const SHIFT_LABELS = new Set(["근무", "요일별 근무", "근무표", "연장·휴무일 근무"]);
+export const shiftLines = (lines) => lines.filter(([label]) => SHIFT_LABELS.has(label) || label.startsWith("순서 "));
+
+/** A setup with its pay taken out, for a phone that did not join the company. */
+export function shiftsOnly(setup) {
+  const { pay, ...rest } = setup;
+  return rest;
+}
+
+const memberReads = new Map();
+
+/**
+ * Who is asking about [companyId]: their install (X-Device) and whether they joined it. A member reading pay more than
+ * [MEMBER.readsPerDay] times a day reads as anyone else until the next day ([limited]), counted in memory like the
+ * public lists so a read costs no write.
+ */
+async function viewer(request, env, companyId) {
+  const id = deviceId(request?.headers.get("x-device"));
+  if (!id) return { dev: null, member: false };
+  const dev = await deviceHash(id);
+  const row = await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0 LIMIT 1", dev, companyId);
+  if (!row) return { dev, member: false };
+  const day = Math.floor(Date.now() / DAY);
+  const key = `${dev}|${day}`;
+  const n = (memberReads.get(key) ?? 0) + 1;
+  memberReads.set(key, n);
+  if (memberReads.size > 20000) for (const k of memberReads.keys()) if (!k.endsWith(`|${day}`)) memberReads.delete(k);
+  return n > MEMBER.readsPerDay ? { dev, member: false, limited: true } : { dev, member: true };
+}
+
+/**
+ * What a setup tells about its pay: whether it has one, and for a non-member that it is hidden; [stable] once it settled
+ * (결정 D79: three phones on it and no other version for 30 days).
+ */
+async function payMark(env, companyId, deptNorm, grp, text, who, now) {
+  const has = JSON.parse(text).pay !== undefined;
+  const st = await stableOf(env, companyId, deptNorm, grp, now);
+  return { pay: has, ...(has && !who.member ? { payHidden: true } : {}), ...(st.stable ? { stable: true } : {}) };
+}
+
+/**
+ * [PLAZA-09] Whether [grp] of a department settled: at least [MEMBER.stablePhones] phones use it and nothing changed for
+ * [MEMBER.stableDays] days (no other version sent, no version adopted, and it is itself that old). [since] is the last change.
+ */
+async function stableOf(env, companyId, deptNorm, grp, now) {
+  const row = await one(env, `SELECT
+      (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?3) AS uses,
+      (SELECT MIN(created_at) FROM reports WHERE company_id = ?1 AND grp = ?3) AS born,
+      (SELECT MAX(created_at) FROM reports WHERE company_id = ?1 AND dept_norm = ?2 AND grp != ?3 AND status IN ('pending', 'adopted', 'replaced')) AS other,
+      (SELECT MAX(adopted_at) FROM rules WHERE company_id = ?1 AND dept_norm = ?2) AS adopted`, companyId, deptNorm, grp);
+  const since = Math.max(row.born ?? 0, row.other ?? 0, row.adopted ?? 0);
+  return { stable: row.uses >= MEMBER.stablePhones && since > 0 && now - since >= MEMBER.stableDays * DAY, uses: row.uses, since };
+}
+
+/**
+ * [PLAZA-07] Joins [companyId] for one calendar of the phone [dev]. A calendar keeps its company 30 days before another;
+ * a phone is in two at most. What came of it, as the app shows it: joined, or why not and until when.
+ */
+async function joinCompany(env, dev, companyId, cal, now) {
+  const rows = await all(env, "SELECT cal, company_id, since, left FROM members WHERE device = ?", dev);
+  const here = rows.find((r) => r.cal === cal);
+  const same = rows.find((r) => r.company_id === companyId && r.left === 0);
+  if (same) return { joined: true, company: companyId, since: iso(same.since), changeAfter: iso(same.since + MEMBER.waitDays * DAY) };
+  if (here && here.company_id !== companyId && now - here.since < MEMBER.waitDays * DAY) {
+    return { joined: false, error: "member_wait", until: iso(here.since + MEMBER.waitDays * DAY) };
+  }
+  const others = new Set(rows.filter((r) => r.left === 0 && r.cal !== cal).map((r) => r.company_id));
+  if (others.size >= MEMBER.perPhone) return { joined: false, error: "member_limit", limit: MEMBER.perPhone };
+  const since = here && here.company_id === companyId ? here.since : now;
+  await run(env, `INSERT INTO members (device, cal, company_id, since, left) VALUES (?, ?, ?, ?, 0)
+    ON CONFLICT (device, cal) DO UPDATE SET company_id = excluded.company_id, since = excluded.since, left = 0`, dev, cal, companyId, since);
+  return { joined: true, company: companyId, since: iso(since), changeAfter: iso(since + MEMBER.waitDays * DAY) };
+}
+
+/** [PLAZA-07] GET (header X-Device) the companies joined; POST {device, company, cal} joins; DELETE {device, company} leaves. */
+async function members(request, env) {
+  const now = Date.now();
+  if (request.method === "GET") {
+    const dev = await installOf(request);
+    const rows = await all(env, `SELECT m.cal, m.company_id, m.since, m.left, c.name FROM members m JOIN companies c ON c.id = m.company_id
+      WHERE m.device = ? ORDER BY m.since`, dev);
+    return json({ members: rows.map((r) => ({ company: { id: r.company_id, name: r.name }, cal: r.cal, since: iso(r.since),
+      changeAfter: iso(r.since + MEMBER.waitDays * DAY), ...(r.left ? { left: true } : {}) })), perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays });
+  }
+  if (request.method !== "POST" && request.method !== "DELETE") return json({ error: "not_found" }, 404);
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
+  const dev = await deviceHash(device);
+  const c = await follow(env, body.company);
+  if (!c || c.hidden) return json({ error: "not_found" }, 404);
+  if (request.method === "DELETE") {
+    // The 30 days stay: leaving and joining another company at once would get round them.
+    await run(env, "UPDATE members SET left = 1 WHERE device = ? AND company_id = ?", dev, c.id);
+    return json({ joined: false, company: c.id });
+  }
+  const net = await network(request, env, now);
+  if (!(await allow(env, `join|${net.day}`, MEMBER.joinsPerNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const r = await joinCompany(env, dev, c.id, calOf(body.cal), now);
+  return json(r, r.joined ? 200 : 409);
+}
+
+/**
+ * [PLAZA-09] A company's room, for a phone that joined it: the version it uses (else its own, else the department's 대표),
+ * the department's other versions with what differs and who stands behind them, and whether it settled. The app makes
+ * 고친 점 cards from the files, so only members ever get them.
+ */
+async function room(request, env, companyId) {
+  const c = await follow(env, companyId);
+  if (!c || c.hidden) return json({ error: "not_found" }, 404);
+  const who = await viewer(request, env, c.id);
+  if (!who.dev) refuse("device", "device");
+  if (!who.member) return json({ error: who.limited ? "rate_limited" : "member" }, who.limited ? 429 : 403);
+  const now = Date.now();
+  const { adoptPoints } = await settings(env);
+  const live = await all(env, `SELECT grp, dept, dept_norm, setup, version, 'adopted' AS status, adopted_at AS at FROM rules
+      WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
+    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, NULL, 'pending', MAX(r.created_at) FROM reports r
+      WHERE r.company_id = ?1 AND r.status = 'pending'
+        AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
+        AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp AND (w.withdrawn = 1 OR w.superseded = 0))
+      GROUP BY r.grp`, c.id);
+  if (!live.length) return json({ company: { id: c.id, name: c.name }, member: true, base: null, others: [], stable: false });
+  const mine = await one(env, `SELECT grp FROM uses WHERE company_id = ?1 AND device = ?2
+    UNION ALL SELECT grp FROM reports WHERE company_id = ?1 AND device = ?2 AND status IN ('pending', 'adopted') LIMIT 1`, c.id, who.dev);
+  const states = new Map();
+  for (const v of live) states.set(v.grp, await state(env, c.id, v.grp, adoptPoints, v.status === "adopted"));
+  const best = [...live].sort((a, b) => (b.status === "adopted") - (a.status === "adopted") || states.get(b.grp).support - states.get(a.grp).support)[0];
+  const base = live.find((v) => v.grp === mine?.grp) ?? best;
+  const baseSetup = JSON.parse(base.setup);
+  const st = await stableOf(env, c.id, base.dept_norm, base.grp, now);
+  const view = (v) => ({ ...states.get(v.grp), dept: v.dept, version: v.version, at: iso(v.at), setup: shared(v.setup, c.name) });
+  const others = live.filter((v) => v.grp !== base.grp && v.dept_norm === base.dept_norm).map((v) => ({
+    ...view(v), changes: diffLines(describe(baseSetup), describe(JSON.parse(v.setup))),
+  })).sort((a, b) => b.persons - a.persons || b.support - a.support);
+  return json({
+    company: { id: c.id, name: c.name },
+    member: true,
+    base: { ...view(base), mine: mine?.grp === base.grp, first: base.status === "pending" && states.get(base.grp).senders <= 1 },
+    others,
+    stable: st.stable,
+    stableRule: { phones: MEMBER.stablePhones, days: MEMBER.stableDays, uses: st.uses, since: st.since ? iso(st.since) : null },
+  });
+}
+
+/**
+ * [PLAZA-10] A company's or department's first setup with its pay is new information (결정 D79): its sender gets the pass
+ * of [firstMonths], once a day and [firstCapYear] times a year at most, besides the plaza's own cap. Past them it waits as
+ * 'owed' for the developer. A setup with only shifts, the same setup again or a rule for a whole job earns nothing.
+ */
+async function newInfo(env, c, r, reportId, dev, now) {
+  if (!r.setup.pay || c.kind === "topic") return null;
+  const before = await one(env, `SELECT
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND dept_norm = ?2 AND id != ?3 AND instr(setup, '"pay":') > 0
+        AND status IN ('pending', 'adopted', 'replaced', 'rejected')) AS reported,
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND dept_norm = ?2) AS ruled`, c.id, r.deptNorm, reportId);
+  if (before.reported || before.ruled) return null;
+  const { firstMonths, firstCapYear, rewardCapMonths, rewardCapDays, autoReward } = await settings(env);
+  if (firstMonths <= 0) return null;
+  const id = `w${reportId}`;
+  await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at)
+    VALUES (?, ?, 'first', ?, ?, 'owed', '새 정보', ?, NULL)`, id, reportId, dev, firstMonths, now);
+  const got = await one(env, `SELECT
+      (SELECT COUNT(*) FROM rewards WHERE device = ?1 AND rule_id = 'first' AND status = 'paid' AND paid_at > ?2) AS today,
+      (SELECT COUNT(*) FROM rewards WHERE device = ?1 AND rule_id = 'first' AND status = 'paid' AND paid_at > ?3) AS year`,
+  dev, now - DAY, now - 365 * DAY);
+  if (autoReward && got.today < 1 && got.year < firstCapYear) await payEach(env, [{ id, device: dev, months: firstMonths }], { rewardCapMonths, rewardCapDays }, now);
+  const w = await one(env, "SELECT months, status FROM rewards WHERE id = ?", id);
+  return { months: w.months, status: w.status };
+}
+
+/**
+ * [PLAZA-09] 광장 소식 for members: other versions sent in their companies since [since] and still being checked, not one
+ * they use or sent. One adopted in place of theirs is the "changed" news already.
+ */
+function roomNews(env, dev, since) {
+  return stmt(env, `SELECT m.company_id, c.name, COUNT(DISTINCT r.grp) AS n, MAX(r.created_at) AS at FROM members m
+      JOIN reports r ON r.company_id = m.company_id AND r.device != m.device AND r.status = 'pending' AND r.created_at > ?2
+      JOIN companies c ON c.id = m.company_id
+    WHERE m.device = ?1 AND m.left = 0
+      AND r.grp NOT IN (SELECT grp FROM uses WHERE device = ?1 AND company_id = m.company_id)
+      AND r.grp NOT IN (SELECT grp FROM reports WHERE device = ?1 AND company_id = m.company_id)
+    GROUP BY m.company_id ORDER BY at DESC LIMIT 10`, dev, since);
+}
+// AF 1.26 끝
+
 
 async function state(env, companyId, grp, threshold, adopted) {
   const s = await score(env, companyId, grp);
@@ -1335,7 +1682,8 @@ async function state(env, companyId, grp, threshold, adopted) {
       (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
       (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
       (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
-        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked`, companyId, grp);
+        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp);
   const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
       WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
   // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
@@ -1344,7 +1692,28 @@ async function state(env, companyId, grp, threshold, adopted) {
       UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
     ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
+    // [PLAZA-05] What decides the 대표 판 of a department (D74): phones using it, people behind it, less 달라요.
+    support: support({ uses: who.uses, ok: s.persons, bad: s.bad, verified: who.sentChecked }),
     ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
+}
+
+/**
+ * [PLAZA-05] 지지 (결정 D74, X-D3), the one score for which 판 of a department should be its 대표 판: phones that use it,
+ * people who sent or backed it ([ok]) and pay-slip checks of a waiting one ([verified]), weighed by the Wilson share of
+ * 맞았어요 among 맞았어요·달라요. The developer's 같은 회사 여러 판 screen recommends by the same score ([ADMUX-18]), so the
+ * plaza's own choice and the recommendation never disagree. One decimal.
+ */
+export const support = (c) => Math.round(10 * (c.uses + c.ok + (c.verified ?? 0)) * (0.5 + wilson(c.ok, c.ok + c.bad) / 200)) / 10;
+
+/** [PLAZA-05] Whether [grp] has more 지지 than [active], the department's 대표 판; a tie keeps the one in use. */
+async function outweighs(env, companyId, grp, active) {
+  const uses = (g) => one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", companyId, g);
+  // A pay-slip check counts on either side, as on the developer's screen.
+  const checked = (g) => one(env, "SELECT COUNT(*) AS n FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted') AND verified = 1", companyId, g);
+  const [mine, theirs, mineUses, theirUses, mineChecked, theirChecked] = await Promise.all([score(env, companyId, grp), score(env, companyId, active.grp),
+    uses(grp), uses(active.grp), checked(grp), checked(active.grp)]);
+  return support({ uses: mineUses.n, ok: mine.persons, bad: mine.bad, verified: mineChecked.n })
+    > support({ uses: theirUses.n, ok: theirs.persons, bad: theirs.bad, verified: theirChecked.n });
 }
 
 /**
@@ -1376,10 +1745,15 @@ async function report(request, env) {
   if (r.ask) return askDeveloper(env, c, grp, r, dev, net, now);
   // The same install sending the same setup again gets its earlier report back.
   const again = await one(env, "SELECT id FROM reports WHERE company_id = ? AND grp = ? AND device = ? AND status IN ('pending', 'adopted')", c.id, grp, dev);
-  if (again) return json({ ...(await reportView(env, again.id)), again: true });
+  // [PLAZA-07] Who sends a company's setup joins it (결정 D79), the same again or not.
+  const member = c.kind === "topic" ? null : await joinCompany(env, dev, c.id, calOf(body.cal), now);
+  if (again) return json({ ...(await reportView(env, again.id)), again: true, first: false, newInfo: false, ...(member ? { member } : {}) });
   const cluster = await clusterFor(env, c.id, net);
   const active = await activeRule(env, c.id, r.deptNorm);
   const adopted = active?.grp === grp;
+  // [PLAZA-10] The first version of this company's department from anyone: shown at once as 제보 1 · 확인 중.
+  const first = !active && !(await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND dept_norm = ? AND device != ?
+    AND status IN ('pending', 'adopted') LIMIT 1`, c.id, r.deptNorm, dev));
   const id = randomId(22);
   await batch(env, [
     // A newer setup from the same sender for the same place takes the place of the older one.
@@ -1393,7 +1767,9 @@ async function report(request, env) {
       !adopted && active && r.amends === active.id ? active.id : null),
   ]);
   if (!adopted) await settle(env, c.id, grp, now);
-  return json(await reportView(env, id), 201);
+  const reward = await newInfo(env, c, r, id, dev, now);
+  const view = await reportView(env, id);
+  return json({ ...view, first, newInfo: reward !== null, ...(reward ? { reward } : {}), ...(member ? { member } : {}) }, 201);
 }
 
 /**
@@ -1517,7 +1893,20 @@ async function settle(env, companyId, grp, now) {
   const active = await activeRule(env, companyId, rep.dept_norm);
   const amends = await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND amends = ? LIMIT 1`,
     companyId, grp, active?.id ?? "");
-  if (amends) await adopt(env, companyId, grp, "amend", now);
+  if (amends) return adopt(env, companyId, grp, "amend", now);
+  // [PLAZA-05] Another setup for the same department (U26: "같은 회사 2개") becomes its 대표 판 once it is adopted
+  // by its own right and more people stand behind it than behind the one in use (결정 D74). The one it replaces
+  // is kept as an earlier version in the history, never deleted, and its users hear of it in 광장 소식.
+  if (!active || s.persons < adoptPersons || await turnedDown(env, companyId, grp)) return;
+  if (await outweighs(env, companyId, grp, active)) await adopt(env, companyId, grp, "rival", now);
+}
+
+/** [PLAZA-05] The developer took this setup down or turned it down: it never takes a department over by itself. */
+async function turnedDown(env, companyId, grp) {
+  const row = await one(env, `SELECT
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 1) AS withdrawn,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'rejected') AS rejected`, companyId, grp);
+  return Boolean(row.withdrawn || row.rejected);
 }
 
 /**
@@ -1578,7 +1967,8 @@ async function payOut(env, ruleId, now) {
 async function payEach(env, owed, { rewardCapMonths, rewardCapDays }, now) {
   for (const w of owed) {
     if (w.device.startsWith("gone")) continue;
-    const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ?",
+    // [INVITE-04] Invites have their own cap and do not use this one up.
+    const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ? AND rule_id != 'invite'",
       w.device, now - rewardCapDays * DAY);
     if (got.m + w.months > rewardCapMonths) continue;
     let deferred = null;
@@ -1663,6 +2053,8 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE posts SET disagree = disagree - 1 WHERE id IN (SELECT post_id FROM post_votes WHERE device = ? AND ok = 0)", dev),
     stmt(env, "DELETE FROM post_votes WHERE device = ?", dev),
     stmt(env, "DELETE FROM uses WHERE device = ?", dev),
+    // [PLAZA-07] The companies it joined go at once, the 30 days with them.
+    stmt(env, "DELETE FROM members WHERE device = ?", dev),
     stmt(env, "DELETE FROM nicks WHERE device = ?", dev),
     stmt(env, "DELETE FROM rate_votes WHERE device = ?", dev),
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
@@ -1687,6 +2079,12 @@ async function forgetMine(request, env) {
     // law's record of a sale until they expire (처리방침 보관 기간).
     stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
     stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
+    // [INVITE-04] Its invite code and an invite not yet counted go; a counted one keeps only the phone mark for its
+    // year, so the same phone does not count again (처리방침 1-12).
+    stmt(env, "DELETE FROM invite_codes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM invite_uses WHERE invitee = ? AND status NOT IN ('credited', 'capped', 'qualified')", dev),
+    stmt(env, "UPDATE invite_uses SET invitee = ? WHERE invitee = ?", `${gone}i`, dev),
+    stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", gone, dev),
   ]);
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
 }
@@ -1821,6 +2219,9 @@ async function talk(request, env, companyId, grp) {
   if (!c) return json({ error: "not_found" }, 404);
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
+  // [PLAZA-08] A proposal's lines about pay are for the company's members (결정 D79, AF-D6); its shift lines are for all.
+  const member = (await viewer(request, env, c.id)).member;
+  const lines = (change) => (member ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
   const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const key = await authorKey(env);
@@ -1883,7 +2284,7 @@ async function talk(request, env, companyId, grp) {
       ...(mine ? {} : { author: await authorToken(key, p.device) }),
       parent: p.parent ?? null,
       kind: p.kind ?? "talk",
-      change: p.change ? JSON.parse(p.change) : null,
+      change: p.change ? lines(JSON.parse(p.change)) : null,
       agree: p.agree ?? 0,
       disagree: p.disagree ?? 0,
       ...postTrust(p),
@@ -1898,7 +2299,7 @@ async function talk(request, env, companyId, grp) {
   const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `post|${me}`, Date.now()) : null;
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
   const past = !(await talkable(env, c.id, grp));
-  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
     ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, LIMITS.postsPerDay - (used?.count ?? 0)) } } : {}) });
 }
 
@@ -2067,8 +2468,10 @@ async function useRule(request, env, on) {
   if (!c) return json({ error: "not_found" }, 404);
   if (on) await run(env, "INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", c.id, body.setup, dev, now);
   else await run(env, "DELETE FROM uses WHERE company_id = ? AND grp = ? AND device = ?", c.id, body.setup, dev);
+  // [PLAZA-07] Applying a company's setup is joining it (결정 D79), from an app before 1.26 too.
+  const member = on && c.kind !== "topic" ? await joinCompany(env, dev, c.id, calOf(body.cal), now) : null;
   const n = await one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", c.id, body.setup);
-  return json({ uses: n.n, using: on });
+  return json({ uses: n.n, using: on, ...(member ? { member } : {}) });
 }
 
 /**
@@ -2122,9 +2525,12 @@ async function plazas(env) {
  * (people, an amendment, the developer), when, what changed from the one before, and whether it was
  * taken down. Adopted versions never disappear; this is how the rule grew.
  */
-async function history(env, companyId, url) {
+async function history(env, companyId, url, request) {
   const c = await follow(env, companyId);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
+  // [PLAZA-08] What each version paid, only for a phone that joined the company.
+  const who = await viewer(request, env, c.id);
+  const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
   const grp = url.searchParams.get("setup") ?? "";
   const dept = await one(env, `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
     UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, grp);
@@ -2140,11 +2546,13 @@ async function history(env, companyId, url) {
       version: r.version, setup: r.grp, source: r.source, adoptedAt: iso(r.adopted_at),
       state: r.withdrawn ? "withdrawn" : r.superseded ? "superseded" : "active",
       senders: senders.n, post: proposed?.post_id ?? null,
-      changes: before ? diffLines(describe(before), describe(setup)) : [],
+      // [PLAZA-05] What the version was, so the app can compare it and put it back on a phone.
+      body: who.member ? shared(r.setup, c.name) : shiftsOnly(shared(r.setup, c.name)),
+      changes: before ? diffLines(words(before), words(setup)) : [],
     });
     before = setup;
   }
-  return json({ company: { id: c.id, name: c.name }, versions: versions.reverse() });
+  return json({ company: { id: c.id, name: c.name }, versions: versions.reverse(), member: who.member });
 }
 
 // ---- [PLZ-14] 임금표: market rates for a job and region ----
@@ -2394,7 +2802,7 @@ async function activity(request, env) {
     proposals: posts.map((p) => ({ id: p.id, company: { id: p.company_id, name: p.name }, setup: p.grp, body: p.body,
       agree: p.agree, disagree: p.disagree, ...postTrust(p), at: iso(p.created_at) })),
     rates: mine.map((r) => rateView(r, dev, new Map(), new Map())),
-    rewards: rewardRows.map((w) => ({ months: w.months, status: w.status, why: w.rule_id === "rate" ? "rate" : w.rule_id ? "rule" : "idea",
+    rewards: rewardRows.map((w) => ({ months: w.months, status: w.status, why: rewardWhy(w.rule_id),
       at: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null })),
   });
 }
@@ -3603,16 +4011,16 @@ function secretIssue(env, name, least) {
  * "owner" for managing admins and anything not listed, so a new route stays the owner's until it is.
  */
 function areaFor(path) {
-  if (path === "/overview" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
+  if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
-  if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
+  if (path.startsWith("/companies") || path.startsWith("/rules/") || path === "/versions") return "companies";
   if (path.startsWith("/rewards")) return "rewards";
-  if (path === "/settings" || path === "/settings/sla") return "settings";
+  if (path === "/settings" || path === "/settings/sla" || path === "/settings/invite") return "settings";
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
   if (path.startsWith("/notices") || path === "/switches" || path === "/ops") return "ops";
-  if (path === "/metrics") return "metrics";
+  if (path === "/metrics" || path === "/remote") return "metrics";
   if (path.startsWith("/shares")) return "shares";
   if (path === "/audit") return "audit";
   return "owner";
@@ -3684,6 +4092,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
   if (path === "/overview" && method === "GET") return json(await overview(env, actor));
+  // [ADMUX-17] 할 일 받은함: everything this admin may act on, nearest deadline first.
+  if (path === "/inbox" && method === "GET") return json(await inbox(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") return json(serverState(env));
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
@@ -3709,6 +4119,10 @@ async function signedRoute(request, env, url, path, method, now, session) {
   }
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})$/);
   if (m && method === "POST") return setRule(request, env, m[1], now);
+  // [ADMUX-18] 같은 회사 여러 판, and an earlier version made the department's rule again.
+  if (path === "/versions" && method === "GET") return json(await versions(env, url.searchParams.get("show")));
+  m = path.match(/^\/rules\/([A-Za-z0-9]{16})\/promote$/);
+  if (m && method === "POST") return promote(env, m[1], now);
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
@@ -3718,6 +4132,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/settings" && method === "POST") return saveSettings(request, env, now);
   // [ADMUX-06] 답 목표 (SLA) per kind of question.
   if (path === "/settings/sla" && method === "POST") return saveSla(request, env, now);
+  // [INVITE-08] 친구 초대: how many friends, how many days of use, how many months, the cap.
+  if (path === "/settings/invite") return inviteSettingsRoute(request, env, method, now);
   // [MON-10] The 정식 출시 switch and [MON-09] admins' phones are the owner's (areaFor gives "owner").
   if (path === "/launch" && method === "GET") return json(await launchView(env));
   if (path === "/launch" && method === "POST") return setLaunch(request, env, now);
@@ -3725,6 +4141,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  // [ADMUX-19] 광장 운영 일괄: many posts or 임금표 entries at once, each handled as it is alone.
+  if (path === "/posts/bulk" && method === "POST") return plazaBulk(request, env, now, "posts");
+  if (path === "/rates/bulk" && method === "POST") return plazaBulk(request, env, now, "rates");
   m = path.match(/^\/posts\/(p[A-Za-z0-9]{15})$/);
   if (m && method === "POST") return moderate(request, env, m[1], now);
   // [PLZ-14] 임금표 to look at, and an admin's call on one.
@@ -3740,6 +4159,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
   if (path === "/metrics" && method === "GET") return json(await metrics(env, url, now));
+  // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
+  if (path === "/remote" && method === "GET") return json(await remoteState(env, now, url.searchParams.get("fresh") === "1"));
   if (path === "/shares" && method === "GET") return shareReports(env);
   m = path.match(/^\/shares\/([A-Za-z0-9]{16,32})\/remove$/);
   if (m && method === "POST") return removeShare(request, env, m[1], now);
@@ -4424,6 +4845,10 @@ async function overview(env, actor) {
   if (can(actor, "companies")) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
     counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
+    // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
+    counts.versionConflicts = `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
+      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
+      WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`;
   }
   // [ADMIN-14] 이달 할 일 still open on the home screen.
   if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
@@ -4432,6 +4857,8 @@ async function overview(env, actor) {
     // [MON-09] Admins' phones waiting for the owner's 승인.
     counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
   }
+  // [ADMUX-17] 받은함's statements ride in the same trip, for the menu badge (what is past its deadline).
+  for (const [k, v] of Object.entries(inboxQueries(actor, now))) counts[`inbox_${k}`] = v;
   const keys = Object.keys(counts);
   const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
@@ -4439,11 +4866,13 @@ async function overview(env, actor) {
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
   const rows = new Set(["settings", "waiting", "phones", "live", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
   for (const k of keys) {
-    if (rows.has(k)) continue;
+    if (rows.has(k) || k.startsWith("inbox_")) continue;
     out[k] = got[k][0].n;
   }
   // [ADMUX-08] The developer app's build, so an open app can say a new one is out.
   out.build = adminBuild();
+  // [ADMUX-17] What in 받은함 is past its deadline, for the menu badge.
+  out.inboxLate = inboxItems(Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]])), actor, now).counts.late;
   out.sla = readSla(got.sla);
   if (got.recent) {
     out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
@@ -4679,7 +5108,8 @@ async function companies(env, query, params = new URLSearchParams()) {
       (SELECT COUNT(*) FROM aliases a WHERE a.company_id = c.id) AS aliases,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS rules,
       (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending,
-      (SELECT COUNT(*) FROM reports p WHERE p.company_id = c.id) AS reports
+      (SELECT COUNT(*) FROM reports p WHERE p.company_id = c.id) AS reports,
+      (SELECT COUNT(*) FROM members m WHERE m.company_id = c.id AND m.left = 0) AS members
     FROM companies c
     WHERE ?1 = '' OR c.norm LIKE ?2 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?2 ESCAPE '\\')
     ORDER BY c.merged_into IS NOT NULL, c.created_at DESC LIMIT ?3 OFFSET ?4`, q, like, pg.limit + 1, pg.after);
@@ -4688,14 +5118,14 @@ async function companies(env, query, params = new URLSearchParams()) {
     next,
     companies: items.map((c) => ({
       id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: c.merged_into, aliases: c.aliases, rules: c.rules,
-      pending: c.pending, reports: c.reports, createdAt: iso(c.created_at),
+      pending: c.pending, reports: c.reports, createdAt: iso(c.created_at), members: c.members,
     })),
   };
 }
 
 async function companyInfo(env, id) {
   // One trip for the whole page, however many rules the company has.
-  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await batch(env, [
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending], [joined]] = (await batch(env, [
     stmt(env, "SELECT * FROM companies WHERE id = ?", id),
     stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
@@ -4703,6 +5133,8 @@ async function companyInfo(env, id) {
     stmt(env, "SELECT company_id, grp, device, points, cluster FROM reports WHERE company_id = ? AND status IN ('pending', 'adopted')", id),
     stmt(env, "SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id = ?", id),
     stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
+    // [PLAZA-13] Phones that joined it (결정 D79).
+    stmt(env, "SELECT COUNT(*) AS n FROM members WHERE company_id = ? AND left = 0", id),
   ])).map((r) => r.results);
   if (!c) return json({ error: "not_found" }, 404);
   const into = intoRows[0] ?? null;
@@ -4715,8 +5147,14 @@ async function companyInfo(env, id) {
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
     };
   });
+  // [PLAZA-13] Whether a rule in use settled (결정 D79: three phones on it, nothing new for 30 days).
+  const now = Date.now();
+  for (const [i, r] of ruleRows.entries()) {
+    if (!r.withdrawn && !r.superseded && (await stableOf(env, id, r.dept_norm, r.grp, now)).stable) rules[i].stable = true;
+  }
   return json({
     id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: into, createdAt: iso(c.created_at), aliases, rules, pending: pending.n,
+    members: joined.n,
   });
 }
 
@@ -4756,7 +5194,7 @@ async function updateCompany(request, env, id, now) {
     // The old name keeps finding the company.
     if (norm !== c.norm) stmts.push(stmt(env, "INSERT OR IGNORE INTO aliases (norm, company_id, name) VALUES (?, ?, ?)", c.norm, id, c.name));
     stmts.push(stmt(env, "DELETE FROM aliases WHERE norm = ? AND company_id = ?", norm, id));
-    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ? WHERE id = ?", name, norm, id));
+    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '' WHERE id = ?", name, norm, id));
   }
   if (body.hidden !== undefined) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
@@ -4852,16 +5290,20 @@ async function rewards(env, status, params = new URLSearchParams()) {
     FROM rewards w LEFT JOIN reports p ON p.id = w.report_id LEFT JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
       LEFT JOIN rates t ON t.id = w.report_id
     WHERE w.status = ?1 AND (?2 = '' OR c.norm LIKE ?2 ESCAPE '\\') ORDER BY w.created_at DESC LIMIT ?3 OFFSET ?4`, wanted, like, pg.limit + 1, pg.after);
-  const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status");
+  // [INVITE-06] How invites went, beside the rewards they gave, in the same trip as the counts.
+  const [counts, invites] = await rewardCounts(env, !params.get("after"), Date.now());
   const { items, next } = sqlPage(rows, pg);
   return {
+    invites,
     status: wanted,
     next,
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
     rewards: items.map((w) => ({
       id: w.id, months: w.months, status: w.status, memo: w.memo,
       // [PLZ-14] A rate's reward names the rate instead of a company.
-      company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` } : { id: w.company_id, name: w.company ?? "" },
+      company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` }
+        : w.rule_id === "invite" ? { id: "", name: "친구 초대" } : { id: w.company_id, name: w.company ?? "" },
+      invite: w.rule_id === "invite",
       dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
       version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
     })),
@@ -4910,7 +5352,8 @@ async function saveSettings(request, env, now) {
     return v;
   };
   const extra = { adopt_persons: pick("adoptPersons", 2, 10), amend_persons: pick("amendPersons", 2, 10), auto_reward: pick("autoReward", 0, 1),
-    reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365) };
+    reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365),
+    first_months: pick("firstMonths", 0, 12), first_cap_year: pick("firstCapYear", 0, 12) };
   await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
@@ -4969,13 +5412,19 @@ async function rateList(env, url) {
 async function setRate(request, env, actor, id, now) {
   const body = await readJson(request, 1024);
   const status = oneOf(body.status, ["adopted", "hidden", "pending"], "status");
+  const out = await rateTo(env, actor, id, status, now);
+  return json(out, out.error === "not_found" ? 404 : out.error ? 403 : 200);
+}
+
+/** One 임금표 entry to [status], for one or [ADMUX-19] many. */
+async function rateTo(env, actor, id, status, now) {
   const r = await one(env, "SELECT * FROM rates WHERE id = ?", id);
-  if (!r) return json({ error: "not_found" }, 404);
-  if (r.status === "adopted" && status !== "adopted" && !can(actor, "takedown", "edit")) return json({ error: "no_permission", area: "takedown" }, 403);
+  if (!r) return { error: "not_found" };
+  if (r.status === "adopted" && status !== "adopted" && !can(actor, "takedown", "edit")) return { error: "no_permission", area: "takedown" };
   if (status === "adopted" && r.status !== "adopted") await adoptRate(env, r, await settings(env), now);
   else await run(env, "UPDATE rates SET status = ?, decided_at = ? WHERE id = ?", status, now, id);
   await audit(env, now, `rate_${status}`, id, `${r.trade} ${r.amount}`);
-  return json({ ok: true, status });
+  return { ok: true, status };
 }
 
 // ---- the talk on rule sets, for the developer [COMM-06] ----
@@ -5067,9 +5516,14 @@ function plazaResults(env, p, flagged, writer, now) {
  * the writer cannot post for 30 days, and their post is hidden.
  */
 async function moderate(request, env, id, now) {
-  const body = await readJson(request, 1024);
+  const out = await moderatePost(env, id, await readJson(request, 1024), now);
+  return json(out, out.error ? 404 : 200);
+}
+
+/** One post's handling, for one post or [ADMUX-19] many; the answer for one, or { error } when it is gone. */
+async function moderatePost(env, id, body, now) {
   const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
-  if (!p) return json({ error: "not_found" }, 404);
+  if (!p) return { error: "not_found" };
   const target = `${p.company_id}/${p.grp}/${id}`;
   if (body.action === "hide" || body.action === "mute") {
     const reason = Object.hasOwn(HIDE_REASONS, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
@@ -5093,12 +5547,12 @@ async function moderate(request, env, id, now) {
     await batch(env, [...plazaResults(env, p, "deleted", "deleted", now),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
     await audit(env, now, "post_delete", target);
-    return json({ deleted: true });
+    return { deleted: true };
   } else {
     refuse("action", "action");
   }
   const after = await one(env, "SELECT id, status, hide_reason, kept FROM posts WHERE id = ?", id);
-  return json({ id, status: after.status, kept: after.kept === 1, hidden: after.hide_reason });
+  return { id, status: after.status, kept: after.kept === 1, hidden: after.hide_reason };
 }
 
 // ---- input and output ----
@@ -5238,7 +5692,7 @@ async function passes(env, dev, now) {
   return {
     until: p.until ? iso(p.until) : null,
     waitingMonths: p.waiting,
-    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: r.rule_id === "rate" ? "rate" : r.rule_id ? "rule" : "idea" })),
+    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     admin: link ? { status: link.status, name: link.admin_name } : null,
     code: Boolean(code),
@@ -5278,6 +5732,9 @@ async function money(request, env, path) {
       await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
+        // [INVITE-02] The invite code moves with them, so links already sent count here.
+        stmt(env, "UPDATE OR IGNORE invite_codes SET device = ? WHERE device = ?", dev, row.device),
+        stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", dev, row.device),
       ]);
       await audit(env, now, "pass_move", dev.slice(0, 8), row.device.slice(0, 8));
     }
@@ -5292,6 +5749,308 @@ async function money(request, env, path) {
   if (path === "/api/consents" && method === "POST") return consent(request, env, dev, now);
   return json({ error: "not_found" }, 404);
 }
+
+// AE 1.26 시작
+// ---- 친구 초대 [INVITE-02][INVITE-03][INVITE-04][INVITE-08] ----
+// The person who invited gets months of 프로 each time [friends] friends' phones installed the app by the invite,
+// finished the first setup and used it for the period: opened again on a Korean day at least [days] days after the
+// day they told the server (research/1.26-AE-초대-조사.md, 결정 D81·D82). The developer app sets the numbers
+// (설정 › 친구 초대). The friend gets nothing, and a store rating or review is never part of it (Play: User
+// Ratings, Reviews, and Installs).
+
+const INVITE = {
+  // [INVITE-08] Until changed in the developer app: 5 friends, 7 days, 1 month, no cap (0).
+  friends: 5,
+  days: 7,
+  months: 1,
+  capMonths: 0,
+  // A cap, when one is set, counts the months of the last 365 days.
+  capDays: 365,
+  // A friend who has not used the app for the period by [days] + 30 days after telling is let go.
+  graceDays: 30,
+  // A counted friend (its phone mark, so the phone is not counted again) is kept a year.
+  keepCounted: 365 * DAY,
+  codesPerDay: 5,
+  usesPerHour: 10,
+  usesPerDevice: 5,
+  seenPerDay: 30,
+  package: "com.bamnat.app",
+};
+/** [INVITE-08] What the developer app may set, and the settings rows they are kept in. */
+const INVITE_LIMITS = { friends: [1, 50], days: [1, 60], months: [1, 12], capMonths: [0, 120] };
+const INVITE_KEYS = { friends: "invite_friends", days: "invite_days", months: "invite_months", capMonths: "invite_cap_months" };
+const INVITE_SETTINGS_SQL = `SELECT key, value FROM settings WHERE key IN (${Object.values(INVITE_KEYS).map((k) => `'${k}'`).join(", ")})`;
+
+/** [INVITE-08] The invite rules from their settings rows, each within its limits, else its default. */
+function readInviteSettings(rows) {
+  return Object.fromEntries(Object.entries(INVITE_KEYS).map(([name, key]) => {
+    const n = Number(rows.find((r) => r.key === key)?.value);
+    const [lo, hi] = INVITE_LIMITS[name];
+    return [name, Number.isInteger(n) && n >= lo && n <= hi ? n : INVITE[name]];
+  }));
+}
+
+const inviteSettings = async (env) => readInviteSettings(await all(env, INVITE_SETTINGS_SQL));
+
+/** Days a friend has to come back in, from the day it told the server: the period and 30 more. */
+const inviteDeadline = (set) => (set.days + INVITE.graceDays) * DAY;
+
+// No 0/O, 1/I: a code read out or typed by hand. 32 letters, so a random byte maps evenly.
+const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const INVITE_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
+/** What the app sends as the phone mark: SHA-256 of the app-scoped Android ID, never the id itself. */
+const PHONE_MARK = /^[0-9a-f]{64}$/;
+
+const inviteCode = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => INVITE_CHARS[b % 32]).join("");
+
+/** A code as a person may type it: "abcd-2345" is ABCD2345. */
+export const inviteCodeOf = (v) => {
+  const c = typeof v === "string" ? v.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+  return INVITE_CODE.test(c) ? c : null;
+};
+
+/** The phone mark as the server keeps it: hashed again with the server's secret salt. */
+async function phoneMark(env, v) {
+  if (typeof v !== "string" || !PHONE_MARK.test(v)) return null;
+  return (await sha256(`${await salt(env)}|phone|${v}`)).slice(0, 40);
+}
+
+/** [INVITE-02] The Play listing with the code as the install referrer (Play Install Referrer API). */
+export function storeLink(code) {
+  const referrer = `utm_source=bamnat_invite&utm_content=${code}`;
+  return `https://play.google.com/store/apps/details?id=${INVITE.package}&referrer=${encodeURIComponent(referrer)}`;
+}
+
+/** Why a reward was given, as the app names it. */
+const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
+
+/** Whole days from one Korean date ("2026-10-25") to another. */
+const dayGap = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
+
+/**
+ * [INVITE-02] /i/<code>: a small page that sends an Android phone on to the Play listing with the code, and
+ * shows the code elsewhere. It keeps nothing and does not look the code up, so it tells nobody which codes exist.
+ */
+function invitePage(raw) {
+  const code = inviteCodeOf(raw);
+  if (!code) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+  const store = storeLink(code);
+  const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>밤낮 초대</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;padding:32px 16px;background:#f6f7fb;color:#1b1d24}main{max-width:420px;margin:auto}
+a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
+code{font-size:1.4em;letter-spacing:.08em}@media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head>
+<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. Play 스토어에서 받아 첫 설정을 마치면 친구에게 알릴 수 있어요.</p>
+<p><a class="b" href="${store}">Play 스토어에서 받기</a></p>
+<p>안드로이드 휴대폰에서 열어 주세요. 링크로 받지 못했다면 설치하고 7일 안에 앱의 설정 › 프로 › ‘초대 코드 넣기’에 <code>${shown}</code>를 넣어 주세요.</p>
+<p><small>이 페이지는 아무것도 저장하지 않아요.</small></p></main>
+<script>if(/Android/i.test(navigator.userAgent))location.replace(${JSON.stringify(store)});</script></body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600", "referrer-policy": "no-referrer" } });
+}
+
+/** Months the inviter was given for invites since [since]. */
+async function inviteMonths(env, dev, since = 0) {
+  const r = await one(env, `SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND rule_id = 'invite' AND status = 'paid'
+    AND paid_at > ?`, dev, since);
+  return r.m;
+}
+
+/** [INVITE-08] The rules as the app says them, before anything is sent. */
+const inviteRules = (set) => ({ need: set.friends, days: set.days, months: set.months, capMonths: set.capMonths });
+
+/**
+ * [INVITE-05][INVITE-08] What the inviter sees: the code and link, the rules, friends counted toward the next
+ * months ([progress] of [need]), friends still in their period ([waiting]), friends counted in all and the months
+ * they gave. "3/5명 · 2명은 사용 기간 채우는 중".
+ */
+async function inviteView(env, dev, origin, now) {
+  const set = await inviteSettings(env);
+  const [mine, counts, months, recent, used] = await Promise.all([
+    one(env, "SELECT code FROM invite_codes WHERE device = ?", dev),
+    all(env, "SELECT status, COUNT(*) AS n FROM invite_uses WHERE inviter = ? AND (status != 'waiting' OR created_at > ?) GROUP BY status",
+      dev, now - inviteDeadline(set)),
+    inviteMonths(env, dev),
+    set.capMonths ? inviteMonths(env, dev, now - INVITE.capDays * DAY) : 0,
+    one(env, "SELECT status FROM invite_uses WHERE invitee = ?", dev),
+  ]);
+  const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
+  return {
+    code: mine?.code ?? null,
+    link: mine ? `${origin}/i/${mine.code}` : null,
+    ...inviteRules(set),
+    progress: n("qualified"),
+    waiting: n("waiting"),
+    friends: n("credited") + n("capped") + n("qualified"),
+    given: months,
+    capReached: set.capMonths > 0 && recent + set.months > set.capMonths,
+    // The invite this phone itself came by, as this phone reported it.
+    used: used?.status ?? null,
+  };
+}
+
+/**
+ * [INVITE-08] Each [friends] friends who used the app for the period give the inviter [months] of 프로, the oldest
+ * first, as often as they add up (a lowered number may give more than one at once). One statement takes a group,
+ * so two friends finishing at once cannot both use the same ones. Over a cap, the group is counted without months.
+ */
+async function settleInvites(env, inviter, set, now) {
+  for (let i = 0; i < 50; i++) {
+    const have = await one(env, "SELECT COUNT(*) AS n FROM invite_uses WHERE inviter = ? AND status = 'qualified'", inviter);
+    if (have.n < set.friends) return;
+    const recent = set.capMonths ? await inviteMonths(env, inviter, now - INVITE.capDays * DAY) : 0;
+    const capped = inviter.startsWith("gone") || (set.capMonths > 0 && recent + set.months > set.capMonths);
+    const id = `i${randomId(21)}`;
+    const took = await run(env, `UPDATE invite_uses SET status = ?, batch = ? WHERE invitee IN (SELECT invitee FROM invite_uses
+      WHERE inviter = ? AND status = 'qualified' ORDER BY decided_at, invitee LIMIT ?)
+      AND (SELECT COUNT(*) FROM invite_uses WHERE inviter = ? AND status = 'qualified') >= ?`,
+      capped ? "capped" : "credited", id, inviter, set.friends, inviter, set.friends);
+    if (!took.meta.changes) return;
+    if (capped) {
+      await audit(env, now, "invite_capped", id, inviter.slice(0, 8));
+      continue;
+    }
+    let deferred = null;
+    try {
+      deferred = await deferFor(env, inviter, set.months, now);
+    } catch (e) {
+      console.error(`defer invite: ${e?.code ?? e}`);
+    }
+    const memo = `친구 초대 ${took.meta.changes}명`;
+    await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
+      VALUES (?, ?, 'invite', ?, ?, 'paid', ?, ?, ?, ?)`, id, `invite:${id}`, inviter, set.months,
+      deferred ? `${memo} · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : memo, now, now, deferred ? 1 : 0);
+    await audit(env, now, "invite_credit", id, inviter.slice(0, 8));
+  }
+}
+
+/** [INVITE-08] A lowered number of friends may already be met: settles the inviters it reached. */
+async function settleAllInvites(env, set, now) {
+  const due = await all(env, `SELECT inviter FROM invite_uses WHERE status = 'qualified' GROUP BY inviter HAVING COUNT(*) >= ? LIMIT 200`, set.friends);
+  for (const d of due) await settleInvites(env, d.inviter, set, now);
+}
+
+/**
+ * [INVITE-02][INVITE-03] /api/invites, /api/invites/code, /api/invites/use and /api/invites/seen, all for one install;
+ * [INVITE-08] /api/invites/rules for anyone.
+ */
+async function invites(request, env, path, url) {
+  const method = request.method;
+  const now = Date.now();
+  // [INVITE-08] The rules the 프로 screen says before the user agrees to anything: no install number goes.
+  if (path === "/api/invites/rules" && method === "GET") {
+    return json(inviteRules(await inviteSettings(env)), 200, { "cache-control": "public, max-age=3600" });
+  }
+  const dev = await installOf(request);
+  if (path === "/api/invites" && method === "GET") return json(await inviteView(env, dev, url.origin, now));
+  if (path === "/api/invites/code" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const mark = await phoneMark(env, body.phone);
+    if (!mark) refuse("phone", "phone");
+    if (!(await allow(env, `invitecode|${dev}`, INVITE.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+    // One code per install, kept as it is: a link already sent keeps working.
+    const had = await one(env, "SELECT code FROM invite_codes WHERE device = ?", dev);
+    if (had) {
+      await run(env, "UPDATE invite_codes SET phone = ? WHERE device = ?", mark, dev);
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const r = await run(env, "INSERT OR IGNORE INTO invite_codes (code, device, phone, created_at) VALUES (?, ?, ?, ?)", inviteCode(), dev, mark, now);
+        if (r.meta.changes) break;
+      }
+    }
+    return json(await inviteView(env, dev, url.origin, now), had ? 200 : 201);
+  }
+  if (path === "/api/invites/use" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const net = await network(request, env, now);
+    if (!(await allow(env, `inviteuse|${net.day}`, INVITE.usesPerHour, HOUR, now)) ||
+        !(await allow(env, `inviteuse|${dev}`, INVITE.usesPerDevice, DAY, now))) {
+      return json({ error: "rate_limited" }, 429);
+    }
+    const code = inviteCodeOf(body.code);
+    if (!code) refuse("code", "code");
+    if (!["referrer", "typed"].includes(body.source)) refuse("source", "source");
+    const mark = await phoneMark(env, body.phone);
+    if (!mark) refuse("phone", "phone");
+    const set = await inviteSettings(env);
+    const before = await one(env, "SELECT status, reason FROM invite_uses WHERE invitee = ?", dev);
+    if (before) return json({ status: before.status, reason: before.reason || null, days: set.days, daysLeft: null });
+    const owner = await one(env, "SELECT device, phone FROM invite_codes WHERE code = ?", code);
+    if (!owner) return json({ error: "code", field: "code" }, 404);
+    // [INVITE-04] A phone counts once, whoever invited it and however often the app was installed again.
+    if (await one(env, "SELECT 1 FROM invite_uses WHERE phone = ?", mark)) {
+      await audit(env, now, "invite_refused", code, "phone");
+      return json({ status: "refused", reason: "phone", days: set.days, daysLeft: null });
+    }
+    const self = owner.device === dev || owner.phone === mark;
+    await run(env, `INSERT OR IGNORE INTO invite_uses (invitee, phone, code, inviter, source, first_day, status, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, dev, mark, code, owner.device, body.source, kstDay(now), self ? "refused" : "waiting", self ? "self" : "", now);
+    if (self) await audit(env, now, "invite_refused", code, "self");
+    return json({ status: self ? "refused" : "waiting", reason: self ? "self" : null, days: set.days, daysLeft: self ? null : set.days }, 201);
+  }
+  if (path === "/api/invites/seen" && method === "POST") {
+    if (!(await allow(env, `inviteseen|${dev}`, INVITE.seenPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+    const row = await one(env, "SELECT * FROM invite_uses WHERE invitee = ?", dev);
+    if (!row) return json({ error: "not_found" }, 404);
+    const set = await inviteSettings(env);
+    const answer = (status, daysLeft = null) => json({ status, reason: row.reason || null, days: set.days, daysLeft });
+    if (row.status !== "waiting") return answer(row.status);
+    if (now - row.created_at > inviteDeadline(set)) {
+      await run(env, "UPDATE invite_uses SET status = 'expired', decided_at = ? WHERE invitee = ? AND status = 'waiting'", now, dev);
+      return answer("expired");
+    }
+    // [INVITE-03][INVITE-08] 사용: the app opened again on a Korean day (the server's clock, not the phone's) at least
+    // [days] after the day it told the server. The app sends this once a day it is opened.
+    const used = dayGap(row.first_day, kstDay(now));
+    if (used < set.days) return answer("waiting", set.days - used);
+    await run(env, "UPDATE invite_uses SET status = 'qualified', decided_at = ? WHERE invitee = ? AND status = 'waiting'", now, dev);
+    await settleInvites(env, row.inviter, set, now);
+    return answer((await one(env, "SELECT status FROM invite_uses WHERE invitee = ?", dev))?.status ?? "qualified");
+  }
+  return json({ error: "not_found" }, 404);
+}
+
+/** [INVITE-08] 설정 › 친구 초대 in the developer app: GET the rules, POST changes (a key left out stays as it was). */
+async function inviteSettingsRoute(request, env, method, now) {
+  if (method === "GET") return json(await inviteSettings(env));
+  if (method !== "POST") return json({ error: "not_found" }, 404);
+  const body = await readJson(request, 1024);
+  const was = await inviteSettings(env);
+  const set = Object.fromEntries(Object.entries(INVITE_LIMITS).map(([key, [lo, hi]]) => {
+    const v = body[key] ?? was[key];
+    if (!Number.isInteger(v) || v < lo || v > hi) refuse(key, key);
+    return [key, v];
+  }));
+  await batch(env, Object.entries(INVITE_KEYS).map(([name, key]) =>
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, String(set[name]))));
+  await audit(env, now, "invite_settings", "", `${set.friends}명 · ${set.days}일 · ${set.months}개월 · 상한 ${set.capMonths ? `${set.capMonths}개월` : "없음"}`);
+  await settleAllInvites(env, set, now);
+  return json(set);
+}
+
+/**
+ * [INVITE-06] For the developer app's 보상 screen: the rewards by status and, when [withInvites], how invites went,
+ * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
+ */
+async function rewardCounts(env, withInvites, now) {
+  const [rewardRows, counts, refused, top, codes, setRows] = (await batch(env, [
+    stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
+    stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
+    stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
+    stmt(env, `SELECT code, COUNT(*) AS friends, SUM(status IN ('credited', 'capped', 'qualified')) AS counted, SUM(status = 'waiting') AS waiting
+      FROM invite_uses WHERE status IN ('credited', 'capped', 'qualified', 'waiting') GROUP BY code ORDER BY friends DESC LIMIT 5`),
+    stmt(env, "SELECT COUNT(*) AS n FROM invite_codes"),
+    stmt(env, INVITE_SETTINGS_SQL),
+  ])).map((r) => r.results ?? []);
+  const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
+  return [rewardRows, withInvites ? {
+    codes: codes[0]?.n ?? 0, credited: n("credited"), capped: n("capped"), qualified: n("qualified"), waiting: n("waiting"),
+    expired: n("expired"), rules: readInviteSettings(setRows),
+    refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
+    top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),
+  } : undefined];
+}
+// AE 1.26 끝
 
 // ---- 관리자 휴대폰 [MON-09] ----
 
@@ -5394,15 +6153,17 @@ const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).re
 const b64urlText = (text) => b64url(new TextEncoder().encode(text));
 
 /** An OAuth token for the Play Developer API from the service account (JWT bearer, RS256), kept until near its end. */
-async function playToken(env, account, now) {
-  const kept = playTokens.get(env.DB ?? env);
+async function playToken(env, account, now, scope = PLAY.scope) {
+  // [ADMUX-16] One token per scope: purchases (androidpublisher) and Play's vitals (playdeveloperreporting).
+  const tokens = playTokens.get(env.DB ?? env) ?? {};
+  const kept = tokens[scope];
   if (kept && kept.until > now + 60_000) return kept.token;
   const pem = account.private_key.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
   const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
   const iat = Math.floor(now / 1000);
   const head = b64urlText(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64urlText(JSON.stringify({ iss: account.client_email, scope: PLAY.scope, aud: PLAY.token, iat, exp: iat + 3600 }));
+  const claims = b64urlText(JSON.stringify({ iss: account.client_email, scope, aud: PLAY.token, iat, exp: iat + 3600 }));
   const sig = b64url(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${head}.${claims}`)));
   const res = await fetch(PLAY.token, {
     method: "POST",
@@ -5411,7 +6172,7 @@ async function playToken(env, account, now) {
   });
   if (!res.ok) throw new Refuse("play_auth", "play", 502);
   const t = await res.json();
-  playTokens.set(env.DB ?? env, { token: t.access_token, until: now + (Number(t.expires_in) || 3600) * 1000 });
+  playTokens.set(env.DB ?? env, { ...tokens, [scope]: { token: t.access_token, until: now + (Number(t.expires_in) || 3600) * 1000 } });
   return t.access_token;
 }
 
@@ -5905,26 +6666,47 @@ async function usage(request, env) {
  * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share
  * is phone-days that did it within 28 days over all phone-days: about how many of the phones in use
  * do it, without knowing which phones they are. Under 30 phones a day it says 데이터 부족.
+ * [ADMUX-13]~[ADMUX-16] 1.25: any period up to 180 days (from·to), how many phones on which app, the
+ * plaza, how fast questions get their first answer, server errors and, with Play's numbers, crashes.
  */
 async function metrics(env, url, now) {
-  const days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
-  const to = kstDay(now - DAY);
-  const from = kstDay(now - days * DAY);
-  // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
-  const beforeFrom = kstDay(now - 2 * days * DAY);
-  const beforeTo = kstDay(now - (days + 1) * DAY);
-  const [dayRows, eventRows, subs, beforeRows] = (await batch(env, [
+  const r = metricRange(url, now);
+  const { from, to, days } = r;
+  const start = Date.parse(`${from}T00:00:00+09:00`);
+  const end = Date.parse(`${to}T00:00:00+09:00`) + DAY;
+  const lastWeek = kstDay(Date.parse(`${to}T00:00:00+09:00`) - 6 * DAY);
+  const byDay = (col) => `strftime('%Y-%m-%d', (${col} + 32400000) / 1000, 'unixepoch')`;
+  const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
     stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
       SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
-    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", beforeFrom, beforeTo),
-  ])).map((r) => r.results);
-  const was = new Map(beforeRows.map((r) => [r.day, r.phones]));
-  const phoneDays = dayRows.reduce((n, r) => n + r.phones, 0);
+    // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
+    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", r.beforeFrom, r.beforeTo),
+    // [ADMUX-13] Which app the phones of the period's last seven days run.
+    stmt(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY app ORDER BY phones DESC", lastWeek, to),
+    // [ADMUX-14] The plaza, day by day.
+    stmt(env, `SELECT ${byDay("created_at")} AS day, COUNT(*) AS n, COUNT(DISTINCT device) AS people FROM reports WHERE created_at >= ? AND created_at < ? GROUP BY day`, start, end),
+    stmt(env, `SELECT ${byDay("adopted_at")} AS day, COUNT(*) AS n FROM rules WHERE adopted_at >= ? AND adopted_at < ? GROUP BY day`, start, end),
+    stmt(env, `SELECT ${byDay("created_at")} AS day, COUNT(*) AS n FROM posts WHERE created_at >= ? AND created_at < ? GROUP BY day`, start, end),
+    stmt(env, `SELECT ${byDay("at")} AS day, COUNT(*) AS n FROM post_flags WHERE at >= ? AND at < ? GROUP BY day`, start, end),
+    stmt(env, "SELECT COUNT(*) AS n FROM posts WHERE hide_reason = 'flags' AND hidden_at >= ? AND hidden_at < ?", start, end),
+    stmt(env, `SELECT ${byDay("at")} AS day, COUNT(*) AS n FROM uses WHERE at >= ? AND at < ? GROUP BY day`, start, end),
+    stmt(env, "SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'adopted' THEN 1 ELSE 0 END) AS adopted FROM rates WHERE created_at >= ? AND created_at < ?", start, end),
+    // [ADMUX-14] Each question of the period and when it first got an answer.
+    stmt(env, `SELECT i.kind, i.created_at, i.rating, (SELECT MIN(m.at) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS first
+      FROM inquiries i WHERE i.created_at >= ? AND i.created_at < ?`, start, end),
+    // [ADMUX-16] Requests the worker answered with 500, counted per Korean day.
+    stmt(env, "SELECT key, count FROM counters WHERE key BETWEEN ? AND ?", `errors|${from}`, `errors|${to}`),
+    stmt(env, `SELECT COALESCE(json_extract(info, '$.app'), '') AS app, COUNT(*) AS n FROM inquiries
+      WHERE kind = 'bug' AND created_at >= ? AND created_at < ? AND json_valid(info) GROUP BY app ORDER BY n DESC LIMIT 10`, start, end),
+    env.DB.prepare(SLA_SQL),
+  ])).map((x) => x.results);
+  const was = new Map(beforeRows.map((x) => [x.day, x.phones]));
+  const phoneDays = dayRows.reduce((n, x) => n + x.phones, 0);
   const daily = dayRows.length ? Math.round(phoneDays / dayRows.length) : 0;
-  const ev = new Map(eventRows.map((r) => [r.event, r]));
+  const ev = new Map(eventRows.map((x) => [x.event, x]));
   const share = (e) => (phoneDays ? (ev.get(e)?.recent ?? 0) / phoneDays : null);
   const enough = daily >= 30;
   const gate = (name, rule, e, least) => {
@@ -5932,19 +6714,34 @@ async function metrics(env, url, now) {
     return { name, rule, value: v === null ? null : Math.round(v * 1000) / 10, status: !enough || v === null ? "few" : v * 100 >= least ? "pass" : "fail" };
   };
   const s = subs[0] ?? {};
+  const week = dayRows.filter((x) => x.day >= lastWeek);
+  const vitals = await playVitals(env, now);
+  const vital = (name, rule, key, least) => {
+    const v = vitals?.[key];
+    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : "play" };
+    return { name, rule, value: Math.round(v * 10000) / 100, status: vitals.users < 100 ? "few" : v * 100 < least ? "pass" : "fail" };
+  };
+  const dayList = [];
+  for (let d = start; d < end; d += DAY) dayList.push(kstDay(d));
+  const series = (rows) => {
+    const m = new Map(rows.map((x) => [x.day, x.n]));
+    return dayList.map((day) => m.get(day) ?? 0);
+  };
+  const total = (rows) => rows.reduce((n, x) => n + x.n, 0);
+  const sla = readSla(slaRows);
   return {
     from, to, days, phoneDays, daily, enough,
-    series: dayRows.map((r) => ({ day: r.day, phones: r.phones })),
+    series: dayRows.map((x) => ({ day: x.day, phones: x.phones })),
     // The same day [days] earlier for each day of the series, 0 when nothing came that day.
-    before: dayRows.map((r) => was.get(kstDay(Date.parse(`${r.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
+    before: dayRows.map((x) => was.get(kstDay(Date.parse(`${x.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
     events: Object.entries(EVENTS).map(([event, label]) => {
-      const r = ev.get(event);
-      return { event, label, phones: r?.phones ?? 0, total: r?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
+      const e = ev.get(event);
+      return { event, label, phones: e?.phones ?? 0, total: e?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
     }),
     gates: [
-      // Play's numbers come with Play Reporting access (순번 52); until then the row says where to look.
-      { gate: "G0", name: "비정상 종료", rule: "1.09% 미만(내부 0.5%)", value: null, status: "play" },
-      { gate: "G0", name: "ANR", rule: "0.47% 미만(내부 0.2%)", value: null, status: "play" },
+      // [ADMUX-16] Play's own numbers when the service account may read them; until then the row says where to look.
+      { gate: "G0", ...vital("비정상 종료", "1.09% 미만(내부 0.5%)", "crash", 1.09) },
+      { gate: "G0", ...vital("ANR", "0.47% 미만(내부 0.2%)", "anr", 0.47) },
       { gate: "G0", name: "테스터", rule: "12명이 14일", value: null, status: "play" },
       { gate: "G1", ...gate("급여 화면을 본 사용자", "30% 이상", "pay_view", 30) },
       { gate: "G2", ...gate("근무표 링크를 만든 사용자", "15% 이상", "share_made", 15) },
@@ -5955,8 +6752,478 @@ async function metrics(env, url, now) {
       trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0,
     },
     shares: await shareStats(env, days),
+    // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.
+    active: {
+      daily, week: week.length ? Math.round(week.reduce((n, x) => n + x.phones, 0) / week.length) : 0,
+      most: dayRows.reduce((m, x) => (x.phones > (m?.phones ?? -1) ? x : m), null),
+      versions: appVersions(versionRows),
+    },
+    dayList,
+    plaza: {
+      reports: total(reportRows), people: reportRows.reduce((n, x) => n + x.people, 0), adopted: total(ruleRows), posts: total(postRows),
+      flags: total(flagRows), hidden: hiddenRows[0]?.n ?? 0, applied: total(useRows), rates: rateRows[0]?.n ?? 0, ratesAdopted: rateRows[0]?.adopted ?? 0,
+      series: { reports: series(reportRows), adopted: series(ruleRows), posts: series(postRows), flags: series(flagRows), applied: series(useRows) },
+    },
+    inquiries: inquiryStats(inquiryRows, sla, dayList, now),
+    errors: {
+      server: series(errorRows.map((x) => ({ day: x.key.slice(7), n: x.count }))),
+      serverTotal: errorRows.reduce((n, x) => n + x.count, 0),
+      bugs: bugRows.map((x) => ({ app: x.app || "모름", n: x.n })),
+      play: vitals ? { users: vitals.users ?? null, day: vitals.day ?? null, error: vitals.error ?? null } : null,
+    },
   };
 }
+
+// AA 1.25 시작
+/** [ADMUX-13] The days asked: 7 to 90 back from yesterday, or from·to dates (at most 180 days, none after yesterday). */
+export function metricRange(url, now) {
+  const yesterday = kstDay(now - DAY);
+  const dateOf = (k) => {
+    const v = url.searchParams.get(k);
+    return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00+09:00`)) ? v : null;
+  };
+  let from = dateOf("from");
+  let to = dateOf("to");
+  let days;
+  if (from && to) {
+    if (to > yesterday) to = yesterday;
+    if (from > to) from = to;
+    days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY) + 1;
+    if (days > METRIC_MAX_DAYS) {
+      days = METRIC_MAX_DAYS;
+      from = kstDay(Date.parse(`${to}T00:00:00+09:00`) - (days - 1) * DAY);
+    }
+  } else {
+    days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
+    to = yesterday;
+    from = kstDay(now - days * DAY);
+  }
+  const first = Date.parse(`${from}T00:00:00+09:00`);
+  return { from, to, days, beforeFrom: kstDay(first - days * DAY), beforeTo: kstDay(first - DAY) };
+}
+
+const METRIC_MAX_DAYS = 180;
+
+/**
+ * [ADMUX-15] Each app version's code, for "can this phone take that remote file" (minApp is a code). The
+ * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
+ * carried ("1.24.0 (35)") are learned on top.
+ */
+const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37 };
+
+function appVersions(rows) {
+  const all = rows.reduce((n, x) => n + x.phones, 0);
+  return rows.map((x) => ({ app: x.app, code: APP_CODES[x.app] ?? null, phones: x.phones, share: all ? Math.round((1000 * x.phones) / all) / 10 : 0 }));
+}
+
+/** The value at [q] (0..1) of sorted [list], or null for none. */
+const quantile = (list, q) => (list.length ? list[Math.min(list.length - 1, Math.max(0, Math.ceil(q * list.length) - 1))] : null);
+
+/** [ADMUX-14] How the period's questions were answered: counts, first-answer minutes, kept targets, the users' word. */
+export function inquiryStats(rows, sla, dayList, now) {
+  const waits = rows.filter((x) => x.first !== null).map((x) => Math.round((x.first - x.created_at) / 60000)).sort((a, b) => a - b);
+  // A question still unanswered counts against the target once its time is up.
+  const due = rows.filter((x) => x.first !== null || now - x.created_at > sla[slaKey(x.kind)] * HOUR);
+  const kept = due.filter((x) => x.first !== null && x.first - x.created_at <= sla[slaKey(x.kind)] * HOUR).length;
+  const good = rows.filter((x) => x.rating === 1).length;
+  const bad = rows.filter((x) => x.rating === -1).length;
+  const kinds = new Map();
+  for (const x of rows) {
+    const k = kinds.get(x.kind) ?? { kind: x.kind, n: 0, answered: 0, waits: [] };
+    k.n++;
+    if (x.first !== null) {
+      k.answered++;
+      k.waits.push(Math.round((x.first - x.created_at) / 60000));
+    }
+    kinds.set(x.kind, k);
+  }
+  const per = (pick) => {
+    const m = new Map();
+    for (const x of rows) {
+      const at = pick(x);
+      if (at === null) continue;
+      const d = kstDay(at);
+      m.set(d, (m.get(d) ?? 0) + 1);
+    }
+    return dayList.map((d) => m.get(d) ?? 0);
+  };
+  return {
+    received: rows.length, answered: waits.length, median: quantile(waits, 0.5), p90: quantile(waits, 0.9),
+    kept: due.length ? Math.round((1000 * kept) / due.length) / 10 : null, due: due.length,
+    good, bad, rated: good + bad ? Math.round((1000 * good) / (good + bad)) / 10 : null,
+    kinds: [...kinds.values()].sort((a, b) => b.n - a.n).map((k) => ({ kind: k.kind, n: k.n, answered: k.answered,
+      median: quantile(k.waits.sort((a, b) => a - b), 0.5), target: sla[slaKey(k.kind)] })),
+    series: { received: per((x) => x.created_at), answered: per((x) => x.first) },
+  };
+}
+
+/** [ADMUX-16] One more request the worker could not answer (500) on today's Korean day; kept 400 days. */
+async function countError(env) {
+  const now = Date.now();
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2)
+    ON CONFLICT (key) DO UPDATE SET count = count + 1`).bind(`errors|${kstDay(now)}`, now + 400 * DAY).run();
+}
+
+/**
+ * [ADMUX-16] Play's user-perceived crash and ANR rates over 28 days (Play Developer Reporting API), with the
+ * same service account as the purchase checks once Play Console gives it "앱 정보 보기". Asked at most every
+ * six hours; Play's daily numbers come a day or two late. Null when no account is set.
+ */
+const VITALS = { scope: "https://www.googleapis.com/auth/playdeveloperreporting", api: "https://playdeveloperreporting.googleapis.com/v1beta1/apps",
+  keepMs: 6 * HOUR };
+const vitalsKept = new WeakMap();
+
+export async function playVitals(env, now) {
+  const account = playReady(env);
+  if (!account) return null;
+  const kept = vitalsKept.get(env.DB ?? env);
+  if (kept && kept.until > now) return kept.value;
+  const pkg = env.PLAY_PACKAGE || "com.bamnat.app";
+  // Daily rows are Los Angeles days (the only zone Play takes); ten days back is enough for the latest one.
+  const la = (ms) => {
+    const [y, m, d] = new Date(ms - 8 * HOUR).toISOString().slice(0, 10).split("-").map(Number);
+    return { year: y, month: m, day: d, timeZone: { id: "America/Los_Angeles" } };
+  };
+  const ask = async (token, set, metric) => {
+    const res = await fetch(`${VITALS.api}/${encodeURIComponent(pkg)}/${set}:query`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ timelineSpec: { aggregationPeriod: "DAILY", startTime: la(now - 10 * DAY), endTime: la(now) },
+        metrics: [metric, "distinctUsers"] }),
+      signal: AbortSignal.timeout(SHARE_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Refuse(res.status === 403 ? "play_denied" : "play", "play", 502);
+    const rows = (await res.json()).rows ?? [];
+    const last = rows.at(-1);
+    if (!last) return { rate: null, users: 0, day: null };
+    const val = (name) => Number(last.metrics?.find((x) => x.metric === name)?.decimalValue?.value);
+    const t = last.startTime ?? {};
+    return { rate: Number.isFinite(val(metric)) ? val(metric) : null, users: Number.isFinite(val("distinctUsers")) ? val("distinctUsers") : 0,
+      day: t.year ? `${t.year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}` : null };
+  };
+  let value;
+  try {
+    const token = await playToken(env, account, now, VITALS.scope);
+    const [crash, anr] = await Promise.all([ask(token, "crashRateMetricSet", "userPerceivedCrashRate28dUserWeighted"),
+      ask(token, "anrRateMetricSet", "userPerceivedAnrRate28dUserWeighted")]);
+    value = { crash: crash.rate, anr: anr.rate, users: crash.users, day: crash.day };
+  } catch (e) {
+    value = { error: e?.code === "play_denied" ? "denied" : "unreachable" };
+  }
+  vitalsKept.set(env.DB ?? env, { value, until: now + (value.error ? HOUR : VITALS.keepMs) });
+  return value;
+}
+
+/**
+ * [ADMUX-15] 원격 갱신 배포 현황: each signed file on the site the app reads (remote/v1 on GitHub Pages, or
+ * REMOTE_BASE_URL), whether its Ed25519 signature checks out with the keys the app trusts, and how many of
+ * the phones of the last seven days (usage stats) run an app new enough (minApp) to take it. The app never
+ * says which version it uses (결정 AA-D2), so this is what can reach phones, not what has.
+ */
+export const REMOTE = {
+  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles"],
+  base: "https://ywjmoney.github.io/-/remote/v1",
+  // The same two keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file).
+  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ="],
+  keepMs: 10 * 60 * 1000,
+};
+const remoteKept = new WeakMap();
+
+const unb64 = (text) => Uint8Array.from(atob(text.trim()), (c) => c.charCodeAt(0));
+
+async function signedBy(bytes, signature) {
+  let sig;
+  try {
+    sig = unb64(signature);
+  } catch {
+    return false;
+  }
+  for (const k of REMOTE.keys) {
+    try {
+      const key = await crypto.subtle.importKey("raw", unb64(k), { name: "Ed25519" }, false, ["verify"]);
+      if (await crypto.subtle.verify({ name: "Ed25519" }, key, sig, bytes)) return true;
+    } catch {
+      // A runtime without Ed25519 cannot say; the file shows as not checked.
+    }
+  }
+  return false;
+}
+
+async function remoteState(env, now, fresh = false) {
+  const kept = remoteKept.get(env.DB ?? env);
+  if (!fresh && kept && kept.until > now) return kept.value;
+  const base = (typeof env.REMOTE_BASE_URL === "string" && /^https:\/\/[^\s]+$/.test(env.REMOTE_BASE_URL.trim())
+    ? env.REMOTE_BASE_URL.trim() : REMOTE.base).replace(/\/+$/, "");
+  const get = async (path) => {
+    try {
+      const res = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(SHARE_TIMEOUT_MS), headers: { "cache-control": "no-cache" } });
+      return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+    } catch {
+      return null;
+    }
+  };
+  const week = await all(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY app",
+    kstDay(now - 7 * DAY), kstDay(now - DAY));
+  // Codes the questions carried ("1.24.0 (35)"), on top of the list of releases.
+  const learned = await all(env, `SELECT DISTINCT json_extract(info, '$.app') AS app FROM inquiries
+    WHERE json_valid(info) AND created_at > ? LIMIT 200`, now - 90 * DAY);
+  const codes = { ...APP_CODES };
+  for (const { app } of learned) {
+    const m = /^(\d{1,2}\.\d{1,3}\.\d{1,3}) \((\d{1,6})\)$/.exec(app ?? "");
+    if (m) codes[m[1]] = Number(m[2]);
+  }
+  const phones = week.reduce((n, x) => n + x.phones, 0);
+  const files = await Promise.all(REMOTE.kinds.map(async (kind) => {
+    const [bytes, sig] = await Promise.all([get(`${kind}.json`), get(`${kind}.json.sig`)]);
+    if (!bytes) return { kind, found: false };
+    let f = null;
+    try {
+      f = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      return { kind, found: true, readable: false };
+    }
+    const minApp = Number.isInteger(f.minApp) ? f.minApp : null;
+    const able = week.filter((x) => codes[x.app] !== undefined && (minApp === null || codes[x.app] >= minApp)).reduce((n, x) => n + x.phones, 0);
+    const unknown = week.filter((x) => codes[x.app] === undefined).reduce((n, x) => n + x.phones, 0);
+    return {
+      kind, found: true, readable: f.kind === kind && f.format === 1, version: f.version ?? null, issued: f.issued ?? null, minApp,
+      source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig), valid: sig ? await signedBy(bytes, new TextDecoder().decode(sig)) : false,
+      reach: phones ? Math.round((1000 * able) / phones) / 10 : null, unknown,
+    };
+  }));
+  const value = { base, at: iso(now), phones, files };
+  remoteKept.set(env.DB ?? env, { value, until: now + REMOTE.keepMs });
+  return value;
+}
+
+/** [ADMUX-19] Up to 100 posts (show·hide·delete) or 임금표 entries (adopted·hidden·pending) in one go. */
+async function plazaBulk(request, env, now, what) {
+  const body = await readJson(request, 8 * 1024);
+  const pattern = what === "posts" ? /^p[A-Za-z0-9]{15}$/ : /^[A-Za-z0-9]{22}$/;
+  if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > DEV.bulk || body.ids.some((x) => typeof x !== "string" || !pattern.test(x))) {
+    refuse("ids", "ids");
+  }
+  const ids = [...new Set(body.ids)];
+  let action;
+  if (what === "posts") {
+    action = oneOf(body.action, ["show", "hide", "delete"], "action");
+    if (action === "delete" && !can(env.actor, "community", "edit")) return json({ error: "no_permission", area: "community" }, 403);
+  } else {
+    action = oneOf(body.action, ["adopted", "hidden", "pending"], "action");
+  }
+  const done = [];
+  const skipped = [];
+  for (const id of ids) {
+    const out = what === "posts" ? await moderatePost(env, id, { action, reason: body.reason }, now) : await rateTo(env, env.actor, id, action, now);
+    (out.error ? skipped : done).push(out.error ? { id, error: out.error } : id);
+  }
+  await audit(env, now, `${what === "posts" ? "post" : "rate"}_bulk`, `${done.length}개`, `${action}${skipped.length ? ` (${skipped.length} 건너뜀)` : ""}`);
+  return json({ done, skipped });
+}
+
+/** [ADMUX-18] Wilson score lower bound (95%) of [ok] among [n], as a percent: a share that does not jump on two votes. */
+export function wilson(ok, n) {
+  if (!n) return 0;
+  const z = 1.96;
+  const p = ok / n;
+  const lower = (p + (z * z) / (2 * n) - z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n)) / (1 + (z * z) / n);
+  return Math.round(1000 * Math.max(0, lower)) / 10;
+}
+
+/**
+ * [ADMUX-18] 같은 회사 여러 판: per company and department, the rule in use, the setups waiting to replace it
+ * and the earlier versions, side by side with how many phones took each (uses), 맞았어요·달라요, trust, the
+ * Wilson share and what differs from the rule in use. show "conflict" (default): two or more live ones;
+ * "history": also departments whose only others are earlier versions.
+ */
+async function versions(env, show) {
+  const [ruleRows, groupRows, reports, votes, useRows, postRows, companyRows, settingRows] = (await batch(env, [
+    env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
+    env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at FROM reports WHERE status = 'pending'
+      ORDER BY verified DESC, created_at DESC`),
+    env.DB.prepare("SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE status IN ('pending', 'adopted')"),
+    env.DB.prepare("SELECT company_id, grp, device, ok, verified, cluster FROM votes"),
+    env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM uses GROUP BY company_id, grp"),
+    env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM posts WHERE status = 'shown' GROUP BY company_id, grp"),
+    env.DB.prepare("SELECT id, name FROM companies"),
+    env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
+  ])).map((r) => r.results);
+  const { adoptPoints } = readSettings(settingRows);
+  const scores = tallies(reports, votes);
+  const used = new Map(useRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
+  // [PLAZA-05] Pay-slip-checked reports of every 판, the rule in use too, as the plaza's own 지지 counts them.
+  const checked = new Map();
+  for (const r of reports) if (r.verified === 1) checked.set(`${r.company_id}/${r.grp}`, (checked.get(`${r.company_id}/${r.grp}`) ?? 0) + 1);
+  const talk = new Map(postRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
+  const names = new Map(companyRows.map((c) => [c.id, c.name]));
+  const depts = new Map();
+  const at = (company, norm, dept) => {
+    const key = `${company}/${norm}`;
+    if (!depts.has(key)) depts.set(key, { company: { id: company, name: names.get(company) ?? "" }, dept, list: [] });
+    return depts.get(key);
+  };
+  const card = (company, grp, more) => {
+    const sc = scores.get(`${company}/${grp}`) ?? NO_SCORE;
+    return { setup: grp, uses: used.get(`${company}/${grp}`) ?? 0, ok: sc.persons, bad: sc.bad, points: sc.points, ...trust(sc, adoptPoints),
+      wilson: wilson(sc.persons, sc.persons + sc.bad), posts: talk.get(`${company}/${grp}`) ?? 0, verified: checked.get(`${company}/${grp}`) ?? 0, ...more };
+  };
+  for (const r of ruleRows) {
+    at(r.company_id, r.dept_norm, r.dept).list.push(card(r.company_id, r.grp, {
+      state: r.superseded ? "previous" : "active", rule: r.id, version: r.version, source: r.source, at: iso(r.adopted_at), raw: r.setup }));
+  }
+  const seen = new Set();
+  for (const g of groupRows) {
+    const key = `${g.company_id}/${g.grp}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const reportsOf = groupRows.filter((x) => x.company_id === g.company_id && x.grp === g.grp);
+    at(g.company_id, g.dept_norm, g.dept).list.push(card(g.company_id, g.grp, {
+      state: "pending", reports: reportsOf.length,
+      at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup }));
+  }
+  const out = [];
+  let conflicts = 0;
+  for (const d of depts.values()) {
+    const live = d.list.filter((c) => c.state !== "previous");
+    const conflict = live.length >= 2;
+    if (conflict) conflicts++;
+    if (d.list.length < 2 || (!conflict && show !== "history")) continue;
+    const active = d.list.find((c) => c.state === "active");
+    const base = active ? describe(JSON.parse(active.raw)) : null;
+    // The one most people took and trust: phones that use it, people who sent or backed it, over the Wilson share.
+    const score = support;
+    const best = live.length ? live.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
+    const order = { active: 0, pending: 1, previous: 2 };
+    out.push({
+      company: d.company, dept: d.dept, conflict,
+      candidates: d.list.sort((a, b) => order[a.state] - order[b.state] || (b.version ?? 0) - (a.version ?? 0) || b.at.localeCompare(a.at)).map((c) => {
+        const lines = describe(JSON.parse(c.raw));
+        const { raw, ...rest } = c;
+        return { ...rest, lines, changes: base && c !== active ? diffLines(base, lines) : null, recommended: Boolean(conflict && c === best) };
+      }),
+    });
+  }
+  out.sort((a, b) => b.conflict - a.conflict || a.company.name.localeCompare(b.company.name));
+  return { conflicts, show: show === "history" ? "history" : "conflict", items: out };
+}
+
+/**
+ * [ADMUX-18] An earlier version back as the department's rule: a new version with its setup (source
+ * "promote"), the rule in use becomes an earlier one. Nothing is deleted; phones on the replaced one hear
+ * of the new version through 광장 소식 like any other.
+ */
+async function promote(env, id, now) {
+  if (!can(env.actor, "takedown", "edit")) return json({ error: "no_permission", area: "takedown" }, 403);
+  const r = await one(env, "SELECT * FROM rules WHERE id = ?", id);
+  if (!r) return json({ error: "not_found" }, 404);
+  if (!r.superseded || r.withdrawn) return json({ error: "not_previous" }, 409);
+  const last = await one(env, "SELECT MAX(version) AS v FROM rules WHERE company_id = ? AND dept_norm = ?", r.company_id, r.dept_norm);
+  const ruleId = randomId(16);
+  await batch(env, [
+    stmt(env, "UPDATE rules SET superseded = 1 WHERE company_id = ? AND dept_norm = ? AND superseded = 0", r.company_id, r.dept_norm),
+    stmt(env, `INSERT INTO rules (id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'promote', ?, 0, 0)`, ruleId, r.company_id, r.dept, r.dept_norm, r.grp, (last?.v ?? 0) + 1, r.setup, now),
+  ]);
+  await audit(env, now, "rule_promote", ruleId, `v${r.version} → v${(last?.v ?? 0) + 1}`);
+  return companyInfo(env, r.company_id);
+}
+
+/**
+ * [ADMUX-17] 할 일 받은함: every thing waiting on this admin's areas in one list, the nearest deadline
+ * first, then the oldest. A deadline is the question's answer target, 30 days to look at a post the flags
+ * hid (운영 규칙), a week for a setup or 임금표 entry to be decided, the month's end for its chores.
+ */
+function inboxQueries(actor, now) {
+  const q = {};
+  if (can(actor, "inquiries")) {
+    q.inquiries = `SELECT i.id, i.kind, i.updated_at, i.assignee, i.assignee_name, i.same,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+        (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+      FROM inquiries i WHERE i.status = 'open' ORDER BY i.updated_at LIMIT 300`;
+    q.sla = SLA_SQL;
+  }
+  if (can(actor, "review")) {
+    q.groups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
+      FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 100`;
+    q.asks = "SELECT p.id, p.dept, p.created_at, c.name FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 50";
+    q.doubted = `SELECT r.id, r.dept, r.version, c.name, MAX(v.at) AS at, COUNT(*) AS n FROM rules r JOIN companies c ON c.id = r.company_id
+      JOIN votes v ON v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0 WHERE r.withdrawn = 0 AND r.superseded = 0 GROUP BY r.id LIMIT 50`;
+  }
+  if (can(actor, "community")) {
+    q.posts = `SELECT p.id, p.body, p.flags, p.status, p.hide_reason, p.hidden_at, p.created_at, c.name,
+        (SELECT MIN(f.at) FROM post_flags f WHERE f.post_id = p.id) AS flagged
+      FROM posts p JOIN companies c ON c.id = p.company_id WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') LIMIT 100`;
+    q.rates = "SELECT id, trade, amount, unit, created_at FROM rates WHERE status = 'pending' ORDER BY created_at LIMIT 50";
+  }
+  if (can(actor, "dev")) {
+    q.dev = "SELECT id, title, status, assignee, created_at FROM dev_items WHERE deleted_at IS NULL AND status = 'todo' ORDER BY created_at LIMIT 50";
+  }
+  if (can(actor, "rewards")) q.owed = "SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed'";
+  if (can(actor, "ops")) q.ops = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
+  if (actor.owner) {
+    q.admins = "SELECT id, name, email, created_at FROM admins WHERE status = 'pending'";
+    q.phones = "SELECT id, admin_name, created_at FROM admin_devices WHERE status = 'pending'";
+  }
+  return q;
+}
+
+async function inbox(env, actor, now) {
+  const q = inboxQueries(actor, now);
+  const keys = Object.keys(q);
+  const res = await batch(env, keys.map((k) => (Array.isArray(q[k]) ? stmt(env, ...q[k]) : env.DB.prepare(q[k]))));
+  return inboxItems(Object.fromEntries(keys.map((k, i) => [k, res[i].results])), actor, now);
+}
+
+/** [ADMUX-17] The list from what [inboxQueries] read (also read inside the overview's one trip). */
+function inboxItems(got, actor, now) {
+  const items = [];
+  const add = (item) => items.push({ due: null, ...item, at: iso(item.at), ...(item.due ? { due: iso(item.due) } : {}) });
+  const short = (t) => [...String(t ?? "")].slice(0, 80).join("");
+  if (got.inquiries) {
+    const sla = readSla(got.sla);
+    for (const r of got.inquiries) {
+      if (r.last !== "user") continue;
+      add({ type: "inquiry", id: r.id, kind: r.kind, title: short(r.first) || "(내용 없음)", at: r.updated_at, due: r.updated_at + sla[slaKey(r.kind)] * HOUR,
+        same: r.same ?? 0, mine: r.assignee === actor.id, assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null });
+    }
+  }
+  for (const g of got.groups ?? []) {
+    add({ type: "group", id: `${g.company_id}.${g.grp}`, title: `${g.name}${g.dept ? ` ${g.dept}` : ""}`, n: g.n, at: g.since, due: g.since + INBOX.decideDays * DAY });
+  }
+  for (const a of got.asks ?? []) add({ type: "ask", id: a.id, title: `${a.name}${a.dept ? ` ${a.dept}` : ""}`, at: a.created_at, due: a.created_at + INBOX.decideDays * DAY });
+  for (const d of got.doubted ?? []) add({ type: "doubted", id: d.id, title: `${d.name}${d.dept ? ` ${d.dept}` : ""} v${d.version}`, n: d.n, at: d.at });
+  for (const p of got.posts ?? []) {
+    const hidden = p.status === "hidden" && p.hide_reason === "flags";
+    add({ type: hidden ? "hidden_post" : "flagged_post", id: p.id, title: short(p.body), company: p.name, n: p.flags,
+      at: hidden ? p.hidden_at : p.flagged ?? p.created_at, due: hidden ? p.hidden_at + LIMITS.hiddenReviewDays * DAY : null });
+  }
+  for (const r of got.rates ?? []) add({ type: "rate", id: r.id, title: `${r.trade} ${r.amount.toLocaleString("ko-KR")}원`, at: r.created_at, due: r.created_at + INBOX.decideDays * DAY });
+  for (const d of got.dev ?? []) add({ type: "dev", id: d.id, title: short(d.title), at: d.created_at, mine: d.assignee === actor.id });
+  if (got.owed?.[0]?.n) add({ type: "rewards", id: "owed", title: "드릴 보상", n: got.owed[0].n, at: got.owed[0].since });
+  if (got.ops) {
+    const month = kstDay(now).slice(0, 7);
+    const [y, m] = month.split("-").map(Number);
+    const monthEnd = Date.parse(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01T00:00:00+09:00`);
+    for (const i of opsItems(month, got.ops[0]?.value)) {
+      if (!i.done) add({ type: "ops", id: i.key, title: i.text, at: Date.parse(`${month}-01T00:00:00+09:00`), due: monthEnd });
+    }
+  }
+  for (const a of got.admins ?? []) add({ type: "admin", id: a.id, title: `${a.name} (${maskEmail(a.email)})`, at: a.created_at });
+  for (const p of got.phones ?? []) add({ type: "phone", id: p.id, title: `${p.admin_name}의 휴대폰`, at: p.created_at });
+  items.sort((a, b) => (a.due && b.due ? a.due.localeCompare(b.due) : a.due ? -1 : b.due ? 1 : a.at.localeCompare(b.at)));
+  const today = Date.parse(`${kstDay(now)}T00:00:00+09:00`) + DAY;
+  const counts = { today: 0, week: 0, all: items.length, late: 0, mine: items.filter((i) => i.mine).length };
+  for (const i of items) {
+    const due = i.due ? Date.parse(i.due) : null;
+    if (due !== null && due < now) counts.late++;
+    if (due !== null && due < today) counts.today++;
+    if (due !== null && due < today + 6 * DAY) counts.week++;
+  }
+  return { now: iso(now), counts, items: items.slice(0, 200) };
+}
+
+const INBOX = { decideDays: 7 };
+// AA 1.25 끝
 
 // [COMM-09] 이 사람 글 안 보기 without a list on the server. Each post carries its writer sealed with a key
 // only this server has (AES-GCM, a fresh nonce each time), so the marks of two posts never match and
@@ -6058,7 +7325,7 @@ async function digest(request, env, url) {
 }
 
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results] = (await batch(env, [
+  const [changed, adopted, rates, results, rooms] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -6073,6 +7340,7 @@ async function newsItems(env, dev, since, now) {
     // [COMM-11] What became of posts this phone flagged or wrote, and the end of its 쓰기 막기.
     stmt(env, `SELECT x.kind, x.result, x.post_id, x.company_id, c.name, x.at FROM plaza_results x LEFT JOIN companies c ON c.id = x.company_id
       WHERE x.device = ? AND x.at > ? AND x.at <= ? ORDER BY x.at DESC LIMIT 20`, dev, since, now),
+    roomNews(env, dev, since),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -6081,6 +7349,8 @@ async function newsItems(env, dev, since, now) {
     ...rates.map((r) => ({ kind: "rate", trade: r.trade, region: r.region, at: iso(r.at) })),
     ...results.map((r) => ({ kind: r.kind, result: r.result, ...(r.post_id ? { post: r.post_id } : {}),
       ...(r.company_id ? { company: { id: r.company_id, name: r.name ?? "" } } : {}), at: iso(r.at) })),
+    // [PLAZA-09] Something new in a company this phone joined: n other versions to look at.
+    ...rooms.map((r) => ({ kind: "room", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

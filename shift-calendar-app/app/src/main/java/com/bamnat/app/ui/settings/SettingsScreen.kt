@@ -64,6 +64,7 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.WorkOutline
@@ -143,14 +144,18 @@ import com.bamnat.core.time.Today
  * [SET-02] Seven since 1.22: 잠과 휴식 went into 알림과 잠 (both say when the app tells you something),
  * and 앱 정보 into 개인정보·앱 정보 (처리방침 was in both).
  */
-enum class SettingsPage(val title: String, val icon: ImageVector) {
-    WORK("내 근무", Icons.Outlined.WorkOutline),
-    ALARM("알람", Icons.Outlined.Alarm),
-    NOTICES("알림과 잠", Icons.Outlined.Notifications),
-    PAY("급여와 연차", Icons.Outlined.Payments),
-    CALENDAR("달력 화면", Icons.Outlined.CalendarMonth),
-    DATA("데이터", Icons.Outlined.SettingsBackupRestore),
-    PRIVACY("개인정보·앱 정보", Icons.Outlined.PrivacyTip),
+enum class SettingsPage(
+    val title: String, val icon: ImageVector,
+    /** [VIS-06] The group's colour family: work, what tells you something, the screen, data and privacy. */
+    val kind: com.bamnat.app.ui.theme.SettingsKind,
+) {
+    WORK("내 근무", Icons.Outlined.WorkOutline, com.bamnat.app.ui.theme.SettingsKind.WORK),
+    ALARM("알람", Icons.Outlined.Alarm, com.bamnat.app.ui.theme.SettingsKind.ALERT),
+    NOTICES("알림과 잠", Icons.Outlined.Notifications, com.bamnat.app.ui.theme.SettingsKind.ALERT),
+    PAY("급여와 연차", Icons.Outlined.Payments, com.bamnat.app.ui.theme.SettingsKind.WORK),
+    CALENDAR("달력 화면", Icons.Outlined.CalendarMonth, com.bamnat.app.ui.theme.SettingsKind.SCREEN),
+    DATA("데이터", Icons.Outlined.SettingsBackupRestore, com.bamnat.app.ui.theme.SettingsKind.DATA),
+    PRIVACY("개인정보·앱 정보", Icons.Outlined.PrivacyTip, com.bamnat.app.ui.theme.SettingsKind.DATA),
 }
 
 /** A result to show once; [undo] offers to take an import back. */
@@ -708,7 +713,8 @@ private fun SettingsHub(
         Spacer(Modifier.size(4.dp))
         val work by vm.workSettings.collectAsStateWithLifecycle()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
+            GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p,
+                tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [SET-02] The seven groups, then the rows that are not settings of their own under a small heading,
         // so the list reads as the "7묶음" the 1.22 notice names.
@@ -717,6 +723,10 @@ private fun SettingsHub(
         // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
+        // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there.
+        if (LocalContext.current.appContainer.inviteApi.enabled) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "친구가 깔고 다른 날 한 번 더 열면 프로 1개월 · 초대 코드 넣기", false) { SettingsLinks.go(SettingsGo.PRO) }
+        }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.

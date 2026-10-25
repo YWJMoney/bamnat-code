@@ -202,7 +202,7 @@ fun EditValueDialog(
                             },
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        if (locked) com.bamnat.app.ui.money.ProPill(Modifier.padding(start = 8.dp))
+                        if (k == ScopeKind.RANGE) com.bamnat.app.ui.money.ProPill(Modifier.padding(start = 8.dp), locked = locked) // [TIER-06]
                     }
                 }
                 if (scope == ScopeKind.RANGE) {

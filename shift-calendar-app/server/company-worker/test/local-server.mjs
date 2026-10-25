@@ -87,11 +87,59 @@ async function seed() {
     info: { app: "1.12.0 (18)" },
   }, "10.0.0.12");
   // [ADMUX-07] 56 days of made-up phone counts, so 지표 draws its chart with the period before.
+  // [ADMUX-13] On two app versions as the phones send them, with the events behind the gates.
   const kst = (ms) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);
+  const run = (sql, ...v) => env.DB.prepare(sql).bind(...v).run();
   for (let i = 1; i <= 56; i++) {
-    await env.DB.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '33', ?)").bind(kst(Date.now() - i * 864e5), 30 + ((i * 7) % 23) + (i < 29 ? 8 : 0)).run();
+    const day = kst(Date.now() - i * 864e5);
+    const phones = 30 + ((i * 7) % 23) + (i < 29 ? 8 : 0);
+    const newer = i < 10 ? Math.round(phones * 0.7) : 0;
+    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
+    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
+    for (const [event, share] of [["open", 0.9], ["pay_view", 0.35], ["share_made", 0.08], ["plaza_apply", 0.05], ["inquiry", 0.02], ["backup", 0.1]]) {
+      const n = Math.max(1, Math.round(phones * share));
+      await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
+    }
   }
-  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 2 questions, 56 days of usage");
+  if (login.ok) await seedVersions(login.headers.get("set-cookie").split(";")[0], a);
+  // [ADMUX-14] Four weeks of questions with their first answers and the askers' word, and the plaza spread over them.
+  const kinds = ["bug", "question", "idea", "bug", "other"];
+  for (let i = 0; i < 24; i++) {
+    const at = Date.now() - (i + 1) * 864e5 + (i % 5) * 3600e3;
+    const id = `seedQ${String(i).padStart(17, "0")}`;
+    const kind = kinds[i % kinds.length];
+    const app = i < 8 ? "1.24.0 (35)" : "1.23.0 (34)";
+    await run(`INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
+      id, `seed-device-q${i}`, kind, JSON.stringify({ app }), at, at, i % 4 === 0 ? -1 : i % 3 === 0 ? null : 1);
+    await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, `지난 문의 ${i + 1}`, at);
+    await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', '확인했어요', 'owner', ?)", id, at + ((i * 97) % 600 + 20) * 60e3);
+  }
+  for (const t of ["reports", "posts"]) await run(`UPDATE ${t} SET created_at = created_at - (rowid % 20 + 1) * 86400000`);
+  await run("UPDATE post_flags SET at = at - (rowid % 9 + 1) * 86400000");
+  for (let i = 0; i < 30; i++) {
+    await run("INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", a.company.id, a.setup, `seed-device-u${i}`, Date.now() - (i % 25 + 1) * 864e5);
+  }
+  // [ADMUX-16] A few requests the server could not answer.
+  for (const i of [3, 11, 12]) await run("INSERT INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
+  console.log("seeded: 예시정밀 v1·v2 and a third version waiting, 2 waiting elsewhere, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 26 questions, 56 days of usage");
+}
+
+/**
+ * [ADMUX-18] 예시정밀's rule in two versions (v1, then the 12% one as v2) and a third setup waiting beside it,
+ * so 여러 판 has a department to decide and an earlier version to bring back.
+ */
+async function seedVersions(cookie, first) {
+  const adopt = (company, grp) => worker.fetch(new Request(`http://localhost:${port}/api/admin/groups/${company}/${grp}/adopt`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie }, body: "{}",
+  }), env);
+  await adopt(first.company.id, first.setup);
+  const queue = await worker.fetch(new Request(`http://localhost:${port}/api/admin/queue`, { headers: { cookie } }), env).then((r) => r.json());
+  const v2 = queue.groups.find((g) => g.company.id === first.company.id && g.setup !== first.setup && !g.dept);
+  if (v2) await adopt(first.company.id, v2.setup);
+  const third = setup();
+  third.pay.rules.extra[3].percent = 0.15;
+  await send("/api/reports", report(13, { company: "예시정밀", setup: third, note: "우리 조는 대근 15%예요" }), "10.0.0.13");
+  await send("/api/reports", report(14, { company: "예시정밀", setup: third }), "10.0.0.14");
 }
 
 /** [ADMIN-04] One approved admin (minji@example.com, password minji-review-2026), one waiting, one invite out. */
@@ -116,7 +164,23 @@ async function seedAdmins(cookie) {
 
 if (args.includes("--seed")) await seed();
 
+// AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
+// friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.
+const testClock = args.includes("--test-clock");
+if (testClock) {
+  const realNow = Date.now.bind(Date);
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  globalThis.__moveClock = (days) => { offset += days * 24 * 60 * 60 * 1000; };
+}
+
 http.createServer(async (req, res) => {
+  if (testClock && req.method === "POST" && req.url.startsWith("/__test/clock")) {
+    globalThis.__moveClock(Number(new URL(req.url, "http://x").searchParams.get("days") || 1));
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const chunks = [];
   for await (const c of req) chunks.push(c);
   const headers = new Headers();

@@ -147,7 +147,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
 
-private enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+internal enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
     /** [WORK-06] Income, spending and what is left, for every kind of work. */
     MONEY("money", "돈", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
@@ -159,6 +159,12 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
 
     /** [TYPE-02] The hours-and-money tab is named for the work of the calendar on screen. */
     fun labelFor(style: WorkStyle?): String = if (this == STATS) style.words().tab else label
+
+    companion object {
+        /** [NAV-05] The tabs in the order kept in settings ([com.bamnat.core.layout.TabOrder] keys are the routes). */
+        fun ordered(saved: List<String>): List<TopLevel> =
+            com.bamnat.core.layout.TabOrder.of(saved, entries.map { it.route }).map { k -> entries.first { it.route == k } }
+    }
 }
 
 /** [MON-07] Where the banner may go: under 근무·급여 and 돈 only ([com.bamnat.core.tier.AdRules.banner]). */
@@ -217,6 +223,8 @@ private object Routes {
     const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}"
     const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
     const val COMPANY_REPORT = "company_report"
+    /** [PLAZA-06] 처음 설정 다시 받기. */
+    const val SETUP_AGAIN = "setup_again"
     const val COMPANY_SENT = "company_sent"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
@@ -234,6 +242,9 @@ private object Routes {
     const val COMBINED = "combined"
     // [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Shift and day work's own tools, for the calendar on screen.
     const val DUTY_ROSTER = "duty_roster"
+    /** [READ-10] 한 달 근무 넣기 on one month: the calendar's 이번 달 전부 넣기 (1.25 순번 371). */
+    const val DUTY_ROSTER_MONTH = "duty_roster_month/{month}"
+    fun dutyRoster(month: java.time.YearMonth) = "duty_roster_month/$month"
     const val HEALTH_REPORT = "health_report"
     const val TEAMS = "teams"
     const val YEAR = "year"
@@ -300,9 +311,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true && !browse.browsing) {
+            // [NAV-03] 1.25 Z (U4): a help link tapped during the setup is not followed later, out of the blue, once it is done.
+            LaunchedEffect(Unit) { SettingsLinks.target.collect { it?.let(SettingsLinks::consume) } }
             if (consentSeen == null && setupDraft == null) {
                 val key = firstStyleKey
                 if (key == null) {
+                    // [NAV-04] 1.25 Z 후속: the very first screen closes only on a second back, as the calendar does.
+                    val context = LocalContext.current
+                    val exit = remember { ExitGuard() }
+                    androidx.activity.compose.BackHandler { exit.press(context) }
                     com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
                     return
                 }
@@ -331,7 +348,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         route?.let { com.bamnat.app.ui.guide.GuideUse.screen(com.bamnat.app.data.GuideStore.get(container.appContext), it.substringBefore('/').substringBefore('?')) }
     }
 
-    // Opening the app (again) always lands on the calendar.
+    // [NAV-05] 1.26 AD: the tabs in the user's order (D82); the first is home: the app opens there, back ends there.
+    val tabEdit = remember { TabEdit() }
+    val savedTabs = remember(settingsNow.tabOrder) { TopLevel.ordered(settingsNow.tabOrder) }
+    val home = savedTabs.first()
+    val tabs = if (tabEdit.editing) tabEdit.order.map { k -> TopLevel.entries.first { it.route == k } } else savedTabs
+
+    // Opening the app (again) always lands on the first tab (the calendar unless the user moved another first).
     val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
     LaunchedEffect(homeRequests) {
         // Kept per process with the count: a screen rebuilt (a fold, a restore) does not take one twice or miss one.
@@ -340,8 +363,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
-            if (NoticeLinks.target.value == null && current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
-                nav.navigate(TopLevel.CALENDAR.route) {
+            val homeRoute = TopLevel.ordered(container.settingsRepository.current.tabOrder).first().route
+            if (NoticeLinks.target.value == null && current != homeRoute && TopLevel.entries.any { it.route == current }) {
+                TabHistory.clear()
+                nav.navigate(homeRoute) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
                 }
@@ -390,6 +415,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
+            // [TAX-02] Likewise, to open 세금·실수령.
+            NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -403,6 +430,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.GROUP -> { nav.navigate(Routes.SHARE_GROUP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -438,7 +468,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
     val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
     LaunchedEffect(sharedRoster) {
-        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route != Routes.DUTY_ROSTER) {
+        // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
+        // 한 달 근무 넣기 (U, ROST-09) is open stays that screen's.
+        val rosterOpen = nav.currentBackStackEntry?.destination?.route in setOf(Routes.DUTY_ROSTER, Routes.DUTY_ROSTER_MONTH)
+        val shot = sharedRoster as? com.bamnat.app.IncomingRoster.Shared.Photo
+        if (shot != null && activeStyle == WorkStyle.INVEST && !rosterOpen) {
+            com.bamnat.app.IncomingRoster.take()
+            com.bamnat.app.invest.IncomingFills.put(shot.uri)
+            NoticeLinks.open(NoticeLinks.Target.INVEST, activeCalendarId)
+            return@LaunchedEffect
+        }
+        if (sharedRoster != null && !rosterOpen) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
     }
@@ -537,6 +577,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
+    com.bamnat.app.ui.company.AutoShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
+
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
     LaunchedEffect(lastDeleted) {
@@ -577,6 +620,62 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
+    // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
+    val startTab = rememberSaveable { home.route }
+
+    // [NAV-02] 1.25 Z (U4): back goes where the user was. From a tab reached from another tab, that tab, as it was
+    // left (Android's default went to the calendar from every tab); from the calendar itself, a second back within
+    // two seconds closes the app, so one stray back does not. Screens and sheets inside take back first.
+    // [NAV-05] 1.26 AD: "the calendar" is the first tab ([home]), whichever the user put there, even when it was moved
+    // first in this run (the bottom of the back stack is then still the tab the app opened on, [start]).
+    // One callback, added again after every move so it comes after the NavHost's own back (added once, at the
+    // start), which would otherwise pop straight to the calendar; screens composed with the move add theirs later
+    // and still go first.
+    val context = LocalContext.current
+    val exitGuard = remember { ExitGuard() }
+    val tabBack = remember { TabBackCallback() }
+    // On every tab; what to do is decided when back comes, from the back stack as it is then (it is not state, and
+    // a tab brought back with its screens is still settling when this is drawn).
+    tabBack.isEnabled = topLevel != null
+    tabBack.onBack = onBack@{
+        val previousRoute = nav.previousBackStackEntry?.destination?.route
+        val current = TopLevel.entries.firstOrNull { it.route == nav.currentBackStackEntry?.destination?.route }
+        val start = nav.graph.findStartDestination().route
+        when {
+            // A tab put over an inner screen goes back to that screen, as anything else that is the NavHost's.
+            current == null || (previousRoute != null && previousRoute != start) -> return@onBack false
+            current == home -> { if (exitGuard.press(context)) TabHistory.clear() }
+            TabHistory.previous() != null -> TabHistory.back()?.let { prev -> nav.navigateTopLevel(prev, record = false) }
+            // Right over home: the NavHost pops to it.
+            previousRoute == home.route -> return@onBack false
+            // Home was moved first in this run, so it is not under this tab: it is brought up as a tab switch.
+            else -> nav.navigateTopLevel(home.route, record = false)
+        }
+        true
+    }
+    val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(dispatcher, lifecycleOwner, backStack?.id) {
+        tabBack.remove()
+        tabBack.dispatcher = dispatcher
+        dispatcher?.addCallback(lifecycleOwner, tabBack)
+        onDispose { tabBack.remove() }
+    }
+
+    // [NAV-06] 1.26 AD: a long press on a tab moves the tabs; a tap anywhere else, back, or leaving the tabs saves.
+    val saveTabs: () -> Unit = {
+        if (tabEdit.editing) {
+            val made = tabEdit.finish()
+            if (made != savedTabs.map { it.route }) {
+                container.settingsRepository.update { it.copy(tabOrder = com.bamnat.core.layout.TabOrder.toSave(made)) }
+            }
+        }
+    }
+    if (tabEdit.editing) androidx.activity.compose.BackHandler { saveTabs() }
+    LaunchedEffect(route, showNav) { if (!showNav || topLevel == null) saveTabs() }
+    val tabNames: (String) -> String = { k -> TopLevel.entries.first { it.route == k }.labelFor(activeStyle) }
+    val tabsShown: () -> List<String> = { tabs.map { it.route } }
+    val onTab: (TopLevel) -> Unit = { dest -> if (!tabEdit.editing) navigateTop(dest) }
 
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
     val tabletop = rememberTabletop()
@@ -585,16 +684,20 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (wide && showNav) {
                 NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
                     Spacer(Modifier.height(12.dp))
-                    for (dest in TopLevel.entries) {
-                        val selected = dest == topLevel
-                        NavigationRailItem(
-                            selected = selected,
-                            onClick = { navigateTop(dest) },
-                            icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                            label = { TabLabel(dest.labelFor(activeStyle)) },
-                            // [VIS-03] The chosen tab in the same blue as every other chosen thing.
-                            colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
-                        )
+                    tabs.forEachIndexed { index, dest ->
+                        androidx.compose.runtime.key(dest.route) {
+                            val selected = dest == topLevel
+                            val label = dest.labelFor(activeStyle)
+                            NavigationRailItem(
+                                selected = selected,
+                                onClick = { onTab(dest) },
+                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                label = { TabLabel(label) },
+                                modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = false, tabsShown, tabNames, saveTabs),
+                                // [VIS-03] The chosen tab in the same blue as every other chosen thing.
+                                colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
+                            )
+                        }
                     }
                 }
             }
@@ -606,37 +709,51 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 bottomBar = {
                     if (!wide && showNav) {
                         Column {
-                            AdSlot(topLevel.adPlace())
+                            // [NAV-06] While the tabs are moved, the line about it takes the ad's place.
+                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs) else AdSlot(topLevel.adPlace())
                             NavigationBar {
-                                for (dest in TopLevel.entries) {
-                                    val selected = dest == topLevel
-                                    NavigationBarItem(
-                                        selected = selected,
-                                        onClick = { navigateTop(dest) },
-                                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                                        label = { TabLabel(dest.labelFor(activeStyle)) },
-                                        colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
-                                    )
+                                tabs.forEachIndexed { index, dest ->
+                                    androidx.compose.runtime.key(dest.route) {
+                                        val selected = dest == topLevel
+                                        val label = dest.labelFor(activeStyle)
+                                        NavigationBarItem(
+                                            selected = selected,
+                                            onClick = { onTab(dest) },
+                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                            label = { TabLabel(label) },
+                                            modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
+                                            colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 },
             ) { padding ->
-                Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-                    if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
-                        com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    Column(Modifier.fillMaxSize()) {
+                        if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
+                            com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
+                        }
+                        RingingBanner()
+                        AppNavHost(
+                            nav = nav,
+                            container = container,
+                            wide = wide,
+                            snackbar = snackbar,
+                            styleExtras = styleExtras,
+                            start = startTab,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (wide && showNav) AdSlot(topLevel.adPlace())
                     }
-                    RingingBanner()
-                    AppNavHost(
-                        nav = nav,
-                        container = container,
-                        wide = wide,
-                        snackbar = snackbar,
-                        styleExtras = styleExtras,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (wide && showNav) AdSlot(topLevel.adPlace())
+                    // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else. Beside the
+                    // rail the line about it lies over the bottom of the screen, which keeps its size.
+                    if (tabEdit.editing) {
+                        TabEditCatcher(saveTabs, Modifier.matchParentSize())
+                        if (wide) TabEditHint(tabEdit.said, saveTabs, Modifier.align(Alignment.BottomCenter))
+                    }
                 }
             }
         }
@@ -704,6 +821,7 @@ private fun AppNavHost(
     wide: Boolean,
     snackbar: SnackbarHostState,
     styleExtras: androidx.compose.runtime.MutableState<StyleExtras?>,
+    start: String,
     modifier: Modifier = Modifier,
 ) {
     // Outlives the screen that starts it, e.g. a message shown after 회사 찾기 closes.
@@ -712,7 +830,8 @@ private fun AppNavHost(
     // little and fades. The system's "remove animations" setting turns both off.
     NavHost(
         navController = nav,
-        startDestination = TopLevel.CALENDAR.route,
+        // [NAV-05] The first tab (D82); read once when the app starts, so a move in this run does not reset the screens.
+        startDestination = start,
         modifier = modifier,
         enterTransition = {
             if (betweenTabs()) fadeIn(tween(TAB_IN_MILLIS, delayMillis = TAB_OUT_MILLIS))
@@ -751,7 +870,15 @@ private fun AppNavHost(
                 onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
                 onEditCalendar = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } },
                 onOpenCombined = { nav.navigate(Routes.COMBINED) { launchSingleTop = true } },
+                onFillMonth = { m -> nav.navigate(Routes.dutyRoster(m)) { launchSingleTop = true } },
             )
+        }
+        // [PLAZA-06] U25-나: the first setup again, in its own draft; done or given up, back where the user was.
+        composable(Routes.SETUP_AGAIN) {
+            val vm = appViewModel(key = "setup_again") { SetupViewModel(it, again = true) }
+            val done by vm.done.collectAsStateWithLifecycle()
+            LaunchedEffect(done) { if (done) nav.popFrom(Routes.SETUP_AGAIN) }
+            SetupHost(vm)
         }
         composable(Routes.COMBINED) { com.bamnat.app.ui.calendar.CombinedScreen(onBack = { nav.popFrom(Routes.COMBINED) }) }
         composable(Routes.CALENDAR_SETUP, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -974,6 +1101,7 @@ private fun AppNavHost(
                 return@composable
             }
             val nudges = appViewModel { CompanyNudgeViewModel(it) }
+            val publicUse by container.companyStore.publicUse.collectAsStateWithLifecycle()
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
@@ -994,6 +1122,9 @@ private fun AppNavHost(
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
+                    // [SPAT-05] A public cycle in use and its pay just set: the plaza, the reward said first.
+                    if (calendar == PersonalCalendar.MAIN && profile != null) com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        onPay = {}, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
                     // [COMM-12] The company is known and no coworker's rules are in use: the plaza, with its name typed.
                     com.bamnat.app.ui.company.PlazaEntryCard(container, calendar, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
                         Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -1012,7 +1143,9 @@ private fun AppNavHost(
                 // [PAYS-09] The invitation after a match or an item of the company's own sends to 내 설정 나누기.
                 onShareWay = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                 // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
-                onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) })
+                onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) },
+                // [SPAT-04] The public cycle in use, for the first pay setup of the main calendar.
+                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } })
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
@@ -1037,7 +1170,10 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_FIND) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays)) },
                 onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
-                onBoard = if (setup) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
+                onBoard = if (setup || !container.companyApi.enabled) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
+                // [SPAT-04][SPAT-05] A public cycle just put in: on to the pay (with its usual allowances), or with pay set, the plaza.
+                onPay = { nav.navigate(Routes.pay()) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
+                onShare = { nav.navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
             )
         }
         composable(
@@ -1104,6 +1240,8 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_REPORT) },
                 onDone = { nav.popFrom(Routes.COMPANY_REPORT) },
                 onOpenSent = { nav.navigate(Routes.COMPANY_SENT) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
+                // [SPAT-05] Sent from a public row: that company's plaza page, in place of the form.
+                onOpenCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
             )
         }
         composable(Routes.COMPANY_SENT) {
@@ -1132,6 +1270,12 @@ private fun AppNavHost(
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "duty_$calendar") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar) }
             com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER) })
+        }
+        composable(Routes.DUTY_ROSTER_MONTH, arguments = listOf(navArgument("month") { type = NavType.StringType })) { entry ->
+            val calendar = remember { container.calendars.active.value }
+            val month = remember { entry.arguments?.getString("month")?.let { runCatching { java.time.YearMonth.parse(it) }.getOrNull() } }
+            val vm = appViewModel(key = "duty_${calendar}_$month") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar, month) }
+            com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER_MONTH) })
         }
         composable(Routes.TEAMS) {
             val calendar = remember { container.calendars.active.value }
@@ -1216,6 +1360,11 @@ private fun AppNavHost(
                     nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
                 }) else null,
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
+                // [SPAT-02] The company's cycle is for the main calendar, as a coworker's setup is (MCAL-06).
+                onFindCompany = if (!setup && calendar == PersonalCalendar.MAIN) ({
+                    vm.draft.forget()
+                    nav.navigate(Routes.companyFind()) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
+                }) else null,
             )
         }
         composable(
@@ -1293,7 +1442,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)
         }
-        Place.MONEY -> navigateTopLevel(TopLevel.MONEY.route)
+        Place.MONEY -> if (link.focus == "tax") NoticeLinks.open(NoticeLinks.Target.TAX) else navigateTopLevel(TopLevel.MONEY.route)
         Place.AUTO_RECORD -> NoticeLinks.open(NoticeLinks.Target.AUTO_RECORD)
         Place.MEMOS -> navigateTopLevel(TopLevel.MEMOS.route)
         Place.STATS -> navigateTopLevel(TopLevel.STATS.route)
@@ -1401,11 +1550,56 @@ private fun NavHostController.fixCompanySetup(place: FixPlace) {
     }
 }
 
-private fun NavHostController.navigateTopLevel(route: String) {
+/**
+ * [NAV-02] To a tab. From another tab it is a tab switch (each tab keeps its own screens) and the tab left is
+ * remembered for back ([record]); from a screen opened over a tab, the tab goes on top of that screen, so back
+ * returns to it instead of the screen being thrown away.
+ */
+private fun NavHostController.navigateTopLevel(route: String, record: Boolean = true) {
+    val current = currentBackStackEntry?.destination?.route
+    val fromTab = current == null || TopLevel.entries.any { it.route == current }
+    if (!fromTab) {
+        navigate(route) { launchSingleTop = true }
+        return
+    }
+    if (record && current != null && current != route) TabHistory.left(current, route)
     navigate(route) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/** [NAV-02] The tabs the user went through, latest last, for back. Kept for the app's run; opening the app again clears it. */
+internal object TabHistory {
+    private val stack = ArrayDeque<String>()
+    private const val MAX = 10
+
+    /** Left tab [from] for tab [to]: [to] is taken out further down, so going round the tabs does not grow the list. */
+    fun left(from: String, to: String) {
+        stack.remove(from)
+        stack.remove(to)
+        stack.addLast(from)
+        while (stack.size > MAX) stack.removeFirst()
+    }
+
+    fun previous(): String? = stack.lastOrNull()
+
+    fun back(): String? = stack.removeLastOrNull()
+
+    fun clear() = stack.clear()
+}
+
+/** [NAV-02] Back between tabs and out of the calendar ([AppRoot]); what it does is set on every composition. */
+private class TabBackCallback : androidx.activity.OnBackPressedCallback(false) {
+    /** False hands back on to the callbacks under this one. */
+    var onBack: () -> Boolean = { false }
+    var dispatcher: androidx.activity.OnBackPressedDispatcher? = null
+
+    override fun handleOnBackPressed() {
+        if (onBack()) return
+        isEnabled = false
+        try { dispatcher?.onBackPressed() } finally { isEnabled = true }
     }
 }
 

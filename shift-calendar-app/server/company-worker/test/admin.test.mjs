@@ -1,7 +1,7 @@
 // [ADMIN-01] The developer app: sign-in, review, companies, rules, rewards and its files: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, setup, report, from, signIn, ORIGIN, PASSWORD } from "./helpers.mjs";
+import { server, setup, report, from, device, signIn, ORIGIN, PASSWORD } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 
@@ -145,7 +145,8 @@ test("the developer adopts or turns down what coworkers sent", async () => {
   assert.equal((await call("POST", `/api/admin/groups/${a.data.company.id}/${a.data.setup}/adopt`, {}, h)).status, 404);
   const o = (await call("GET", "/api/admin/overview", undefined, h)).data;
   assert.deepEqual([o.pending, o.flagged, o.owed, o.companies, o.rules, o.reports], [0, 0, 1, 2, 1, 2]);
-  assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90 });
+  assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
+    firstMonths: 0, firstCapYear: 3 });
   assert.equal(o.reasons.wrong, "실제와 다른 정보로 보여요");
 });
 
@@ -224,6 +225,7 @@ test("a new version of a rule in use waits for the developer, with what changed"
   const { company } = await adopted(call);
   const other = setup();
   other.pay.rules.extra[3].percent = 0.12;
+  // [PLAZA-05] As many behind it, and as many pay-slip checks, as behind the rule in use (결정 D74): it waits.
   await call("POST", "/api/reports", report(3, { setup: other, verified: true }), from(3));
   const d = await call("POST", "/api/reports", report(4, { setup: other }), from(4));
   assert.deepEqual([d.data.status, d.data.review], ["pending", true]);
@@ -240,7 +242,8 @@ test("a new version of a rule in use waits for the developer, with what changed"
   await call("POST", `/api/admin/groups/${company}/${d.data.setup}/adopt`, {}, h);
   const info = (await call("GET", `/api/admin/companies/${company}`, undefined, h)).data;
   assert.deepEqual(info.rules.map((r) => [r.version, r.source, r.superseded]), [[2, "admin", false], [1, "auto", true]]);
-  const pub = (await call("GET", `/api/companies/${company}`)).data;
+  // [PLAZA-08] Its pay is for phones that joined the company: one that sent a version did.
+  const pub = (await call("GET", `/api/companies/${company}`, undefined, { "x-device": device(3) })).data;
   assert.deepEqual(pub.setups.map((s) => [s.status, s.version]), [["adopted", 2]]);
   assert.equal(pub.setups[0].setup.pay.rules.extra[3].percent, 0.12);
 });
@@ -255,11 +258,12 @@ test("a lower bar adopts what already meets it", async () => {
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 1, rewardMonths: 3 }, h)).data.error, "adoptPoints");
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 25 }, h)).data.error, "rewardMonths");
   const saved = await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6 }, h);
-  assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90 });
+  assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
+    firstMonths: 0, firstCapYear: 3 });
   const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
   assert.deepEqual([mine.status, mine.threshold, mine.rewardMonths], ["adopted", 2, 6]);
   assert.deepEqual(mine.reward, { months: 6, status: "owed" });
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6, agree: 75 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6, agree: 75, firstMonths: 0 });
   // [COMM-07] The agreement share it takes on its own, from half to everyone.
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6, adoptAgree: 40 }, h)).data.error, "adoptAgree");
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6, adoptAgree: 90 }, h)).data.adoptAgree, 90);
@@ -501,7 +505,7 @@ test("the developer app's screens take a few trips to the database however much 
       inBatch = false;
     }
   };
-  for (const path of ["/api/admin/overview", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
+  for (const path of ["/api/admin/overview", "/api/admin/inbox", "/api/admin/versions", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
     trips = 0;
     const res = await call("GET", path, undefined, admin);
     assert.equal(res.status, 200, path);

@@ -51,6 +51,9 @@ val OPEN_SOURCE_NOTICES: List<OpenSourceNotice> = listOf(
     // [MON-07]
     OpenSourceNotice("Google 사용자 메시지 플랫폼 (광고 동의)", "Google", "Android 소프트웨어 개발 키트 라이선스",
         "https://developers.google.com/admob/android/privacy"),
+    // [INVITE-03] AE 1.26
+    OpenSourceNotice("Google Play 설치 리퍼러 라이브러리 (친구 초대)", "Google", "Android 소프트웨어 개발 키트 라이선스",
+        "https://developer.android.com/google/play/installreferrer/library"),
 )
 
 private const val APACHE_2 = "Apache License 2.0"

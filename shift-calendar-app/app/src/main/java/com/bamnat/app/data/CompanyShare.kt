@@ -72,13 +72,18 @@ class CompanyShare(
                     put(k.id.toString(), JSONArray(set.mapNotNull(names::get)))
                 }
             })
-        (PatternTimeline.current(snapshot.patterns, today()) as? WorkPattern.Rotation)?.let { r ->
-            root.put("rotation", JSONObject()
-                .put("anchor", r.anchorDate.toString())
-                .put("steps", JSONArray(r.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
+        when (val current = PatternTimeline.current(snapshot.patterns, today())) {
+            is WorkPattern.Rotation -> root.put("rotation", JSONObject()
+                .put("anchor", current.anchorDate.toString())
+                .put("steps", JSONArray(current.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
                 // [SETUP-02] The sender's 조, so a coworker on the same one is asked only "같은 B조예요?".
                 .apply { team.trim().take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) } })
+            // [PLAZA-01] Weekday and part-time work travel as their days, Monday first (U2: "모든 유형").
+            is WorkPattern.Weekly -> root.put("weekly", JSONArray(current.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
+            else -> Unit
         }
+        // [PLAZA-01] A roster that comes every month (간호): said so, since such a file has no order to give.
+        if (settings.current.rosterMonthly && !root.has("rotation")) root.put("roster", true)
         payStore.profile.value?.let { p ->
             // [LEAVE-02] The company's leave year goes along; whether the app counts and the 80% years are the user's own.
             val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap(),
@@ -111,8 +116,10 @@ class CompanyShare(
      * allowance amounts, and the won amounts typed into extra-work rules (1회·시간당 정액, 1회 수당) at 0.
      * The server refuses a file with any amount in it rather than dropping it, so none may slip through.
      */
-    suspend fun exportForServer(): JSONObject {
+    suspend fun exportForServer(cycleOnly: Boolean = false): JSONObject {
         val root = JSONObject(export("", withAmounts = false))
+        // [SPAT-05] 근무주기만 올리기: the shifts and the order, no pay part at all (사용자 2026-10-25 14:05).
+        if (cycleOnly) root.remove("pay")
         root.optJSONObject("pay")?.optJSONObject("rules")?.let { r ->
             r.optJSONObject("extra")?.let(::withoutAmounts)
             r.optJSONObject("extraByShift")?.let { by -> by.keys().forEach { k -> by.optJSONObject(k)?.let(::withoutAmounts) } }
@@ -152,6 +159,10 @@ class CompanyShare(
         val anchor: LocalDate?,
         val team: String?,
         val hasPay: Boolean,
+        /** [PLAZA-01] Monday..Sunday by shift name (null a day off); empty when the file has none. */
+        val weekly: List<String?> = emptyList(),
+        /** [PLAZA-01] The days come in a roster every month. */
+        val roster: Boolean = false,
     )
 
     /**
@@ -170,7 +181,15 @@ class CompanyShare(
             anchor = rotation?.let(::anchorOf),
             team = rotation?.optString("team")?.trim()?.take(MAX_TEAM)?.takeIf { it.isNotEmpty() },
             hasPay = root.has("pay"),
+            weekly = weeklyOf(root),
+            roster = root.optBoolean("roster"),
         )
+    }
+
+    /** [PLAZA-01] The file's days of the week, or empty when it has none (or not seven). */
+    private fun weeklyOf(root: JSONObject): List<String?> {
+        val a = root.optJSONArray("weekly")?.takeIf { it.length() == 7 } ?: return emptyList()
+        return (0 until 7).map { i -> if (a.isNull(i)) null else a.getString(i).take(MAX_NAME) }
     }
 
     /** Everything is read once before anything is written, so a broken part changes nothing. */
@@ -198,6 +217,8 @@ class CompanyShare(
             .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", BASE_VERSION)
             .put("company", "").put("template", t.id)
             .put("shiftTypes", JSONArray(t.shifts.map { typeJson(it.type) }))
+        // [PLAZA-01] A roster template says so, as a company's file would.
+        if (t.roster) root.put("roster", true)
         if (t.order.isNotEmpty()) root.put("rotation", JSONObject().put("steps", JSONArray(t.orderNames.map { it ?: JSONObject.NULL })))
         return root.toString()
     }
@@ -269,11 +290,55 @@ class CompanyShare(
                 cycle = steps.size
             }
         }
+        // [PLAZA-01] A weekday or part-time company's days, from today on as a team change would.
+        weeklyOf(root).takeIf { rotation && it.isNotEmpty() && !root.has("rotation") }?.let { days ->
+            val pattern = WorkPattern.Weekly.fromSteps(today(), days.map { name -> name?.let(ids::get) })
+            if (schedule.snapshot.first().hasPattern) schedule.changePatternFrom(pattern, today())
+            else schedule.setFirstPattern(pattern, today())
+            cycle = 7
+        }
         val (rules, pendingPay) = applyRules(root, ids)
         return Applied(added, cycle, rules, pendingPay)
     }
 
     data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
+
+    /**
+     * [PLAZA-09] 이 값 쓰기 (결정 D79): the one item [key] of [theirs] in place of the user's own, everything else as it was
+     * (amounts, leave days, names of kinds). False when it cannot be taken alone or nothing changed.
+     */
+    suspend fun takeOne(theirs: String, key: String): Boolean {
+        val mine = export("", withAmounts = true)
+        val patched = com.bamnat.core.plaza.SetupPatch.take(mine, theirs, key) ?: return false
+        val before = payStore.profile.value
+        if (key.startsWith("item:")) {
+            // An allowance the user has keeps its id and amount; merge never overwrites one, so it is changed here.
+            val p = before ?: return false
+            val name = key.removePrefix("item:")
+            val o = JSONObject(patched).optJSONObject("pay")?.optJSONArray("items").objects().firstOrNull { it.optString("name") == name }
+            val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+            val have = p.items.firstOrNull { it.name == name }
+            val items = when {
+                o == null -> p.items.filter { it.name != name }
+                have == null -> null
+                else -> {
+                    val types = o.optJSONArray("types")?.let { a -> (0 until a.length()).mapNotNull { ids[a.getString(it).take(MAX_NAME)] }.toSet() } ?: emptySet()
+                    val next = PayCodec.itemFrom(JSONObject(o.toString()).put("types", JSONArray())).copy(id = have.id, amount = have.amount, shiftTypeIds = types)
+                    p.items.map { if (it.name == name) next else it }
+                }
+            }
+            if (items != null) {
+                payStore.save(p.copy(items = items))
+                return true
+            }
+        }
+        apply(patched, rotation = false)
+        // The kinds' own names (extraNames) are the user's: the export leaves them out, so they are put back.
+        payStore.profile.value?.let { now ->
+            if (before != null && now.rules.extraNames != before.rules.extraNames) payStore.save(now.copy(rules = now.rules.copy(extraNames = before.rules.extraNames)))
+        }
+        return true
+    }
 
     /**
      * [PLZ-10] 내 월급으로 시험: the user's own pay setup with [text]'s rules in place of the company part,

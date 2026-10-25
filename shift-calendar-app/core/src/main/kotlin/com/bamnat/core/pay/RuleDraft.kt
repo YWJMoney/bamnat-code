@@ -32,6 +32,8 @@ data class RuleDraft(
         HOLIDAY("휴일", listOf(Way.PREMIUM), false),
         SATURDAY("토요일 근무", DAY_WAYS, false),
         SUNDAY("일요일 근무", DAY_WAYS, false),
+        /** [PAYS-13] Work on a 공휴일, on top of what the 빨간날 choice pays (회사 규칙 › 빨간날에 일하면). */
+        PUBLIC_HOLIDAY("빨간날 근무", DAY_WAYS, false),
     }
 
     enum class Way(val label: String, val startPercent: Double, val startAmount: Long) {
@@ -67,7 +69,8 @@ data class RuleDraft(
             Way.ORDINARY -> "${target.label}은 통상시급의 ${pct(percent)}"
             Way.PER_HOUR -> if (target.extraWork) "${target.label} 시간당 ${won(amount)}" else "${target.label}는 시간당 ${won(amount)}"
             Way.PER_TIME -> if (target.extraWork) "${target.label} 1회 ${unitHours}시간까지 ${won(amount)}" else "${target.label} 1회 ${won(amount)}"
-            Way.PREMIUM -> if (target.extraWork || target == Target.SATURDAY || target == Target.SUNDAY) "${target.label}는 시간당 ${pct(percent)} 더"
+            Way.PREMIUM -> if (target.extraWork || target == Target.SATURDAY || target == Target.SUNDAY || target == Target.PUBLIC_HOLIDAY)
+                "${target.label}는 시간당 ${pct(percent)} 더"
             else "${target.label} ${pct(percent)} 가산"
         }
         if (!asksPremiums) return pay

@@ -238,6 +238,22 @@ data class ExtraRule(
         (if (bonus > 0) " + 1회 ${won(bonus)}" else "")
 }
 
+/**
+ * [HOLI-01] What a company does when a shift falls on a 빨간날 (공휴일·대체공휴일·노동절), one choice in place of the
+ * three settings it used to take ([CompanyRules.publicHolidaysPaid], [CompanyRules.publicHolidayAs],
+ * [CompanyRules.holidayByShiftStart]). It is the company's (취업규칙·단체협약); research/1.25-V-조사.md 2장.
+ */
+enum class HolidayWork(val label: String, val detail: String) {
+    /** 근로기준법 제56조 제2항: 8시간까지 50%, 넘으면 100% on top. */
+    PREMIUM("휴일 근무 가산", "법대로 8시간까지 50%, 넘으면 100% 더 받아요"),
+    /** [PAYX-07][HOLI-03] Paid like a kind of extra work (특근·대근), by the kind of shift; its night premium stays. */
+    AS_EXTRA("특근·대근처럼", "빨간날 근무를 특근(대근)으로 셈해요. 모닝·이브닝·나이트마다 금액을 정하고 야간 수당은 그대로"),
+    /** 제55조 제2항 단서: swapped for another day by a written agreement, so a working day with no premium. */
+    SUBSTITUTE("대체휴일", "가산 없이 평일처럼 받고, 다른 날 하루 쉬어요(근로자대표와 서면 합의)"),
+    /** The rota already holds the 휴일: a 빨간날 is a usual day for shift work. */
+    SHIFT_NORMAL("교대제라 상관없음", "근무표대로 평일처럼 받아요. 쉬는 날이 이미 근무표에 들어 있어요"),
+}
+
 /** [EXTRA-02] What work on a day off (휴무일, not a paid holiday) counts as. Companies decide this in the 취업규칙. */
 enum class RestDayWork(val label: String, val detail: String) {
     /** 근로기준법: 휴무일 work is not 휴일근로; only hours beyond 8 a day or 40 a week are 연장 (제50·56조). */
@@ -382,7 +398,69 @@ data class CompanyRules(
      * 단시간 (소정이 통상근로자보다 짧은지) only the contract tells.
      */
     val partTimePremium: Boolean = false,
+    /**
+     * [HOLI-01] Kept only to tell [HolidayWork.SHIFT_NORMAL] from [HolidayWork.SUBSTITUTE], which pay the same; null
+     * otherwise. Read [holidayWork], set with [withHolidayWork].
+     */
+    val holidayWorkChoice: HolidayWork? = null,
 ) {
+    /** [HOLI-01] The 빨간날 choice the settings come to. */
+    val holidayWork: HolidayWork
+        get() = when {
+            !publicHolidaysPaid -> if (holidayWorkChoice == HolidayWork.SHIFT_NORMAL) HolidayWork.SHIFT_NORMAL else HolidayWork.SUBSTITUTE
+            publicHolidayAs != null -> HolidayWork.AS_EXTRA
+            else -> HolidayWork.PREMIUM
+        }
+
+    /**
+     * [HOLI-01] These rules with the 빨간날 choice [mode]; [kind] is the extra work a [HolidayWork.AS_EXTRA] shift is paid as
+     * (특근 when null). 특근처럼 judges an overnight shift by the day it starts: a 빨간날 나이트 is one 특근, and the 나이트
+     * of the day before is not one too (research/1.25-V-조사.md 2장).
+     */
+    fun withHolidayWork(mode: HolidayWork, kind: Long? = null): CompanyRules = when (mode) {
+        HolidayWork.PREMIUM -> copy(publicHolidaysPaid = true, publicHolidayAs = null, holidayWorkChoice = null)
+        HolidayWork.AS_EXTRA -> copy(publicHolidaysPaid = true, publicHolidayAs = kind ?: publicHolidayAs ?: ExtraKind.SPECIAL_ID,
+            holidayByShiftStart = true, holidayWorkChoice = null)
+        HolidayWork.SUBSTITUTE -> copy(publicHolidaysPaid = false, publicHolidayAs = null, holidayWorkChoice = null)
+        HolidayWork.SHIFT_NORMAL -> copy(publicHolidaysPaid = false, publicHolidayAs = null, holidayWorkChoice = HolidayWork.SHIFT_NORMAL)
+    }
+
+    /**
+     * [HOLI-03] A 빨간날 shift of type [shiftTypeId] paid [amount] won a time as [kind] (특근 when null), its night premium on
+     * top as the kind of shift has it; 0 takes the shift's own amount away (the kind's general rule, else the law).
+     */
+    fun withHolidayShiftPay(shiftTypeId: Long, amount: Long, kind: Long? = null): CompanyRules {
+        val k = kind ?: publicHolidayAs ?: ExtraKind.SPECIAL_ID
+        val byType = extraByShift[k].orEmpty().let { m ->
+            if (amount > 0) m + (shiftTypeId to ExtraRule(basis = ExtraBasis.FIXED_PER_TIME, amount = amount, nightPremium = true)) else m - shiftTypeId
+        }
+        return copy(extraByShift = if (byType.isEmpty()) extraByShift - k else extraByShift + (k to byType))
+    }
+
+    /** [HOLI-03] The 1회 amount set for a 빨간날 shift of type [shiftTypeId], 0 when none. */
+    fun holidayShiftPay(shiftTypeId: Long, kind: Long? = null): Long {
+        val r = extraByShift[kind ?: publicHolidayAs ?: ExtraKind.SPECIAL_ID]?.get(shiftTypeId) ?: return 0
+        return if (r.basis == ExtraBasis.FIXED_PER_TIME) r.amount else 0
+    }
+
+    /** [HOLI-01] The 빨간날 choice in one sentence, for the pay summary and 회사 규칙. */
+    fun holidayWorkText(shiftNames: Map<Long, String> = emptyMap()): String = when (holidayWork) {
+        HolidayWork.PREMIUM -> "빨간날 근무는 휴일 가산(8시간까지 50%, 넘으면 100%)" + if (holidayByShiftStart) ", 밤샘은 시작한 날로" else ""
+        HolidayWork.AS_EXTRA -> {
+            val k = publicHolidayAs ?: ExtraKind.SPECIAL_ID
+            val each = extraByShift[k].orEmpty().filterValues { it.basis == ExtraBasis.FIXED_PER_TIME && it.amount > 0 }
+                .entries.joinToString(", ") { (id, r) -> "${shiftNames[id] ?: "근무"} ${won(r.amount)}" }
+            val general = extraRule(k)?.describe()
+            "빨간날 근무는 ${extraName(k)}처럼" + when {
+                each.isNotEmpty() -> " (1회 $each, 야간 수당은 따로)"
+                general != null -> " ($general)"
+                else -> " (${extraName(k)} 방식이 법대로라 휴일 가산으로 계산)"
+            }
+        }
+        HolidayWork.SUBSTITUTE -> "빨간날 근무는 대체휴일(가산 없이 평일처럼, 다른 날 쉼)"
+        HolidayWork.SHIFT_NORMAL -> "빨간날도 근무표대로 평일처럼(교대제)"
+    }
+
     fun extraRule(kind: Long?): ExtraRule? = kind?.let { extra[it] }?.takeUnless { it.isLegal }
 
     /** The rule for [kind] when it covered a shift of type [shiftTypeId], per shift first [PAYX-11]. */

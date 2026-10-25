@@ -217,6 +217,25 @@ object Notifications {
 
     internal fun formatLate(minutes: Long): String = if (minutes >= 60) "${minutes / 60}시간" + (if (minutes % 60 > 0) " ${minutes % 60}분" else "") else "${minutes}분"
 
+    /**
+     * [ALRM-07] Android 14+ with 전체 화면 알림 off: the alarm rang only as a small notice, with no ringing screen on
+     * the lock screen. Said once after it, opening the switch.
+     */
+    fun postFullScreenOff(context: Context) {
+        if (Build.VERSION.SDK_INT < 34) return
+        val notification = NotificationCompat.Builder(context, STATUS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("잠금 화면 알람이 꺼져 있어 알림으로만 울렸어요")
+            .setContentText("눌러서 ‘전체 화면 알림’을 허용하면 다음부터 알람 화면이 떠요")
+            .setContentIntent(PendingIntent.getActivity(context, 2106,
+                Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, android.net.Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true)
+            .build()
+        post(context, ALARM_LATE_ID, notification)
+    }
+
     /** Plain alarm notification used when the ringing service cannot start. */
     fun postFallbackAlarm(context: Context, ring: RingRequest) {
         val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL_ID)
@@ -268,6 +287,31 @@ object Notifications {
         if (Build.VERSION.SDK_INT >= 28 && channel.group?.let { nm.getNotificationChannelGroup(it) }?.isBlocked == true) return false
         return true
     }
+
+    /**
+     * [ALRM-07] What keeps the ringing screen off the lock screen besides the full-screen switch: the 근무 알람
+     * channel turned down to 조용히 (a full-screen alarm needs a high channel) or hidden on the lock screen.
+     * Null when nothing does.
+     */
+    fun alarmChannelTrouble(context: Context): String? {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return null
+        val channel = nm.getNotificationChannel(ALARM_CHANNEL_ID)
+        return when {
+            channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE && channel.importance < NotificationManager.IMPORTANCE_HIGH ->
+                "‘근무 알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요"
+            channel != null && channel.lockscreenVisibility == android.app.Notification.VISIBILITY_SECRET ->
+                "‘근무 알람’ 알림이 잠금 화면에서 숨겨져 있어요"
+            else -> null
+        }
+    }
+
+    /** [ALRM-07] 방해 금지 set to 완전히 무음 silences alarms too (other 방해 금지 modes let alarms through). */
+    fun dndBlocksAlarms(context: Context): Boolean =
+        context.getSystemService(NotificationManager::class.java)?.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE
+
+    /** [ALRM-07] Phones whose maker adds its own 잠금 화면에 표시 permission, off for some apps at first (확인 필요 per model). */
+    fun makerLockScreenPermission(maker: String = Build.MANUFACTURER): Boolean =
+        maker.lowercase() in setOf("xiaomi", "redmi", "poco", "oppo", "vivo", "realme", "oneplus")
 
     /** Android 14+ lets users turn off full-screen alarms per app. */
     fun canUseFullScreen(context: Context): Boolean =

@@ -77,6 +77,8 @@ import com.bamnat.core.time.Today
  * shots in a class of its own that extends this one, so Gradle can run the classes in parallel forks.
  */
 abstract class ScreenshotBase {
+    /** [QA-09] A Compose dispatch dropped at the end of an earlier test in this JVM is posted again (full-run-only misses). */
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     /** [DAILY-09] Stands in for the fold's hinge sensor; nothing is published unless a test asks. */
@@ -106,6 +108,8 @@ abstract class ScreenshotBase {
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
+        // [INVITE-02] Nor about invites (AE's shots put a fake in its place).
+        c.inviteApi = com.bamnat.app.tier.InviteClient(baseUrl = "")
         // [ONBOARD-01] Through the consent pages already; the shots of them start over.
         c.consentStore.markSeen(ConsentItem.entries)
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
@@ -470,6 +474,15 @@ abstract class ScreenshotBase {
                 }
             }
             settle()
+        }
+
+        /**
+         * [NAV-06] 1.26 AD: holds a finger on the tab in place [from] for [hold] frames (40 is a long press), then drags it
+         * slowly to place [to], along the bar (or the rail when [wide]), where [tab] would tap.
+         */
+        fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) = gesture { w, h, d ->
+            fun at(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / 5 to h - 40 * d
+            List(hold + 1) { at(from.toFloat()) } + (1..30).map { k -> at(from + (to - from) * k / 30f) } + listOf(at(to.toFloat()))
         }
 
         /** Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = settings). */
@@ -1070,7 +1083,8 @@ abstract class ScreenshotBase {
     }
     internal fun Screen.inquiryThread() {
         askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
-        tapText("내 문의:", prefix = true)
+        // The help screen lists every 자주 묻는 질문 above it, and the list grows each release.
+        tapText("내 문의:", prefix = true, scrolls = 30)
         tapText("[알람] 야간 근무 전 알람이 가끔", prefix = true)
     }
     internal fun Screen.whatsNew() = content {
@@ -1426,6 +1440,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     var file = "{}"
     /** [COMM-14] Two reports for (주)예시정밀 생산팀 side by side, on the board and the company screen. */
     var twins = false
+    /** [PLAZA-02][PLAZA-05] 묶음 X: the second 생산팀 판's own file (null: the same as [file]), history with each version's file. */
+    var rivalFile: String? = null
+    var bodies = false
+    /** [PLAZA-02] What this phone posted: body, a proposal's lines and its setup. */
+    val posts = mutableListOf<Triple<String, List<com.bamnat.app.company.ChangeLine>, org.json.JSONObject?>>()
     private val now = Today.instant()
 
     private fun status(id: String, status: String, company: String, dept: String, points: Int, persons: Int, ask: Boolean = false,
@@ -1440,7 +1459,7 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     )
 
     override suspend fun search(query: String) =
-        if (com.bamnat.app.company.CompanyText.norm(query).let { "예시" in it }) listOf(
+        if (com.bamnat.app.company.CompanyText.norm(query).let { "예시" in it } || com.bamnat.core.plaza.Choseong.isQuery(query)) listOf(
             com.bamnat.app.company.CompanyHit("c1", "(주)예시정밀", null, 1, 1),
             com.bamnat.app.company.CompanyHit("c2", "예시정밀 2공장", "예시정밀2", 0, 1),
         ) else emptyList()
@@ -1462,7 +1481,7 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
             com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay, trust = 75, agree = 75, posts = 4),
             com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2), trust = 67, agree = 100),
         ) + if (!twins) emptyList() else listOf(
-            com.bamnat.app.company.SharedSetup("s3", false, 3, 2, 0, 3, "생산팀", null, file,
+            com.bamnat.app.company.SharedSetup("s3", false, 3, 2, 0, 3, "생산팀", null, rivalFile ?: file,
                 listOf("근무" to "주간 08:00~20:00 휴게 60분 · 야간 20:00~08:00 휴게 60분 · 휴무(쉬는 날)", "순서 4일" to "주간 야간 휴무 휴무") + pay, trust = 67, agree = 67),
             com.bamnat.app.company.SharedSetup("s4", false, 2, 2, 0, 3, "생산팀", null, file,
                 listOf(main[0], "순서 4일" to "주간 야간 휴무 휴무") + pay.take(3), trust = 67, agree = 100),
@@ -1471,8 +1490,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
 
     override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
 
+    /** [SPAT-05] What was sent: the note and the setup file, to check that no amount went. */
+    val reports = mutableListOf<Pair<String, org.json.JSONObject>>()
+
     override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: org.json.JSONObject, ask: Boolean) =
-        status("r9", if (ask) "ask" else "pending", company, dept, if (verified) 2 else 1, 1, ask = ask)
+        status("r9".also { reports += note to setup }, if (ask) "ask" else "pending", company, dept, if (verified) 2 else 1, 1, ask = ask)
 
     override suspend fun status(id: String) = mine.firstOrNull { it.id == id }
     override suspend fun takeBack(device: String, id: String) = Unit
@@ -1518,6 +1540,9 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
 
     // [PLZ-01]~[PLZ-15] The plaza that grows by itself.
     override suspend fun postVote(device: String, id: String, ok: Boolean?) = com.bamnat.app.company.PostVote(3, 0, 100, ok)
+    override suspend fun post(device: String, company: String, setup: String, body: String): String { posts += Triple(body, emptyList(), null); return "p9" }
+    override suspend fun post(device: String, company: String, setup: String, body: String, parent: String?, kind: String,
+        change: List<com.bamnat.app.company.ChangeLine>, proposal: org.json.JSONObject?): String { posts += Triple(body, change, proposal); return "p9" }
     override suspend fun plazas() = listOf(
         com.bamnat.app.company.PlazaJob("factory", "제조·생산", 12, 5, 0),
         com.bamnat.app.company.PlazaJob("nurse", "간호사·병원", 4, 3, 2),
@@ -1525,8 +1550,9 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     )
     override suspend fun history(company: String, setup: String) = listOf(
         com.bamnat.app.company.RuleVersion(2, "s1", "amend", now.minus(java.time.Duration.ofDays(3)), "active", 3, "p5",
-            listOf("근무: 주간 08:00~19:00 휴게 60분"), listOf("근무: 주간 08:00~20:00 휴게 60분")),
-        com.bamnat.app.company.RuleVersion(1, "s0", "auto", now.minus(java.time.Duration.ofDays(60)), "superseded", 3, null, emptyList(), emptyList()),
+            listOf("근무: 주간 08:00~19:00 휴게 60분"), listOf("근무: 주간 08:00~20:00 휴게 60분"), body = if (bodies) file else null),
+        com.bamnat.app.company.RuleVersion(1, "s0", if (bodies) "rival" else "auto", now.minus(java.time.Duration.ofDays(60)), "superseded", 3, null, emptyList(), emptyList(),
+            body = if (bodies) rivalFile ?: file else null),
     )
     private fun rate(id: String, trade: String, unit: String, amount: Long, status: String, agree: Int, disagree: Int, mine: Boolean = false,
         myVote: Boolean? = null, nick: String? = null, note: String = "", hours: Long = 3) = com.bamnat.app.company.Rate(

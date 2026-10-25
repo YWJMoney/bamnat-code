@@ -48,9 +48,11 @@ class CompanyStore(context: Context) {
     private val _applied = MutableStateFlow(readApplied())
     val applied: StateFlow<AppliedSetup?> = _applied.asStateFlow()
 
-    private val _draft = MutableStateFlow(prefs.getString("draft", null)?.let { s ->
+    private val _draft = MutableStateFlow(readDraft())
+
+    private fun readDraft() = prefs.getString("draft", null)?.let { s ->
         runCatching { JSONObject(s).let { CompanyDraft(it.getString("company"), it.optString("dept"), it.optBoolean("fix")) } }.getOrNull()
-    })
+    }
     val draft: StateFlow<CompanyDraft?> = _draft.asStateFlow()
 
     private val _pendingPay = MutableStateFlow(prefs.getString("pending_pay", null))
@@ -81,13 +83,102 @@ class CompanyStore(context: Context) {
         prefs.edit().putString("plaza_entry_closed", company).apply()
     }
 
-    private val _inviteClosed = MutableStateFlow(prefs.getBoolean("invite_closed", false))
-    /** The invitation to share a hand-made setup was closed. */
-    val inviteClosed: StateFlow<Boolean> = _inviteClosed.asStateFlow()
+    /**
+     * [PLAZA-04] When the invitation to share a hand-made setup may show again (epoch ms): "다음에" waits 14, then 30, then
+     * 90 days ([com.bamnat.core.plaza.ShareAsk]); "그만 볼게요" ends it. A phone that closed it before 1.25 waits 14 days.
+     */
+    private val _inviteDue = MutableStateFlow(readInviteDue())
 
-    fun closeInvite(closed: Boolean = true) {
-        _inviteClosed.value = closed
-        prefs.edit().putBoolean("invite_closed", closed).apply()
+    private fun readInviteDue(): Long =
+        if (prefs.contains("invite_due") || !prefs.getBoolean("invite_closed", false)) prefs.getLong("invite_due", 0)
+        else com.bamnat.core.plaza.ShareAsk.nextDue(1, com.bamnat.core.time.Today.millis()).also {
+            prefs.edit().putLong("invite_due", it).putInt("invite_laters", 1).apply()
+        }
+    val inviteDue: StateFlow<Long> = _inviteDue.asStateFlow()
+    private val _inviteNever = MutableStateFlow(prefs.getBoolean("invite_never", false))
+    val inviteNever: StateFlow<Boolean> = _inviteNever.asStateFlow()
+
+    /** "다음에": one more wait, each longer than the one before. */
+    fun inviteLater(now: Long) {
+        val laters = prefs.getInt("invite_laters", 0) + 1
+        val due = com.bamnat.core.plaza.ShareAsk.nextDue(laters, now)
+        _inviteDue.value = due
+        prefs.edit().putInt("invite_laters", laters).putLong("invite_due", due).apply()
+    }
+
+    /** "그만 볼게요". */
+    fun inviteNever() {
+        _inviteNever.value = true
+        prefs.edit().putBoolean("invite_never", true).apply()
+    }
+
+    private val _handMade = MutableStateFlow(prefs.getBoolean("hand_made", false))
+    /** [PLAZA-04] The first setup was finished by hand, with no company's setup and no company name: worth sharing too. */
+    val handMade: StateFlow<Boolean> = _handMade.asStateFlow()
+
+    fun setHandMade(on: Boolean) {
+        _handMade.value = on
+        prefs.edit().putBoolean("hand_made", on).apply()
+    }
+
+    private val _publicUse = MutableStateFlow(PublicUse.read(prefs.getString("public_use", null)))
+    /**
+     * [SPAT-03] The public row this phone's cycle came from and how far the pay and plaza steps have gone; on this phone
+     * only (not in the backup's "company" part), as the other invitation memories.
+     */
+    val publicUse: StateFlow<PublicUse?> = _publicUse.asStateFlow()
+
+    fun setPublicUse(u: PublicUse?) {
+        _publicUse.value = u
+        prefs.edit().apply { if (u == null) remove("public_use") else putString("public_use", u.json()) }.apply()
+    }
+
+    fun updatePublicUse(change: (PublicUse) -> PublicUse) {
+        _publicUse.value?.let { setPublicUse(change(it)) }
+    }
+
+    /**
+     * [PLAZA-07] 결정 D79: whether the work order and pay way go to the company's plaza by themselves after each change
+     * (amounts and names left out). Null until the user answered the one-time ask; false also after 설정 turned it off.
+     */
+    private val _autoShare = MutableStateFlow(if (prefs.contains("auto_share")) prefs.getBoolean("auto_share", false) else null)
+    val autoShare: StateFlow<Boolean?> = _autoShare.asStateFlow()
+
+    fun setAutoShare(on: Boolean) {
+        _autoShare.value = on
+        prefs.edit().putBoolean("auto_share", on).apply { if (!on) putBoolean("auto_dirty", false) }.apply()
+    }
+
+    /** A change waits to be shared, at most once a day ([autoSentAt] the last time, epoch ms). */
+    var autoDirty: Boolean
+        get() = prefs.getBoolean("auto_dirty", false)
+        set(v) = prefs.edit().putBoolean("auto_dirty", v).apply()
+    var autoSentAt: Long
+        get() = prefs.getLong("auto_sent_at", 0)
+        set(v) = prefs.edit().putLong("auto_sent_at", v).apply()
+
+    private val _member = MutableStateFlow(readMember())
+    /** [PLAZA-07] The company this phone's main calendar joined, as the server last said: (id, name). */
+    val member: StateFlow<Pair<String, String>?> = _member.asStateFlow()
+
+    private fun readMember(): Pair<String, String>? = prefs.getString("member", null)?.let { s ->
+        runCatching { JSONObject(s).let { it.getString("id") to it.optString("name") } }.getOrNull()
+    }
+
+    fun setMember(id: String?, name: String = "") {
+        _member.value = id?.let { it to name }
+        prefs.edit().putString("member", id?.let { JSONObject().put("id", it).put("name", name).toString() }).apply()
+    }
+
+    /** [BAK-01] After a restore wrote the file anew: what travels in a backup is read again. */
+    fun reload() {
+        _sent.value = readSent()
+        _applied.value = readApplied()
+        _draft.value = readDraft()
+        _pendingPay.value = prefs.getString("pending_pay", null)
+        _plazaEntryClosed.value = prefs.getString("plaza_entry_closed", null)
+        // [PLAZA-04] The invitation's own waits stay on the phone (X-D5); a 1.24 backup's 닫음 waits 14 days as on update.
+        _inviteDue.value = readInviteDue()
     }
 
     fun addSent(r: SentReport) = writeSent(listOf(r) + _sent.value.filter { it.id != r.id })
@@ -98,6 +189,8 @@ class CompanyStore(context: Context) {
     fun forgetSent() {
         writeSent(emptyList())
         _applied.value?.let { setApplied(it.copy(vote = null)) }
+        // [PLAZA-07] The server forgot the companies joined with everything else.
+        setMember(null)
     }
 
     fun setApplied(a: AppliedSetup?) {
@@ -116,7 +209,11 @@ class CompanyStore(context: Context) {
     fun setDraft(d: CompanyDraft?) {
         _draft.value = d
         prefs.edit().putString("draft", d?.let { JSONObject().put("company", it.company).put("dept", it.dept).put("fix", it.fix).toString() }).apply()
-        if (d != null) closeInvite(false)
+        // A new company typed by hand is a new thing to share: asked about at once again ("그만 볼게요" still holds).
+        if (d != null) {
+            _inviteDue.value = 0
+            prefs.edit().putLong("invite_due", 0).putInt("invite_laters", 0).apply()
+        }
     }
 
     private fun writeSent(list: List<SentReport>) {

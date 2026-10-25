@@ -114,6 +114,12 @@ fun SetupHost(
     // [MCAL-02] A calendar being added: back on the first question gives it up, after asking.
     var leaving by remember { mutableStateOf(false) }
     BackHandler(enabled = vm.calendarId != null && !fixing && d.previous() == null) { leaving = true }
+    // [PLAZA-06] 처음 설정 다시 받기 changed nothing yet: back on the first question just leaves.
+    BackHandler(enabled = vm.again && !fixing && d.previous() == null) { vm.cancelAgain() }
+    // [NAV-04] 1.25 Z 후속: the first setup's first question closed the app on one back; now a second is needed.
+    val exitContext = LocalContext.current
+    val exit = remember { com.bamnat.app.ui.ExitGuard() }
+    BackHandler(enabled = vm.calendarId == null && !vm.again && !fixing && d.previous() == null) { exit.press(exitContext) }
 
     // One way in for a coworker's company file and for the user's own backup, as in settings.
     val context = LocalContext.current
@@ -136,7 +142,7 @@ fun SetupHost(
                 TopAppBar(
                     title = {
                         Column {
-                            Text(if (fixing) "답 고치기" else vm.calendarName?.let { "$it 달력 설정" } ?: "근무 설정",
+                            Text(if (fixing) "답 고치기" else vm.calendarName?.let { "$it 달력 설정" } ?: if (vm.again) "처음 설정 다시 받기" else "근무 설정",
                                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             // [SETUP-06] What is left, once the kind of work says how many questions there are. A "2/8"
                             // that became "3/7" when a company file skipped a question read as going backwards.
@@ -150,12 +156,15 @@ fun SetupHost(
                             }
                         } else if (vm.calendarId != null) {
                             IconButton(onClick = { leaving = true }) { Icon(Icons.Filled.Close, "새 달력 그만 만들기") }
+                        } else if (vm.again) {
+                            IconButton(onClick = vm::cancelAgain) { Icon(Icons.Filled.Close, "다시 받기 그만두기") }
                         }
                     },
                     actions = {
                         // [MCAL-02] An added calendar is set up now or not made; its questions wait on no card.
                         if (d.step != SetupStep.STYLE && !fixing) {
-                            if (vm.calendarId == null) TextButton(onClick = vm::later) { Text("나중에 할게요") }
+                            if (vm.again) TextButton(onClick = vm::cancelAgain) { Text("그만두기") }
+                            else if (vm.calendarId == null) TextButton(onClick = vm::later) { Text("나중에 할게요") }
                             else TextButton(onClick = { leaving = true }) { Text("그만두기") }
                         }
                     },
@@ -168,6 +177,12 @@ fun SetupHost(
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp), drawStopIndicator = {})
                 // [A11Y-04] At 200% two lines no longer fit the bar's height, so what is left goes under it.
                 if (stepsLeft != null && bigFont) StepsLeft(stepsLeft, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                // [PLAZA-06] Said once at the top, so going through the questions again is not feared.
+                if (vm.again && d.step == SetupStep.STYLE) {
+                    Text("지금 달력은 그대로예요. 마지막에 저장해야 오늘부터 바뀌고, 지난 날짜와 직접 바꾼 날은 남아요. 회사 찾기도 여기서 다시 할 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                }
             }
         },
         bottomBar = { primary?.let { BottomButton(it, busy = saving) } },
@@ -200,7 +215,7 @@ fun SetupHost(
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
                             onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
-                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = if (vm.companySearch) ({ searching = true }) else null, onOpenFile = onOpenFile)
+                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { searching = true }, onOpenFile = onOpenFile)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)
                         SetupStep.ORDER -> OrderStep(vm, d)

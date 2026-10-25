@@ -46,9 +46,61 @@ data class SharedSetup(
     val by: List<String> = emptyList(),
     /** [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from two networks in two different months. */
     val checkedLong: Boolean = false,
+    /** [PLAZA-05] 지지 (결정 D74): phones using it plus people behind it, less 달라요; the most of a department is its 대표 판. */
+    val support: Int = 0,
+    /**
+     * [PLAZA-08] 결정 D79: the setup has a pay way this phone does not see, since it did not join the company (or read
+     * too much today). [text] then has the shifts and their order only.
+     */
+    val payHidden: Boolean = false,
+    /** [PLAZA-09] 안정: three phones or more on it and nothing else sent or adopted for 30 days. */
+    val stable: Boolean = false,
 ) {
-    val hasPay: Boolean get() = runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
+    val hasPay: Boolean get() = payHidden || runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
 }
+
+/**
+ * [PLAZA-07] What came of joining a company (결정 D79): joined, or why not ([error] member_wait until [until], or
+ * member_limit). A calendar keeps its company until [changeAfter].
+ */
+data class Membership(
+    val joined: Boolean,
+    val company: String,
+    val error: String? = null,
+    val until: Instant? = null,
+    val changeAfter: Instant? = null,
+)
+
+/** [PLAZA-09] One version in a company's room: who stands behind it and, for the others, what differs from the base. */
+data class RoomVersion(
+    val setup: String,
+    val adopted: Boolean,
+    val dept: String,
+    val version: Int?,
+    val text: String,
+    val persons: Int,
+    val senders: Int,
+    val uses: Int,
+    val support: Int,
+    val changes: List<String> = emptyList(),
+)
+
+/**
+ * [PLAZA-09] A company's room, for a phone that joined it: the version it uses ([base], [first] when it is the
+ * department's first and only one, 제보 1 · 확인 중), the department's other versions, and whether it settled.
+ */
+data class RoomPage(
+    val companyId: String,
+    val company: String,
+    val base: RoomVersion?,
+    val mine: Boolean,
+    val first: Boolean,
+    val others: List<RoomVersion>,
+    val stable: Boolean,
+    val stablePhones: Int = 3,
+    val stableDays: Int = 30,
+    val stableUses: Int = 0,
+)
 
 data class CompanyPage(
     val id: String,
@@ -59,10 +111,14 @@ data class CompanyPage(
     val kind: String = "company",
     val job: String = "",
     val region: String = "",
+    /** [PLAZA-08] This phone joined the company and sees its pay ways; [limited] when it read too much today. */
+    val member: Boolean = false,
+    val limited: Boolean = false,
 )
 
 /** What a setup needs to be adopted and what adoption earns, said before anyone sends [COMM-03]. */
-data class CompanyTerms(val threshold: Int, val rewardMonths: Int, val agree: Int = 75)
+/** [PLAZA-10] [firstMonths]: the pass a company's first setup with its pay earns (새 정보). */
+data class CompanyTerms(val threshold: Int, val rewardMonths: Int, val agree: Int = 75, val firstMonths: Int = 0)
 
 /** [COMM-07] One company's rule set on 회사 규칙 광장: still being voted on, or adopted for anyone to use. */
 data class BoardItem(
@@ -158,6 +214,8 @@ data class RuleVersion(
     val post: String?,
     val added: List<String>,
     val removed: List<String>,
+    /** [PLAZA-05] That version's company settings file, to compare with or go back to; null from an older server. */
+    val body: String? = null,
 )
 
 /** [PLZ-14] A market rate someone sent: per [unit] day, hour or month, with its 맞아요·달라요. */
@@ -264,6 +322,11 @@ data class ReportStatus(
     val rewardMonths: Int,
     /** The same setup was sent from this phone before; this is that report. */
     val again: Boolean = false,
+    /** [PLAZA-10] The department's first version from anyone (제보 1 · 확인 중), and first with its pay (새 정보, [reward]). */
+    val first: Boolean = false,
+    val newInfo: Boolean = false,
+    /** [PLAZA-07] Sending joins the company; what came of it. */
+    val member: Membership? = null,
 )
 
 data class VoteResult(val points: Int, val persons: Int, val bad: Int, val threshold: Int, val adopted: Boolean, val trust: Int = 0, val agree: Int = 0)
@@ -289,6 +352,14 @@ interface CompanyApi {
     /** [PLZ-12] A report that names its job plaza and 시·도, or with [topic] a rule for a whole job, not one company. */
     suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
         region: String, topic: Boolean): ReportStatus = report(device, company, dept, verified, note, setup)
+    /** [PLAZA-07][PLAZA-10] A report for one calendar ([cal]); [auto] when it went by itself after the user said yes once. */
+    suspend fun report(device: String, company: String, dept: String, setup: JSONObject, cal: String, auto: Boolean): ReportStatus =
+        report(device, company, dept, false, "", setup)
+    /** [PLAZA-07] Joins [company] for the calendar [cal]; a refusal (member_wait, member_limit) comes back, not thrown. */
+    suspend fun join(device: String, company: String, cal: String): Membership = Membership(true, company)
+    suspend fun leave(device: String, company: String) = Unit
+    /** [PLAZA-09] The room of a company this phone joined; null when it has not joined (or an older server). */
+    suspend fun room(device: String, company: String): RoomPage? = null
     suspend fun status(id: String): ReportStatus?
     suspend fun takeBack(device: String, id: String)
     suspend fun forgetMine(device: String): Int
@@ -322,6 +393,8 @@ interface CompanyApi {
     suspend fun postVote(device: String, id: String, ok: Boolean?): PostVote = throw CompanyException("offline")
     /** [PLZ-08] This phone uses (applied) a rule set, or stopped; how many use it comes back. */
     suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = 0
+    /** [PLAZA-07] The same for one calendar: using a company's setup joins the company for it. */
+    suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = use(device, company, setup, on)
     /** [PLZ-08] The name this phone is shown by on the plaza; empty for none. */
     suspend fun nick(device: String, nick: String): String? = null
     /** [PLZ-12] The job plazas with how much is in each. */
@@ -348,6 +421,8 @@ class CompanyClient(
     private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
     /** [COMM-09] The X-Hide header: the writers this phone hides, or null. */
     private val hidden: () -> String? = { null },
+    /** [PLAZA-08] The install id for X-Device on a company's page, so a member gets its pay ways (결정 D79). */
+    private val device: () -> String? = { null },
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
@@ -361,8 +436,9 @@ class CompanyClient(
 
     /** A company and its setups; one merged into another opens as that one. */
     override suspend fun company(id: String): CompanyPage = serverCall {
-        var o = request("GET", "/api/companies/$id")
-        o.optStringOrNull("mergedInto")?.let { o = request("GET", "/api/companies/$it") }
+        val me = device()
+        var o = request("GET", "/api/companies/$id", device = me)
+        o.optStringOrNull("mergedInto")?.let { o = request("GET", "/api/companies/$it", device = me) }
         CompanyPage(
             id = o.getString("id"),
             name = o.getString("name"),
@@ -392,15 +468,68 @@ class CompanyClient(
                     checked = s.optInt("checked"),
                     by = s.optJSONArray("by").strings(),
                     checkedLong = s.optBoolean("checkedLong"),
+                    support = s.optInt("support"),
+                    payHidden = s.optBoolean("payHidden"),
+                    stable = s.optBoolean("stable"),
                 )
             },
+            member = o.optBoolean("member"),
+            limited = o.optBoolean("limited"),
         )
     }
 
     override suspend fun terms(): CompanyTerms = serverCall {
         val o = request("GET", "/api/terms")
-        CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75))
+        CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75), o.optInt("firstMonths", 0))
     }
+
+    override suspend fun join(device: String, company: String, cal: String): Membership = serverCall {
+        try {
+            membership(request("POST", "/api/members", JSONObject().put("device", device).put("company", company).put("cal", cal)), company)
+        } catch (e: CompanyException) {
+            // A 409 carries the reason as its error word; the details are not needed to say it.
+            if (e.code == "member_wait" || e.code == "member_limit") Membership(false, company, e.code) else throw e
+        }
+    }
+
+    override suspend fun leave(device: String, company: String) = serverCall {
+        request("DELETE", "/api/members", JSONObject().put("device", device).put("company", company))
+        Unit
+    }
+
+    override suspend fun room(device: String, company: String): RoomPage? = serverCall {
+        val o = try {
+            request("GET", "/api/companies/$company/room", device = device)
+        } catch (e: CompanyException) {
+            if (e.code == "member" || e.code == "not_found") return@serverCall null
+            throw e
+        }
+        val c = o.getJSONObject("company")
+        val b = o.optJSONObject("base")
+        val rule = o.optJSONObject("stableRule")
+        RoomPage(
+            companyId = c.getString("id"), company = c.optString("name"),
+            base = b?.let(::roomVersion), mine = b?.optBoolean("mine") == true, first = b?.optBoolean("first") == true,
+            others = o.optJSONArray("others").objects().map(::roomVersion),
+            stable = o.optBoolean("stable"),
+            stablePhones = rule?.optInt("phones", 3) ?: 3, stableDays = rule?.optInt("days", 30) ?: 30, stableUses = rule?.optInt("uses") ?: 0,
+        )
+    }
+
+    private fun roomVersion(v: JSONObject) = RoomVersion(
+        setup = v.getString("id"),
+        adopted = v.optString("status") == "adopted",
+        dept = v.optString("dept"),
+        version = if (v.has("version") && !v.isNull("version")) v.getInt("version") else null,
+        text = v.getJSONObject("setup").toString(),
+        persons = v.optInt("persons"), senders = v.optInt("senders"), uses = v.optInt("uses"), support = v.optInt("support"),
+        changes = v.optJSONArray("changes").lines(),
+    )
+
+    private fun membership(o: JSONObject, company: String) = Membership(
+        joined = o.optBoolean("joined"), company = o.optString("company").ifEmpty { company }, error = o.optStringOrNull("error"),
+        until = o.optStringOrNull("until")?.let(Instant::parse), changeAfter = o.optStringOrNull("changeAfter")?.let(Instant::parse),
+    )
 
     override suspend fun board(adopted: Boolean, from: Int, q: String, job: String, region: String, sort: String): Board = serverCall {
         val name = q.trim().take(40).takeIf { it.isNotEmpty() }?.let { "&q=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
@@ -466,8 +595,13 @@ class CompanyClient(
         vote(request("POST", "/api/posts/$id/vote", JSONObject().put("device", device).put("ok", ok ?: JSONObject.NULL)))
     }
 
-    override suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = serverCall {
-        request(if (on) "POST" else "DELETE", "/api/uses", JSONObject().put("device", device).put("company", company).put("setup", setup)).optInt("uses")
+    override suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = use(device, company, setup, on, "")
+
+    override suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = serverCall {
+        val body = JSONObject().put("device", device).put("company", company).put("setup", setup)
+        // [PLAZA-07] The company's setup goes into the main calendar, so the app joins for it unless told otherwise.
+        body.put("cal", cal.ifEmpty { AutoShare.CAL })
+        request(if (on) "POST" else "DELETE", "/api/uses", body).optInt("uses")
     }
 
     override suspend fun nick(device: String, nick: String): String? = serverCall {
@@ -484,7 +618,8 @@ class CompanyClient(
         request("GET", "/api/companies/$company/history?setup=$setup").optJSONArray("versions").objects().map { v ->
             val ch = v.optJSONObject("changes")
             RuleVersion(v.getInt("version"), v.optString("setup"), v.optString("source"), Instant.parse(v.getString("adoptedAt")), v.optString("state"),
-                v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines())
+                v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines(),
+                v.optJSONObject("body")?.toString())
         }
     }
 
@@ -579,8 +714,11 @@ class CompanyClient(
     override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
         region: String, topic: Boolean): ReportStatus = send(device, company, dept, verified, note, setup, false, job, region, topic)
 
+    override suspend fun report(device: String, company: String, dept: String, setup: JSONObject, cal: String, auto: Boolean): ReportStatus =
+        send(device, company, dept, false, "", setup, false, "", "", false, cal, auto)
+
     private suspend fun send(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean,
-        job: String, region: String, topic: Boolean): ReportStatus = serverCall {
+        job: String, region: String, topic: Boolean, cal: String = "", auto: Boolean = false): ReportStatus = serverCall {
         val body = JSONObject()
             .put("v", 1).put("device", device).put("company", company.trim()).put("dept", dept.trim())
             .put("verified", verified).put("note", note.trim()).put("setup", setup)
@@ -588,6 +726,8 @@ class CompanyClient(
         if (job.isNotEmpty()) body.put("job", job)
         if (region.isNotEmpty()) body.put("region", region)
         if (topic) body.put("topic", true)
+        if (!topic) body.put("cal", cal.ifEmpty { AutoShare.CAL })
+        if (auto) body.put("auto", true)
         status(request("POST", "/api/reports", body))
     }
 
@@ -651,6 +791,9 @@ class CompanyClient(
             reward = o.optJSONObject("reward")?.let { Reward(it.getInt("months"), it.getString("status")) },
             rewardMonths = o.optInt("rewardMonths"),
             again = o.optBoolean("again"),
+            first = o.optBoolean("first"),
+            newInfo = o.optBoolean("newInfo"),
+            member = o.optJSONObject("member")?.let { membership(it, c.getString("id")) },
         )
     }
 
@@ -660,7 +803,7 @@ class CompanyClient(
 
     private companion object {
         /** [SRV-08] What the server takes once per X-Request-Id: posts, replies, 신고 and reports. */
-        val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"))
+        val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"), Regex("/api/members"))
     }
 }
 

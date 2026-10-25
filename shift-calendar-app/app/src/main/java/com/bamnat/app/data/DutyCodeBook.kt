@@ -13,6 +13,8 @@ import org.json.JSONObject
  * [ROST-06] Each calendar's code book for 한 달 근무 넣기: what the user said a roster's code means once (병가 → 유급 휴가,
  * M → 미들), so the next month's roster needs no question (결정 D63). On this phone and in the backup, like 모든 조.
  * [ROST-10] Clipboard text is never in here: the screen's ClipboardHint remembers only the copy time it dealt with.
+ * [READ-06] And whose line of the roster is the user's (1.25 순번 370 양식 기억): the name or 조 they picked, so next
+ * month's roster from the same ward needs no "어느 줄이 내 것인가요?". Kept beside the book, in the backup with it.
  */
 class DutyCodeBook(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -31,6 +33,15 @@ class DutyCodeBook(context: Context) {
         _books.value = _books.value + (calendarId to next)
     }
 
+    /** [READ-06] The line the user picked on [calendarId]'s last roster ("김민지", "B조"), or null. */
+    fun mine(calendarId: String): String? = prefs.getString(MINE + calendarId, null)
+
+    fun rememberMine(calendarId: String, label: String) {
+        val l = label.trim()
+        if (l.isEmpty()) return
+        prefs.edit().putString(MINE + calendarId, l.take(40)).apply()
+    }
+
     fun forget(calendarId: String, code: String) {
         val next = of(calendarId) - DutyCodes.norm(code)
         prefs.edit().apply { if (next.isEmpty()) remove(calendarId) else putString(calendarId, encode(next)) }.apply()
@@ -38,20 +49,23 @@ class DutyCodeBook(context: Context) {
     }
 
     /** For the backup: calendar id → encoded book. */
-    fun export(): Map<String, String> = _books.value.filterValues { it.isNotEmpty() }.mapValues { encode(it.value) }
+    fun export(): Map<String, String> = _books.value.filterValues { it.isNotEmpty() }.mapValues { encode(it.value) } +
+        prefs.all.filterKeys { it.startsWith(MINE) }.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }
 
     fun import(all: Map<String, String>) {
         prefs.edit().clear().apply {
-            all.forEach { (k, v) -> if (decode(v).isNotEmpty()) putString(k, v) }
+            all.forEach { (k, v) -> if (k.startsWith(MINE)) putString(k, v.take(40)) else if (decode(v).isNotEmpty()) putString(k, v) }
         }.apply()
         _books.value = read()
     }
 
     private fun read(): Map<String, Map<String, DutyCell>> =
-        prefs.all.mapNotNull { (k, v) -> (v as? String)?.let { k to decode(it) } }.toMap()
+        prefs.all.filterKeys { !it.startsWith(MINE) }.mapNotNull { (k, v) -> (v as? String)?.let { k to decode(it) } }.toMap()
 
     companion object {
         private const val PREFS = "duty_codes"
+        /** Key prefix of [mine]; a calendar id never starts so. */
+        private const val MINE = "mine:"
 
         /** One cell as a short string: "S12" a kind of work, "O" a day off, "L1.2.0" leave (kind code, quarters, from start). */
         fun encodeCell(c: DutyCell): String? = when (c) {

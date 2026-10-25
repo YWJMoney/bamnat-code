@@ -32,6 +32,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,6 +56,12 @@ data class EditRow(
     val isNew: Boolean = false,
 )
 
+/**
+ * [FIT-02] A part that does not suit this calendar's kind of work, offered under '더 보기': [added] once the
+ * user put it on this calendar anyway.
+ */
+data class OtherRow(val id: String, val label: String, val what: String, val added: Boolean)
+
 /** [CUST-01] A group of rows that move among themselves, with where they sit on the page. */
 data class EditGroup(val title: String, val rows: List<EditRow>)
 
@@ -75,6 +83,9 @@ fun PageEditSheet(
     onAsk: () -> Unit,
     onDismiss: () -> Unit,
     options: @Composable ColumnScope.() -> Unit = {},
+    /** [FIT-01][FIT-02] Parts hidden because they do not suit this calendar, and adding one back. */
+    others: List<OtherRow> = emptyList(),
+    onAdd: (id: String, added: Boolean) -> Unit = { _, _ -> },
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
@@ -95,6 +106,7 @@ fun PageEditSheet(
                     EditRowLine(row, first = i == 0, last = i == group.rows.lastIndex, onShow = { onShow(row.id, it) }, onMove = { onMove(row.id, it) })
                 }
             }
+            FitMore(others, onAdd)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             options()
             TextButton(onClick = onAsk, modifier = Modifier.heightIn(min = 48.dp)) { Text("원하는 배치나 기능이 없나요? 바로 말해 주세요") }
@@ -151,5 +163,37 @@ private fun Block(label: String, color: Color, tall: Boolean = false) {
     Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 44.dp else 18.dp).background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center) {
         Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = if (tall) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * [FIT-01][FIT-02] '이 달력에 안 맞아 숨긴 기능 n개 · 더 보기': what this kind of work does not need, put away
+ * rather than deleted, each with 더하기 to keep it on this calendar anyway (and 빼기 to put it back away).
+ */
+@Composable
+fun FitMore(others: List<OtherRow>, onAdd: (id: String, added: Boolean) -> Unit, title: String = "이 달력에 안 맞아 숨긴 기능") {
+    if (others.isEmpty()) return
+    // Open each time the sheet opens with something added (the added list can come a moment after the sheet), so it is in sight.
+    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val anyAdded = others.any { it.added }
+    androidx.compose.runtime.LaunchedEffect(anyAdded) { if (anyAdded) open = true }
+    TextButton(onClick = { open = !open }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text("$title ${others.size}개 · ${if (open) "접기" else "더 보기"}", modifier = Modifier.weight(1f))
+        Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null)
+    }
+    if (!open) return
+    Text("이 달력의 일에는 잘 쓰지 않아 숨겨 뒀어요. 더하면 이 달력에서만 보여요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    others.forEach { row ->
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(row.label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(row.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
+                    overflow = TextOverflow.Ellipsis)
+            }
+            TextButton(onClick = { onAdd(row.id, !row.added) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (row.added) "빼기" else "더하기")
+            }
+        }
     }
 }

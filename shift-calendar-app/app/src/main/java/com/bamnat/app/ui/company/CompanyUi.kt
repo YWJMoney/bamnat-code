@@ -54,6 +54,10 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "not_found" -> "찾을 수 없어요. 이미 지워졌을 수 있어요"
     // [SRV-04] A feature the developer paused for a while from the developer app.
     "paused" -> "지금은 잠시 쉬고 있어요. 곧 다시 열게요"
+    // [PLAZA-07] 결정 D79: a calendar keeps its company 30 days, a phone joins two at most.
+    "member_wait" -> "달력 하나는 회사 하나만 쓸 수 있어요. 회사를 바꾼 지 30일이 지나면 다른 회사에 참여할 수 있어요"
+    "member_limit" -> "휴대폰 하나로 회사 두 곳까지 참여할 수 있어요"
+    "member" -> "이 회사에 참여한 휴대폰만 볼 수 있어요. 이 회사 설정을 쓰면 참여돼요"
     else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
 }
 

@@ -125,7 +125,12 @@ class AppContainer(context: Context) {
     suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
         captureInto(text, pkg, app, postedAt, fromMessenger).also {
             // [OBS-01] 기록 지점 9: how many, never what or how much.
-            if (it == MoneyRepository.Outcome.SAVED) journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+            if (it == MoneyRepository.Outcome.SAVED) {
+                journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+                // [TAX-01] A pay deposit just written becomes 월급 관측 (and 급여, so it is not added on top of the estimate).
+                runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt)) }
+                    .onFailure { e -> if (e is kotlinx.coroutines.CancellationException) throw e }
+            }
         }
 
     private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
@@ -170,12 +175,24 @@ class AppContainer(context: Context) {
     val payStore = PayStore(appContext)
     /** [LEAVE-01] The main calendar's 연차 원장. */
     val leaveRepository by lazy { com.bamnat.app.leave.LeaveRepository(database, scheduleRepository, payStore) }
+    /** [TAX-01][TAX-06] Calendar [id]'s 월급 관측 and tax answers, in its own database; the main one's otherwise. */
+    fun tax(id: String): com.bamnat.app.data.TaxRepository = com.bamnat.app.data.TaxRepository.of(
+        if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) database else calendars.database(id))
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
-        staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles })
+        staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles },
+        settingsFiles = {
+            com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
+                com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
+                companyStore.reload()
+                rateHints.reload()
+                autoRecordPrefs.reload()
+                shareGroup.reload()
+            }
+        })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -189,8 +206,11 @@ class AppContainer(context: Context) {
         shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
-        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
+        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
+        device = { companyStore.device })
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
+    val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
     val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
@@ -201,6 +221,8 @@ class AppContainer(context: Context) {
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
+    /** [PLAZA-06] 처음 설정 다시 받기: its own draft, so the calendar in use is untouched until it is saved. */
+    val againSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "again_setup_draft.json")) }
     val firstSetup by lazy {
         com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyShare }, { companyStore })
     }
@@ -281,6 +303,16 @@ class AppContainer(context: Context) {
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
 
+    // AE 1.26 [INVITE-02][INVITE-03] 친구 초대: built on first use; screenshots and tests put fakes in place of the
+    // server, Play's referrer and the phone mark.
+    var inviteApi: com.bamnat.app.tier.InviteApi = com.bamnat.app.tier.InviteClient()
+    var referrerSource: com.bamnat.app.tier.ReferrerSource = com.bamnat.app.tier.PlayReferrer
+    var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
+    val invites by lazy {
+        com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
+            setupDone = { settingsRepository.current.workStyle != null }, installedAt = { installedAt }, referrer = { referrerSource })
+    }
+
     /**
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
      * passes and admin link when it has any reason to, and Play's purchases; then the gate again.
@@ -294,6 +326,8 @@ class AppContainer(context: Context) {
         }
         runCatching { syncPasses(force) }
         runCatching { sendConsent() }
+        // [INVITE-03] A friend's next day and the inviter's counts; not before the calendar has drawn (afterFirstFrame).
+        runCatching { if (laterStarted.get()) invites.sync(force) }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
         if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
@@ -528,6 +562,8 @@ class AppContainer(context: Context) {
         if (!laterStarted.compareAndSet(false, true)) return
         keptBeforeLater = kept.toList()
         startLater()
+        // [INVITE-03] Once, not kept: after the first setup Play's install referrer is read here (and nowhere at the start).
+        appScope.launch { runCatching { invites.sync() } }
     }
 
     /** [PERF-03] What [start] had running when the waiting jobs started, for the startup budget test. */

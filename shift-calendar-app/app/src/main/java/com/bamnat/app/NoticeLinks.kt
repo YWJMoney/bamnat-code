@@ -65,6 +65,14 @@ object NoticeLinks {
         WHATS_NEW,
         /** [SHR-14] 우리 조 모아 보기. */
         GROUP,
+        /** [PLAZA-04] 내 설정 나누기, from the invitation on the calendar after a setup made by hand. */
+        COMPANY_REPORT,
+        /** [PLAZA-06] 처음 설정 다시 받기, from 설정 › 도움말, the calendar's menu or 문의하기. */
+        SETUP_AGAIN,
+        /** [TAX-02] 1.25 W: the money tab with 세금·실수령 open. */
+        TAX,
+        /** [SPAT-04] The main calendar's pay setup, from the card after a public cycle went in. */
+        PAY,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

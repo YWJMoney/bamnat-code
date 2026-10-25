@@ -163,6 +163,41 @@ class LegalPagesTest {
         assertTrue(text.contains("‘모든 링크 끊기’") && text.contains("‘보내는 것과 권한 한눈에’"))
     }
 
+    /**
+     * [INVITE-06][INVITE-08] 3.0 for 1.26.0: 친구 초대, in the app's and the company server's own numbers — what goes and when, how
+     * long it stays, the phone mark, the referrer permission the library adds, 30 days' notice (결정 D18).
+     */
+    @Test fun thePrivacyPolicyCoversInvites() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("처리방침 3.0 · 앱 버전 1.26.0 기준 · 게시일 2026년 10월 25일 · 시행일 2026년 11월 24일"))
+        assertTrue("30 days' notice", java.time.LocalDate.of(2026, 10, 25).plusDays(30) == java.time.LocalDate.of(2026, 11, 24))
+        assertTrue(text.contains("3.0에서 바뀐 점: 앱 1.26.0부터 <b>친구 초대</b>"))
+        assertTrue(text.contains("1-12. 친구 초대 (선택, 앱 1.26.0부터)"))
+        // [INVITE-08] The server's own numbers: the default rules (the developer app may change them), the longest
+        // period of use, how long records stay.
+        val server = File(site, "shift-calendar-app/server/company-worker/src/index.js").readText()
+        val d = com.bamnat.core.tier.InviteTerms.DEFAULT
+        assertTrue(server.contains("  friends: ${d.need},\n  days: ${d.days},\n  months: ${d.months},\n  capMonths: ${d.capMonths},"))
+        assertTrue(server.contains("days: [1, 60]") && server.contains("graceDays: 30,") && server.contains("keepCounted: 365 * DAY"))
+        assertTrue(text.contains("친구 ${d.need}명마다 프로 ${d.months}개월, 사용 기간 ${d.days}일, 상한 없음") && text.contains("사용 기간은 60일까지"))
+        assertTrue(text.contains("영문·숫자 8자") && com.bamnat.core.tier.InviteRules.code("abcd-2345") == "ABCD2345")
+        assertTrue(text.contains("알린 날부터 (사용 기간+30)일 뒤 삭제(지금 ${d.days + 30}일)") && text.contains("사용 기간을 채운 기록은 1년 뒤 삭제"))
+        // The phone mark: hashed on the phone, never the id or the advertising ID.
+        assertTrue(text.contains("<b>휴대폰 표시</b>") && text.contains("원래 번호와 광고 ID는 서버로 보내지 않으며"))
+        assertTrue(com.bamnat.app.tier.PhoneMark.hash("x").matches(Regex("[0-9a-f]{64}")))
+        assertTrue(text.contains("설치 ${com.bamnat.core.tier.InviteRules.REFERRER_WITHIN.toDays()}일 안에 한 번만"))
+        // The permission the Install Referrer library adds is in the table.
+        assertTrue(text.contains("<td>설치 리퍼러 서비스 연결(Google Play, 앱 1.26.0부터)</td>"))
+        assertTrue(File(site, "shift-calendar-app/app/build.gradle.kts").readText().contains("com.android.installreferrer:installreferrer:2.2"))
+        // What the user is told before tapping is what the policy says goes.
+        assertTrue(com.bamnat.app.ui.pro.INVITE_MAKE_CONSENT.contains("설치 번호와 휴대폰 표시"))
+        assertTrue(com.bamnat.app.ui.pro.inviteUseConsent("ABCD2345", 7).contains("초대 코드 ABCD-2345"))
+        assertTrue(com.bamnat.app.ui.pro.inviteUseConsent("ABCD2345", 7).contains("7일이 지난 뒤 앱을 다시 열면"))
+        assertTrue(text.contains("스토어 평점·리뷰와는 묶지 않습니다"))
+    }
+
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {
         val terms = File(site, "terms/index.html")
         assumeTrue(File(site, "privacy/index.html").exists())

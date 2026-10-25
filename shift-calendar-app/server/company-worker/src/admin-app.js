@@ -525,6 +525,13 @@ background:var(--raised);border-top:1px solid var(--line)}
 .bulkbar{position:sticky;bottom:calc(4.6rem + env(safe-area-inset-bottom));z-index:4;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;
 margin:.75rem 0 0;padding:.6rem .75rem;background:var(--raised);border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:var(--shadow-lg)}
 .bulkbar b{margin-right:auto;font-size:.9rem}
+.toolbar.end{justify-content:flex-end}
+.card.picked{outline:2px solid var(--accent)}
+.versions{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr))}
+.version{border:1px solid var(--line);border-radius:12px;padding:.75rem;min-width:0}
+.version.best{border-color:var(--gold)}
+.version p{margin:0 0 .4rem}
+.rows.inbox .row-side{flex-wrap:wrap;justify-content:flex-end}
 @media (min-width:600px){.bulkbar{bottom:1rem}}
 .dev-body{margin:.6rem 0 0;white-space:pre-wrap;font-size:.94rem}
 .history{list-style:none;margin:0;padding:0}
@@ -666,16 +673,23 @@ function adminApp(L, BUILD) {
     // [SRV-04][ADMIN-14] 운영, [ADMIN-13] 지표, [SRV-05] 공유 링크 신고.
     ops: '<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/>',
     metrics: '<path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/>',
+    // [ADMUX-17] 받은함, [ADMUX-18] 여러 판.
+    inbox: '<path d="M3.5 13.5 6 5h12l2.5 8.5V19h-17z"/><path d="M3.5 13.5H9l1 2h4l1-2h5.5"/>',
+    versions: '<rect x="3.5" y="7" width="11" height="13" rx="1.5"/><path d="M8 7V4.5h12.5V17H14.5"/>',
     shares: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   };
   /** Where each screen lives and who sees it; badges count what waits for someone there. */
   const NAV = [
     { key: "home", label: "홈", group: "main" },
+    // [ADMUX-17] Everything waiting, nearest deadline first; the badge is what is past its deadline.
+    { key: "inbox", label: "받은함", group: "main", badge: (o) => o.inboxLate ?? 0 },
     { key: "review", label: "검토", area: "review", group: "main", badge: (o) => L.reviewCount(o) },
     { key: "inquiries", label: "문의", area: "inquiries", group: "main", badge: (o) => o.inquiries ?? 0 },
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
     { key: "dev", label: "개발사항", area: "dev", group: "main", badge: (o) => (can("devStatus", "edit") ? o.devTodo ?? 0 : 0) },
     { key: "companies", label: "회사", area: "companies", group: "main" },
+    // [ADMUX-18] Departments with more than one live version of their rule.
+    { key: "versions", label: "여러 판", area: "companies", group: "main", badge: (o) => o.versionConflicts ?? 0 },
     // [COMM-06] The talk on rule sets: what people flagged first.
     { key: "community", label: "토론", area: "community", group: "main", badge: (o) => o.flaggedPosts ?? 0 },
     { key: "rewards", label: "보상", area: "rewards", group: "main", badge: (o) => o.owed ?? 0 },
@@ -713,7 +727,8 @@ function adminApp(L, BUILD) {
     login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
-    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림",
+    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
+    post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", settings: "채택 설정 바꿈",
     post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
@@ -818,6 +833,8 @@ function adminApp(L, BUILD) {
     data: {}, // per screen
     // [ADMIN-13] 지표 기간(일), [ADMIN-14] 운영 화면의 달(YYYY-MM, 비면 이번 달).
     metricDays: 28, opsMonth: "",
+    // [ADMUX-13] 지표를 날짜로 고른 기간(비면 metricDays), [ADMUX-17] 받은함 보기, [ADMUX-18] 여러 판 보기, [ADMUX-19] 토론·임금표 여러 개.
+    metricFrom: "", metricTo: "", inboxView: "all", versionShow: "conflict", postPick: null, ratePick: null,
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
     inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
@@ -870,8 +887,10 @@ function adminApp(L, BUILD) {
     community: { show: "postFilter", q: "postQuery" },
     rewards: { status: "rewardTab", q: "rewardQuery" },
     companies: { q: "query" },
-    metrics: { days: "metricDays" },
+    metrics: { days: "metricDays", from: "metricFrom", to: "metricTo" },
     ops: { month: "opsMonth" },
+    inbox: { view: "inboxView" },
+    versions: { show: "versionShow" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -1036,10 +1055,19 @@ function adminApp(L, BUILD) {
       if (name === "ops") {
         jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })), api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
       }
-      if (name === "metrics") jobs.push(api(`/metrics?days=${S.metricDays}`).then(keep((d) => { S.data.metrics = d; })));
+      if (name === "metrics") {
+        const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
+        jobs.push(api(`/metrics?${range}`).then(keep((d) => { S.data.metrics = d; })));
+        // [ADMUX-15] The remote files are read from the site by the server; a slow site does not hold the screen.
+        api("/remote").then(keep((d) => { S.data.remote = d; if (S.route.name === "metrics") render({ keepScroll: true }); })).catch(() => {});
+      }
+      if (name === "inbox") jobs.push(api("/inbox").then(keep((d) => { S.data.inbox = d; })));
+      if (name === "versions") jobs.push(api(`/versions?show=${S.versionShow}`).then(keep((d) => { S.data.versions = d; })));
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
       // [ADMIN-19] 알림 on this device; [ADMIN-15] the owner's server state comes from /server now.
       if (name === "settings") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
+      // [INVITE-08] 친구 초대 rules.
+      if (name === "settings" && can("settings")) jobs.push(api("/settings/invite").then(keep((d) => { S.data.inviteSettings = d; })));
       if (name === "settings" && S.me?.owner) {
         jobs.push(api("/server").then(keep((d) => { S.server = d; })));
         // [MON-10] The 정식 출시 card is the owner's; S.me is known from the last overview.
@@ -1298,6 +1326,8 @@ function adminApp(L, BUILD) {
         <button class="btn primary" data-act="refresh">다시 불러오기</button></div>`;
     }
     if (name === "home") return homeView();
+    if (name === "inbox") return inboxView();
+    if (name === "versions") return versionsView();
     if (name === "review") return reviewView();
     if (name === "inquiries") return id ? inquiryView() : inquiriesView();
     if (name === "dev") return id ? devView() : devListView();
@@ -1322,7 +1352,7 @@ function adminApp(L, BUILD) {
     return Boolean({
       home: S.overview, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards, admins: d.admins, audit: d.audit,
-      ops: d.ops && d.notices, metrics: d.metrics, shares: d.shares, settings: true, account: true, more: true,
+      ops: d.ops && d.notices, metrics: d.metrics, inbox: d.inbox, versions: d.versions, shares: d.shares, settings: true, account: true, more: true,
     }[name]);
   }
 
@@ -1412,7 +1442,7 @@ function adminApp(L, BUILD) {
     return `<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
         <p>${o.doneToday ? `오늘 ${o.doneToday}건 처리했어요. ` : ""}${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, toggles()))}`}</p></div>
       ${S.prefs.views.length ? `<nav class="chips" aria-label="저장한 보기">${S.prefs.views.filter((v) => String(v.hash).startsWith("#/")).map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
-      <section class="card todo-card"><div class="card-head"><h2>지금 할 일</h2>${S.queue ? "" : can("inquiries", "edit") && o.inquiries ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
+      <section class="card todo-card"><div class="card-head"><h2>지금 할 일</h2><a class="btn small ghost" href="${href("inbox")}">받은함${o.inboxLate ? ` · 기한 넘김 ${o.inboxLate}` : ""}</a>${S.queue ? "" : can("inquiries", "edit") && o.inquiries ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
         ${queue.length ? `<ul class="queue-list">${queue.join("")}</ul>` : ""}
         ${todo.length ? `<ul class="todo">${todo.join("")}</ul>` : queue.length ? "" : '<p class="hint">기다리는 일이 없어요. 새로 오면 여기와 메뉴에 숫자로 보여요.</p>'}</section>
       <div class="tiles">${tiles.join("")}</div>
@@ -1549,7 +1579,15 @@ function adminApp(L, BUILD) {
     if (!d.posts.length) {
       return head + empty(S.postFilter === "flagged" && !talk ? "신고된 글이 없어요" : "글이 없어요", "신고가 오면 여기와 메뉴에 숫자로 보여요.");
     }
-    return head + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk)).join("")}</div>${moreButton(d.next, "posts-more")}`;
+    // [ADMUX-19] 여러 개 고르기: the same three steps as on one post, for every picked one.
+    const picking = Boolean(S.postPick) && edit;
+    const n = picking ? S.postPick.size : 0;
+    const tools = edit ? `<div class="toolbar end"><button class="btn" data-act="post-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button></div>` : "";
+    const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 글"><b>${n}개 골랐어요</b>
+        <button class="btn small ghost" data-act="post-pick-all">${n === d.posts.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
+        ${[["show", "문제없음·다시 보이기"], ["hide", "가리기"], ["delete", "지우기"]].map(([k, label]) =>
+          `<button class="btn small${k === "delete" ? " danger" : k === "show" ? " primary" : ""}" data-act="post-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}</div>` : "";
+    return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
   /**
@@ -1569,8 +1607,16 @@ function adminApp(L, BUILD) {
     if (!d) return head + skeleton();
     if (!d.rates.length) return head + empty("시세가 없어요", "앱에서 임금표에 시세를 올리면 여기에 보여요.");
     const won = (v) => `${Number(v).toLocaleString("ko-KR")}원`;
-    return head + `<div class="grid">${d.rates.map((r) => `<article class="card">
-      <div class="head"><h3>${esc(r.trade)} <span class="dept">${esc(r.unitName)} ${esc(won(r.amount))}</span></h3><span class="pill">${esc(r.year)}년</span></div>
+    // [ADMUX-19] 임금표 여러 개: 채택·가리기·투표로 되돌리기 at once (an adopted one only with 광장 규칙 내리기).
+    const picking = Boolean(S.ratePick) && edit;
+    const picked = picking ? S.ratePick.size : 0;
+    const tools = edit ? `<div class="toolbar end"><button class="btn" data-act="rate-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button></div>` : "";
+    const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 시세"><b>${picked}개 골랐어요</b>
+        <button class="btn small ghost" data-act="rate-pick-all">${picked === d.rates.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
+        ${[["adopted", "채택"], ["hidden", "가리기"], ["pending", "투표로 되돌리기"]].map(([k, label]) =>
+          `<button class="btn small${k === "adopted" ? " primary" : k === "hidden" ? " danger" : ""}" data-act="rate-bulk" data-key="${k}"${picked ? "" : " disabled"}>${label}</button>`).join("")}</div>` : "";
+    return head + tools + `<div class="grid">${d.rates.map((r) => `<article class="card${picking && S.ratePick.has(r.id) ? " picked" : ""}">
+      <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-rate="${r.id}"${S.ratePick.has(r.id) ? " checked" : ""} aria-label="이 시세 고르기"> ` : ""}${esc(r.trade)} <span class="dept">${esc(r.unitName)} ${esc(won(r.amount))}</span></h3><span class="pill">${esc(r.year)}년</span></div>
       <p class="meta">${esc(r.jobName)} · ${esc(r.regionName)} · 맞아요 ${r.agree} · 달라요 ${r.disagree} · 글쓴이 ${esc(r.writer)} · ${esc(ago(r.at))}</p>
       ${r.note ? `<blockquote>${esc(r.note)}</blockquote>` : ""}
       ${edit ? `<div class="actions">
@@ -1578,14 +1624,15 @@ function adminApp(L, BUILD) {
         ${r.status === "adopted" && !can("takedown", "edit") ? "" : `${r.status === "hidden" ? "" : `<button class="btn danger" data-act="rate-set" data-id="${r.id}" data-key="hidden">가리기</button>`}
           ${r.status === "pending" ? "" : `<button class="btn" data-act="rate-set" data-id="${r.id}" data-key="pending">투표로 되돌리기</button>`}`}
       </div>` : ""}
-    </article>`).join("")}</div>${moreButton(d.next, "rates-more")}`;
+    </article>`).join("")}</div>${moreButton(d.next, "rates-more")}${bar}`;
   }
 
-  function postCard(p, edit, talk) {
+  function postCard(p, edit, talk, picking = false) {
     const state = p.status === "hidden" ? `<span class="pill bad">가려짐</span>` : p.flags ? `<span class="pill warn">신고 ${p.flags}</span>`
       : p.kept ? '<span class="pill ok">확인함</span>' : "";
-    return `<article class="card">
-      <div class="head"><h3>${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
+    const on = picking && S.postPick.has(p.id);
+    return `<article class="card${on ? " picked" : ""}">
+      <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
       <blockquote>${esc(p.body)}</blockquote>
       ${p.reasons.length ? `<p class="meta">신고 이유: ${p.reasons.map((r) => `${esc(r.text)} ${r.n}`).join(", ")}</p>` : ""}
@@ -2099,7 +2146,8 @@ function adminApp(L, BUILD) {
     }
     return `<ul class="rows">${list.map((c) => `<li><a class="row" href="${href("companies", c.id)}">
       <span class="row-main"><b>${esc(c.name)}</b><small>${[c.rules ? `규칙 ${c.rules}` : "규칙 없음", c.pending ? `대기 ${c.pending}` : "", `제보 ${c.reports}`,
-        c.aliases ? `다른 이름 ${c.aliases}` : ""].filter(Boolean).join(" · ")}</small></span>
+        // [PLAZA-13] Phones that joined the company (결정 D79).
+        c.members ? `참여 ${c.members}` : "", c.aliases ? `다른 이름 ${c.aliases}` : ""].filter(Boolean).join(" · ")}</small></span>
       ${c.mergedInto ? '<span class="pill">합쳐짐</span>' : c.hidden ? '<span class="pill">숨김</span>' : c.pending ? '<span class="pill warn">대기</span>' : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>`;
   }
 
@@ -2119,7 +2167,7 @@ function adminApp(L, BUILD) {
         <form data-form="rename"><label for="name">이름</label>
           <div class="field"><input id="name" name="name" value="${esc(c.name)}" maxlength="40" required${dis}>${edit ? '<button class="btn" type="submit">저장</button>' : ""}</div></form>
         <label class="switch"><input type="checkbox" data-change="hidden"${c.hidden ? " checked" : ""}${dis}><span class="track" aria-hidden="true"></span><span>회사 찾기에서 숨기기</span></label>
-        <p class="meta">${day(c.createdAt)}에 생김${c.pending ? ` · 검토 대기 ${c.pending}` : ""}</p>
+        <p class="meta">${day(c.createdAt)}에 생김${c.pending ? ` · 검토 대기 ${c.pending}` : ""} · 참여한 휴대폰 ${c.members ?? 0}대</p>
       </section>
       <section class="card">
         <h2>다른 이름</h2>
@@ -2146,7 +2194,7 @@ function adminApp(L, BUILD) {
     return `<div class="rule${r.withdrawn || r.superseded ? " dim" : ""}">
       <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
         <p class="meta">${r.source === "auto" ? "자동 채택" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}</p></div>
-        <span class="pill ${tone}">${label}</span></div>
+        <span class="pill ${tone}">${label}</span>${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
       <details><summary>내용</summary>${lines(r.lines)}</details>
       ${action ? `<div class="actions">${action}</div>` : ""}
     </div>`;
@@ -2162,7 +2210,7 @@ function adminApp(L, BUILD) {
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
+          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
         ${edit ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
@@ -2171,8 +2219,42 @@ function adminApp(L, BUILD) {
       </li>`).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
     return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="회사나 부서로 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${csvButton("rewards", r?.status === S.rewardTab ? r.rewards : null)}</div>
+      ${inviteSummaryView(r?.invites)}
       <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요.</p>${body}`;
   }
+
+  // AE 1.26 시작
+  /** [INVITE-06] 친구 초대 at a glance: counted, waiting, stopped and why, and the codes most friends came by. */
+  function inviteSummaryView(v) {
+    if (!v) return "";
+    const why = { self: "자기 초대", phone: "같은 휴대폰" };
+    const refused = Object.entries(v.refused ?? {}).map(([k, n]) => `${why[k] ?? k} ${n}`).join(" · ") || "없음";
+    const top = v.top.length ? `<ul class="rows">${v.top.map((t) => `<li class="item"><div class="row-main"><b>${esc(t.code)}</b>
+      <small>친구 ${t.friends}명 · 채움 ${t.counted} · 사용 기간 채우는 중 ${t.waiting}</small></div></li>`).join("")}</ul>` : "";
+    return `<section class="card" aria-label="친구 초대"><h3>친구 초대</h3>
+      <p>초대 코드 ${v.codes}개 · 보상 받음 ${v.credited}명 · 다음 보상 기다림 ${v.qualified ?? 0}명 · 상한 넘음 ${v.capped}명 · 사용 기간 채우는 중 ${v.waiting}명 · 끝남 ${v.expired ?? 0}명</p>
+      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 설정 › 친구 초대에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${top}</section>`;
+  }
+
+  /** [INVITE-08] The rules in one line: "친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음". */
+  function inviteRuleWords(r) {
+    return `친구 ${r.friends}명이 ${r.days}일 넘게 쓸 때마다 프로 ${r.months}개월 · ${r.capMonths ? `1년에 ${r.capMonths}개월까지` : "상한 없음"}.`;
+  }
+
+  /** [INVITE-08] 설정 › 친구 초대: the developer's numbers, applied by the server to every invite from then on. */
+  function inviteSettingsCard(edit) {
+    const s = S.inviteDraft ?? S.data.inviteSettings;
+    if (!s) return '<section class="card"><h2>친구 초대</h2>' + skeleton(1) + "</section>";
+    return `<section class="card"><h2>친구 초대</h2>
+      ${stepper("friends", "보상에 필요한 친구", s.friends, "명", edit, "friend-step")}
+      ${stepper("days", "친구가 써야 하는 기간", s.days, "일", edit, "friend-step")}
+      ${stepper("months", "보상", s.months, "개월", edit, "friend-step")}
+      ${stepper("capMonths", "1년 상한", s.capMonths ? `${s.capMonths}` : "없음", s.capMonths ? "개월" : "", edit, "friend-step")}
+      <p class="hint">${esc(inviteRuleWords(s))} 쓴다는 건 친구가 초대를 알린 날부터 이 기간이 지난 날(한국 날짜, 서버 시계)에 앱을 다시 여는 거예요. 기간을 채운 친구가 모일 때마다 초대한 분께 보상을 드려요. 상한을 0으로 두면 없음이에요. 같은 휴대폰은 한 번만 세고 자기 초대는 막아요.</p>
+      ${edit ? `<div class="actions">${S.inviteDraft ? '<button class="btn ghost" data-act="friend-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-friend"${S.inviteDraft ? "" : " disabled"}>저장</button></div>` : ""}
+    </section>`;
+  }
+  // AE 1.26 끝
 
   // ---- admins (the owner only) ----
 
@@ -2393,11 +2475,19 @@ function adminApp(L, BUILD) {
 
   // ---- [ADMIN-13][STAT-03][STAT-04] 지표 ----
 
-  const GATE_STATE = { pass: ["ok", "통과"], fail: ["bad", "못 미침"], few: ["warn", "데이터 부족"], play: ["", "Play Console에서 확인"] };
+  const GATE_STATE = { pass: ["ok", "통과"], fail: ["bad", "못 미침"], few: ["warn", "데이터 부족"], play: ["", "Play Console에서 확인"],
+    // [ADMUX-16] The service account is set but Play has not given it 앱 정보 보기 yet.
+    denied: ["warn", "Play 권한 필요"] };
 
   function metricsView() {
     const d = S.data.metrics;
-    const head = `<div class="segmented" role="group" aria-label="기간">${[7, 28, 90].map((n) => seg("metric-days", String(n), String(S.metricDays), `${n}일`)).join("")}</div>`;
+    // [ADMUX-13] 7·28·90일, or two dates (180 days at most, up to yesterday).
+    const custom = Boolean(S.metricFrom && S.metricTo);
+    const head = `<div class="toolbar"><div class="segmented" role="group" aria-label="기간">${[7, 28, 90].map((n) => seg("metric-days", String(n), custom ? "" : String(S.metricDays), `${n}일`)).join("")}</div>
+      <label class="sr" for="mt-from">시작 날짜</label><input id="mt-from" type="date" value="${esc(S.metricFrom || d?.from || "")}" data-change="metric-from" aria-label="이날부터">
+      <label class="sr" for="mt-to">끝 날짜</label><input id="mt-to" type="date" value="${esc(S.metricTo || d?.to || "")}" data-change="metric-to" aria-label="이날까지">
+      ${custom ? '<button class="btn small ghost" data-act="metric-clear">날짜 지우기</button>' : ""}</div>
+      ${d ? `<p class="meta">${esc(d.from)} ~ ${esc(d.to)} (${d.days}일)</p>` : ""}`;
     if (!d) return head + skeleton(3);
     const pct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
     const gates = `<section class="card"><h2>출시 관문</h2>
@@ -2431,8 +2521,181 @@ function adminApp(L, BUILD) {
     const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
         <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
       : '<p class="meta">공유 서버가 연결되지 않았어요. 설정 → 서버 상태를 봐 주세요.</p>'}</section>`;
-    return head + `<div class="grid two">${gates}${funnel}${series}${shares}${events}</div>`;
+    return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${funnel}${shares}${events}</div>`;
   }
+
+  // ---- [ADMUX-13]~[ADMUX-16] 1.25 지표 ----
+
+  const dayLabels = (d) => (d.dayList ?? []).map((x) => x.slice(5).replace("-", "/"));
+  const mins = (m) => (m === null || m === undefined ? "–" : m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.round(m / 6) / 10}시간` : `${Math.round(m / 144) / 10}일`);
+
+  function activeCard(d) {
+    const a = d.active;
+    if (!a) return "";
+    return `<section class="card"><h2>활성 휴대폰</h2>
+      <dl class="kv"><dt>하루 평균</dt><dd>${a.daily}대</dd><dt>마지막 7일 하루 평균</dt><dd>${a.week}대</dd>
+        <dt>가장 많은 날</dt><dd>${a.most ? `${esc(a.most.day)} · ${a.most.phones}대` : "–"}</dd></dl>
+      <p class="hint">사용 통계에 동의한 휴대폰이 보낸 날을 세요. 같은 휴대폰을 구별하지 않아서 '주 활성'은 7일 하루 평균으로 봐요. 설치·삭제 수는 Play Console › 통계에 있어요.</p>
+      ${a.versions.length ? `<h3 class="section">앱 판(마지막 7일)</h3><ul class="rows">${a.versions.map((v) => `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b>
+        <small>${v.code ? `번호 ${v.code}` : "번호 모름"}</small></span><span class="row-side"><b>${v.share}%</b><span class="meta">${v.phones}</span></span></div></li>`).join("")}</ul>` : ""}</section>`;
+  }
+
+  function plazaCard(d) {
+    const p = d.plaza;
+    if (!p) return "";
+    return `<section class="card"><h2>광장</h2>
+      <dl class="kv"><dt>받은 제보</dt><dd>${p.reports}건 · ${p.people}명</dd><dt>채택된 규칙</dt><dd>${p.adopted}</dd><dt>규칙을 내 달력에 적용</dt><dd>${p.applied}</dd>
+        <dt>토론 글</dt><dd>${p.posts}</dd><dt>신고</dt><dd>${p.flags}</dd><dt>신고로 가려진 글</dt><dd>${p.hidden}</dd><dt>임금표 시세</dt><dd>${p.rates}(채택 ${p.ratesAdopted})</dd></dl>
+      ${L.barChart(p.series.reports.map((v, i) => v + p.series.posts[i]), { labels: dayLabels(d), before: p.series.applied, beforeName: "규칙 적용", name: "날마다 받은 제보·토론 글과 규칙 적용" })}
+      <p class="legend"><span><i class="sw" aria-hidden="true"></i>제보 + 토론 글</span><span><i class="sw before" aria-hidden="true"></i>규칙 적용</span></p></section>`;
+  }
+
+  function inquiryCard(d) {
+    const q = d.inquiries;
+    if (!q) return "";
+    return `<section class="card"><h2>문의 처리</h2>
+      <dl class="kv"><dt>받은 문의</dt><dd>${q.received}건</dd><dt>첫 답을 한 문의</dt><dd>${q.answered}건</dd>
+        <dt>첫 답까지(가운데 값)</dt><dd>${mins(q.median)}</dd><dt>첫 답까지(10건 중 9건 안)</dt><dd>${mins(q.p90)}</dd>
+        <dt>답 목표 지킴</dt><dd>${q.kept === null ? "–" : `${q.kept}%`}${q.due ? ` <span class="meta">${q.due}건 중</span>` : ""}</dd>
+        <dt>도움 됐어요</dt><dd>${q.rated === null ? "–" : `${q.rated}%`} <span class="meta">좋아요 ${q.good} · 아쉬워요 ${q.bad}</span></dd></dl>
+      ${q.kinds.length ? `<ul class="rows">${q.kinds.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(KIND_NAMES[k.kind] ?? k.kind)}</b>
+        <small>${k.n}건 · 답 ${k.answered}건 · 목표 ${k.target}시간</small></span><span class="row-side"><b>${mins(k.median)}</b></span></div></li>`).join("")}</ul>` : ""}
+      ${L.barChart(q.series.received, { labels: dayLabels(d), before: q.series.answered, beforeName: "첫 답", name: "날마다 받은 문의와 첫 답" })}
+      <p class="legend"><span><i class="sw" aria-hidden="true"></i>받은 문의</span><span><i class="sw before" aria-hidden="true"></i>첫 답</span></p></section>`;
+  }
+
+  function errorCard(d) {
+    const e = d.errors;
+    if (!e) return "";
+    const play = e.play;
+    const playLine = !play ? "Play 비정상 종료·ANR 비율은 서버에 PLAY_SERVICE_ACCOUNT가 있으면 위 출시 관문에 바로 보여요."
+      : play.error === "denied" ? "Play가 아직 통계를 주지 않아요. Play Console › 사용자 및 권한에서 서비스 계정에 '앱 정보 보기'를 주고, Google Cloud에서 Play Developer Reporting API를 켜 주세요."
+        : play.error ? "Play 통계에 닿지 못했어요. 한 시간 뒤 다시 물어요."
+          : `Play 기준 ${esc(play.day ?? "")}까지 28일, 사용자 ${play.users ?? 0}명이에요(Play는 하루이틀 늦게 세요).`;
+    return `<section class="card"><h2>오류</h2>
+      <dl class="kv"><dt>서버가 답하지 못한 요청</dt><dd>${e.serverTotal}번</dd></dl>
+      ${e.serverTotal ? L.barChart(e.server, { labels: dayLabels(d), name: "날마다 서버 오류" }) : ""}
+      <p class="hint">${playLine}</p>
+      <h3 class="section">앱 판별 문제 신고</h3>
+      ${e.bugs.length ? `<ul class="rows">${e.bugs.map((b) => `<li><div class="row"><span class="row-main"><b>${esc(b.app)}</b></span><span class="row-side"><b>${b.n}건</b>
+        <a class="btn small ghost" href="${L.routeHash("inquiries", null, { status: "all", q: b.app === "모름" ? "" : b.app.split(" ")[0] })}">보기</a></span></div></li>`).join("")}</ul>`
+        : '<p class="meta">이 기간에 문제 신고가 없어요.</p>'}</section>`;
+  }
+
+  const REMOTE_NAMES = { presets: "직군 프리셋", rates: "최저임금·4대 보험 요율", wages: "시중노임단가", taxtable: "간이세액표", publicpay: "공무원 보수",
+    holidays: "공휴일", taxes: "세금", "alarm-guide": "알람 기종별 안내", cycles: "회사 근무주기" };
+
+  function remoteCard() {
+    const r = S.data.remote;
+    if (!r) return '<section class="card"><h2>원격 갱신</h2><div class="card skeleton short"></div></section>';
+    const ok = r.files.filter((f) => f.found && f.valid).length;
+    return `<section class="card"><div class="card-head"><h2>원격 갱신</h2><button class="btn small ghost" data-act="remote-refresh">${icon(P.refresh)}다시 읽기</button></div>
+      <p class="hint">앱이 하루에 한 번 받는 서명된 계산 자료예요. ${ok}/${r.files.length}개 서명 확인. '받을 수 있는 휴대폰'은 마지막 7일 앱 판 가운데 최소 앱 번호 이상의 비율이에요(앱은 어느 판을 쓰는지 보내지 않아요).</p>
+      <ul class="rows">${r.files.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(REMOTE_NAMES[f.kind] ?? f.kind)}</b>
+        <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터` : "사이트에 없어요"}</small></span>
+        <span class="row-side">${f.found ? `<span class="pill ${f.valid ? "ok" : "bad"}">${f.valid ? "서명 맞음" : f.signed ? "서명 틀림" : "서명 없음"}</span>
+          <b title="받을 수 있는 휴대폰">${f.reach === null ? "–" : `${f.reach}%`}</b>` : '<span class="pill bad">없음</span>'}</span></div></li>`).join("")}</ul>
+      <p class="meta">${esc(r.base)} · ${esc(ago(r.at))} 읽음</p></section>`;
+  }
+
+  // ---- [ADMUX-17] 받은함 ----
+
+  const INBOX_NAMES = { inquiry: "문의", group: "제보", ask: "앱에 없는 방식", doubted: "달라요 달린 규칙", hidden_post: "신고로 가려진 글", flagged_post: "신고된 글",
+    rate: "임금표", dev: "개발사항 접수", rewards: "보상", ops: "이달 운영", admin: "승인 대기 관리자", phone: "관리자 휴대폰" };
+  const SNOOZE = "bamnat-admin-snooze";
+
+  /** [ADMUX-17] Items put off on this device until the next morning: { "type:id": until }. */
+  function snoozed() {
+    try {
+      const all = JSON.parse(localStorage.getItem(SNOOZE) ?? "{}");
+      const now = Date.now();
+      return Object.fromEntries(Object.entries(all).filter(([, until]) => until > now));
+    } catch {
+      return {};
+    }
+  }
+
+  function inboxLink(x) {
+    if (x.type === "inquiry") return href("inquiries", x.id);
+    if (x.type === "group") return L.routeHash("review", null, { show: "groups" });
+    if (x.type === "ask") return L.routeHash("review", null, { show: "asks" });
+    if (x.type === "doubted") return L.routeHash("review", null, { show: "flagged" });
+    if (x.type === "hidden_post") return L.routeHash("community", null, { show: "hidden" });
+    if (x.type === "flagged_post") return L.routeHash("community", null, { show: "flagged" });
+    if (x.type === "rate") return L.routeHash("community", null, { show: "rates" });
+    if (x.type === "dev") return href("dev", x.id);
+    if (x.type === "rewards") return href("rewards");
+    if (x.type === "ops") return href("ops");
+    return href("admins");
+  }
+
+  function dueText(x, now) {
+    if (!x.due) return "";
+    const left = Math.round((Date.parse(x.due) - now) / 60000);
+    const t = L.slaText(left);
+    return `<span class="pill ${t.tone}">${esc(left < 0 ? t.text.replace("목표", "기한") : `기한 ${t.text}`)}</span>`;
+  }
+
+  function inboxView() {
+    const d = S.data.inbox;
+    const c = d?.counts ?? {};
+    const head = `<div class="segmented" role="group" aria-label="보기">${seg("inbox-view", "today", S.inboxView, "오늘까지", c.today)}${seg("inbox-view", "week", S.inboxView, "이번 주", c.week)}
+        ${seg("inbox-view", "mine", S.inboxView, "내 것", c.mine)}${seg("inbox-view", "all", S.inboxView, "모두", c.all)}</div>
+      <p class="hint">내 권한 안에서 기다리는 일을 기한이 가까운 것부터 모았어요. 문의는 답 목표, 신고로 가려진 글은 30일 안 확인, 제보·임금표는 받은 지 7일, 운영 할 일은 그 달 말일이 기한이에요. '내일 볼게요'는 이 기기에서만 내일 아침까지 숨겨요.</p>`;
+    if (!d) return head + skeleton(3);
+    const now = Date.parse(d.now);
+    const kst = new Date(now + 9 * 3600e3);
+    const todayEnd = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 3600e3;
+    const hide = snoozed();
+    const list = d.items.filter((x) => !hide[`${x.type}:${x.id}`]).filter((x) => (S.inboxView === "all" ? true : S.inboxView === "mine" ? x.mine
+      : x.due && Date.parse(x.due) < (S.inboxView === "today" ? todayEnd : todayEnd + 6 * 864e5)));
+    const hidden = Object.keys(hide).length;
+    if (!list.length) {
+      return head + empty(S.inboxView === "all" ? "기다리는 일이 없어요" : "이 보기에는 기다리는 일이 없어요", "새로 오면 여기와 메뉴에 숫자로 보여요.",
+        hidden ? `<button class="btn" data-act="inbox-unsnooze">내일로 미룬 ${hidden}개 다시 보기</button>` : "");
+    }
+    const editInq = can("inquiries", "edit");
+    const flagged = (x) => x.type === "flagged_post" || x.type === "hidden_post";
+    return head + `<ul class="rows inbox">${list.map((x) => `<li><div class="row">
+        <span class="row-main"><b class="wrap"><a href="${inboxLink(x)}">${esc(INBOX_NAMES[x.type] ?? x.type)} · ${esc(x.title)}</a></b>
+          <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>
+        <span class="row-side">${dueText(x, Date.now())}
+          ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
+          <a class="btn small primary" href="${inboxLink(x)}">${x.type === "inquiry" ? "답하기" : "열기"}</a>
+          <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}">내일 볼게요</button></span></div></li>`).join("")}</ul>
+      ${hidden ? `<p class="meta">내일로 미룬 ${hidden}개는 숨겼어요. <button class="btn small ghost" data-act="inbox-unsnooze">다시 보기</button></p>` : ""}`;
+  }
+
+  // ---- [ADMUX-18] 같은 회사 여러 판 ----
+
+  const VERSION_STATE = { active: ["ok", "쓰는 판"], pending: ["info", "기다리는 판"], previous: ["", "이전 판"] };
+
+  function versionsView() {
+    const d = S.data.versions;
+    const editRules = can("takedown", "edit");
+    const editReview = can("review", "edit");
+    const head = `<div class="segmented" role="group" aria-label="보기">${seg("versions-show", "conflict", S.versionShow, "정할 것", d?.conflicts)}${seg("versions-show", "history", S.versionShow, "이전 판까지")}</div>
+      <p class="hint">한 부서에 쓰는 판과 새로 온 판이 같이 있거나, 기다리는 판이 둘 이상이면 여기 모여요. 적용한 휴대폰·맞았어요가 많고 신뢰가 높은 판이 '추천'이에요. 신뢰 하한은 투표가 적을 때 비율이 튀지 않게 본 값(윌슨 95%)이에요. 이전 판은 지우지 않고 다시 대표로 올릴 수 있어요.</p>`;
+    if (!d) return head + skeleton(2);
+    if (!d.items.length) return head + empty(S.versionShow === "history" ? "판이 여럿인 부서가 없어요" : "정할 판이 없어요", "같은 회사 부서에 판이 둘 이상 생기면 여기와 메뉴에 숫자로 보여요.");
+    return head + `<div class="grid">${d.items.map((v) => `<article class="card">
+      <div class="head"><h3>${can("companies") ? `<a href="${href("companies", v.company.id)}">${esc(v.company.name)}</a>` : esc(v.company.name)}${v.dept ? ` <span class="dept">${esc(v.dept)}</span>` : ""}</h3>
+        ${v.conflict ? '<span class="pill warn">정할 것</span>' : ""}</div>
+      <div class="versions">${v.candidates.map((c) => {
+        const [tone, label] = VERSION_STATE[c.state];
+        const key = `v:${v.company.id}.${c.setup}.${c.version ?? "p"}`;
+        return `<section class="version${c.recommended ? " best" : ""}"><p><span class="pill ${tone}">${label}${c.version ? ` v${c.version}` : ""}</span>${c.recommended ? ' <span class="pill gold">추천</span>' : ""}
+          <span class="meta">${esc(day(c.at))}${c.source === "promote" ? " · 이전 판에서 되돌림" : ""}</span></p>
+          <dl class="kv"><dt>적용한 휴대폰</dt><dd>${c.uses}</dd><dt>맞았어요·달라요</dt><dd>${c.ok} · ${c.bad}</dd><dt>신뢰</dt><dd>${c.trust} <span class="meta">하한 ${c.wilson}%</span></dd>
+            ${c.state === "pending" ? `<dt>제보</dt><dd>${c.reports}건${c.verified ? ` · 명세서 ${c.verified}` : ""}</dd>` : ""}${c.posts ? `<dt>토론</dt><dd>${c.posts}개</dd>` : ""}</dl>
+          ${c.changes ? changes(c.changes) : ""}
+          <details data-key="${key}"${S.opened.get(key) ? " open" : ""}><summary>설정 보기</summary>${lines(c.lines)}</details>
+          <div class="actions">${c.state === "pending" && editReview ? `<button class="btn primary" data-act="adopt" data-company="${v.company.id}" data-setup="${c.setup}">이 판으로 채택</button>` : ""}
+            ${c.state === "previous" && editRules ? `<button class="btn" data-act="version-promote" data-id="${c.rule}" data-version="${c.version}">다시 대표로</button>` : ""}
+            ${c.state === "active" && editRules ? `<button class="btn danger" data-act="withdraw-rule" data-id="${c.rule}">내리기</button>` : ""}</div></section>`;
+      }).join("")}</div></article>`).join("")}</div>`;
+  }
+
 
   // ---- [SRV-05] 공유 링크 신고 ----
 
@@ -2512,6 +2775,7 @@ function adminApp(L, BUILD) {
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>
+      ${inviteSettingsCard(edit)}
       <section class="card"><h2>답 목표</h2>
         <p class="hint">문의 종류마다 이 시간 안에 첫 답을 하려고 해요. 목록과 홈의 남은 시간, 놓친 문의가 이걸 따라요. 1~168시간이에요.</p>
         ${SLA_NAMES.map(([k, label]) => stepper(k, label, sla[k], "시간", edit, "sla-step")).join("")}
@@ -3155,6 +3419,27 @@ function adminApp(L, BUILD) {
       S.slaDraft = s;
       render({ keepScroll: true });
     },
+    // [INVITE-08]
+    "friend-step": ({ key, d }) => {
+      const s = { ...(S.inviteDraft ?? S.data.inviteSettings ?? {}) };
+      const lim = { friends: [1, 50], days: [1, 60], months: [1, 12], capMonths: [0, 120] }[key];
+      if (!lim) return;
+      s[key] = Math.min(lim[1], Math.max(lim[0], (s[key] ?? lim[0]) + Number(d)));
+      S.inviteDraft = s;
+      render({ keepScroll: true });
+    },
+    "friend-undo": () => {
+      S.inviteDraft = null;
+      render({ keepScroll: true });
+    },
+    "save-friend": async () => {
+      const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
+      if (r) {
+        S.data.inviteSettings = r;
+        S.inviteDraft = null;
+      }
+      render({ keepScroll: true });
+    },
     "sla-undo": () => {
       S.slaDraft = null;
       render({ keepScroll: true });
@@ -3222,6 +3507,8 @@ function adminApp(L, BUILD) {
     }),
     "post-filter": ({ key }) => {
       S.postFilter = key;
+      S.postPick = null;
+      S.ratePick = null;
       S.data.rates = null;
       refilter("posts");
     },
@@ -3516,7 +3803,113 @@ function adminApp(L, BUILD) {
     // [ADMIN-13]
     "metric-days": ({ key }) => {
       S.metricDays = Number(key);
+      S.metricFrom = "";
+      S.metricTo = "";
       refilter("metrics");
+    },
+    // [ADMUX-13] Back to the 7·28·90 buttons.
+    "metric-clear": () => {
+      S.metricFrom = "";
+      S.metricTo = "";
+      refilter("metrics");
+    },
+    // [ADMUX-15] Read the remote files again now, not from the ten minutes the server keeps them.
+    "remote-refresh": async () => {
+      const d = await act(() => api("/remote?fresh=1"), "원격 자료를 다시 읽었어요");
+      if (d) S.data.remote = d;
+      render({ keepScroll: true });
+    },
+    // [ADMUX-17] 받은함
+    "inbox-view": ({ key }) => {
+      S.inboxView = key;
+      syncUrl();
+      render({ keepScroll: true });
+    },
+    "inbox-assign": async ({ id }) => {
+      await act(() => api(`/inquiries/${id}/assign`, "POST", { to: "me" }), "내가 맡았어요", () => api(`/inquiries/${id}/assign`, "POST", { to: null }).then(() => load()));
+      load();
+    },
+    "inbox-snooze": ({ key }) => {
+      const all = snoozed();
+      // Until 6 in the morning of the next Korean day.
+      const kst = new Date(Date.now() + 9 * 3600e3);
+      all[key] = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1, 6) - 9 * 3600e3;
+      try {
+        localStorage.setItem(SNOOZE, JSON.stringify(all));
+      } catch {
+        // A private window keeps nothing; the item simply stays.
+      }
+      toast("내일 아침까지 이 기기에서 숨겼어요", () => {
+        const back = snoozed();
+        delete back[key];
+        try {
+          localStorage.setItem(SNOOZE, JSON.stringify(back));
+        } catch {
+          // As above.
+        }
+        render({ keepScroll: true });
+      });
+      render({ keepScroll: true });
+    },
+    "inbox-unsnooze": () => {
+      try {
+        localStorage.removeItem(SNOOZE);
+      } catch {
+        // Nothing kept.
+      }
+      render({ keepScroll: true });
+    },
+    // [ADMUX-18] 여러 판
+    "versions-show": ({ key }) => {
+      S.versionShow = key;
+      refilter("versions");
+    },
+    "version-promote": ({ id, version }) => confirmBox(`v${version}을 다시 대표로 할까요?`,
+      "지금 쓰는 판은 이전 판으로 남고, v" + version + "과 같은 설정이 새 판으로 올라가요. 지금 판을 쓰는 분들은 광장 소식으로 알게 돼요. 언제든 다시 바꿀 수 있어요.", "다시 대표로",
+      async () => {
+        await act(() => api(`/rules/${id}/promote`, "POST"), "이전 판을 다시 대표로 했어요");
+        load();
+      }, "primary"),
+    // [ADMUX-19] 토론 글·임금표 여러 개
+    "post-pick": () => {
+      S.postPick = S.postPick ? null : new Set();
+      render({ keepScroll: true });
+    },
+    "post-pick-all": () => {
+      const items = S.data.posts?.posts ?? [];
+      S.postPick = S.postPick.size === items.length ? new Set() : new Set(items.map((x) => x.id));
+      render({ keepScroll: true });
+    },
+    "post-bulk": ({ key }) => {
+      const ids = [...(S.postPick ?? [])];
+      if (!ids.length) return;
+      const go = async () => {
+        const r = await act(() => api("/posts/bulk", "POST", { ids, action: key, ...(key === "hide" ? { reason: "abuse" } : {}) }),
+          (d) => `${d.done.length}개 처리했어요${d.skipped.length ? `, ${d.skipped.length}개는 이미 없어서 건너뛰었어요` : ""}`);
+        if (r) S.postPick = new Set();
+        load();
+      };
+      if (key === "delete") confirmBox(`글 ${ids.length}개를 지울까요?`, "지운 글은 되돌릴 수 없어요. 글쓴이 앱에서도 사라져요.", "지우기", go);
+      else if (key === "hide") confirmBox(`글 ${ids.length}개를 가릴까요?`, "가린 이유는 '욕설·비방'으로 글쓴이 앱에 보여요. 다른 이유는 글마다 가리기로 골라 주세요.", "가리기", go);
+      else go();
+    },
+    "rate-pick": () => {
+      S.ratePick = S.ratePick ? null : new Set();
+      render({ keepScroll: true });
+    },
+    "rate-pick-all": () => {
+      const items = S.data.rates?.rates ?? [];
+      S.ratePick = S.ratePick.size === items.length ? new Set() : new Set(items.map((x) => x.id));
+      render({ keepScroll: true });
+    },
+    "rate-bulk": async ({ key }) => {
+      const ids = [...(S.ratePick ?? [])];
+      if (!ids.length) return;
+      const r = await act(() => api("/rates/bulk", "POST", { ids, action: key }),
+        (d) => `${d.done.length}개 처리했어요${d.skipped.length ? `, ${d.skipped.length}개는 권한이 없거나 없어서 건너뛰었어요` : ""}`);
+      if (r) S.ratePick = new Set();
+      S.data.rates = null;
+      load();
     },
     // [SRV-05]
     "share-remove": ({ id }) => confirmBox("이 링크를 내릴까요?", "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
@@ -3952,6 +4345,17 @@ function adminApp(L, BUILD) {
       if (c) S.data.company = c;
       render({ keepScroll: true });
     },
+    // [ADMUX-13] A period by dates: both set, the 7·28·90 buttons step aside.
+    "metric-from": (t) => {
+      S.metricFrom = t.value;
+      if (!S.metricTo) S.metricTo = S.data.metrics?.to ?? "";
+      refilter("metrics");
+    },
+    "metric-to": (t) => {
+      S.metricTo = t.value;
+      if (!S.metricFrom) S.metricFrom = S.data.metrics?.from ?? "";
+      refilter("metrics");
+    },
     "inquiry-sort": (t) => {
       S.inquirySort = t.value;
       refilter("inquiries");
@@ -4021,6 +4425,15 @@ function adminApp(L, BUILD) {
       const box = document.getElementById("dev-list");
       if (box) box.innerHTML = devRows();
       return;
+    }
+    // [ADMUX-19] Picking posts and 임금표 entries.
+    for (const [attr, field] of [["pickPost", "postPick"], ["pickRate", "ratePick"]]) {
+      if (t.dataset?.[attr] && S[field]) {
+        if (t.checked) S[field].add(t.dataset[attr]);
+        else S[field].delete(t.dataset[attr]);
+        render({ keepScroll: true });
+        return;
+      }
     }
     // [ADMIN-16] Picking questions.
     if (t.dataset?.pickInquiry && S.inquiryPick) {

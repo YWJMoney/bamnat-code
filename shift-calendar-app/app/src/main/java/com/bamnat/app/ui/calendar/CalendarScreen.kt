@@ -50,6 +50,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -113,6 +114,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import com.bamnat.app.ui.components.sheetScrollGuard
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -152,6 +155,8 @@ import java.time.LocalDate
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
 import com.bamnat.core.work.ShiftMonth
+import com.bamnat.core.guide.FitSurface
+import com.bamnat.core.guide.FitTable
 import com.bamnat.core.model.ShiftOverride
 import java.time.temporal.ChronoUnit
 import java.time.DayOfWeek
@@ -226,6 +231,11 @@ fun CalendarScreen(
     onEditCalendar: (String) -> Unit = {},
     /** [COMN-01] 모든 달력 합쳐 보기. */
     onOpenCombined: () -> Unit = {},
+    /**
+     * [READ-10] 이번 달 전부 넣기 → 한 달 근무 넣기 on that month (1.25 순번 371, 사용자 "빠른입력에서 이번달 전체넣기에 듀티표
+     * 사진과 입력 도구"): the keypad there, with 사진·엑셀·CSV beside it. Null keeps the keypad sheet over the calendar.
+     */
+    onFillMonth: ((YearMonth) -> Unit)? = null,
 ) {
     // [DAILY-09] Half open like a laptop (Flex): the day sits below the hinge as it sits beside the month when
     // unfolded, so everything a wide screen does (no sheet, the day always shown) holds there too.
@@ -238,10 +248,15 @@ fun CalendarScreen(
     var notificationsAllowed by remember { mutableStateOf(Notifications.canPost(context)) }
     val askNotifications = rememberNotificationAsk()
     var fullScreenAllowed by remember { mutableStateOf(Notifications.canUseFullScreen(context)) }
+    var alarmChannelTrouble by remember { mutableStateOf<String?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         notificationsAllowed = Notifications.canPost(context)
         fullScreenAllowed = Notifications.canUseFullScreen(context)
+        com.bamnat.app.alarm.AlarmsOff.activeUntil(context)
+        alarmChannelTrouble = if (notificationsAllowed) Notifications.alarmChannelTrouble(context) else null
     }
+    // [ALRM-09] 오늘 남은 알람 모두 끄기, until when.
+    val alarmsOffUntil by com.bamnat.app.alarm.AlarmsOff.until.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     // [PERF-01] The month is there: Android's "Fully drawn" for this start, and the startup budget's last step.
     androidx.activity.compose.ReportDrawnWhen { snapshot != null }
@@ -254,12 +269,17 @@ fun CalendarScreen(
     }
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [CUST-01] The page's parts in the user's order (화면 꾸미기).
-    val calendarParts = remember(settings) { settings.calendarParts() }
+    // [FIT-01][FIT-02] Only the parts that suit this calendar's kind of work, and those the user added to it.
+    val fitCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(fitCalendar.id)
+    val calendarParts = remember(settings, fitAdded) { settings.calendarParts(fitAdded) }
     fun partShown(p: CalendarPart) = calendarParts.firstOrNull { it.part == p }?.shown != false
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
     // [CAL-30] Saved, so the month being typed is still open after folding or unfolding (I 리뷰 P11).
     var typingMonth by rememberSaveable(stateSaver = YearMonthSaver) { mutableStateOf<YearMonth?>(null) }
+    // [READ-10] Unfolded, the keypad stays beside the month (CAL-45); elsewhere the month opens in 한 달 근무 넣기.
+    val fillMonth: (YearMonth) -> Unit = { m -> if (wide && tabletop == null || onFillMonth == null) typingMonth = m else onFillMonth(m) }
     // [REST-01] 근무표 점검 기준, opened from the check's card.
     var rulesOpen by rememberSaveable { mutableStateOf(false) }
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
@@ -404,6 +424,8 @@ fun CalendarScreen(
         delay(150)
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthEstimate(payProfile, snap, visibleMonth) }
     }
+    // [TAX-02] 세후 beside it (프로).
+    val takeHome by produceState<Long?>(null, payEstimate) { value = payEstimate?.let { vm.takeHome(payProfile, it, visibleMonth) } }
     val scope = rememberCoroutineScope()
     // A month picked from the list is there at once.
     val goToMonth: (YearMonth) -> Unit = { m -> scope.launch { pagerState.scrollToPage(monthToPage(baseMonth, m)) } }
@@ -842,9 +864,14 @@ fun CalendarScreen(
             onEditCalendar = if (viewingReceived == null) ({ onEditCalendar(activeCalendar.id) }) else null,
             onCustomize = if (viewingReceived == null) ({ editingLayout = true }) else null,
             calendarName = activeCalendar.name,
+            calendarId = activeCalendar.id,
             onOpenTeams = openTeams,
             // [NURS-01] A month's duty typed one day after another, for rosters that come as a sheet.
-            onTypeMonth = if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) ({ typingMonth = visibleMonth }) else null,
+            onTypeMonth = if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) ({ fillMonth(visibleMonth) }) else null,
+            style = settings.workStyle,
+            // [NAV-03] Which tiles this kind of calendar has at all, so the others keep their places while one waits.
+            toolFit = ToolFit(teams = settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT, receive = received.enabled,
+                viewingReceived = viewingReceived != null, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = openTeams != null || viewingReceived != null),
         ) }
         if (sideways) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -901,6 +928,11 @@ fun CalendarScreen(
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
+            // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
+            alarmsOffUntil != null -> "오늘 알람 끔" to {
+                val text = "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지"
+                AlarmWarningLine(text, "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, linePlace)
+            }
             !alarmSoon -> null
             // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
             // [EASY-01] The example never rings, so it has nothing to turn on.
@@ -917,6 +949,12 @@ fun CalendarScreen(
                 if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
                     android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                         android.net.Uri.parse("package:${context.packageName}")))
+            }, linePlace) }
+            // [ALRM-07] The 근무 알람 notice turned down to 조용히 or hidden: the ringing screen cannot show either.
+            alarmChannelTrouble != null -> alarmChannelTrouble!! to { AlarmWarningLine(alarmChannelTrouble!!, "고치기", {
+                SystemSettings.open(context, android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, Notifications.ALARM_CHANNEL_ID))
             }, linePlace) }
             else -> null
         }
@@ -1024,6 +1062,18 @@ fun CalendarScreen(
                     )
                 }
             })
+            // [PLAZA-04] Right after a setup made by hand: put it on the plaza for coworkers (14·30·90일 간격, 그만 볼게요).
+            if (paint == null && viewingReceived == null) add(Notice("plazaShare", "광장에 올리기") {
+                com.bamnat.app.ui.company.ShareInviteNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            })
+            // [SPAT-04][SPAT-05] After a public cycle went in: the pay, then the plaza (14·30·90일 간격, 그만 볼게요).
+            if (paint == null && viewingReceived == null && activeCalendar.id == com.bamnat.app.data.PersonalCalendar.MAIN) add(Notice("publicCycle", "근무주기 다음 단계") {
+                com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) },
+                    onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) })
+            })
+            // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
+            if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             if (guideHere) add(Notice("guide", "오늘의 팁") {
@@ -1059,6 +1109,7 @@ fun CalendarScreen(
                     MonthSummaryBar(
                         overview = overview,
                         payEstimate = payEstimate,
+                        takeHome = takeHome,
                         versus = versus,
                         onOpen = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) onOpenPay else onOpenMoney,
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -1320,7 +1371,7 @@ fun CalendarScreen(
                     // the month above, every stamp in reach below, nothing floating over the days.
                     if (paint != null) {
                         PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
-                            mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { typingMonth = visibleMonth },
+                            mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { fillMonth(visibleMonth) },
                             stamp = stamp, stamps = stamps, onStamp = vm::setStamp, large = true,
                             modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp))
                     } else detailPart(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), 16.dp)
@@ -1344,6 +1395,9 @@ fun CalendarScreen(
                     }
                     VerticalDivider()
                     val typing = typingMonth
+                    // [NAV-02] 1.25 Z (U4): back closes the panel beside the month, as its own close does; it used to close the app.
+                    androidx.activity.compose.BackHandler(enabled = typing != null) { typingMonth = null }
+                    androidx.activity.compose.BackHandler(enabled = typing == null && teamsBeside && openTeams != null) { teamsBeside = false }
                     when {
                         // [CAL-45] Unfolded, the month being typed sits beside the calendar instead of in a sheet over it
                         // (I 리뷰 N5 a): the roster on paper, the keypad on the right, the month filling in on the left.
@@ -1377,7 +1431,7 @@ fun CalendarScreen(
         if (paint != null && tabletop == null) {
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
-                    mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { typingMonth = visibleMonth },
+                    mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { fillMonth(visibleMonth) },
                     stamp = stamp, stamps = stamps, onStamp = vm::setStamp)
             }
         }
@@ -1413,7 +1467,7 @@ fun CalendarScreen(
     }
 
     if (editingLayout) {
-        CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false })
+        CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false }, calendar = activeCalendar.id)
     }
     coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
 
@@ -1498,7 +1552,8 @@ private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content
     // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
     DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
-        Box(Modifier.fillMaxWidth()) {
+        // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
+        Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
         }
@@ -1564,11 +1619,17 @@ private fun CalendarHeader(
     /** [CALS-01] The calendar on screen's own page; null while a received calendar is shown. */
     onEditCalendar: (() -> Unit)? = null,
     calendarName: String = "",
+    /** [READ-11] The calendar on screen, whose last month put in 도구 can take back. */
+    calendarId: String = "",
     /** [CUST-01] 화면 꾸미기 for the calendar page; null while a received calendar is shown. */
     onCustomize: (() -> Unit)? = null,
     /** [CAL-24] 모든 조 보기; null when the calendar has no rotation to split into teams. */
     onOpenTeams: (() -> Unit)? = null,
     onTypeMonth: (() -> Unit)? = null,
+    /** [FIT-01] The calendar on screen's kind of work: the tools it does not use wait under 더 보기 (kept per [calendarId]). */
+    style: com.bamnat.core.work.WorkStyle? = null,
+    /** [NAV-03] Which tiles this kind of calendar has and which have to wait (1.25 Z). */
+    toolFit: ToolFit = ToolFit(),
     modifier: Modifier = Modifier,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
@@ -1634,26 +1695,51 @@ private fun CalendarHeader(
         }
     }
     if (menu) {
+        // [FIT-01] Every tool with its id in the fit table; [FIT-02] the ones this kind of work does not use wait under 더 보기.
+        // [READ-11] A month put in at once, taken back here for a while after (its own screen may be closed).
+        val recent = remember { com.bamnat.app.ui.RecentFill.current(calendarId) }
+        // [NAV-03] 1.25 Z (U4): every tile keeps its place. A tool that has to wait (a received calendar on screen,
+        // no shifts or order yet) stays, greyed with why; before, the tiles after it moved up, and a thumb used to
+        // 화면 꾸미기 landed on 달력 보기 설정 and the settings tab. The ways out of the calendar are in a row of their own.
+        val all = CalendarToolSlots.build(toolFit).map { slot ->
+            val label = when (slot.id) {
+                CalendarToolSlots.EDIT -> "‘$calendarName’ 고치기"
+                CalendarToolSlots.SHARE -> if (style?.usesPayEngine != false) "근무표 공유" else "달력 공유"
+                else -> slot.label
+            }
+            CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {
+                CalendarToolSlots.EDIT -> onEditCalendar
+                CalendarToolSlots.TEAMS -> onOpenTeams
+                CalendarToolSlots.TYPE_MONTH -> onTypeMonth
+                CalendarToolSlots.SHARE -> onShare
+                CalendarToolSlots.YEAR -> ({ com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
+                CalendarToolSlots.RECEIVE -> onReceive
+                CalendarToolSlots.PATTERN -> onOpenPattern
+                CalendarToolSlots.ADD -> onAddCalendar
+                CalendarToolSlots.CUSTOMIZE -> onCustomize
+                CalendarToolSlots.VIEW_SETTINGS -> ({ com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR) })
+                else -> ({ com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true)) })
+            }.takeIf { slot.enabled }, note = slot.note, away = slot.away)
+        }
+        val added = com.bamnat.app.ui.guide.rememberFitAdded(calendarId)
+        val context = LocalContext.current
+        val (tools, others) = all.partition { t -> t.id == null || FitTable.visible(FitSurface.CALENDAR_TOOLS, t.id, style, added) }
+        val offered = all.filter { t -> t.id != null && FitTable.item(FitSurface.CALENDAR_TOOLS, t.id)?.fits(style) == false }
         CalendarToolsSheet(
             onDismiss = { menu = false },
-            tools = buildList {
-                onEditCalendar?.let { add(CalendarTool("‘$calendarName’ 고치기", Icons.Outlined.Edit, it)) }
-                // [CAL-24] 모든 조 is also on the calendar itself; here it stays where people learned it.
-                onOpenTeams?.let { add(CalendarTool("모든 조 보기", Icons.Outlined.Groups, it)) }
-                onTypeMonth?.let { add(CalendarTool("이번 달 전부 넣기", Icons.Outlined.Keyboard, it)) }
-                add(CalendarTool("근무표 공유", Icons.Filled.Share, onShare))
-                add(CalendarTool("1년 달력", Icons.Outlined.CalendarViewMonth) { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
-                onReceive?.let { add(CalendarTool("동료 근무표 받기", Icons.Outlined.GroupAdd, it)) }
-                add(CalendarTool("근무 주기 설정", Icons.Filled.EventRepeat, onOpenPattern))
-                add(CalendarTool("새 달력 만들기", Icons.Outlined.LibraryAdd, onAddCalendar))
-                onCustomize?.let { add(CalendarTool("화면 꾸미기", Icons.Outlined.Dashboard, it)) }
-                add(CalendarTool("달력 보기 설정", Icons.Outlined.Tune) {
-                    com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR)
-                })
-                add(CalendarTool("도움말·문의", Icons.AutoMirrored.Outlined.HelpOutline) {
-                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
-                })
+            tools = tools.let { slots ->
+                // [READ-11] 방금 넣은 것 되돌리기, after the tools so none of them moves (NAV-03).
+                val at = slots.indexOfFirst { it.away }.takeIf { it >= 0 } ?: slots.size
+                slots.toMutableList().apply {
+                    recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
+                    // [PLAZA-06] U25-나: the first setup again, a way out of the calendar, so last in that row and nothing moves
+                    // (the main calendar only; an added one has its own 고치기).
+                    if (onEditCalendar == null) add(CalendarTool("처음 설정 다시 받기", Icons.Filled.EventRepeat, away = true,
+                        onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN) }))
+                }
             },
+            others = offered.map { com.bamnat.app.ui.components.OtherRow(it.id!!, it.label, "이 달력의 일에는 잘 쓰지 않는 도구예요", it !in others) },
+            onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendarId, FitSurface.CALENDAR_TOOLS, id, on) },
         )
     }
     }
@@ -1672,14 +1758,49 @@ private fun monthTitle(month: YearMonth): androidx.compose.ui.text.AnnotatedStri
 }
 
 /** [CAL-23] One tool of the calendar's tool sheet: a name people can read, not a hidden menu row. */
-internal data class CalendarTool(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val onClick: () -> Unit)
+internal data class CalendarTool(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    /** [FIT-01] The tool's id in [FitTable] (CALENDAR_TOOLS), the same as its [CalendarToolSlots] id. */
+    val id: String? = null,
+    /** Null while the tool has to wait; the tile stays, greyed, with [note]. */
+    val onClick: (() -> Unit)?,
+    val note: String? = null,
+    /** [NAV-03] Opens another tab (settings, help): shown in a row of its own under the tools. */
+    val away: Boolean = false,
+)
+
+/** [NAV-03] Each slot's icon. */
+private fun CalendarToolSlots.Slot.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
+    CalendarToolSlots.EDIT -> Icons.Outlined.Edit
+    CalendarToolSlots.TEAMS -> Icons.Outlined.Groups
+    CalendarToolSlots.TYPE_MONTH -> Icons.Outlined.Keyboard
+    CalendarToolSlots.SHARE -> Icons.Filled.Share
+    CalendarToolSlots.YEAR -> Icons.Outlined.CalendarViewMonth
+    CalendarToolSlots.RECEIVE -> Icons.Outlined.GroupAdd
+    CalendarToolSlots.PATTERN -> Icons.Filled.EventRepeat
+    CalendarToolSlots.ADD -> Icons.Outlined.LibraryAdd
+    CalendarToolSlots.CUSTOMIZE -> Icons.Outlined.Dashboard
+    CalendarToolSlots.VIEW_SETTINGS -> Icons.Outlined.Tune
+    else -> Icons.AutoMirrored.Outlined.HelpOutline
+}
 
 /** [CAL-23] The calendar's tools as big named tiles, three or four to a row. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CalendarToolsSheet(tools: List<CalendarTool>, onDismiss: () -> Unit) {
+internal fun CalendarToolsSheet(
+    tools: List<CalendarTool>, onDismiss: () -> Unit,
+    others: List<com.bamnat.app.ui.components.OtherRow> = emptyList(),
+    onAdd: (String, Boolean) -> Unit = { _, _ -> },
+) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        CalendarToolsGrid(tools, onPicked = onDismiss)
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            CalendarToolsGrid(tools, onPicked = onDismiss)
+            // [FIT-02] What this kind of work does not use, put away and added back here.
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
+                com.bamnat.app.ui.components.FitMore(others, onAdd, title = "이 달력에 안 맞아 숨긴 도구")
+            }
+        }
     }
 }
 
@@ -1690,14 +1811,17 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val perRow = if (maxWidth >= 480.dp) 4 else 3
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                tools.chunked(perRow).forEach { row ->
+                tools.filter { !it.away }.chunked(perRow).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { tool ->
+                            val click = tool.onClick
                             Surface(
-                                onClick = { onPicked(); tool.onClick() },
+                                onClick = { if (click != null) { onPicked(); click() } },
+                                enabled = click != null,
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.weight(1f).heightIn(min = 84.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = 84.dp)
+                                    .alpha(if (click != null) 1f else 0.5f),
                             ) {
                                 Column(
                                     Modifier.padding(horizontal = 6.dp, vertical = 12.dp),
@@ -1706,10 +1830,35 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                 ) {
                                     Icon(tool.icon, null, tint = MaterialTheme.colorScheme.primary)
                                     Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
+                                    if (click == null && tool.note != null) {
+                                        Text(tool.note, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                    }
                                 }
                             }
                         }
                         repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+        // [NAV-03] Ways out of the calendar, apart from its tools and said as such: they open another tab.
+        val away = tools.filter { it.away }
+        if (away.isNotEmpty()) {
+            Text("다른 화면으로", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+            for (tool in away) {
+                val click = tool.onClick ?: continue
+                Surface(
+                    onClick = { onPicked(); click() },
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).heightIn(min = 48.dp),
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(tool.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        Text(tool.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
