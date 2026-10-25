@@ -141,7 +141,7 @@ class UScreenshotTest : ScreenshotBase() {
     // ---- 372: taking a month back, and what saving overwrites ----
     @Test fun undoInTools() = shoot("822_u_undo_recent_fill", PHONE_393, style(WorkStyle.SHIFT) {
         RecentFill.record("11월에 30일을 넣었어요", c.calendars.active.value, c.appScope) {}
-        tapText("도구", exact = true)
+        tapText("도구")
         assertTrue(shows("방금 넣은 것 되돌리기"))
     })
     @Test fun keypadOverwrite() = shoot("823_u_keypad_overwrite", FOLDED, style(WorkStyle.SHIFT) {
