@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: 묶음마다 자기 줄, 통합이 접음).
+        Release(36, "1.25.0", listOf(
+            // [ALRM-07][ALRM-08][ALRM-09] Bundle AB.
+            Line("알람이 울리면 소리·전원 버튼으로 끄고, ‘오늘 남은 알람 모두 끄기’ 한 번이면 오늘은 더 안 울려요. 잠금 화면에 안 뜨게 막는 설정도 알람 점검이 찾아 줘요", "alarm.allOff"),
+        )),
         // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md 1장 5번: P 2·Q 1·R 1·S 1, 8 lines at most; 통합 folds them).
         Release(35, "1.24.0", listOf(
             // [ROST-01][ROST-03][ROST-05] Bundle P.

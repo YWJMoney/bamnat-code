@@ -83,6 +83,8 @@ internal fun MissionScreen(
     references: List<Long> = emptyList(),
     place: String = "",
     wrongBefore: Int = 0,
+    /** [ALRM-08][ALRM-09] What the buttons do here, and 오늘 모두 끄기 waiting for the mission. */
+    note: String? = null,
 ) {
     val context = LocalContext.current
     val shakeOk = remember { hasMotionSensor(context) }
@@ -108,6 +110,8 @@ internal fun MissionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (note != null) Text(note, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center)
             if (mission == AlarmMission.PHOTO && kind != AlarmMission.PHOTO) {
                 val why = when {
                     references.isEmpty() -> "기준 사진이 없어서"

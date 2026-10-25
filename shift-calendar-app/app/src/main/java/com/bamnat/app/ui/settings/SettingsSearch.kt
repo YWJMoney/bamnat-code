@@ -95,6 +95,8 @@ data class SettingEntry(
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
 /** [SET-05] The alarm page's row that moves every shift's alarms at once. */
 internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+/** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
+internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -218,6 +220,8 @@ internal object SettingsIndex {
         row(V, "앱 버전", "버전", "업데이트", row = "버전"),
         // O 1.23 (I)
         row(A, "알람 제안", "스마트 알람", "알람 추천", "늦게 끔", "알람 시간", "숨긴 제안", "다시 보기"), // [ALRM-03]
+        // 1.25 묶음 AB
+        row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
     )
 
     /** The best fits for [query], best first. */
