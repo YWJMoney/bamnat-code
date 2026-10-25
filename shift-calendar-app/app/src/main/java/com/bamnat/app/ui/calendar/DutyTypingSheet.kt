@@ -238,6 +238,11 @@ fun DutyTypingPanel(
                     if (onRules != null) TextButton(onClick = onRules) { Text("기준 바꾸기") }
                 }
             }
+            // [READ-11] What saving overwrites, said before it does: days already changed by hand (1.25 순번 372). Leave stays.
+            val byDate = remember(snap) { snap.entries.associateBy { it.date } }
+            val over = typed.count { (d, o) -> byDate[d]?.let { e -> e.override != ShiftOverride.None && e.override != o } == true }
+            if (over > 0) Text("이미 바꿔 둔 ${over}일을 덮어써요. 저장한 뒤 ‘되돌리기’나 도구의 ‘방금 넣은 것 되돌리기’로 되돌릴 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 TextButton(onClick = onDismiss) { Text("닫기") }
                 Button(onClick = { onDoubtLeft(toCheck.toSet()); onSave(typed.toMap()) }, enabled = typed.isNotEmpty()) { Text(if (typed.isEmpty()) "저장" else "${typed.size}일 저장") }

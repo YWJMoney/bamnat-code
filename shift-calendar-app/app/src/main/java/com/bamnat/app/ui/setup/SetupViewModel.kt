@@ -411,6 +411,7 @@ class SetupViewModel(
         val tool = _paintTool.value
         if (tool == PaintTool.Pick || dates.isEmpty()) return
         _paintUndo.value = current.painted
+        leavesUndo = null
         update { d ->
             d.copy(painted = when (tool) {
                 is PaintTool.Shift -> d.painted + dates.associateWith { tool.shiftTypeId }
@@ -440,15 +441,24 @@ class SetupViewModel(
     fun undoPaint() {
         val before = _paintUndo.value ?: return
         _paintUndo.value = null
-        update { it.copy(painted = before) }
+        val leaves = leavesUndo
+        leavesUndo = null
+        update { it.copy(painted = before, leaves = leaves ?: it.leaves) }
     }
 
+    /** The leave before a roster's line was put in, so [undoPaint] takes the whole line back. */
+    private var leavesUndo: Map<LocalDate, com.bamnat.core.model.Leave>? = null
+
     // [SETUP-15] 듀티표가 있어요 (중-8, 리뷰 P9): a roster photo or file read the same way as 한 달 근무 넣기, its line
-    // painted onto the month it names. Leave and codes not known stay unpainted (they go in after the setup).
+    // painted onto the month it names. [READ-05] 1.25 순번 371: a roster of several lines asks whose it is first; its leave
+    // goes in with the setup and a code the setup's kinds do not cover is asked here, so nothing is left for "after".
     private val _roster = MutableStateFlow<com.bamnat.app.ui.imports.RosterResult?>(null)
     val roster: StateFlow<com.bamnat.app.ui.imports.RosterResult?> = _roster.asStateFlow()
     private val _rosterReading = MutableStateFlow(false)
     val rosterReading: StateFlow<Boolean> = _rosterReading.asStateFlow()
+    /** Codes of the picked line the setup's kinds do not cover ("M", "교육"), with their days, one asked at a time. */
+    private val _rosterAsks = MutableStateFlow<List<Pair<com.bamnat.core.imports.DutyCell.Unknown, List<LocalDate>>>>(emptyList())
+    val rosterAsks: StateFlow<List<Pair<com.bamnat.core.imports.DutyCell.Unknown, List<LocalDate>>>> = _rosterAsks.asStateFlow()
 
     private fun rosterCodes(): com.bamnat.core.imports.DutyCodes = com.bamnat.core.imports.DutyCodes(
         current.types.map { com.bamnat.core.imports.DutyType(it.id, it.name, it.label, it.isOff, it.start, com.bamnat.core.model.NightShift.of(it)) },
@@ -459,8 +469,11 @@ class SetupViewModel(
         viewModelScope.launch {
             val r = how(rosterCodes())
             _rosterReading.value = false
-            _roster.value = r
-            if (r.rows.size == 1) useRosterRow(0) else if (r.error != null) _message.value = r.error
+            val rows = r.rows.sortedBy { it.line }
+            // A photo that read nothing keeps its picture, for 사진 위에서 누르기.
+            _roster.value = r.copy(rows = rows, scan = r.scan ?: _roster.value?.scan.takeIf { r.from == com.bamnat.core.journal.RosterFrom.PHOTO })
+            _rosterAsks.value = emptyList()
+            if (rows.size == 1) useRosterRow(0) else if (r.error != null) _message.value = r.error
         }
     }
 
@@ -470,30 +483,59 @@ class SetupViewModel(
 
     fun readRosterText(text: String) = readRoster { com.bamnat.app.ui.imports.RosterReader.text(text, it, today) }
 
-    fun clearRoster() { _roster.value = null }
+    /** [READ-04] The roster photo read again along the two lines the user tapped. */
+    fun readRosterTapped(hint: com.bamnat.core.imports.RosterHint) {
+        val scan = _roster.value?.scan ?: return
+        readRoster { com.bamnat.app.ui.imports.RosterReader.tapped(scan, it, hint, today) }
+    }
 
-    /** [SETUP-15] The picked line onto the painted days of the roster's month; one undo takes it back. */
+    fun clearRoster() {
+        _roster.value = null
+        _rosterAsks.value = emptyList()
+    }
+
+    /** [SETUP-15] The picked line onto the painted days of the roster's month, its leave with it; one undo takes it back. */
     fun useRosterRow(i: Int) {
         val r = _roster.value ?: return
         val row = r.rows.getOrNull(i) ?: return
         val month = r.month ?: _paintMonth.value
-        val days = row.cells.filterKeys { it <= month.lengthOfMonth() }.mapNotNull { (d, cell) ->
+        val cells = row.cells.filterKeys { it <= month.lengthOfMonth() }.mapKeys { month.atDay(it.key) }
+        val days = cells.mapNotNull { (date, cell) ->
             when (cell) {
-                is com.bamnat.core.imports.DutyCell.Shift -> month.atDay(d) to cell.shiftTypeId
-                com.bamnat.core.imports.DutyCell.Off -> month.atDay(d) to null
+                is com.bamnat.core.imports.DutyCell.Shift -> date to cell.shiftTypeId
+                com.bamnat.core.imports.DutyCell.Off -> date to null
                 else -> null
             }
         }.toMap()
-        if (days.isEmpty()) {
+        val leaves = cells.mapNotNull { (date, cell) -> (cell as? com.bamnat.core.imports.DutyCell.Leave)?.let { date to it.leave } }.toMap()
+        val asks = cells.entries.mapNotNull { (date, cell) -> (cell as? com.bamnat.core.imports.DutyCell.Unknown)?.let { it to date } }
+            .groupBy({ it.first.raw }, { it }).map { (_, list) -> list.first().first to list.map { it.second } }
+        if (days.isEmpty() && leaves.isEmpty()) {
             _message.value = "근무 칸을 찾지 못했어요. 직접 칠해 주세요."
             return
         }
         _paintUndo.value = current.painted
-        update { it.copy(painted = it.painted + days) }
+        leavesUndo = current.leaves
+        update { it.copy(painted = it.painted + days, leaves = it.leaves - days.keys + leaves) }
         _paintMonth.value = month
         _roster.value = r.copy(rows = listOf(row))
-        val left = row.cells.size - days.size
-        _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" + if (left > 0) " · 휴가·모르는 칸 ${left}개는 설정이 끝난 뒤 넣어요" else ""
+        _rosterAsks.value = asks
+        _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" +
+            (if (leaves.isNotEmpty()) " · 휴가 ${leaves.size}일도 넣어요" else "") +
+            (if (asks.isNotEmpty()) " · 모르는 글자 ${asks.size}개는 아래에서 골라 주세요" else "")
+    }
+
+    /** [SETUP-15] What a code the setup did not know means: its days painted (or given leave), or left as they are (null). */
+    fun answerRosterCode(raw: String, cell: com.bamnat.core.imports.DutyCell?) {
+        val ask = _rosterAsks.value.firstOrNull { it.first.raw == raw } ?: return
+        _rosterAsks.value = _rosterAsks.value - ask
+        val dates = ask.second
+        when (cell) {
+            is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + dates.associateWith { cell.shiftTypeId }, leaves = it.leaves - dates.toSet()) }
+            com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + dates.associateWith { null }, leaves = it.leaves - dates.toSet()) }
+            is com.bamnat.core.imports.DutyCell.Leave -> update { it.copy(leaves = it.leaves + dates.associateWith { cell.leave }) }
+            else -> Unit
+        }
     }
 
     // ---- 6. today ----

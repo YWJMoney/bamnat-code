@@ -52,6 +52,7 @@ import com.bamnat.app.pay.PayslipScanner
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.pay.CustomRule
+import com.bamnat.core.pay.PayPhotos
 import com.bamnat.core.pay.PayslipRead
 import com.bamnat.core.pay.PayslipReader
 import com.bamnat.core.pay.RuleChange
@@ -182,14 +183,36 @@ internal fun SlipPreview(read: PayslipRead) {
 }
 
 /**
+ * [READ-08] The company's way of counting pay, read with the payslip: what a found rule is checked against, and where
+ * the ticked ones go (회사 규칙, 묶음 V).
+ */
+class RuleTarget(
+    val kinds: List<ExtraKind>,
+    val shiftTypes: List<ShiftType>,
+    val fiveOrMore: Boolean,
+    val onRules: (List<RuleChange>, java.time.YearMonth?) -> Unit,
+)
+
+/**
  * [PAYS-04][PAYS-05] 명세서로 채우기: a photo, a screenshot or pasted text of one payslip becomes its lines, shown
  * before anything is filled. [onRead] gets them once the user agrees.
+ * [READ-08] 1.25 (사용자 2026-10-25 "명세서와 회사 계산방법 사진을 두 장 보낼 수 있게"): with [rules], a second photo of the
+ * company's pay rules (취업규칙 임금 조항, 수당표) can go with it, in either slot: [PayPhotos] tells which is which. Its
+ * rules are listed to tick, and go to [RuleTarget.onRules] with the payslip; 공제·실수령 are shown for the tax estimate.
  */
 @Composable
-fun PayslipFillDialog(title: String, onDismiss: () -> Unit, onRead: (PayslipRead) -> Unit) {
+fun PayslipFillDialog(title: String, onDismiss: () -> Unit, rules: RuleTarget? = null, onRead: (PayslipRead) -> Unit) {
     var text by remember { mutableStateOf("") }
+    var second by remember { mutableStateOf("") }
     var typing by remember { mutableStateOf(false) }
     var read by remember { mutableStateOf<PayslipRead?>(null) }
+    val ticks = remember { mutableStateListOf<Pair<RuleFinding, Boolean>>() }
+    fun analyse() {
+        val photos = PayPhotos.read(listOf(text, second).filter { it.isNotBlank() }, rules?.kinds.orEmpty(), rules?.shiftTypes.orEmpty(), rules?.fiveOrMore ?: true)
+        read = photos.slip ?: PayslipReader.read(text)
+        ticks.clear()
+        if (rules != null) ticks += photos.rules.map { it to (it.confidence >= 0.6) }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -197,12 +220,18 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, onRead: (PayslipRead
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val r = read
                 if (r == null) {
-                    Text("명세서 사진이나 캡처 한 장이면 돼요. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요.",
+                    Text(if (rules != null) "명세서 사진 한 장, 있으면 회사 계산 방법(취업규칙·수당표) 사진 한 장 더. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요."
+                        else "명세서 사진이나 캡처 한 장이면 돼요. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ScanButtons(onText = { t -> text = t; read = PayslipReader.read(t) })
+                    if (rules != null) Text(if (text.isBlank()) "1. 명세서" else "1. 명세서 ✓ 읽었어요", style = MaterialTheme.typography.titleSmall)
+                    ScanButtons(onText = { t -> text = t; if (rules == null) analyse() })
+                    if (rules != null) {
+                        Text(if (second.isBlank()) "2. 회사 계산 방법 (없으면 건너뛰어도 돼요)" else "2. 회사 계산 방법 ✓ 읽었어요", style = MaterialTheme.typography.titleSmall)
+                        ScanButtons(onText = { t -> second = if (second.isBlank()) t else second + "\n" + t })
+                    }
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap. Typing it is folded away.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() },
-                        onPaste = { t -> text = t; read = PayslipReader.read(t) })
+                        onPaste = { t -> text = t; if (rules == null) analyse() })
                     TextButton(onClick = { typing = !typing }) { Text(if (typing) "글로 붙여 넣기 접기" else "글로 붙여 넣기") }
                     if (typing) OutlinedTextField(
                         value = text, onValueChange = { text = it },
@@ -210,24 +239,46 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, onRead: (PayslipRead
                         placeholder = { Text("기본급 2,508,000\n연장근로수당 288,000\n식대 200,000\n지급합계 2,996,000") },
                         minLines = 4, modifier = Modifier.fillMaxWidth(),
                     )
-                } else if (r.lines.isEmpty()) {
+                } else if (r.lines.isEmpty() && ticks.isEmpty()) {
                     Text("금액을 찾지 못했어요. ‘기본급 2,508,000’처럼 이름과 금액이 함께 보이게 찍거나 붙여 넣어 주세요.")
                 } else {
                     r.month?.let { Text("${it.year}년 ${it.monthValue}월 명세서", style = MaterialTheme.typography.titleSmall) }
                     SlipPreview(r)
+                    // [READ-08] What the tax estimate (묶음 W) starts from: 공제 합계 and 실수령, worked out when the photo cut them.
+                    val net = r.net
+                    if (r.deducted != null || net != null) Text(
+                        listOfNotNull(r.deducted?.let { "공제 ${won(it)}" }, net?.let { "실수령 ${won(it)}" }).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (ticks.isNotEmpty()) {
+                        Text("회사 계산 방법에서 읽은 규칙 ${ticks.size}개", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+                        ticks.forEachIndexed { i, (f, on) ->
+                            Row(Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { ticks[i] = f to !on }, verticalAlignment = Alignment.Top) {
+                                Checkbox(checked = on, onCheckedChange = null, modifier = Modifier.padding(8.dp))
+                                Column(Modifier.weight(1f).padding(top = 6.dp)) {
+                                    Text(f.change.summary, style = MaterialTheme.typography.bodyMedium)
+                                    Text("“${f.sourceLine}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    } else if (second.isNotBlank()) Text("회사 계산 방법 사진에서 규칙을 찾지 못했어요. 규칙은 급여 설정의 ‘회사 규칙’에서 글로 적어도 돼요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
         confirmButton = {
             val r = read
             when {
-                r == null -> if (typing) Button(onClick = { read = PayslipReader.read(text) }, enabled = text.isNotBlank()) { Text("읽기") }
-                r.lines.isEmpty() -> Button(onClick = { read = null }) { Text("다시 하기") }
-                else -> Button(onClick = { onRead(r) }) { Text("이대로 채우기") }
+                r == null -> if (typing || (rules != null && text.isNotBlank())) Button(onClick = ::analyse, enabled = text.isNotBlank()) { Text("읽기") }
+                r.lines.isEmpty() && ticks.isEmpty() -> Button(onClick = { read = null }) { Text("다시 하기") }
+                else -> Button(onClick = {
+                    val chosen = ticks.filter { it.second }.map { it.first.change }
+                    if (rules != null && chosen.isNotEmpty()) rules.onRules(chosen, r.month)
+                    if (r.lines.isNotEmpty()) onRead(r) else onDismiss()
+                }) { Text(if (ticks.any { it.second }) "이대로 채우고 규칙 넣기" else "이대로 채우기") }
             }
         },
         dismissButton = {
-            if (read != null) TextButton(onClick = { read = null }) { Text("다시 하기") } else TextButton(onClick = onDismiss) { Text("취소") }
+            if (read != null) TextButton(onClick = { read = null; text = ""; second = ""; ticks.clear() }) { Text("다시 하기") } else TextButton(onClick = onDismiss) { Text("취소") }
         },
     )
 }

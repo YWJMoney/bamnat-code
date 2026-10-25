@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -186,7 +187,13 @@ fun PayslipMatchDialog(
     // [PAYS-05] 명세서 사진으로 채우기, and what it filled.
     var scanning by remember { mutableStateOf(false) }
     var filled by remember { mutableStateOf<String?>(null) }
-    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false }) { read ->
+    // [READ-08] With the company's way of counting as a second photo: its ticked rules go into the pay setup from that month.
+    val payAppSettings by vm.settings.collectAsState()
+    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false },
+        rules = RuleTarget(payAppSettings.extraKinds.kinds, snapshot.shiftTypes, profile.fiveOrMoreEmployees) { changes, m ->
+            vm.applyRuleChanges(changes, m ?: chosen)
+            filled = "회사 규칙 ${changes.size}개를 급여 설정에 넣었어요"
+        }) { read ->
         form.fill(read, profile)
         more = true
         val moved = read.month?.takeIf { !it.isAfter(latest) && it != chosen }
