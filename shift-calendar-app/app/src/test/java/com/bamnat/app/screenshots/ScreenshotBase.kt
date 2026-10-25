@@ -474,6 +474,15 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /**
+         * [NAV-06] 1.26 AD: holds a finger on the tab in place [from] for [hold] frames (40 is a long press), then drags it
+         * slowly to place [to], along the bar (or the rail when [wide]), where [tab] would tap.
+         */
+        fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) = gesture { w, h, d ->
+            fun at(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / 5 to h - 40 * d
+            List(hold + 1) { at(from.toFloat()) } + (1..30).map { k -> at(from + (to - from) * k / 30f) } + listOf(at(to.toFloat()))
+        }
+
         /** Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = settings). */
         fun tab(index: Int, wide: Boolean) = gesture { w, h, d ->
             val p = if (wide) 40 * d to (45 + index * 62) * d

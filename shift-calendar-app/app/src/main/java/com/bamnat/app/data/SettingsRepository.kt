@@ -139,6 +139,11 @@ data class AppSettings(
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
      */
     val dayGroupOrder: List<String> = emptyList(),
+    /**
+     * [NAV-05] 1.26 AD (D82): the bottom tabs in the user's order, by key ([com.bamnat.core.layout.TabOrder]); the first
+     * is the screen the app opens on. Empty is the usual order (달력 first), so nothing changes for whoever never moved one.
+     */
+    val tabOrder: List<String> = emptyList(),
     /** [FEAT-07] The user's calendars written to a calendar of their own on the phone (프로); none at first. */
     val phoneCalendars: List<String> = emptyList(),
     /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
@@ -278,6 +283,7 @@ class SettingsRepository(context: Context) {
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
             phoneCalendars = prefs.getString(K_PHONE_CALENDARS, null)?.let(::decodeGroupOrder) ?: d.phoneCalendars,
+            tabOrder = prefs.getString(K_TAB_ORDER, null)?.let(::decodeGroupOrder) ?: d.tabOrder,
             alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
             shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
             wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
@@ -349,6 +355,7 @@ class SettingsRepository(context: Context) {
             .putString(K_STATS_LAYOUT, s.statsLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
+            .putString(K_TAB_ORDER, s.tabOrder.joinToString(","))
             .putString(K_ALARM_MISSION, s.alarmMission)
             .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
             .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
@@ -377,6 +384,7 @@ class SettingsRepository(context: Context) {
         const val K_STATS_LAYOUT = "stats_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_PHONE_CALENDARS = "phone_calendars"
+        const val K_TAB_ORDER = "tab_order"
         const val K_ALARM_MISSION = "alarm_mission"
         const val K_SHIFT_MISSIONS = "shift_missions"
         const val K_WAKE_CHECK = "wake_check_minutes"

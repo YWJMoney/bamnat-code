@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
+        Release(37, "1.26.0", listOf(
+            // [NAV-05][NAV-06] Bundle AD.
+            Line("아래 메뉴를 길게 누르면 순서를 바꿀 수 있어요. 맨 앞에 둔 메뉴가 앱을 켤 때 첫 화면이 돼요(설정 › 달력 화면 › 첫 화면·메뉴 순서)", "nav.tabOrder"),
+        )),
         // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
         Release(36, "1.25.0", listOf(
             // [READ-02][READ-05][READ-06] Bundle U.

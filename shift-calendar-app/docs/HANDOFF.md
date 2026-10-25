@@ -444,6 +444,15 @@ shift-calendar-app/
 - **알람 화면** `RingingScreen`: 480dp 아래로 낮은 가로 화면은 시계·버튼을 옆으로 나란히(전에는 버튼이 시계를 덮었음), 세로는 글이 길면 스크롤.
 - 시험 `AlarmButtonsAllOffTest`(12개, 끝에서 끝), `M7AppTest`(단추 3개), 사진 `ABScreenshotTest` 960~969. 결정 AB-1~AB-4: `계획/1.25-AB-개발계획.md`.
 
+### 6-16. 첫 화면·메뉴 순서 바꾸기 (1.26.0 묶음 AD, NAV-05~07·GUIDE-09)
+
+- **순서** `core/layout/TabOrder`(탭 경로 키, 모르는 키는 버리고 빠진 탭은 뒤에, 숨기기 없음 D82). 설정 `AppSettings.tabOrder`(파일 키 `tab_order`, 백업 `settings.tabOrder`), 비면 지금 순서(달력 먼저) → 손대지 않은 사람은 그대로. `TopLevel`은 `internal`, `TopLevel.ordered(saved)`.
+- **첫 화면·집** `AppRoot`: `NavHost`의 시작은 앱을 켤 때 맨 앞 탭(`startTab`, `rememberSaveable`이라 화면 돌림엔 그대로, 실행 중 순서를 바꿔도 그래프를 다시 만들지 않음). 뒤로(`TabBackCallback`)의 '집'은 지금 저장된 맨 앞 탭: 맨 앞 탭에서 2초 안 두 번 = 닫힘, 다른 탭은 바로 전 탭 → 없으면 맨 앞 탭(실행 중 바꿨으면 탭 바꾸기로 올림). 다른 화면 위에 올린 탭은 전처럼 그 화면으로. 다시 열기(`HomeRequests`)도 맨 앞 탭. 알림·위젯·공유 링크는 그대로 자기 화면.
+- **편집** `ui/TabBar.kt`: 탭을 길게 누르면(`tabEditModifier`, Initial 단계에서 길게 누름만 가로챔, 짧게 누르면 탭 그대로) `TabEdit` 상태 + 진동. 아이콘 `WigglingIcon` ±3.5° 엇갈려 흔들림, 휴대폰 '애니메이션 없애기'(ANIMATOR_DURATION_SCALE 0)면 테두리. 끌기는 자리(slot) 위치로 이웃 30% 넘으면 바꿈, `key(route)`로 노드가 손가락을 따라감. 아래 줄은 광고 자리에 안내 줄(`TabEditHint`, 누르면 저장, TalkBack 알림 영역), 넓은 화면은 화면 아래에 겹쳐 둠. 화면 위 `TabEditCatcher`(첫 터치 = 저장, 아무 일도 안 함)·뒤로·탭 밖으로 이동 = 저장. 편집 중 탭 누름은 이동 안 함. 접근성 동작 '메뉴 순서 바꾸기·앞으로 옮기기·뒤로 옮기기·순서 저장'.
+- 주의: 옆 줄(NavigationRail) 안 빈 칸에 `weight` 상자를 넣으면 Robolectric에서 측정이 끝없이 돌아 메모리가 넘쳐요(편집 중 시험 OOM) → 옆 줄 빈 칸은 저장 자리로 쓰지 않음.
+- **설정** `ui/settings/TabOrderRows.kt` 설정 › 달력 화면 › 모양 › '첫 화면·메뉴 순서'(위·아래, '처음 순서로'), `SettingsIndex` 1.26 AD 줄, `FeatureRegistry` `nav.tabOrder`, `HelpFaq` `tabOrder`(문의 화면 자주 묻는 질문·'달력 화면' 도움말·앱 주제), WhatsNew 1.26.0 첫 줄.
+- 시험 `TabOrderTest`(core 4), `ADScreenshotTest`(끝에서 끝 7 + 사진 1020~1034), `ZFullBackupTest` 왕복, `GestureAlternativesTest`에 `TabBar.kt`. `ScreenshotBase.Screen.dragTab(from, to, wide, hold)`. 결정 AD-1~AD-4: `계획/1.26-AD-개발계획.md`.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

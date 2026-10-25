@@ -456,6 +456,8 @@ class BackupManager(
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
+                // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
+                .put("tabOrder", s.tabOrder.joinToString(","))
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
                 // [ALRM-08] Added in 1.25 (AB).
@@ -911,6 +913,8 @@ class BackupManager(
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
                     // [FEAT-07] Added in 1.20; the phone's calendar permission is asked again on the new phone.
                     phoneCalendars = o.optStringOrNull("phoneCalendars")?.let(::decodeGroupOrder) ?: s.phoneCalendars,
+                    // [NAV-05] Added in 1.26; an older backup keeps this phone's order.
+                    tabOrder = o.optStringOrNull("tabOrder")?.let(::decodeGroupOrder) ?: s.tabOrder,
                     // [PROV-06][PROV-07] Added in 1.20. Shift ids are the backup's own, restored with its shifts.
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,

@@ -527,6 +527,10 @@ object FeatureRegistry {
         f("data.movePhone", "BAK-01", "새 휴대폰으로 옮기기", "기록과 모든 설정을 백업 파일 하나로 옮겨요. 이 휴대폰에만 남는 것(지도 위치·알람 소리 등)도 알려 줘요",
             ALL, "설정 › 데이터 › 새 휴대폰으로 옮기기", at(Place.SETTINGS_DATA, "새 휴대폰으로 옮기기"), "새 휴대폰", "기기 변경", "옮기기", "모든 설정",
             under = "data.backup"),
+        // ---- 1.26 묶음 AD (계획/1.26-AD-개발계획.md 419~421) ----
+        f("nav.tabOrder", "NAV-05", "첫 화면·메뉴 순서", "아래 메뉴를 길게 눌러 끌면 순서가 바뀌고, 맨 앞 메뉴가 앱을 켤 때 처음 보이는 화면이 돼요. 설정에서 위·아래로도 바꿔요",
+            ALL, "설정 › 달력 화면 › 첫 화면·메뉴 순서", at(Place.SETTINGS_CALENDAR, "첫 화면·메뉴 순서"), "첫 화면", "시작 화면", "메인 화면", "메뉴 순서",
+            "탭 순서", "길게 누르기"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }
