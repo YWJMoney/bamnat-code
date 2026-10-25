@@ -87,7 +87,7 @@ class CompanyStore(context: Context) {
      */
     private val _inviteDue = MutableStateFlow(
         if (prefs.contains("invite_due") || !prefs.getBoolean("invite_closed", false)) prefs.getLong("invite_due", 0)
-        else com.bamnat.core.plaza.ShareAsk.nextDue(1, System.currentTimeMillis()).also {
+        else com.bamnat.core.plaza.ShareAsk.nextDue(1, com.bamnat.core.time.Today.millis()).also {
             prefs.edit().putLong("invite_due", it).putInt("invite_laters", 1).apply()
         },
     )
