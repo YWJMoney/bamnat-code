@@ -775,11 +775,11 @@ READ-08,"사용자 2026-10-25 명세서 + 회사 계산 방법 사진 두 장: �
 READ-09,"순번 370 사진 다듬기: EXIF 방향, 큰 사진 줄이기, 기울면 바로 세우고 대비 높여 한 번 더 읽어 나은 쪽, 휴대폰 안에서만(D68)",2 (1.25.0),완료,,"U: ImagePrep, RosterScanner.scan 두 번 읽기, PayslipScanner; ML Kit은 실기기 확인"
 READ-10,"순번 371 빠른 입력 '이번 달 전부 넣기' → 한 달 근무 넣기 화면(그 달, 사진·엑셀·키패드), 첫 설정 듀티표 휴가·모르는 글자까지 넣기",2 (1.25.0),완료,,"U: Routes.DUTY_ROSTER_MONTH, CalendarScreen.onFillMonth, SetupDraft.leaves·SetupViewModel.answerRosterCode; SetupRosterPhotoTest(사진 → 달력 30일)"
 READ-11,"순번 372 전체 넣기 되돌리기: 화면을 닫은 뒤에도 도구 '방금 넣은 것 되돌리기'(10분), 저장 전 'n일 덮어써요'",2 (1.25.0),완료,,"U: RecentFill, DutyTypingSheet 덮어쓰기 줄; RosterPhotoTest.thePickedLineGoesInAndComesBackOutFromTheCalendar"
-HOLI-01,"순번 374 (U1): 회사 규칙 '빨간날에 일하면' 한 항목 — 휴일 가산(법)·대근·특근처럼·대체휴일·교대제라 상관없음, 예전 세 칸과 늘 맞게",2 (1.25.0),진행 중,,
-HOLI-02,"순번 374 (U1): 빨간날 휴가는 근무일(출근)만 인정, 야간·휴일 가산 0, 시급·일당제 유급휴일과 휴가 이중 지급 고침",2 (1.25.0),진행 중,,
-HOLI-03,"순번 374 (U1): 빨간날 근무를 특근·대근으로 셀 때 근무 종류(모닝·이브닝·나이트·당직)별 1회 금액, 근무 종류의 야간 가산은 그대로",2 (1.25.0),진행 중,,
-PAYS-12,"순번 375 (U22): 급여 간편 설정 — 근무 형태 묻기 → 흔한 가산 묶음 → 한 장 확인(문장·이번 달 예상), 칸별 편집기는 '자세히 고치기'(D70)",2 (1.25.0),진행 중,,
-PAYS-13,"순번 375 (U22): 규칙 조립기 모든 대상×방식 → 계산 금액 왕복(계산에 안 들어가는 항목 0), 대상에 빨간날 근무",2 (1.25.0),진행 중,,
-PAYS-14,"순번 376 (U9-가): 명세서 사진 → 기본급·가산율·대근 금액·없는 수당·빨간날 방식 역산 → 한 장 확인 → 적용(기기 안, D68)",2 (1.25.0),진행 중,,
-PAYS-15,"순번 376 (U9-가): 명세서·규칙으로 맞춘 뒤 광장에 올리기 권유와 혜택 안내",2 (1.25.0),진행 중,,
-PAYX-48,"순번 377 (U9-나): '사용하러 가기'·바로 가기 목적지 전수 시험, 월급날 비교 카드 늘 보이고 들어온 급여 바로 적기",2 (1.25.0),진행 중,,
+HOLI-01,"순번 374 (U1): 회사 규칙 '빨간날에 일하면' 한 항목 — 휴일 가산(법)·대근·특근처럼·대체휴일·교대제라 상관없음, 예전 세 칸과 늘 맞게",2 (1.25.0),완료,,"core HolidayWork·withHolidayWork, HolidayWorkPicker(회사 규칙·처음 설정·간편 설정); HolidayWorkGoldenTest, VScreenshotTest 830~833"
+HOLI-02,"순번 374 (U1): 빨간날 휴가는 근무일(출근)만 인정, 야간·휴일 가산 0, 시급·일당제 유급휴일과 휴가 이중 지급 고침",2 (1.25.0),완료,,"PayCalculator 휴가 줄 유급휴일 시간 뺌·월급제 무급 미공제; HolidayWorkGoldenTest(휴가·반차·시급 휴가·무급)"
+HOLI-03,"순번 374 (U1): 빨간날 근무를 특근·대근으로 셀 때 근무 종류(모닝·이브닝·나이트·당직)별 1회 금액, 근무 종류의 야간 가산은 그대로",2 (1.25.0),완료,,"withHolidayShiftPay(근무 종류별 1회, 야간 가산 유지·시작한 날 기준); HolidayWorkGoldenTest, VScreenshotTest 831·847"
+PAYS-12,"순번 375 (U22): 급여 간편 설정 — 근무 형태 묻기 → 흔한 가산 묶음 → 한 장 확인(문장·이번 달 예상), 칸별 편집기는 '자세히 고치기'(D70)",2 (1.25.0),완료,,"core WorkForm·WorkForms·PayStory, ui/pay/PayQuickSetup; WorkFormTest, VScreenshotTest 834~837·846"
+PAYS-13,"순번 375 (U22): 규칙 조립기 모든 대상×방식 → 계산 금액 왕복(계산에 안 들어가는 항목 0), 대상에 빨간날 근무",2 (1.25.0),완료,,"RuleDraft 대상 빨간날 근무, RuleText.HolidayMode; RuleBuilderRoundTripTest(24조합 왕복)"
+PAYS-14,"순번 376 (U9-가): 명세서 사진 → 기본급·가산율·대근 금액·없는 수당·빨간날 방식 역산 → 한 장 확인 → 적용(기기 안, D68)",2 (1.25.0),완료,,"core SlipRules.infer(명세서+회사 계산 방법 글), SlipRulesDialog; SlipRulesTest(표본 5종 ±1%), VScreenshotTest 838~840·842·848"
+PAYS-15,"순번 376 (U9-가): 명세서·규칙으로 맞춘 뒤 광장에 올리기 권유와 혜택 안내",2 (1.25.0),완료,,"PlazaAskDialog(채택 방법·혜택), 적용 뒤 onShareWay; VScreenshotTest 840·841"
+PAYX-48,"순번 377 (U9-나): '사용하러 가기'·바로 가기 목적지 전수 시험, 월급날 비교 카드 늘 보이고 들어온 급여 바로 적기",2 (1.25.0),완료,,"pay.gap focus·카드 늘 보임·AddPayDialog(돈 탭 급여 한 줄); FeatureDestinationsTest, VScreenshotTest 843~845·849"

@@ -252,4 +252,35 @@ class VScreenshotTest : ScreenshotBase() {
         reveal("10월 월급날 비교", exact = true)
         assertTrue(shows("급여 계산 맞추기", exact = true))
     })
+
+    // ---- 378 at other sizes: 큰 글씨, 어두운 화면, 작은 폰 ----
+    @Test fun quickConfirmHugeText() = shoot("846_v_quick_confirm_huge_text", PHONE, fontScale = 2f, quickSetup {
+        tapText("2교대 · 달력을 보면 이것 같아요", exact = true)
+        waitFor(400)
+        typeInto("월 기본급", "2600000")
+        tapText("다음", exact = true)
+        tapText("다음", exact = true)
+        assertTrue(shows("이렇게 계산해요", exact = true))
+    })
+    @Test fun quickHolidayAmountsDark() = shoot("847_v_quick_holiday_dark", FOLDED_NIGHT, quickSetup {
+        tapText("2교대 · 달력을 보면 이것 같아요", exact = true)
+        waitFor(400)
+        typeInto("월 기본급", "2600000")
+        tapText("다음", exact = true)
+        tapText(HolidayWork.AS_EXTRA.label, exact = true)
+        reveal("빨간날 근무 1회 금액", exact = true)
+        assertTrue(shows("빨간날 주간"))
+    })
+    @Test fun slipRulesSmallPhone() = shoot("848_v_slip_small", SMALL_PHONE, slipRules {
+        typeSlip()
+        tapText("맞춰 보기", exact = true)
+        waitFor(800)
+        assertTrue(shows("이렇게 바꿀게요", exact = true))
+    })
+    @Test fun payGapDialogDark() = shoot("849_v_pay_gap_dialog_dark", FOLDED_NIGHT, {
+        withPay()
+        settle()
+        openPayGap()
+        assertTrue(shows("통장에 실제로 들어온 금액이에요(세금·4대보험 뺀 금액)."))
+    })
 }
