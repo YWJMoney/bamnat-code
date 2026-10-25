@@ -1684,6 +1684,10 @@ private fun CalendarHeader(
                 add(CalendarTool("달력 보기 설정", Icons.Outlined.Tune) {
                     com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR)
                 })
+                // [PLAZA-06] U25-나: the first setup again, for the main calendar (an added one has its own 고치기).
+                if (onEditCalendar == null) add(CalendarTool("처음 설정 다시 받기", Icons.Filled.EventRepeat) {
+                    com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)
+                })
                 add(CalendarTool("도움말·문의", Icons.AutoMirrored.Outlined.HelpOutline) {
                     com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
                 })

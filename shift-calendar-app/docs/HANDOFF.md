@@ -344,6 +344,18 @@ shift-calendar-app/
 - 시험 표본은 `tools/roster_fixtures.py`·`tools/payslip_fixtures.py`가 이 컴퓨터의 실제 OCR(RapidOCR PP-OCRv4 + 한국어)로 만들어요(`core/src/test/resources/roster-photos`·`payslip-photos`). 새 양식이 나오면 `CASES`에 더하고 다시 만든 뒤 `RosterPhotoFixturesTest`를 보세요. ML Kit은 Robolectric에서 안 돌아서 앱 시험은 `RosterScanner.fake`(·`fakeImage`)로 단어를 줘요.
 - 새 화면이 사진을 읽으면 `ImagePrep.load`를 지나게 하세요(큰 사진·EXIF).
 
+### 6-10. 광장 고도화·회사 찾기·첫 설정 연결 (1.25.0 묶음 X, PLAZA-01~06)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-X-개발계획.md`, 조사는 `research/1.25-X-조사.md`. 결정 X-D1~D7, D74.
+
+- **설정을 항목으로** `core/plaza/SetupFacts`(회사 설정 파일 → 항목 `key`·묶음·서버 말투 값·제안 칸), `SetupCompare`(두 파일 비교, 제안 줄 6개·80자), `SetupEdit`(파일의 값만 바꾸는 편집, 나머지는 그대로), `Choseong`, `ShareAsk`(권유 14→30→90일). 서버의 `describe()`와 말투를 맞춰 두었으니 한쪽을 바꾸면 `PlazaCompareTest`로 같이 보세요.
+- **모든 유형** `CompanyShare`가 주5일·파트타임 `weekly`와 매달 근무표 `roster`를 담고 읽어요(`SetupDraft.withShared(weekly)`). 순서·요일·근무표가 없는 옛 파일은 지문이 그대로예요.
+- **다른 점 말하기** `ui/company/PlazaCompare.kt`: `DiffEditorSheet`(시간·칩·스테퍼, 글자 칸은 이유만), `CompareSheet`·`CompareRows`(다른 곳 먼저, 같은 곳은 접음). 회사 카드·급여 단계(`CompanyPayScreen`의 "이 회사 급여 설정을 쓸까요?")에서 열고, `TalkHolder.send(setupText=)`로 고친 파일 전체가 제안으로 가요. 급여 단계에서 고친 값은 그 휴대폰의 `pendingPay`가 돼요.
+- **대표 판** 서버 `support()`·`outweighs()`·`settle()`의 `rival`, 앱은 "대표 판 vN", 바뀐 기록의 `body`로 비교·되돌리기, 쓰던 판이 바뀌면 회사 화면 맨 위 카드("비교하고 바꾸기"/"그대로 둘게요").
+- **권유** `CompanyStore.handMade`(첫 설정을 회사 없이 직접), `inviteDue`·`inviteNever`, 달력 알림 묶음 `plazaShare` → `ShareInviteNotice`, 급여 화면 `ShareMoment.PAY/PAYSLIP`. 명세서 사진으로 규칙을 넣은 뒤(묶음 V)는 `ShareWayCard(ShareMoment.PAYSLIP, …)`를 띄우면 돼요.
+- **처음 설정 다시 받기** `Routes.SETUP_AGAIN`·`NoticeLinks.Target.SETUP_AGAIN`, `SetupViewModel(again = true)`는 `againSetupDrafts`(따로 둔 초안)를 써서 그만두면 아무것도 안 바뀌고, 저장은 `firstSetup.save`라 오늘부터 바뀌어요. 들어가는 곳: 설정 › 내 근무(`SETUP_AGAIN_ROW`), 도움말·문의 첫 화면, HelpFaq `setupAgain`.
+- 시험: core `PlazaCompareTest`, 서버 `test/plaza-x.test.mjs`·`company.test.mjs`(D74), 앱 `company/PlazaXAppTest`(실제 서버와 왕복), 사진 `XScreenshotTest` 870~889.
+
 ### 6-13. 관리자 앱 완성 (1.25.0 묶음 AA, ADMUX-12~20)
 
 - 모두 회사 서버 안(`server/company-worker`). 앱(Kotlin)·DB 판·서버로 오는 정보는 바뀌지 않음. 회사 서버 재배포가 있어야 관리자 앱에 보여요.

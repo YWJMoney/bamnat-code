@@ -225,6 +225,8 @@ internal object SettingsIndex {
         screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
         // 1.25 묶음 AB
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
+        // ---- 1.25 묶음 X [PLAZA-06] ----
+        row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
     )
 
     /** The best fits for [query], best first. */

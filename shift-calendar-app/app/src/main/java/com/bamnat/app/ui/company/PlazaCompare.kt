@@ -134,7 +134,7 @@ fun CompareSheet(
  * 다른 점 말하기: [base] (the rule set as the plaza has it) in an editor. [mine] is this phone's own setup, for
  * "내 설정으로 채우기". [onSend] gets the proposal's lines, the edited file and the reason, if any.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DiffEditorSheet(
     title: String,
@@ -162,9 +162,10 @@ fun DiffEditorSheet(
             Text("다른 점 말하기", style = MaterialTheme.typography.titleLarge)
             Text("$title · 이 회사 값으로 채워 두었어요. 우리와 다른 곳만 바꿔 주세요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+            // The count on its own line and the two buttons flowing under it, so large text never squeezes the count.
+            FlowRow(verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Text(if (changed.isEmpty()) "아직 바꾼 곳이 없어요" else "바꾼 곳 ${changed.size}가지",
-                    style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge, modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp),
                     color = if (changed.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
                 if (mine != null) TextButton(onClick = { SetupEdit.of(mine)?.let { m -> edit = m } }) { Text("내 설정으로 채우기") }
                 if (changed.isNotEmpty()) TextButton(onClick = { edit = start }) { Text("처음대로") }
@@ -175,15 +176,16 @@ fun DiffEditorSheet(
                     TextButton(onClick = { comparing = !comparing }) { Text(if (comparing) "비교 접기" else "바꾼 곳 비교해 보기") }
                     if (comparing) changed.forEach { CompareLine(it, "지금", "바꿀 값") }
                 }
+                // The reason and the note scroll with the editor, so large text still leaves room to edit; only the send stays.
+                OutlinedTextField(
+                    why, { why = it.take(160) }, singleLine = false, maxLines = 3,
+                    label = { Text("왜 다른지 (선택)") }, placeholder = { Text("예: 10월부터 주간이 한 시간 줄었어요") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("보내면 토론에 ‘고치자는 제안’으로 올라가요. 같은 부서 분들이 맞아요를 누르면 이 설정이 다음 버전이 돼요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            OutlinedTextField(
-                why, { why = it.take(160) }, singleLine = false, maxLines = 3,
-                label = { Text("왜 다른지 (선택)") }, placeholder = { Text("예: 10월부터 주간이 한 시간 줄었어요") },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp)) }
-            Text("보내면 토론에 ‘고치자는 제안’으로 올라가요. 같은 부서 분들이 맞아요를 누르면 이 설정이 다음 버전이 돼요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             Button(
                 onClick = { onSend(proposalChange(rows), e.text, why.trim()) },
                 enabled = changed.isNotEmpty() && !busy,
@@ -212,7 +214,8 @@ private val RATE_KEYS = listOf("ot" to "연장", "night" to "야간", "hw" to "�
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, onChange: (SetupEdit) -> Unit) {
-    val names = e.shifts.filter { !it.off }.map { it.name }
+    // The order's days cycle through every shift, 휴무 too, then 쉼.
+    val names = e.shifts.map { it.name }
     Part(FactGroup.SHIFT, changed) {
         e.shifts.filter { !it.off }.forEach { s ->
             Text(s.name, style = MaterialTheme.typography.titleSmall)
