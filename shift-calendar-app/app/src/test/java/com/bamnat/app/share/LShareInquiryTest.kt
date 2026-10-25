@@ -81,6 +81,8 @@ class LShareInquiryTest {
     private fun link(id: String) = ShareLinkState(id, "https://share.example/s/$id", "token-$id", Instant.now().plus(Duration.ofDays(20)), "나", 30, null)
 
     @Before fun setUp() {
+        // [QA-09] See ComposeMainReset.
+        com.bamnat.app.rules.ComposeMainReset.now()
         c.shareApi = api
         ShareLinkKey.all(PersonalCalendar.MAIN).forEach { c.shareLinksOf(it).clear() }
         c.received.calendars.value.forEach { c.received.remove(it.id) }

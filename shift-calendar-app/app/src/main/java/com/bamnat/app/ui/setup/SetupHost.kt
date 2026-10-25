@@ -116,6 +116,10 @@ fun SetupHost(
     BackHandler(enabled = vm.calendarId != null && !fixing && d.previous() == null) { leaving = true }
     // [PLAZA-06] 처음 설정 다시 받기 changed nothing yet: back on the first question just leaves.
     BackHandler(enabled = vm.again && !fixing && d.previous() == null) { vm.cancelAgain() }
+    // [NAV-04] 1.25 Z 후속: the first setup's first question closed the app on one back; now a second is needed.
+    val exitContext = LocalContext.current
+    val exit = remember { com.bamnat.app.ui.ExitGuard() }
+    BackHandler(enabled = vm.calendarId == null && !vm.again && !fixing && d.previous() == null) { exit.press(exitContext) }
 
     // One way in for a coworker's company file and for the user's own backup, as in settings.
     val context = LocalContext.current

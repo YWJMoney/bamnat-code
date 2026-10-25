@@ -289,6 +289,8 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     var sort by rememberSaveable { mutableStateOf(OwedSort.URGENT) }
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
+    // [NAV-04] 1.25 Z 후속: back closes the search (and its words) first, as the close button does.
+    androidx.activity.compose.BackHandler(enabled = searching) { searching = false; query = "" }
     var person by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(vm) {

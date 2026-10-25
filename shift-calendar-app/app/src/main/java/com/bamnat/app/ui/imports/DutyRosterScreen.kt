@@ -181,6 +181,8 @@ class DutyRosterViewModel(
             }
         /** Cells that will be written: everything but those still unknown. */
         val writable: Map<Int, DutyCell> get() = cells.filterValues { it !is DutyCell.Unknown }
+        /** [NAV-04] Cells typed or read and not yet put on the calendar: leaving asks first. */
+        val unsaved: Boolean get() = applied == null && writable.isNotEmpty()
         /** [NURS-04] Days read with doubt the user has not touched yet, and cells still unknown. */
         val doubtful: Set<Int>
             get() = (row?.doubtful(days).orEmpty() - edits.keys) + cells.filterValues { it is DutyCell.Unknown }.keys
@@ -450,12 +452,24 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     val byId = types.associateBy { it.id }
     val conf = androidx.compose.ui.platform.LocalConfiguration.current
     val wide = conf.screenWidthDp >= 600 && conf.screenWidthDp > conf.screenHeightDp
+    // [NAV-04] 1.25 Z 후속: back or the arrow with a month typed or read but not put on asks first; it closed at once.
+    var leaving by remember { mutableStateOf(false) }
+    val leave = { if (ui.unsaved) leaving = true else onBack() }
+    androidx.activity.compose.BackHandler(enabled = ui.unsaved) { leaving = true }
+    if (leaving) com.bamnat.app.ui.components.ConfirmDialog(
+        title = "넣지 않고 나갈까요?",
+        message = "${ui.month.monthValue}월에 넣은 ${ui.writable.size}일이 아직 달력에 들어가지 않았어요. 나가면 사라져요.",
+        confirmLabel = "버리고 나가기",
+        onDismiss = { leaving = false },
+        onConfirm = { leaving = false; onBack() },
+        destructive = true,
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("한 달 근무 넣기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                navigationIcon = { IconButton(onClick = leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

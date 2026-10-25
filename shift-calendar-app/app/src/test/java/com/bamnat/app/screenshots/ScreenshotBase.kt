@@ -77,6 +77,8 @@ import com.bamnat.core.time.Today
  * shots in a class of its own that extends this one, so Gradle can run the classes in parallel forks.
  */
 abstract class ScreenshotBase {
+    /** [QA-09] A Compose dispatch dropped at the end of an earlier test in this JVM is posted again (full-run-only misses). */
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     /** [DAILY-09] Stands in for the fold's hinge sensor; nothing is published unless a test asks. */
