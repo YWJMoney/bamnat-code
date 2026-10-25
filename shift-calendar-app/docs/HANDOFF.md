@@ -344,6 +344,16 @@ shift-calendar-app/
 - 시험 표본은 `tools/roster_fixtures.py`·`tools/payslip_fixtures.py`가 이 컴퓨터의 실제 OCR(RapidOCR PP-OCRv4 + 한국어)로 만들어요(`core/src/test/resources/roster-photos`·`payslip-photos`). 새 양식이 나오면 `CASES`에 더하고 다시 만든 뒤 `RosterPhotoFixturesTest`를 보세요. ML Kit은 Robolectric에서 안 돌아서 앱 시험은 `RosterScanner.fake`(·`fakeImage`)로 단어를 줘요.
 - 새 화면이 사진을 읽으면 `ImagePrep.load`를 지나게 하세요(큰 사진·EXIF).
 
+### 6-8. 급여 간편 설정·빨간날 근무·명세서로 회사 방식·월급날 비교 (1.25.0 묶음 V, HOLI-01~03·PAYS-12~15·PAYX-48)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.25-V-개발계획.md`, 근거는 `research/1.25-V-조사.md`.
+
+- **빨간날 근무** `core/pay/CompanyRules.HolidayWork`(법대로 휴일 가산·특근·대근처럼·대체휴일·교대제라 상관없음)는 예전 세 칸(`publicHolidaysPaid`·`publicHolidayAs`·`holidayByShiftStart`)에서 늘 다시 구해요. 바꿀 때는 `withHolidayWork`·`withHolidayShiftPay`만 쓰세요(세 칸을 따로 고치면 고른 것과 어긋나요). 저장은 `holidayWorkChoice`(대체휴일과 교대제를 가르는 것) 하나만 더해요. 특근처럼은 근무 종류별 1회 금액(`extraByShift`, `nightPremium = true`로 근무 종류의 야간 가산은 그대로)이고 시작한 날 기준을 같이 켜요.
+- **빨간날 휴가**: `PayCalculator` 휴가 줄은 그날 유급휴일이 이미 주는 시간을 빼요(시급·일당 이중 지급 고침). 내역 글에 "공휴일이라 근무일로 인정, 야간·휴일 가산 없음". 연차 일수는 그대로 `LeaveSources`의 `holidayLeaveFree`가 정해요.
+- **급여 간편 설정** `ui/pay/PayQuickSetup`이 급여 처음·다시 설정의 기본 길이에요(근무 형태 `core/pay/WorkForm` → 금액 → 빨간날 → `PayStory` 문장 한 장). `PayWizard`는 ‘자세히 고치기’로만 열려요. `WorkForms.apply`는 기존 설정의 값을 지우지 않아요(D70). 근무 형태 추측은 근무 순서(Rotation)에 실제로 도는 근무 종류만 봐요.
+- **명세서로 회사 방식** `core/pay/SlipRules.infer`(명세서 글 + 두 번째 사진의 회사 계산 방법 글 + 그 달 근무)가 기본급·가산율·1회 금액·없는 수당·빨간날 방식을 찾고 `PayslipMatcher`로 나머지를 맞춰요. 화면은 `SlipRulesDialog`(사진 두 장, 두 번째는 고를 때만), 적용 뒤 `PlazaAskDialog`가 광장 올리기를 권해요(`onShareWay`). 사진 글 읽기(OCR)는 묶음 U의 몫이고, 여기는 읽은 글만 받아요.
+- **월급날 비교** `pay.gap`은 `at(Place.STATS, "pay.gap")`이고 카드가 늘 보여요(급여 설정 전엔 급여 화면으로, 입금 전엔 ‘들어온 급여 적기’로 돈 탭 급여 한 줄). **새 바로 가기에 focus 키를 주면 그 키를 받는 화면(`FocusedTool`·`FeatureLinks.take`)이 있어야 해요** — `FeatureDestinationsTest`가 막아요.
+
 ### 6-9. 세금 예측·실수령·사업자 세금·투자 수수료와 단가 채우기 (1.25.0 묶음 W, TAX-01~07·INV-38~41)
 
 계획은 프로젝트 파일(git 밖)의 `계획/1.25-W-개발계획.md`, 근거(법령 원문 출처)는 `research/1.25-W-조사.md`.

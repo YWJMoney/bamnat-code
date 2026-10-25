@@ -89,6 +89,8 @@ val TOOL_KEYS = setOf(
     "customize",
     // [TAX-02] 세금·실수령 card on the 돈 summary (MoneyScreen).
     "tax",
+    // [PAYX-48] 월급날 비교 on the stats tab: the card comes into view and asks the amount (WorkTypeCards).
+    "pay.gap",
 )
 
 /**
