@@ -225,7 +225,7 @@ fun PayScreen(
                         initial = profile,
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
-                        slipRules = { base, read, text -> vm.slipRules(base, snap, read, text) },
+                        slipRules = { base, read, rules -> vm.slipRules(base, snap, read, rules) },
                         onDone = { p, slip ->
                             vm.saveSetup(p, slip)
                             editingSetup = false
@@ -590,7 +590,10 @@ private fun PayResult(
     }
     if (importing) RuleImportDialog(vm, month, onDismiss = { importing = false })
     if (slipRules) SlipRulesDialog(
-        infer = { read, text -> vm.slipRules(profile, snapshot, read, text) },
+        infer = { read, rules -> vm.slipRules(profile, snapshot, read, rules) },
+        shiftTypes = snapshot.shiftTypes,
+        fiveOrMore = profile.fiveOrMoreEmployees,
+        kinds = vm.settings.value.extraKinds.kinds,
         onDismiss = { slipRules = false },
         onApply = { r -> vm.applySlipRules(r); slipRules = false; if (onShareWay != null && r.changes.isNotEmpty()) plazaAsk = true },
     )

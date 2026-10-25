@@ -410,11 +410,12 @@ class PayViewModel(
      * [PAYS-14] 명세서(+회사 계산 방법 사진) → 회사 규칙 on top of [profile], worked out off the main thread (D68: on the phone
      * only). The payslip's own month, else last month. Nothing is saved until [applySlipRules] or a first [saveSetup].
      */
-    suspend fun slipRules(profile: PayProfile, snapshot: ScheduleSnapshot, read: com.bamnat.core.pay.PayslipRead, ruleText: String?): com.bamnat.core.pay.SlipRulesResult? {
+    suspend fun slipRules(profile: PayProfile, snapshot: ScheduleSnapshot, read: com.bamnat.core.pay.PayslipRead,
+                          rules: List<com.bamnat.core.pay.RuleChange>): com.bamnat.core.pay.SlipRulesResult? {
         val month = read.month ?: YearMonth.from(Today.date()).minusMonths(1)
         val result = withContext(Dispatchers.Default) {
             com.bamnat.core.pay.SlipRules.infer(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month,
-                snapshot.resolver::resolve, read, ruleText, calculator = calculator)
+                snapshot.resolver::resolve, read, ruleChanges = rules, calculator = calculator)
         }
         container.telemetry.event("pay_slip_rules", when { result == null -> "none"; result.close -> "close"; else -> "gap" })
         return result

@@ -94,4 +94,14 @@ class SlipRulesTest {
         assertClose(c, r)
         assertTrue(r.changes.toString(), r.changes.any { it.startsWith("회사 계산 방법:") })
     }
+
+    @Test
+    fun `사진 창에서 고른 회사 규칙도 같은 길로 먼저 들어감`() {
+        val c = SlipCases.logistics
+        val ticked = com.bamnat.core.pay.RuleText.read("야간 가산 60%\n공휴일 근무는 특근처럼 계산").filter { it.confidence >= 0.6 }.map { it.change }
+        val read = PayslipReader.read(text(c.file))
+        val r = SlipRules.infer(c.start, SlipCases.oct, c.resolver::resolve, read, ruleChanges = ticked)!!
+        assertClose(c, r)
+        assertTrue(r.changes.toString(), r.changes.any { it.startsWith("회사 계산 방법:") })
+    }
 }

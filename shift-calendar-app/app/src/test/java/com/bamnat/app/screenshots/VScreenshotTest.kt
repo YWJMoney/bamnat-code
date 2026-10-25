@@ -162,21 +162,21 @@ class VScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun slipRulesTwoPhotos() = shoot("838_v_slip_two_photos", FOLDED, slipRules {
-        assertTrue(shows("1. 급여 명세서"))
-        assertTrue(shows("2. 회사 계산 방법 (있으면)"))
-        assertTrue(shows("사진은 휴대폰 안에서만 읽고 어디에도 보내지 않아요."))
+        assertTrue(shows("1. 명세서"))
+        assertTrue(shows("2. 회사 계산 방법"))
+        assertTrue(shows("사진과 금액은 어디에도 보내지 않아요"))
     })
     @Test fun slipRulesRead() = shoot("839_v_slip_read", FOLDED, slipRules {
         typeSlip()
         assertTrue(shows("2026년 9월 명세서"))
-        reveal("맞춰 보기", exact = true)
+        reveal("이대로 채우기", exact = true)
     })
 
     /** The payslip read, worked out against September's calendar, applied: the 교대수당 is now in the setup. */
     @Test fun slipRulesAppliedEndToEnd() = shoot("840_v_slip_changes", FOLDED, slipRules {
         val before = saved!!
         typeSlip()
-        tapText("맞춰 보기", exact = true)
+        tapText("이대로 채우기", exact = true)
         waitFor(800)
         assertTrue(shows("이렇게 바꿀게요", exact = true))
         assertTrue(shows("2026년 9월 명세서 3,612,000원"))
@@ -191,7 +191,7 @@ class VScreenshotTest : ScreenshotBase() {
     })
     @Test fun slipRulesPlazaAsk() = shoot("841_v_plaza_ask", FOLDED_NIGHT, slipRules {
         typeSlip()
-        tapText("맞춰 보기", exact = true)
+        tapText("이대로 채우기", exact = true)
         waitFor(800)
         tapText("이대로 적용", exact = true)
         waitFor(400)
@@ -204,7 +204,7 @@ class VScreenshotTest : ScreenshotBase() {
     @Test fun quickSetupFromSlip() = shoot("842_v_quick_from_slip", FOLDED, quickSetup {
         tapText("모르겠으면 명세서 사진으로 맞추기")
         typeSlip()
-        tapText("맞춰 보기", exact = true)
+        tapText("이대로 채우기", exact = true)
         waitFor(800)
         tapText("이대로 적용", exact = true)
         waitFor(400)
@@ -273,7 +273,7 @@ class VScreenshotTest : ScreenshotBase() {
     })
     @Test fun slipRulesSmallPhone() = shoot("848_v_slip_small", SMALL_PHONE, slipRules {
         typeSlip()
-        tapText("맞춰 보기", exact = true)
+        tapText("이대로 채우기", exact = true)
         waitFor(800)
         assertTrue(shows("이렇게 바꿀게요", exact = true))
     })

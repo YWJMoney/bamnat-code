@@ -52,6 +52,11 @@ object SlipRules {
          * text read on the phone. Its rules go in first; what the payslip says then fills in the rest.
          */
         ruleText: String? = null,
+        /**
+         * The same second photo as the rules the user ticked in the photo dialog (묶음 U `PayPhotos`, READ-08): they go in
+         * first, as [ruleText] does.
+         */
+        ruleChanges: List<RuleChange> = emptyList(),
         isHoliday: ((LocalDate) -> Boolean)? = null,
         calculator: PayCalculator = PayCalculator(),
     ): SlipRulesResult? {
@@ -71,6 +76,11 @@ object SlipRules {
                 p = RuleText.apply(p, found.map { it.change }, month)
                 changes += found.map { "회사 계산 방법: ${it.change.summary}" }
             }
+        }
+
+        if (ruleChanges.isNotEmpty()) {
+            p = RuleText.apply(p, ruleChanges, month)
+            changes += ruleChanges.map { "회사 계산 방법: ${it.summary}" }
         }
 
         // 1. 기본급 or 시급.

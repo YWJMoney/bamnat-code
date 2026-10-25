@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,14 +38,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.company.HowAdopted
-import com.bamnat.app.ui.components.ClipboardHint
 import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.PayRange
 import com.bamnat.core.pay.PayStory
 import com.bamnat.core.pay.PayslipRead
-import com.bamnat.core.pay.PayslipReader
+import com.bamnat.core.pay.RuleChange
 import com.bamnat.core.pay.SlipRulesResult
 import com.bamnat.core.pay.WageType
 import com.bamnat.core.pay.WorkForm
@@ -75,7 +73,7 @@ fun PayQuickSetup(
     /** The month a setup comes to, off the main thread. */
     preview: suspend (PayProfile) -> PayRange,
     /** [PAYS-14] 명세서 (+회사 계산 방법) → rules on top of a setup, off the main thread. */
-    slipRules: suspend (PayProfile, PayslipRead, String?) -> SlipRulesResult?,
+    slipRules: suspend (PayProfile, PayslipRead, List<RuleChange>) -> SlipRulesResult?,
     /** The setup to keep, and whether a payslip filled it. */
     onDone: (PayProfile, Boolean) -> Unit,
     /** 자세히 고치기: the question-by-question setup, starting from what is here so far. */
@@ -112,10 +110,12 @@ fun PayQuickSetup(
 
     var slipOpen by remember { mutableStateOf(false) }
     if (slipOpen) SlipRulesDialog(
-        infer = { read, text ->
+        infer = { read, rules ->
             val f = form ?: guessed ?: WorkForm.OFFICE
-            slipRules(WorkForms.apply(f, amount ?: 0, since, initial, holiday.takeIf { f.asksHoliday }), read, text)
+            slipRules(WorkForms.apply(f, amount ?: 0, since, initial, holiday.takeIf { f.asksHoliday }), read, rules)
         },
+        shiftTypes = snapshot.shiftTypes,
+        fiveOrMore = initial?.fiveOrMoreEmployees ?: true,
         onDismiss = { slipOpen = false },
         onApply = { r ->
             fromSlip = r.profile
@@ -257,31 +257,34 @@ private fun ConfirmPage(
 }
 
 /**
- * [PAYS-14] 명세서 + 회사 계산 방법, two photos read on the phone (사용자 2026-10-25, D68), worked out into the company's rules:
- * what changes in words, the payslip's total against the app's, then 적용. The second photo is optional.
+ * [PAYS-14] 명세서 + 회사 계산 방법, two photos read on the phone (사용자 2026-10-25, D68), worked out into the company's rules.
+ * The photos go through 묶음 U's [PayslipFillDialog] (READ-08: either photo in either slot, the rules found ticked); the
+ * payslip and the ticked rules then go to [infer] with the month's work, and this shows what changes in words and the
+ * payslip's total against the app's before 적용.
  */
 @Composable
 internal fun SlipRulesDialog(
-    infer: suspend (PayslipRead, String?) -> SlipRulesResult?,
+    shiftTypes: List<com.bamnat.core.model.ShiftType>,
+    fiveOrMore: Boolean,
+    infer: suspend (PayslipRead, List<RuleChange>) -> SlipRulesResult?,
     onDismiss: () -> Unit,
     onApply: (SlipRulesResult) -> Unit,
+    kinds: List<com.bamnat.core.model.ExtraKind> = emptyList(),
 ) {
+    var ticked by remember { mutableStateOf(emptyList<RuleChange>()) }
     var read by remember { mutableStateOf<PayslipRead?>(null) }
-    var typing by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf("") }
-    var ruleText by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<SlipRulesResult?>(null) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    fun analyse() {
-        val r = read ?: return
+    fun analyse(r: PayslipRead) {
+        read = r
         busy = true
         failed = false
         scope.launch {
             try {
-                result = infer(r, ruleText)
+                result = infer(r, ticked)
                 failed = result == null
             } catch (e: CancellationException) {
                 throw e
@@ -293,72 +296,33 @@ internal fun SlipRulesDialog(
         }
     }
 
+    if (read == null) {
+        PayslipFillDialog("명세서로 회사 방식 맞추기", onDismiss = onDismiss,
+            rules = RuleTarget(kinds, shiftTypes, fiveOrMore) { changes, _ -> ticked = changes }) { r -> analyse(r) }
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (result == null) "명세서로 회사 방식 맞추기" else "이렇게 바꿀게요") },
+        title = { Text(if (result != null) "이렇게 바꿀게요" else "명세서로 회사 방식 맞추기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val res = result
-                if (res != null) {
-                    SlipRulesSummary(res)
-                    return@Column
-                }
-                Text("사진은 휴대폰 안에서만 읽고 어디에도 보내지 않아요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("1. 급여 명세서", style = MaterialTheme.typography.titleSmall)
-                val r = read
                 when {
-                    r == null -> {
-                        ScanButtons(onText = { t -> text = t; read = PayslipReader.read(t) })
-                        ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() },
-                            onPaste = { t -> text = t; read = PayslipReader.read(t) })
-                        TextButton(onClick = { typing = !typing }) { Text(if (typing) "글로 붙여 넣기 접기" else "글로 붙여 넣기") }
-                        if (typing) {
-                            OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("명세서 글") },
-                                placeholder = { Text("기본급 2,508,000\n야간근로수당 288,000\n지급합계 2,996,000") },
-                                minLines = 4, modifier = Modifier.fillMaxWidth())
-                            Button(onClick = { read = PayslipReader.read(text) }, enabled = text.isNotBlank()) { Text("읽기") }
-                        }
+                    res != null -> SlipRulesSummary(res)
+                    busy -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
                     }
-                    r.lines.isEmpty() -> {
-                        Text("금액을 찾지 못했어요. ‘기본급 2,508,000’처럼 이름과 금액이 함께 보이게 다시 찍어 주세요.")
-                        TextButton(onClick = { read = null }) { Text("다시 찍기") }
-                    }
-                    else -> {
-                        r.month?.let { Text("${it.year}년 ${it.monthValue}월 명세서", style = MaterialTheme.typography.labelLarge) }
-                        SlipPreview(r)
-                        TextButton(onClick = { read = null; result = null }) { Text("명세서 다시 찍기") }
-                    }
+                    failed -> Text("명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
-                HorizontalDivider()
-                Text("2. 회사 계산 방법 (있으면)", style = MaterialTheme.typography.titleSmall)
-                Text("취업규칙·수당 규정·근로계약서에서 ‘야간 근무 1회 5만 원’, ‘공휴일은 특근’처럼 계산 방법이 적힌 부분이에요. " +
-                    "없으면 명세서만으로 맞춰요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val rt = ruleText
-                if (rt == null) ScanButtons(onText = { ruleText = it })
-                else {
-                    val lines = rt.lines().filter { it.isNotBlank() }
-                    Text("글 ${lines.size}줄을 읽었어요: " + lines.take(2).joinToString(" / ").take(80),
-                        style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { ruleText = null }) { Text("빼기") }
-                }
-                if (busy) Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
-                }
-                if (failed) Text("명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         },
         confirmButton = {
             val res = result
             if (res != null) Button(onClick = { onApply(res) }) { Text("이대로 적용") }
-            else Button(onClick = ::analyse, enabled = !busy && read?.lines?.isNotEmpty() == true) { Text("맞춰 보기") }
         },
-        dismissButton = {
-            if (result != null) TextButton(onClick = { result = null }) { Text("다시 하기") }
-            else TextButton(onClick = onDismiss) { Text("취소") }
-        },
+        dismissButton = { TextButton(onClick = { read = null; result = null; ticked = emptyList() }) { Text("다시 하기") } },
     )
 }
 
