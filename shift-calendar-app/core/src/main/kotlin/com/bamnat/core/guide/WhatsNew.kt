@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.25.0 (계획/1.25-사용자발견-전면개선-통합계획.md 1장 5번: U 2·V 2·W 2·X 2·Y 1·Z 1, 10 lines at most; 통합 folds them).
+        Release(36, "1.25.0", listOf(
+            // [FIT-01][FIT-03][TIER-07][VIS-06] Bundle Y.
+            Line("달력마다 하는 일에 맞는 기능만 보이고, 숨긴 건 ‘더 보기’에서 더해요. 새 달력은 ‘어떤 일을 하고 계신가요?’로 시작하고, 프로 기능엔 ‘프로’ 표시와 모아보기, 설정은 색으로 묶였어요", "pro.collection"),
+        )),
         // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md 1장 5번: P 2·Q 1·R 1·S 1, 8 lines at most; 통합 folds them).
         Release(35, "1.24.0", listOf(
             // [ROST-01][ROST-03][ROST-05] Bundle P.

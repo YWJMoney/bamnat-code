@@ -110,10 +110,13 @@ internal fun StyleStep(
         return
     }
     if (forCalendar != null) {
-        StepHeader("$forCalendar 달력은 어떻게 일하세요?", "처음 시작할 때처럼 하나씩 물어볼게요. 이 달력에만 들어가고 다른 달력은 그대로예요.")
+        // [FIT-03] U23: a new calendar asks what it is for, in the user's words first.
+        StepHeader("‘$forCalendar’ 달력으로 어떤 일의 일정을 관리하고 싶으세요?",
+            "하는 일을 적으면 그 일에 맞는 달력과 기능으로 시작해요. 이 달력에만 들어가고 다른 달력은 그대로예요.")
     } else {
-        StepHeader("어떻게 일하세요?", "고르면 바로 다음 질문으로 넘어가요. 나중에 설정에서 바꿀 수 있어요.")
+        StepHeader("어떻게 일하세요?", "하는 일을 적거나 아래에서 골라 주세요. 고르면 바로 다음 질문으로 넘어가요. 나중에 설정에서 바꿀 수 있어요.")
     }
+    JobAsk(onPick = onPick)
     STYLE_CHOICES.forEach { c ->
         ChoiceCard(
             title = c.title,
