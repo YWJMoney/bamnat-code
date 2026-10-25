@@ -183,6 +183,10 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     }
     val hasPay: Boolean get() = c.payStore.profile.value != null
 
+    // [PLAZA-09] Before init: load() fills it.
+    private val _room = MutableStateFlow<Room?>(null)
+    val room: StateFlow<Room?> = _room.asStateFlow()
+
     init {
         load()
     }
@@ -195,6 +199,49 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
             } catch (e: CompanyException) {
                 State.Failed(e.code)
             }
+            loadRoom()
+        }
+    }
+
+    /**
+     * [PLAZA-09] 회사 방 for a member (결정 D79): the version in use with its state (제보 1 · 확인 중, 대표 판, 안정) and only what
+     * the others changed against this phone's own setup, as cards with 이 값 쓰기.
+     */
+    data class Room(val page: com.bamnat.app.company.RoomPage, val cards: List<com.bamnat.core.plaza.RoomCard>, val taken: Set<String> = emptySet())
+
+    private suspend fun loadRoom() {
+        val page = (_state.value as? State.Loaded)?.page ?: return
+        if (!page.member) { _room.value = null; return }
+        val r = runCatching { c.companyApi.room(c.companyStore.device, page.id) }.getOrNull() ?: run { _room.value = null; return }
+        _room.value = Room(r, roomCards(r), _room.value?.taken.orEmpty())
+    }
+
+    private suspend fun roomCards(r: com.bamnat.app.company.RoomPage): List<com.bamnat.core.plaza.RoomCard> {
+        val mine = runCatching { c.companyShare.exportForServer().toString() }.getOrNull() ?: return emptyList()
+        val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
+            .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
+        return com.bamnat.core.plaza.RoomCards.cards(mine, versions)
+    }
+
+    /** 이 값 쓰기: one value of the version behind [card], the rest of the user's setup as it was. */
+    fun take(card: com.bamnat.core.plaza.RoomCard, done: (String, Boolean) -> Unit) {
+        val room = _room.value ?: return
+        val from = (room.page.others + listOfNotNull(room.page.base)).firstOrNull { it.setup == card.from } ?: return
+        viewModelScope.launch {
+            val ok = try {
+                c.companyShare.takeOne(from.text, card.key)
+            } catch (e: BackupException) {
+                false
+            } catch (e: org.json.JSONException) {
+                false
+            }
+            if (ok) {
+                c.telemetry.event("plaza_take", card.key.substringBefore(':'))
+                // [PLAZA-07] A change of the user's own goes to the plaza too, after the one-time yes.
+                c.autoShare.saved()
+                _room.value = Room(room.page, roomCards(room.page), room.taken + "${card.key}=${card.after}")
+            }
+            done(if (ok) "${card.label}${com.bamnat.app.ui.Fmt.obj(card.label)} 바꿨어요. 내 금액은 그대로예요" else "이 값은 따로 쓸 수 없어요. 판 전체를 쓰면 바뀌어요", ok)
         }
     }
 
@@ -208,16 +255,32 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val result = c.companyShare.apply(setup.text, rotation = true, todayStep = todayStep)
+                // [PLAZA-07] 결정 D79: applying is joining. The pay way comes only then, so the page is read again as a member.
+                var text = setup.text
+                if (setup.payHidden || !page.member) {
+                    val m = c.companyApi.join(c.companyStore.device, page.id, com.bamnat.app.company.AutoShare.CAL)
+                    if (!m.joined) {
+                        failed(companyProblem(m.error ?: "member"))
+                        return@launch
+                    }
+                    c.companyStore.setMember(page.id, page.name)
+                    val again = c.companyApi.company(page.id)
+                    _state.value = State.Loaded(again)
+                    again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
+                }
+                val result = c.companyShare.apply(text, rotation = true, todayStep = todayStep)
                 // [PLZ-08] 쓰는 사람: this phone now uses this rule set, and no longer the one before.
                 val before = c.companyStore.applied.value
                 if (before != null && before.setup != setup.id) launch { runCatching { c.companyApi.use(c.companyStore.device, before.company, before.setup, false) } }
-                launch { runCatching { c.companyApi.use(c.companyStore.device, page.id, setup.id, true) } }
+                launch { runCatching { c.companyApi.use(c.companyStore.device, page.id, setup.id, true, com.bamnat.app.company.AutoShare.CAL) } }
                 c.companyStore.setApplied(AppliedSetup(page.id, page.name, setup.dept, setup.id, setup.version, setup.adopted, Today.instant()))
                 c.companyStore.setDraft(null)
-                c.companyStore.pendingPay = if (result.pendingPay) setup.text else null
+                c.companyStore.pendingPay = if (result.pendingPay) text else null
                 c.telemetry.event("company_apply", if (setup.adopted) "adopted" else "pending")
+                loadRoom()
                 done(result)
+            } catch (e: CompanyException) {
+                failed(companyProblem(e.code, e.field))
             } catch (e: BackupException) {
                 failed(e.message ?: "설정을 넣지 못했어요")
             } catch (e: org.json.JSONException) {
@@ -900,6 +963,8 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
                 val status = if (job.isEmpty() && region.isEmpty() && !topic) c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup)
                     else c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup, job, region, topic)
                 c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
+                // [PLAZA-07] Sending a company's setup joins it (결정 D79).
+                status.member?.takeIf { it.joined }?.let { c.companyStore.setMember(status.companyId, status.company) }
                 _statuses.value = _statuses.value + (status.id to status)
                 c.companyStore.setDraft(null)
                 // [SPAT-05] The way on from a public row ends here; the plaza page it went to opens next.

@@ -473,6 +473,19 @@ shift-calendar-app/
 - 관리자 앱: 설정 › '친구 초대' 카드(스테퍼 넷), 보상 화면의 invite 보상은 '친구 초대'(메모 '친구 초대 5명'), 위에 '친구 초대' 요약(코드 수·보상 받음·다음 보상 기다림·상한 넘음·사용 기간 채우는 중·끝남·지금 규칙·최근 30일 막은 이유·친구가 많이 온 코드 5개).
 - 시험: 서버 `test/invite.test.mjs`(12), `test/ui/admin-ui.test.mjs` INVITE-06·INVITE-08, 앱 `tier/InviteAppTest`(실제 Node 서버에서 관리자 로그인으로 규칙 2명·7일 저장, `local-server.mjs --test-clock`으로 서버 시계를 6일·7일 넘김), core `InviteRulesTest`, 사진 `AEScreenshotTest` 1040~1056, `LegalPagesTest.thePrivacyPolicyCoversInvites`. 조사·결정: `research/1.26-AE-초대-조사.md`, `계획/1.26-AE-개발계획.md`.
 
+### 6-18. 회사별 광장: 참여·저절로 나누기·고친 점 카드 (1.26.0 묶음 AF, PLAZA-07~13)
+
+계획과 결정(AF-D1~D9, 사용자 결정 D79)은 프로젝트 파일(git 밖)의 `계획/1.26-AF-개발계획.md`. 묶음 AC가 부르는 제보 API의 요청·응답도 그 5장에 있어요.
+
+- **참여(서버)** `members (device, cal, company_id, since, left)`, `joinCompany()`: 달력 하나에 회사 하나, 바꾸면 30일 뒤(`member_wait`), 휴대폰당 2곳(`member_limit`), 네트워크당 하루 30번. 적용(`POST /api/uses`)·제보(`POST /api/reports`)·`POST /api/members`가 참여예요. 떠나도 30일은 남고 `prune`이 그 뒤 지워요. `DELETE /api/mine`이 함께 지워요.
+- **참여 전엔 근무만** `viewer()`가 `X-Device`로 참여를 보고, 아니면 `shiftsOnly`·`shiftLines`(설정에 `pay: true`·`payHidden`), 바뀐 기록·토론 제안 줄도 근무·순서만. 하루 120번 넘게 읽은 참여 휴대폰은 그날 근무만(`limited`, 메모리 카운터). `/api/board`는 원래 급여 규칙을 싣지 않아요(시험으로 고정). 옛 앱(헤더 없음)도 같은 모양이라 그대로 돼요.
+- **회사 방** `GET /api/companies/:id/room`(참여만): 쓰는 판(`base`, 첫 판이면 `first` = 제보 1 · 확인 중)과 같은 부서 다른 판. `stableOf()` 안정 = 같은 판 휴대폰 3대 이상 + 30일 동안 다른 판·채택 없음. 광장 소식 `kind: "room"`(아직 확인 중인 다른 판, 내 것 제외).
+- **새 정보 보상** `newInfo()`: 회사·부서의 급여 방식까지 담긴 첫 판만 `firstMonths`(관리자 설정, 기본 1개월), 하루 1번·1년 `firstCapYear`(3)번, 넘으면 owed. 근무만 보낸 첫 판은 보상 없이 바로 검색에 나와요(`first: true`). 채택 보상(passes)은 손대지 않았어요.
+- **앱** `CompanyClient`(`device` 람다로 회사 화면에 `X-Device`, `join`·`leave`·`room`, 제보 `cal`·`auto`와 답의 `first`·`newInfo`·`member`, 달력 id는 기본 `main`). `CompanyDetailViewModel.apply`가 먼저 참여하고 다시 읽은 전체 파일(급여 포함)을 넣어요. `RoomSection`(우리 회사 광장), `SetupCard`의 "급여 방식 있음 · 확인 n명 · 쓰면 보여요"·"제보 1 · 확인 중"·"안정".
+- **고친 점 카드·이 값 쓰기** core `RoomCards`(내 파일과 다른 판들을 항목·값별로 묶어 사람 수 합침), `SetupPatch.take(mine, theirs, key)`(그 항목만, 금액·수당 id는 내 것). 앱은 `CompanyShare.takeOne`이 금액 든 내 파일에 덧대 `apply(rotation = false)`, 수당은 PayStore에서 직접, 근무 순서(`cycle:*`)는 판 전체로만.
+- **한 번 묻고 저절로 나누기** `company/AutoShare`: 근무 주기·급여 저장(`ShiftsViewModel`, `PayViewModel.saveSetup`, 기본 달력만)에서 회사를 알면 한 번 물어요(`AutoShareHost`/`AutoShareDialog`, `AppRoot`). 예 → 바로 보내고 그 회사 화면으로. 그 뒤 바뀌면 `autoDirty` → `OutboxJob.scheduleShare`(같은 JobService, ID 4404, 지난 보낸 때 + 24시간 최소 지연), 시작할 때 도는 일은 없어요. 끄기: 설정 › 개인정보·앱 정보 `AUTO_SHARE_ROW`. 키 `auto_share`·`auto_dirty`·`auto_sent_at`·`member`는 휴대폰에만(`SettingsFilesBackup.DEVICE_ONLY`, 새 휴대폰에서 다시 물음).
+- 시험: 서버 `test/plaza-af.test.mjs`, core `PlazaRoomTest`, 앱 `company/PlazaAFAppTest`(실제 node 서버와 끝에서 끝), 사진 `AFScreenshotTest` 1060~1069. 관리자 앱: 회사 목록 "참여 n", 회사 화면 "참여한 휴대폰 n대", 규칙 카드 "안정".
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

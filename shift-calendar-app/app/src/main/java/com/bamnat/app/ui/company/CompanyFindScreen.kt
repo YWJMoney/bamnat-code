@@ -329,10 +329,13 @@ fun CompanyDetailScreen(
     val applied by vm.applied.collectAsStateWithLifecycle()
     val hasPattern by vm.hasPattern.collectAsStateWithLifecycle()
     val votes by vm.votes.collectAsStateWithLifecycle()
+    val room by vm.room.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf<Pair<SharedSetup, Phases>?>(null) }
     var applying by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // [PLAZA-09] What 이 값 쓰기 changed, said once.
+    var notice by remember { mutableStateOf<String?>(null) }
     val page = (state as? CompanyDetailViewModel.State.Loaded)?.page
     // [PLAZA-02] 다른 점 말하기 on one rule set, with this phone's own setup for "내 설정으로 채우기".
     var proposing by remember { mutableStateOf<SharedSetup?>(null) }
@@ -345,7 +348,7 @@ fun CompanyDetailScreen(
 
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; error = it })
+        vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; choosing = null; error = it })
     }
     fun start(p: CompanyPage, s: SharedSetup) {
         if (onPick != null) return onPick(p, s)
@@ -393,6 +396,16 @@ fun CompanyDetailScreen(
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
+                    // [PLAZA-09] 결정 D79: a member's room, only what the others changed, each value to take alone.
+                    room?.takeIf { onPick == null }?.let { r ->
+                        RoomSection(r, onTake = { card -> vm.take(card) { msg, ok -> if (ok) { error = null; notice = msg } else error = msg } })
+                    }
+                    // [PLAZA-08] Not a member: shift times and their order only; the pay way shows after joining.
+                    if (!p.member && p.setups.any { it.payHidden }) {
+                        Text(if (p.limited) "오늘은 많이 봐서 근무 시각·순서만 보여요. 내일 다시 보여요."
+                            else "급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여돼요.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     // [PLAZA-05] The rule set this phone used is no longer the department's 대표 판 (결정 D74): say so once, with
                     // a compare against this phone's own setup, and leave the choice to keep it.
                     val old = applied?.takeIf { it.companyId == p.id && p.setups.none { su -> su.id == it.setup } }
@@ -415,7 +428,10 @@ fun CompanyDetailScreen(
                     // [COMM-14] What only this set has, beside another of the same department.
                     val diffs = remember(p) { com.bamnat.core.plaza.SetupDiff.diff(p.setups.map { it.diffItem() }) }
                     p.setups.forEach { su ->
-                        SetupCard(su, diffs[su.id], applied?.takeIf { it.companyId == p.id && it.setup == su.id }, onUse = { start(p, su) },
+                        val using = applied?.takeIf { it.companyId == p.id && it.setup == su.id }
+                        SetupCard(su, diffs[su.id], using, onUse = { start(p, su) },
+                            // [PLAZA-09] A member reads the others' pay as 고친 점 cards above, the own one in full.
+                            showPay = room == null || using != null || room?.page?.base?.setup == su.id,
                             // [COMM-06][COMM-07] Anyone who knows the company can vote and talk it over, using it or not.
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
@@ -438,6 +454,15 @@ fun CompanyDetailScreen(
                         }
                     }
                     Spacer(Modifier.height(24.dp))
+                }
+            }
+            notice?.takeIf { error == null }?.let { msg ->
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).navigationBarsPadding()) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(msg, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { notice = null }) { Text("닫기") }
+                    }
                 }
             }
             error?.let { msg ->
@@ -511,16 +536,21 @@ private fun SetupCard(
     onHistory: (() -> Unit)? = null,
     onDiff: (() -> Unit)? = null,
     onCompare: (() -> Unit)? = null,
+    showPay: Boolean = true,
 ) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
-    val pay = s.lines - main.toSet()
+    val pay = if (showPay) s.lines - main.toSet() else emptyList()
     SoftCard(highlighted = applied != null) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(s.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 // [PLAZA-05] 결정 D74: the department's 대표 판 is the one most phones use; earlier versions stay in 바뀐 기록.
-                if (s.adopted) StatusChip("대표 판${s.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
+                if (s.adopted) StatusChip("대표 판${s.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                // [PLAZA-10] 결정 D79: the first provider's version shows at once, as 제보 1 · 확인 중.
+                else StatusChip(if (s.senders <= 1) "제보 1 · 확인 중" else "확인 중", Tone.WAIT)
+                // [PLAZA-09] 안정: settled, no more nudges.
+                if (s.stable) { Spacer(Modifier.width(6.dp)); StatusChip("안정", Tone.GOOD) }
             }
             diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
@@ -539,6 +569,10 @@ private fun SetupCard(
                     Icon(if (more) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
                 }
                 AnimatedVisibility(more) { Column { pay.forEach { (label, text) -> SetupLine(label, text) } } }
+            } else if (s.payHidden) {
+                // [PLAZA-08] 결정 D79: that there is one and how many stand behind it, never its values.
+                Text("급여 방식 있음 · 확인 ${s.persons}명 · 쓰면 보여요", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (!s.hasPay) {
                 Text("급여 계산 방식은 없어요. 근무표만 가져와요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -573,6 +607,50 @@ private fun SetupCard(
             if (onTalk != null) {
                 TextButton(onClick = onTalk, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     Text(if (s.posts > 0) "토론 ${s.posts}개 보기 · 고치자고 제안하기" else "토론 열기 · 고치자고 제안하기")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * [PLAZA-09] 우리 회사 광장 (결정 D79), for a phone that joined: where the version in use stands (제보 1 · 확인 중, 대표 판,
+ * 안정) and what others changed against this phone's own setup, one card per value with 이 값 쓰기.
+ */
+@Composable
+internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.core.plaza.RoomCard) -> Unit) {
+    val r = room.page
+    SoftCard(highlighted = true) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("우리 회사 광장", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                val b = r.base
+                when {
+                    b == null -> Unit
+                    b.adopted -> StatusChip("대표 판${b.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                    r.first -> StatusChip("제보 1 · 확인 중", Tone.WAIT)
+                    else -> StatusChip("확인 중", Tone.WAIT)
+                }
+                if (r.stable) { Spacer(Modifier.width(6.dp)); StatusChip("안정", Tone.GOOD) }
+            }
+            Text(
+                when {
+                    r.stable -> "같은 판을 ${r.stablePhones}대 넘게 쓰고 ${r.stableDays}일 동안 바뀐 게 없어요. 이제 바뀐 값 알림은 보내지 않아요."
+                    r.first -> "처음 알려 준 판이에요. 같은 회사 분들이 맞아요·달라요로 다듬어 가요."
+                    else -> "참여했어요. 다른 분들이 바꾼 값만 모아 보여요."
+                },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (room.cards.isEmpty()) {
+                Text("내 설정과 다르게 쓰는 분이 아직 없어요.", style = MaterialTheme.typography.bodyMedium)
+            }
+            room.cards.forEach { card ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(card.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    if (card.canTake) TextButton(onClick = { onTake(card) }) { Text("이 값 쓰기") }
+                }
+                if (!card.canTake) {
+                    Text("근무 순서는 판 전체를 쓰면 바뀌어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

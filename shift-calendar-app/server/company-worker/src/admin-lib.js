@@ -101,6 +101,12 @@ export function adminLib() {
     public: "모두의 문의가 아니에요",
     purchase: "구매 정보를 다시 확인해 주세요",
     rate_limited: "잠시 뒤 다시 해 주세요",
+    // [PLAZA-07][PLAZA-10] 1.26 AF: 회사 참여와 새 정보 보상.
+    member_wait: "이 달력은 회사를 바꾼 지 30일이 지나야 다른 회사로 바꿀 수 있어요",
+    member_limit: "한 휴대폰은 회사 두 곳까지 참여할 수 있어요",
+    member: "이 회사에 참여한 휴대폰만 볼 수 있어요",
+    firstMonths: "새 정보 보상은 0~12개월 사이로 정해 주세요",
+    firstCapYear: "새 정보 보상 한 해 상한은 0~12번 사이로 정해 주세요",
     reason: "이유를 적어 주세요",
     recent: "너무 최근 항목이에요. 잠시 뒤 다시 해 주세요",
     releasedIn: "반영된 앱 버전을 1.23.0처럼 적어 주세요",

@@ -142,6 +142,11 @@ class SettingsFilesBackup(
             "company:invite_laters" to "광장 올리기 권유에 '다음에'를 누른 횟수, 이 휴대폰의 것",
             "company:invite_never" to "광장 올리기 권유 '그만 볼게요', 이 휴대폰의 것",
             "company:hand_made" to "이 휴대폰에서 첫 설정을 손으로 끝냈는지(권유를 띄울 때만 써요)",
+            // [PLAZA-07] 1.26 AF (결정 D79, AF-D9): sharing by itself is asked again on a new phone, like the 동의 기록.
+            "company:auto_share" to "근무 순서·계산 방식을 저절로 나눌지, 이 휴대폰에서 답한 것(새 휴대폰에서 다시 물어요)",
+            "company:auto_dirty" to "저절로 나눌 바뀐 것이 남았는지, 이 휴대폰의 보내기 대기",
+            "company:auto_sent_at" to "저절로 나눈 마지막 때, 하루 한 번을 세는 이 휴대폰의 것",
+            "company:member" to "참여한 회사는 이 휴대폰의 설치 번호로 서버에 있어요",
             "inquiry" to "문의 기록은 이 휴대폰의 설치 번호로 열려요",
             "commute" to "출퇴근 장소의 지도 위 좌표는 다니는 파일에 넣지 않아요",
             "auto_backup" to "자동 백업 폴더와 열쇠(비밀값)",

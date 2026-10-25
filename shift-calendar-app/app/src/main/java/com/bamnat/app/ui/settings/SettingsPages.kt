@@ -660,6 +660,22 @@ internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
     }
 }
 
+/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 저절로 나누기. */
+internal const val AUTO_SHARE_ROW = "회사 광장에 저절로 나누기"
+
+@Composable
+internal fun AutoShareRow() {
+    val c = LocalContext.current.appContainer
+    val on by c.companyStore.autoShare.collectAsStateWithLifecycle()
+    val member by c.companyStore.member.collectAsStateWithLifecycle()
+    SwitchRow(
+        AUTO_SHARE_ROW,
+        "근무 순서와 계산 방식을 바꾸면 하루 한 번 ${member?.second?.ifEmpty { null } ?: "다니는 회사"} 광장에 고쳐 올려요. 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요",
+        on == true,
+        onChange = { c.autoShare.set(it) },
+    )
+}
+
 @Composable
 private fun PrivacyPage(
     vm: SettingsViewModel,
@@ -680,6 +696,8 @@ private fun PrivacyPage(
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
         // the app works the same either way.
         UsageStatsRow(settings.shareUsageStats) { on -> context.appContainer.setUsageStats(on) }
+        // [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes; off stops it.
+        if (context.appContainer.companyApi.enabled) AutoShareRow()
         // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
         val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
         var adWords by remember { mutableStateOf(false) }

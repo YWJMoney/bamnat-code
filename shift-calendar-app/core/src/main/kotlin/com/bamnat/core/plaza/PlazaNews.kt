@@ -16,6 +16,8 @@ data class PlazaNewsItem(
     val result: String? = null,
     /** [COMM-11] The post a result is about, for 이의 제기. */
     val post: String? = null,
+    /** [PLAZA-09] For room: how many other versions came in, in a company this phone joined. */
+    val count: Int = 0,
 )
 
 /**
@@ -46,6 +48,8 @@ object PlazaNews {
                 else -> null
             }
             "unmuted" -> "글쓰기 제한이 끝났어요. 다시 글을 쓸 수 있어요."
+            // [PLAZA-09] 결정 D79: members hear of changes until the company's setup settles.
+            "room" -> "${i.company ?: "참여한 회사"} 광장에 다르게 쓰는 판이 ${i.count.coerceAtLeast(1)}개 올라왔어요. 눌러서 바뀐 값만 봐요."
             else -> null
         }
     }

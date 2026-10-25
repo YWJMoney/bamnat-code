@@ -304,6 +304,43 @@ class CompanyShare(
     data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
 
     /**
+     * [PLAZA-09] 이 값 쓰기 (결정 D79): the one item [key] of [theirs] in place of the user's own, everything else as it was
+     * (amounts, leave days, names of kinds). False when it cannot be taken alone or nothing changed.
+     */
+    suspend fun takeOne(theirs: String, key: String): Boolean {
+        val mine = export("", withAmounts = true)
+        val patched = com.bamnat.core.plaza.SetupPatch.take(mine, theirs, key) ?: return false
+        val before = payStore.profile.value
+        if (key.startsWith("item:")) {
+            // An allowance the user has keeps its id and amount; merge never overwrites one, so it is changed here.
+            val p = before ?: return false
+            val name = key.removePrefix("item:")
+            val o = JSONObject(patched).optJSONObject("pay")?.optJSONArray("items").objects().firstOrNull { it.optString("name") == name }
+            val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+            val have = p.items.firstOrNull { it.name == name }
+            val items = when {
+                o == null -> p.items.filter { it.name != name }
+                have == null -> null
+                else -> {
+                    val types = o.optJSONArray("types")?.let { a -> (0 until a.length()).mapNotNull { ids[a.getString(it).take(MAX_NAME)] }.toSet() } ?: emptySet()
+                    val next = PayCodec.itemFrom(JSONObject(o.toString()).put("types", JSONArray())).copy(id = have.id, amount = have.amount, shiftTypeIds = types)
+                    p.items.map { if (it.name == name) next else it }
+                }
+            }
+            if (items != null) {
+                payStore.save(p.copy(items = items))
+                return true
+            }
+        }
+        apply(patched, rotation = false)
+        // The kinds' own names (extraNames) are the user's: the export leaves them out, so they are put back.
+        payStore.profile.value?.let { now ->
+            if (before != null && now.rules.extraNames != before.rules.extraNames) payStore.save(now.copy(rules = now.rules.copy(extraNames = before.rules.extraNames)))
+        }
+        return true
+    }
+
+    /**
      * [PLZ-10] 내 월급으로 시험: the user's own pay setup with [text]'s rules in place of the company part,
      * nothing saved, so the same month can be worked out both ways on the phone (결정 D36). Shift types
      * are matched by name to the user's own; kinds of extra work the user does not have keep their ids.

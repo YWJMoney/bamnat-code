@@ -577,6 +577,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
+    com.bamnat.app.ui.company.AutoShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
+
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
     LaunchedEffect(lastDeleted) {
