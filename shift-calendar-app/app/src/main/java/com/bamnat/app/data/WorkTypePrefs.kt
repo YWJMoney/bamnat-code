@@ -23,6 +23,9 @@ class WorkTypePrefs private constructor(context: Context) {
     private val state = MutableStateFlow(read())
     val all: StateFlow<Map<String, WorkTypeChoices>> = state.asStateFlow()
 
+    /** [BAK-01] After a restore wrote the file anew. */
+    fun reload() { state.value = read() }
+
     fun of(calendarId: String): WorkTypeChoices = state.value[calendarId] ?: WorkTypeChoices()
 
     fun setOvertimeCap(calendarId: String, hours: Int?) = write(calendarId) { it.copy(overtimeCapHours = hours?.coerceIn(1, 300)) }

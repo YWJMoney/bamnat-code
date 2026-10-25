@@ -461,6 +461,33 @@ internal object HelpFaq {
             listOf("설정 › 프로"),
             "프로 기능 모아보기 열기" to HelpAction.Go(SettingsGo.PRO),
         ),
+        // ---- 1.25 묶음 Z ----
+        // [NAV-02] U4.
+        HelpTopic(
+            "back", "화면", "뒤로 가기를 누르면 어디로 가나요?",
+            "바로 전에 보던 화면으로 가요. 돈 탭에서 설정 탭으로 왔다면 뒤로는 돈 탭(보던 그대로), 급여 설정은 앞 단계, 돈·투자 탭 안의 다른 쪽은 첫 쪽이에요. " +
+                "달력 첫 화면에서는 한 번 누르면 ‘한 번 더 누르면 밤낮이 닫혀요’가 뜨고, 2초 안에 한 번 더 눌러야 닫혀요.",
+            listOf("뒤로", "뒤로 가기", "꺼져요", "앱이 닫혀", "처음으로 가요", "달력으로 가요", "전 화면"),
+            listOf("화면 이동"),
+        ),
+        // [SHFT-09] U25-가.
+        HelpTopic(
+            "deleteShiftType", "근무 종류", "만든 근무 종류를 지우고 싶어요",
+            "설정 › 내 근무 › ‘근무 종류와 시간’에서 근무 옆 휴지통을 눌러요. 그 근무가 달력·근무 주기에 쓰였으면 몇 날인지 알려 주고, 다른 근무로 바꾸거나 비울지 골라요. " +
+                "지운 뒤 아래 ‘되돌리기’를 누르면 날짜·주기까지 그대로 돌아와요. 근무 종류가 하나뿐이면 지울 수 없어요.",
+            listOf("근무 종류 삭제", "근무 지우기", "삭제", "모닝", "필요 없는 근무", "되돌리기"),
+            listOf("근무 종류와 시간", "내 근무"),
+            "근무 종류와 시간 열기" to HelpAction.Page(SettingsPage.WORK, "근무 종류와 시간"),
+        ),
+        // [BAK-01] U8.
+        HelpTopic(
+            "movePhone", "백업", "새 휴대폰으로 설정까지 다 옮길 수 있나요?",
+            "네. 설정 › 데이터 › ‘새 휴대폰으로 옮기기’에서 백업 파일 하나를 만들면 기록과 모든 설정(근무 형태별 연장 상한·세금 방식, 적용한 회사 규칙, 화면 배치, 결제 알림 조정까지)이 들어가요. " +
+                "새 휴대폰에서 ‘파일 불러오기’로 열면 끝이에요. 출퇴근 지도 위치·알람 소리 파일·동의 기록처럼 그 휴대폰의 것만 남고, 무엇이 남는지 그 화면에 적혀 있어요.",
+            listOf("새 휴대폰", "기기 변경", "옮기기", "설정까지", "모든 설정", "폰 바꿈", "이전"),
+            listOf("데이터"),
+            "새 휴대폰으로 옮기기 열기" to HelpAction.Page(SettingsPage.DATA, MOVE_ROW),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
@@ -470,7 +497,7 @@ internal object HelpFaq {
         "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import"),
         "share" to listOf("share", "receive"),
         "company" to listOf("plaza"),
-        "backup" to listOf("backup", "phoneCalendar"),
+        "backup" to listOf("backup", "movePhone", "phoneCalendar"),
         "app" to listOf("widget", "alarm", "turnOff", "profile", "journal"),
     )
 

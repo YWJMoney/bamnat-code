@@ -518,6 +518,10 @@ object FeatureRegistry {
             PAID, "${tab(SHIFT)} › 이번 달 급여 › 값 고치기 › 기간 지정", at(Place.PAY), "일괄 적용", "기간 지정", "인상 계산", "소급", under = "pay.calc"),
         f("money.stats", "TIER-05", "돈 통계", "지난달과 비교, 분류별 지출, 쓰는 속도, 올해 흐름을 그림으로 보여 줘요",
             ALL, "돈 관리 › 분석", at(Place.MONEY, "report"), "분석", "지출 통계", "분류별", "쓰는 속도", "올해 흐름"),
+        // 1.25 묶음 Z (계획/1.25-Z-개발계획.md 402).
+        f("data.movePhone", "BAK-01", "새 휴대폰으로 옮기기", "기록과 모든 설정을 백업 파일 하나로 옮겨요. 이 휴대폰에만 남는 것(지도 위치·알람 소리 등)도 알려 줘요",
+            ALL, "설정 › 데이터 › 새 휴대폰으로 옮기기", at(Place.SETTINGS_DATA, "새 휴대폰으로 옮기기"), "새 휴대폰", "기기 변경", "옮기기", "모든 설정",
+            under = "data.backup"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

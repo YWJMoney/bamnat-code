@@ -25,6 +25,9 @@ class RateHintStore(context: Context) {
     private val _own = MutableStateFlow(readOwn())
     val own: StateFlow<Own> = _own.asStateFlow()
 
+    /** [BAK-01] After a restore wrote the file anew. */
+    fun reload() { _own.value = readOwn() }
+
     /** Adds the groups of one 임금표 look; the same job, region, trade, unit and year is replaced by the newer. */
     fun keep(region: String, groups: List<RateGroup>) {
         if (groups.isEmpty()) return

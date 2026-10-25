@@ -38,6 +38,9 @@ class AutoRecordPrefs(context: Context) {
     val state: StateFlow<State> = _state.asStateFlow()
     val current: State get() = _state.value
 
+    /** [BAK-01] After a restore wrote the file anew. */
+    fun reload() { _state.value = read() }
+
     fun setFilter(filter: CaptureFilter) = edit {
         putStringSet(K_BLOCKED, filter.blockedApps)
         putString(K_WORDS, filter.words.map { CaptureFilter.clean(it) }.filter { it.isNotEmpty() }.distinct().take(CaptureFilter.MAX_WORDS).joinToString("\n"))
