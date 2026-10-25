@@ -39,29 +39,41 @@ import com.bamnat.app.ui.appViewModel
 import com.bamnat.core.time.Today
 
 /**
- * [PAYS-09] Whether the invitation to share the company's way may show, on this phone only: "다음에" puts it off
- * for a month and "그만 볼게요" for good, so it never nags.
+ * [PAYS-09] Whether the invitation to share the company's way may show, on this phone only: [PLAZA-04] "다음에" puts it
+ * off for 14 days, then 30, then 90 ([com.bamnat.core.plaza.ShareAsk]), and "그만 볼게요" for good, so it never nags.
  */
 internal class ShareWayMemory(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("share_way", Context.MODE_PRIVATE)
 
-    fun due(now: Long = Today.millis()): Boolean = !prefs.getBoolean("never", false) && now >= prefs.getLong("later", 0)
+    fun due(now: Long = Today.millis()): Boolean =
+        com.bamnat.core.plaza.ShareAsk.due(prefs.getBoolean("never", false), prefs.getLong("later", 0), now, usesCompanySetup = false)
 
-    fun later(now: Long = Today.millis()) = prefs.edit().putLong("later", now + LATER_MILLIS).apply()
+    fun later(now: Long = Today.millis()) {
+        val laters = prefs.getInt("laters", 0) + 1
+        prefs.edit().putInt("laters", laters).putLong("later", com.bamnat.core.plaza.ShareAsk.nextDue(laters, now)).apply()
+    }
 
     fun never() = prefs.edit().putBoolean("never", true).apply()
-
-    companion object {
-        const val LATER_MILLIS = 30L * 24 * 60 * 60 * 1000
-    }
 }
 
-/** [PAYS-09] What just happened, which decides how the invitation is worded. */
+/**
+ * [PAYS-09] What just happened, which decides how the invitation is worded; [PLAZA-04] each in the words of
+ * [com.bamnat.core.plaza.ShareAsk.Moment] of the same name. [PAYSLIP] is for rules read from a payslip or a company
+ * rule photo and applied (묶음 V): show [ShareWayCard] with it right after they are applied.
+ */
 enum class ShareMoment {
     /** The payslip and the app came to the same month. */
     MATCHED,
     /** The user made an item of the company's own. */
     MADE,
+    /** The first setup was finished by hand. */
+    SETUP,
+    /** The pay setup was made by hand. */
+    PAY,
+    /** Rules read from a payslip or a company rule photo were applied. */
+    PAYSLIP;
+
+    val title: String get() = com.bamnat.core.plaza.ShareAsk.Moment.valueOf(name).title
 }
 
 /**
@@ -104,7 +116,7 @@ fun ShareWayCard(
                 Icon(Icons.Filled.Groups, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    if (moment == ShareMoment.MATCHED) "명세서와 맞았어요. 이 방식을 동료와 나눌까요?" else "우리 회사 방식, 동료에게도 알려 줄까요?",
+                    moment.title,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )

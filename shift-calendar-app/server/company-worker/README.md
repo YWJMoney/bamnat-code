@@ -125,7 +125,9 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 - 명세서로 맞춰 본 제보는 2점, 그 밖의 제보는 1점이에요. 다른 분의 "맞았어요"는 1점이고, 명세서로 맞춰 봤다면 2점이에요. 한 휴대폰은 한 번만 세요. "달라요"를 누른 분의 점수는 빠져요.
 - 모두 1시간 안에 같은 네트워크(회사 와이파이 등)에서 보낸 설정은 자동으로 채택하지 않고 개발자가 확인해요. 한 분이 여러 번 보냈을 수도 있어서예요.
 - 이미 쓰는 규칙이 있으면, 그 규칙을 고치자고 보낸 설정(토론의 "고치자는 제안"이나 `amends`를 단 제보)에 서로 다른 3명(설정 2~10명)이 맞아요 하면 다음 버전으로 바뀌어요.
-  그 밖의 다른 설정은 개발자가 정해요. 개발자가 거절하거나 내린 설정은 다시 모여도 자동으로 채택되지 않아요 [PLZ-02].
+- **대표 판(결정 D74, 1.25 묶음 X)**: 같은 부서의 다른 설정도 채택 조건(사람 수·맞았어요 비율)을 채우고 지지가 쓰는 규칙보다 크면 다음 버전(`source: "rival"`)이 돼요.
+  지지 `support = (쓰는 휴대폰 + 보내거나 맞았어요 한 사람 + 명세서 확인 제보) × (0.5 + 윌슨 하한/200)`이고, 관리자 앱 여러 판의 추천도 같은 함수예요. 같으면 쓰던 규칙이 남아요.
+  쓰던 휴대폰에는 광장 소식 `changed`가 가고, 이전 버전은 이력에 남아 앱에서 비교하고 되돌릴 수 있어요. 개발자가 거절하거나 내린 설정은 다시 모여도 자동으로 채택되지 않아요 [PLZ-02][PLAZA-05].
 - 바뀐 규칙의 이전 버전은 지워지지 않고 이력(`/history`)에 남아요. 이전 버전의 토론은 읽기만 돼요 [PLZ-04].
 - 채택되면 그때까지 보낸 분마다 보상이 기록되고, 자동 지급이 켜져 있으면 처음 보낸 세 분과 제안한 분께 바로 이용권(이미 결제 중이면 Play 다음 결제 미룸)으로 드려요.
   한 휴대폰이 90일(설정) 안에 자동으로 받는 보상은 3개월(설정)까지예요. 나머지는 보상 화면에 "지급 대기"로 남아요. 투표한 분께는 보상이 없어요(결정 D33) [PLZ-03].
@@ -150,8 +152,8 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 
 | 요청 | 하는 일 |
 | --- | --- |
-| `GET /api/companies?q=` | 회사 찾기. 띄어쓰기, (주), 주식회사, Co., Ltd.는 빼고 찾아요. 아직 확인 중인 회사는 이름이 똑같을 때만 나와요. |
-| `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정, 각 설정을 풀어 쓴 줄(`lines`) |
+| `GET /api/companies?q=` | 회사 찾기. 띄어쓰기, (주), 주식회사, Co., Ltd.는 빼고 찾아요. 아직 확인 중인 회사는 이름이 똑같을 때만 나와요. 초성만 두 글자 넘게(`ㅅㅅㅈㅈ`) 적으면 쓰는 규칙이 있는 회사를 초성으로 찾아요(`companies.cho`·`aliases.cho`, 처음 찾을 때 500개씩 채움) [PLAZA-03] |
+| `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정, 각 설정을 풀어 쓴 줄(`lines`), 지지(`support`) [PLAZA-05]. 설정에는 순서(`rotation`) 대신 요일별 근무 `weekly`(월~일 7칸, 근무 이름이나 null)나 매달 근무표 `roster: true`가 있을 수 있어요 [PLAZA-01] |
 | `GET /api/terms` | 채택 점수와 채택 보상 기간 (보내기 전에 앱이 보여 줘요) |
 | `POST /api/reports` | 제보 보내기 `{v: 1, device, company, dept, verified, note, setup}`. 앱에 없는 방식이면 `ask: true`와 설명(1500자까지)을 `note`에. 선택: `job`(직군 광장), `region`(시·도 코드), `topic: true`(회사 없이 직군 공통 규칙, `job` 필요), `amends`(고치려는 쓰는 규칙 id) [PLZ-02][PLZ-12] |
 | `GET /api/reports/:id` | 제보가 어디까지 왔는지: 점수, 채택, 거절 이유, 보상 |
@@ -160,7 +162,7 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | `POST /api/votes` | 맞았어요·달라요 `{device, company, setup, ok, verified?, why?}` |
 | `GET /api/board?tab=voting\|adopted&from=&q=&job=&region=&sort=` | 회사 규칙 광장: 모든 회사의 투표 중인 규칙(최근 활동 순)이나 채택된 규칙, 20개씩. `q`는 회사 이름이나 다른 이름(회사 찾기처럼 띄어쓰기·(주) 무시, 두 글자부터) [COMM-07]. `job`은 직군 광장, `region`은 시·도 코드, `sort`는 `recent`·`trust`·`used` [PLZ-05][PLZ-12] |
 | `GET /api/plazas` | 직군 광장 목록(채택·투표 중·시세 수), 시·도, 제안 항목, 시세 단위 [PLZ-12] |
-| `GET /api/companies/:id/history?setup=` | 한 부서 규칙이 거쳐 온 버전: 채택 방식(`auto`·`amend`·`developer`), 날짜, 앞 버전과 달라진 줄, 제안한 글 [PLZ-04] |
+| `GET /api/companies/:id/history?setup=` | 한 부서 규칙이 거쳐 온 버전: 채택 방식(`auto`·`amend`·`rival`·`promote`·`developer`), 날짜, 앞 버전과 달라진 줄, 제안한 글, 그 버전의 설정 `body`(비교·되돌리기) [PLZ-04][PLAZA-05] |
 | `GET /api/companies/:id/setups/:setup/posts` | 한 규칙의 토론. 헤더 `X-Device`가 있으면 내 글 표시와 가려진 내 글의 이유 [COMM-06] |
 | `POST /api/posts` | 토론 글 `{device, company, setup, body, parent?, kind?}` (500자까지). `parent`는 답글, `kind`는 `talk`·`question`·`proposal`. 고치자는 제안은 `change: [{field, now, want, why}]`(6줄까지, 금액 없이)와 고친 설정 `proposal`을 함께 [PLZ-05][PLZ-09] |
 | `POST /api/posts/:id/vote` | 글에 맞아요·달라요 `{device, ok: true\|false\|null}`(null은 취소). 제안 글이면 그 설정에 대한 투표도 돼요 [PLZ-01] |

@@ -135,9 +135,13 @@ class PayViewModel(
     }
 
     // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
-    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false) = viewModelScope.launch {
+    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
+        // [PAYS-15] Not when the screen asks itself right away (PlazaAskDialog after a payslip): one ask, not two.
+        if (invite && container.companyStore.applied.value == null) _shareMoment.value =
+            if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
         read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
@@ -148,6 +152,14 @@ class PayViewModel(
     }
 
     fun reset() = viewModelScope.launch { payStore.save(null) }
+
+    private val _shareMoment = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.ShareMoment?>(null)
+    /** [PLAZA-04] The pay was just set up by hand (or from a payslip): the plaza invitation shows once on the pay screen. */
+    val shareMoment: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.ui.company.ShareMoment?> = _shareMoment
+
+    fun shareShown() {
+        _shareMoment.value = null
+    }
 
     /** [TAX-02] The calendar's pay records, so 세후 예상 under the total follows a newly read or typed month. */
     val payRecords = container.tax(calendarId).observations

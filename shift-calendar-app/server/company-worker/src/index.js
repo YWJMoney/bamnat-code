@@ -529,6 +529,11 @@ const COLUMNS = [
   "ALTER TABLE reply_templates ADD COLUMN topic TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE reply_templates ADD COLUMN uses INTEGER NOT NULL DEFAULT 0",
   // H 1.23 끝
+  // X 1.25 시작
+  // [PLAZA-03] The 초성 of a name ("ㅅㅅㅈㅈ"), filled by search when empty, so 초성 alone finds a company.
+  "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
+  // X 1.25 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -837,6 +842,14 @@ export function cleanSetup(raw, texts = []) {
     if (steps.length === 0) refuse("setup", "rotation");
     setup.rotation = { anchor: date(r.anchor, "rotation"), steps };
   }
+  // [PLAZA-01] Weekday and part-time work by the day of the week (Monday first), and a roster that comes every
+  // month (간호): kept only when sent, so every setup from before keeps its fingerprint.
+  if (given(raw.weekly)) {
+    const w = list(raw.weekly, 7, "weekly");
+    if (w.length !== 7) refuse("setup", "weekly");
+    setup.weekly = w.map((s) => (s === null ? null : names.has(s) ? s : refuse("setup", "weekly")));
+  }
+  if (bool(raw.roster ?? false, "roster")) setup.roster = true;
 
   if (given(raw.pay)) {
     const p = object(raw.pay, "pay");
@@ -911,6 +924,8 @@ function rules(raw, names, kindIds, say) {
   // [PAYS-03] Kept only when set, so a setup without them keeps its fingerprint and reads as before.
   if (bool(r.supervisory ?? false, "rules")) out.supervisory = true;
   if (bool(r.holidaysU5 ?? false, "rules")) out.holidaysU5 = true;
+  // [HOLI-01][PLAZA-01] 1.25 V: 교대제라 상관없음 is told from 대체휴일 (both unpaid 빨간날) only by this, kept only then.
+  if (out.publicHolidays === false && r.holidayWork === "SHIFT_NORMAL") out.holidayWork = "SHIFT_NORMAL";
   const breakPay = oneOf(r.breakPay ?? "UNPAID", BREAK_PAY, "rules");
   if (breakPay !== "UNPAID") out.breakPay = breakPay;
   if (given(r.publicHolidayAs)) {
@@ -1092,6 +1107,9 @@ function canonical(setup) {
   const r = p?.rules;
   return {
     cycle: smallestRotation((setup.rotation?.steps ?? []).map(sig)),
+    // [PLAZA-01] Only when there, so a setup without them reads as it always did.
+    ...(setup.weekly ? { weekly: setup.weekly.map(sig) } : {}),
+    ...(setup.roster ? { roster: true } : {}),
     kinds: kinds.map((k) => ({ key: kindOf(k.id), ...k.sig })).sort((a, b) => cmp(a.key, b.key)),
     pay: p ? {
       fiveOrMore: p.fiveOrMore,
@@ -1176,6 +1194,9 @@ export function describe(setup) {
   add("근무", setup.shiftTypes.map((t) => (t.off ? `${t.name}(쉬는 날)`
     : `${t.name} ${t.start ?? "?"}~${t.end ?? "?"}${t.break ? ` 휴게 ${t.break}분` : ""}`)).join(" · "));
   if (setup.rotation) add(`순서 ${setup.rotation.steps.length}일`, setup.rotation.steps.map((s) => s ?? "빈 날").join(" "));
+  // [PLAZA-01] The same words as the app's SetupFacts.
+  if (setup.weekly) add("요일별 근무", setup.weekly.map((s, i) => `${"월화수목금토일"[i]} ${s ?? "쉼"}`).join(" · "));
+  if (setup.roster) add("근무표", "매달 근무표(순서 없음)");
   const kinds = kindLines(setup);
   const kindName = (id) => kinds.find((k) => k.id === String(id))?.name ?? KIND_NAMES[id] ?? `종류 ${id}`;
   add("연장·휴무일 근무", kinds.filter((k) => !k.hidden).map((k) => `${k.name}(${timingText(k)})`).join(" · "));
@@ -1192,13 +1213,20 @@ export function describe(setup) {
       if (r.nightStart && r.nightEnd) add("야간 시간", `${r.nightStart}~${r.nightEnd}`);
       add("쉬는 날 근무", { LAW: "법대로", HOLIDAY: "휴일근로로", OVERTIME: "연장근로로" }[r.restDay]);
       add("주휴일", r.weeklyHolidayDay === "FIRST_REST" ? "쉬는 날 중 첫날" : WEEKDAYS[r.weeklyHolidayDay] ? `${WEEKDAYS[r.weeklyHolidayDay]}요일` : "");
-      if (r.publicHolidayAs) add("공휴일 근무", `${kindName(r.publicHolidayAs)} 방식`);
+      // [HOLI-01] 빨간날 근무, one of four ways; the same words as the app's SetupFacts.holidayText.
+      if (p.fiveOrMore || r.publicHolidayAs) add("빨간날 근무", holidayText(r, r.publicHolidayAs ? kindName(r.publicHolidayAs) : null));
       for (const [k, e] of Object.entries(r.extra)) add(kindName(k), ruleText(e));
       for (const [k, by] of Object.entries(r.extraByShift)) for (const [n, e] of Object.entries(by)) add(`${kindName(k)} · ${n}`, ruleText(e));
     }
     if (p.items.length) add("수당", p.items.map(itemText).join(" · "));
   }
   return lines;
+}
+
+function holidayText(r, kind) {
+  const mode = r.publicHolidays === false ? (r.holidayWork === "SHIFT_NORMAL" ? "SHIFT_NORMAL" : "SUBSTITUTE") : r.publicHolidayAs ? "AS_EXTRA" : "PREMIUM";
+  const head = { PREMIUM: "휴일 근무 가산", AS_EXTRA: `${kind ?? "특근"}처럼`, SUBSTITUTE: "대체휴일", SHIFT_NORMAL: "교대제라 상관없음" }[mode];
+  return head + (r.holidayByStart && (mode === "PREMIUM" || mode === "AS_EXTRA") ? ", 밤샘은 시작한 날로" : "");
 }
 
 function timingText(k) {
@@ -1265,7 +1293,9 @@ async function terms(env) {
 }
 
 async function search(env, url) {
-  const q = normName(url.searchParams.get("q")).slice(0, 40);
+  const raw = String(url.searchParams.get("q") ?? "");
+  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) });
+  const q = normName(raw).slice(0, 40);
   if (q.length < 2) return json({ companies: [] });
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await all(env, `
@@ -1287,6 +1317,63 @@ async function search(env, url) {
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending }));
   return json({ companies });
+}
+
+// ---- [PLAZA-03] 초성 찾기 ----
+
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+
+/**
+ * The 초성 of each Hangul syllable of [s] (U+AC00..U+D7A3 is (초성 × 21 + 중성) × 28 + 종성, so 초성 = (code − 0xAC00) / 588,
+ * The Unicode Standard 3.12); other letters and digits as they are. The app's core Choseong is the same rule.
+ */
+export function choseong(s) {
+  let out = "";
+  for (const ch of String(s ?? "")) {
+    const c = ch.codePointAt(0);
+    if (c >= 0xac00 && c <= 0xd7a3) out += CHO[Math.floor((c - 0xac00) / 588)];
+    else if (CHO.includes(ch)) out += ch;
+    else if (/[\p{L}\p{N}]/u.test(ch)) out += ch.toLowerCase();
+  }
+  return out;
+}
+
+/** Whether [q] is 초성 only (two or more), typed as compatibility jamo (ㅅ is U+3145). */
+export function isChoseong(q) {
+  const t = String(q ?? "").replace(/\s/g, "");
+  return t.length >= 2 && [...t].every((ch) => CHO.includes(ch));
+}
+
+/** Names whose 초성 were not worked out yet (new, renamed, or from before 1.25) get them, a batch at a time. */
+async function fillChoseong(env) {
+  const [cs, as] = await Promise.all([
+    all(env, "SELECT id, norm FROM companies WHERE cho = '' LIMIT 500"),
+    all(env, "SELECT norm FROM aliases WHERE cho = '' LIMIT 500"),
+  ]);
+  if (!cs.length && !as.length) return;
+  await batch(env, [
+    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ? WHERE id = ?", choseong(c.norm) || "-", c.id)),
+    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ? WHERE norm = ?", choseong(a.norm) || "-", a.norm)),
+  ]);
+}
+
+async function searchChoseong(env, q) {
+  await fillChoseong(env);
+  const like = `%${q}%`;
+  const rows = await all(env, `
+    SELECT c.id, c.name, c.cho,
+      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1 LIMIT 1) AS alias,
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+    FROM companies c
+    WHERE c.hidden = 0 AND c.merged_into IS NULL
+      AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
+    LIMIT 200`, like);
+  // 초성 are a guess by nature: only companies with a rule in use, those starting with them first.
+  return rows.filter((c) => c.adopted > 0)
+    .sort((a, b) => b.cho.startsWith(q) - a.cho.startsWith(q) || a.name.length - b.name.length || a.name.localeCompare(b.name, "ko"))
+    .slice(0, 20)
+    .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending }));
 }
 
 async function company(env, id) {
@@ -1337,7 +1424,8 @@ async function state(env, companyId, grp, threshold, adopted) {
       (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
       (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
       (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
-        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked`, companyId, grp);
+        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp);
   const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
       WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
   // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
@@ -1346,7 +1434,28 @@ async function state(env, companyId, grp, threshold, adopted) {
       UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
     ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
+    // [PLAZA-05] What decides the 대표 판 of a department (D74): phones using it, people behind it, less 달라요.
+    support: support({ uses: who.uses, ok: s.persons, bad: s.bad, verified: who.sentChecked }),
     ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
+}
+
+/**
+ * [PLAZA-05] 지지 (결정 D74, X-D3), the one score for which 판 of a department should be its 대표 판: phones that use it,
+ * people who sent or backed it ([ok]) and pay-slip checks of a waiting one ([verified]), weighed by the Wilson share of
+ * 맞았어요 among 맞았어요·달라요. The developer's 같은 회사 여러 판 screen recommends by the same score ([ADMUX-18]), so the
+ * plaza's own choice and the recommendation never disagree. One decimal.
+ */
+export const support = (c) => Math.round(10 * (c.uses + c.ok + (c.verified ?? 0)) * (0.5 + wilson(c.ok, c.ok + c.bad) / 200)) / 10;
+
+/** [PLAZA-05] Whether [grp] has more 지지 than [active], the department's 대표 판; a tie keeps the one in use. */
+async function outweighs(env, companyId, grp, active) {
+  const uses = (g) => one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", companyId, g);
+  // A pay-slip check counts on either side, as on the developer's screen.
+  const checked = (g) => one(env, "SELECT COUNT(*) AS n FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted') AND verified = 1", companyId, g);
+  const [mine, theirs, mineUses, theirUses, mineChecked, theirChecked] = await Promise.all([score(env, companyId, grp), score(env, companyId, active.grp),
+    uses(grp), uses(active.grp), checked(grp), checked(active.grp)]);
+  return support({ uses: mineUses.n, ok: mine.persons, bad: mine.bad, verified: mineChecked.n })
+    > support({ uses: theirUses.n, ok: theirs.persons, bad: theirs.bad, verified: theirChecked.n });
 }
 
 /**
@@ -1519,7 +1628,20 @@ async function settle(env, companyId, grp, now) {
   const active = await activeRule(env, companyId, rep.dept_norm);
   const amends = await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND amends = ? LIMIT 1`,
     companyId, grp, active?.id ?? "");
-  if (amends) await adopt(env, companyId, grp, "amend", now);
+  if (amends) return adopt(env, companyId, grp, "amend", now);
+  // [PLAZA-05] Another setup for the same department (U26: "같은 회사 2개") becomes its 대표 판 once it is adopted
+  // by its own right and more people stand behind it than behind the one in use (결정 D74). The one it replaces
+  // is kept as an earlier version in the history, never deleted, and its users hear of it in 광장 소식.
+  if (!active || s.persons < adoptPersons || await turnedDown(env, companyId, grp)) return;
+  if (await outweighs(env, companyId, grp, active)) await adopt(env, companyId, grp, "rival", now);
+}
+
+/** [PLAZA-05] The developer took this setup down or turned it down: it never takes a department over by itself. */
+async function turnedDown(env, companyId, grp) {
+  const row = await one(env, `SELECT
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 1) AS withdrawn,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'rejected') AS rejected`, companyId, grp);
+  return Boolean(row.withdrawn || row.rejected);
 }
 
 /**
@@ -2142,6 +2264,8 @@ async function history(env, companyId, url) {
       version: r.version, setup: r.grp, source: r.source, adoptedAt: iso(r.adopted_at),
       state: r.withdrawn ? "withdrawn" : r.superseded ? "superseded" : "active",
       senders: senders.n, post: proposed?.post_id ?? null,
+      // [PLAZA-05] What the version was, so the app can compare it and put it back on a phone.
+      body: shared(r.setup, c.name),
       changes: before ? diffLines(describe(before), describe(setup)) : [],
     });
     before = setup;
@@ -4777,7 +4901,7 @@ async function updateCompany(request, env, id, now) {
     // The old name keeps finding the company.
     if (norm !== c.norm) stmts.push(stmt(env, "INSERT OR IGNORE INTO aliases (norm, company_id, name) VALUES (?, ?, ?)", c.norm, id, c.name));
     stmts.push(stmt(env, "DELETE FROM aliases WHERE norm = ? AND company_id = ?", norm, id));
-    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ? WHERE id = ?", name, norm, id));
+    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '' WHERE id = ?", name, norm, id));
   }
   if (body.hidden !== undefined) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
@@ -6314,7 +6438,7 @@ async function versions(env, show) {
     env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
     env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at FROM reports WHERE status = 'pending'
       ORDER BY verified DESC, created_at DESC`),
-    env.DB.prepare("SELECT company_id, grp, device, points, cluster FROM reports WHERE status IN ('pending', 'adopted')"),
+    env.DB.prepare("SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE status IN ('pending', 'adopted')"),
     env.DB.prepare("SELECT company_id, grp, device, ok, verified, cluster FROM votes"),
     env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM uses GROUP BY company_id, grp"),
     env.DB.prepare("SELECT company_id, grp, COUNT(*) AS n FROM posts WHERE status = 'shown' GROUP BY company_id, grp"),
@@ -6324,6 +6448,9 @@ async function versions(env, show) {
   const { adoptPoints } = readSettings(settingRows);
   const scores = tallies(reports, votes);
   const used = new Map(useRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
+  // [PLAZA-05] Pay-slip-checked reports of every 판, the rule in use too, as the plaza's own 지지 counts them.
+  const checked = new Map();
+  for (const r of reports) if (r.verified === 1) checked.set(`${r.company_id}/${r.grp}`, (checked.get(`${r.company_id}/${r.grp}`) ?? 0) + 1);
   const talk = new Map(postRows.map((u) => [`${u.company_id}/${u.grp}`, u.n]));
   const names = new Map(companyRows.map((c) => [c.id, c.name]));
   const depts = new Map();
@@ -6335,7 +6462,7 @@ async function versions(env, show) {
   const card = (company, grp, more) => {
     const sc = scores.get(`${company}/${grp}`) ?? NO_SCORE;
     return { setup: grp, uses: used.get(`${company}/${grp}`) ?? 0, ok: sc.persons, bad: sc.bad, points: sc.points, ...trust(sc, adoptPoints),
-      wilson: wilson(sc.persons, sc.persons + sc.bad), posts: talk.get(`${company}/${grp}`) ?? 0, ...more };
+      wilson: wilson(sc.persons, sc.persons + sc.bad), posts: talk.get(`${company}/${grp}`) ?? 0, verified: checked.get(`${company}/${grp}`) ?? 0, ...more };
   };
   for (const r of ruleRows) {
     at(r.company_id, r.dept_norm, r.dept).list.push(card(r.company_id, r.grp, {
@@ -6348,7 +6475,7 @@ async function versions(env, show) {
     seen.add(key);
     const reportsOf = groupRows.filter((x) => x.company_id === g.company_id && x.grp === g.grp);
     at(g.company_id, g.dept_norm, g.dept).list.push(card(g.company_id, g.grp, {
-      state: "pending", reports: reportsOf.length, verified: reportsOf.filter((x) => x.verified === 1).length,
+      state: "pending", reports: reportsOf.length,
       at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup }));
   }
   const out = [];
@@ -6361,7 +6488,7 @@ async function versions(env, show) {
     const active = d.list.find((c) => c.state === "active");
     const base = active ? describe(JSON.parse(active.raw)) : null;
     // The one most people took and trust: phones that use it, people who sent or backed it, over the Wilson share.
-    const score = (c) => (c.uses + c.ok + (c.verified ?? 0)) * (0.5 + c.wilson / 200);
+    const score = support;
     const best = live.length ? live.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
     const order = { active: 0, pending: 1, previous: 2 };
     out.push({

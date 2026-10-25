@@ -34,9 +34,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.company.HowAdopted
 import com.bamnat.core.pay.HolidayWork
 import com.bamnat.core.schedule.PatternTimeline
@@ -349,6 +353,10 @@ internal fun SlipRulesSummary(res: SlipRulesResult) {
  */
 @Composable
 internal fun PlazaAskDialog(onShare: () -> Unit, onDismiss: () -> Unit) {
+    // [PLAZA-04] The reward as the server gives it now (rewardLine), the same words as every other plaza invitation.
+    val container = LocalContext.current.appContainer
+    val terms = if (container.companyApi.enabled)
+        appViewModel { com.bamnat.app.ui.company.CompanyNudgeViewModel(it) }.terms.collectAsStateWithLifecycle().value else null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("같은 회사 사람들도 바로 쓰게 해 주실래요?") },
@@ -356,7 +364,7 @@ internal fun PlazaAskDialog(onShare: () -> Unit, onDismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("방금 명세서로 맞춘 계산 방식을 광장에 올리면, 같은 회사 분들은 회사 이름만 찾아서 1분이면 설정이 끝나요. " +
                     "금액과 이름은 올라가지 않아요.", style = MaterialTheme.typography.bodyMedium)
-                HowAdopted(3, "채택되면 프로 이용권을 드려요. 기간은 광장 화면에 적혀 있어요")
+                HowAdopted(terms?.threshold ?: 3, com.bamnat.app.ui.company.rewardLine(terms))
             }
         },
         confirmButton = { Button(onClick = onShare) { Text("광장에 올리기") } },

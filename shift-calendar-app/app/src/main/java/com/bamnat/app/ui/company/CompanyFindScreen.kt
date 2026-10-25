@@ -118,6 +118,8 @@ fun CompanyFindScreen(
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+    // [NAV-02][PLAZA-03] Back first clears the search, as 메모·설정 do (1.25 Z), and only then leaves the screen.
+    androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) { vm.query.value = "" }
     val result by vm.result.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
@@ -152,7 +154,7 @@ fun CompanyFindScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { vm.query.value = it.take(40) },
-                    placeholder = { Text("회사 이름 (예: 예시정밀)") },
+                    placeholder = { Text("회사 이름이나 초성 (예: 예시정밀, ㅇㅅㅈㅁ)") },
                     leadingIcon = { Icon(Icons.Outlined.Search, null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) IconButton(onClick = { vm.query.value = "" }) { Icon(Icons.Filled.Close, "지우기") }
@@ -179,6 +181,11 @@ fun CompanyFindScreen(
                             NotFound(r.query, rewardLine(terms), ready) { byHand(r.query) }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // [PLAZA-03] 초성 찾기 only offers companies whose rule is in use, so a guess never leads to an empty page.
+                                if (com.bamnat.core.plaza.Choseong.isQuery(r.query)) {
+                                    Text("초성으로 찾았어요. 쓰는 설정이 있는 회사만 보여요.", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                                 r.hits.forEach { hit -> CompanyRow(hit) { keyboard?.hide(); onOpen(hit.id) } }
                                 TextButton(onClick = { byHand(r.query) }) {
                                     Text(if (ready) "여기 없어요. ‘${r.query}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query}’로 직접 설정할게요")
@@ -211,7 +218,7 @@ private fun HowItWorks() {
     SoftCard {
         Column(Modifier.padding(16.dp)) {
             Text("이렇게 끝나요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 6.dp))
-            HowStep(1, "회사 찾기", "띄어쓰기나 (주)는 빼고 적어도 찾아요")
+            HowStep(1, "회사 찾기", "띄어쓰기나 (주)는 빼고, 초성(ㅇㅅㅈㅁ)만 적어도 찾아요")
             HowStep(2, "오늘 근무 고르기", "같은 회사라도 조마다 순서가 달라서, 오늘이 어떤 근무인지만 골라요")
             HowStep(3, "내 기본급 넣기", "근무 시간, 연장·휴무일 근무, 가산 방식은 이미 들어 있어요")
         }
@@ -234,7 +241,7 @@ private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
                 Text(
                     listOfNotNull(
                         hit.alias?.let { "다른 이름 $it" },
-                        if (hit.adopted > 0) "채택된 설정 ${hit.adopted}개" else null,
+                        if (hit.adopted > 0) "쓰는 설정 ${hit.adopted}개" else null,
                         if (hit.pending > 0) "확인 중 ${hit.pending}개" else null,
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -309,6 +316,14 @@ fun CompanyDetailScreen(
     var applying by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val page = (state as? CompanyDetailViewModel.State.Loaded)?.page
+    // [PLAZA-02] 다른 점 말하기 on one rule set, with this phone's own setup for "내 설정으로 채우기".
+    var proposing by remember { mutableStateOf<SharedSetup?>(null) }
+    var mine by remember { mutableStateOf<String?>(null) }
+    var sending by remember { mutableStateOf(false) }
+    var sendError by remember { mutableStateOf<String?>(null) }
+    // [PLAZA-02][PLAZA-05] Two rule sets of one department side by side: the 대표 판 and another, or a past version.
+    var comparing by remember { mutableStateOf<Compare?>(null) }
+    var keepOld by rememberSaveable { mutableStateOf(false) }
 
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
@@ -360,6 +375,25 @@ fun CompanyDetailScreen(
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
+                    // [PLAZA-05] The rule set this phone used is no longer the department's 대표 판 (결정 D74): say so once, with
+                    // a compare against this phone's own setup, and leave the choice to keep it.
+                    val old = applied?.takeIf { it.companyId == p.id && p.setups.none { su -> su.id == it.setup } }
+                    val lead = old?.let { o -> p.setups.firstOrNull { it.adopted && it.dept == o.dept } }
+                    if (old != null && lead != null && onPick == null && !keepOld) {
+                        SoftCard(highlighted = true) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("쓰시던 판 대신 새 대표 판이 생겼어요", style = MaterialTheme.typography.titleSmall)
+                                Text("같은 부서 분들이 더 많이 쓰는 판이에요. 내 설정과 비교해 보고 바꿀지 정해 주세요. 그대로 두셔도 돼요.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { scope.launch { vm.mine()?.let { m -> comparing = Compare("내 설정과 새 대표 판", m, lead.text, "내 설정", "대표 판", lead) } } }) {
+                                        Text("비교하고 바꾸기")
+                                    }
+                                    TextButton(onClick = { keepOld = true }) { Text("그대로 둘게요") }
+                                }
+                            }
+                        }
+                    }
                     // [COMM-14] What only this set has, beside another of the same department.
                     val diffs = remember(p) { com.bamnat.core.plaza.SetupDiff.diff(p.setups.map { it.diffItem() }) }
                     p.setups.forEach { su ->
@@ -371,6 +405,10 @@ fun CompanyDetailScreen(
                             // [PLZ-10][PLZ-04] My own month with these rules, and how the rule got here.
                             onTry = if (su.hasPay) ({ vm.tryPay(su) }) else null,
                             onHistory = if (su.adopted && (su.version ?: 1) > 1) ({ vm.showHistory(p, su) }) else null,
+                            onDiff = if (onPick == null) ({ sendError = null; proposing = su; scope.launch { mine = vm.mine() } }) else null,
+                            onCompare = p.setups.firstOrNull { it.adopted && it.dept == su.dept && it.id != su.id }?.takeIf { !su.adopted }?.let { lead ->
+                                { comparing = Compare("대표 판과 비교", lead.text, su.text, "대표 판", "이 판", su) }
+                            },
                         )
                     }
                     SoftCard {
@@ -399,7 +437,37 @@ fun CompanyDetailScreen(
     TalkSheet(vm.talk)
     TrialSheet(vm.trial.collectAsStateWithLifecycle().value, onClose = vm::closeTrial,
         onVote = { ok -> page?.setups?.firstOrNull { it.id == vm.trial.value?.setup }?.let { su -> vm.vote(page, su, ok, if (ok) null else "wrong") { e -> error = e } } })
-    HistorySheet(vm.history.collectAsStateWithLifecycle().value, onClose = vm::closeHistory)
+    HistorySheet(vm.history.collectAsStateWithLifecycle().value, onClose = vm::closeHistory,
+        // [PLAZA-05] A past version stays: compared with the one in use, and put back on this phone if it fits better.
+        onCompare = { v, now ->
+            val su = page?.setups?.firstOrNull { it.id == now.setup }
+            if (v.body != null && now.body != null && su != null) {
+                vm.closeHistory()
+                comparing = Compare("v${v.version}과 지금 비교", now.body, v.body, "지금 v${now.version}", "v${v.version}",
+                    su.copy(id = v.setup, text = v.body, version = v.version, adopted = false), back = true)
+            }
+        })
+    proposing?.let { su ->
+        DiffEditorSheet(
+            title = "${page?.name.orEmpty()} · ${su.dept.ifEmpty { "회사 전체" }}",
+            base = su.text, mine = mine, busy = sending, error = sendError,
+            onSend = { lines, text, why ->
+                val p = page ?: return@DiffEditorSheet
+                sending = true
+                vm.propose(p, su, lines, text, why) { e -> sending = false; sendError = e; if (e == null) proposing = null }
+            },
+            onDismiss = { proposing = null },
+        )
+    }
+    comparing?.let { cmp ->
+        CompareSheet(cmp.title, cmp.before, cmp.after, cmp.beforeName, cmp.afterName, onDismiss = { comparing = null },
+            note = if (cmp.back) "지난 판도 지워지지 않아요. 우리에게 더 맞으면 이 휴대폰에 다시 넣을 수 있어요." else null,
+            action = if (onPick != null || page == null) null else ({
+                Button(onClick = { comparing = null; start(page, cmp.setup) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(when { cmp.back -> "이 판으로 되돌리기"; cmp.setup.adopted -> "이 판으로 바꾸기"; else -> "이 판 써 보기" })
+                }
+            }))
+    }
     val pick = choosing
     if (pick != null && page != null) {
         PhaseSheet(
@@ -423,6 +491,8 @@ private fun SetupCard(
     onTalk: (() -> Unit)? = null,
     onTry: (() -> Unit)? = null,
     onHistory: (() -> Unit)? = null,
+    onDiff: (() -> Unit)? = null,
+    onCompare: (() -> Unit)? = null,
 ) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
@@ -431,7 +501,8 @@ private fun SetupCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(s.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                if (s.adopted) StatusChip("채택${s.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
+                // [PLAZA-05] 결정 D74: the department's 대표 판 is the one most phones use; earlier versions stay in 바뀐 기록.
+                if (s.adopted) StatusChip("대표 판${s.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
             }
             diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
@@ -472,6 +543,13 @@ private fun SetupCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     onTry?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("내 월급으로 시험") } }
                     onHistory?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("바뀐 기록") } }
+                }
+            }
+            if (onDiff != null || onCompare != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    // [PLAZA-02] U2: what is different here, said on this rule set's own values, not in a blank box.
+                    onDiff?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("우리는 달라요 · 다른 점 말하기") } }
+                    onCompare?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("대표 판과 비교") } }
                 }
             }
             if (onTalk != null) {
@@ -560,3 +638,14 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
         }
     }
 }
+
+/** [PLAZA-02][PLAZA-05] What the compare sheet shows: [setup] is the second one, ready to apply; [back] for a past version. */
+private data class Compare(
+    val title: String,
+    val before: String,
+    val after: String,
+    val beforeName: String,
+    val afterName: String,
+    val setup: SharedSetup,
+    val back: Boolean = false,
+)

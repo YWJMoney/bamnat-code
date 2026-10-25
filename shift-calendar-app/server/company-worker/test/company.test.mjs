@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { normName, personal, cleanSetup, readReport, fingerprint, describe as words } from "../src/index.js";
+import { normName, personal, cleanSetup, readReport, fingerprint, describe as words, support } from "../src/index.js";
 import { server, setup, report, device, from } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
@@ -159,7 +159,7 @@ test("a setup reads as plain Korean for the developer", () => {
   assert.equal(lines["순서 8일"], "주간 주간 휴무 휴무 야간 야간 휴무 휴무");
   assert.equal(lines["연장·휴무일 근무"], "잔업(근무 뒤 2시간) · 특근(09:00~18:00) · 대근(주간·야간 대신) · 조기출근(근무 앞 1시간)");
   assert.equal(lines["대근"], "8시간에 기본급 10% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%");
-  assert.equal(lines["공휴일 근무"], "대근 방식");
+  assert.equal(lines["빨간날 근무"], "대근처럼");
   assert.equal(lines["수당"], "상여(2·4·6·8·10·12월 기본급 100%) · 자격수당(매달) · 야간수당(야간마다)");
 });
 
@@ -280,18 +280,49 @@ test("a company shows its adopted rule first and what is still being checked", a
   assert.equal((await call("GET", "/api/companies/AAAAAAAAAAAA")).status, 404);
 });
 
-test("a rule in use is changed only by the developer", async () => {
+test("a rule in use is replaced by another only when more people stand behind it (결정 D74)", async () => {
   const { call } = server();
-  await call("POST", "/api/reports", report(1, { verified: true }), from(1));
-  await call("POST", "/api/reports", report(2), from(2));
+  for (const n of [1, 2, 6]) await call("POST", "/api/reports", report(n), from(n));
   const other = setup();
   other.pay.rules.extra[3].percent = 0.12;
   const sent = [];
-  for (const n of [3, 4, 5]) sent.push(await call("POST", "/api/reports", report(n, { setup: other, verified: true }), from(n)));
-  assert.equal(sent[2].data.points, 6);
+  for (const n of [3, 4, 5]) sent.push(await call("POST", "/api/reports", report(n, { setup: other }), from(n)));
+  // As many behind it as behind the one in use: the one in use stays (a tie never moves people).
+  assert.equal(sent[2].data.points, 3);
   assert.equal(sent[2].data.status, "pending");
-  const c = await call("GET", `/api/companies/${sent[0].data.company.id}`);
+  let c = await call("GET", `/api/companies/${sent[0].data.company.id}`);
   assert.deepEqual(c.data.setups.map((s) => s.status), ["adopted", "pending"]);
+  assert.deepEqual(c.data.setups.map((s) => s.support), [support({ uses: 0, ok: 3, bad: 0 }), support({ uses: 0, ok: 3, bad: 0 })]);
+  // One more: it becomes the 대표 판, and the one before is an earlier version, not gone.
+  const more = await call("POST", "/api/reports", report(7, { setup: other }), from(7));
+  assert.equal(more.data.status, "adopted");
+  c = await call("GET", `/api/companies/${sent[0].data.company.id}`);
+  assert.deepEqual(c.data.setups.map((s) => [s.status, s.version]), [["adopted", 2]]);
+  const h = (await call("GET", `/api/companies/${c.data.id}/history?setup=${more.data.setup}`)).data.versions;
+  assert.deepEqual(h.map((v) => [v.version, v.state, v.source]), [[2, "active", "rival"], [1, "superseded", "auto"]]);
+  assert.equal(h[1].body.pay.rules.extra[3].percent, 0.1);
+  assert.equal(h[0].body.pay.rules.extra[3].percent, 0.12);
+});
+
+test("an earlier version's users count for it, and one the developer turned down never takes over", async () => {
+  const { call, DB } = server();
+  const first = [];
+  for (const n of [1, 2, 7]) first.push(await call("POST", "/api/reports", report(n), from(n)));
+  const c = first[0].data.company.id;
+  // Ten phones applied the rule in use.
+  for (let n = 20; n < 30; n++) await call("POST", "/api/uses", { device: device(n), company: c, setup: first[0].data.setup }, from(n));
+  const other = setup();
+  other.pay.monthlyHours = 209;
+  for (const n of [3, 4, 5, 6]) await call("POST", "/api/reports", report(n, { setup: other }), from(n));
+  let page = (await call("GET", `/api/companies/${c}`)).data;
+  assert.deepEqual(page.setups.map((s) => [s.status, s.support]), [["adopted", support({ uses: 10, ok: 3, bad: 0 })], ["pending", support({ uses: 0, ok: 4, bad: 0 })]]);
+  assert.ok(page.setups[0].support > page.setups[1].support);
+  // Turned down by the developer: however many come, it waits.
+  const grp = page.setups[1].id;
+  DB.db.prepare("UPDATE reports SET status = 'rejected' WHERE grp = ?").run(grp);
+  for (let n = 40; n < 55; n++) await call("POST", "/api/reports", report(n, { setup: other }), from(n));
+  page = (await call("GET", `/api/companies/${c}`)).data;
+  assert.equal(page.setups[0].id, first[0].data.setup);
 });
 
 test("a sender's newer setup takes the place of their older one", async () => {

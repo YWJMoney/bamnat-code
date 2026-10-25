@@ -1062,6 +1062,10 @@ fun CalendarScreen(
                     )
                 }
             })
+            // [PLAZA-04] Right after a setup made by hand: put it on the plaza for coworkers (14·30·90일 간격, 그만 볼게요).
+            if (paint == null && viewingReceived == null) add(Notice("plazaShare", "광장에 올리기") {
+                com.bamnat.app.ui.company.ShareInviteNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             if (guideHere) add(Notice("guide", "오늘의 팁") {
@@ -1717,10 +1721,13 @@ private fun CalendarHeader(
             onDismiss = { menu = false },
             tools = tools.let { slots ->
                 // [READ-11] 방금 넣은 것 되돌리기, after the tools so none of them moves (NAV-03).
-                val r = recent ?: return@let slots
                 val at = slots.indexOfFirst { it.away }.takeIf { it >= 0 } ?: slots.size
                 slots.toMutableList().apply {
-                    add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) }))
+                    recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
+                    // [PLAZA-06] U25-나: the first setup again, a way out of the calendar, so last in that row and nothing moves
+                    // (the main calendar only; an added one has its own 고치기).
+                    if (onEditCalendar == null) add(CalendarTool("처음 설정 다시 받기", Icons.Filled.EventRepeat, away = true,
+                        onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN) }))
                 }
             },
             others = offered.map { com.bamnat.app.ui.components.OtherRow(it.id!!, it.label, "이 달력의 일에는 잘 쓰지 않는 도구예요", it !in others) },

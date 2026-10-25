@@ -137,6 +137,11 @@ class SettingsFilesBackup(
          */
         val DEVICE_ONLY = mapOf(
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
+            // [PLAZA-04] 1.25 X (결정 X-D5): the plaza invitation's waits are this phone's, like share_way.
+            "company:invite_due" to "광장 올리기 권유를 다시 보일 날, 이 휴대폰에서 본 만큼",
+            "company:invite_laters" to "광장 올리기 권유에 '다음에'를 누른 횟수, 이 휴대폰의 것",
+            "company:invite_never" to "광장 올리기 권유 '그만 볼게요', 이 휴대폰의 것",
+            "company:hand_made" to "이 휴대폰에서 첫 설정을 손으로 끝냈는지(권유를 띄울 때만 써요)",
             "inquiry" to "문의 기록은 이 휴대폰의 설치 번호로 열려요",
             "commute" to "출퇴근 장소의 지도 위 좌표는 다니는 파일에 넣지 않아요",
             "auto_backup" to "자동 백업 폴더와 열쇠(비밀값)",

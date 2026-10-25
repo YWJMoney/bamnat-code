@@ -3,7 +3,7 @@ package com.bamnat.core.plaza
 /**
  * [COMM-14][ADMUX-09] Telling apart two rule sets of one company and department (점검 보고서 중-11: two cards
  * of "(주)예시정밀" read the same down to the summary; the 대근 10%→12% was only inside). Each gets a name
- * ([label]: 채택 v2, or 제보 1·2 in the order they came) and the lines only it has ([diff]).
+ * ([label]: 대표 판 v2, or 제보 1·2 in the order they came) and the lines only it has ([diff]).
  */
 object SetupDiff {
     /** One rule set as the plaza shows it: [lines] are (label, text), e.g. ("대근", "기본급의 12%"). */
@@ -16,7 +16,8 @@ object SetupDiff {
         items.groupBy { it.dept }.values.filter { it.size > 1 }.forEach { same ->
             var n = 0
             same.sortedBy { it.at }.forEach { i ->
-                out[i.id] = if (i.adopted) "채택${i.version?.let { " v$it" } ?: ""}" else "제보 ${++n}"
+                // [PLAZA-05] The one in use is the department's 대표 판 (D74); the others are 제보 until people make one of them it.
+                out[i.id] = if (i.adopted) "대표 판${i.version?.let { " v$it" } ?: ""}" else "제보 ${++n}"
             }
         }
         return out

@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -48,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.data.CompanySummary
 import com.bamnat.app.ui.pay.MoneyField
 import com.bamnat.app.ui.pay.MonthStepper
 import com.bamnat.app.ui.pay.baseName
@@ -76,6 +78,11 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val summary = vm.summary
+    // [PLAZA-03] U26: first, whether the company's pay rules are ours at all. Without rules there is nothing to ask.
+    var choice by rememberSaveable { mutableStateOf(if (vm.hasRules) "ask" else "use") }
+    var proposing by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    var sendNote by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -91,7 +98,16 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 HeroIcon(Icons.Outlined.Payments)
+                if (choice == "ask") {
+                    PayChoice(vm.company, summary, canPropose = vm.canPropose,
+                        onUse = { choice = "use" },
+                        onDiffer = { sendNote = null; proposing = true },
+                        onByHand = onByHand)
+                    Spacer(Modifier.height(24.dp))
+                    return@Column
+                }
                 Text("거의 다 됐어요! 내 금액만 넣어요", style = MaterialTheme.typography.headlineSmall)
+                if (vm.edited) Note("말씀하신 다른 점을 넣은 방식으로 계산해요. " + (sendNote ?: "같은 회사 분들께도 제안으로 올렸어요. 맞아요가 모이면 다음 버전이 돼요."))
                 Text(
                     "${vm.company.ifEmpty { "같은 회사" }} 분들이 맞춘 계산 방식이 들어 있어요. 사람마다 다른 금액만 넣으면 끝나요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -189,6 +205,44 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
             }
         }
     }
+    val companyText = vm.text
+    if (proposing && companyText != null) {
+        DiffEditorSheet(
+            title = vm.company.ifEmpty { "같은 회사" }, base = companyText, mine = null, busy = sending, error = null,
+            onSend = { lines, setup, why ->
+                sending = true
+                vm.useEdited(lines, setup, why) { e ->
+                    sending = false; proposing = false; choice = "use"
+                    sendNote = e?.let { "제안은 올리지 못했어요($it). 광장의 토론에서 다시 올릴 수 있어요." }
+                }
+            },
+            onDismiss = { proposing = false },
+        )
+    }
+}
+
+/**
+ * [PLAZA-03] U26 "급여 설정도 그 회사 값을 쓸지": the company's way of paying in a few lines, then use it, say what is
+ * different (fixed on its own values, and offered to coworkers), or make one from scratch.
+ */
+@Composable
+private fun PayChoice(company: String, summary: CompanySummary?, canPropose: Boolean, onUse: () -> Unit, onDiffer: () -> Unit, onByHand: () -> Unit) {
+    Text("이 회사 급여 설정을 쓸까요?", style = MaterialTheme.typography.headlineSmall)
+    Text("${company.ifEmpty { "같은 회사" }} 분들이 맞춘 급여 계산 방식이 있어요. 명세서와 같다면 그대로 쓰고, 다르면 다른 점만 고쳐요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (summary != null) {
+        SoftCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (summary.hasRules) Ready("연장·야간·휴일 가산과 회사 규칙")
+                if (summary.extraKinds.isNotEmpty()) Ready("연장·휴무일 근무: ${summary.extraKinds.joinToString(" · ")}")
+                if (summary.items.isNotEmpty()) Ready("수당: ${summary.items.joinToString(" · ")}")
+            }
+        }
+    }
+    Button(onClick = onUse, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("네, 이 설정으로 할게요") }
+    if (canPropose) OutlinedButton(onClick = onDiffer, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("우리 급여는 조금 달라요") }
+    TextButton(onClick = onByHand, modifier = Modifier.fillMaxWidth()) { Text("처음부터 직접 만들게요") }
+    Note("다른 점을 고치면 내 급여는 고친 대로 계산하고, 같은 회사 분들께는 ‘고치자는 제안’으로 올라가요. 많은 분이 참여할수록 회사 설정이 정확해져요.")
 }
 
 @Composable

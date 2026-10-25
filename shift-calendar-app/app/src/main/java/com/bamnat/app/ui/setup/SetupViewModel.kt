@@ -55,14 +55,28 @@ class SetupViewModel(
      * calendar only. The app's settings, pay setup and company stay as they are.
      */
     val calendarId: String? = null,
+    /**
+     * [PLAZA-06] U25-나 처음 설정 다시 받기: the first setup's questions again, for someone who skipped them or wants a
+     * company's setup now. Answers wait in their own draft; leaving changes nothing, and saving applies them as the
+     * first setup would (from today on; past days and days changed by hand stay).
+     */
+    val again: Boolean = false,
 ) : ViewModel() {
-    private val store = if (calendarId != null) c.calendarSetupDrafts else c.setupDrafts
+    private val store = when {
+        calendarId != null -> c.calendarSetupDrafts
+        again -> c.againSetupDrafts
+        else -> c.setupDrafts
+    }
     private val current: SetupDraft get() = store.draft.value ?: SetupDraft()
 
     val draft: StateFlow<SetupDraft> = store.draft.map { it ?: SetupDraft() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, current)
 
     init {
+        if (again && store.draft.value == null) {
+            store.save(SetupDraft())
+            c.telemetry.event("setup_again")
+        }
         // A draft kept from an older build, or cut short, can sit on a step it no longer has.
         val d = current
         if (d.step !in d.steps) store.save(d.copy(step = d.steps.firstOrNull { !d.canLeave(it) } ?: SetupStep.SUMMARY))
@@ -159,7 +173,15 @@ class SetupViewModel(
     /** "나중에": the app opens on the calendar with a card to go on from here. */
     fun later() {
         c.telemetry.event("setup_later", current.step.name)
+        if (again) return cancelAgain()
         update { it.copy(later = true) }
+    }
+
+    /** [PLAZA-06] Leaves 처음 설정 다시 받기: its answers go, the calendar stays as it was. */
+    fun cancelAgain() {
+        if (!again) return
+        store.clear()
+        _done.value = true
     }
 
     // ---- 1. how the user works ----
@@ -260,10 +282,12 @@ class SetupViewModel(
     internal fun importCompany(text: String) {
         val shared = c.companyShare.read(text)
         val d = current
-        val style = d.style?.takeIf { it.usesPattern || it == WorkStyle.HOURLY } ?: if (shared.order.isNotEmpty()) WorkStyle.SHIFT else WorkStyle.DAY
-        val base = if (d.style == style) d else SetupDraft(style = style, companyName = d.companyName)
+        val style = d.style?.takeIf { it.usesPattern || it == WorkStyle.HOURLY }
+            ?: if (shared.order.isNotEmpty() || shared.roster) WorkStyle.SHIFT else WorkStyle.DAY
+        val base = (if (d.style == style) d else SetupDraft(style = style, companyName = d.companyName))
+            .let { if (shared.roster && style == WorkStyle.SHIFT) it.copy(rosterMonthly = true) else it }
         val source = SetupSource(SetupSource.Kind.FILE, text, name = shared.company, team = shared.team, anchor = shared.anchor)
-        val withFile = base.withShared(source, shared.types, shared.order)
+        val withFile = base.withShared(source, shared.types, shared.order, shared.weekly)
         _fixing.value = false
         c.telemetry.event("setup_file", if (shared.team != null) "team" else "")
         store.save(withFile.copy(step = SetupStep.TIMES))
@@ -304,8 +328,10 @@ class SetupViewModel(
             return
         }
         // Only a coworker's own file says which 조 it is; a template or the server does not.
-        val base = roster?.let { current.copy(rosterMonthly = it) } ?: current
-        val d = base.withShared(source.copy(team = null, anchor = null), shared.types, shared.order)
+        // [PLAZA-01] A company whose file says its roster comes every month is painted, not repeated.
+        val monthly = roster ?: shared.roster.takeIf { it && current.style == WorkStyle.SHIFT }
+        val base = monthly?.let { current.copy(rosterMonthly = it) } ?: current
+        val d = base.withShared(source.copy(team = null, anchor = null), shared.types, shared.order, shared.weekly)
         // New shifts are a new setup from here on, not a fix of one answer.
         _fixing.value = false
         store.save(d.copy(step = d.steps.dropWhile { it != SetupStep.COMPANY }.getOrElse(1) { SetupStep.SUMMARY }))
@@ -591,6 +617,7 @@ class SetupViewModel(
         c.appScope.launch {
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
+                    if (again) { store.clear(); _done.value = true }
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)
                         d.source?.let { append('_').append(it.kind.name) }
