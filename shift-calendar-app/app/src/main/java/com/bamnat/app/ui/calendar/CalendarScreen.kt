@@ -995,6 +995,9 @@ fun CalendarScreen(
         )
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
+            if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
+                add(Notice("policy31", "처리방침 3.1") { com.bamnat.app.ui.pro.PolicyConsentNotice() })
             // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
             // AG 1.27 [INVITE-10]: first, so it is never folded in "알림 n개 더 보기" (리뷰 2026-10-25); it shows only
             // for a phone that did not answer at the end of the first setup, and after the report the friend's own invite.

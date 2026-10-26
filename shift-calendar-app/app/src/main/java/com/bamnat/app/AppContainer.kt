@@ -278,7 +278,11 @@ class AppContainer(context: Context) {
         runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
     }
     /** [MON-02] The 정식 출시 switch and what goes with it, from the company server once a day. */
-    val remoteConfig = com.bamnat.app.tier.RemoteConfigStore(appContext)
+    val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext, held = { policyAsks() })
+
+    /** [PRIV-03] 결정 D84: this phone was installed before 처리방침 3.1 was posted and has not said yes yet. */
+    fun policyAsks(): Boolean = com.bamnat.core.ops.PolicyConsent.asks(
+        installedAt?.atZone(com.bamnat.core.time.Today.zone())?.toLocalDate(), remoteConfig.policyAgreed(), com.bamnat.core.time.Today.date())
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
      * built-in data as the app starts.
@@ -475,6 +479,8 @@ class AppContainer(context: Context) {
 
     @OptIn(FlowPreview::class)
     fun start() {
+        // [PRIV-03] The 3.1 hold is looked at again now that the container is whole (결정 D84); no job of its own.
+        remoteConfig.recheck()
         // [STAT-01] A no that came another way (a restored backup) forgets what waited, without a job of its own.
         usageStats.forgetUnless(settingsRepository.current.shareUsageStats)
         keep("schedule") {

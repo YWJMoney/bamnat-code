@@ -114,11 +114,31 @@ data class LaunchConfig(
 }
 
 /** [MON-02] The last [LaunchConfig] on this phone; asked again once a day. */
-class RemoteConfigStore(context: Context) {
+class RemoteConfigStore(
+    context: Context,
+    /** [PRIV-03] 결정 D84: true while this phone still owes its yes to 처리방침 3.1; the switch then stays off here. */
+    private val held: () -> Boolean = { false },
+) {
     private val prefs = context.applicationContext.getSharedPreferences("launch_config", Context.MODE_PRIVATE)
-    private val _config = MutableStateFlow(LaunchConfig.fromSaved(prefs.getString(KEY, null)) ?: LaunchConfig())
+    /** What the server said, as saved. [config] is this with the switch held off while [held]. */
+    private var raw: LaunchConfig = LaunchConfig.fromSaved(prefs.getString(KEY, null)) ?: LaunchConfig()
+    private val _config = MutableStateFlow(mask(raw))
     val config: StateFlow<LaunchConfig> = _config.asStateFlow()
     val current: LaunchConfig get() = _config.value
+
+    private fun mask(c: LaunchConfig): LaunchConfig =
+        if (c.billingLive && runCatching { held() }.getOrDefault(false)) c.copy(billingLive = false, launchedAt = null) else c
+
+    /** [PRIV-03] After a yes (or on a new day) the held switch is looked at again. */
+    fun recheck() { _config.value = mask(raw) }
+
+    /** [PRIV-03] The 3.1 yes, kept in this file (휴대폰에만: 동의 기록은 새 휴대폰에서 다시 물어요). */
+    fun policyAgreed(): Boolean = prefs.getString(POLICY_KEY, null) == com.bamnat.core.ops.PolicyConsent.VERSION
+
+    fun agreePolicy(now: Instant = Today.instant()) {
+        prefs.edit().putString(POLICY_KEY, com.bamnat.core.ops.PolicyConsent.VERSION).putString(POLICY_AT, now.toString()).apply()
+        recheck()
+    }
 
     /** Due when never asked, a day has passed, or the clock went back. */
     fun due(now: Instant): Boolean {
@@ -127,7 +147,8 @@ class RemoteConfigStore(context: Context) {
     }
 
     fun save(c: LaunchConfig) {
-        _config.value = c
+        raw = c
+        _config.value = mask(c)
         prefs.edit().putString(KEY, c.toJson().toString()).apply()
     }
 
@@ -147,6 +168,8 @@ class RemoteConfigStore(context: Context) {
 
     companion object {
         private const val KEY = "config"
+        private const val POLICY_KEY = "policy_agreed"
+        private const val POLICY_AT = "policy_agreed_at"
         val EVERY: Duration = Duration.ofDays(1)
     }
 }
