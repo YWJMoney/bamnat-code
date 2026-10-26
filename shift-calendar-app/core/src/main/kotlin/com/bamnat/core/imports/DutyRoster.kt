@@ -81,6 +81,11 @@ data class RosterRow(
     val unsure: Set<Int> = emptySet(),
     /** [READ-04] The line of the table it was read from, top to bottom: the order people are listed, and where a tap lands. */
     val line: Int = 0,
+    /**
+     * [READ-19] 1.27: the words read for each day as the photo gave them ("OF", "0", "Ｄ"), so a cell the user corrects
+     * teaches the code book what that word means on their rosters ([RosterLearn]). In memory only, never saved.
+     */
+    val raw: Map<Int, String> = emptyMap(),
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
 
@@ -498,18 +503,25 @@ object DutyRoster {
             // The columns again, from where this line's own cells stand.
             val own = RosterGeometry.leastSquares(read.positions)
             if (own != null && read.positions.size >= 5 && own.second in start.b * 0.8..start.b * 1.25) {
-                val refit = start.copy(a = own.first, b = own.second)
+                val refit = start.copy(a = own.first, b = own.second, c = 0.0)
                 readLine(row, refit, codes).first.let { again -> if (again.cells.size >= read.cells.size) { read = again; fit = refit } }
+            }
+            // [READ-13] 1.27: columns that narrow along the row (seen from one side): bent to where this line's cells stand.
+            RosterGeometry.bent(fit, read.positions)?.let { bent ->
+                readLine(row, bent, codes).first.let { again -> if (again.cells.size >= read.cells.size && again.unsure.size <= read.unsure.size) { read = again; fit = bent } }
             }
             if (read.cells.size >= min) {
                 carried[h] = fit
-                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i)
+                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i, raw = read.raws)
             }
         }
         return out
     }
 
-    private class LineRead(val label: String, val cells: Map<Int, DutyCell>, val guessed: Set<Int>, val notes: Map<Int, String>, val unsure: Set<Int>, val positions: List<Pair<Int, Double>>)
+    private class LineRead(
+        val label: String, val cells: Map<Int, DutyCell>, val guessed: Set<Int>, val notes: Map<Int, String>, val unsure: Set<Int>,
+        val positions: List<Pair<Int, Double>>, val raws: Map<Int, String> = emptyMap(),
+    )
 
     private fun readLine(row: List<Placed>, fit: DayFit, codes: DutyCodes): Pair<LineRead, DayFit> {
         val cells = LinkedHashMap<Int, DutyCell>()
@@ -517,6 +529,7 @@ object DutyRoster {
         val at = HashMap<Int, Double>()
         val guessed = HashSet<Int>()
         val notes = HashMap<Int, String>()
+        val raws = HashMap<Int, String>()
         val label = StringBuilder()
         // 1.25 통합 직접 시험: a table with its names at the right end (after the last day) read every cell but no name.
         val rightLabel = StringBuilder()
@@ -549,6 +562,7 @@ object DutyRoster {
                         cells[d] = cell
                         off[d] = miss
                         at[d] = w.x
+                        raws[d] = w.text.trim()
                         // 1.25 통합 직접 시험: a lone "0" is O to the reader, but OCR also makes it of D: looked at, never taken quietly.
                         if (w.word.doubt || codes.guessedWork(w.text, cell) || w.text.trim() == "0") guessed += d else guessed -= d
                         read?.second?.let { notes[d] = it } ?: notes.remove(d)
@@ -562,7 +576,28 @@ object DutyRoster {
         if (label.isBlank()) label.append(rightLabel)
         // [READ-03] A cell far from its column's middle may be the next day's: one to look at.
         val unsure = off.filter { (d, miss) -> miss > 0.3 && d in cells }.keys
-        return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }) to fit
+        // [READ-13] 1.27: a line written in 한글 codes (주·야·비·휴) with one Latin word ("OF" for 야, the bench's dim 조 표), or
+        // the other way round, has a misread cell: the word matched a code of the other alphabet. Looked at, never quiet.
+        guessed += mixedScript(raws, cells)
+        return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }, raws) to fit
+    }
+
+    /** [READ-13] Days whose word is in the other alphabet from most of the line's work and days off (leave words aside). */
+    internal fun mixedScript(raws: Map<Int, String>, cells: Map<Int, DutyCell>): Set<Int> {
+        fun script(t: String): Char? {
+            val f = DutyCodes.norm(t).filter { it.isLetter() }
+            return when {
+                f.isEmpty() -> null
+                f.all { it in '가'..'힣' } -> 'K'
+                f.all { it in 'A'..'Z' } -> 'L'
+                else -> null
+            }
+        }
+        val judged = raws.filterKeys { d -> cells[d] is DutyCell.Shift || cells[d] == DutyCell.Off }.mapValues { (_, t) -> script(t) }.filterValues { it != null }
+        if (judged.size < 5) return emptySet()
+        val major = judged.values.groupingBy { it }.eachCount().maxBy { it.value }
+        if (major.value * 10 < judged.size * 6) return emptySet()
+        return judged.filterValues { it != major.key }.keys
     }
 
     /**

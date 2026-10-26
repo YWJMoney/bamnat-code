@@ -77,7 +77,9 @@ object WorkForms {
             estimatedFields = existing.estimatedFields - Unknowns.BASE,
         ) ?: PayPresets.firstSetup(
             PayProfile(occupation = form.occupation, wageType = form.wageType, base = base,
-                dailyLimitMinutes = PayPresets.of(form.occupation).dailyLimitMinutes),
+                dailyLimitMinutes = PayPresets.of(form.occupation).dailyLimitMinutes,
+                // [PAYS-17] 1.27: the 시수 is the law's 209 until the user says; the pay screen asks it ("이것만 넣으면").
+                estimatedFields = if (form.wageType == WageType.MONTHLY) setOf(RuleOnlyNeeds.HOURS_UNSET) else emptySet()),
         )
         return if (holiday == null || p.rules.holidayWork == holiday) p
         else p.copy(rules = p.rules.withHolidayWork(holiday), estimatedFields = p.estimatedFields - Unknowns.PUBLIC_HOLIDAYS)

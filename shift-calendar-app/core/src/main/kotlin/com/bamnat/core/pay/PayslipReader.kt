@@ -158,6 +158,8 @@ object PayslipReader {
             n in setOf("합계", "총계", "계", "총액", "소계", "합") -> SlipRole.TOTAL
             "기본급" in n || "기본월급" in n || "기본임금" in n || n == "기본" || n == "기본급여" -> SlipRole.BASE
             n == "시급" || n == "기본시급" || n == "통상시급" -> SlipRole.HOURLY
+            // [READ-13] 1.27: 기본급 with its last letter misread (기본려·기본료·기본터·기본다), a lone name of three letters.
+            n.length == 3 && n.startsWith("기본") -> SlipRole.BASE
             "고정" in n && ("연장" in n || "시간외" in n || "ot" in n) -> SlipRole.ALLOWANCE
             "주휴" in n -> SlipRole.WEEKLY_HOLIDAY
             "잔업" in n || "특근" in n || "대근" in n || "조출" in n -> SlipRole.EXTRA_WORK
@@ -178,6 +180,10 @@ object PayslipReader {
     private val OCR_SLIPS = listOf(
         "함계" to "합계", "함게" to "합계", "합게" to "합계", "보협" to "보험", "실수형" to "실수령", "실수랑" to "실수령",
         "언장" to "연장", "지금" to "지급", "한목" to "항목", "항모" to "항목", "한모" to "항목", "수딩" to "수당", "근로수딩" to "근로수당",
+        // [READ-13] 1.27 어려운 사진 표본(흐림·저조도·화면 찍은 사진)에서 본 것.
+        "아간" to "야간", "아긴" to "야간", "군로" to "근로", "퓨일" to "휴일", "유일근로" to "휴일근로", "유입근로" to "휴일근로", "유입문로" to "휴일근로",
+        "공재" to "공제", "공계" to "공제", "한게" to "합계", "안게" to "합계", "소독세" to "소득세", "지규" to "지급", "금역" to "금액",
+        "보형" to "보험", "보려" to "보험", "보역" to "보험", "보연" to "보험", "보러" to "보험", "보현" to "보험",
     )
 
     fun ocrFix(s: String): String = OCR_SLIPS.fold(s) { acc, (from, to) -> acc.replace(from, to) }

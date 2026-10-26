@@ -25,13 +25,24 @@ internal class Placed(val word: RosterWord, val x: Double, val y: Double, val w:
 }
 
 /** Columns of days on one line: day d's middle is at a + b·d, for days [first]..[last]. */
-internal data class DayFit(val a: Double, val b: Double, val first: Int, val last: Int) {
-    fun x(day: Int): Double = a + b * day
+internal data class DayFit(
+    val a: Double, val b: Double, val first: Int, val last: Int,
+    /**
+     * [READ-13] 1.27: the bend of the columns (x = a + b·d + c·d²). A photo taken from one side of the table (strong
+     * perspective) has narrower columns at the far end; a straight line put the far days' cells one day off (1.27 bench
+     * r05: 9 cells on the next day without a yellow mark). 0 for a table seen square on.
+     */
+    val c: Double = 0.0,
+) {
+    fun x(day: Int): Double = a + b * day + c * day * day
+    /** The width of a column at [day]. */
+    fun step(day: Int): Double = (b + c * (2 * day)).coerceAtLeast(b * 0.3)
     /** The day whose column [x] is in, and how far from its middle in columns, or null outside [first]..[last]. */
     fun day(x: Double): Pair<Int, Double>? {
-        val d = ((x - a) / b).roundToInt()
+        val guess = ((x - a) / b).roundToInt()
+        val d = if (c == 0.0) guess else (guess - 3..guess + 3).minBy { abs(x - x(it)) }
         if (d < first || d > last) return null
-        return d to abs(x - x(d)) / b
+        return d to abs(x - x(d)) / step(d)
     }
 }
 
@@ -186,7 +197,55 @@ internal object RosterGeometry {
         }
         if (best.size < min) return null
         val (a, b) = leastSquares(best) ?: return null
-        return DayFit(a, b, best.minOf { it.first }, best.maxOf { it.first })
+        val line = DayFit(a, b, best.minOf { it.first }, best.maxOf { it.first })
+        return bent(line, points) ?: line
+    }
+
+    /**
+     * [READ-13] [line] bent to fit [points] when the columns narrow or widen along the row (perspective): a quadratic
+     * through the points near it, grown while more points fall within 0.3 of a column. Null when the straight line is as
+     * good, or the bend is not a photo's (columns more than halving or doubling across the month).
+     */
+    fun bent(line: DayFit, points: List<Pair<Int, Double>>): DayFit? {
+        if (points.distinctBy { it.first }.size < 8) return null
+        var fit = line
+        var inliers = points.filter { (d, x) -> abs(x - fit.x(d)) <= 0.3 * fit.step(d) }.distinctBy { it.first }
+        repeat(3) {
+            val q = quadratic(inliers) ?: return@repeat
+            val next = DayFit(q.first, q.second, minOf(fit.first, inliers.minOf { it.first }), maxOf(fit.last, inliers.maxOf { it.first }), q.third)
+            val (lo, hi) = next.first to next.last
+            if (next.step(lo) <= 0 || next.step(hi) / next.step(lo) !in 0.5..2.0) return@repeat
+            val more = points.filter { (d, x) -> abs(x - next.x(d)) <= 0.3 * next.step(d) }.distinctBy { it.first }
+            if (more.size < inliers.size) return@repeat
+            fit = next
+            inliers = more
+        }
+        if (fit === line || abs(fit.c) * 31 * 31 < 0.15 * fit.b) return null
+        return fit.copy(first = minOf(line.first, inliers.minOf { it.first }), last = maxOf(line.last, inliers.maxOf { it.first }))
+    }
+
+    /** a, b and c of x = a + b·d + c·d² through [points] (least squares), or null for fewer than three days. */
+    fun quadratic(points: List<Pair<Int, Double>>): Triple<Double, Double, Double>? {
+        if (points.distinctBy { it.first }.size < 3) return null
+        // Normal equations in d centred on its mean, for a steady solve.
+        val m = points.sumOf { it.first.toDouble() } / points.size
+        var s0 = 0.0; var s1 = 0.0; var s2 = 0.0; var s3 = 0.0; var s4 = 0.0; var t0 = 0.0; var t1 = 0.0; var t2 = 0.0
+        for ((d, x) in points) {
+            val u = d - m
+            s0 += 1; s1 += u; s2 += u * u; s3 += u * u * u; s4 += u * u * u * u
+            t0 += x; t1 += x * u; t2 += x * u * u
+        }
+        val det = s0 * (s2 * s4 - s3 * s3) - s1 * (s1 * s4 - s3 * s2) + s2 * (s1 * s3 - s2 * s2)
+        if (abs(det) < 1e-9) return null
+        val p = (t0 * (s2 * s4 - s3 * s3) - s1 * (t1 * s4 - s3 * t2) + s2 * (t1 * s3 - s2 * t2)) / det
+        val q = (s0 * (t1 * s4 - s3 * t2) - t0 * (s1 * s4 - s3 * s2) + s2 * (s1 * t2 - t1 * s2)) / det
+        val r = (s0 * (s2 * t2 - t1 * s3) - s1 * (s1 * t2 - t1 * s2) + t0 * (s1 * s3 - s2 * s2)) / det
+        // x = p + q·u + r·u², u = d − m.
+        val c = r
+        val b = q - 2 * r * m
+        val a = p - q * m + r * m * m
+        if (b + 2 * c * m <= 0) return null
+        return Triple(a, b, c)
     }
 
     /** a and b of x = a + b·d through [points], or null when they are all one day. */

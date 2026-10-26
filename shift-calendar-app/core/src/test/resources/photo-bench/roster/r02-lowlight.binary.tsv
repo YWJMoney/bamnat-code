@@ -1,0 +1,13 @@
+# r02-lowlight binary {'angle': 1.5, 'blur': 0.8} {'dark': 0.6}
+truth	김민지	D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O
+truth	이수진	E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D
+truth	박하늘	N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E
+truth	최유리	O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N
+truth	정다은	D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O
+word	1118	241	1329	290	-1.45	2026년11월	
+word	1355	239	1435	284	-1.45	근무표	근무표
+word	245	460	331	508	-2.73	감만지	김민지
+word	246	511	332	559	0.0	이수한	이수진
+word	247	560	333	614	0.0	학라는	박하늘
+word	250	617	334	662	0.0	최유리	최유리
+word	247	665	335	714	-4.04	경다운	정다은
