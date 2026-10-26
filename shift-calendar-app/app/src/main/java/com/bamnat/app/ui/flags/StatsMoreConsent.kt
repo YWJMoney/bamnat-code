@@ -24,9 +24,9 @@ import com.bamnat.app.ui.company.SoftCard
 import com.bamnat.core.flags.Check
 import com.bamnat.core.flags.FlagCatalog
 
-/** [FLAG-16] What 처리방침 3.2 adds to 사용 통계, in the words of the one ask (순번 459). */
+/** [FLAG-16][PERF-16] What 처리방침 3.2 adds (1.28 통합: the times go as AO's buckets, not exact milliseconds) to 사용 통계, in the words of the one ask (순번 459). */
 const val STATS_MORE_TITLE = "보내는 내용이 두 가지 늘어요(켜진 기능 목록, 앱 시작에 걸린 시간)"
-const val STATS_MORE_BODY = "사용 통계를 켜 두셔서 여쭤봐요. 이 휴대폰에서 켜진 기능 이름 목록과, 앱을 열 때 첫 화면까지 걸린 시간(밀리초)을 " +
+const val STATS_MORE_BODY = "사용 통계를 켜 두셔서 여쭤봐요. 이 휴대폰에서 켜진 기능 이름 목록과, 앱을 열 때 달력이 보이기까지 걸린 시간(0.1초~15초의 정해진 구간 값)을 " +
     "하루 한 번 함께 보내요. 휴대폰을 구별하는 번호는 보내지 않고, 안 하셔도 앱은 똑같이 돼요."
 
 /**
