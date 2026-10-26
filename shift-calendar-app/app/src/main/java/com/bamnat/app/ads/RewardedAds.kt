@@ -57,9 +57,11 @@ fun DayPassButton(gate: Gate, modifier: Modifier = Modifier) {
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     val pro by c.proStore.state.collectAsStateWithLifecycle()
     val ready by c.ads.ready.collectAsStateWithLifecycle()
+    // [FLAG-09] The `ads` row in place of the 정식 출시 switch.
+    val rows by c.flags.byKey.collectAsStateWithLifecycle()
     val today = Today.date()
     val offer = ready && AdIds.rewarded.isNotBlank() && !gate.preview &&
-        AdRules.rewardedOffer(config.billingLive, gate.tier >= Tier.PRO, true, pro.dayPass, today)
+        AdRules.rewardedOffer(rows[com.bamnat.core.flags.FlagCatalog.ADS]?.on == true, gate.tier >= Tier.PRO, true, pro.dayPass, today)
     if (!offer) return
     val context = LocalContext.current
     var loading by remember { mutableStateOf(false) }

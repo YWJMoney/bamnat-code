@@ -478,7 +478,7 @@ private fun InquiryForm(
     var share by rememberSaveable { mutableStateOf(true) }
     // [SRV-06] Up to two photos, made small and stripped on the phone; the developer's switch can pause them.
     var photos by remember { mutableStateOf<List<ByteArray>>(emptyList()) }
-    val photosOpen = !mail && !context.appContainer.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
+    val photosOpen = !mail && !context.appContainer.flags.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
     val pickPhotos = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(com.bamnat.app.company.InquiryPhotos.MAX),
     ) { uris ->

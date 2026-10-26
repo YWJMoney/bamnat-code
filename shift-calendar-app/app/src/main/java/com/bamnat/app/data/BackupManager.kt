@@ -480,7 +480,9 @@ class BackupManager(
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
-                .put("plazaRules", s.plazaRulesAgreed),
+                .put("plazaRules", s.plazaRulesAgreed)
+                // [FLAG-16] 1.28 AL: the 3.2 extra yes, like 사용 통계's own (null: not asked yet).
+                .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL),
         )
         return root
     }
@@ -948,6 +950,8 @@ class BackupManager(
                     plazaNews = o.optBoolean("plazaNews", s.plazaNews),
                     plazaHidden = o.optStringOrNull("plazaHidden")?.let { com.bamnat.core.plaza.HideList.decode(it).encode() } ?: s.plazaHidden,
                     plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
+                    // [FLAG-16] 1.28: a backup without it keeps what this phone has.
+                    usageStatsMore = if (!o.has("usageStatsMore")) s.usageStatsMore else if (o.isNull("usageStatsMore")) null else o.optBoolean("usageStatsMore"),
                     // Old records came back with the backup; offer to fix them again.
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )

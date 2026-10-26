@@ -157,7 +157,7 @@ fun ProScreen(onBack: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     val zone = Today.zone()
     // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
-    LaunchedEffect(Unit) { if (config.billingLive) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
+    LaunchedEffect(Unit) { if (c.flags.on(com.bamnat.core.flags.FlagCatalog.BILLING)) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
 
     Scaffold(topBar = {
         TopAppBar(

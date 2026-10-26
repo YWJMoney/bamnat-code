@@ -56,6 +56,11 @@ data class AppSettings(
      * consent (개인정보 보호법 제22조), so off until the user says yes; the app works the same without it.
      */
     val shareUsageStats: Boolean = false,
+    /**
+     * [FLAG-16] 1.28 AL, 순번 459: the separate yes for what 처리방침 3.2 adds to 사용 통계 (켜진 기능 목록, 앱 시작 시간);
+     * null until asked. Only sent with [shareUsageStats] and once the `stats.more` row is on.
+     */
+    val usageStatsMore: Boolean? = null,
     /** [COMM-10] 광장 소식: one bundled notice a day about the user's own plaza things. On; off on the plaza screen. */
     val plazaNews: Boolean = true,
     /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
@@ -249,6 +254,7 @@ class SettingsRepository(context: Context) {
             plazaHidden = prefs.getString(K_PLAZA_HIDDEN, null) ?: d.plazaHidden,
             plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
+            usageStatsMore = if (prefs.contains(K_STATS_MORE)) prefs.getBoolean(K_STATS_MORE, false) else null,
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
@@ -325,6 +331,7 @@ class SettingsRepository(context: Context) {
             .putString(K_PLAZA_HIDDEN, s.plazaHidden)
             .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
+            .apply { if (s.usageStatsMore == null) remove(K_STATS_MORE) else putBoolean(K_STATS_MORE, s.usageStatsMore) }
             .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
@@ -421,6 +428,7 @@ class SettingsRepository(context: Context) {
         const val K_PLAZA_RULES = "plaza_rules_agreed"
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"
+        const val K_STATS_MORE = "usage_stats_more"
         const val K_WORK_STYLE = "work_style"
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"

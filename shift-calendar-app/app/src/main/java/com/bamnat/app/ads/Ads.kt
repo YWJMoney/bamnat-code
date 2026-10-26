@@ -28,8 +28,7 @@ object AdIds {
 }
 
 /**
- * [MON-07] Google's consent (UMP) and the ads SDK, started only when an ad may show at all: after the
- * 정식 출시 switch, for a phone without 프로, in a build with ad ids. Where the law asks (EEA, UK and
+ * [MON-07] Google's consent (UMP) and the ads SDK, started only when an ad may show at all: [FLAG-09] with the `ads` row on, for a phone without 프로, in a build with ad ids. Where the law asks (EEA, UK and
  * the like) Google's own form asks first; 설정 › 개인정보·앱 정보 › 광고 개인정보 선택 opens it again.
  */
 class Ads(private val scope: CoroutineScope) {
@@ -39,6 +38,12 @@ class Ads(private val scope: CoroutineScope) {
     private val _privacyOptions = MutableStateFlow(false)
     /** Google says this phone's region needs a way back to the consent form. */
     val privacyOptions: StateFlow<Boolean> = _privacyOptions.asStateFlow()
+    private val _consent = MutableStateFlow<Boolean?>(null)
+    /**
+     * [FLAG-09] Google's consent as the form left it: null before it was asked on this run, false when ads may not be
+     * requested. The `ads` row's consent condition (AL-D5): not asked yet counts, so the form can be shown.
+     */
+    val consent: StateFlow<Boolean?> = _consent.asStateFlow()
     @Volatile private var asked = false
     @Volatile private var started = false
 
@@ -52,18 +57,23 @@ class Ads(private val scope: CoroutineScope) {
             UserMessagingPlatform.loadAndShowConsentFormIfRequired(activity) { settled(activity, info) }
         }, { settled(activity, info) })
         // A choice made on an earlier run counts at once.
-        if (info.canRequestAds()) startSdk(activity.applicationContext)
+        if (info.canRequestAds()) {
+            _consent.value = true
+            startSdk(activity.applicationContext)
+        }
     }
 
     fun showPrivacyOptions(activity: Activity) {
         UserMessagingPlatform.showPrivacyOptionsForm(activity) {
             val info = UserMessagingPlatform.getConsentInformation(activity)
+            _consent.value = info.canRequestAds()
             if (info.canRequestAds()) startSdk(activity.applicationContext) else _ready.value = false
         }
     }
 
     private fun settled(context: Context, info: ConsentInformation) {
         _privacyOptions.value = info.privacyOptionsRequirementStatus == ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED
+        _consent.value = info.canRequestAds()
         if (info.canRequestAds()) startSdk(context.applicationContext)
     }
 

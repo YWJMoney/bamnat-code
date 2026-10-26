@@ -99,7 +99,9 @@ fun launchThanksText(until: java.time.LocalDate): String =
 fun LaunchThanks(c: AppContainer) {
     val pro by c.proStore.state.collectAsStateWithLifecycle()
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
-    if (!config.billingLive || pro.thanksSeen) return
+    // [FLAG-08] The `billing` row in place of the 정식 출시 switch; launchedAt still comes from the server.
+    val rows by c.flags.byKey.collectAsStateWithLifecycle()
+    if (rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.on != true || pro.thanksSeen) return
     val zone = Today.zone()
     val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchedAt, config.thanksMonths, zone) ?: return
     if (!Today.instant().isBefore(until)) return

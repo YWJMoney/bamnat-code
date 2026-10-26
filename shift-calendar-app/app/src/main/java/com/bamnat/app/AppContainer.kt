@@ -279,12 +279,16 @@ class AppContainer(context: Context) {
     val installedAt: java.time.Instant? by lazy {
         runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
     }
-    /** [MON-02] The 정식 출시 switch and what goes with it, from the company server once a day. */
-    val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext, held = { policyAsks() })
+    /** [MON-02] What the company server says once a day: [FLAG-06] the dark-merge overrides, notices, 처리방침 dates. */
+    val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
-    /** [PRIV-03] 결정 D84: this phone was installed before 처리방침 3.1 was posted and has not said yes yet. */
-    fun policyAsks(): Boolean = com.bamnat.core.ops.PolicyConsent.asks(
-        installedAt?.atZone(com.bamnat.core.time.Today.zone())?.toLocalDate(), remoteConfig.policyAgreed(), com.bamnat.core.time.Today.date())
+    /**
+     * [PRIV-03] 결정 D84: this phone was installed before 처리방침 3.1 was posted and has not said yes yet. [FLAG-03] The
+     * dates come from the policy calendar (the server may move them).
+     */
+    fun policyAsks(): Boolean = remoteConfig.current.calendar.holds(com.bamnat.core.ops.PolicyConsent.VERSION,
+        installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate(), remoteConfig.agreed.value,
+        com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)) == true
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
      * built-in data as the app starts.
@@ -300,7 +304,62 @@ class AppContainer(context: Context) {
     val proStore = com.bamnat.app.tier.ProStore(appContext)
     /** [MON-02] 프로 on the company server; screenshots and tests put a fake in its place. */
     var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
-    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, installedAt = { installedAt })
+    /** [MON-07] Google's consent form and the ads SDK. */
+    val ads = com.bamnat.app.ads.Ads(appScope)
+    /** [FLAG-15] The rows this admin phone previews; this phone only, not backed up. */
+    val flagPreviews = com.bamnat.app.flags.FlagPreviews(appContext)
+    /** [FLAG-07] Company facts wait for the first month on screen (a store read the start does not need). */
+    @Volatile private var flagsWarm = false
+    /**
+     * [FLAG-07] 1.28 AL: every dark-merge row as evaluated on this phone (billing, ads, kinds of work, the old 기능
+     * 스위치, free.*, stats.more…). Screens and jobs ask [com.bamnat.app.flags.Flags.on].
+     */
+    val flags: com.bamnat.app.flags.Flags = com.bamnat.app.flags.Flags(
+        remoteConfig.config,
+        listOf(
+            remoteConfig.agreed,
+            settingsRepository.settings.map { listOf(it.shareUsageStats, it.usageStatsMore, it.workStyle) }.distinctUntilChanged(),
+            proStore.state.map { it.passes?.admin to it.passes?.checkedAt }.distinctUntilChanged(),
+            flagPreviews.keys, ads.consent,
+            payStore.profile.map { it != null }.distinctUntilChanged(),
+        ),
+        appScope, facts = { phoneFacts() }, serverNow = { remoteConfig.serverNow() },
+    )
+
+    /** [FLAG-07] This phone as the dark-merge rows read it; nothing of it is sent. */
+    fun phoneFacts(): com.bamnat.core.flags.PhoneFacts {
+        val now = Today.instant()
+        val s = settingsRepository.current
+        val passes = proStore.current.passes
+        val admin = passes?.admin?.takeIf { it.approved && java.time.Duration.between(passes.checkedAt, now) < com.bamnat.core.tier.ProAccess.ADMIN_CHECK }
+        val warm = flagsWarm
+        return com.bamnat.core.flags.PhoneFacts(
+            now = now,
+            // [FLAG-04] AL-D6: a 1.27 server (no flags, no clock) is read with the phone's date, as 1.27 did.
+            serverNow = remoteConfig.serverNow() ?: now.takeIf { remoteConfig.current.flags == null },
+            versionCode = BuildConfig.VERSION_CODE,
+            installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate(),
+            agreed = remoteConfig.agreed.value,
+            consents = buildMap {
+                put("usage", s.shareUsageStats)
+                s.usageStatsMore?.let { put("usage.stats.more", it) }
+                ads.consent.value?.let { put("ads", it) }
+            },
+            profile = setOfNotNull(
+                "setup.done".takeIf { s.workStyle != null },
+                "pay.setup".takeIf { payStore.profile.value != null },
+                "company.linked".takeIf { warm && (companyStore.member.value != null || companyStore.applied.value != null) },
+            ),
+            workType = s.workStyle?.name,
+            installHash = if (warm) flagInstallHash else null,
+            admin = admin != null,
+            owner = admin?.owner == true,
+            previews = flagPreviews.keys.value,
+        )
+    }
+    private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }
+
+    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, flags, installedAt = { installedAt })
     /**
      * [MON-03] Play billing; screenshots and tests put a fake in its place. [PERF-01] Play's billing client is
      * built the first time it is used (after the 정식 출시 switch, or for a known subscription), not while
@@ -315,9 +374,6 @@ class AppContainer(context: Context) {
             device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } },
             onBought = { trial -> telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) })
     }
-    /** [MON-07] Google's consent form and the ads SDK. */
-    val ads = com.bamnat.app.ads.Ads(appScope)
-
     // AE 1.26 [INVITE-02][INVITE-03] 친구 초대: built on first use; screenshots and tests put fakes in place of the
     // server, Play's referrer and the phone mark.
     var inviteApi: com.bamnat.app.tier.InviteApi = com.bamnat.app.tier.InviteClient()
@@ -339,14 +395,15 @@ class AppContainer(context: Context) {
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
-            usageStats.sendIfDue(settingsRepository.current.shareUsageStats && !remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.USAGE_STATS))
+            // [FLAG-10] The developer's rest is the usage.stats row; [FLAG-16] stats.more adds the rows on.
+            usageStats.sendIfDue(settingsRepository.current.shareUsageStats && !flags.paused(com.bamnat.core.ops.ServerSwitch.USAGE_STATS), flags.statsOn())
         }
         runCatching { syncPasses(force) }
         runCatching { sendConsent() }
         // [INVITE-03] A friend's next day and the inviter's counts; not before the calendar has drawn (afterFirstFrame).
         runCatching { if (laterStarted.get()) invites.sync(force) }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
-        if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
+        if (flags.on(com.bamnat.core.flags.FlagCatalog.BILLING) || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
         // [STAT-04] A day with a paid subscription counts toward the G2 gate (구독 사용자 비율).
         if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
@@ -481,8 +538,8 @@ class AppContainer(context: Context) {
 
     @OptIn(FlowPreview::class)
     fun start() {
-        // [PRIV-03] The 3.1 hold is looked at again now that the container is whole (결정 D84); no job of its own.
-        remoteConfig.recheck()
+        // [FLAG-07] Every dark-merge row is looked at again now that the container is whole; no job of its own.
+        flags.refresh()
         // [STAT-01] A no that came another way (a restored backup) forgets what waited, without a job of its own.
         usageStats.forgetUnless(settingsRepository.current.shareUsageStats)
         keep("schedule") {
@@ -580,6 +637,9 @@ class AppContainer(context: Context) {
     fun afterFirstFrame() {
         if (!laterStarted.compareAndSet(false, true)) return
         keptBeforeLater = kept.toList()
+        // [FLAG-07] Company facts (회사 연결, rollout place) join the rows now.
+        flagsWarm = true
+        flags.refresh()
         startLater()
         // [INVITE-03] Once, not kept: after the first setup Play's install referrer is read here (and nowhere at the start).
         appScope.launch { runCatching { invites.sync() } }

@@ -1004,6 +1004,9 @@ fun CalendarScreen(
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
                 add(Notice("policy31", "처리방침 3.1") { com.bamnat.app.ui.pro.PolicyConsentNotice() })
+            // [FLAG-16] 1.28 AL: once 처리방침 3.2 is in force, one ask for 사용 통계's two extra items.
+            if (paint == null && viewingReceived == null && com.bamnat.app.ui.flags.statsMoreAsks(LocalContext.current.appContainer))
+                add(Notice("statsMore", "사용 통계") { com.bamnat.app.ui.flags.StatsMoreNotice() })
             // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
             // AG 1.27 [INVITE-10]: first, so it is never folded in "알림 n개 더 보기" (리뷰 2026-10-25); it shows only
             // for a phone that did not answer at the end of the first setup, and after the report the friend's own invite.

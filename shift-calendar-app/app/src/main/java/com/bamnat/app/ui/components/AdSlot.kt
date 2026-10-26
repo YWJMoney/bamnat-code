@@ -38,8 +38,10 @@ fun AdSlot(place: AdRules.Place, modifier: Modifier = Modifier) {
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     val ready by c.ads.ready.collectAsStateWithLifecycle()
+    // [FLAG-09] The `ads` row in place of the 정식 출시 switch.
+    val rows by c.flags.byKey.collectAsStateWithLifecycle()
     val show = ready && AdIds.banner.isNotBlank() && !gate.preview &&
-        AdRules.banner(place, config.billingLive, gate.allows(Feature.NO_ADS), true, c.installedAt, Today.instant(), config.adQuietDays)
+        AdRules.banner(place, rows[com.bamnat.core.flags.FlagCatalog.ADS]?.on == true, gate.allows(Feature.NO_ADS), true, c.installedAt, Today.instant(), config.adQuietDays)
     if (!show) return
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val width = maxWidth.value.toInt()

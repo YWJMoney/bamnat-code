@@ -2,6 +2,12 @@ package com.bamnat.app.tier
 
 import android.content.Context
 import com.bamnat.core.ops.AppNotice
+import com.bamnat.app.flags.FlagJson
+import com.bamnat.core.flags.FlagCatalog
+import com.bamnat.core.flags.FlagOverride
+import com.bamnat.core.flags.Force
+import com.bamnat.core.flags.PolicyCalendar
+import com.bamnat.core.flags.PolicyVersion
 import com.bamnat.core.ops.ServerSwitch
 import com.bamnat.core.tier.AdRules
 import com.bamnat.core.tier.TrialConsent
@@ -16,24 +22,50 @@ import java.time.Instant
 import com.bamnat.core.time.Today
 
 /**
- * [MON-02] What the company server's `GET /api/config` says: the developer app's 정식 출시 switch and
- * what goes with it. A phone that never heard from the server keeps the switch off, so everything stays
- * free. [freeFeatures] can only open a 프로 feature to everyone, never lock a free one.
+ * [MON-02] What the company server's `GET /api/config` says. [FLAG-06] Since 1.28 the 정식 출시 switch is retired into
+ * the dark-merge book: [flags] are the server's overrides of its rows, [policy] its 처리방침 dates and [serverTime] its
+ * clock (for LEGAL rows). A 1.27 server sends none of them; [overrides] then reads [billingLive], [freeFeatures] and
+ * [off] as overrides, so a 1.28 phone behaves exactly as 1.27 did until the server is redeployed (AL-D6).
+ * A phone that never heard from the server has no override: every row follows the app's own conditions.
  */
 data class LaunchConfig(
+    /** The 1.27 switch as the server still sends it for older apps; 1.28 reads it only from a server without [flags]. */
     val billingLive: Boolean = false,
     val launchedAt: Instant? = null,
     val thanksMonths: Int = 0,
+    /** 1.27: pro features opened to everyone; read only from a server without [flags] (then `free.<FEATURE>`). */
     val freeFeatures: Set<Feature> = emptySet(),
     val adQuietDays: Int = AdRules.QUIET_DAYS,
     val trialAskDays: Int = TrialConsent.ASK_BEFORE.toDays().toInt(),
     val fetchedAt: Instant? = null,
     /** [SRV-04] The developer app's notices, shown one at a time over the calendar. */
     val notices: List<AppNotice> = emptyList(),
-    /** [SRV-04] Features the developer paused; the app shows them as resting and does not call the server for them. */
+    /** [SRV-04] 1.27: features the developer paused; read only from a server without [flags]. */
     val off: Set<ServerSwitch> = emptySet(),
+    /** [FLAG-06] The server's overrides by key; null from a server that does not know flags (1.27). */
+    val flags: Map<String, FlagOverride>? = null,
+    /** [FLAG-03] The server's 처리방침 dates, laid over [PolicyCalendar.SEED]. */
+    val policy: List<PolicyVersion> = emptyList(),
+    /** [FLAG-04] The server's clock when it answered. */
+    val serverTime: Instant? = null,
+    /** [FLAG-04] The phone's time since boot when the answer came, and which boot (to carry [serverTime] forward). */
+    val fetchedElapsed: Long? = null,
+    val fetchedBoot: Int? = null,
 ) {
-    fun paused(s: ServerSwitch): Boolean = s in off
+    /**
+     * [FLAG-06] The overrides the phone evaluates: the server's [flags], or, from a 1.27 server, its switch read as
+     * forces (AL-D6): 정식 출시 on/off → billing·ads forced on/off, 무료로 연 기능 → `free.*` on, 쉬는 기능 → off.
+     */
+    fun overrides(): Map<String, FlagOverride> = flags ?: buildMap {
+        val launch = if (billingLive) Force.ON else Force.OFF
+        put(FlagCatalog.BILLING, FlagOverride(force = launch, why = "정식 출시 스위치(옛 서버)"))
+        put(FlagCatalog.ADS, FlagOverride(force = launch, why = "정식 출시 스위치(옛 서버)"))
+        freeFeatures.forEach { put(FlagCatalog.FREE_PREFIX + it.name, FlagOverride(force = Force.ON, why = "무료로 연 기능(옛 서버)")) }
+        off.forEach { put(FlagCatalog.switchKey(it), FlagOverride(force = Force.OFF, why = "기능 스위치(옛 서버)")) }
+    }
+
+    /** [FLAG-03] The app's 처리방침 dates with the server's laid over. */
+    val calendar: PolicyCalendar get() = PolicyCalendar.SEED.merged(policy)
 
     fun toJson(): JSONObject = JSONObject().put("billingLive", billingLive).put("launchedAt", launchedAt?.toString() ?: JSONObject.NULL)
         .put("thanksMonths", thanksMonths).put("freeFeatures", JSONArray(freeFeatures.map { it.name }))
@@ -51,12 +83,18 @@ data class LaunchConfig(
                     ?: JSONObject.NULL)
         }))
         .put("off", JSONArray(off.map { it.key }))
+        .put("flags", flags?.let { FlagJson.toJson(it) } ?: JSONObject.NULL)
+        .put("policy", FlagJson.toJson(policy))
+        .put("serverTime", serverTime?.toString() ?: JSONObject.NULL)
+        .put("fetchedElapsed", fetchedElapsed ?: JSONObject.NULL).put("fetchedBoot", fetchedBoot ?: JSONObject.NULL)
 
     companion object {
         /** The server's answer read strictly: a wrong shape is an error, so the last good answer stays. */
         fun parse(o: JSONObject, now: Instant): LaunchConfig {
-            if (!o.has("billingLive")) throw JSONException("billingLive")
-            val live = o.getBoolean("billingLive")
+            // [FLAG-06] A 1.27 server always sends billingLive; a 1.28 one sends flags (and billingLive for older apps).
+            val flags = if (!o.has("flags") || o.isNull("flags")) null else FlagJson.overrides(o.getJSONObject("flags"))
+            if (!o.has("billingLive") && flags == null) throw JSONException("billingLive")
+            val live = if (o.has("billingLive")) o.getBoolean("billingLive") else false
             val names = o.optJSONArray("freeFeatures")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
             return LaunchConfig(
                 billingLive = live,
@@ -70,6 +108,12 @@ data class LaunchConfig(
                 notices = o.optJSONArray("notices")?.let { a -> (0 until a.length()).map { notice(a.getJSONObject(it)) } }.orEmpty().take(AppNoticesMax),
                 // A switch of a newer server is skipped; this app has nothing of it to pause.
                 off = o.optJSONArray("off")?.let { a -> (0 until a.length()).mapNotNull { ServerSwitch.of(a.getString(it)) } }.orEmpty().toSet(),
+                flags = flags,
+                policy = if (!o.has("policy") || o.isNull("policy")) emptyList() else FlagJson.policy(o.getJSONArray("policy")),
+                serverTime = if (!o.has("serverTime") || o.isNull("serverTime")) null else Instant.parse(o.getString("serverTime")),
+                // Kept by the store, not sent by the server: only a saved answer has them.
+                fetchedElapsed = if (!o.has("fetchedElapsed") || o.isNull("fetchedElapsed")) null else o.getLong("fetchedElapsed"),
+                fetchedBoot = if (!o.has("fetchedBoot") || o.isNull("fetchedBoot")) null else o.getInt("fetchedBoot"),
             )
         }
 
@@ -113,31 +157,47 @@ data class LaunchConfig(
     }
 }
 
-/** [MON-02] The last [LaunchConfig] on this phone; asked again once a day. */
+/**
+ * [MON-02] The last [LaunchConfig] on this phone; asked again once a day. [FLAG-11] 1.28: the 3.1 hold (결정 D84) is no
+ * longer a mask here but the `billing`·`ads` rows' policy condition ([com.bamnat.app.flags.Flags]); this keeps the yes.
+ */
 class RemoteConfigStore(
     context: Context,
-    /** [PRIV-03] 결정 D84: true while this phone still owes its yes to 처리방침 3.1; the switch then stays off here. */
-    private val held: () -> Boolean = { false },
+    /** [FLAG-04] Time since boot and which boot, to carry the server's clock forward; tests put their own. */
+    private val elapsed: () -> Long = { android.os.SystemClock.elapsedRealtime() },
+    private val boot: () -> Int? = { bootCount(context) },
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("launch_config", Context.MODE_PRIVATE)
-    /** What the server said, as saved. [config] is this with the switch held off while [held]. */
-    private var raw: LaunchConfig = LaunchConfig.fromSaved(prefs.getString(KEY, null)) ?: LaunchConfig()
-    private val _config = MutableStateFlow(mask(raw))
+    private val _config = MutableStateFlow(LaunchConfig.fromSaved(prefs.getString(KEY, null)) ?: LaunchConfig())
     val config: StateFlow<LaunchConfig> = _config.asStateFlow()
     val current: LaunchConfig get() = _config.value
 
-    private fun mask(c: LaunchConfig): LaunchConfig =
-        if (c.billingLive && runCatching { held() }.getOrDefault(false)) c.copy(billingLive = false, launchedAt = null) else c
+    /** [FLAG-03] The 처리방침 versions this phone said yes to (휴대폰에만: 동의 기록은 새 휴대폰에서 다시 물어요). */
+    private val _agreed = MutableStateFlow(readAgreed())
+    val agreed: StateFlow<Set<String>> = _agreed.asStateFlow()
 
-    /** [PRIV-03] After a yes (or on a new day) the held switch is looked at again. */
-    fun recheck() { _config.value = mask(raw) }
+    private fun readAgreed(): Set<String> = setOfNotNull(prefs.getString(POLICY_KEY, null))
 
-    /** [PRIV-03] The 3.1 yes, kept in this file (휴대폰에만: 동의 기록은 새 휴대폰에서 다시 물어요). */
-    fun policyAgreed(): Boolean = prefs.getString(POLICY_KEY, null) == com.bamnat.core.ops.PolicyConsent.VERSION
+    /** [PRIV-03] The 3.1 yes. */
+    fun policyAgreed(): Boolean = PolicyCalendar.agreedAtLeast(_agreed.value, com.bamnat.core.ops.PolicyConsent.VERSION)
 
-    fun agreePolicy(now: Instant = Today.instant()) {
-        prefs.edit().putString(POLICY_KEY, com.bamnat.core.ops.PolicyConsent.VERSION).putString(POLICY_AT, now.toString()).apply()
-        recheck()
+    fun agreePolicy(now: Instant = Today.instant(), version: String = com.bamnat.core.ops.PolicyConsent.VERSION) {
+        prefs.edit().putString(POLICY_KEY, version).putString(POLICY_AT, now.toString()).apply()
+        _agreed.value = readAgreed()
+    }
+
+    /**
+     * [FLAG-04] The server's clock now: its time when it last answered plus the time since, on the same boot. After a
+     * reboot the time since is not known, so the server's time as it was (it is at least that late). Null before any
+     * answer with a server time.
+     */
+    fun serverNow(): Instant? {
+        val c = current
+        val at = c.serverTime ?: return null
+        val then = c.fetchedElapsed ?: return at
+        val now = elapsed()
+        val sameBoot = c.fetchedBoot == boot() && now >= then
+        return if (sameBoot) at.plusMillis(now - then) else at
     }
 
     /** Due when never asked, a day has passed, or the clock went back. */
@@ -146,10 +206,11 @@ class RemoteConfigStore(
         return now.isBefore(at) || Duration.between(at, now) >= EVERY
     }
 
+    /** [FLAG-04] A fresh answer is stamped with the time since boot, so its server time can be carried forward. */
     fun save(c: LaunchConfig) {
-        raw = c
-        _config.value = mask(c)
-        prefs.edit().putString(KEY, c.toJson().toString()).apply()
+        val stamped = if (c.serverTime != null && c.fetchedElapsed == null) c.copy(fetchedElapsed = elapsed(), fetchedBoot = boot()) else c
+        _config.value = stamped
+        prefs.edit().putString(KEY, stamped.toJson().toString()).apply()
     }
 
     /** Asks the server when due; no answer (offline, a sign-in page) keeps the last one. */
@@ -171,5 +232,10 @@ class RemoteConfigStore(
         private const val POLICY_KEY = "policy_agreed"
         private const val POLICY_AT = "policy_agreed_at"
         val EVERY: Duration = Duration.ofDays(1)
+
+        /** [FLAG-04] Which boot this is (Android 7+); null when the phone does not say. */
+        fun bootCount(context: Context): Int? = runCatching {
+            android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT)
+        }.getOrNull()
     }
 }

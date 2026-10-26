@@ -132,7 +132,7 @@ class PlazaNewsJob : JobService() {
          */
         suspend fun digest(c: AppContainer): Digest? {
             if (BuildConfig.COMPANY_BASE_URL.isBlank()) return null
-            val plazaOn = takesPart(c) && !c.remoteConfig.current.paused(ServerSwitch.PLAZA_NEWS)
+            val plazaOn = takesPart(c) && !c.flags.paused(ServerSwitch.PLAZA_NEWS)
             if (!plazaOn && !c.inquiryStore.asked) return null
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val since = prefs.getString(K_SINCE, null)

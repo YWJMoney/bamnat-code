@@ -14,8 +14,11 @@ import com.bamnat.core.time.Today
 /** [MON-08] One reward pass the developer gave this install: [why] is "rule" (회사 방식) or "idea" (제안). */
 data class PassItem(val months: Int, val at: Instant, val why: String)
 
-/** [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved". */
-data class AdminState(val status: String, val name: String) {
+/**
+ * [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved".
+ * [FLAG-13] 1.28: [owner] when the link code was made by the owner (최고 관리자); such a phone sees hidden kinds of work.
+ */
+data class AdminState(val status: String, val name: String, val owner: Boolean = false) {
     val approved: Boolean get() = status == "approved"
 }
 
@@ -87,7 +90,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
 
     override suspend fun link(device: String, code: String): AdminState = serverCall {
         val o = request("POST", "/api/admin-link", JSONObject().put("code", code.trim()), device)
-        AdminState(o.getString("status"), o.optString("name"))
+        AdminState(o.getString("status"), o.optString("name"), o.optBoolean("owner"))
     }
 
     override suspend fun unlink(device: String) = serverCall {
@@ -127,7 +130,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             waitingMonths = o.optInt("waitingMonths"),
             items = o.optJSONArray("items").objects().map { PassItem(it.getInt("months"), Instant.parse(it.getString("at")), it.optString("why")) },
             deferred = o.optInt("deferred"),
-            admin = o.optJSONObject("admin")?.let { AdminState(it.getString("status"), it.optString("name")) },
+            admin = o.optJSONObject("admin")?.let { AdminState(it.getString("status"), it.optString("name"), it.optBoolean("owner")) },
             hasCode = o.optBoolean("code"),
             checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Today.instant(),
         )

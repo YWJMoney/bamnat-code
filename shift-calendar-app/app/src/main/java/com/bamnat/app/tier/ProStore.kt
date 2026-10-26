@@ -84,8 +84,9 @@ data class ProState(
     /** [SRV-07] The trial answer still to send. */
     val pendingConsent: PendingConsent? = null,
 ) {
-    fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId): ProSources = ProSources(
-        billingLive = config.billingLive,
+    /** [FLAG-08] [live] is the `billing` row on this phone (the retired 정식 출시 switch). */
+    fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId, live: Boolean): ProSources = ProSources(
+        billingLive = live,
         subscription = sub?.play(),
         passUntil = passes?.until,
         admin = passes?.admin?.let { AdminLink(it.approved, passes.checkedAt) },
@@ -157,7 +158,7 @@ class ProStore(context: Context) {
                 JSONObject().put("until", p.until.json()).put("waitingMonths", p.waitingMonths)
                     .put("items", JSONArray(p.items.map { JSONObject().put("months", it.months).put("at", it.at.toString()).put("why", it.why) }))
                     .put("deferred", p.deferred).put("code", p.hasCode).put("checkedAt", p.checkedAt.toString())
-                    .put("admin", p.admin?.let { JSONObject().put("status", it.status).put("name", it.name) } ?: JSONObject.NULL)
+                    .put("admin", p.admin?.let { JSONObject().put("status", it.status).put("name", it.name).put("owner", it.owner) } ?: JSONObject.NULL)
             } ?: JSONObject.NULL)
             .put("dayPass", s.dayPass?.toString() ?: JSONObject.NULL)
             .put("trialAnswer", s.trialAnswer ?: JSONObject.NULL).put("trialAnswerAt", s.trialAnswerAt.json())

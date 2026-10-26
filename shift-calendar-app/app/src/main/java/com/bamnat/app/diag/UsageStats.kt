@@ -44,7 +44,16 @@ class UsageStats(
     /** [ALRM-02] The last day a bundle went, for 서버 연결 점검; null before any did. */
     val sentDay: LocalDate? get() = prefs.getLong(K_SENT_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(LocalDate::ofEpochDay)
 
-    fun preview(): String? = synchronized(lock) { book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
+    fun preview(flagsOn: List<String>? = null): String? = synchronized(lock) {
+        book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() }?.let { withFlags(it, flagsOn) }
+    }
+
+    /**
+     * [FLAG-16] 1.28 AL: with the `stats.more` row on (처리방침 3.2 and its own yes), the keys of the dark-merge rows on
+     * this phone, sorted: the same list on every phone with the same rows, so it tells no phone apart.
+     */
+    private fun withFlags(body: String, flagsOn: List<String>?): String =
+        if (flagsOn == null) body else JSONObject(body).put("flagsOn", org.json.JSONArray(flagsOn.sorted())).toString()
 
     /** Turning it off forgets everything not sent yet. */
     fun clear() = synchronized(lock) { prefs.edit().clear().apply() }
@@ -58,14 +67,14 @@ class UsageStats(
      * Sends the finished days when [allowed] (the user's yes and the developer's switch) and not yet today.
      * A failure keeps them for tomorrow; days older than a week are dropped by [UsageBook].
      */
-    suspend fun sendIfDue(allowed: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun sendIfDue(allowed: Boolean, flagsOn: List<String>? = null): Boolean = withContext(Dispatchers.IO) {
         if (!allowed || baseUrl.isBlank()) return@withContext false
         val day = today()
         if (prefs.getLong(K_SENT_DAY, Long.MIN_VALUE) >= day) return@withContext false
         val body = synchronized(lock) { book().bundle(day, BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
             ?: return@withContext false
         try {
-            post(baseUrl, JSONObject(body))
+            post(baseUrl, JSONObject(withFlags(body, flagsOn)))
         } catch (e: CompanyException) {
             // A bad bundle would fail every day; it is dropped. No connection is tried tomorrow.
             if (e.code == "offline" || e.code == "rate_limited" || e.code.startsWith("http_5")) return@withContext false
