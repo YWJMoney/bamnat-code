@@ -45,8 +45,15 @@ const hashText = (text) => {
   return h.toString(36);
 };
 
+// AN 1.28 [ADMUX-39] tools/bundle.mjs writes these two already made into dist/worker.js, so a fresh worker copy
+// sends the app without building it first; left null (wrangler deploy, the tests), they are made on first ask.
 let builtFiles = null;
 let builtVersion = null;
+
+/** AN 1.28 [ADMUX-39] The files and build name as tools/bundle.mjs puts them into dist/worker.js. */
+export function adminPrebuilt() {
+  return { files: adminFiles(), version: adminBuild() };
+}
 
 /** [ADMUX-08] A name for this build of the app's files; /api/admin/overview sends it as build. */
 export function adminBuild() {
@@ -559,7 +566,9 @@ margin:.75rem 0 0;padding:.6rem .75rem;background:var(--raised);border:1px solid
 .version.best{border-color:var(--gold)}
 .version p{margin:0 0 .4rem}
 .rows.inbox .row-side{flex-wrap:wrap;justify-content:flex-end}
-@media (min-width:600px){.bulkbar{bottom:1rem}}
+.rows.inbox .row-main a{color:inherit;text-decoration:none}
+.rows.inbox .row-main a:hover{text-decoration:underline}
+@media (min-width:600px){.bulkbar{bottom:1rem}.rows.inbox .row-side{flex-direction:row;align-items:center}}
 .dev-body{margin:.6rem 0 0;white-space:pre-wrap;font-size:.94rem}
 .history{list-style:none;margin:0;padding:0}
 .history li{padding:.6rem 0;border-top:1px solid var(--line);font-size:.88rem}

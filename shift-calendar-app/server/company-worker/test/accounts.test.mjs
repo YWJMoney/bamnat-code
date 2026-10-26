@@ -261,6 +261,15 @@ test("the bundled worker.js for the dashboard is one file that works the same", 
   const res = await worker.fetch(new Request(`${ORIGIN}/admin/join`), {});
   assert.equal(res.status, 200);
   assert.match(await res.text(), /밤낮 관리자/);
+  // AN 1.28 [ADMUX-39] The app's files come already made, and are the very ones the worker makes for itself.
+  const { call } = server();
+  assert.ok(!code.includes("let builtFiles = null;"), "the files are made at bundle time");
+  for (const path of ["/admin/app.js", "/admin/sw.js", "/admin/app.css"]) {
+    const a = await worker.fetch(new Request(`${ORIGIN}${path}`), {});
+    const b = await call("GET", path);
+    assert.equal(a.headers.get("etag"), b.headers.get("etag"), path);
+    assert.equal(await a.text(), b.text, path);
+  }
 });
 
 test("the hourly clean-up deletes spent sign-ins, unused invites and codes, and keeps used invites", async (t) => {
