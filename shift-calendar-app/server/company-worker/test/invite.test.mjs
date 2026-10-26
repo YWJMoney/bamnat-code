@@ -111,7 +111,7 @@ test("five friends who each use the app seven days give the inviter a month, wai
 
   // After the launch it runs a month from the launch day.
   const owner = await signIn(call);
-  await call("POST", "/api/admin/launch", { billingLive: true }, owner);
+  await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "정식 출시" }, owner);
   const live = (await call("GET", "/api/passes", undefined, phone(1))).data;
   assert.equal(live.until, "2026-12-08T03:00:00.000Z");
   assert.equal(live.waitingMonths, 0);

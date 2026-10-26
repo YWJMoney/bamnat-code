@@ -54,7 +54,7 @@ test("[SRV-10] over 90% of the free D1 day, 사용 통계 then 문의 사진 res
   const { call, env, DB } = server();
   const h = await signIn(call);
   // The developer switched 광장 소식 off by hand: the job leaves it alone.
-  await call("POST", "/api/admin/switches", { key: "PLAZA_NEWS", off: true }, h);
+  await call("POST", "/api/admin/switches", { key: "PLAZA_NEWS", off: true, why: "시험: 잠시 끔" }, h);
   const day = new Date(NOW).toISOString().slice(0, 10);
   DB.db.prepare("INSERT OR REPLACE INTO counters (key, count, expires) VALUES (?, 95000, ?)").run(`meter|${day}`, NOW + 3 * 24 * HOUR);
   const off = async () => (await call("GET", "/api/config")).data.off;

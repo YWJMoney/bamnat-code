@@ -53,35 +53,40 @@ test("passes stack from the launch, and wait before it", () => {
 });
 
 test("every app reads the switch; only the owner turns it", async (t) => {
+  // AM 1.28 [FLAG-22][FLAG-25] 정식 출시 is the billing flag: apps up to 1.27 read the same fields, worked out from it.
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T01:00:00Z") });
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
-  assert.deepEqual(before, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, notices: [], off: [] });
+  const { flags, policy, serverTime, ...old } = before;
+  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, notices: [], off: [] });
+  assert.equal(serverTime, "2026-11-20T01:00:00.000Z");
+  assert.ok(flags.billing && policy.some((p) => p.version === "3.1"));
 
   const owner = await signIn(call);
   const { headers: m } = await member(call, owner);
-  // An admin who may change 채택 설정 still cannot launch.
-  assert.equal((await call("POST", "/api/admin/launch", { billingLive: true }, m)).status, 403);
-  assert.equal((await call("POST", "/api/admin/launch", { freeFeatures: ["not ok"] }, owner)).data.error, "freeFeatures");
-  assert.equal((await call("POST", "/api/admin/launch", { thanksMonths: 13 }, owner)).data.error, "thanksMonths");
+  // An admin who may change 채택 설정 still cannot launch; the old switch is retired.
+  assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "출시" }, m)).status, 403);
+  assert.equal((await call("POST", "/api/admin/launch", { billingLive: true }, owner)).status, 410);
+  assert.equal((await call("POST", "/api/admin/flags/billing/thanks", { thanksMonths: 13 }, owner)).data.error, "thanksMonths");
 
-  const on = await call("POST", "/api/admin/launch", { billingLive: true, freeFeatures: ["MONEY_STATS"] }, owner);
+  const on = await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "Play 승인 받음" }, owner);
   assert.equal(on.status, 200);
-  assert.equal(on.data.billingLive, true);
-  assert.equal(on.data.launchedAt, "2026-11-20T01:00:00.000Z");
-  assert.equal(on.data.play, false);
+  assert.equal(on.data.on, true);
+  assert.equal(on.data.launchedAt, Date.parse("2026-11-20T01:00:00Z"));
+  await call("POST", "/api/admin/flags/free.MONEY_STATS/force", { force: "on", why: "돈 통계 모두에게" }, owner);
   assert.equal((await call("GET", "/api/admin/overview", undefined, owner)).data.billingLive, true);
+  assert.equal((await call("GET", "/api/admin/launch", undefined, owner)).data.billingLive, true);
 
   // Off and on again later: the launch day stays the first one.
   t.mock.timers.tick(3 * DAY);
-  await call("POST", "/api/admin/launch", { billingLive: false }, owner);
+  await call("POST", "/api/admin/flags/billing/force", { force: "off", why: "잠시 멈춤" }, owner);
   assert.equal((await call("GET", "/api/config")).data.billingLive, false);
-  await call("POST", "/api/admin/launch", { billingLive: true }, owner);
+  await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "다시" }, owner);
   const cfg = (await call("GET", "/api/config")).data;
   assert.equal(cfg.launchedAt, "2026-11-20T01:00:00.000Z");
   assert.deepEqual(cfg.freeFeatures, ["MONEY_STATS"]);
   const log = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries.map((e) => e.action);
-  assert.deepEqual(log.filter((a) => a.startsWith("launch")), ["launch_on", "launch_off", "launch_settings", "launch_on"]);
+  assert.deepEqual(log.filter((a) => a.startsWith("launch")), ["launch_recorded"]);
 });
 
 test("a reward given becomes a pass on that phone, counted from the launch", async (t) => {
@@ -107,7 +112,7 @@ test("a reward given becomes a pass on that phone, counted from the launch", asy
 
   t.mock.timers.tick(19 * DAY);
   // A sign-in lasts a week; the owner signs in again on launch day.
-  assert.equal((await call("POST", "/api/admin/launch", { billingLive: true }, await signIn(call))).status, 200);
+  assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "정식 출시" }, await signIn(call))).status, 200);
   const after = (await call("GET", "/api/passes", undefined, p1.items.length ? phone(1) : phone(2))).data;
   assert.equal(after.until, "2027-05-20T00:00:00.000Z");
   assert.equal(after.waitingMonths, 0);
