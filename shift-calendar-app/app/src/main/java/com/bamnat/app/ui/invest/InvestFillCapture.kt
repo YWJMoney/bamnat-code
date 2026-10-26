@@ -88,8 +88,9 @@ internal fun FillCaptureSheet(
     val context = LocalContext.current
     val zone = Today.zone()
 
-    fun take(text: String) {
-        val fills = FillSheetReader.read(text)
+    // [READ-13] 1.27 AJ: a capture read several ways comes with its 체결 put together (FillVote); typed text is read here.
+    fun take(text: String, voted: List<FillSheetReader.Fill>? = null) {
+        val fills = voted ?: FillSheetReader.read(text)
         rows.clear()
         rows += fills.map(::FillRow)
         read = true
@@ -100,7 +101,7 @@ internal fun FillCaptureSheet(
         val uri = shared ?: return@LaunchedEffect
         try {
             // [READ-09] Through U's ImagePrep (upright, sized for reading), on the phone only (결정 D68).
-            take(com.bamnat.app.pay.PayslipScanner.read(context, uri))
+            com.bamnat.app.pay.PayslipScanner.scan(context, uri).let { take(it.text, it.fills) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -148,7 +149,7 @@ internal fun FillCaptureSheet(
                     CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
                     Text("  휴대폰 안에서 캡처를 읽고 있어요", style = MaterialTheme.typography.bodySmall)
                 }
-                ScanButtons(onText = ::take)
+                ScanButtons(onScan = { take(it.text, it.fills) })
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 if (read && rows.isNotEmpty()) {
                     Text("${rows.size}건을 읽었어요. 노란 칸은 숫자가 서로 안 맞거나 확실하지 않은 곳이에요. 캡처와 같은지 보고 고치거나 ‘맞아요’를 눌러 주세요.",

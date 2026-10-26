@@ -58,6 +58,7 @@ import com.bamnat.core.pay.PayslipReader
 import com.bamnat.core.pay.RuleChange
 import com.bamnat.core.pay.RuleFinding
 import com.bamnat.core.pay.RuleText
+import com.bamnat.core.pay.SlipNames
 import com.bamnat.core.pay.SlipRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -65,22 +66,37 @@ import kotlinx.coroutines.launch
 /**
  * [PAYS-05] Two buttons that read the text of a photo on the phone: one picks a photo or screenshot, one takes a
  * picture. The text goes to [onText]; a photo taken here is deleted once read.
+ * [READ-13][READ-14] 1.27: the photo is read several ways and put together ([PayslipScanner.scan]), "n/m번째 방법으로 읽는
+ * 중" shows while it does, and a photo too dark, blurred or small says how to take a better one. [onScan], when given,
+ * gets the whole reading (the put-together payslip, its lines to look at, the photo for "사진과 같은가요?") instead of
+ * the text alone.
  */
 @Composable
-internal fun ScanButtons(onText: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun ScanButtons(
+    onText: (String) -> Unit = {}, modifier: Modifier = Modifier,
+    onScan: ((PayslipScanner.Scan) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var reading by remember { mutableStateOf(false) }
+    var step by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var advice by remember { mutableStateOf<String?>(null) }
 
     fun read(uri: Uri, taken: Boolean) {
         reading = true
         error = null
+        advice = null
+        step = null
         scope.launch {
             try {
-                val text = PayslipScanner.read(context, uri)
-                if (text.isBlank()) error = "글자를 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요."
-                else onText(text)
+                val scan = PayslipScanner.scan(context, uri) { n, m -> step = n to m }
+                val retake = scan.quality?.takeIf { it.retake }?.line
+                if (scan.text.isBlank()) error = "글자를 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
+                else {
+                    advice = retake
+                    if (onScan != null) onScan(scan) else onText(scan.text)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
@@ -132,13 +148,15 @@ internal fun ScanButtons(onText: (String) -> Unit, modifier: Modifier = Modifier
         }
         if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text("  휴대폰 안에서 글자를 읽고 있어요", style = MaterialTheme.typography.bodySmall)
+            Text(step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
+                style = MaterialTheme.typography.bodySmall)
         }
         error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     }
 }
 
-private fun SlipRole.short(): String = when (this) {
+internal fun SlipRole.short(): String = when (this) {
     SlipRole.GROSS, SlipRole.TOTAL -> "지급 총액"
     SlipRole.BASE -> "기본급"
     SlipRole.HOURLY -> "시급"
@@ -199,20 +217,45 @@ class RuleTarget(
  * [READ-08] 1.25 (사용자 2026-10-25 "명세서와 회사 계산방법 사진을 두 장 보낼 수 있게"): with [rules], a second photo of the
  * company's pay rules (취업규칙 임금 조항, 수당표) can go with it, in either slot: [PayPhotos] tells which is which. Its
  * rules are listed to tick, and go to [RuleTarget.onRules] with the payslip; 공제·실수령 are shown for the tax estimate.
+ * [READ-18] 1.27 순번 447: the photo beside what was read, "사진과 내용이 같은가요?", and on '다른 곳이 있어요' each line fixed
+ * where it is (its kind and amount), lines added or taken away; a line read two ways is yellow. A kind the user gives a
+ * line's name is learned for the next payslip ([com.bamnat.app.data.ReadFixBook], [SlipNames]).
+ * [PAYS-16] 1.27 순번 448: with [rulesOnly], the company's way of counting alone (no payslip) goes on: [onRead] gets an
+ * empty payslip with the ticked rules, and the pay is worked out from the rules and the calendar.
  */
 @Composable
-fun PayslipFillDialog(title: String, onDismiss: () -> Unit, rules: RuleTarget? = null, onRead: (PayslipRead) -> Unit) {
+fun PayslipFillDialog(
+    title: String, onDismiss: () -> Unit, rules: RuleTarget? = null, rulesOnly: Boolean = false, onRead: (PayslipRead) -> Unit,
+) {
+    val context = LocalContext.current
+    val fixes = remember { com.bamnat.app.data.ReadFixBook.get(context) }
     var text by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     var typing by remember { mutableStateOf(false) }
     var read by remember { mutableStateOf<PayslipRead?>(null) }
+    // [READ-18] The photo read for each slot (its put-together lines and picture), and what was read before fixing.
+    var scan by remember { mutableStateOf<PayslipScanner.Scan?>(null) }
+    var scanSecond by remember { mutableStateOf<PayslipScanner.Scan?>(null) }
+    var asRead by remember { mutableStateOf<PayslipRead?>(null) }
+    var unsure by remember { mutableStateOf(emptySet<Int>()) }
+    var same by remember { mutableStateOf<Boolean?>(null) }
     val ticks = remember { mutableStateListOf<Pair<RuleFinding, Boolean>>() }
     fun analyse() {
-        val photos = PayPhotos.read(listOf(text, second).filter { it.isNotBlank() }, rules?.kinds.orEmpty(), rules?.shiftTypes.orEmpty(), rules?.fiveOrMore ?: true)
-        read = photos.slip ?: PayslipReader.read(text)
+        val texts = listOf(text, second)
+        val photos = PayPhotos.read(texts.filter { it.isNotBlank() }, rules?.kinds.orEmpty(), rules?.shiftTypes.orEmpty(), rules?.fiveOrMore ?: true)
+        // The slot the payslip came from, and its photo's put-together reading when it was read from a photo as it is.
+        val slot = texts.withIndex().filter { it.value.isNotBlank() }.getOrNull(photos.slipIndex)?.index
+        val voted = slot?.let { listOf(scan, scanSecond)[it]?.takeIf { s -> s.text == texts[it] }?.slip }
+        val raw = voted?.read ?: photos.slip ?: PayslipReader.read(text)
+        val taught = SlipNames.apply(raw, fixes.slipNames())
+        read = taught
+        asRead = taught
+        unsure = voted?.unsure.orEmpty()
+        same = null
         ticks.clear()
         if (rules != null) ticks += photos.rules.map { it to (it.confidence >= 0.6) }
     }
+    val photo = scan?.takeIf { it.text == text }?.image ?: scanSecond?.takeIf { it.text == second }?.image
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -220,18 +263,28 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, rules: RuleTarget? =
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val r = read
                 if (r == null) {
-                    Text(if (rules != null) "명세서 사진 한 장, 있으면 회사 계산 방법(취업규칙·수당표) 사진 한 장 더. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요."
-                        else "명세서 사진이나 캡처 한 장이면 돼요. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (rules != null) Text(if (text.isBlank()) "1. 명세서" else "1. 명세서 ✓ 읽었어요", style = MaterialTheme.typography.titleSmall)
-                    ScanButtons(onText = { t -> text = t; if (rules == null) analyse() })
+                    Text(when {
+                        rulesOnly -> "명세서 사진, 회사 계산 방법(취업규칙·수당표) 사진, 둘 중 하나만 있어도 돼요. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요."
+                        rules != null -> "명세서 사진 한 장, 있으면 회사 계산 방법(취업규칙·수당표) 사진 한 장 더. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요."
+                        else -> "명세서 사진이나 캡처 한 장이면 돼요. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요."
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (rules != null) Text(when {
+                        text.isNotBlank() -> "1. 명세서 ✓ 읽었어요"
+                        rulesOnly -> "1. 명세서 (없으면 건너뛰어도 돼요)"
+                        else -> "1. 명세서"
+                    }, style = MaterialTheme.typography.titleSmall)
+                    ScanButtons(onScan = { s -> scan = s; text = s.text; if (rules == null) analyse() })
                     if (rules != null) {
-                        Text(if (second.isBlank()) "2. 회사 계산 방법 (없으면 건너뛰어도 돼요)" else "2. 회사 계산 방법 ✓ 읽었어요", style = MaterialTheme.typography.titleSmall)
-                        ScanButtons(onText = { t -> second = if (second.isBlank()) t else second + "\n" + t })
+                        Text(when {
+                            second.isNotBlank() -> "2. 회사 계산 방법 ✓ 읽었어요"
+                            rulesOnly -> "2. 회사 계산 방법 (명세서가 없으면 이것만으로도 계산해요)"
+                            else -> "2. 회사 계산 방법 (없으면 건너뛰어도 돼요)"
+                        }, style = MaterialTheme.typography.titleSmall)
+                        ScanButtons(onScan = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text })
                     }
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap. Typing it is folded away.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() },
-                        onPaste = { t -> text = t; if (rules == null) analyse() })
+                        onPaste = { t -> text = t; scan = null; if (rules == null) analyse() })
                     TextButton(onClick = { typing = !typing }) { Text(if (typing) "글로 붙여 넣기 접기" else "글로 붙여 넣기") }
                     if (typing) OutlinedTextField(
                         value = text, onValueChange = { text = it },
@@ -240,10 +293,21 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, rules: RuleTarget? =
                         minLines = 4, modifier = Modifier.fillMaxWidth(),
                     )
                 } else if (r.lines.isEmpty() && ticks.isEmpty()) {
-                    Text("금액을 찾지 못했어요. ‘기본급 2,508,000’처럼 이름과 금액이 함께 보이게 찍거나 붙여 넣어 주세요.")
+                    Text(if (rulesOnly) "금액도 규칙도 찾지 못했어요. 명세서는 ‘기본급 2,508,000’처럼 이름과 금액이, 회사 계산 방법은 ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 찍어 주세요."
+                        else "금액을 찾지 못했어요. ‘기본급 2,508,000’처럼 이름과 금액이 함께 보이게 찍거나 붙여 넣어 주세요.")
                 } else {
                     r.month?.let { Text("${it.year}년 ${it.monthValue}월 명세서", style = MaterialTheme.typography.titleSmall) }
-                    SlipPreview(r)
+                    if (photo != null) PhotoThumb(photo)
+                    if (r.lines.isNotEmpty()) {
+                        SlipCheck(r, unsure, same, fromPhoto = photo != null,
+                            onAnswer = { same = it },
+                            onChange = { next, fixed ->
+                                read = next
+                                unsure = fixed
+                            })
+                    } else if (rulesOnly) Text("명세서 없이 회사 계산 방법만으로 계산해요. 기본급·시간 같은 꼭 필요한 값은 급여 화면이 바로 넣게 알려 줘요. " +
+                        "명세서를 넣으면 실제 입금액·기본급과 맞춰 볼 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // [READ-08] What the tax estimate (묶음 W) starts from: 공제 합계 and 실수령, worked out when the photo cut them.
                     val net = r.net
                     if (r.deducted != null || net != null) Text(
@@ -267,18 +331,34 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, rules: RuleTarget? =
         },
         confirmButton = {
             val r = read
+            // [READ-18] A photo's lines read two ways wait for "사진과 같은가요?" (조용히 틀린 값 0).
+            val waiting = r != null && r.lines.isNotEmpty() && photo != null && same == null && unsure.isNotEmpty()
+            val canRead = text.isNotBlank() || rulesOnly && second.isNotBlank()
             when {
-                r == null -> if (typing || (rules != null && text.isNotBlank())) Button(onClick = ::analyse, enabled = text.isNotBlank()) { Text("읽기") }
+                r == null -> if (typing || (rules != null && canRead)) Button(onClick = ::analyse, enabled = canRead) { Text("읽기") }
                 r.lines.isEmpty() && ticks.isEmpty() -> Button(onClick = { read = null }) { Text("다시 하기") }
+                waiting -> Button(onClick = {}, enabled = false) { Text("사진과 같은지 먼저 봐 주세요") }
                 else -> Button(onClick = {
                     val chosen = ticks.filter { it.second }.map { it.first.change }
+                    asRead?.let { before -> fixes.learnSlip(SlipNames.learned(before, r)) }
                     if (rules != null && chosen.isNotEmpty()) rules.onRules(chosen, r.month)
-                    if (r.lines.isNotEmpty()) onRead(r) else onDismiss()
-                }) { Text(if (ticks.any { it.second }) "이대로 채우고 규칙 넣기" else "이대로 채우기") }
+                    when {
+                        r.lines.isNotEmpty() -> onRead(r)
+                        rulesOnly && chosen.isNotEmpty() -> onRead(PayslipRead(emptyList(), r.month))
+                        else -> onDismiss()
+                    }
+                }) {
+                    Text(when {
+                        r.lines.isEmpty() && rulesOnly -> "규칙으로 계산하기"
+                        ticks.any { it.second } -> "이대로 채우고 규칙 넣기"
+                        else -> "이대로 채우기"
+                    })
+                }
             }
         },
         dismissButton = {
-            if (read != null) TextButton(onClick = { read = null; text = ""; second = ""; ticks.clear() }) { Text("다시 하기") } else TextButton(onClick = onDismiss) { Text("취소") }
+            if (read != null) TextButton(onClick = { read = null; text = ""; second = ""; ticks.clear(); scan = null; scanSecond = null }) { Text("다시 하기") }
+            else TextButton(onClick = onDismiss) { Text("취소") }
         },
     )
 }

@@ -185,6 +185,12 @@ class PayViewModel(
 
     fun undo() = viewModelScope.launch { payStore.undo() }
 
+    /** [PAYS-17] 1.27: a kind of work's times put in from the pay screen's "이것만 넣으면 정확해져요". */
+    fun setShiftTimes(type: com.bamnat.core.model.ShiftType, start: java.time.LocalTime, end: java.time.LocalTime, breakMinutes: Int) =
+        viewModelScope.launch {
+            container.calendars.repository(calendarId).saveShiftType(type.copy(start = start, end = end, breakMinutes = breakMinutes))
+        }
+
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
         val before = payStore.profile.value
         payStore.update(transform)

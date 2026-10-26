@@ -424,6 +424,12 @@ fun CalendarScreen(
         delay(150)
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthEstimate(payProfile, snap, visibleMonth) }
     }
+    // [PAYS-17] 1.27: values the pay still needs (기본급, 시수, 근무 시각 …), said under the estimate; the tap opens the pay.
+    val payNeeds = remember(payProfile, snap, visibleMonth, focus) {
+        val p = payProfile
+        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || p == null) 0
+        else runCatching { com.bamnat.app.ui.pay.payNeeds(p, snap, visibleMonth).size }.getOrDefault(0)
+    }
     // [TAX-02] 세후 beside it (프로).
     val takeHome by produceState<Long?>(null, payEstimate) { value = payEstimate?.let { vm.takeHome(payProfile, it, visibleMonth) } }
     val scope = rememberCoroutineScope()
@@ -1110,6 +1116,7 @@ fun CalendarScreen(
                         overview = overview,
                         payEstimate = payEstimate,
                         takeHome = takeHome,
+                        payNeeds = payNeeds,
                         versus = versus,
                         onOpen = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) onOpenPay else onOpenMoney,
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),

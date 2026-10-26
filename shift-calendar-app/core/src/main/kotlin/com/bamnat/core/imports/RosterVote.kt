@@ -19,10 +19,16 @@ object RosterVote {
         val usable = reads.filter { it.rows.isNotEmpty() }
         if (usable.isEmpty()) return reads.firstOrNull() ?: RosterPhotoRead(emptyList(), 0.0, emptyList(), RosterPhotoRead.Problem.NO_TEXT)
         if (usable.size == 1) return usable[0]
-        val anchor = usable.maxBy { r -> r.rows.sumOf { it.cells.size - it.unknown } }
+        val anchor = reads[anchor(reads)]
         val others = usable.filter { it !== anchor }
         val rows = anchor.rows.map { a -> vote(a, others.mapNotNull { match(a, it.rows) }) }
         return anchor.copy(rows = rows)
+    }
+
+    /** Which of [reads] the put-together keeps the lines, names and places of: the one with the most known cells. */
+    fun anchor(reads: List<RosterPhotoRead>): Int {
+        val best = reads.indices.filter { reads[it].rows.isNotEmpty() }.maxByOrNull { i -> reads[i].rows.sumOf { it.cells.size - it.unknown } }
+        return best ?: 0
     }
 
     private fun key(label: String) = DutyCodes.norm(label)

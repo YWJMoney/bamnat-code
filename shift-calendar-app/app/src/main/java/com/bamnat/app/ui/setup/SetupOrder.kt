@@ -418,7 +418,8 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
             label = { Text("엑셀·CSV") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
     }
-    if (reading) Text("듀티표를 읽고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (reading) Text("휴대폰 안에서 듀티표를 여러 방법으로 읽어 맞춰 보고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    roster?.advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     // [READ-04][READ-05] The photo itself: tapped when it read nothing or the wrong thing, or looked at to see what was read.
     var tapping by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var seeing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -432,6 +433,29 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
     }
     val rows = roster?.rows.orEmpty()
     if (rows.size > 1) com.bamnat.app.ui.imports.WhichLine(rows, d.types, onPick = vm::useRosterRow)
+    // [READ-17] 1.27: the picked line beside the photo, "사진과 내용이 같은가요?", a cell fixed on its own.
+    val same by vm.rosterSame.collectAsStateWithLifecycle()
+    var fixing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+    val photoScan = roster?.scan
+    val painting by vm.paintMonth.collectAsStateWithLifecycle()
+    val month = roster?.month ?: painting
+    if (photoScan != null && rows.size == 1 && roster?.from == com.bamnat.core.journal.RosterFrom.PHOTO && !reading) {
+        val row = rows[0]
+        val cells = (1..month.lengthOfMonth()).mapNotNull { day ->
+            val date = month.atDay(day)
+            val cell = d.leaves[date]?.let { com.bamnat.core.imports.DutyCell.Leave(it.kind, it.quarters, it.fromStart) }
+                ?: if (d.painted.containsKey(date)) d.painted[date]?.let { com.bamnat.core.imports.DutyCell.Shift(it) } ?: com.bamnat.core.imports.DutyCell.Off
+                else row.cells[day]?.takeIf { it is com.bamnat.core.imports.DutyCell.Unknown }
+            cell?.let { day to it }
+        }.toMap()
+        com.bamnat.app.ui.imports.SameAsPhotoCard(
+            photoScan, row, vm.rosterRank, cells, if (same == true) emptySet() else row.doubtful(month.lengthOfMonth()), d.types,
+            month.lengthOfMonth(), same, onAnswer = { vm.rosterSame(it) }, onFix = { fixing = it }, onAgain = { vm.rosterSame(null) },
+        )
+    }
+    fixing?.let { day ->
+        com.bamnat.app.ui.imports.CellDialog(month.atDay(day), d.types, onDismiss = { fixing = null }) { cell -> vm.fixRosterDay(month.atDay(day), cell); fixing = null }
+    }
     // [SETUP-15] A code the setup's kinds do not cover: asked here, one at a time, so it goes in with the setup.
     val asks by vm.rosterAsks.collectAsStateWithLifecycle()
     asks.firstOrNull()?.let { (ask, days) ->
