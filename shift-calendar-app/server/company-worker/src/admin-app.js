@@ -293,7 +293,6 @@ font-weight:700;text-decoration:none}
 .quick form{display:grid;gap:.5rem}
 .quick textarea{min-height:5.5rem}
 .section svg{width:1.15rem;height:1.15rem}
-.soon .pill{margin-left:auto}
 
 /* ---- buttons and fields ---- */
 .icon-btn{display:inline-grid;place-items:center;width:2.75rem;height:2.75rem;border:0;border-radius:var(--r-sm);background:none;cursor:pointer;flex:none;color:inherit}
@@ -670,6 +669,26 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .btn.disabled{opacity:.45;pointer-events:none}
 .pane-main{min-width:0}
 .toolbar .btn{flex:none}
+/* AM 1.28 기능 관리 [ADMUX-21]~[ADMUX-27] */
+.lead{margin:.2rem 0 .5rem;font-size:1rem;font-weight:600;line-height:1.5}
+.pills{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center;justify-content:flex-end}
+.row-side.pills{flex-direction:row;max-width:45%}
+@media (max-width:599.98px){.row-side.pills{max-width:55%}}
+.checklist{list-style:none;margin:0;padding:0;display:grid;gap:.55rem}
+.checklist li{display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;font-size:.92rem}
+.checklist .mark{flex:none;width:1.6rem;height:1.6rem;border-radius:50%;display:inline-grid;place-items:center;font-weight:800;background:var(--soft);color:var(--muted)}
+.checklist .met .mark{background:var(--ok-bg);color:var(--ok)}
+.checklist .unmet .mark{background:var(--warn-bg);color:var(--warn)}
+.checklist .phone .mark{background:var(--info-bg);color:var(--info)}
+.checklist .c-main{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
+.checklist small{display:block;color:var(--muted);font-size:.8rem}
+.card.flag-alert{border-color:var(--bad);background:var(--bad-bg)}
+.agenda .date{flex:none;width:4.5rem;display:flex;flex-direction:column;font-weight:800;font-size:.9rem}
+.agenda .date small{font-weight:600;color:var(--muted);font-size:.75rem}
+.cond-out{margin:.5rem 0 0;font-size:.88rem}
+.cond-out .lines{padding-left:1.2rem}
+#flag-cond{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9rem}
+.sim-grid{display:grid;gap:.25rem .75rem;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (forced-colors:active){.btn,.seg,.tab,.card{border:1px solid CanvasText}}
 `;
@@ -713,6 +732,9 @@ function adminApp(L, BUILD) {
     inbox: '<path d="M3.5 13.5 6 5h12l2.5 8.5V19h-17z"/><path d="M3.5 13.5H9l1 2h4l1-2h5.5"/>',
     versions: '<rect x="3.5" y="7" width="11" height="13" rx="1.5"/><path d="M8 7V4.5h12.5V17H14.5"/>',
     shares: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    // AM 1.28 [ADMUX-21] 기능 관리(스위치 둘), [ADMUX-26] 근무 유형.
+    flags: '<rect x="3" y="5" width="18" height="6" rx="3"/><circle cx="15" cy="8" r="1.8"/><rect x="3" y="13" width="18" height="6" rx="3"/><circle cx="9" cy="16" r="1.8"/>',
+    types: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     // AN 1.28 [ADMUX-30] 출시: a flag on its pole.
     release: '<path d="M5.5 21V3.5"/><path d="M5.5 4.5h11.5l-2.5 4 2.5 4H5.5"/>',
   };
@@ -770,10 +792,16 @@ function adminApp(L, BUILD) {
     // [ADMIN-16][ADMIN-17][ADMUX-06]
     inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
     rate_set: "임금표 처리",
+    // AM 1.28 [FLAG-21][FLAG-25][FLAG-32]
+    flag_force_off: "기능 강제로 끔", flag_force_on: "기능 강제로 켬", flag_clear: "기능 강제 풀기", flag_conditions: "기능 조건 바꿈",
+    flag_check: "확인했어요", flag_uncheck: "확인 취소", flag_auto_on: "기능이 조건대로 켜짐", flag_auto_off: "기능이 조건대로 꺼짐",
+    flag_expire: "강제 기한이 끝남", flag_migrate: "1.27 스위치를 기능 관리로 옮김", policy_edit: "처리방침 일정 고침",
+    launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
+    auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
   };
   /** [ADMIN-17] The activity screen's 종류 filter, as the server names them. */
   const AUDIT_KIND_NAMES = { login: "로그인", admins: "관리자", review: "검토", companies: "회사·규칙", rewards: "보상", community: "토론·임금표",
-    inquiries: "문의", dev: "개발사항", ops: "운영", settings: "설정" };
+    inquiries: "문의", dev: "개발사항", ops: "운영", settings: "설정", flags: "기능 관리" };
   // [ADMUX-01] Every error code the server sends has words in src/admin-lib.js (a test checks).
   const ERRORS = L.ERRORS;
 
@@ -877,6 +905,8 @@ function adminApp(L, BUILD) {
     failed: "", newBuild: false, stale: false, relogin: false,
     // [ADMUX-04] 큐 모드: answering the waiting questions one after another.
     queue: null, cursor: -1,
+    // AM 1.28 [ADMUX-21][ADMUX-24][ADMUX-25] 기능 관리: 상태 거르기, 찾기, 목록·일정, 미리 보기의 휴대폰.
+    flagShow: "all", flagQuery: "", flagView: "", flagSim: null,
   };
 
   const esc = L.esc;
@@ -920,6 +950,7 @@ function adminApp(L, BUILD) {
     chores: { month: "opsMonth" },
     home: { view: "inboxView" },
     versions: { show: "versionShow" },
+    flags: { show: "flagShow", q: "flagQuery", view: "flagView" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -1071,11 +1102,15 @@ function adminApp(L, BUILD) {
     try {
       const b = await api("/badges");
       const before = JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]);
+      // 1.28 통합 [ADMUX-27] 오늘's top card (a legal flag just on) comes with the numbers, so a change draws 오늘 again.
+      const alerts = JSON.stringify(S.overview?.flagAlerts ?? []);
       S.overview = { ...(S.overview ?? {}), ...b };
+      if (!("flagAlerts" in b)) S.overview.flagAlerts = [];
       S.me = b.me;
       S.newBuild = Boolean(b.build && b.build !== BUILD);
       if (S.phase !== "app") return;
-      if (JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]) !== before) render({ keepScroll: true });
+      const home = S.route.name === "home" && JSON.stringify(S.overview.flagAlerts) !== alerts;
+      if (home || JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]) !== before) render({ keepScroll: true });
       else {
         paintBanners();
         updateBadges();
@@ -1134,8 +1169,8 @@ function adminApp(L, BUILD) {
       if (name === "rewards" && can("settings")) jobs.push(api("/settings/invite").then(keep((d) => { S.data.inviteSettings = d; })));
       if (name === "admins") jobs.push(api("/admins").then(keep((d) => { S.data.admins = d; })), api("/devices").then(keep((d) => { S.data.phones = d; })));
       if (name === "audit") jobs.push(api(`/audit${auditQuery()}`).then(keep((d) => { S.data.audit = d; })));
-      // [ADMUX-32] 운영 in three tabs of 출시: 앱 공지, 이달 할 일, and the 기능 스위치 inside 기능 관리 until AM's screen.
-      if (name === "notices" || (name === "flags" && typeof flagsView !== "function")) jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })));
+      // [ADMUX-32] 운영 in tabs of 출시: 앱 공지 and 이달 할 일 (its 기능 스위치 are flags in 기능 관리 now).
+      if (name === "notices") jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })));
       if (name === "chores") jobs.push(api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
       if (name === "metrics" || name === "gates") {
         const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
@@ -1149,8 +1184,13 @@ function adminApp(L, BUILD) {
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
       if (name === "server") jobs.push(api("/server").then(keep((d) => { S.server = d; })));
-      // [MON-10] The 정식 출시 card stays where it was (#/settings) until AM's 기능 관리 takes its place.
-      if (name === "settings" && S.me?.owner) jobs.push(api("/launch").then(keep((d) => { S.data.launch = d; })));
+      // AM 1.28 [ADMUX-21][ADMUX-22][ADMUX-25][ADMUX-26] 출시 › 기능 관리 (list, timeline, one flag) and 근무 유형.
+      if (name === "flags" && !id) jobs.push(api("/flags").then(keep((d) => { S.data.flags = d; })));
+      if (name === "flags" && !id && S.flagView === "timeline" && can("ops")) api("/ops").then(keep((d) => { S.data.flagOps = d; if (S.route.name === "flags") render({ keepScroll: true }); })).catch(() => {});
+      if (name === "flags" && id) jobs.push(api(`/flags/${encodeURIComponent(id)}`).then(keep((d) => { S.data.flag = d; })));
+      if (name === "types") jobs.push(api("/types").then(keep((d) => { S.data.types = d; })));
+      // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과: each flag's share of phones and problems before and after it turned on.
+      if (name === "effects") jobs.push(api("/effects").then(keep((d) => { S.data.effects = d; })));
       const results = await Promise.allSettled(jobs);
       const failed = results.find((r) => r.status === "rejected" && !r.reason?.quiet);
       if (seq.current("load", n)) {
@@ -1444,6 +1484,7 @@ function adminApp(L, BUILD) {
       const first = S.data.posts?.posts?.[0];
       return { title: first ? first.company.name : "토론", sub: first?.room ? (first.room === "style" ? "유형 광장 이야기" : "회사 정보 광장 자유 토의") : first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
     }
+    if (name === "flags" && id) return flagHeading();
     if (name === "more") return { title: "더 보기" };
     // [ADMUX-32] #/settings is now the list of where its cards went.
     if (name === "settings") return { title: "설정은 자리를 옮겼어요", back: href("account") };
@@ -1455,9 +1496,8 @@ function adminApp(L, BUILD) {
   }
 
   /**
-   * AN 1.28 [ADMUX-40] Every tab's screen in one table. 기능 관리·근무 유형·기능별 효과 are AM's (flagsView, flagView,
-   * typesView, effectsView): when the integration brings them they are used by name, and until then a tidy
-   * placeholder (기능 관리 keeps the 1.27 기능 스위치 so nothing is lost).
+   * AN 1.28 [ADMUX-40] Every tab's screen in one table. 기능 관리·근무 유형 are AM's (flagsView, flagView, typesView);
+   * 기능별 효과 (effectsView) reads AM's flag numbers through /effects (1.28 통합).
    */
   const VIEWS = {
     home: () => homeView(),
@@ -1471,15 +1511,13 @@ function adminApp(L, BUILD) {
     companies: (id) => (id ? companyView(S.data.company) : companiesView()),
     shares: () => sharesView(),
     adopt: () => adoptView(),
-    flags: (id) => (typeof flagsView === "function" ? (id && typeof flagView === "function" ? flagView() : flagsView()) : switchesView()),
-    types: () => (typeof typesView === "function" ? typesView()
-      : placeholder("근무 유형", "어떤 근무 유형(교대·주간·시간제·현장·사업자·투자)을 새로 고르는 곳에 보일지 정하는 화면이 여기에 와요. 쓰던 달력은 그대로예요.")),
+    flags: (id) => (id ? flagView() : flagsView()),
+    types: () => typesView(),
     notices: () => noticesView(),
     chores: () => choresView(),
     gates: () => gatesView(),
     metrics: () => metricsView(),
-    effects: () => (typeof effectsView === "function" ? effectsView()
-      : placeholder("기능별 효과", "기능을 켜기 전과 켠 뒤의 사용·문의·오류를 나란히 보는 화면이 여기에 와요. 그동안은 지표에서 기간을 골라 비교해 주세요.", `<a class="btn" href="${href("metrics")}">지표 보기</a>`)),
+    effects: () => effectsView(),
     audit: () => auditView(),
     admins: () => adminsView(),
     rewards: () => rewardsView(),
@@ -1499,10 +1537,6 @@ function adminApp(L, BUILD) {
     return VIEWS[name]?.(id) ?? "";
   }
 
-  /** [ADMUX-40] A tab whose screen comes with another bundle: what it will do, nothing broken. */
-  const placeholder = (title, text, action = "") => `<section class="card soon"><div class="card-head"><h2>${esc(title)}</h2><span class="pill info">준비 중</span></div>
-    <p class="hint">${esc(text)}</p>${action ? `<div class="actions start">${action}</div>` : ""}</section>`;
-
   /** Whether the current screen has anything to show yet. */
   function hasData() {
     const { name, id } = S.route;
@@ -1510,8 +1544,8 @@ function adminApp(L, BUILD) {
     return Boolean({
       home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
-      notices: d.notices, chores: d.ops, flags: typeof flagsView === "function" || d.notices, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares,
-      server: S.server, adopt: S.basics, sla: S.basics, types: true, effects: true, settings: true, account: true, more: true,
+      notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares,
+      server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
     }[name]);
   }
 
@@ -1532,7 +1566,7 @@ function adminApp(L, BUILD) {
    */
   function homeView() {
     const t = S.data.today;
-    const top = typeof flagAlertCard === "function" ? flagAlertCard() : "";
+    const top = flagAlertCard();
     if (!t) return top + skeleton(3);
     const o = { ...(S.overview ?? {}), ...t };
     const hour = new Date().getHours();
@@ -2519,7 +2553,7 @@ function adminApp(L, BUILD) {
           data-level="${l}" role="radio" aria-checked="${cur === l}" aria-pressed="${cur === l}" tabindex="${cur === l ? 0 : -1}"${l === "edit" && d.viewOnly?.includes(area) ? " disabled" : ""}>${yesNo ? (l === "edit" ? "줌" : "없음") : LEVEL_NAMES[l]}</button>`).join("")}</span>
         <input type="hidden" name="perm-${area}" value="${cur}"></div>`;
       }).join("")}</div>
-      <p class="help">보기는 화면을 보기만 하고, 고치기는 채택·답하기 같은 바꾸는 일까지 해요. 개발사항 처리는 개발중·완료·반려를 정하고 여러 항목을 한 번에 처리하는 권한이에요. 관리자 관리는 최고 관리자만 해요.</p>`;
+      <p class="help">보기는 화면을 보기만 하고, 고치기는 채택·답하기 같은 바꾸는 일까지 해요. 개발사항 처리는 개발중·완료·반려를 정하고 여러 항목을 한 번에 처리하는 권한이에요. 기능 관리 고치기는 법적이 아닌 기능의 조건을 바꾸고 확인하는 권한, 기능 강제로 끄기는 사고 때 기능을 바로 끄는 예/아니요 권한이에요(처음에는 최고 관리자만). 강제로 켜기와 결제·광고 같은 법적 확인은 최고 관리자만 해요. 관리자 관리는 최고 관리자만 해요.</p>`;
   }
 
   const readPermForm = (form, d) => Object.fromEntries(Object.keys(d.areas).map((a) => [a, form.elements[`perm-${a}`]?.value ?? "none"]));
@@ -2636,23 +2670,6 @@ function adminApp(L, BUILD) {
           <span class="row-side"><span class="pill ${tone}">${label}</span>${edit ? `<button class="btn small" data-act="notice-edit" data-id="${x.id}">고치기</button>
             <button class="btn small" data-act="notice-remove" data-id="${x.id}">내리기</button>` : ""}</span></div></li>`;
       }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>`;
-  }
-
-  /**
-   * AN 1.28 [ADMUX-40] 출시 › 기능 관리 until AM's screen (flagsView) is wired: the 1.27 기능 스위치, unchanged, so
-   * switching a feature off is never lost on the way.
-   */
-  function switchesView() {
-    const n = S.data.notices;
-    const edit = can("ops", "edit");
-    if (!n) return skeleton(2);
-    return `${placeholder("기능 관리", "다크머지 기능 목록(켜짐·대기·강제로 끔·일정표)이 여기에 와요. 그동안 아래 기능 스위치로 서버 기능을 잠시 꺼요.")}
-      <section class="card"><h2>기능 스위치</h2>
-      <p class="hint">문제가 생겼을 때 앱 업데이트 없이 그 기능만 잠시 꺼요. 서버도 바로 받지 않고, 앱은 하루 안에 따라와요. 끈 기능은 앱에 "잠시 쉬고 있어요"로 보여요.</p>
-      <ul class="rows">${n.switches.map((w) => `<li><div class="row"><span class="row-main"><b>${esc(w.label)}</b><small>${esc(w.key)}</small></span>
-        <span class="row-side"><span class="pill ${w.off ? "bad" : "ok"}">${w.off ? "꺼짐" : "켜짐"}</span>
-        ${edit ? `<button class="btn small${w.off ? " primary" : ""}" data-act="switch" data-key="${w.key}" data-off="${w.off ? "" : "1"}">${w.off ? "다시 켜기" : "끄기"}</button>` : ""}</span></div></li>`).join("")}</ul>
-      ${edit ? "" : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}</section>`;
   }
 
   function openNotice(x) {
@@ -3011,11 +3028,13 @@ function adminApp(L, BUILD) {
       ["sla", "문의 답 목표", "문의 › 답 목표"],
       ["account", "이 기기(화면 색·글자 크기·아래 탭·소리)·이 기기 알림·앱으로 설치·단축키", "관리 › 내 계정·이 기기"],
       ["server", "서버 상태", "관리 › 서버 상태"],
-      ["flags", "기능 스위치(정식 출시는 기능 관리의 billing·ads로 바뀌어요)", "출시 › 기능 관리"],
+      ["flags", "기능 스위치·정식 출시(결제·광고 조건과 정식 출시일)", "출시 › 기능 관리"],
     ].filter(([t]) => tabOk(t));
     return `<p class="hint">설정 화면에 있던 것은 하는 일에 맞는 허브로 옮겼어요. 누르면 바로 가요.</p>
       <ul class="rows">${rows.map(([t, what, where]) => `<li><a class="row" href="${href(t)}"><span class="row-main"><b>${esc(what)}</b><small>${esc(where)}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
-      ${S.me?.owner ? launchCard() : ""}`;
+      ${tabOk("flags") ? `<section class="card"><h2>정식 출시 (결제·광고)</h2>
+        <p class="hint">정식 출시 스위치는 1.28에서 기능 관리의 '결제(프로 구독)'와 '광고'로 바뀌었어요. 처리방침 시행일과 Play 확인이 끝나면 저절로 켜지고, 처음 켜진 순간이 정식 출시일로 남아요.</p>
+        <div class="actions start"><a class="btn primary" href="${L.routeHash("flags", "billing", {})}">결제 조건 보기</a><a class="btn" href="${L.routeHash("flags", "ads", {})}">광고 조건 보기</a></div></section>` : ""}`;
   }
   // AN 1.28 끝
 
@@ -3068,29 +3087,6 @@ function adminApp(L, BUILD) {
       <p class="label">저장한 보기</p>
       ${p.views.length ? `<ul class="rows">${p.views.map((v, i) => `<li class="item"><a class="row-main" href="${esc(v.hash)}"><b>${esc(v.name)}</b><small>${esc(v.hash)}</small></a>
         <button class="btn small ghost" data-act="view-remove" data-i="${i}">지우기</button></li>`).join("")}</ul>` : '<p class="hint">목록 화면에서 찾기·이동(Ctrl+K)의 "지금 보기 저장"으로 거른 목록을 저장해 두고 오늘에서 한 번에 열어요.</p>'}
-    </section>`;
-  }
-
-  /**
-   * [MON-10] 정식 출시: the switch every app reads once a day. On, the app charges for 프로, shows the ad
-   * banner and gives phones installed before today the thank-you months. Off, everything is free again.
-   */
-  function launchCard() {
-    const l = S.data.launch;
-    if (!l) return '<section class="card"><h2>정식 출시</h2>' + skeleton(1) + "</section>";
-    return `<section class="card"><div class="card-head"><h2>정식 출시 (결제·광고)</h2>
-        <span class="pill ${l.billingLive ? "ok" : "warn"}">${l.billingLive ? "켜짐" : "꺼짐"}</span></div>
-      <p class="hint">${l.billingLive ? `${esc(day(l.launchedAt))}에 켰어요. 앱은 하루 안에 따라와요. 끄면 다시 모두 무료가 돼요.`
-        : "켜기 전에는 모든 기능이 무료이고 광고가 없어요. 켜면 앱이 하루 안에 결제·광고·프로 잠금을 시작해요."}</p>
-      <dl class="kv"><dt>Play 구매 확인</dt><dd>${l.play ? "연결됨 (PLAY_SERVICE_ACCOUNT)" : "꺼짐: 휴대폰의 Play 결제로만 판단, 체험 동의가 없어도 결제를 멈출 수 없어요"}</dd>
-        <dt>구독 중</dt><dd>${l.subscribers}명 (서버가 확인한 수)</dd></dl>
-      <form data-form="launch">
-        <div class="fieldset"><label for="thanks">테스트 참여자 감사 보상</label><input id="thanks" name="thanks" type="number" min="0" max="12" value="${l.thanksMonths}">
-          <span class="help">정식 출시 전에 설치한 휴대폰에 출시 날부터 드릴 프로 개월 수</span></div>
-        <div class="fieldset"><label for="free">모두에게 무료로 연 프로 기능</label><input id="free" name="free" value="${esc(l.freeFeatures.join(", "))}" placeholder="예: MONEY_STATS">
-          <span class="help">프로 기능을 모두에게 열 때만 적어요. 연 기능을 다시 잠그지는 않아요(이미 준 것은 거두지 않음).</span></div>
-        <div class="actions"><button class="btn" type="submit">저장</button></div></form>
-      <div class="actions start"><button class="btn ${l.billingLive ? "danger" : "primary"}" data-act="launch-switch" data-key="${l.billingLive ? "off" : "on"}">${l.billingLive ? "정식 출시 끄기" : "정식 출시 켜기"}</button></div>
     </section>`;
   }
 
@@ -3534,7 +3530,492 @@ function adminApp(L, BUILD) {
     }
   }
 
+  // ---- AM 1.28 기능 관리 ----
+  // [ADMUX-21]~[ADMUX-29] 기능 관리(다크머지): the list with its filters, one flag in full, the calendar of dates (timeline),
+  // the ways of working, and the home screen's warning for a legal flag that just turned on. The screens read
+  // /api/admin/flags, /flags/<key> and /types; who may press what comes from the server (reach) and every locked
+  // button says why. AN's 출시 hub points at the routes flags and types (통합계획 2-2).
+
+  const FLAG_STATE = { forced_off: ["bad", "강제로 끔"], forced_on: ["info", "강제로 켬"], on: ["ok", "켜짐"], waiting: ["warn", "대기"], off: ["", "꺼짐"] };
+  const FLAG_SHOW = [["all", "전체"], ["waiting", "대기"], ["on", "켜짐"], ["forced_off", "강제로 끔"], ["cleanup", "정리 대상"]];
+  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능" };
+  /** 1.22's 기능 스위치 by their flag (운영 screen's card links each to its flag). */
+  const SWITCH_FLAGS = { PLAZA_WRITE: "plaza.write", COMPANY_REPORT: "company.report", INQUIRY_PHOTOS: "inquiry.photos", SHARE_CREATE: "share.create",
+    USAGE_STATS: "usage.stats", PLAZA_NEWS: "plaza.news" };
+  const PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/";
+  const LOCK = {
+    off: "강제로 끄기는 최고 관리자나 '기능 강제로 끄기' 권한을 받은 관리자만 해요(결정 D97).",
+    on: "강제로 켜기는 최고 관리자만 해요.",
+    legal: "법적 기능이라 조건 바꾸기·확인·되돌리기는 최고 관리자만 해요.",
+    edit: "조건을 바꾸려면 기능 관리 고치기 권한이 있어야 해요.",
+  };
+
+  const flagLink = (key) => L.routeHash("flags", key, {});
+  const md = (d) => (d ? `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : "");
+  const statePill = (r) => {
+    const [tone, label] = FLAG_STATE[r.state] ?? ["", r.state];
+    const left = r.state === "waiting" && r.daysLeft !== null && r.daysLeft !== undefined && r.daysLeft >= 0 ? ` · ${r.daysLeft === 0 ? "오늘" : `${r.daysLeft}일 남음`}` : "";
+    return `<span class="pill ${tone}">${label}${left}</span>`;
+  };
+  const riskPill = (r) => (r.risk === "LEGAL" ? '<span class="pill gold" title="결제·광고·새로 보내는 정보처럼 법적 조건이 붙은 기능">법적</span>' : "");
+  const flagPills = (r) => [statePill(r), riskPill(r), r.warnings?.length ? '<span class="pill bad">고지 기간 확인</span>' : "",
+    r.sunsetDue ? '<span class="pill">정리 대상</span>' : "", r.reviewDue ? '<span class="pill warn">다시 볼 날</span>' : ""].join("");
+
+  /** What a step needs, by the reach the server sent: null when allowed, else the reason the button is locked. */
+  function flagLock(r, reach, step) {
+    if (reach.owner) return null;
+    const legal = r.risk === "LEGAL";
+    const forced = r.override?.force && !(r.override.until && Date.parse(r.override.until) <= Date.now()) ? r.override.force : null;
+    if (step === "on") return LOCK.on;
+    if (step === "off") return reach.off ? null : LOCK.off;
+    if (step === "clear") return forced === "on" ? (reach.off ? null : LOCK.off) : legal ? LOCK.legal : reach.off ? null : LOCK.off;
+    if (step === "conditions") return legal ? LOCK.legal : reach.edit ? null : LOCK.edit;
+    if (step === "check") return legal ? LOCK.legal : reach.edit ? null : LOCK.edit;
+    return null;
+  }
+  const lockedBtn = (label, lock, attrs, tone = "") => `<button class="btn small${tone ? ` ${tone}` : ""}" ${lock ? `disabled title="${esc(lock)}"` : attrs}>${esc(label)}</button>`;
+
+  // ---- the list [ADMUX-21] ----
+
+  function flagsView() {
+    const d = S.data.flags;
+    const timeline = S.flagView === "timeline";
+    const head = `<div class="segmented" role="group" aria-label="보기">${seg("flag-view", "", S.flagView, "목록")}${seg("flag-view", "timeline", S.flagView, "일정")}</div>`;
+    if (!d) return head + skeleton(3);
+    if (timeline) return head + flagTimeline(d);
+    const rows = d.flags;
+    const match = (r) => ({ all: true, waiting: r.state === "waiting", on: r.state === "on" || r.state === "forced_on", forced_off: r.state === "forced_off", cleanup: r.sunsetDue }[S.flagShow] ?? true);
+    const q = S.flagQuery.trim().toLowerCase();
+    const found = rows.filter(match).filter((r) => !q || `${r.name} ${r.key} ${r.what}`.toLowerCase().includes(q));
+    const counts = Object.fromEntries(FLAG_SHOW.map(([k]) => [k, rows.filter((r) => ({ all: true, waiting: r.state === "waiting", on: r.state === "on" || r.state === "forced_on",
+      forced_off: r.state === "forced_off", cleanup: r.sunsetDue })[k]).length]));
+    const alerts = rows.filter((r) => r.warnings?.length);
+    const filters = `<div class="chips" role="group" aria-label="상태">${FLAG_SHOW.map(([k, label]) =>
+        `<button type="button" class="chip pick" data-act="flag-show" data-key="${k}" aria-pressed="${S.flagShow === k}">${label}${counts[k] ? ` ${counts[k]}` : ""}</button>`).join("")}</div>
+      <div class="searchbar"><input id="search" type="search" placeholder="이름이나 키로 찾기(예: billing, 결제)" value="${esc(S.flagQuery)}" autocomplete="off" enterkeyhint="search" aria-label="기능 찾기"></div>
+      <p class="hint">앱 안에 들어 있는 기능이 언제 저절로 켜지는지(날짜·처리방침·확인), 지금 왜 그런지 보여요. 서버는 덮어쓸 것만 보내고, 휴대폰은 인터넷이 없어도 조건대로 켜요. 법적 기능은 강제로 켜도 처리방침 조건을 계속 지켜요.${d.statsPhones ? ` 켜진 비율은 지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰 ${d.statsPhones}대 기준이에요.` : ""}</p>
+      ${alerts.length ? `<p class="note bad" role="status">고지 기간이 모자란 기능이 ${alerts.length}개 있어요: ${alerts.map((r) => esc(r.name)).join(", ")}. 처리방침 9항(7일, 불리하면 30일)을 확인해 주세요.</p>` : ""}`;
+    if (!found.length) return head + filters + empty(q ? "찾는 기능이 없어요" : "이 상태의 기능이 없어요", "", '<button class="btn" data-act="flag-show" data-key="all">전체 보기</button>');
+    const groups = [...new Set(found.map((r) => r.group))];
+    return head + filters + groups.map((g) => `<h2 class="day-head">${esc(FLAG_GROUPS[g] ?? g)}</h2><ul class="rows">${found.filter((r) => r.group === g).map((r) =>
+      `<li><a class="row" href="${flagLink(r.key)}"><span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)}${r.onShare !== null && r.onShare !== undefined ? ` · 휴대폰 ${r.onShare}%에서 켜짐` : ""}</small>
+        <span class="preview">${esc(r.reason)}</span></span><span class="row-side pills">${flagPills(r)}</span>${icon(P.chevron)}</a></li>`).join("")}</ul>`).join("");
+  }
+
+  // ---- the calendar [ADMUX-25] ----
+
+  function flagTimeline(d) {
+    const today = L.flagDay(Date.now());
+    const from = L.flagDay(Date.now() - 14 * 864e5);
+    const items = [];
+    const add = (day, text, to, tone, kind) => day && day >= from && items.push({ day, text, to, tone, kind });
+    for (const r of d.flags) {
+      for (const c of r.conditions.flatMap((c) => (c.type === "any" ? c.of : [c]))) {
+        if (c.type !== "date") continue;
+        const day = L.dateFrom(c, d.policy);
+        if (day && day > today) add(day, `${r.name}: ${L.conditionLabel(c, d.policy)} 조건`, flagLink(r.key), r.risk === "LEGAL" ? "gold" : "info", "날짜 조건");
+      }
+      if (r.override?.until) add(L.flagDay(Date.parse(r.override.until)), `${r.name}: 강제${r.override.force === "on" ? " 켬" : " 끔"} 기한 끝`, flagLink(r.key), "warn", "강제 기한");
+      if (r.override?.reviewAt) add(r.override.reviewAt, `${r.name}: 강제로 끈 것 다시 보기`, flagLink(r.key), "warn", "다시 볼 날");
+    }
+    for (const p of d.policy) {
+      add(p.posted, `처리방침 ${p.version} 게시`, null, "", "처리방침");
+      add(p.effective, `처리방침 ${p.version} 시행`, null, "info", "처리방침");
+      if (p.heldUntil) add(p.heldUntil, `처리방침 ${p.version}: 동의하지 않은 휴대폰에도 시행`, null, "info", "처리방침");
+    }
+    items.sort((a, b) => a.day.localeCompare(b.day));
+    let month = "";
+    const out = [];
+    for (const x of items) {
+      const m = x.day.slice(0, 7);
+      if (m !== month) {
+        if (month) out.push("</ul>");
+        out.push(`<h2 class="day-head">${Number(m.slice(0, 4))}년 ${Number(m.slice(5))}월</h2><ul class="rows agenda">`);
+        month = m;
+      }
+      const n = L.daysLeft(x.day);
+      const when = x.day === today ? "오늘" : n > 0 ? `D-${n}` : "지남";
+      const inner = `<span class="date">${md(x.day)}<small>${when}</small></span><span class="row-main"><b class="wrap">${esc(x.text)}</b></span><span class="pill ${x.tone}">${esc(x.kind)}</span>`;
+      out.push(`<li>${x.to ? `<a class="row" href="${x.to}">${inner}</a>` : `<div class="row">${inner}</div>`}</li>`);
+    }
+    if (month) out.push("</ul>");
+    const o = S.data.flagOps;
+    const chores = o ? `<section class="card"><div class="card-head"><h2>이달 운영 할 일</h2><a class="btn small ghost" href="${href("chores")}">이달 할 일에서 보기</a></div>
+      <ul class="rows">${o.items.map((i) => `<li><div class="row"><span class="row-main"><b class="wrap">${esc(i.text)}</b><small>${esc(i.source)}</small></span>
+        <span class="pill ${i.done ? "ok" : ""}">${i.done ? "마침" : "남음"}</span></div></li>`).join("")}</ul></section>` : "";
+    const owner = d.reach.owner;
+    const policy = `<section class="card"><div class="card-head"><h2>처리방침 일정</h2>${owner ? '<button class="btn small" data-act="flag-policy">판 더하기·날짜 고치기</button>' : ""}</div>
+      <p class="hint">휴대폰은 앱에 든 날짜를 쓰다가 서버가 고친 날짜로 바꿔요. 시행일이 바뀌면 그 판에 기댄 기능도 함께 움직여요.${owner ? "" : " 고치기는 최고 관리자만 해요."}</p>
+      <ul class="rows">${d.policy.map((p) => `<li><div class="row"><span class="row-main"><b>처리방침 ${esc(p.version)}${p.changed ? ' <span class="pill info">고침</span>' : ""}</b>
+        <small>게시 ${esc(p.posted)} · 시행 ${esc(p.effective)}${p.heldUntil ? ` · 동의 없이 ${esc(p.heldUntil)}` : ""}${p.unfavourable ? " · 불리한 변경(30일 전 고지)" : ""}</small></span>
+        ${owner ? `<button class="btn small ghost" data-act="flag-policy" data-version="${esc(p.version)}">고치기</button>` : ""}</div></li>`).join("")}</ul></section>`;
+    return `${out.length ? out.join("") : empty("다가오는 날짜가 없어요", "날짜 조건, 강제 기한, 다시 볼 날, 처리방침 날짜가 여기에 모여요.")}<div class="grid two">${policy}${chores}</div>`;
+  }
+
+  // ---- one flag [ADMUX-22][ADMUX-23][ADMUX-24] ----
+
+  function flagHeading() {
+    const r = S.data.flag;
+    const ok = r && r.key === S.route.id;
+    return { title: ok ? r.name : "기능", sub: ok ? `${r.key} · ${(FLAG_STATE[r.state] ?? ["", ""])[1]}` : "", back: href("flags") };
+  }
+
+  function flagView() {
+    const r = S.data.flag;
+    if (!r || r.key !== S.route.id) return skeleton(3);
+    const reach = r.reach;
+    const share = r.onShare !== null && r.onShare !== undefined ? `휴대폰 ${r.onShare}%` : null;
+    const top = `<section class="card${r.alert ? " flag-alert" : ""}"><div class="card-head"><h2>지금 상태</h2><span class="pills">${flagPills(r)}</span></div>
+      <p class="lead">${esc(r.reason)}</p>
+      ${r.next ? `<p class="meta">다음 날짜: ${md(r.next)}(${r.daysLeft === 0 ? "오늘" : `${r.daysLeft}일 남음`}) 0시, 한국 시간</p>` : ""}
+      ${r.override?.force ? `<p class="note ${r.override.force === "off" ? "bad" : "info"}">${esc(r.override.by || "시스템")} · ${esc(moment(r.override.at))}에 강제로 ${r.override.force === "off" ? "껐어요" : "켰어요"}${r.override.auto ? "(사용량 자동 쉼)" : ""}: ${esc(r.override.why)}${r.override.until ? ` · ${esc(moment(r.override.until))}까지` : ""}${r.override.reviewAt ? ` · 다시 볼 날 ${esc(r.override.reviewAt)}` : ""}</p>` : ""}
+      ${r.alert ? `<p class="note bad" role="status">켜진 지 24시간이 안 됐어요(${esc(ago(r.onSince))}). 문제가 보이면 바로 강제로 꺼 주세요.</p>` : ""}
+      ${r.warnings.map((w) => `<p class="note warn">${esc(w)}</p>`).join("")}
+      ${r.sunsetDue ? `<p class="note">정리 예정 판(${esc(r.sunset)})이 나왔어요. 두 판 넘게 켜져 있었다면 코드에서 이 플래그를 걷어 내요.</p>` : ""}
+      <div class="actions start">
+        ${r.state === "forced_off" ? lockedBtn("강제 끔 풀기", flagLock(r, reach, "clear"), `data-act="flag-clear" data-key="${esc(r.key)}"`, "primary")
+          : lockedBtn("강제로 끄기", flagLock(r, reach, "off"), `data-act="flag-force" data-key="${esc(r.key)}" data-force="off"`, "danger")}
+        ${r.override?.force === "on" ? lockedBtn("강제 켬 풀기", flagLock(r, reach, "clear"), `data-act="flag-clear" data-key="${esc(r.key)}"`)
+          : r.state !== "forced_off" ? lockedBtn("강제로 켜기", flagLock(r, reach, "on"), `data-act="flag-force" data-key="${esc(r.key)}" data-force="on"`) : ""}
+        ${lockedBtn("조건 고치기", flagLock(r, reach, "conditions"), `data-act="flag-cond" data-key="${esc(r.key)}"`)}</div>
+      ${[["off", "강제로 끄기"], ["on", "강제로 켜기"], ["conditions", "조건 고치기"]].map(([s, label]) => [label, flagLock(r, reach, s)]).filter(([, l]) => l)
+        .map(([label, l]) => `<p class="help">${esc(label)}: ${esc(l)}</p>`).join("")}</section>`;
+
+    const checks = r.checks ?? {};
+    const lockCheck = flagLock(r, reach, "check");
+    const list = `<section class="card"><h2>켜지는 조건</h2>
+      ${r.override?.conditions ? `<p class="note info">앱에 든 조건 대신 관리자가 바꾼 조건이에요(${esc(r.override.by)} · ${esc(moment(r.override.at))}).</p>` : ""}
+      ${r.checklist.length ? `<ul class="checklist">${r.checklist.map((c) => {
+        const cls = c.met === true ? "met" : c.met === "phone" ? "phone" : "unmet";
+        const mark = c.met === true ? "✓" : c.met === "phone" ? "~" : "○";
+        const what = c.met === true ? "채움" : c.met === "phone" ? `휴대폰마다 달라요${share ? ` · 지금 켜진 ${share}` : ""}` : "남음";
+        const manual = c.keys.map((k) => {
+          const got = checks[k];
+          return got ? `<small>${esc(r.manualNames?.[k] ?? k)}: ${esc(got.by || "관리자")} · ${esc(moment(got.at))}에 확인${got.note ? ` · ${esc(got.note)}` : ""}</small>
+              ${lockedBtn("확인 취소", lockCheck, `data-act="flag-check" data-name="${esc(k)}" data-done=""`, "ghost")}`
+            : lockedBtn("확인했어요", lockCheck, `data-act="flag-check" data-name="${esc(k)}" data-done="1"`, "primary");
+        }).join("");
+        return `<li class="${cls}"><span class="mark" aria-hidden="true">${mark}</span><span class="c-main">${esc(c.label)}<small>${what}</small></span>${manual}</li>`;
+      }).join("")}</ul>` : `<p class="meta">조건이 없어요. ${r.default ? "기본으로 켜져 있어요." : "기본으로 꺼져 있고, 강제로 켜야 열려요."}</p>`}
+      ${lockCheck && r.manualKeys.length ? `<p class="help">확인: ${esc(lockCheck)}</p>` : ""}</section>`;
+
+    const b = r.basis ?? {};
+    const about = `<section class="card"><h2>무엇이고 왜 꺼 뒀나</h2>
+      <dl class="kv"><dt>하는 일</dt><dd>${esc(r.what)}</dd><dt>꺼 둔 이유</dt><dd>${esc(r.whyOff)}</dd>
+        <dt>근거</dt><dd>${[b.policy ? `<a href="${PRIVACY_URL}" target="_blank" rel="noopener">처리방침 ${esc(b.policy)}</a>` : "", b.law ? esc(b.law) : "",
+          b.decision ? `결정 ${esc(b.decision)}` : "", b.req ? esc(b.req) : ""].filter(Boolean).join(" · ") || "–"}</dd>
+        <dt>담당·만든 판</dt><dd>${esc(r.owner)} · ${esc(r.since)}${r.sunset ? ` · 정리 예정 ${esc(r.sunset)}` : ""}</dd>
+        ${r.switchKey ? `<dt>옛 이름</dt><dd>기능 스위치 ${esc(r.switchKey)}(1.27까지의 앱은 이 이름으로 읽어요)</dd>` : ""}</dl></section>`;
+
+    const phones = `<section class="card"><h2>휴대폰</h2>
+      ${r.statsPhones ? `<p class="lead">${share ? `지난 7일 ${share}에서 켜져 있었어요` : "아직 켜진 휴대폰이 없어요"}</p><p class="meta">'사용 통계 더 보내기'를 보낸 휴대폰 ${r.statsPhones}대 기준(휴대폰 구별 없음)</p>
+        ${r.series.length ? L.barChart(r.series.map((x) => x.share ?? 0), { labels: r.series.map((x) => x.day.slice(5).replace("-", "/")), name: "날마다 켜진 휴대폰 비율(%)" }) : ""}
+        ${r.versions.length ? `<ul class="rows">${r.versions.map((v) => `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${v.code ? `번호 ${v.code}` : "번호 모름"}</small></span>
+          <span class="row-side"><b>${v.share ?? "–"}%</b><span class="meta">${v.phones}대</span></span></div></li>`).join("")}</ul>` : ""}`
+        : '<p class="meta">아직 켜진 기능 목록을 보낸 휴대폰이 없어요. \'사용 통계 더 보내기\'(처리방침 3.2)가 시행되고 동의한 휴대폰부터 와요.</p>'}
+      <h3 class="section">켜지기 전후 ${r.compare.days}일</h3>
+      ${r.compare.measured ? `<dl class="kv"><dt>문제 신고</dt><dd>${r.compare.bugsBefore} → ${r.compare.bugsAfter}${r.compare.bugsAfter > r.compare.bugsBefore ? ' <span class="pill warn">늘었어요</span>' : ""}</dd>
+        <dt>서버 오류</dt><dd>${r.compare.errorsBefore} → ${r.compare.errorsAfter}${r.compare.errorsAfter > r.compare.errorsBefore ? ' <span class="pill warn">늘었어요</span>' : ""}</dd></dl>
+        <p class="help">${esc(moment(r.compare.pivot))}(서버가 마지막으로 켜짐·꺼짐을 본 때) 앞뒤예요. 켠 휴대폰과 안 켠 휴대폰을 나눠 세지는 않아요.</p>` : '<p class="meta">서버가 아직 이 기능의 켜짐·꺼짐을 기록하지 않았어요(매시 17분).</p>'}</section>`;
+
+    const billing = r.key === "billing" ? `<section class="card"><h2>정식 출시</h2>
+      <dl class="kv"><dt>정식 출시일</dt><dd>${r.launchedAt ? esc(moment(new Date(r.launchedAt).toISOString())) : "아직(처음 켜지는 순간 서버가 한 번 적어요)"}</dd></dl>
+      <form data-form="flag-thanks"><div class="fieldset"><label for="flag-thanks">테스트 참여자 감사 보상(개월)</label>
+        <input id="flag-thanks" name="thanks" type="number" min="0" max="12" value="${r.thanksMonths ?? 1}"${reach.owner ? "" : " disabled"}>
+        <span class="help">정식 출시 전에 설치한 휴대폰에 출시일부터 드리는 프로 개월 수예요. ${reach.owner ? "" : "최고 관리자만 바꿔요."}</span></div>
+        ${reach.owner ? '<div class="actions"><button class="btn" type="submit">저장</button></div>' : ""}</form></section>` : "";
+
+    const sim = flagSimCard(r);
+    const hist = `<section class="card"><h2>기록</h2>${r.history.length ? `<ul class="feed">${r.history.map((h) => `<li><span class="when">${esc(moment(h.at))}</span>
+      <span><b>${esc(ACTION_NAMES[h.action] ?? h.action)}</b> <span class="meta">${esc(flagSummary(h.before))} → ${esc(flagSummary(h.after))}</span>${h.why ? `<span class="meta">${esc(h.why)}</span>` : ""}</span>
+      <span class="who">${esc(h.actor)}</span></li>`).join("")}</ul>` : '<p class="meta">아직 바꾼 적이 없어요.</p>'}</section>`;
+    return `${top}<div class="grid two">${list}${about}${phones}${billing}${sim}</div>${hist}`;
+  }
+
+  /** One side of a history line in words. */
+  function flagSummary(o) {
+    if (!o) return "없음";
+    if (o.check) return `${S.data.flag?.manualNames?.[o.check] ?? o.check} 확인`;
+    if (o.thanksMonths !== undefined) return `${o.thanksMonths}개월`;
+    if (o.effective) return `게시 ${o.posted} · 시행 ${o.effective}${o.heldUntil ? ` · 동의 없이 ${o.heldUntil}` : ""}`;
+    const parts = [];
+    if (o.force) parts.push(`강제로 ${o.force === "on" ? "켬" : "끔"}`);
+    if (o.conditions) parts.push(`조건 ${L.conditionText(o.conditions).replace(/\n/g, " · ")}`);
+    return parts.join(", ") || "조건대로";
+  }
+
+  /** [ADMUX-24] 미리 보기: one pretend phone through the same evaluator, to see what a change does before it is made. */
+  function flagSimCard(r) {
+    const sim = S.flagSim ?? {};
+    const today = sim.day || L.flagDay(Date.now());
+    const opt = (v, label, cur) => `<option value="${v}"${cur === v ? " selected" : ""}>${label}</option>`;
+    return `<section class="card"><h2>미리 보기</h2><p class="hint">이런 휴대폰이면 어떻게 될지 서버와 같은 판단기로 봐요. 아무것도 바뀌지 않아요.</p>
+      <form id="flag-sim" class="sim-grid" aria-describedby="flag-sim-out">
+        <div class="fieldset"><label for="sim-day">날짜</label><input id="sim-day" type="date" data-change="flag-sim" name="day" value="${esc(today)}"></div>
+        <div class="fieldset"><label for="sim-app">앱 번호</label><input id="sim-app" type="number" min="1" data-change="flag-sim" name="app" value="${esc(sim.app ?? "39")}"></div>
+        <div class="fieldset"><label for="sim-agreed">동의한 처리방침</label><input id="sim-agreed" data-change="flag-sim" name="agreed" value="${esc(sim.agreed ?? "")}" placeholder="예: 3.1"></div>
+        <div class="fieldset"><label for="sim-installed">설치한 날</label><input id="sim-installed" type="date" data-change="flag-sim" name="installed" value="${esc(sim.installed ?? "")}"></div>
+        ${Object.entries(L.CONSENT_NAMES).map(([k, label], i) => `<div class="fieldset"><label for="sim-c${i}">${esc(label)}</label><select id="sim-c${i}" data-change="flag-sim" name="consent:${k}">
+          ${opt("", "아직 안 물음", sim[`consent:${k}`] ?? "")}${opt("yes", "동의", sim[`consent:${k}`] ?? "")}${opt("no", "거절", sim[`consent:${k}`] ?? "")}</select></div>`).join("")}
+        <div class="fieldset"><label for="sim-type">근무 유형</label><select id="sim-type" data-change="flag-sim" name="workType">${L.WORK_TYPES.map((w) => opt(w, L.WORK_NAMES[w], sim.workType ?? "SHIFT")).join("")}</select></div>
+        <div class="fieldset"><label for="sim-bucket">설치 자리(0~99)</label><input id="sim-bucket" type="number" min="0" max="99" data-change="flag-sim" name="bucket" value="${esc(sim.bucket ?? "50")}"></div>
+        <label class="check-row"><input type="checkbox" data-change="flag-sim" name="preview"${sim.preview ? " checked" : ""}>관리자 휴대폰 미리 보기</label>
+      </form><div id="flag-sim-out" class="cond-out" aria-live="polite">${flagSimText(r)}</div></section>`;
+  }
+
+  function flagSimText(r) {
+    const s = S.flagSim ?? {};
+    const day = s.day || L.flagDay(Date.now());
+    const consents = {};
+    for (const k of Object.keys(L.CONSENT_NAMES)) if (s[`consent:${k}`]) consents[k] = s[`consent:${k}`] === "yes";
+    const phone = { app: Number(s.app ?? 39), agreed: s.agreed || null, installed: s.installed || null, consents, workType: s.workType ?? "SHIFT",
+      profile: [], bucket: Number(s.bucket ?? 50), admin: Boolean(s.preview), preview: Boolean(s.preview) };
+    const ev = L.evalFlag({ conditions: r.catalogConditions, default: r.default, risk: r.risk }, r.override,
+      { now: Date.parse(`${day}T12:00:00+09:00`), policy: r.policy, checks: r.checks ?? {}, phone });
+    return `<p class="lead"><span class="pill ${ev.on ? "ok" : "warn"}">${ev.on ? "켜짐" : "꺼짐"}</span> ${esc(ev.reason)}</p>
+      <ul class="checklist">${ev.conditions.map((c) => `<li class="${c.met === true ? "met" : "unmet"}"><span class="mark" aria-hidden="true">${c.met === true ? "✓" : "○"}</span><span class="c-main">${esc(c.label)}</span></li>`).join("")}</ul>`;
+  }
+
+  // ---- dialogs ----
+
+  function openFlagForce(key, force, why = "") {
+    const r = S.data.flag?.key === key ? S.data.flag : S.data.flags?.flags.find((x) => x.key === key) ?? S.overview?.flagAlerts?.find((x) => x.key === key) ?? { key, name: key };
+    const off = force === "off";
+    const tomorrow = L.flagDay(Date.now() + 864e5);
+    openDialog(`<form data-form="flag-force" data-key="${esc(key)}" data-force="${force}"><h2>${esc(r.name)}을(를) 강제로 ${off ? "끌까요" : "켤까요"}?</h2>
+      <p>${off ? "모든 휴대폰에서 다음 확인 때(하루 안, 앱을 열 때) 꺼지고, 서버도 바로 그 기능을 받지 않아요. 조건이 다 차도 켜지지 않아요."
+        : "조건과 상관없이 켜요. 법적 기능은 강제로 켜도 처리방침 조건이 남은 휴대폰에서는 꺼져 있어요."}</p>
+      <div class="fieldset"><label for="ff-why">이유(필수, 기록에 남아요)</label><textarea id="ff-why" name="why" maxlength="300" required placeholder="${off ? "예: 결제 화면 오류 신고가 몰려요" : "예: Play 승인을 받았어요"}">${esc(why)}</textarea></div>
+      ${off ? `<div class="fieldset"><label for="ff-review">다시 볼 날(선택)</label><input id="ff-review" name="reviewAt" type="date" min="${L.flagDay(Date.now())}">
+        <span class="help">그날 목록과 메뉴 숫자로 다시 보라고 알려요. 저절로 켜지지는 않아요.</span></div>` : ""}
+      <div class="fieldset"><label for="ff-until">이날 0시에 저절로 풀기(선택)</label><input id="ff-until" name="until" type="date" min="${tomorrow}">
+        <span class="help">비우면 풀 때까지 그대로예요. 1년 안으로 골라요.</span></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn ${off ? "danger" : "primary"}" type="submit">강제로 ${off ? "끄기" : "켜기"}</button></div></form>`);
+  }
+
+  function openFlagConditions(key) {
+    const r = S.data.flag;
+    const text = L.conditionText(r.conditions);
+    openDialog(`<form data-form="flag-cond" data-key="${esc(key)}"><h2>${esc(r.name)}의 켜지는 조건</h2>
+      <p>한 줄에 조건 하나, 모두 채우면 켜져요. 'or'로 이으면 그중 하나면 돼요. 저장하면 휴대폰은 앱에 든 조건 대신 이 조건을 써요.</p>
+      <div class="fieldset"><label for="flag-cond">조건</label><textarea id="flag-cond" name="conditions" spellcheck="false" aria-describedby="flag-cond-out">${esc(text)}</textarea>
+        <span class="help">예: date >= 2026-11-10 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
+      <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
+      <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
+      <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}
+        <button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`, "wide");
+  }
+
+  /** The editor's lines as the checklist will say them, or the first mistake. */
+  function flagCondPreview(text) {
+    const got = L.parseConditions(text);
+    if (got.error) return `<p class="note bad" role="alert">${esc(got.error)}</p>`;
+    const unknown = JSON.stringify(got.list).match(/"type":"manual","key":"([^"]+)"/g)?.map((m) => m.slice(23, -1)).filter((k) => !Object.hasOwn(L.MANUAL_NAMES, k)) ?? [];
+    if (unknown.length) return `<p class="note bad" role="alert">모르는 확인 이름이에요: ${esc(unknown[0])}. ${Object.keys(L.MANUAL_NAMES).join(", ")} 가운데에서 골라요.</p>`;
+    if (!got.list.length) return '<p class="note">조건이 없으면 기본값을 따라요.</p>';
+    return `<ol class="lines">${got.list.map((c) => `<li>${esc(L.conditionLabel(c, S.data.flag?.policy ?? []))}</li>`).join("")}</ol>`;
+  }
+
+  function openFlagPolicy(version) {
+    const p = (S.data.flags?.policy ?? []).find((x) => x.version === version) ?? null;
+    openDialog(`<form data-form="flag-policy"><h2>${p ? `처리방침 ${esc(p.version)} 날짜` : "처리방침 판 더하기"}</h2>
+      <p>게시일·시행일을 바꾸면 그 판에 기대는 기능(날짜 조건·동의)도 같이 움직여요. 휴대폰은 다음 확인 때 따라와요.</p>
+      <div class="fieldset"><label for="fp-version">판</label><input id="fp-version" name="version" required pattern="\\d{1,2}\\.\\d{1,2}" value="${esc(p?.version ?? "")}"${p ? " readonly" : ""} placeholder="예: 3.3"></div>
+      <div class="fieldset"><label for="fp-posted">게시일</label><input id="fp-posted" name="posted" type="date" required value="${esc(p?.posted ?? "")}"></div>
+      <div class="fieldset"><label for="fp-effective">시행일</label><input id="fp-effective" name="effective" type="date" required value="${esc(p?.effective ?? "")}"></div>
+      <div class="fieldset"><label for="fp-held">동의하지 않은 휴대폰에도 시행하는 날(선택)</label><input id="fp-held" name="heldUntil" type="date" value="${esc(p?.heldUntil ?? "")}"></div>
+      <label class="check-row"><input type="checkbox" name="unfavourable"${p?.unfavourable ? " checked" : ""}>이용자에게 불리한 변경(30일 전에 알려요)</label>
+      <div class="fieldset"><label for="fp-why">이유(필수)</label><input id="fp-why" name="why" maxlength="300" required></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
+  }
+
+  // ---- 근무 유형 [ADMUX-26] ----
+
+  function typesView() {
+    const d = S.data.types;
+    if (!d) return skeleton(2);
+    const shown = d.types.filter((t) => t.on).length;
+    const lock = d.reach.off ? null : LOCK.off;
+    return `<p class="hint">숨긴 유형은 첫 질문, 근무 형태 화면, 새 달력 만들기, 직업 찾기, 둘러보기 예시에서만 빠져요. 이미 그 유형을 쓰는 달력·백업 복원·회사 파일은 그대로 열리고, 최고 관리자로 연결한 휴대폰에는 '숨김'으로 보여요. 휴대폰은 하루 안에 따라와요.</p>
+      <ul class="rows">${d.types.map((t) => {
+        const last = t.on && shown <= 1;
+        const button = t.on ? lockedBtn("숨기기", lock ?? (last ? "마지막 남은 유형은 숨길 수 없어요." : null), `data-act="type-hide" data-type="${t.style}"`)
+          : lockedBtn("보이기", lock, `data-act="type-show" data-type="${t.style}"`, "primary");
+        return `<li class="item"><span class="row-main"><b>${esc(t.label)}</b><small>${esc(t.key)}${t.override?.force === "off" ? ` · ${esc(t.override.by || "관리자")}: ${esc(t.override.why)}` : ""}</small></span>
+          <span class="pill ${t.on ? "ok" : "warn"}">${t.on ? "보임" : "숨김"}</span>${button}<a class="btn small ghost" href="${flagLink(t.key)}">자세히</a></li>`;
+      }).join("")}</ul>
+      ${lock ? `<p class="note">${esc(lock)}</p>` : '<p class="help">하나는 늘 보여요. 숨기기·보이기는 모두 기록에 남아요.</p>'}`;
+  }
+
+  // ---- home [ADMUX-27][FLAG-28] ----
+
+  /** A legal flag that turned on in the last 24 hours: at the top of 홈, with a one-tap force off (결정 D99). */
+  function flagAlertCard() {
+    const list = S.overview?.flagAlerts ?? [];
+    if (!list.length) return "";
+    return list.map((a) => `<section class="card flag-alert" role="status"><div class="card-head"><h2>${esc(a.name)}이(가) 켜졌어요</h2><span class="pill bad">${esc(ago(a.since))}</span></div>
+      <p class="hint">법적 기능이 조건을 채워 저절로 켜졌어요. 24시간 동안 여기 보여요. 결제·광고에 문제가 보이면 바로 강제로 꺼 주세요.</p>
+      <div class="actions start">${can("flagOff", "edit") ? `<button class="btn danger" data-act="flag-force" data-key="${esc(a.key)}" data-force="off" data-why="켜진 뒤 문제가 보여 홈에서 바로 껐어요">강제로 끄기</button>` : ""}
+        <a class="btn" href="${flagLink(a.key)}">자세히</a></div></section>`).join("");
+  }
+
+  // ---- 분석 › 기능별 효과 (1.28 통합) [ADMUX-40][FLAG-30] ----
+
+  /**
+   * Each flag's share of phones (stats.more, last 7 days) and problem reports and server errors in the 7 days
+   * before and after the server saw it turn on or off: the flag page's numbers for all flags side by side.
+   */
+  function effectsView() {
+    const d = S.data.effects;
+    if (!d) return skeleton(3);
+    const rows = [...d.flags].sort((a, b) => (b.compare ? Date.parse(b.compare.pivot) : 0) - (a.compare ? Date.parse(a.compare.pivot) : 0)
+      || (b.onShare ?? -1) - (a.onShare ?? -1));
+    const up = (a, b) => (b > a ? ' <span class="pill warn">늘었어요</span>' : "");
+    const line = (r) => {
+      const c = r.compare;
+      const share = r.onShare !== null && r.onShare !== undefined ? `휴대폰 ${r.onShare}%에서 켜짐` : "켜진 휴대폰 수 모름";
+      const nums = c ? `<span class="preview">${esc(moment(c.pivot))} 앞뒤 ${c.days}일 · 문제 신고 ${c.bugsBefore} → ${c.bugsAfter}${up(c.bugsBefore, c.bugsAfter)} · 서버 오류 ${c.errorsBefore} → ${c.errorsAfter}${up(c.errorsBefore, c.errorsAfter)}</span>`
+        : '<span class="preview">서버가 아직 켜짐·꺼짐을 보지 않았어요</span>';
+      const inner = `<span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)} · ${share}</small>${nums}</span><span class="row-side pills">${statePill(r)}${riskPill(r)}</span>`;
+      return `<li>${d.flagsReach ? `<a class="row" href="${flagLink(r.key)}">${inner}${icon(P.chevron)}</a>` : `<div class="row">${inner}</div>`}</li>`;
+    };
+    const measured = rows.filter((r) => r.compare);
+    const rest = rows.filter((r) => !r.compare);
+    return `<p class="hint">기능마다 켜진 휴대폰 비율(지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰${d.statsPhones ? ` ${d.statsPhones}대` : ""} 기준, 휴대폰 구별 없음)과
+        서버가 켜짐·꺼짐을 본 때 앞뒤 7일의 문제 신고·서버 오류를 나란히 봐요. 켠 휴대폰과 안 켠 휴대폰을 나눠 세지는 않아요.${d.flagsReach ? " 줄을 누르면 그 기능의 자세한 기록이 열려요." : ""}</p>
+      ${d.statsPhones ? "" : '<p class="note">아직 켜진 기능 목록을 보낸 휴대폰이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}
+      ${measured.length ? `<h2 class="day-head">켜짐·꺼짐을 본 기능</h2><ul class="rows">${measured.map(line).join("")}</ul>` : ""}
+      ${rest.length ? `<h2 class="day-head">아직 바뀐 적 없는 기능</h2><ul class="rows">${rest.map(line).join("")}</ul>` : ""}`;
+  }
+
+  const FLAG_ACTIONS = {
+    "flag-show": ({ key }) => {
+      S.flagShow = key;
+      syncUrl();
+      render({ keepScroll: true });
+    },
+    "flag-view": ({ key }) => {
+      S.flagView = key;
+      syncUrl();
+      render({ keepScroll: true });
+      load();
+    },
+    "flag-force": ({ key, force, why }) => openFlagForce(key, force, why ?? ""),
+    "flag-clear": ({ key }) => {
+      const r = S.data.flag;
+      confirmBox("강제를 풀까요?", `${r?.name ?? key}이(가) 다시 조건대로 켜지고 꺼져요. 지금 조건이면 ${r?.checklist?.every((c) => c.met !== false) ? "켜져요" : "꺼진 채예요"}.`, "풀기", async () => {
+        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }), "강제를 풀었어요");
+        if (d) S.data.flag = d;
+        render({ keepScroll: true });
+        load({ quiet: true });
+      }, "primary");
+    },
+    "flag-cond": ({ key }) => openFlagConditions(key),
+    "flag-check": ({ name, done }) => {
+      const label = S.data.flag?.manualNames?.[name] ?? name;
+      if (done) {
+        openDialog(`<form data-form="flag-check" data-name="${esc(name)}"><h2>${esc(label)}, 확인했나요?</h2>
+          <p>확인하면 이 조건을 기다리는 기능이 다른 조건을 채운 대로 바로 켜질 수 있어요. 누가 언제 확인했는지 남아요.</p>
+          <div class="fieldset"><label for="fk-note">메모(선택)</label><input id="fk-note" name="note" maxlength="300" placeholder="예: Play Console 출시 개요에서 봄"></div>
+          <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">확인했어요</button></div></form>`);
+        return;
+      }
+      confirmBox(`${label} 확인을 취소할까요?`, "이 조건을 기다리는 기능이 다시 대기로 돌아가요.", "확인 취소", async () => {
+        await act(() => api(`/checks/${encodeURIComponent(name)}`, "POST", { done: false }), "확인을 취소했어요");
+        load();
+      });
+    },
+    "flag-policy": ({ version }) => openFlagPolicy(version ?? null),
+    "type-show": async ({ type }) => {
+      const d = await act(() => api("/types", "POST", { type, show: true }), "다시 보여요. 휴대폰은 하루 안에 따라와요");
+      if (d) S.data.types = d;
+      render({ keepScroll: true });
+    },
+    "type-hide": ({ type }) => openDialog(`<form data-form="type-hide" data-type="${esc(type)}"><h2>${esc(L.WORK_NAMES[type] ?? type)} 유형을 숨길까요?</h2>
+      <p>새로 고르는 곳에서만 빠지고, 이미 쓰는 달력은 그대로예요.</p>
+      <div class="fieldset"><label for="th-why">이유(필수)</label><input id="th-why" name="why" maxlength="300" required placeholder="예: 화면을 다듬는 중이에요"></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">숨기기</button></div></form>`),
+  };
+
+  const FLAG_FORMS = {
+    "flag-force": async (form) => {
+      const data = new FormData(form);
+      const { key, force } = form.dataset;
+      const body = { force, why: String(data.get("why") ?? "").trim(), until: data.get("until") || null, ...(force === "off" ? { reviewAt: data.get("reviewAt") || null } : {}) };
+      const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", body), force === "off" ? "강제로 껐어요. 휴대폰은 하루 안에 따라와요" : "강제로 켰어요");
+      if (!d) return;
+      dialog.close();
+      if (S.route.name === "flags") S.data.flag = d;
+      render({ keepScroll: true });
+      load({ quiet: true });
+    },
+    "flag-cond": async (form, submitter) => {
+      const reset = submitter?.name === "reset";
+      const why = String(new FormData(form).get("why") ?? "").trim() || (reset ? "앱에 든 조건으로 되돌림" : "");
+      let conditions = null;
+      if (!reset) {
+        const got = L.parseConditions(form.elements.conditions.value);
+        if (got.error) return toast(got.error);
+        conditions = got.list;
+      }
+      const d = await act(() => api(`/flags/${encodeURIComponent(form.dataset.key)}/conditions`, "POST", { conditions, why }), reset ? "앱 조건으로 되돌렸어요" : "조건을 바꿨어요");
+      if (!d) return;
+      dialog.close();
+      S.data.flag = d;
+      render({ keepScroll: true });
+    },
+    "flag-check": async (form) => {
+      const r = await act(() => api(`/checks/${encodeURIComponent(form.dataset.name)}`, "POST", { done: true, note: String(new FormData(form).get("note") ?? "").trim() }), "확인했어요");
+      if (!r) return;
+      dialog.close();
+      load();
+    },
+    "flag-thanks": async (form) => {
+      const d = await act(() => api("/flags/billing/thanks", "POST", { thanksMonths: Number(new FormData(form).get("thanks")) }), "저장했어요");
+      if (d) S.data.flag = d;
+      render({ keepScroll: true });
+    },
+    "flag-policy": async (form) => {
+      const data = new FormData(form);
+      const body = { version: data.get("version"), posted: data.get("posted"), effective: data.get("effective"), heldUntil: data.get("heldUntil") || null,
+        unfavourable: data.get("unfavourable") === "on", why: String(data.get("why") ?? "").trim() };
+      const d = await act(() => api("/policy", "POST", body), "처리방침 일정을 고쳤어요");
+      if (!d) return;
+      dialog.close();
+      S.data.flags = d;
+      render({ keepScroll: true });
+    },
+    "type-hide": async (form) => {
+      const d = await act(() => api("/types", "POST", { type: form.dataset.type, show: false, why: String(new FormData(form).get("why") ?? "").trim() }), "숨겼어요. 휴대폰은 하루 안에 따라와요");
+      if (!d) return;
+      dialog.close();
+      S.data.types = d;
+      render({ keepScroll: true });
+    },
+  };
+
+  const FLAG_CHANGES = {
+    "flag-sim": () => {
+      const form = document.getElementById("flag-sim");
+      const out = document.getElementById("flag-sim-out");
+      if (!form || !out || !S.data.flag) return;
+      const data = new FormData(form);
+      S.flagSim = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
+      S.flagSim.preview = data.get("preview") === "on";
+      out.innerHTML = flagSimText(S.data.flag);
+    },
+  };
+
+  /** Typing in the condition editor: what it will say, or the first mistake, as the admin types. */
+  function flagInput(t) {
+    if (t.id !== "flag-cond") return;
+    const out = document.getElementById("flag-cond-out");
+    if (out) out.innerHTML = flagCondPreview(t.value);
+  }
+  // ---- AM 1.28 기능 관리 끝 ----
+
   const ACTIONS = {
+    ...FLAG_ACTIONS,
     refresh: () => load(),
     close: () => dialog.close(),
     shortcuts: () => openShortcuts(),
@@ -3978,20 +4459,6 @@ function adminApp(L, BUILD) {
         <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣어 주세요.</p>
         <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`);
     },
-    // [MON-10]
-    "launch-switch": ({ key }) => {
-      const on = key === "on";
-      const go = async () => {
-        const d = await act(() => api("/launch", "POST", { billingLive: on }), on ? "정식 출시를 켰어요. 앱이 하루 안에 따라와요" : "정식 출시를 껐어요. 다시 모두 무료예요");
-        if (d) S.data.launch = d;
-        load();
-      };
-      if (on) {
-        confirmBox("정식 출시를 켤까요?", "켜기 전에 차례대로 확인해 주세요: ① Play 정기 결제 상품 활성 ② 이용약관·처리방침 개정판 게시 뒤 7일 ③ Play 데이터 보안·광고 포함 선언 ④ 1.19.0 이상이 프로덕션에. 켜면 결제·광고가 시작되고 출시 전에 설치한 분들께 감사 보상이 가요.", "켜기", go);
-      } else {
-        confirmBox("정식 출시를 끌까요?", "앱이 다음 확인 때부터 모든 기능을 무료로 열고 광고를 멈춰요. 이미 구독한 분의 Play 결제는 그대로예요.", "끄기", go);
-      }
-    },
     "admin-edit": ({ id }) => openAdminEdit(id, false),
     "admin-status": ({ id, status, name }) => {
       const run = async () => {
@@ -4029,17 +4496,6 @@ function adminApp(L, BUILD) {
       if (n) S.data.notices = n;
       render({ keepScroll: true });
     }),
-    switch: ({ key, off }) => {
-      const label = S.data.notices?.switches.find((w) => w.key === key)?.label ?? key;
-      const flip = async () => {
-        const n = await act(() => api("/switches", "POST", { key, off: Boolean(off) }), off ? `${label}을(를) 껐어요` : `${label}을(를) 다시 켰어요`,
-          off ? () => ACTIONS.switch({ key, off: "" }) : undefined);
-        if (n) S.data.notices = n;
-        render({ keepScroll: true });
-      };
-      if (off) confirmBox(`${label}을(를) 끌까요?`, "서버가 바로 받지 않고, 앱은 하루 안에 이 기능을 잠시 쉬게 해요. 다시 켜면 돌아와요.", "끄기", flip);
-      else flip();
-    },
     // [ADMIN-13]
     "metric-days": ({ key }) => {
       S.metricDays = Number(key);
@@ -4240,6 +4696,7 @@ function adminApp(L, BUILD) {
   const fillJoinForm = (v) => Object.entries(v).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
 
   const FORMS = {
+    ...FLAG_FORMS,
     login: async (form) => {
       S.error = "";
       const data = new FormData(form);
@@ -4336,13 +4793,6 @@ function adminApp(L, BUILD) {
       if (!n) return;
       S.data.notices = n;
       dialog.close();
-      render({ keepScroll: true });
-    },
-    launch: async (form) => {
-      const data = new FormData(form);
-      const free = String(data.get("free") ?? "").split(/[\s,]+/).map((f) => f.trim().toUpperCase()).filter(Boolean);
-      const d = await act(() => api("/launch", "POST", { thanksMonths: Number(data.get("thanks")), freeFeatures: free }), "저장했어요");
-      if (d) S.data.launch = d;
       render({ keepScroll: true });
     },
     rename: async (form) => {
@@ -4589,6 +5039,7 @@ function adminApp(L, BUILD) {
 
   /** Changes that are a setting, not a form: [data-change] names which. */
   const CHANGES = {
+    ...FLAG_CHANGES,
     hidden: async (t) => {
       if (S.route.name !== "companies") return;
       const c = await act(() => api(`/companies/${S.route.id}`, "POST", { hidden: t.checked }),
@@ -4704,6 +5155,8 @@ function adminApp(L, BUILD) {
     inquiries: () => ["inquiryQuery", "inquiries", () => loadInquiries()],
     community: () => ["postQuery", S.postFilter === "rates" ? "rates" : "posts", () => load({ quiet: true })],
     rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
+    // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
+    flags: () => ["flagQuery", "flags", async () => {}],
   };
 
   // toggle does not bubble, so it is caught on the way down.
@@ -4762,6 +5215,7 @@ function adminApp(L, BUILD) {
       return paintPalette();
     }
     if (t.id === "dev-find") return showCandidates(t.value);
+    if (t.id === "flag-cond") return flagInput(t);
     if (t.id !== "search") return;
     const plan = SEARCH[S.route.name]?.();
     if (!plan) return;

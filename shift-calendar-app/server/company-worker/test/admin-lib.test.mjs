@@ -79,8 +79,10 @@ test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees 
   assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home"]], ["ask", ["inquiries", "templates"]], ["manage", ["account"]]]);
   assert.deepEqual(L.visibleHubs(PLAZA).map((h) => h.key), ["today", "plaza", "manage"]);
   assert.deepEqual(L.visibleHubs(PLAZA).find((h) => h.key === "plaza").tabs, ["review", "versions", "community", "companies"]);
-  // 운영 keeps 기능 관리 until the server knows the flags area (AN-D3); 설정 alone opens 보상 for 친구 초대 (AN-D4).
-  assert.ok(L.tabVisible("flags", { perms: { ops: "view" } }));
+  // 1.28 통합: 기능 관리·근무 유형 follow the flags area (the server gives it to 1.27 운영 보기 admins, SINCE.flags), so
+  // 운영 alone no longer opens them; 설정 alone opens 보상 for 친구 초대 (AN-D4).
+  assert.ok(L.tabVisible("flags", { perms: { flags: "view" } }) && !L.tabVisible("flags", { perms: { ops: "edit", flags: "none" } }));
+  assert.ok(!L.tabVisible("types", { perms: { ops: "edit" } }));
   assert.ok(L.tabVisible("rewards", { perms: { settings: "view" } }));
   assert.ok(!L.tabVisible("server", ASKER) && L.tabVisible("server", OWNER));
 });

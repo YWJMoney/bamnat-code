@@ -596,23 +596,27 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual([...t.errors, ...u.errors, ...v.errors], []);
 });
 
-test("[ADMUX-40] 출시 › 기능 관리 keeps the switches until AM's screen comes: 끄기 turns the feature off on the server", async () => {
+test("[ADMUX-40] 출시 › 기능 관리 is AM's screen: a 기능 스위치 is a flag, forced off with a reason, and 분석 › 기능별 효과 lists every flag", async () => {
   const s = await world();
   const t = await signedIn(s.env);
   await t.go("#/flags");
-  assert.match(t.text("#main"), /기능 관리/);
-  const btn = t.$('#main [data-act="switch"][data-off="1"]');
-  const key = btn.dataset.key;
-  await t.click(btn);
-  t.$('dialog form[data-form="confirm"]').requestSubmit();
+  assert.ok(!t.$("#main .soon"), "no placeholder left");
+  assert.ok(t.$(`#main a.row[href="#/flags/plaza.write"]`), "the 1.27 switch 광장 글쓰기 is a flag row");
+  await t.go("#/flags/plaza.write");
+  await t.settle(20);
+  await t.click('#main [data-act="flag-force"][data-force="off"]');
+  t.$("#ff-why").value = "글 신고가 몰려요";
+  t.$('dialog form[data-form="flag-force"]').requestSubmit();
   await t.settle(30);
   const owner = await signIn(s.call);
   const n = (await s.call("GET", "/api/admin/notices", undefined, owner)).data;
-  assert.equal(n.switches.find((w) => w.key === key).off, true);
-  for (const tabName of ["types", "effects"]) {
-    await t.go(`#/${tabName}`);
-    assert.ok(t.$("#main .soon"), `${tabName} waits for AM's screen`);
-  }
+  assert.equal(n.switches.find((w) => w.key === "PLAZA_WRITE").off, true);
+  await t.go("#/types");
+  assert.ok(t.$('#main [data-act="type-hide"], #main [data-act="type-show"]'), "근무 유형 screen");
+  await t.go("#/effects");
+  await t.settle(20);
+  assert.ok(t.$(`#main a.row[href="#/flags/plaza.write"]`), "효과 lists flags, linked to their page");
+  assert.match(t.text("#main"), /문제 신고 \d+ → \d+/);
   assert.deepEqual(t.errors, []);
 });
 
@@ -773,3 +777,195 @@ test("[ADMUX-35] bottom tabs and saved views kept on this device from 1.27 move 
   assert.deepEqual(t.errors, []);
 });
 // AN 1.28 끝
+// ---- AM 1.28 기능 관리 [ADMUX-21]~[ADMUX-29] ----
+
+const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
+  takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
+
+/** An admin the owner invited (운영 관리자, no 기능 강제로 끄기) and approved; returns the id and the sign-in cookie. */
+async function manager(call, owner) {
+  const inv = await call("POST", "/api/admin/invites", { email: "minji@example.com", perms: MANAGER }, owner);
+  await call("POST", "/api/admin/join", { token: inv.data.link.split("#")[1], name: "민지", password: "minji-flags-2026" }, { "x-admin": "1", origin: ORIGIN, ...from(40) });
+  const id = (await call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === "minji@example.com").id;
+  await call("POST", `/api/admin/admins/${id}`, { status: "active" }, owner);
+  const res = await call("POST", "/api/admin/login", { email: "minji@example.com", password: "minji-flags-2026" }, { "x-admin": "1", origin: ORIGIN, ...from(40) });
+  return { id, cookie: res.headers.get("set-cookie").split(";")[0] };
+}
+
+test("[ADMUX-21][ADMUX-25][ADMUX-26] 기능 관리, its timeline, one flag and 근무 유형 open without an error or a style attribute", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  for (const h of ["#/flags", "#/flags?view=timeline", "#/flags/billing", "#/flags/type.shift", "#/flags/plaza.write", "#/types"]) {
+    await u.go(h);
+    await u.settle(20);
+    assert.ok(u.$("#main").textContent.trim().length > 10, `${h} shows something`);
+    assert.ok(!u.$("#main .failed"), `${h} loaded`);
+    assert.equal(u.$$("#main [style]").length, 0, `${h}: no style attribute (CSP)`);
+  }
+  await u.go("#/flags/billing");
+  await u.settle(20);
+  assert.match(u.text("#title"), /결제\(프로 구독\)/);
+  assert.match(u.text("#main"), /켜지는 조건/);
+  assert.ok(u.$$('#main [data-act="flag-check"][data-done="1"]').length >= 2, "확인했어요 for Play's two facts");
+  assert.ok(u.$('#main a[href="https://ywjmoney.github.io/-/privacy/"]'), "the basis links the policy");
+  assert.ok(u.$('#main form[data-form="flag-thanks"]'), "감사 보상 lives here now");
+  // The simulator answers for a pretend phone.
+  assert.match(u.text("#flag-sim-out"), /켜짐|꺼짐/);
+  // 설정 no longer has the 정식 출시 switch; it points here.
+  await u.go("#/settings");
+  await u.settle(20);
+  assert.ok(!u.$('[data-act="launch-switch"]'));
+  assert.ok(u.$('#main a[href="#/flags/billing"]'));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-21] the list filters by state and words, in the address", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.api("POST", "/api/admin/flags/plaza.write/force", { force: "off", why: "도배" });
+  await u.go("#/flags");
+  await u.settle(20);
+  const all = u.$$("#main .rows .row").length;
+  assert.ok(all >= 16, "every flag");
+  await u.click('#main [data-act="flag-show"][data-key="forced_off"]');
+  assert.equal(u.window.location.hash, "#/flags?show=forced_off");
+  assert.deepEqual(u.$$("#main .rows .row b").map((b) => b.textContent), ["광장 글쓰기(글·답글·제안·임금표)"]);
+  assert.match(u.text("#main .rows"), /강제로 끔/);
+  await u.click('#main [data-act="flag-show"][data-key="all"]');
+  await u.type("#search", "billing");
+  await new Promise((r) => setTimeout(r, 300));
+  await u.settle();
+  assert.equal(u.$$("#main .rows .row").length, 1);
+  assert.match(u.window.location.hash, /q=billing/);
+  // 대기 shows the waiting flags with their pill.
+  await u.type("#search", "");
+  await new Promise((r) => setTimeout(r, 300));
+  await u.click('#main [data-act="flag-show"][data-key="waiting"]');
+  assert.ok(u.$$("#main .rows .pill.warn").some((p) => /대기/.test(p.textContent)));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-23] forcing off asks why, the server keeps it with its history; conditions are checked as typed", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/flags/plaza.write");
+  await u.settle(20);
+  await u.click('#main [data-act="flag-force"][data-force="off"]');
+  assert.ok(u.$('dialog form[data-form="flag-force"]'));
+  assert.ok(u.$("#ff-review"), "다시 볼 날");
+  u.$("#ff-why").value = "도배 글이 몰려요";
+  u.$('dialog form[data-form="flag-force"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /강제로 껐어요/);
+  const d = await u.api("GET", "/api/admin/flags/plaza.write");
+  assert.deepEqual([d.override.force, d.override.why, d.history[0].action], ["off", "도배 글이 몰려요", "flag_force_off"]);
+  assert.match(u.text("#main"), /강제로 끔/);
+  assert.ok(u.$('#main [data-act="flag-clear"]'), "the way back");
+  assert.match(u.text("#main .feed"), /기능 강제로 끔/);
+
+  // The condition editor says the first mistake while typing, and saves what it shows.
+  await u.go("#/flags/leave.hourly");
+  await u.settle(20);
+  await u.click('#main [data-act="flag-cond"]');
+  await u.type("#flag-cond", "date >= 2027-01-01\nweather sunny");
+  assert.ok(u.$('#flag-cond-out [role="alert"]'));
+  assert.match(u.text("#flag-cond-out"), /2째 줄/);
+  await u.type("#flag-cond", "date >= 2027-01-01\nrollout 10%");
+  assert.equal(u.$$("#flag-cond-out li").length, 2);
+  u.$("#fc-why").value = "먼저 10%";
+  u.$('dialog form[data-form="flag-cond"]').requestSubmit();
+  await u.settle(30);
+  const leave = await u.api("GET", "/api/admin/flags/leave.hourly");
+  assert.deepEqual(leave.override.conditions, [{ type: "date", from: "2027-01-01" }, { type: "rollout", percent: 10 }]);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-28] the owner gives 기능 강제로 끄기 as a yes/no; without it the buttons are locked with the reason", async (t) => {
+  offline(t);
+  const s = await world();
+  const owner = await signIn(s.call);
+  const m = await manager(s.call, owner);
+  const u = await tab(s.env, { hash: "#/flags/billing", cookie: m.cookie });
+  await u.settle(20);
+  const button = (label) => u.$$("#main button").find((b) => b.textContent === label);
+  assert.ok(button("강제로 끄기").disabled, "강제로 끄기 locked");
+  assert.match(button("강제로 끄기").getAttribute("title"), /기능 강제로 끄기/);
+  assert.ok(button("강제로 켜기").disabled);
+  assert.ok(u.$$("#main button").filter((b) => b.textContent === "확인했어요").every((b) => b.disabled), "legal confirmations are the owner's");
+  assert.match(u.text("#main"), /최고 관리자만/);
+  // A flag that is not legal: conditions are open to 기능 관리 고치기.
+  await u.go("#/flags/leave.hourly");
+  await u.settle(20);
+  assert.equal(u.$('#main [data-act="flag-cond"]')?.disabled, false);
+
+  // The owner's 관리자 screen: the permission is a yes/no like 개발사항 처리.
+  const o = await asOwner(s.env, t);
+  await o.go("#/admins");
+  await o.settle(20);
+  await o.click(`#main [data-act="admin-edit"][data-id="${m.id}"]`);
+  const yes = o.$('dialog [data-act="level"][data-area="flagOff"][data-level="edit"]');
+  assert.ok(yes, "flagOff in the dialog");
+  assert.equal(yes.textContent.trim(), "줌");
+  assert.ok(!o.$('dialog [data-act="level"][data-area="flagOff"][data-level="view"]'), "no 보기 for a yes/no");
+  await o.click(yes);
+  o.$('dialog form[data-form="admin-perms"]').requestSubmit();
+  await o.settle(30);
+  const perms = (await o.api("GET", "/api/admin/admins")).admins.find((a) => a.id === m.id).perms;
+  assert.equal(perms.flagOff, "edit");
+  // Now the same admin may force off (not on).
+  await u.go("#/flags/plaza.write");
+  await u.settle(20);
+  assert.equal(u.$('#main [data-act="flag-force"][data-force="off"]')?.disabled, false);
+  assert.deepEqual([...u.errors, ...o.errors], []);
+});
+
+test("[ADMUX-27][FLAG-28] a legal flag on for under 24 hours sits at the top of 홈 with a one-tap force off", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  // 1.28 통합: forced on from the flag's page in the app, so the menu numbers (/badges) are asked again at once.
+  await u.go("#/flags/billing");
+  await u.settle(20);
+  await u.click('#main [data-act="flag-force"][data-force="on"]');
+  u.$("#ff-why").value = "Play 승인";
+  u.$('dialog form[data-form="flag-force"]').requestSubmit();
+  await u.settle(30);
+  await u.go("#/home");
+  await u.settle(20);
+  const card = u.$("#main .card.flag-alert");
+  assert.ok(card, "the warning card");
+  assert.match(card.textContent, /결제\(프로 구독\)이\(가\) 켜졌어요/);
+  assert.ok(u.$("#main").firstElementChild.classList.contains("flag-alert"), "at the top");
+  await u.click('#main .flag-alert [data-act="flag-force"]');
+  assert.match(u.$("#ff-why").value, /홈에서 바로 껐어요/);
+  u.$('dialog form[data-form="flag-force"]').requestSubmit();
+  await u.settle(30);
+  assert.equal((await u.api("GET", "/api/admin/flags/billing")).override.force, "off");
+  await u.settle(20);
+  assert.ok(!u.$("#main .card.flag-alert"), "gone once forced off");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMUX-26] 근무 유형: hide with a reason, never the last one", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  for (const type of ["INVEST", "BUSINESS", "FIELD", "HOURLY"]) await u.api("POST", "/api/admin/types", { type, show: false, why: "다듬는 중" });
+  await u.go("#/types");
+  await u.settle(20);
+  await u.click('#main [data-act="type-hide"][data-type="DAY"]');
+  u.$("#th-why").value = "일근 화면 다듬는 중";
+  u.$('dialog form[data-form="type-hide"]').requestSubmit();
+  await u.settle(30);
+  const types = (await u.api("GET", "/api/admin/types")).types;
+  assert.deepEqual(types.filter((x) => x.on).map((x) => x.style), ["SHIFT"]);
+  const last = u.$$("#main button").find((b) => b.textContent === "숨기기");
+  assert.ok(last.disabled);
+  assert.match(last.getAttribute("title"), /마지막 남은 유형/);
+  await u.click('#main [data-act="type-show"][data-type="INVEST"]');
+  assert.equal((await u.api("GET", "/api/admin/types")).types.find((x) => x.style === "INVEST").on, true);
+  assert.deepEqual(u.errors, []);
+});

@@ -126,3 +126,46 @@ test("[ADMUX-38] the four new indexes are made and used", async () => {
   assert.match(plan("SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"), /posts_flagged/);
   assert.match(plan("SELECT id FROM audit WHERE action = ? ORDER BY id DESC LIMIT 50", "adopt"), /audit_action/);
 });
+
+// ---- 1.28 통합: AN의 /badges와 AM의 기능 관리 ----
+
+test("[ADMUX-40][FLAG-28] /badges carries 기능 관리's number and 오늘's legal-flag card like /overview, only with the flags area", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const support = await member(call, owner, { ...SUPPORT, ops: "edit", flags: "none" });
+  const b = (await call("GET", "/api/admin/badges", undefined, owner)).data;
+  const o = (await call("GET", "/api/admin/overview", undefined, owner)).data;
+  assert.equal(typeof b.flagsWaiting, "number");
+  assert.equal(b.flagsWaiting, o.flagsDue);
+  assert.deepEqual(b.flagAlerts, []);
+  assert.equal(b.billingLive, false);
+  // Forcing billing on is a write: the kept numbers are fresh at once, with the 24-hour card and billingLive.
+  assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "Play 승인" }, owner)).status, 200);
+  const after = (await call("GET", "/api/admin/badges", undefined, owner)).data;
+  assert.deepEqual(after.flagAlerts.map((a) => a.key), ["billing"]);
+  assert.equal(after.billingLive, true);
+  // 운영 without 기능 관리 (flags none): no flag numbers, and the flag screens are closed.
+  const s = (await call("GET", "/api/admin/badges", undefined, support)).data;
+  assert.ok(!("flagsWaiting" in s) && !("flagAlerts" in s));
+  assert.equal(s.billingLive, true);
+  assert.equal((await call("GET", "/api/admin/flags", undefined, support)).status, 403);
+});
+
+test("[ADMUX-40][FLAG-30] /effects: every flag with its share of phones and problems before and after, for 지표 readers", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/flags/plaza.write/force", { force: "off", why: "글 신고가 몰려요" }, owner);
+  const e = (await call("GET", "/api/admin/effects", undefined, owner)).data;
+  const keys = e.flags.map((f) => f.key);
+  for (const k of ["billing", "ads", "type.shift", "plaza.write", "stats.more"]) assert.ok(keys.includes(k), k);
+  assert.equal(e.flagsReach, true);
+  const pw = e.flags.find((f) => f.key === "plaza.write");
+  assert.equal(pw.state, "forced_off");
+  assert.ok(pw.compare === null || typeof pw.compare.bugsBefore === "number");
+  const support = await member(call, owner);
+  assert.equal((await call("GET", "/api/admin/effects", undefined, support)).status, 403);
+  const reader = await member(call, owner, { ...SUPPORT, metrics: "view", flags: "none" }, "reader@example.com", 41);
+  const r = (await call("GET", "/api/admin/effects", undefined, reader)).data;
+  assert.equal(r.flagsReach, false);
+  assert.ok(r.flags.length > 10);
+});

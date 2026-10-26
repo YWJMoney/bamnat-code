@@ -143,6 +143,20 @@ export function adminLib() {
     push: "웹 푸시가 연결되지 않은 서버예요",
     subscription: "알림 구독 정보를 읽지 못했어요. 알림을 껐다 다시 켜 주세요",
     quiet: "조용한 시간을 0~23시로 골라 주세요",
+    // AM 1.28 [FLAG-21]~[FLAG-33] 기능 관리.
+    retired: "정식 출시 스위치는 은퇴했어요. 기능 관리 › 결제(프로 구독)에서 조건을 확인해 주세요",
+    flag: "모르는 기능이에요. 새로 고친 뒤 다시 골라 주세요",
+    last_type: "근무 유형을 모두 숨길 수는 없어요. 적어도 하나는 보여야 해요",
+    conditions: "켜지는 조건을 다시 확인해 주세요",
+    manual: "모르는 확인 항목이에요",
+    flagsOn: "켜진 기능 목록을 읽지 못했어요",
+    force: "강제로 켜기·끄기·풀기 가운데 하나를 골라 주세요",
+    review_at: "다시 볼 날은 오늘부터 1년 안의 날짜로 골라 주세요",
+    flag_until: "강제 기한은 지금부터 1년 안으로 정해 주세요",
+    policy: "처리방침 판과 날짜(게시 ≤ 시행 ≤ 동의 없이 시행)를 다시 확인해 주세요",
+    type: "근무 유형을 다시 골라 주세요",
+    show: "보이기·숨기기 가운데 하나를 골라 주세요",
+    why: "이유를 적어 주세요(300자까지). 나중에 다른 관리자가 이 기록으로 판단해요",
   };
   const errorText = (code) => ERRORS[code] ?? "처리하지 못했어요. 잠시 뒤 다시 해 주세요";
 
@@ -198,6 +212,8 @@ export function adminLib() {
     // [ADMUX-33] 오늘 › 할 일 keeps 받은함's 보기; [ADMUX-32] 이달 할 일 keeps 운영's month.
     home: { view: "all" },
     chores: { month: "" },
+    // AM 1.28 [ADMUX-21][ADMUX-25] 기능 관리: which state, words, list or timeline.
+    flags: { show: "all", q: "", view: "" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -276,9 +292,9 @@ export function adminLib() {
     companies: { label: "회사", area: "companies", old: "회사·규칙 companies" },
     shares: { label: "공유 링크", area: "shares", old: "공유 링크 신고 shares" },
     adopt: { label: "채택 규칙", area: "settings", old: "설정 자동 채택 맞았어요 비율 채택 보상 상한 settings" },
-    // [ADMUX-40] 기능 관리 and 근무 유형 are AM's screens; until the server has the flags area, 운영 may see them.
-    flags: { label: "기능 관리", area: ["flags", "ops"], badge: (o) => o.flagsWaiting ?? 0, strip: "기능 확인", old: "운영 기능 스위치 정식 출시 다크머지 결제 광고 flags ops" },
-    types: { label: "근무 유형", area: ["flags", "ops"], old: "근무 유형 노출 types" },
+    // [ADMUX-40][FLAG-27] 기능 관리 and 근무 유형 (AM): the flags area, which admins with 운영 보기 got when 1.28 came (SINCE.flags).
+    flags: { label: "기능 관리", area: "flags", badge: (o) => o.flagsWaiting ?? 0, strip: "기능 확인", old: "운영 기능 스위치 정식 출시 다크머지 결제 광고 flags ops" },
+    types: { label: "근무 유형", area: "flags", old: "근무 유형 노출 types" },
     notices: { label: "앱 공지", area: "ops", old: "공지 notices 운영" },
     chores: { label: "이달 할 일", area: "ops", badge: (o) => o.opsLeft ?? 0, old: "이달 할 일 chores 운영" },
     gates: { label: "출시 관문", area: "metrics", old: "지표 출시 관문 원격 갱신 gates" },
@@ -671,10 +687,292 @@ export function adminLib() {
     return "개발자 확인 대기";
   }
 
+  // ---- AM 1.28 기능 관리(다크머지) 판단기 [FLAG-21][ADMUX-23][ADMUX-24] ----
+  // The server (index.js) and the developer app's 미리 보기 use this one evaluator, so what the screen says a phone
+  // would do is what the server computes. The phone app has its own copy in core (com.bamnat.core.flags.FlagEval,
+  // 묶음 AL) with the same order: 1 강제 끔 → 2 앱 버전 밖 → 3 관리자 휴대폰 미리 보기 → 4 강제 켬 → 5 조건.
+  // The condition JSON is AL's (AL-D1): date {from | policy}, policy {version}, consent {key, unknownMeets}, profile {key},
+  // app {min, max} (versionCode), workType {in}, rollout {percent}, manual {key}, admin, any {of}.
+
+  const FLAG_KST = 9 * 3600e3;
+  const flagDay = (ms) => new Date(ms + FLAG_KST).toISOString().slice(0, 10);
+  const FLAG_DATE = /^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+  const WORK_TYPES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
+  const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "시급", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+  /** What a 동의 (consent) condition can name, and how the screens say it (core FlagEval.CONSENTS). */
+  const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)" };
+  /** What a 정보 (profile) condition can name: the user gave the app what the feature needs (core FlagEval.PROFILE). */
+  const PROFILE_NAMES = { "setup.done": "첫 설정을 마침", "pay.setup": "급여 설정을 마침", "company.linked": "회사를 연결함" };
+  /** Facts only a person can confirm (manual): who confirmed and when is kept on the server (core FlagEval.MANUAL). */
+  const MANUAL_NAMES = {
+    "play.production": "Play 프로덕션 승인",
+    "play.subscription": "정기 결제 상품 활성",
+    "data.safety": "Play 데이터 보안 답 고침",
+  };
+  const MANUAL_KEY = /^[a-z][a-z0-9]{1,19}(\.[a-z0-9]{1,30}){1,2}$/;
+  const POLICY_VERSION = /^\d{1,2}\.\d{1,2}$/;
+
+  /** -1, 0, 1 for two policy or app version names ("3.1" < "3.10", "1.27.0" < "1.28.0"). */
+  function versionCompare(a, b) {
+    const x = String(a).split(".").map(Number);
+    const y = String(b).split(".").map(Number);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (x[i] ?? 0) - (y[i] ?? 0);
+      if (d) return d < 0 ? -1 : 1;
+    }
+    return 0;
+  }
+
+  /**
+   * A condition list as stored, checked: { list } or { error } in words. Kinds: date, policy, consent, profile, app,
+   * workType, rollout, manual, admin, and any (one of several, one level deep).
+   */
+  function checkConditions(list, depth = 0) {
+    if (!Array.isArray(list) || list.length > 12) return { error: "조건은 12개까지 목록으로 적어 주세요" };
+    const out = [];
+    for (const [i, c] of list.entries()) {
+      const at = `${i + 1}번째 조건`;
+      if (!c || typeof c !== "object") return { error: `${at}을 읽지 못했어요` };
+      if (c.type === "date") {
+        if (c.policy != null) {
+          if (c.from != null || !POLICY_VERSION.test(c.policy)) return { error: `${at}: 처리방침 시행일은 3.1처럼 판만 적어 주세요` };
+          out.push({ type: "date", policy: c.policy });
+        } else {
+          if (!FLAG_DATE.test(c.from ?? "")) return { error: `${at}: 날짜는 2026-11-10처럼 적어 주세요` };
+          out.push({ type: "date", from: c.from });
+        }
+      } else if (c.type === "policy") {
+        if (!POLICY_VERSION.test(c.version ?? "")) return { error: `${at}: 처리방침 판은 3.1처럼 적어 주세요` };
+        out.push({ type: "policy", version: c.version });
+      } else if (c.type === "consent") {
+        if (!Object.hasOwn(CONSENT_NAMES, c.key ?? "")) return { error: `${at}: 동의 종류는 ${Object.keys(CONSENT_NAMES).join(", ")} 가운데 하나예요` };
+        out.push({ type: "consent", key: c.key, ...(c.unknownMeets === true ? { unknownMeets: true } : {}) });
+      } else if (c.type === "profile") {
+        if (!Object.hasOwn(PROFILE_NAMES, c.key ?? "")) return { error: `${at}: 정보는 ${Object.keys(PROFILE_NAMES).join(", ")} 가운데 하나예요` };
+        out.push({ type: "profile", key: c.key });
+      } else if (c.type === "app") {
+        const ok = (v) => v === undefined || v === null || (Number.isInteger(v) && v > 0 && v < 1000000);
+        if (!ok(c.min) || !ok(c.max) || (c.min == null && c.max == null)) return { error: `${at}: 앱 버전 번호(versionCode)를 숫자로 적어 주세요` };
+        if (c.min != null && c.max != null && c.max < c.min) return { error: `${at}: 앱 버전 끝 번호가 시작보다 작아요` };
+        out.push({ type: "app", min: c.min ?? null, max: c.max ?? null });
+      } else if (c.type === "workType") {
+        if (!Array.isArray(c.in) || !c.in.length || !c.in.every((w) => WORK_TYPES.includes(w))) return { error: `${at}: 근무 유형은 ${WORK_TYPES.join(", ")}에서 골라요` };
+        out.push({ type: "workType", in: [...new Set(c.in)] });
+      } else if (c.type === "rollout") {
+        if (!Number.isInteger(c.percent) || c.percent < 0 || c.percent > 100) return { error: `${at}: 비율은 0~100 사이 숫자예요` };
+        out.push({ type: "rollout", percent: c.percent });
+      } else if (c.type === "manual") {
+        if (!MANUAL_KEY.test(c.key ?? "")) return { error: `${at}: 확인 이름은 play.production처럼 적어요` };
+        out.push({ type: "manual", key: c.key });
+      } else if (c.type === "admin") {
+        out.push({ type: "admin" });
+      } else if (c.type === "any" && depth === 0) {
+        const inner = checkConditions(c.of, 1);
+        if (inner.error) return { error: `${at}(또는): ${inner.error}` };
+        if (inner.list.length < 2) return { error: `${at}: '또는'은 두 개 이상을 묶어요` };
+        out.push({ type: "any", of: inner.list });
+      } else {
+        return { error: `${at}: 모르는 종류예요` };
+      }
+    }
+    return { list: out };
+  }
+
+  /** The day a date condition waits for: its own, or its policy version's effective day (null when not in the calendar). */
+  const dateFrom = (c, policy) => c.from ?? (policy ?? []).find((x) => x.version === c.policy)?.effective ?? null;
+
+  /** One condition in words, as the checklist and the editor say it. */
+  function conditionLabel(c, policy = []) {
+    const md = (d) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일`;
+    const year = (d) => (d.slice(0, 4) === "2026" ? md(d) : `${d.slice(0, 4)}년 ${md(d)}`);
+    if (c.type === "date") {
+      const from = dateFrom(c, policy);
+      if (c.policy) return `처리방침 ${c.policy} 시행일${from ? `(${year(from)})` : "(일정에 없음)"}부터`;
+      return `${year(c.from)}(한국 시간 0시)부터`;
+    }
+    if (c.type === "policy") {
+      const p = (policy ?? []).find((x) => x.version === c.version);
+      const free = p ? p.heldUntil ?? p.effective : null;
+      return `처리방침 ${c.version}에 동의했거나 ${free ? `${year(free)}이 지남` : "보류가 끝남"}`;
+    }
+    if (c.type === "consent") return (CONSENT_NAMES[c.key] ?? c.key) + (c.unknownMeets ? "(묻기 전에는 켬)" : "");
+    if (c.type === "profile") return PROFILE_NAMES[c.key] ?? c.key;
+    if (c.type === "app") return c.min != null && c.max != null ? `앱 번호 ${c.min}~${c.max}` : c.min != null ? `앱 번호 ${c.min} 이상` : `앱 번호 ${c.max} 이하`;
+    if (c.type === "workType") return `근무 유형 ${c.in.map((w) => WORK_NAMES[w] ?? w).join("·")}`;
+    if (c.type === "rollout") return `휴대폰 ${c.percent}%에 먼저`;
+    if (c.type === "manual") return `${MANUAL_NAMES[c.key] ?? c.key}(관리자가 확인)`;
+    if (c.type === "admin") return "관리자 휴대폰";
+    if (c.type === "any") return c.of.map((x) => conditionLabel(x, policy)).join(" 또는 ");
+    return c.type;
+  }
+
+  /** Conditions as the editor's lines ("date >= 2026-11-10", "date >= policy 3.1", "policy 3.1 or date >= 2026-11-24"). */
+  function conditionText(list) {
+    const one = (c) => ({
+      date: () => (c.policy ? `date >= policy ${c.policy}` : `date >= ${c.from}`), policy: () => `policy ${c.version}`,
+      consent: () => `consent ${c.key}${c.unknownMeets ? "?" : ""}`, profile: () => `profile ${c.key}`,
+      app: () => (c.min != null && c.max != null ? `app ${c.min}..${c.max}` : c.min != null ? `app >= ${c.min}` : `app <= ${c.max}`),
+      workType: () => `workType ${c.in.join(",")}`, rollout: () => `rollout ${c.percent}%`, manual: () => `manual ${c.key}`, admin: () => "admin",
+      any: () => c.of.map(one).join(" or "),
+    })[c.type]?.() ?? "";
+    return (list ?? []).map(one).join("\n");
+  }
+
+  /** [ADMUX-23] The editor's lines back to conditions, with the first mistake by line. */
+  function parseConditions(text) {
+    const lines = String(text ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+    const one = (part) => {
+      const t = part.trim();
+      let m;
+      if ((m = t.match(/^(?:date|날짜)\s*>=\s*(?:policy|처리방침)\s+(\S+)$/i))) return { type: "date", policy: m[1] };
+      if ((m = t.match(/^(?:date|날짜)\s*>=\s*(\S+)$/i))) return { type: "date", from: m[1] };
+      if ((m = t.match(/^(?:policy|처리방침)\s*(?:>=\s*)?(\S+)$/i))) return { type: "policy", version: m[1] };
+      if ((m = t.match(/^(?:consent|동의)\s+(\S+?)(\?)?$/i))) return { type: "consent", key: m[1], ...(m[2] ? { unknownMeets: true } : {}) };
+      if ((m = t.match(/^(?:profile|정보)\s+(\S+)$/i))) return { type: "profile", key: m[1] };
+      if ((m = t.match(/^(?:app|앱)\s*>=\s*(\d+)$/i))) return { type: "app", min: Number(m[1]) };
+      if ((m = t.match(/^(?:app|앱)\s*<=\s*(\d+)$/i))) return { type: "app", max: Number(m[1]) };
+      if ((m = t.match(/^(?:app|앱)\s+(\d+)\s*\.\.\s*(\d+)$/i))) return { type: "app", min: Number(m[1]), max: Number(m[2]) };
+      if ((m = t.match(/^(?:worktype|유형)\s+([A-Za-z,\s]+)$/i))) return { type: "workType", in: m[1].split(/[,\s]+/).filter(Boolean).map((w) => w.toUpperCase()) };
+      if ((m = t.match(/^(?:rollout|비율)\s+(\d+)\s*%?$/i))) return { type: "rollout", percent: Number(m[1]) };
+      if ((m = t.match(/^(?:manual|확인)\s+(\S+)$/i))) return { type: "manual", key: m[1] };
+      if (/^(?:admin|관리자)$/i.test(t)) return { type: "admin" };
+      return null;
+    };
+    const list = [];
+    for (const [i, line] of lines.entries()) {
+      const got = line.split(/\s+(?:or|또는)\s+/i).map(one);
+      if (got.some((g) => !g)) return { error: `${i + 1}째 줄을 읽지 못했어요: "${line}"` };
+      list.push(got.length > 1 ? { type: "any", of: got } : got[0]);
+    }
+    return checkConditions(list);
+  }
+
+  /**
+   * Whether one condition holds: true, false, or "phone" (it depends on each phone, and no phone was given).
+   * [ctx] { now, policy, checks: {manualKey: …}, phone: null | {app, agreed, installed, consents: {key: true|false},
+   * workType, profile: [keys], bucket, admin, preview} }. Unknown (not in the calendar, not asked) is not met, as in core.
+   */
+  function conditionMet(c, ctx) {
+    const phone = ctx.phone ?? null;
+    const today = flagDay(ctx.now);
+    if (c.type === "date") {
+      const from = dateFrom(c, ctx.policy);
+      return Boolean(from) && today >= from;
+    }
+    if (c.type === "manual") return Boolean(ctx.checks?.[c.key]);
+    if (c.type === "policy") {
+      // Held: posted, not past its held-until day, installed before it was posted and not agreed (core PolicyCalendar.holds).
+      const p = (ctx.policy ?? []).find((x) => x.version === c.version);
+      if (!p) return false;
+      if (today < p.posted || today >= (p.heldUntil ?? p.effective)) return true;
+      if (!phone) return "phone";
+      const agreed = Boolean(phone.agreed && POLICY_VERSION.test(phone.agreed) && versionCompare(phone.agreed, c.version) >= 0);
+      return agreed || Boolean(phone.installed && phone.installed >= p.posted);
+    }
+    if (c.type === "rollout") {
+      if (c.percent >= 100) return true;
+      if (c.percent <= 0) return false;
+      return phone ? Number(phone.bucket ?? 0) < c.percent : "phone";
+    }
+    if (c.type === "any") {
+      const got = c.of.map((x) => conditionMet(x, ctx));
+      return got.includes(true) ? true : got.includes("phone") ? "phone" : false;
+    }
+    if (!phone) return "phone";
+    if (c.type === "consent") {
+      const v = phone.consents?.[c.key];
+      return v === true || (v === undefined && Boolean(c.unknownMeets));
+    }
+    if (c.type === "profile") return (phone.profile ?? []).includes(c.key);
+    if (c.type === "app") return Number.isInteger(phone.app) && (c.min == null || phone.app >= c.min) && (c.max == null || phone.app <= c.max);
+    if (c.type === "workType") return c.in.includes(phone.workType);
+    if (c.type === "admin") return Boolean(phone.admin);
+    return false;
+  }
+
+  /** A force (on or off) still in effect at [now]: an until that passed means it ended. */
+  const forceOf = (o, now) => (o && (o.force === "on" || o.force === "off") && !(o.until && Date.parse(o.until) <= now) ? o.force : null);
+
+  /**
+   * [FLAG-21] One flag's state: { on, state, source, reason, conditions: [{c, label, met}], next }. state is one of
+   * forced_off, forced_on, on, waiting (conditions left), off. With no phone (the server's view), conditions that
+   * depend on the phone are "phone" and do not hold the flag back: on means "on for the phones that meet them".
+   */
+  function evalFlag(flag, override, ctx) {
+    const now = ctx.now ?? Date.now();
+    const c2 = { ...ctx, now };
+    const conds = Array.isArray(override?.conditions) ? override.conditions : flag.conditions ?? [];
+    const conditions = conds.map((c) => ({ c, label: conditionLabel(c, ctx.policy), met: conditionMet(c, c2) }));
+    const dates = [];
+    const walk = (c) => {
+      if (c.type === "any") return c.of.forEach(walk);
+      const from = c.type === "date" ? dateFrom(c, ctx.policy) : null;
+      if (from && from > flagDay(now)) dates.push(from);
+    };
+    conds.forEach(walk);
+    const next = dates.sort()[0] ?? null;
+    const force = forceOf(override, now);
+    const phone = ctx.phone ?? null;
+    const base = { conditions, next };
+    // [FLAG-04] A legal flag turned on by a preview or a force still needs its policy conditions (core policyOnly).
+    const policyLeft = flag.risk === "LEGAL" ? conditions.find((x) => x.c.type === "policy" && x.met === false) : null;
+    if (force === "off") return { ...base, on: false, state: "forced_off", source: "force", reason: `강제로 껐어요${override.why ? `: ${override.why}` : ""}` };
+    const app = conditions.find((x) => x.c.type === "app");
+    if (phone && app && app.met === false) return { ...base, on: false, state: "off", source: "app", reason: "이 앱 버전에서는 꺼져요(앱 버전 밖)" };
+    if (phone && phone.admin && phone.preview) {
+      if (policyLeft) return { ...base, on: false, state: "waiting", source: "admin", reason: `미리 보기를 켰지만 법적 조건이 남아 꺼져 있어요: ${policyLeft.label}` };
+      return { ...base, on: true, state: "on", source: "admin", reason: "관리자 휴대폰의 미리 보기라 켜져요" };
+    }
+    if (force === "on") {
+      if (policyLeft) return { ...base, on: false, state: "waiting", source: "force", reason: `강제로 켰지만 법적 기능이라 처리방침 조건을 기다려요: ${policyLeft.label}` };
+      return { ...base, on: true, state: "forced_on", source: "force", reason: `강제로 켰어요${override.why ? `: ${override.why}` : ""}` };
+    }
+    if (!conds.length) {
+      return { ...base, on: Boolean(flag.default), state: flag.default ? "on" : "off", source: "default", reason: flag.default ? "기본으로 켜져 있어요" : "기본으로 꺼져 있어요" };
+    }
+    const left = conditions.filter((x) => x.met === false);
+    if (!left.length) {
+      const varies = conditions.filter((x) => x.met === "phone");
+      return { ...base, on: true, state: "on", source: "conditions",
+        reason: varies.length ? `조건을 채워 켜졌어요. ${varies.map((x) => x.label).join(", ")}은(는) 휴대폰마다 달라요` : "조건을 모두 채워 켜졌어요" };
+    }
+    const words = left.map((x) => x.label).join(", ");
+    if (flag.default) return { ...base, on: true, state: "on", source: "default", reason: `기본으로 켜져 있어요(남은 조건: ${words})` };
+    const tail = left.every((x) => x.c.type === "manual") ? " 확인하면 바로 켜져요." : left.every((x) => x.c.type === "date") ? " 그날 저절로 켜져요." : "";
+    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. ${words}이(가) 남았어요.${tail}` };
+  }
+
+  /** Whole days from [now] to the KST start of [day] ("15일 남음"), or null. */
+  function daysLeft(day, now = Date.now()) {
+    if (!day || !FLAG_DATE.test(day)) return null;
+    return Math.ceil((Date.parse(`${day}T00:00:00+09:00`) - now) / 86400000);
+  }
+
+  /**
+   * [FLAG-29] 처리방침 9항: a change is announced 7 days before it applies, 30 days when it is unfavourable to users.
+   * Warnings for a flag: its basis version gives too little notice, or a date condition comes before that version applies.
+   */
+  function noticeWarnings(flag, conds, policy = []) {
+    const out = [];
+    const v = String(flag.basis?.policy ?? "").split(" ")[0];
+    const p = v ? (policy ?? []).find((x) => x.version === v) : null;
+    if (!p) return out;
+    const gap = Math.round((Date.parse(`${p.effective}T00:00:00Z`) - Date.parse(`${p.posted}T00:00:00Z`)) / 86400000);
+    const need = p.unfavourable ? 30 : 7;
+    if (gap < need) out.push(`처리방침 ${p.version}는 게시(${p.posted})에서 시행(${p.effective})까지 ${gap}일이에요. ${p.unfavourable ? "불리한 변경은 30일" : "7일"} 전에 알려야 해요(처리방침 9항)`);
+    const early = (conds ?? []).filter((c) => c.type === "date" && c.from && c.from < p.effective).map((c) => c.from);
+    if (early.length) out.push(`날짜 조건(${early[0]})이 근거 처리방침 ${p.version}의 시행일(${p.effective})보다 일러요`);
+    return out;
+  }
+  // ---- AM 1.28 끝 ----
+
   return {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion,
+    // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
+    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom,
+    WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
   };
 }

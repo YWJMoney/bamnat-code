@@ -54,9 +54,9 @@ test("[SRV-04] a notice shows only while it runs, and a switch stops the server'
   assert.equal((await call("GET", "/api/admin/notices", undefined, admin)).data.notices.length, 1);
 
   // Switching the plaza's writing off: the app hides it, and the server refuses it from any app.
-  assert.equal((await call("POST", "/api/admin/switches", { key: "NOPE", off: true }, admin)).data.field, "key");
-  await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true }, admin);
-  await call("POST", "/api/admin/switches", { key: "COMPANY_REPORT", off: true }, admin);
+  assert.equal((await call("POST", "/api/admin/switches", { key: "NOPE", off: true, why: "시험: 잠시 끔" }, admin)).data.field, "key");
+  await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true, why: "시험: 잠시 끔" }, admin);
+  await call("POST", "/api/admin/switches", { key: "COMPANY_REPORT", off: true, why: "시험: 잠시 끔" }, admin);
   config = (await call("GET", "/api/config")).data;
   assert.deepEqual(config.off, ["PLAZA_WRITE", "COMPANY_REPORT"]);
   const sent = await call("POST", "/api/reports", report(1), from(1));
@@ -87,7 +87,7 @@ test("[SRV-04] only admins given 운영 may change notices; a 보기 admin only 
   const login = await call("POST", "/api/admin/login", { email: "help@example.com", password: "a-long-password-123" }, { "x-admin": "1", origin: ORIGIN });
   const helper = { cookie: login.headers.get("set-cookie").split(";")[0], "x-admin": "1", origin: ORIGIN };
   assert.equal((await call("GET", "/api/admin/notices", undefined, helper)).status, 200);
-  assert.equal((await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true }, helper)).status, 403);
+  assert.equal((await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true, why: "시험: 잠시 끔" }, helper)).status, 403);
   assert.equal((await call("GET", "/api/admin/metrics", undefined, helper)).status, 403);
 });
 
@@ -130,7 +130,7 @@ test("[STAT-01] switched off, the server takes nothing; day totals go after 400 
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call, DB, env } = plaza();
   const admin = await signIn(call);
-  await call("POST", "/api/admin/switches", { key: "USAGE_STATS", off: true }, admin);
+  await call("POST", "/api/admin/switches", { key: "USAGE_STATS", off: true, why: "시험: 잠시 끔" }, admin);
   assert.equal((await call("POST", "/api/events", { v: 1, app: "1.22.0", days: [{ day: "2026-10-21", events: { open: 1 } }] })).status, 204);
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM usage_days").get().n, 0);
   DB.db.prepare("INSERT INTO usage_days VALUES ('2025-09-01', '1.13.0', 5), ('2025-10-01', '1.14.0', 7)").run();
@@ -268,7 +268,7 @@ test("[SRV-06] photos go with a question without what says where they were taken
   assert.equal((await get(`/api/admin/inquiries/${res.data.id}/photos/2`, { cookie: admin.cookie })).headers.get("content-type"), "image/jpeg");
   assert.equal((await call("GET", `/api/admin/inquiries/${res.data.id}`, undefined, admin)).data.photos, 2);
   // Switched off, the words still go and the app is told why the photos did not.
-  await call("POST", "/api/admin/switches", { key: "INQUIRY_PHOTOS", off: true }, admin);
+  await call("POST", "/api/admin/switches", { key: "INQUIRY_PHOTOS", off: true, why: "시험: 잠시 끔" }, admin);
   const off = await ask(2, [b64(jpeg())]);
   assert.deepEqual([off.status, off.data.photos, off.data.photosSkipped], [201, 0, "paused"]);
   // Closed, the photos go 90 days later; the words stay until the question does.

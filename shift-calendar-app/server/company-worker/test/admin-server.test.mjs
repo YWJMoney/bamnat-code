@@ -85,7 +85,7 @@ test("[ADMIN-15] the login screen learns only what it needs; the owner sees the 
 test("[ADMIN-15] me says which areas are yes or no and which are look only", async () => {
   const { call } = server();
   const me = (await call("GET", "/api/admin/me", undefined, await signIn(call))).data;
-  assert.deepEqual(me.toggles, ["devStatus", "takedown"]);
+  assert.deepEqual(me.toggles, ["devStatus", "takedown", "flagOff"]);
   assert.deepEqual(me.viewOnly, ["audit"]);
 });
 
