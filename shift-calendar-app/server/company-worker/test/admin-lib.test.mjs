@@ -58,13 +58,74 @@ test("[ADMUX-02] a screen and its filters go into the address and back", () => {
   assert.equal(L.parseRoute("#/inquiries?status=closed&who=late").params.status, "open");
 });
 
-test("[ADMUX-03] the bottom tabs: chosen ones the admin can still see, 더 보기 lit for the rest", () => {
-  const visible = ["home", "review", "inquiries", "dev", "companies", "settings"].map((key) => ({ key }));
-  assert.deepEqual(L.bottomTabs(visible).tabs, ["home", "review", "inquiries", "dev"]);
-  assert.deepEqual(L.bottomTabs(visible, ["dev", "settings", "rewards"]).tabs, ["home", "dev", "settings", "review"]);
-  assert.deepEqual(L.bottomTabs(visible, [], "companies"), { tabs: ["home", "review", "inquiries", "dev"], lit: "more", back: true });
-  assert.deepEqual(L.bottomTabs(visible, [], "inquiries"), { tabs: ["home", "review", "inquiries", "dev"], lit: "inquiries", back: false });
+// AN 1.28 시작
+const OWNER = { owner: true, perms: {} };
+const ASKER = { owner: false, perms: { inquiries: "edit" } };
+const PLAZA = { owner: false, perms: { review: "edit", community: "view", companies: "view" } };
+
+test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees only the hubs and tabs they may use", () => {
+  assert.deepEqual(L.HUBS.map((h) => h.label), ["오늘", "문의", "광장", "출시", "분석", "관리"]);
+  // 1.28 통합계획 2-2, plus 기능별 효과 (AN-D2).
+  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home"], ["inquiries", "dev", "templates", "sla"], ["review", "versions", "community", "companies", "shares", "adopt"],
+    ["flags", "types", "notices", "chores", "gates"], ["metrics", "effects", "audit"], ["admins", "rewards", "server", "account"]]);
+  const tabs = L.HUBS.flatMap((h) => h.tabs);
+  assert.equal(new Set(tabs).size, tabs.length, "each tab once");
+  for (const t of tabs) assert.ok(L.TABS[t]?.label, `${t} has a name`);
+  // The 15 menus of 1.27 all land somewhere (받은함 → 오늘, 운영 → 출시, 설정 → its cards' new tabs).
+  for (const old of ["home", "inbox", "review", "inquiries", "dev", "companies", "versions", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings"]) {
+    assert.ok(L.hubOf(old), `${old} has a hub`);
+  }
+  assert.deepEqual(L.visibleHubs(OWNER).map((h) => h.key), ["today", "ask", "plaza", "release", "insight", "manage"]);
+  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home"]], ["ask", ["inquiries", "templates"]], ["manage", ["account"]]]);
+  assert.deepEqual(L.visibleHubs(PLAZA).map((h) => h.key), ["today", "plaza", "manage"]);
+  assert.deepEqual(L.visibleHubs(PLAZA).find((h) => h.key === "plaza").tabs, ["review", "versions", "community", "companies"]);
+  // 운영 keeps 기능 관리 until the server knows the flags area (AN-D3); 설정 alone opens 보상 for 친구 초대 (AN-D4).
+  assert.ok(L.tabVisible("flags", { perms: { ops: "view" } }));
+  assert.ok(L.tabVisible("rewards", { perms: { settings: "view" } }));
+  assert.ok(!L.tabVisible("server", ASKER) && L.tabVisible("server", OWNER));
 });
+
+test("[ADMUX-30] the phone's bottom tabs: 오늘 and three hubs, then 더 보기; all of them when they fit", () => {
+  const all = L.visibleHubs(OWNER);
+  assert.deepEqual(L.bottomHubs(all), { tabs: ["today", "ask", "plaza", "release"], lit: "today", back: false, more: true });
+  assert.deepEqual(L.bottomHubs(all, ["insight", "ask"], "audit"), { tabs: ["today", "insight", "ask", "plaza"], lit: "insight", back: false, more: true });
+  assert.deepEqual(L.bottomHubs(all, [], "admins"), { tabs: ["today", "ask", "plaza", "release"], lit: "more", back: true, more: true });
+  assert.deepEqual(L.bottomHubs(all, [], "more").lit, "more");
+  assert.deepEqual(L.bottomHubs(L.visibleHubs(ASKER), [], "templates"), { tabs: ["today", "ask", "manage"], lit: "ask", back: false, more: false });
+});
+
+test("[ADMUX-34] badges count only what the admin must do, each thing once, and 더 보기 is only its hubs", () => {
+  const o = { inquiries: 2, devTodo: 3, pending: 4, asks: 1, flagged: 0, flaggedPosts: 2, versionConflicts: 1, opsLeft: 5, owed: 1, admins: { waiting: 1, phones: 1 } };
+  assert.equal(L.hubBadge("ask", o, OWNER), 5);
+  assert.equal(L.hubBadge("plaza", o, OWNER), 7, "여러 판 is on its tab, not added again");
+  assert.equal(L.tabBadge("versions", o, OWNER), 1);
+  assert.equal(L.hubBadge("release", o, OWNER), 5);
+  assert.equal(L.hubBadge("insight", o, OWNER), 0);
+  assert.equal(L.hubBadge("manage", o, OWNER), 3);
+  assert.equal(L.hubBadge("today", o, OWNER), 0, "오늘 does not count the others again");
+  // Without 처리 (devStatus) 접수 is not this admin's to clear; numbers of areas they cannot see are not theirs.
+  assert.equal(L.hubBadge("ask", o, ASKER), 2);
+  assert.equal(L.hubBadge("plaza", o, ASKER), 0);
+  assert.deepEqual(L.waiting("plaza", o, OWNER).map((x) => `${x.label} ${x.n}`), ["검토 5", "여러 판 1", "신고 글 2"]);
+  assert.deepEqual(L.waiting("today", o, OWNER).map((x) => `${x.label} ${x.n}`), ["문의 5", "광장 7", "출시 5", "관리 3"]);
+});
+
+test("[ADMUX-35] old addresses go to the new places with their filters, and this device's choices move once", () => {
+  const go = (h) => { const r = L.redirect(L.parseRoute(h)); return L.routeHash(r.name, r.id, r.params); };
+  assert.equal(go("#/inbox?view=mine"), "#/home?view=mine");
+  assert.equal(go("#/inbox"), "#/home");
+  assert.equal(go("#/ops"), "#/flags");
+  assert.equal(go("#/ops?month=2026-11"), "#/chores?month=2026-11");
+  assert.equal(go("#/review?show=asks"), "#/review?show=asks");
+  assert.equal(go("#/companies/abc"), "#/companies/abc");
+  const p = L.migratePrefs({ theme: "dark", tabs: ["inbox", "audit", "ops", "review"], views: [{ name: "내 것", hash: "#/inbox?view=mine" }, { name: "답함", hash: "#/inquiries?status=answered" }] });
+  assert.deepEqual(p.tabs, ["insight", "release", "plaza"]);
+  assert.deepEqual(p.views.map((v) => v.hash), ["#/home?view=mine", "#/inquiries?status=answered"]);
+  assert.equal(p.v, 2);
+  assert.equal(p.theme, "dark");
+  assert.equal(L.migratePrefs(p), p, "only once");
+});
+// AN 1.28 끝
 
 test("[ADMUX-07] word by word before and after, escaped", () => {
   assert.equal(L.wordDiff("알람이 늦게 울려요", "알람이 가끔 늦게 울려요"), "알람이 <ins>가끔 </ins>늦게 울려요");

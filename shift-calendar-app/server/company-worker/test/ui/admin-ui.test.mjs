@@ -102,7 +102,9 @@ async function signedIn(env) {
 test("[ADMUX-01] every screen opens without an error and without a style attribute", async () => {
   const { env } = await world();
   const t = await signedIn(env);
-  for (const s of ["home", "inbox", "versions", "review", "inquiries", "dev", "companies", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings", "account", "more"]) {
+  // AN 1.28: the six hubs' tabs, and the 1.27 addresses that now lead to them (inbox, ops, settings).
+  for (const s of ["home", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
+    "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -210,7 +212,8 @@ test("[ADMUX-04] keys and the palette go places", async () => {
 test("[ADMUX-03] this device's choices: colours, text size, bottom tabs", async () => {
   const { env } = await world();
   const t = await signedIn(env);
-  await t.go("#/settings");
+  // AN 1.28 [ADMUX-32] 관리 › 내 계정·이 기기.
+  await t.go("#/account");
   const pick = async (id, value) => {
     const el = t.$(id);
     el.value = value;
@@ -229,12 +232,12 @@ test("[ADMUX-03] this device's choices: colours, text size, bottom tabs", async 
     box.dispatchEvent(new t.window.Event("change", { bubbles: true }));
     await t.settle();
   };
-  // Home and three: a fourth takes the place of the one there longest.
-  await flip("audit", true);
-  // [ADMUX-17] 받은함 is the first tab after home since 1.25, so it is the one that makes room.
-  assert.match(t.text("#toast"), /3개까지라 받은함 대신 활동 기록/);
-  assert.ok(!t.$('.tabs [data-nav="inbox"]'));
-  assert.ok(t.$('.tabs [data-nav="audit"]'), "활동 기록 is a bottom tab now");
+  // AN 1.28 [ADMUX-30] 오늘 and three hubs: a fourth takes the place of the one there longest (문의, the first after 오늘).
+  await flip("insight", true);
+  assert.match(t.text("#toast"), /오늘과 3개까지라 문의 대신 분석/);
+  assert.ok(!t.$('.tabs [data-nav="ask"]'));
+  assert.ok(t.$('.tabs [data-nav="insight"]'), "분석 is a bottom tab now");
+  assert.deepEqual(JSON.parse(t.window.localStorage.getItem("bamnat-admin-prefs")).tabs, ["plaza", "release", "insight"]);
 });
 
 test("[ADMIN-15] the join page asks for its invite with the token in the body", async () => {
@@ -262,7 +265,7 @@ test("[ADMIN-15] the join page asks for its invite with the token in the body", 
 test("[ADMUX-07] a notice shows as the phone will show it, and lists go out as CSV", async () => {
   const { env } = await world();
   const t = await signedIn(env);
-  await t.go("#/ops");
+  await t.go("#/notices");
   await t.click('[data-act="notice-new"]');
   assert.match(t.text("#nt-preview"), /제목/);
   await t.type("#nt-title", "점검 안내");
@@ -340,11 +343,13 @@ async function asOwner(env, t) {
   return { ...s, api: call };
 }
 
-test("[ADMUX-17] 받은함 lists what waits, 맡기 takes the question, 내일 볼게요 hides it on this device only", async (t) => {
+test("[ADMUX-17][ADMUX-33] 할 일 (받은함 on 오늘) lists what waits, 맡기 takes the question, 내일 볼게요 hides it on this device only", async (t) => {
   offline(t);
   const { env } = await world();
   const u = await asOwner(env, t);
+  // AN 1.28 [ADMUX-35] The 1.27 address lands on 오늘 › 할 일.
   await u.go("#/inbox");
+  assert.equal(u.window.location.hash, "#/home");
   assert.ok(u.$$("#main .rows.inbox li").length >= 4, "questions and the report wait");
   assert.match(u.text("#main .rows.inbox"), /아무도 안 맡음/);
   await u.click('#main [data-act="inbox-assign"]');
@@ -357,9 +362,8 @@ test("[ADMUX-17] 받은함 lists what waits, 맡기 takes the question, 내일 �
   assert.match(u.window.localStorage.getItem("bamnat-admin-snooze"), /:/);
   await u.click("#toast [data-undo]");
   assert.equal(u.$$("#main .rows.inbox li").length, before);
-  // Home sends 지금 할 일 to 받은함.
-  await u.go("#/home");
-  assert.ok(u.$('#main a[href="#/inbox"]'));
+  // One list: no second 받은함 to go to.
+  assert.ok(!u.$('#main a[href="#/inbox"]'));
   assert.deepEqual(u.errors, []);
 });
 
@@ -459,10 +463,10 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   assert.deepEqual(t.errors, []);
 });
 
-test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends, days, months and the cap", async () => {
+test("[INVITE-08] 관리 › 보상 › 친구 초대 (1.27 설정): the developer sets how many friends, days, months and the cap", async () => {
   const { env, DB } = await world();
   const t = await signedIn(env);
-  await t.go("#/settings");
+  await t.go("#/rewards");
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
@@ -522,7 +526,7 @@ test("[PLAZA-15] 회사·규칙: 맞아요·달라요 by where, 대표에서 빠
   await u.settle(20);
   assert.match(u.text("#main"), /맞았어요 3 · 달라요 4 \(순서 2 · 시간 1 · 급여 항목 1\)/);
   assert.ok(u.$$("#main .pill.warn").some((p) => p.textContent === "대표에서 빠짐"));
-  await u.go("#/settings");
+  await u.go("#/adopt");
   await u.settle(20);
   assert.match(u.text("#main"), /5표 이상이고 달라요가 40%를 넘으면/);
   assert.deepEqual(u.errors, []);

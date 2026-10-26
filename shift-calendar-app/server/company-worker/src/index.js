@@ -171,6 +171,8 @@ export default {
       return json({ error: "server" }, 500);
     } finally {
       if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
+      // AN 1.28 [ADMUX-37] Anything sent may change what the developer app's badges count.
+      if (request.method !== "GET" && request.method !== "HEAD") badgesChanged();
     }
   },
   // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
@@ -178,7 +180,7 @@ export default {
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
-      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env)));
+      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env)).finally(badgesChanged));
   },
 };
 
@@ -595,6 +597,15 @@ const LATE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS inquiries_assignee ON inquiries (assignee, status)",
   "CREATE INDEX IF NOT EXISTS audit_actor ON audit (actor_id, at)",
   // H 1.23 끝
+  // AN 1.28 시작
+  // [ADMUX-38] What the developer app's badges and 오늘 read most: questions by the day they came, the open ones
+  // people found unhelpful (only those rows), posts the flags put in front of an admin (only those rows), and
+  // the activity log by kind of action.
+  "CREATE INDEX IF NOT EXISTS inquiries_created ON inquiries (created_at)",
+  "CREATE INDEX IF NOT EXISTS inquiries_bad ON inquiries (status) WHERE rating = -1",
+  "CREATE INDEX IF NOT EXISTS posts_flagged ON posts (flags, created_at) WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')",
+  "CREATE INDEX IF NOT EXISTS audit_action ON audit (action, id)",
+  // AN 1.28 끝
 ];
 
 const schemas = new WeakMap();
@@ -4289,6 +4300,8 @@ function secretIssue(env, name, least) {
  */
 function areaFor(path) {
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
+  // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
+  if (path === "/badges" || path === "/today" || path === "/basics") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -4369,6 +4382,10 @@ async function signedRoute(request, env, url, path, method, now, session) {
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
   if (path === "/overview" && method === "GET") return json(await overview(env, actor));
+  // AN 1.28 [ADMUX-37] /overview in three: numbers for the menu, the 오늘 screen, and what rarely changes.
+  if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
+  if (path === "/today" && method === "GET") return json(await today(env, actor, now));
+  if (path === "/basics" && method === "GET") return json(await basics(env));
   // [ADMUX-17] 할 일 받은함: everything this admin may act on, nearest deadline first.
   if (path === "/inbox" && method === "GET") return json(await inbox(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
@@ -5064,6 +5081,28 @@ function auditAbout(r) {
   return { label: "", link: null };
 }
 
+/**
+ * AN 1.28 [ADMUX-37] The counts behind the developer app's menu numbers, each with the area an admin needs to see
+ * it. /badges reads only these; /overview reads them among its other numbers.
+ */
+const BADGE_SQL = {
+  pending: ["review", "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')"],
+  asks: ["review", "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'"],
+  flagged: ["review", `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`],
+  inquiries: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'"],
+  devTodo: ["dev", "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'todo'"],
+  owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
+  flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
+  // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
+  versionConflicts: ["companies", `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
+      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
+      WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`],
+  waiting: ["owner", "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'"],
+  // [MON-09] Admins' phones waiting for the owner's 승인.
+  phones: ["owner", "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'"],
+};
+
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
   // One trip to the database for every number: the home screen waits on this call.
@@ -5078,16 +5117,13 @@ async function overview(env, actor) {
   // [ADMIN-17] The home screen's 최근 활동, so it does not read 50 lines of /audit for ten.
   if (can(actor, "audit")) counts.recent = `${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`;
   if (can(actor, "review")) {
-    counts.pending = "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')";
-    counts.asks = "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'";
-    counts.flagged = `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
-      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`;
+    for (const k of ["pending", "asks", "flagged"]) counts[k] = BADGE_SQL[k][1];
     counts.reports = "SELECT COUNT(*) AS n FROM reports";
     counts.queueGroups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
       FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 5`;
   }
   if (can(actor, "inquiries")) {
-    counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
+    counts.inquiries = BADGE_SQL.inquiries[1];
     // [ADMIN-12] 오늘 할 일: the waiting questions I took, and the ones nobody took yet.
     counts.inquiriesMine = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee = ?", actor.id];
     counts.inquiriesFree = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NULL";
@@ -5105,14 +5141,14 @@ async function overview(env, actor) {
   }
   if (can(actor, "dev")) {
     // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
-    counts.devTodo = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'todo'";
+    counts.devTodo = BADGE_SQL.devTodo[1];
     counts.devDoing = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'doing'";
     counts.devMine = ["SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status IN ('todo', 'doing') AND assignee = ?", actor.id];
   }
-  if (can(actor, "rewards")) counts.owed = "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'";
+  if (can(actor, "rewards")) counts.owed = BADGE_SQL.owed[1];
   if (can(actor, "community")) {
     // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
-    counts.flaggedPosts = "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')";
+    counts.flaggedPosts = BADGE_SQL.flaggedPosts[1];
     counts.flaggedPostsLate = ["SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND status = 'hidden' AND hide_reason = 'flags' AND hidden_at < ?",
       Date.now() - (LIMITS.hiddenReviewDays - 7) * DAY];
     counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
@@ -5122,17 +5158,13 @@ async function overview(env, actor) {
   if (can(actor, "companies")) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
     counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
-    // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
-    counts.versionConflicts = `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
-      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
-      WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`;
+    counts.versionConflicts = BADGE_SQL.versionConflicts[1];
   }
   // [ADMIN-14] 이달 할 일 still open on the home screen.
   if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
   if (actor.owner) {
-    counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
-    // [MON-09] Admins' phones waiting for the owner's 승인.
-    counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
+    counts.waiting = BADGE_SQL.waiting[1];
+    counts.phones = BADGE_SQL.phones[1];
   }
   // [ADMUX-17] 받은함's statements ride in the same trip, for the menu badge (what is past its deadline).
   for (const [k, v] of Object.entries(inboxQueries(actor, now))) counts[`inbox_${k}`] = v;
@@ -5186,6 +5218,97 @@ async function overview(env, actor) {
   if (got.opsDone) out.opsLeft = opsItems(kstDay(Date.now()).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
   return out;
 }
+
+// AN 1.28 시작
+
+/**
+ * [ADMUX-37] An admin's badge numbers are kept this long in the worker's memory, per database and per admin
+ * with their permissions; any request that sends something (badgesChanged) makes the next read fresh.
+ */
+const BADGES = { keepMs: 15_000, maxKept: 200 };
+let badgeEpoch = 0;
+const badgeMemory = new WeakMap();
+
+function badgesChanged() {
+  badgeEpoch++;
+}
+
+/**
+ * [ADMUX-37] The developer app's menu numbers and who is signed in, nothing else: what the app polls every
+ * 30 or 90 seconds and reads beside (never before) the screen's own data.
+ */
+async function badges(env, actor, now) {
+  let kept = badgeMemory.get(env.DB);
+  if (!kept) badgeMemory.set(env.DB, (kept = new Map()));
+  const key = `${actor.id}|${actor.owner ? 1 : 0}|${JSON.stringify(actor.perms ?? {})}`;
+  const hit = kept.get(key);
+  if (hit && hit.epoch === badgeEpoch && now - hit.at < BADGES.keepMs) return hit.data;
+  const epoch = badgeEpoch;
+  const q = { live: ["SELECT value FROM settings WHERE key = 'billing_live'"] };
+  for (const [k, [area, sql]] of Object.entries(BADGE_SQL)) if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql];
+  if (can(actor, "ops")) q.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
+  const keys = Object.keys(q);
+  const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
+  const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
+  const data = { me: me(actor), build: adminBuild(), billingLive: got.live[0]?.value === "1" };
+  for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
+  if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
+  if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
+  if (kept.size >= BADGES.maxKept) kept.clear();
+  kept.set(key, { at: now, epoch, data });
+  return data;
+}
+
+/**
+ * [ADMUX-33][ADMUX-37] The 오늘 screen, read only while it is shown: one 할 일 list (받은함's, nearest deadline
+ * first), the numbers above it, who holds how many questions and the recent activity.
+ */
+async function today(env, actor, now) {
+  const start = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
+  const q = {
+    doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, start],
+  };
+  for (const [k, v] of Object.entries(inboxQueries(actor, now))) q[`inbox_${k}`] = Array.isArray(v) ? v : [v];
+  if (can(actor, "audit")) q.recent = [`${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`];
+  if (can(actor, "inquiries")) {
+    q.inquiriesToday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ?", start];
+    q.inquiriesYesterday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ? AND created_at < ?", start - DAY, start];
+    q.inquiriesBad = ["SELECT COUNT(*) AS n FROM inquiries WHERE rating = -1 AND status != 'closed'"];
+    q.assigned = ["SELECT assignee AS id, assignee_name AS name, COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NOT NULL GROUP BY assignee ORDER BY n DESC"];
+  }
+  if (can(actor, "review")) q.reports = ["SELECT COUNT(*) AS n FROM reports"];
+  if (can(actor, "community")) q.posts = ["SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'"];
+  if (can(actor, "companies")) {
+    q.companies = ["SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"];
+    q.rules = ["SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"];
+  }
+  const keys = Object.keys(q);
+  const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
+  const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
+  const inbox = Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]]));
+  const out = { todo: inboxItems(inbox, actor, now), doneToday: got.doneToday[0].n };
+  for (const k of ["inquiriesToday", "inquiriesYesterday", "inquiriesBad", "reports", "posts", "companies", "rules"]) if (got[k]) out[k] = got[k][0].n;
+  if (inbox.inquiries) {
+    // How many waiting questions reach their answer target before today ends.
+    const sla = readSla(inbox.sla);
+    out.slaLateToday = inbox.inquiries.filter((r) => r.last === "user" && r.updated_at + sla[slaKey(r.kind)] * HOUR < start + DAY).length;
+    out.assigned = got.assigned.map((a) => ({ id: a.id, name: a.name ?? "", n: a.n }));
+  }
+  if (got.recent) {
+    out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
+      detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
+  }
+  return out;
+}
+
+/** [ADMUX-37] What the screens share and rarely changes: the 채택 settings, the answer targets and the reason words. */
+async function basics(env) {
+  const [settings, sla] = await batch(env, [env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`), env.DB.prepare(SLA_SQL)]);
+  return { settings: readSettings(settings.results), sla: readSla(sla.results), doubt: DOUBT, reasons: REASONS, answers: ANSWERS,
+    hideReasons: HIDE_REASONS, flagReasons: FLAGS };
+}
+
+// AN 1.28 끝
 
 /** Rows of [list] grouped by company and setup. */
 function byGroup(list) {
