@@ -101,11 +101,14 @@ internal fun StyleStep(
     browseFirst: Boolean = false,
 ) {
     var browsing by rememberSaveable { mutableStateOf(browseFirst && onBrowse != null) }
+    // [FLAG-12][FLAG-13] 1.28 AL: a hidden kind of work leaves this list (first setup, a new calendar, 둘러보기); the kind
+    // already picked stays, and the owner's phone sees hidden ones marked.
+    val shown = com.bamnat.app.ui.flags.typeChoices(keep = d.style)
     if (browsing && onBrowse != null) {
         StepHeader("어떤 일로 둘러볼까요?", "고른 일의 예시 달력이 열려요. 둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않아요.")
-        STYLE_CHOICES.filter { it.style != WorkStyle.SHIFT || !it.roster }.forEach { c ->
+        STYLE_CHOICES.filter { (it.style != WorkStyle.SHIFT || !it.roster) && shown.shows(it.style) }.forEach { c ->
             ChoiceCard(title = c.title.substringBefore(" · ").let { if (c.style == WorkStyle.SHIFT) "교대 근무" else it },
-                subtitle = c.subtitle.substringBefore(" · "), icon = c.icon, selected = false, onClick = { onBrowse(c.style) })
+                subtitle = shown.mark(c.style, c.subtitle.substringBefore(" · ")), icon = c.icon, selected = false, onClick = { onBrowse(c.style) })
         }
         TextButton(onClick = { browsing = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 정보로 바로 시작할게요") }
         return
@@ -117,11 +120,11 @@ internal fun StyleStep(
     } else {
         StepHeader("어떻게 일하세요?", "하는 일을 적거나 아래에서 골라 주세요. 고르면 바로 다음 질문으로 넘어가요. 나중에 설정에서 바꿀 수 있어요.")
     }
-    JobAsk(onPick = onPick)
-    STYLE_CHOICES.forEach { c ->
+    JobAsk(onPick = onPick, shown = shown)
+    STYLE_CHOICES.filter { shown.shows(it.style) }.forEach { c ->
         ChoiceCard(
             title = c.title,
-            subtitle = c.subtitle,
+            subtitle = shown.mark(c.style, c.subtitle),
             icon = c.icon,
             selected = d.style == c.style && (c.style != WorkStyle.SHIFT || d.rosterMonthly == c.roster),
             onClick = { onPick(c.style, c.roster) },

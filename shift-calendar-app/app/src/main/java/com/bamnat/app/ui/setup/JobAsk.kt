@@ -42,10 +42,15 @@ internal fun choiceFor(job: Job): StyleChoice =
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun JobAsk(onPick: (WorkStyle, Boolean) -> Unit, modifier: Modifier = Modifier) {
+internal fun JobAsk(
+    onPick: (WorkStyle, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    /** [FLAG-12] The kinds this list may lead to: a job of a hidden kind is not offered (the owner's phone marks it). */
+    shown: com.bamnat.app.ui.flags.TypeShown = com.bamnat.app.ui.flags.TypeShown.ALL,
+) {
     var text by rememberSaveable { mutableStateOf("") }
     val focus = LocalFocusManager.current
-    val matches = remember(text) { JobDictionary.suggest(text) }
+    val matches = remember(text, shown) { JobDictionary.suggest(text, limit = 6).filter { shown.shows(it.job.style) }.take(3) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = text,
@@ -59,7 +64,7 @@ internal fun JobAsk(onPick: (WorkStyle, Boolean) -> Unit, modifier: Modifier = M
         )
         if (text.isBlank()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                JobDictionary.common.forEach { name -> FilterChip(selected = false, onClick = { text = name }, label = { Text(name) }) }
+                JobDictionary.common.filter { n -> JobDictionary.byName(n)?.style?.let(shown::shows) != false }.forEach { name -> FilterChip(selected = false, onClick = { text = name }, label = { Text(name) }) }
             }
         }
         if (text.trim().length >= 2) {
@@ -73,7 +78,7 @@ internal fun JobAsk(onPick: (WorkStyle, Boolean) -> Unit, modifier: Modifier = M
                         val choice = choiceFor(m.job)
                         ChoiceCard(
                             title = "${m.job.name} · ${choice.title}",
-                            subtitle = "누르면 이 일에 맞는 달력과 기능으로 다음 질문을 이어 가요",
+                            subtitle = shown.mark(m.job.style, "누르면 이 일에 맞는 달력과 기능으로 다음 질문을 이어 가요"),
                             icon = choice.icon,
                             selected = false,
                             onClick = { focus.clearFocus(); onPick(m.job.style, m.job.roster) },

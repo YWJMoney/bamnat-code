@@ -103,14 +103,18 @@ fun WorkStyleScreen(
                 )
                 Spacer(Modifier.height(6.dp))
                 // Changing the kind of work later keeps the setup, so only the first run mentions 회사 찾기.
-                WorkStyle.entries.forEach { style -> StyleCard(style, selected = style == current, company = company && current == null) { onPick(style) } }
+                // [FLAG-12][FLAG-13] 1.28 AL: a hidden kind is not offered; the one in use stays, the owner's phone sees all.
+                val shown = com.bamnat.app.ui.flags.typeChoices(keep = current)
+                shown.choices.forEach { ch ->
+                    StyleCard(ch.style, selected = ch.style == current, company = company && current == null, hidden = ch.hidden) { onPick(ch.style) }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StyleCard(style: WorkStyle, selected: Boolean, company: Boolean, onClick: () -> Unit) {
+private fun StyleCard(style: WorkStyle, selected: Boolean, company: Boolean, hidden: Boolean = false, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -125,6 +129,7 @@ private fun StyleCard(style: WorkStyle, selected: Boolean, company: Boolean, onC
             }
             Column(Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(style.label, style = MaterialTheme.typography.titleMedium)
+                if (hidden) Text(com.bamnat.core.flags.TypeExposure.HIDDEN_MARK, style = MaterialTheme.typography.labelMedium, color = scheme.error)
                 Text(style.description, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                 Text("예: ${style.examples}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                 Text(style.nextStep(company), style = MaterialTheme.typography.labelMedium, color = scheme.primary,

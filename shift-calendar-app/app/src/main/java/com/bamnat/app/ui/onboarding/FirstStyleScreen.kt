@@ -45,9 +45,11 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit) {
             ) {
                 // [FIT-03] U23: the user's own words first, the kinds of work under them.
                 StepHeader(FIRST_QUESTION, "적거나 고른 일에 맞는 기능만 켜고, 다음 질문도 그 일에 맞춰 물어요. 적은 말은 이 휴대폰에만 있어요.")
-                JobAsk(onPick = { style, roster -> onPick(FirstStyle(style, roster)) })
-                STYLE_CHOICES.forEach { c ->
-                    ChoiceCard(title = c.title, subtitle = c.subtitle.substringBefore(" · "), icon = c.icon, selected = false,
+                // [FLAG-12][FLAG-13] A hidden kind of work is not offered here (the owner's phone shows it marked).
+                val shown = com.bamnat.app.ui.flags.typeChoices()
+                JobAsk(onPick = { style, roster -> onPick(FirstStyle(style, roster)) }, shown = shown)
+                STYLE_CHOICES.filter { shown.shows(it.style) }.forEach { c ->
+                    ChoiceCard(title = c.title, subtitle = shown.mark(c.style, c.subtitle.substringBefore(" · ")), icon = c.icon, selected = false,
                         onClick = { onPick(FirstStyle(c.style, c.roster)) })
                 }
                 TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("백업이나 회사 파일로 시작할게요") }
