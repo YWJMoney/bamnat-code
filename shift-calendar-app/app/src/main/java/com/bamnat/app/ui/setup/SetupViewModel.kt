@@ -632,6 +632,10 @@ class SetupViewModel(
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
                     if (again) { store.clear(); _done.value = true }
+                    // [PLAZA-14] 1.27 AH: a cycle from a company search is asked about once, for the calendar it went into.
+                    d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
+                        c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN))
+                    }
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)
                         d.source?.let { append('_').append(it.kind.name) }

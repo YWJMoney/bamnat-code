@@ -94,6 +94,8 @@ fun PayQuickSetup(
      * in, marked 확인 필요, for a first pay setup.
      */
     fromCycle: Pair<PublicCycle, String>? = null,
+    /** [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, on the first question (main calendar only). */
+    companyFind: (@Composable () -> Unit)? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
@@ -158,6 +160,7 @@ fun PayQuickSetup(
                 FORM -> {
                     StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
+                    companyFind?.invoke()
                     SlipEntry { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
                     val first = cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed

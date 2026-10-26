@@ -244,6 +244,9 @@ internal object SettingsIndex {
         screen("설정 맨 위 › 함께 만들어요", "불편한 점 알려 주기", SettingsGo.INQUIRY, "불편", "버그 신고", "오류 신고", "개선", "건의", "함께 만들어요"),
         screen("설정 › 기능 켜고 끄기", "달력의 친구 초대 카드 끄기", SettingsGo.FEATURES, "초대 카드", "초대 알림", "초대 권유", "그만 보기"),
         // AG 1.27 끝
+        // ---- 1.27 묶음 AH [PLAZA-14][PLAZA-16] ----
+        screen("${W.title} › 근무 주기", "회사 대표 주기", SettingsGo.PATTERN, "대표 주기", "사업장", "쓰고 있어요", "맞아요", "달라요", "회사 이름 자동 완성"),
+        screen("급여 › 급여 계산 설정", "우리 회사 급여 방식 찾기", SettingsGo.PAY, "급여 방식 찾기", "회사 급여", "계산 방식 가져오기", "수당 가져오기"),
     )
 
     /** The best fits for [query], best first. */

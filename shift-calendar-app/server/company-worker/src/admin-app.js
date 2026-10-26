@@ -2188,6 +2188,13 @@ function adminApp(L, BUILD) {
       </section>` : ""}</div></div>`;
   }
 
+  /** AH 1.27 [PLAZA-15] " (순서 2 · 시간 1)": where the 달라요 say a rule is wrong. */
+  function whyLine(why) {
+    if (!why) return "";
+    const parts = [["order", "순서"], ["time", "시간"], ["pay", "급여 항목"], ["other", "그 밖"]].filter(([k]) => why[k] > 0).map(([k, n]) => `${n} ${why[k]}`);
+    return parts.length ? ` (${parts.join(" · ")})` : "";
+  }
+
   function ruleCard(r, edit) {
     const [tone, label] = r.withdrawn ? ["bad", "내림"] : r.superseded ? ["", "이전 버전"] : ["ok", "쓰는 중"];
     // [PLZ-06] 내리기·다시 올리기 need 광장 규칙 내리기 (결정 D35).
@@ -2195,8 +2202,8 @@ function adminApp(L, BUILD) {
       : r.superseded ? "" : `<button class="btn danger" data-act="withdraw-rule" data-id="${r.id}">내리기</button>`;
     return `<div class="rule${r.withdrawn || r.superseded ? " dim" : ""}">
       <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
-        <p class="meta">${r.source === "auto" ? "자동 채택" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}</p></div>
-        <span class="pill ${tone}">${label}</span>${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
+        <p class="meta">${r.source === "auto" ? "자동 채택" : r.source === "rival" ? "더 믿을 판으로 바뀜" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}${whyLine(r.why)}</p></div>
+        <span class="pill ${tone}">${label}</span>${r.doubted ? '<span class="pill warn" title="달라요가 많아 앱에서 대표 주기로 보이지 않아요">대표에서 빠짐</span>' : ""}${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
       <details><summary>내용</summary>${lines(r.lines)}</details>
       ${action ? `<div class="actions">${action}</div>` : ""}
     </div>`;
@@ -2775,6 +2782,7 @@ function adminApp(L, BUILD) {
         <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 이 점수가 되면 자동으로 채택해요. 명세서로 맞춰 본 제보는 2점, 나머지는 1점이에요.</p>
         ${stepper("adoptAgree", "맞았어요 비율", s.adoptAgree ?? 75, "%", edit)}
         <p class="hint">투표한 분 가운데 이만큼이 맞았어요라고 해야 자동으로 채택해요. 모자라면 검토에 남아 개발자가 정해요. 앱의 신뢰도는 이 비율과 점수를 함께 봐요.</p>
+        <p class="hint" data-doubt>대표에서 빠지는 기준: 맞아요·달라요가 ${S.overview?.doubt?.votes ?? 5}표 이상이고 달라요가 ${S.overview?.doubt?.share ?? 40}%를 넘으면 앱의 대표 주기에서 빠지고 같은 사업장의 다음 판이 대표가 돼요. 다음 판이 채택 조건을 채우면 지지로 이기지 않아도 채택돼요.</p>
         ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월", edit)}
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
         ${stepper("adoptPersons", "채택에 필요한 사람", s.adoptPersons ?? 3, "명", edit)}

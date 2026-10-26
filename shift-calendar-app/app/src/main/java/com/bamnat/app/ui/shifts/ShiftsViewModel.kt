@@ -149,6 +149,8 @@ class ShiftsViewModel(
     fun clearPattern(onDone: () -> Unit) {
         viewModelScope.launch {
             repo.clearPattern()
+            // [SPAT-07] 1.27 AH-D3: this calendar starts again as the first time, company and all.
+            container.leadShare.forget(calendarId)
             onDone()
         }
     }

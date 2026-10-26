@@ -200,12 +200,8 @@ fun CompanyFindScreen(
                                     if (setup) TextButton(onClick = { byHand(r.query) }) { Text("‘${r.query.trim()}’ 근무를 처음부터 직접 정할게요") }
                                     else if (ready && vm.server) TextButton(onClick = { byHand(r.query) }) { Text("지금 쓰는 내 설정을 ‘${r.query.trim()}’로 나눌게요") }
                                 }
-                            } else {
-                                // [SPAT-02] The public rows below are the answer; the way to set it by hand stays one line.
-                                TextButton(onClick = { byHand(r.query) }) {
-                                    Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
-                                }
                             }
+                            // [SPAT-02][SPAT-07] Otherwise the public rows below are the answer, and '여기 없어요' comes after them.
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // [PLAZA-03] 초성 찾기 only offers companies whose rule is in use, so a guess never leads to an empty page.
@@ -214,9 +210,6 @@ fun CompanyFindScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 r.hits.forEach { hit -> CompanyRow(hit) { keyboard?.hide(); onOpen(hit.id) } }
-                                TextButton(onClick = { byHand(r.query) }) {
-                                    Text(if (ready) "여기 없어요. ‘${r.query}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query}’로 직접 설정할게요")
-                                }
                             }
                         }
                         is CompanyFindViewModel.Result.Failed -> Offline(r.code, onRetry = vm::retry) { byHand(r.query) }
@@ -225,6 +218,12 @@ fun CompanyFindScreen(
                 // [SPAT-02] The public rows under the coworkers' setups, never looking like one of them (D79).
                 PublicCycleSection(query, onPick = onPublic, onPay = onPay, onShare = onShare,
                     browse = result is CompanyFindViewModel.Result.Idle)
+                // [SPAT-07] 1.27 AH (사용자 2026-10-25): the coworkers' companies, then the public rows, then '여기 없어요' last.
+                (result as? CompanyFindViewModel.Result.Found)?.takeIf { it.hits.isNotEmpty() || PublicCycles.search(it.query).isNotEmpty() }?.let { r ->
+                    TextButton(onClick = { byHand(r.query) }) {
+                        Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
+                    }
+                }
                 if (onBoard != null) {
                     OutlinedButton(onClick = { keyboard?.hide(); onBoard() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Forum, null, Modifier.size(18.dp))
@@ -326,7 +325,10 @@ fun CompanyDetailScreen(
     onPick: ((CompanyPage, SharedSetup) -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val applied by vm.applied.collectAsStateWithLifecycle()
+    val appliedMain by vm.applied.collectAsStateWithLifecycle()
+    // [SPAT-07] 1.27 AH (사용자 2026-10-25): what the main calendar uses is not what a new calendar or the first setup
+    // picks here — 'n명 쓰고 있어요' opened from a new calendar said '다시 넣기'. Picking, nothing is in use yet (AH-D2).
+    val applied = appliedMain.takeIf { onPick == null }
     val hasPattern by vm.hasPattern.collectAsStateWithLifecycle()
     val votes by vm.votes.collectAsStateWithLifecycle()
     val room by vm.room.collectAsStateWithLifecycle()
@@ -552,6 +554,9 @@ private fun SetupCard(
                 // [PLAZA-09] 안정: settled, no more nudges.
                 if (s.stable) { Spacer(Modifier.width(6.dp)); StatusChip("안정", Tone.GOOD) }
             }
+            // [PLAZA-14][PLAZA-15] 1.27 AH: the one shown first for its department, or why it no longer is.
+            if (s.doubted) StatusChip("달라요가 많아요 · 다시 확인 중", Tone.WAIT)
+            else if (s.lead) StatusChip("대표 주기 · 찾는 분께 먼저 보여요", Tone.GOOD)
             diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
             if (!s.adopted) PointsBar(s.points, s.threshold)
@@ -589,7 +594,7 @@ private fun SetupCard(
             if (onVote != null) {
                 Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                VoteButtons(vote, onVote)
+                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion)
             }
             if (onTry != null || onHistory != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

@@ -92,9 +92,14 @@ object PublicCycleFiles {
      * [SPAT-03] Puts [cycle] with [codes] on the main calendar from today, today being day [todayStep] of the order, and
      * remembers where it came from for the pay and plaza steps. The caller asks [com.bamnat.app.ui.guide.WriteGate] first.
      */
-    suspend fun apply(c: AppContainer, cycle: PublicCycle, codes: String, todayStep: Int?): CompanyShare.Applied {
-        val r = c.companyShare.apply(text(cycle, codes), rotation = true, todayStep = todayStep)
-        remember(c, cycle, codes)
+    suspend fun apply(c: AppContainer, cycle: PublicCycle, codes: String, todayStep: Int?,
+        calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN): CompanyShare.Applied {
+        // [SPAT-07] 1.27 AH-D2: an added calendar takes the cycle into its own schedule; only the main one is remembered
+        // for the pay and plaza steps (they are the main calendar's).
+        val main = calendar == com.bamnat.app.data.PersonalCalendar.MAIN
+        val share = if (main) c.companyShare else CompanyShare(c.calendars.repository(calendar), c.payStore, c.settingsRepository)
+        val r = share.apply(text(cycle, codes), rotation = true, todayStep = todayStep)
+        if (main) remember(c, cycle, codes)
         c.telemetry.event("public_cycle_apply", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
         return r
     }

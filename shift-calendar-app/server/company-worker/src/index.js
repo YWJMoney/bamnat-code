@@ -1377,6 +1377,8 @@ async function search(env, url) {
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
       ...(c.adopted === 0 ? { first: true } : {}) }));
+  // AH 1.27 [PLAZA-14] The first few with their 대표 주기 and users, for the list under the name box.
+  for (const c of companies.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
   return json({ companies });
 }
 
@@ -1431,12 +1433,15 @@ async function searchChoseong(env, q) {
       AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
     LIMIT 200`, like);
   // [PLAZA-10] 초성 are a guess, so companies with a rule in use come first; a first setup still being checked is found too.
-  return rows.filter((c) => c.adopted > 0 || c.pending > 0)
+  const out = rows.filter((c) => c.adopted > 0 || c.pending > 0)
     .sort((a, b) => (b.adopted > 0) - (a.adopted > 0) || b.cho.startsWith(q) - a.cho.startsWith(q) || a.name.length - b.name.length ||
       a.name.localeCompare(b.name, "ko"))
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
       ...(c.adopted === 0 ? { first: true } : {}) }));
+  // AH 1.27 [PLAZA-14]
+  for (const c of out.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
+  return out;
 }
 
 async function company(env, id, request) {
@@ -1479,6 +1484,8 @@ async function company(env, id, request) {
     setups.push({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
       ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) });
   }
+  // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
+  await markLeads(env, c.id, setups, who.dev);
   return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups,
     member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } });
 }
@@ -1790,6 +1797,131 @@ function roomPostNews(env, dev, since) {
     WHERE m.device = ?1 AND m.left = 0 GROUP BY m.company_id ORDER BY at DESC LIMIT 10`, dev, since);
 }
 // AI 1.27 끝
+// AH 1.27 시작
+// ---- [PLAZA-14][PLAZA-15] 대표 주기와 맞아요·달라요 (계획 1.27-AH, AH-D4·D7·D8·D9) ----
+//
+// Each department (사업장) of a company has one 대표 주기 to offer first: of its versions that too many people did not
+// call wrong, the adopted one, else the one with the most 지지 (support(), the score the 대표 판 is already decided by).
+// A company's first setup is its 대표 주기 at once (사용자 2026-10-25 "대표주기가 됩니다!"); the reward still comes only
+// with adoption or new information, so a made-up company earns nothing. Too many 달라요 take a version out of the lead,
+// and the next trusted one leads instead.
+
+/** At least [votes] votes (맞아요 and 달라요) and more than [share] percent 달라요: the version leads no longer (AH-D7). */
+export const DOUBT = { votes: 5, share: 40 };
+/** Where a 달라요 says it is wrong (AH-D9): the order, the times, the pay items. Older apps send wrong, old or name. */
+export const WHY_PARTS = ["order", "time", "pay"];
+export const VOTE_WHY = ["wrong", "name", "old", ...WHY_PARTS];
+
+/** [PLAZA-15] Whether a score (persons who stand behind it, [bad] who said 달라요) has too many 달라요 to lead. */
+export const doubted = (s) => s.persons + s.bad >= DOUBT.votes && s.bad * 100 > DOUBT.share * (s.persons + s.bad);
+
+/**
+ * [PLAZA-14] The 대표 주기 of one department among [versions] ({id, adopted, support, doubted}, in the order they came):
+ * not doubted, adopted first, then the most 지지; a tie keeps the earlier. Null when every one is doubted.
+ */
+export function leadOf(versions) {
+  let best = null;
+  for (const v of versions) {
+    if (v.doubted) continue;
+    if (!best || (v.adopted && !best.adopted) || (v.adopted === best.adopted && v.support > best.support)) best = v;
+  }
+  return best?.id ?? null;
+}
+
+/** [PLAZA-15] The 맞아요·달라요 on one version: counts, 달라요 by where, and this phone's own vote when it gave one. */
+async function opinions(env, companyId, grp, dev) {
+  const rows = await all(env, "SELECT device, ok, why FROM votes WHERE company_id = ? AND grp = ?", companyId, grp);
+  const why = { order: 0, time: 0, pay: 0, other: 0 };
+  let ok = 0;
+  let bad = 0;
+  let mine = null;
+  for (const r of rows) {
+    if (r.ok) ok++;
+    else {
+      bad++;
+      why[WHY_PARTS.includes(r.why) ? r.why : "other"]++;
+    }
+    if (dev && r.device === dev) mine = r.ok ? "ok" : (r.why ?? "wrong");
+  }
+  return { ok, bad, why, ...(mine ? { mine } : {}) };
+}
+
+/** [PLAZA-14][PLAZA-15] company()'s setups marked: each with its opinions, doubted ones, and each department's lead. */
+async function markLeads(env, companyId, setups, dev) {
+  const byDept = new Map();
+  for (const s of setups) {
+    s.opinion = await opinions(env, companyId, s.id, dev);
+    if (doubted(s)) {
+      s.doubted = true;
+      // A version people say is wrong has not settled, whatever its age.
+      delete s.stable;
+    }
+    const k = normName(s.dept ?? "");
+    byDept.set(k, [...(byDept.get(k) ?? []), s]);
+  }
+  for (const list of byDept.values()) {
+    const id = leadOf(list.map((s) => ({ id: s.id, adopted: s.status === "adopted", support: s.support, doubted: Boolean(s.doubted) })));
+    for (const s of list) if (s.id === id) s.lead = true;
+  }
+}
+
+/**
+ * [PLAZA-14] A company's 대표 주기 per department, lighter than company(): for the search's one line. Each has the shifts
+ * and their order (never pay values), whether a pay way is there, and who stands behind it.
+ */
+async function leads(env, companyId) {
+  const rows = await all(env, `SELECT grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
+    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id = ?1 AND r.status = 'pending'
+      AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
+      AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
+    GROUP BY r.grp`, companyId);
+  const versions = [];
+  for (const r of rows) {
+    const s = await score(env, companyId, r.grp);
+    const extra = await one(env, `SELECT (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS checked`, companyId, r.grp);
+    versions.push({ id: r.grp, dept: r.dept, deptNorm: r.dept_norm, adopted: r.adopted === 1, setup: JSON.parse(r.setup),
+      persons: s.persons, bad: s.bad, uses: extra.uses, doubted: doubted(s),
+      support: support({ uses: extra.uses, ok: s.persons, bad: s.bad, verified: extra.checked }) });
+  }
+  const out = [];
+  for (const k of new Set(versions.map((v) => v.deptNorm))) {
+    const list = versions.filter((v) => v.deptNorm === k);
+    const id = leadOf(list);
+    const v = list.find((x) => x.id === id) ?? list[0];
+    out.push({ ...v, doubted: id === null });
+  }
+  return out;
+}
+
+/** [PLAZA-14] The search's line for a company: its main 대표 주기 (회사 전체 first) and how many phones use the company. */
+async function searchLead(env, companyId) {
+  const all_ = await leads(env, companyId);
+  const main = all_.find((l) => l.deptNorm === "") ?? [...all_].sort((a, b) => b.persons - a.persons)[0];
+  const users = await one(env, `SELECT COUNT(*) AS n FROM (SELECT device FROM uses WHERE company_id = ?1
+    UNION SELECT device FROM reports WHERE company_id = ?1 AND status IN ('pending', 'adopted'))`, companyId);
+  if (!main) return { users: users.n };
+  const offs = main.setup.shiftTypes.filter((t) => t.off).map((t) => t.name);
+  return {
+    users: users.n,
+    sites: all_.length,
+    lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
+      roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
+      ...(main.doubted ? { doubted: true } : {}) },
+  };
+}
+
+/** [PLAZA-15] Whether the department's rule in use has too many 달라요: then another version may take over by its own right. */
+async function activeDoubted(env, companyId, active) {
+  return Boolean(active) && doubted(await score(env, companyId, active.grp));
+}
+
+/** [PLAZA-15] After a 달라요 on a department's rule, the versions waiting there may now take its place (settle decides). */
+async function settleDept(env, companyId, deptNorm, now) {
+  const waiting = await all(env, "SELECT DISTINCT grp FROM reports WHERE company_id = ? AND dept_norm = ? AND status = 'pending'", companyId, deptNorm);
+  for (const w of waiting) await settle(env, companyId, w.grp, now);
+}
+// AH 1.27 끝
 
 
 async function state(env, companyId, grp, threshold, adopted) {
@@ -2019,7 +2151,8 @@ async function settle(env, companyId, grp, now) {
   // by its own right and more people stand behind it than behind the one in use (결정 D74). The one it replaces
   // is kept as an earlier version in the history, never deleted, and its users hear of it in 광장 소식.
   if (!active || s.persons < adoptPersons || await turnedDown(env, companyId, grp)) return;
-  if (await outweighs(env, companyId, grp, active)) await adopt(env, companyId, grp, "rival", now);
+  // AH 1.27 [PLAZA-15] A rule in use with too many 달라요 does not need to be outweighed: the next trusted version takes over.
+  if ((await activeDoubted(env, companyId, active)) || (await outweighs(env, companyId, grp, active))) await adopt(env, companyId, grp, "rival", now);
 }
 
 /** [PLAZA-05] The developer took this setup down or turned it down: it never takes a department over by itself. */
@@ -2217,7 +2350,8 @@ async function vote(request, env) {
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
   if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
   if (typeof body.ok !== "boolean") refuse("ok", "ok");
-  const why = body.ok ? null : ["wrong", "name", "old"].includes(body.why) ? body.why : "wrong";
+  // AH 1.27 [PLAZA-15] 달라요 says where: the order, the times or the pay items (AH-D9).
+  const why = body.ok ? null : VOTE_WHY.includes(body.why) ? body.why : "wrong";
   // AI 1.27 [PLAZA-30] A pay-slip 맞았어요 needs the month the phone matched; an older app's bare one counts as a plain 맞았어요.
   const proof = readProof(body.proof);
   const verified = body.ok && body.verified === true && proofCounts(proof);
@@ -2238,6 +2372,8 @@ async function vote(request, env) {
       why = excluded.why, net = excluded.net, at = excluded.at`, c.id, grp, dev, cluster, body.ok ? 1 : 0, verified ? 1 : 0, why, net.now, now);
   await run(env, "UPDATE votes SET claim = ? WHERE company_id = ? AND grp = ? AND device = ?", body.ok && body.verified === true && !proof ? 1 : 0, c.id, grp, dev);
   if (body.ok && !rule) await settle(env, c.id, grp, now);
+  // AH 1.27 [PLAZA-15] Too many 달라요 on the rule in use: a version waiting in its department may take its place now.
+  if (!body.ok && rule) await settleDept(env, c.id, (await one(env, "SELECT dept_norm FROM rules WHERE id = ?", rule.id)).dept_norm, now);
   const adopted = rule ?? (await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp));
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
 }
@@ -5003,7 +5139,8 @@ async function overview(env, actor) {
   const keys = Object.keys(counts);
   const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
-  const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
+  // AH 1.27 [PLAZA-15] doubt: when 달라요 take a version out of the lead (AH-D7), shown on the settings page.
+  const out = { me: me(actor), settings: readSettings(got.settings), doubt: DOUBT, reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
   const rows = new Set(["settings", "waiting", "phones", "live", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
   for (const k of keys) {
@@ -5273,7 +5410,8 @@ async function companyInfo(env, id) {
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
     stmt(env, "SELECT * FROM rules WHERE company_id = ? ORDER BY dept_norm, version DESC", id),
     stmt(env, "SELECT company_id, grp, device, points, cluster FROM reports WHERE company_id = ? AND status IN ('pending', 'adopted')", id),
-    stmt(env, "SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id = ?", id),
+    // AH 1.27 [PLAZA-15] with where each 달라요 says it is wrong.
+    stmt(env, "SELECT company_id, grp, device, ok, verified, cluster, why FROM votes WHERE company_id = ?", id),
     stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
     // [PLAZA-13] Phones that joined it (결정 D79).
     stmt(env, "SELECT COUNT(*) AS n FROM members WHERE company_id = ? AND left = 0", id),
@@ -5287,6 +5425,10 @@ async function companyInfo(env, id) {
     return {
       id: r.id, dept: r.dept, version: r.version, source: r.source, adoptedAt: iso(r.adopted_at), withdrawn: r.withdrawn === 1,
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
+      // AH 1.27 [PLAZA-15] 달라요 by where (순서·시간·급여 항목·그 밖), and whether too many took it out of the lead.
+      why: Object.fromEntries([...WHY_PARTS, "other"].map((k) => [k, votes.filter((v) => v.grp === r.grp && !v.ok &&
+        (k === "other" ? !WHY_PARTS.includes(v.why) : v.why === k)).length])),
+      ...(doubted(s) && !r.withdrawn && !r.superseded ? { doubted: true } : {}),
     };
   });
   // [PLAZA-13] Whether a rule in use settled (결정 D79: three phones on it, nothing new for 30 days).

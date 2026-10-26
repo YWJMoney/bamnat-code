@@ -139,6 +139,8 @@ fun SetupHost(
     LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     val onOpenFile = { openFile.launch(arrayOf(BackupManager.MIME_TYPE, CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
     var searching by remember { mutableStateOf(false) }
+    // [SPAT-07] 1.27 AH: a company tapped in the list under the name opens the search at its page.
+    var openCompany by remember { mutableStateOf<String?>(null) }
     var longShifts by remember { mutableStateOf<List<ShiftType>>(emptyList()) }
 
     // AG 1.27 [INVITE-10] 친구 초대 recognised by itself (결정 AG-D2): Play's referrer is read on the phone as the last
@@ -248,7 +250,8 @@ fun SetupHost(
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
                             onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
-                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { searching = true }, onOpenFile = onOpenFile)
+                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { openCompany = null; searching = true }, onOpenFile = onOpenFile,
+                            onOpenCompany = { openCompany = it; searching = true }, inline = !searching)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)
                         SetupStep.ORDER -> OrderStep(vm, d)
@@ -271,7 +274,7 @@ fun SetupHost(
         ) { CircularProgressIndicator() }
     }
 
-    if (searching) CompanySearchDialog(vm, initialQuery = d.companyName, onDismiss = { searching = false })
+    if (searching) CompanySearchDialog(vm, initialQuery = d.companyName, onDismiss = { searching = false; openCompany = null }, initialOpen = openCompany)
     if (leaving) {
         ConfirmDialog(
             title = "새 달력을 그만 만들까요?",

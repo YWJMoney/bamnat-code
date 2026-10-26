@@ -586,6 +586,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [PLAZA-34] 1.27 AI: each change asks with what changed; 저절로 나누기 says it in one line with 되돌리기.
     com.bamnat.app.ui.company.AutoShareHost(container, snackbar = snackbar,
         onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } })
+    // [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle picked from a company search.
+    com.bamnat.app.ui.company.LeadShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
 
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
@@ -1154,7 +1156,9 @@ private fun AppNavHost(
                 // [SPAT-04] The public cycle in use, for the first pay setup of the main calendar.
                 fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } },
                 // [PLAZA-30] 1.27 AI: the plaza form's 명세서로 맞춰 보기, once.
-                startMatching = remember { container.pendingMatch.also { container.pendingMatch = false } })
+                startMatching = remember { container.pendingMatch.also { container.pendingMatch = false } },
+                // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay.
+                companyFind = if (calendar == PersonalCalendar.MAIN) ({ com.bamnat.app.ui.company.PayFindEntry() }) else null)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
