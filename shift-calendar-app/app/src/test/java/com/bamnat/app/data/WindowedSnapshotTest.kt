@@ -24,8 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -114,9 +113,9 @@ class WindowedSnapshotTest {
     @Test fun theWholeHistoryReplacesTheWindowAndNothingFollowsIt() = runBlocking {
         val r = repo()
         r.history()
-        val seen = withTimeout(10_000) { r.snapshotAround(month).takeWhile { !it.isComplete }.toList() }
-        assertTrue("at most the window comes before the whole: $seen", seen.size <= 1)
-        val all = withTimeout(10_000) { r.snapshotAround(month).take(seen.size + 1).toList() }
+        // One reading, up to and with the whole history (a second reading would get the shared whole at once).
+        val all = withTimeout(10_000) { r.snapshotAround(month).transformWhile { emit(it); !it.isComplete }.toList() }
+        assertTrue("at most the window comes before the whole: $all", all.size <= 2)
         assertTrue("the last value is the whole history", all.last().isComplete)
         val window = all.firstOrNull { !it.isComplete }
         if (window != null) {

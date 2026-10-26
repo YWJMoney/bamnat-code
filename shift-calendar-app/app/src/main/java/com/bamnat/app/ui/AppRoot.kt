@@ -382,6 +382,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [IMPORT-02] When the user asked for it, new events in the chosen calendars are offered on opening the app.
     LaunchedEffect(homeRequests) {
+        // [PERF-19] 1.28 AO: the phone calendar read waits for the first month (at most 3 s, another home tab
+        // never draws one), so it does not share the disk with it.
+        kotlinx.coroutines.withTimeoutOrNull(FIRST_MONTH_WAIT_MILLIS) {
+            androidx.compose.runtime.snapshotFlow { com.bamnat.app.ui.calendar.FirstMonth.settled.value }.first { it }
+        }
         val count = runCatching { container.calendarImporter.countNew(Today.date()) }.getOrDefault(0)
         if (count > 0 && snackbar.showSnackbar("캘린더에 새 일정 ${count}개가 있어요", actionLabel = "가져오기",
                 duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
@@ -1658,6 +1663,8 @@ private fun NavHostController.popFrom(route: String) {
 
 /** [VIS-02] Tabs fade in over 150 ms after the old one fades out over 90 ms; other screens move over 250 ms. */
 private const val TAB_IN_MILLIS = 150
+/** [PERF-19] 1.28 AO: how long the calendar-import offer waits for the first month to settle. */
+private const val FIRST_MONTH_WAIT_MILLIS = 3_000L
 private const val TAB_OUT_MILLIS = 90
 private const val SCREEN_MILLIS = 250
 

@@ -570,6 +570,20 @@ shift-calendar-app/
 - **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
 - 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
 
+### 6-27. 앱 시작 빠르게: 보이는 달 먼저·화면이 기다리지 않음·작업 나눔·Baseline Profile·실제 휴대폰 시작 시간 (1.28.0 묶음 AO, PERF-07~19)
+
+계획·원인 표·JVM 전후 숫자는 프로젝트 파일(git 밖)의 `계획/1.28-AO-개발계획.md`.
+
+- **보이는 달 먼저(PERF-07·08)** `ScheduleRepository.snapshotAround(month)`가 보이는 달 ±2달(`ScheduleSnapshot.windowOf`)만 `DayEntryDao/DayExtraDao.inRange`로 먼저 읽어 보내고, 전체(`live`)가 오면 바꿔 끼워요. 창 스냅숏은 `window`가 있고 `isComplete=false`라서 `covers(month)`로 확인한 뒤에만 써요. `CalendarViewModel.snapshot`은 M-1·M+1이 덮일 때만 값을 내고, 쓰기·실행 취소·통계용 `currentSnapshot()`은 전체만 써요. 전체 읽기는 저장소마다 한 번(`live` = `shareIn(appScope, WhileSubscribed(5초))`), 달력·알림·워치·급여·통계·돈·공유·휴대폰 캘린더가 나눠 써요. 쓰고 바로 읽는 한 번 읽기(`snapshot.first()`)는 그대로 차가운 흐름이에요.
+- **화면이 기다리지 않음(PERF-09·12)** `MainActivity.onCreate`가 스플래시(`setKeepOnScreenCondition`)와 `setContent`를 먼저 하고, 컨테이너는 `BamnatApp.awaitContainer()`로 기다린 뒤 예전 onCreate·onStart 몫을 같은 순서로 해요(`open()`·`started()`). 잠금(AppLock)·BootAlarms·잠긴 부팅 동작은 같아요. `StartupTrace`에 `CONTAINER_WAIT`·차가운/따뜻한 시작 구분.
+- **첫 달 뒤 작업 세 묶음(PERF-10)** `AppContainer.startLater`: 1묶음(오늘 알림·위젯 3개·체험 알림)은 바로, 2묶음(돈·메모 일정·투자·휴가)은 메인 스레드가 한가해진 뒤 0.6초, 3묶음(광장·공유·휴대폰 캘린더·워치·출퇴근)은 1.5초 뒤. WorkManager는 쓰지 않았어요(새 의존성과 시작 initializer가 생기고, 이 작업들은 데이터를 따라가는 흐름이라서).
+- **달력 첫 구성(PERF-11)** `FirstMonth.settled` 전에는 달력 아래 카드와 옆 달 페이지를 만들지 않아요. 달력 가져오기 알림(`countNew`)은 첫 달 뒤(최대 3초 기다림).
+- **Baseline Profile(PERF-13·14)** 루트·`:app`·`:benchmark`에 `androidx.baselineprofile` 1.3.4. `:benchmark`가 프로필을 만들어요(Gradle 관리 에뮬레이터 `pixel6Api34`, `-Pbamnat.profileOnPhone`이면 연결한 휴대폰). 앱은 `saveInSrc`·`mergeIntoMain`·`dexLayoutOptimization`, 빌드 중 자동 생성은 꺼 둠. 측정 빌드는 플러그인의 `benchmarkRelease`(예전 `benchmark` 빌드 타입은 없앰, `app/src/benchmarkRelease`). 손으로 쓴 `baseline-prof.txt`는 그대로 두고 시작 경로 클래스를 더 넣었어요.
+  - **사용자 할 일**: GitHub › Actions › **Baseline Profile (밤낮)** › Run workflow → Artifacts `baseline-profile`을 내려받아 `baseline-prof.txt`·`startup-prof.txt`를 `shift-calendar-app/app/src/main/generated/baselineProfiles/`에 넣고 커밋(`benchmark/README.md` A).
+- **실제 휴대폰 시작 시간(PERF-15~18)** 앱 `diag/StartupStats`: 마지막 시작은 늘 남겨 ‘알람 점검’ 기기 부분에 보여요(동의 필요 없음). 사용 통계에는 `startup: {container, activity, firstMonth, warm:{container, firstMonth}}`(15개 구간 값의 중앙값, 횟수·기기 정보 없음)를 **사용 통계 동의 + `StartupStats.policyAllows()`**일 때만 실어요. `policyAllows`는 지금 `{ false }`, 통합에서 `Flags.on("stats.more")`로(처리방침 3.2). 서버 `usage_startup` 표(400일), `/admin/api/metrics`의 `startup`, 관리자 앱 지표 ‘앱 시작 시간’ 카드(판마다 가운데·90%, 30대 미만 데이터 부족).
+- **그 밖(PERF-19)** 저장된 원격 파일은 확인 지문(`$kind.json.ok`, 바이트·서명·열쇠·앱 판의 SHA-256)이 같으면 Ed25519 확인을 건너뛰어요. 열쇠는 새 것부터 확인.
+- 시험: 앱 `WindowedSnapshotTest` 6, `StartupStatsTest` 6, `StartupBudgetTest` 7(21/7 예산 그대로), `RemoteFilesStoreTest` 7, `BaselineProfileRulesTest` 3, `perf/StartupTimingsReport`(무거운 사용자 548일 JVM 숫자); 서버 `startup-ao.test.mjs` 4, 관리자 UI `[PERF-18]` 1.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

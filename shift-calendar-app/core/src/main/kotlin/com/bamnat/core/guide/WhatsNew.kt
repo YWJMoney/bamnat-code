@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.28.0 — 통합 folds the bundles' lines (each bundle adds only its own).
+        Release(39, "1.28.0", listOf(
+            // [PERF-07][PERF-08][PERF-09] Bundle AO.
+            Line("앱이 더 빨리 열려요. 달력은 보이는 달부터 먼저 그리고, 나머지 준비는 첫 달이 보인 뒤에 나눠서 해요. 마지막으로 연 시간은 ‘알람 점검’ 화면에서 볼 수 있어요"),
+        )),
         // 1.27.0 (계획/1.27-리뷰반영-사진인식-통합계획.md; 통합 folded AG·AH·AI·AJ·AK into eight lines).
         Release(38, "1.27.0", listOf(
             // [READ-13][READ-17] Bundle AJ.
