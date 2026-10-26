@@ -152,6 +152,12 @@ test("[FLAG-35] the 사용 통계 body the app builds (flagsOn) is taken, and on
   // Nothing that tells a phone apart is kept: the table has no such column, and the body had none to keep.
   assert.deepEqual(DB.db.prepare("PRAGMA table_info(usage_flags)").all().map((c) => c.name), ["day", "app", "flag", "phones"]);
   assert.ok(!/device|install/i.test(JSON.stringify(body)));
+  // 1.28 통합 [PERF-17]: the same body carries startup (AO), counted per bucket on the newest day, phones only.
+  assert.ok(body.startup && typeof body.startup.firstMonth === "number", "the app's body has startup");
+  const startup = DB.db.prepare("SELECT day, app, kind, step, bucket, phones FROM usage_startup").all().map((r) => ({ ...r }));
+  assert.ok(startup.some((r) => r.kind === "cold" && r.step === "firstMonth" && r.bucket === body.startup.firstMonth));
+  for (const r of startup) assert.deepEqual([r.day, r.app, r.phones], [day, body.app, 2]);
+  assert.deepEqual(DB.db.prepare("PRAGMA table_info(usage_startup)").all().map((c) => c.name), ["day", "app", "kind", "step", "bucket", "phones"]);
 });
 
 test("[FLAG-36] an override's app range: kept, checked, sent, evaluated for a preview phone, in the history", async (t) => {

@@ -238,7 +238,7 @@ class FlagsAppTest {
 
         // What 사용 통계 sends: flagsOn beside the counts only when given.
         val zone = ZoneId.of("Asia/Seoul")
-        val today = LocalDate.now(zone).toEpochDay()
+        val today = com.bamnat.core.time.Today.date(zone).toEpochDay() // the day UsageStats counts by, even with a fixed clock
         val prefs = context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
         prefs.edit().putString("book", UsageBook().record(UsageEvent.OPEN, today - 1).encode()).commit()
         val sent = mutableListOf<JSONObject>()

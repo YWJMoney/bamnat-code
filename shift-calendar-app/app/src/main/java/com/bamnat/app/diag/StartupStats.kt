@@ -50,8 +50,8 @@ class StartupStats(
     companion object {
         /**
          * [PERF-16] Startup times are a new item for 사용 통계 (처리방침 3.1 §1-9 lists what it sends, with no times), so they
-         * wait for 처리방침 3.2 and its consent: the `stats.more` flag of the flag book. Off until it is wired.
-         * // 통합: StartupStats.policyAllows = { Flags.on("stats.more") }
+         * wait for 처리방침 3.2 and its consent: the `stats.more` flag of the flag book. Off until [com.bamnat.app.AppContainer]
+         * sets it to `flags.on(FlagCatalog.STATS_MORE)` (1.28 통합).
          */
         @Volatile var policyAllows: () -> Boolean = { false }
 

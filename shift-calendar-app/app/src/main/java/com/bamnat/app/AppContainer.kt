@@ -165,7 +165,7 @@ class AppContainer(context: Context) {
     }
     /**
      * [PERF-15][PERF-16] 1.28 AO: how long the app took to open, for 진단 and, with the user's yes to 사용 통계 and
-     * 처리방침 3.2 ([com.bamnat.app.diag.StartupStats.policyAllows], 통합: Flags.on("stats.more")), for 사용 통계.
+     * 처리방침 3.2 ([com.bamnat.app.diag.StartupStats.policyAllows] = the `stats.more` row, set below [flags]), for 사용 통계.
      */
     val startupStats = com.bamnat.app.diag.StartupStats(context.applicationContext,
         allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.StartupStats.policyAllows() })
@@ -332,6 +332,11 @@ class AppContainer(context: Context) {
         ),
         appScope, facts = { phoneFacts() }, serverNow = { remoteConfig.serverNow() },
     )
+    init {
+        // [PERF-16][FLAG-16] 1.28 통합: startup times go out with 사용 통계 only while the `stats.more` row is on
+        // (처리방침 3.2 in force, the user's yes to 사용 통계 and to its added items), the same row as `flagsOn`.
+        com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
+    }
 
     /** [FLAG-07] This phone as the dark-merge rows read it; nothing of it is sent. */
     fun phoneFacts(): com.bamnat.core.flags.PhoneFacts {

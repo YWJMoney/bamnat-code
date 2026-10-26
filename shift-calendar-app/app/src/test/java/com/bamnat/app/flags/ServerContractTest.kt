@@ -3,6 +3,8 @@ package com.bamnat.app.flags
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.StartupTrace
+import com.bamnat.app.diag.StartupStats
 import com.bamnat.app.diag.UsageStats
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.LaunchConfig
@@ -182,8 +184,14 @@ class ServerContractTest {
         val today = Today.date(zone).toEpochDay()
         context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE).edit()
             .putString("book", UsageBook().record(UsageEvent.OPEN, today - 1).record(UsageEvent.OPEN, today - 1).encode()).commit()
-        val body = JSONObject(UsageStats(context, baseUrl = "https://company.example", zone = { zone }, post = { _, _ -> }).preview(keys)!!)
+        // 1.28 통합 [PERF-16]: startup times ride on the same row (AppContainer sets StartupStats.policyAllows to it).
+        context.getSharedPreferences("startup_stats", Context.MODE_PRIVATE).edit().clear().commit()
+        val startup = StartupStats(context, allowed = { flags.on(FlagCatalog.STATS_MORE) })
+        startup.record(StartupTrace.Sample(StartupTrace.Kind.COLD, 40, 300, 1_200))
+        startup.record(StartupTrace.Sample(StartupTrace.Kind.WARM, 0, 80, 350))
+        val body = JSONObject(UsageStats(context, baseUrl = "https://company.example", zone = { zone }, post = { _, _ -> }, startup = startup).preview(keys)!!)
         assertEquals(keys, body.getJSONArray("flagsOn").let { a -> (0 until a.length()).map { a.getString(it) } })
+        assertTrue("startup goes with flagsOn in one body", body.has("startup"))
         val out = JSONObject().put("at", c.serverTime.toString()).put("body", body)
         val file = fixtureFile("events-from-app.json")
         if (System.getenv("BAMNAT_WRITE_FIXTURES") == "1") file.writeText(out.toString(2) + "\n")
