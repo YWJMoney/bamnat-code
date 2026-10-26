@@ -501,3 +501,26 @@ test("[PLAZA-13] 회사·규칙: how many phones joined a company, and 안정 on
   assert.ok(u.$$("#main .pill.ok").some((p) => p.textContent === "안정"), "a settled rule says so");
   assert.deepEqual(u.errors, []);
 });
+
+test("[PLAZA-15] 회사·규칙: 맞아요·달라요 by where, 대표에서 빠짐, and the rule on the settings page (1.27 AH)", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env } = s;
+  const a = await call("POST", "/api/reports", report(1, { company: "의견화학" }), from(1));
+  await call("POST", "/api/reports", report(2, { company: "의견화학" }), from(2));
+  const c = a.data.company.id;
+  // A third 맞아요 adopts it (three points).
+  await call("POST", "/api/votes", { device: device(6), company: c, setup: a.data.setup, ok: true }, from(6));
+  for (const [n, why] of [[3, "order"], [4, "order"], [5, "pay"], [7, "time"]]) {
+    await call("POST", "/api/votes", { device: device(n), company: c, setup: a.data.setup, ok: false, why }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go(`#/companies/${c}`);
+  await u.settle(20);
+  assert.match(u.text("#main"), /맞았어요 3 · 달라요 4 \(순서 2 · 시간 1 · 급여 항목 1\)/);
+  assert.ok(u.$$("#main .pill.warn").some((p) => p.textContent === "대표에서 빠짐"));
+  await u.go("#/settings");
+  await u.settle(20);
+  assert.match(u.text("#main"), /5표 이상이고 달라요가 40%를 넘으면/);
+  assert.deepEqual(u.errors, []);
+});
