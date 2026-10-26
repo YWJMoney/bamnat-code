@@ -38,12 +38,6 @@ import com.bamnat.core.time.Today
 internal fun FoundTradesCard(vm: InvestViewModel, state: InvestState, open: (InvestSheet) -> Unit) {
     val alerts by vm.alerts.collectAsStateWithLifecycle()
     val auto by vm.alertAuto.collectAsStateWithLifecycle()
-    // [INV-40] 409 C: a capture shared from the gallery, or the button below.
-    val shot by com.bamnat.app.invest.IncomingFills.shot.collectAsStateWithLifecycle()
-    var capturing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
-    var sharedShot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null) }
-    androidx.compose.runtime.LaunchedEffect(shot) { com.bamnat.app.invest.IncomingFills.take()?.let { sharedShot = it; capturing = true } }
-    if (capturing) FillCaptureSheet(vm, alerts, sharedShot, onDismiss = { capturing = false; sharedShot = null })
     if (alerts.isEmpty()) return
     val priceless = alerts.count { it.price <= 0 }
     SectionCard(title = "알림으로 찾은 거래 ${alerts.size}건") {
@@ -52,11 +46,11 @@ internal fun FoundTradesCard(vm: InvestViewModel, state: InvestState, open: (Inv
         // [INV-40] Lines without a price: one capture of the broker's 체결 내역 fills them.
         if (priceless > 0) Row(verticalAlignment = Alignment.CenterVertically) {
             Text("단가 없는 알림 ${priceless}건", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            FilledTonalButton(onClick = { capturing = true }) { Text("체결 내역 캡처로 채우기") }
+            FilledTonalButton(onClick = vm::openCapture) { Text("체결 내역 캡처로 채우기") }
         }
         alerts.sortedByDescending { it.at }.forEachIndexed { i, p ->
             if (i > 0) HorizontalDivider()
-            FoundTrade(p, state, onCapture = { capturing = true }) { action ->
+            FoundTrade(p, state, onCapture = vm::openCapture) { action ->
                 when (action) {
                     FoundAction.SAVE -> vm.confirmAlert(p)
                     FoundAction.EDIT -> open(InvestSheet.TradeEdit(p.toDraft(state.account ?: state.settings.lastAccountId)))

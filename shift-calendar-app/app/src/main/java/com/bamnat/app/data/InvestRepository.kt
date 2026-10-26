@@ -150,6 +150,42 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     val fillGuideSeen: Flow<Boolean> = dao.observeSettings().map { l -> l.any { it.key == FILL_GUIDE_KEY && it.value == "true" } }
     suspend fun setFillGuideSeen() = dao.upsertSetting(InvestSettingEntity(FILL_GUIDE_KEY, "true"))
 
+    /**
+     * [INV-44] 1.27 AK: 캡처로 채우기를 묻지 않고 바로 넣기 (this investor calendar's own setting, in its invest_settings,
+     * so a backup carries it with [InvestBackup]). Off until the user turns it on from the capture sheet.
+     */
+    val fillTrust: Flow<Boolean> = dao.observeSettings().map { l -> l.any { it.key == FILL_TRUST_KEY && it.value == "true" } }
+    suspend fun setFillTrust(on: Boolean) = dao.upsertSetting(InvestSettingEntity(FILL_TRUST_KEY, on.toString()))
+
+    /** [INV-43] What a capture put in and changed, to take back with 되돌리기. */
+    data class CaptureApplied(val written: List<Trade>, val fixedBefore: List<Trade>, val alertsBefore: List<TradeAlerts.Pending>)
+
+    /**
+     * [INV-43] 1.27 AK (결정 AK-D3): the rows checked on the capture sheet are written as trades at once (fees suggested as
+     * for a found trade), their waiting alerts taken off the list; [fixes] replace written trades (quantity, price, minute).
+     */
+    suspend fun applyCapture(lines: List<TradeAlerts.Pending>, fixes: List<Trade>): CaptureApplied {
+        val book = now()
+        val alertsBefore = pendingNow()
+        val account = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false } ?: ensureAccount()
+        val written = lines.map { p ->
+            val costs = com.bamnat.core.invest.InvestFees.suggest(p.market, p.side, p.quantity, p.price, book.account(account), book.settings)
+            val t = p.toTrade(account, book.settings.usdKrw).copy(fee = costs.fee, tax = costs.tax)
+            t.copy(id = saveTrade(t))
+        }
+        val before = fixes.mapNotNull { f -> book.trades.firstOrNull { it.id == f.id }?.also { saveTrade(f) } }
+        val taken = lines.map { it.at }.toSet()
+        if (alertsBefore.any { it.at in taken }) restoreAlerts(alertsBefore.filter { it.at !in taken })
+        return CaptureApplied(written, before, alertsBefore)
+    }
+
+    /** [INV-43] 되돌리기: the written trades go, the changed ones come back, the waiting list is as it was. */
+    suspend fun undoCapture(a: CaptureApplied) {
+        a.written.forEach { deleteTrade(it.id) }
+        a.fixedBefore.forEach { saveTrade(it) }
+        restoreAlerts(a.alertsBefore)
+    }
+
     private suspend fun pendingNow() = TradeAlerts.decode(dao.allSettings().firstOrNull { it.key == TradeAlerts.KEY }?.value)
 
     /** [INV-32] A waiting alert written as a trade into the last used open account, fees suggested, and taken off the list. */
@@ -213,6 +249,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     companion object {
         /** [INV-40] The 체결 내역 capture guide was shown once. */
         const val FILL_GUIDE_KEY = "fillGuide"
+        /** [INV-44] 1.27 AK: "true" puts a capture's sure new rows in without asking. */
+        const val FILL_TRUST_KEY = "fillTrust"
         private val opened = WeakHashMap<AppDatabase, InvestRepository>()
 
         /** One repository per open database, so every screen of a calendar reads the same flows. */

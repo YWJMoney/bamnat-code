@@ -10,6 +10,13 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.27.0 (계획/1.27-리뷰반영-사진인식-통합계획.md; 통합 folds the bundles' lines).
+        Release(38, "1.27.0", listOf(
+            // [INV-42][INV-44] Bundle AK.
+            Line("투자 ‘체결 내역 캡처로 채우기’가 이미 적은 건 건너뛰고, 다르면 고칠지 묻고, 새 것만 확인해요. 믿으면 ‘다음부터 묻지 않고 바로 넣기’", "invest.captureTrust"),
+            // [MEMO-03][MEMO-05] Bundle AK.
+            Line("메모를 초성·날짜·그날 근무(야간)로 찾고, ‘다음 야간 때’라고 쓰면 그 근무 출근 1시간 전에 알려 드려요. 지난 같은 근무 메모도 바로 봐요", "memo.shiftRemind"),
+        )),
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.
