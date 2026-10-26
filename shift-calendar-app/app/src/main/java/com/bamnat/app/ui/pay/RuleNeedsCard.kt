@@ -21,6 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.TimeRange
 import com.bamnat.app.ui.components.TimeRangeDialog
@@ -49,7 +51,9 @@ internal fun RuleNeedsCard(needs: List<RuleOnlyNeeds.Need>, withSlip: Boolean, o
                         Text(n.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
                         Text(n.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                     }
-                    FilledTonalButton(onClick = { onFix(n) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
+                    // Several "넣기" on one card: each says which value it puts in (TalkBack).
+                    FilledTonalButton(onClick = { onFix(n) }, modifier = Modifier.heightIn(min = 48.dp)
+                        .semantics { onClick(label = "${n.label} 넣기") { onFix(n); true } }) { Text("넣기") }
                 }
             }
             if (!withSlip) Text("명세서는 없어도 돼요. 넣으면 실제 입금액·기본급과 맞춰 볼 수 있어요.",
@@ -133,13 +137,14 @@ internal fun SlipMatchCard(profile: PayProfile, gate: com.bamnat.app.tier.Gate, 
             else "명세서가 있으면 실제 입금액·기본급과 비교해요. 없으면 회사 계산 방법(취업규칙·수당표) 사진만으로도 계산 방식을 찾아요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            OutlinedButton(onClick = onCompare, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+        // One under the other: side by side the 프로 mark was cut on a 393dp phone (1.27 사진 1149).
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            OutlinedButton(onClick = onCompare, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text("금액 비교하기", maxLines = 1)
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 4.dp))
                 com.bamnat.app.ui.money.ProPill(locked = gate.locked(com.bamnat.app.tier.Feature.PAYSLIP_MATCH)) // [TIER-06]
             }
-            OutlinedButton(onClick = onFind, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("계산 방식 찾기", maxLines = 1) }
+            OutlinedButton(onClick = onFind, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("계산 방식 찾기", maxLines = 1) }
         }
     }
 }

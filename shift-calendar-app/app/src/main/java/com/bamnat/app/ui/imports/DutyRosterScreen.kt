@@ -367,6 +367,9 @@ class DutyRosterViewModel(
 
     fun askSameAgain() = _ui.update { it.copy(same = null) }
 
+    /** [READ-15] The document scanner could not run here. */
+    fun scannerError(message: String) = _ui.update { it.copy(error = message) }
+
     /** [ROST-06] What a code means, here and on the next roster (the calendar's code book). */
     fun answer(raw: String, cell: DutyCell) {
         val key = codeKey(raw)
@@ -536,6 +539,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 }
                 TextButton(onClick = { others = !others }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (others) "다른 방법 접기" else "다른 방법", maxLines = 1) }
             }
+            // [READ-15] 1.27: a roster photographed at an angle or in shade, straightened by Google's scanner on the phone.
+            com.bamnat.app.imports.ScannerButton(onImage = vm::readPhoto, onError = vm::scannerError, enabled = !ui.reading)
             if (others) {
                 OutlinedButton(onClick = { pasting = true }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.ContentPaste, null, Modifier.size(18.dp)); Text(" 글자로 붙여 넣기")

@@ -10,6 +10,13 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.27.0 (통합 스레드가 묶음별 줄을 합쳐요).
+        Release(38, "1.27.0", listOf(
+            // [READ-13][READ-17] Bundle AJ.
+            Line("사진 인식을 다시 만들었어요. 한 장을 여러 방법으로 읽어 맞춰 보고, 사진 옆에 읽은 칸을 보여 주며 ‘사진과 내용이 같은가요?’를 물어요. 다른 칸만 눌러 고치면 돼요", "photo.sameCheck"),
+            // [PAYS-16][PAYS-17][PAYS-19] Bundle AJ.
+            Line("명세서 없이 회사 규칙만으로도 달력 근무로 급여를 계산해요. 비어 있는 기본급·시수는 급여 합계 아래 ‘이것만 넣으면 정확해져요’에서 바로 넣어요", "pay.ruleNeeds"),
+        )),
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.

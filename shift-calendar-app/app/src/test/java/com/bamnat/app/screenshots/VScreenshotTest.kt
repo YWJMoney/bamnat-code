@@ -152,7 +152,8 @@ class VScreenshotTest : ScreenshotBase() {
     private var shared = false
     private fun slipRules(then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         payScreen(Tier.PRO, withProfile = true) { vm -> PayScreen(vm, onBack = {}, onShareWay = { shared = true }) }.invoke(this)
-        tapText("사진으로 회사 방식 맞추기", scrolls = 40)
+        // [PAYS-19] 1.27 AJ: 합계 아래 ‘명세서와 맞춰 보기’ 카드의 ‘계산 방식 찾기’.
+        tapText("계산 방식 찾기", scrolls = 40)
         then()
     }
     private fun Screen.typeSlip() {

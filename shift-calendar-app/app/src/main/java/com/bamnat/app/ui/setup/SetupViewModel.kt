@@ -114,6 +114,9 @@ class SetupViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    /** [READ-15] A line to show, e.g. why the document scanner could not run. */
+    fun say(text: String) { _message.value = text }
+
     fun consumeMessage() {
         _message.value = null
     }

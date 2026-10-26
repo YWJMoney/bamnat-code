@@ -414,6 +414,8 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
         FilterChip(selected = false, enabled = !reading,
             onClick = { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             label = { Text("사진으로") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)) })
+        // [READ-15] 1.27: straightened by Google's scanner on the phone.
+        com.bamnat.app.imports.ScannerButton(onImage = { vm.readRosterPhoto(context, it) }, onError = { vm.say(it) }, enabled = !reading)
         FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.TYPES) },
             label = { Text("엑셀·CSV") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })

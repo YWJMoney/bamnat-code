@@ -146,6 +146,8 @@ internal fun ScanButtons(
                 Text("사진 찍기")
             }
         }
+        // [READ-15] Edges found, straightened and shadows taken out by Google's scanner on the phone.
+        com.bamnat.app.imports.ScannerButton(onImage = { read(it, taken = false) }, onError = { error = it }, enabled = !reading)
         if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             Text(step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
@@ -225,16 +227,19 @@ class RuleTarget(
  */
 @Composable
 fun PayslipFillDialog(
-    title: String, onDismiss: () -> Unit, rules: RuleTarget? = null, rulesOnly: Boolean = false, onRead: (PayslipRead) -> Unit,
+    title: String, onDismiss: () -> Unit, rules: RuleTarget? = null, rulesOnly: Boolean = false,
+    /** A photo already read (a test, or a photo shared to the app): shown at once. */
+    initialScan: PayslipScanner.Scan? = null,
+    onRead: (PayslipRead) -> Unit,
 ) {
     val context = LocalContext.current
     val fixes = remember { com.bamnat.app.data.ReadFixBook.get(context) }
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(initialScan?.text.orEmpty()) }
     var second by remember { mutableStateOf("") }
     var typing by remember { mutableStateOf(false) }
     var read by remember { mutableStateOf<PayslipRead?>(null) }
     // [READ-18] The photo read for each slot (its put-together lines and picture), and what was read before fixing.
-    var scan by remember { mutableStateOf<PayslipScanner.Scan?>(null) }
+    var scan by remember { mutableStateOf(initialScan) }
     var scanSecond by remember { mutableStateOf<PayslipScanner.Scan?>(null) }
     var asRead by remember { mutableStateOf<PayslipRead?>(null) }
     var unsure by remember { mutableStateOf(emptySet<Int>()) }
@@ -255,6 +260,7 @@ fun PayslipFillDialog(
         ticks.clear()
         if (rules != null) ticks += photos.rules.map { it to (it.confidence >= 0.6) }
     }
+    androidx.compose.runtime.LaunchedEffect(initialScan) { if (initialScan != null) analyse() }
     val photo = scan?.takeIf { it.text == text }?.image ?: scanSecond?.takeIf { it.text == second }?.image
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -331,8 +337,10 @@ fun PayslipFillDialog(
         },
         confirmButton = {
             val r = read
-            // [READ-18] A photo's lines read two ways wait for "사진과 같은가요?" (조용히 틀린 값 0).
-            val waiting = r != null && r.lines.isNotEmpty() && photo != null && same == null && unsure.isNotEmpty()
+            // [READ-18] A photo's payslip not sure (a line read two ways, or lines that do not add up to a stated 지급 총액)
+            // waits for "사진과 같은가요?" (조용히 틀린 값 0).
+            val sure = r != null && unsure.isEmpty() && com.bamnat.core.pay.SlipVote.adds(r) && com.bamnat.core.pay.SlipVote.stated(r)
+            val waiting = r != null && r.lines.isNotEmpty() && photo != null && same == null && !sure
             val canRead = text.isNotBlank() || rulesOnly && second.isNotBlank()
             when {
                 r == null -> if (typing || (rules != null && canRead)) Button(onClick = ::analyse, enabled = canRead) { Text("읽기") }

@@ -369,7 +369,7 @@ internal fun SlipRulesSummary(res: SlipRulesResult) {
     // [PAYS-16] Rules alone: the month by the rules and the calendar; nothing to compare yet.
     if (!res.withSlip) {
         Text("${res.month.year}년 ${res.month.monthValue}월 규칙으로 계산 ${won(res.total)}", style = MaterialTheme.typography.titleSmall)
-        Text("달력에 넣은 근무와 이 규칙으로 계산해요. 기본급·월 소정근로시간처럼 꼭 필요한 값이 비어 있으면 급여 화면 맨 위에서 바로 넣을 수 있어요.",
+        Text("달력에 넣은 근무와 이 규칙으로 계산해요. 기본급·월 소정근로시간처럼 꼭 필요한 값이 비어 있으면 급여 합계 바로 아래에서 바로 넣을 수 있어요.",
             style = MaterialTheme.typography.bodyMedium)
         res.changes.forEach { Row { Text("•  "); Text(it, style = MaterialTheme.typography.bodyMedium) } }
         res.hints.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

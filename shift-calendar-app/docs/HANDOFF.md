@@ -498,6 +498,20 @@ shift-calendar-app/
 - **한 번 묻고 저절로 나누기** `company/AutoShare`: 근무 주기·급여 저장(`ShiftsViewModel`, `PayViewModel.saveSetup`, 기본 달력만)에서 회사를 알면 한 번 물어요(`AutoShareHost`/`AutoShareDialog`, `AppRoot`). 예 → 바로 보내고 그 회사 화면으로. 그 뒤 바뀌면 `autoDirty` → `OutboxJob.scheduleShare`(같은 JobService, ID 4404, 지난 보낸 때 + 24시간 최소 지연), 시작할 때 도는 일은 없어요. 끄기: 설정 › 개인정보·앱 정보 `AUTO_SHARE_ROW`. 키 `auto_share`·`auto_dirty`·`auto_sent_at`·`member`는 휴대폰에만(`SettingsFilesBackup.DEVICE_ONLY`, 새 휴대폰에서 다시 물음).
 - 시험: 서버 `test/plaza-af.test.mjs`, core `PlazaRoomTest`, 앱 `company/PlazaAFAppTest`(실제 node 서버와 끝에서 끝), 사진 `AFScreenshotTest` 1060~1069. 관리자 앱: 회사 목록 "참여 n", 회사 화면 "참여한 휴대폰 n대", 규칙 카드 "안정".
 
+### 6-22. 사진 여러 번 읽고 합의·사진과 같은가요·규칙만으로 급여·맞춰 보기 자리 (1.27.0 묶음 AJ, READ-12~19·PAYS-16~20)
+
+계획·결정(AJ-D1~)·정확도 숫자·앱 흐름 점검은 프로젝트 파일(git 밖)의 `계획/1.27-AJ-개발계획.md`, 방법 비교와 출처는 `research/1.27-AJ-사진인식-조사.md`.
+
+- **여러 번 읽고 합의(READ-13)** core `imports/PhotoVariants`(회색 화소: 조명 펴기 FLAT·대비 CONTRAST·이진화 BINARY·글자 상자 확대 UP2·반전 INVERT, `plan()`이 사진 통계로 고름), `RosterVote`(칸마다 다수결, 갈린 칸은 노란 칸, 단어는 `anchor` 읽기에서), `pay/SlipVote`(줄마다; 다른 읽기가 하나라도 다르면 노란 줄, 명세서 자기 합계가 **원 단위까지** 맞을 때만(`adds`) 그 줄들을 확실로), `invest/FillVote`(같은 자리 체결끼리 비교, 같은 이름 두 건도 따로). 앱 `ImagePrep.plan/variant`(2400px, UP2는 ≤3600px, 메모리 부족이면 그 방식 건너뜀), `RosterScanner.scan`·`PayslipScanner.scan`이 진행(`n/m번째 방법으로 읽는 중`)을 알려요. 사진은 휴대폰 안에서만(D68).
+- **사진 품질(READ-14)** core `PhotoQuality`: 60점 아래면 "다시 찍어 주세요"와 까닭 한 줄(`RosterResult.advice`, `ScanButtons`).
+- **문서 스캐너(READ-15)** `imports/DocScanner.ScannerButton` "스캐너로 반듯하게 찍기": `play-services-mlkit-document-scanner:16.0.0`(FULL, JPEG, 1장, 갤러리 가져오기 허용). 화면·모델은 Play 서비스가 받고 앱 권한은 늘지 않아요. 못 쓰는 휴대폰은 `DocScanner.UNAVAILABLE` 안내. 한 달 근무 넣기·첫 설정 듀티표·명세서·체결 캡처. 출시 빌드 APK 8.58MB·AAB 22.27MB(예산 안).
+- **사진과 같은가요(READ-17·18)** 듀티표 `ui/imports/SameAsPhoto`(사진의 날짜 줄·내 줄을 잘라 읽은 칸과 날짜마다 맞춰 나란히, '네, 같아요'·'다른 곳이 있어요' → 누른 칸만 `CellDialog`), `DutyRosterViewModel.sameAsPhoto/askSameAgain`, `SetupViewModel.rosterSame/fixRosterDay`. 명세서 `ui/pay/PayslipCheck`(`PhotoThumb` 눌러 크게, `SlipCheck`, `SlipLineDialog` 종류·금액 고치기·줄 더하기·빼기). 확실하지 않은 명세서는 답하기 전 채우기가 막혀요.
+- **고친 것 배우기(READ-19)** core `RosterLearn.word`(모르는 글자·추측한 칸만), `SlipNames`(줄 이름 → 종류, 금액은 배우지 않음). 앱 `data/ReadFixBook`(설정 파일 `read_fixes`, `SettingsFilesBackup.PARTS`로 백업): 같은 글자를 같은 근무로 2번(`RosterLearn.TIMES`) 고치면 `DutyCodeBook`에.
+- **규칙만으로 급여(PAYS-16~18)** `SlipRules.infer`가 명세서 없이 규칙만으로도 결과(`withSlip=false`), `PayslipFillDialog(rulesOnly = true)` "규칙으로 계산하기". core `RuleOnlyNeeds`(기본급·시수·근무 시각·수당 금액·5인 이상 중 비었거나 추정인 값) → `ui/pay/RuleNeedsCard` "이것만 넣으면 정확해져요"(값마다 '넣기', 시수·5인·근무 시각 창), 달력 요약 줄 "n개만 넣으면 정확해져요"(`MonthSummaryBar.payNeeds`). 기존 골든 그대로.
+- **맞춰 보기 자리·이름(PAYS-19·20)** 급여 합계 바로 아래 `SlipMatchCard` "명세서와 맞춰 보기": '금액 비교하기'(프로)·'계산 방식 찾기'(무료). 회사 규칙 카드에는 '처음부터 설정'만. 급여 내역 줄 풀이(`LineDetailDialog`)에 '이 값 고치기'(기본급·수당)·'계산 방식 고치기'(가산 줄).
+- **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
+- 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
