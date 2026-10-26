@@ -651,6 +651,16 @@ internal object HelpFaq {
             listOf("급여"),
             "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
         ),
+        // ---- 1.28 통합 [FLAG-39] 진단 › 기능 상태 ----
+        HelpTopic(
+            "flagState", "기능 상태", "결제·광고나 새 기능은 언제 켜지나요? 왜 아직 꺼져 있나요?",
+            "설정 › 알람 › 알람 점검의 ‘기능 상태’에서 기능마다 지금 켜졌는지, 왜 그런지, 남은 조건(날짜·처리방침 동의·관리자 확인)을 봐요. " +
+                "조건을 모두 채우면 인터넷이 없어도 그날 저절로 켜지고, 문제가 생기면 관리자가 잠시 끌 수 있어요. " +
+                "이 목록은 휴대폰에서만 보고, ‘사용 통계 더 보내기’에 따로 동의한 경우에만 켜진 기능 이름을 보내요.",
+            listOf("기능 상태", "언제 켜져", "왜 꺼져", "아직 꺼져", "결제 언제", "광고 언제", "대기 중", "남은 조건", "켜진 기능", "시간 단위 연차"),
+            listOf("알람 점검", "진단"),
+            "기능 상태 열기" to HelpAction.Go(SettingsGo.DIAGNOSTICS),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
