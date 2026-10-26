@@ -498,6 +498,16 @@ shift-calendar-app/
 - **한 번 묻고 저절로 나누기** `company/AutoShare`: 근무 주기·급여 저장(`ShiftsViewModel`, `PayViewModel.saveSetup`, 기본 달력만)에서 회사를 알면 한 번 물어요(`AutoShareHost`/`AutoShareDialog`, `AppRoot`). 예 → 바로 보내고 그 회사 화면으로. 그 뒤 바뀌면 `autoDirty` → `OutboxJob.scheduleShare`(같은 JobService, ID 4404, 지난 보낸 때 + 24시간 최소 지연), 시작할 때 도는 일은 없어요. 끄기: 설정 › 개인정보·앱 정보 `AUTO_SHARE_ROW`. 키 `auto_share`·`auto_dirty`·`auto_sent_at`·`member`는 휴대폰에만(`SettingsFilesBackup.DEVICE_ONLY`, 새 휴대폰에서 다시 물음).
 - 시험: 서버 `test/plaza-af.test.mjs`, core `PlazaRoomTest`, 앱 `company/PlazaAFAppTest`(실제 node 서버와 끝에서 끝), 사진 `AFScreenshotTest` 1060~1069. 관리자 앱: 회사 목록 "참여 n", 회사 화면 "참여한 휴대폰 n대", 규칙 카드 "안정".
 
+### 6-21. 회사 정보 광장·유형별 광장·명세서 근거·바뀔 때마다 묻기 (1.27.0 묶음 AI, PLAZA-30~37)
+
+계획과 결정(AI-D1~D11)은 프로젝트 파일(git 밖)의 `계획/1.27-AI-개발계획.md`. 처리방침 초안도 그 6장에 있어요.
+
+- **명세서 근거(441)** core `SlipProof.of(PayProfile.verified, 이번 달)`: 이 달력에서 맞춰 본 달(13개월 안)과 맞았는지만. `PayslipCheck.source`(`match` 맞춰 보기 0.5%·`rules` 회사 방식 맞추기 1%)는 급여 파일에 있어 백업돼요. `PayViewModel.applySlipRules`도 기록해요. 앱 `CompanyClient(proof = …)`가 체크에 `proof {month, match}`만 붙이고 근거가 없으면 체크를 보내지 않아요. 제보 화면 체크는 근거가 있을 때만 켜지고, 없으면 '명세서로 맞춰 보기'(급여 화면 맞춰 보기를 바로 열어요, `AppContainer.pendingMatch`). 맞아요 시트도 같아요. 서버 `readProof`: 근거 없는 체크(옛 앱)는 보통 제보·투표로 세고 `claim`으로 남겨요(관리자 앱 "명세서 확인(근거 없음)").
+- **회사 정보 광장(443)** 기존 토론 표 `posts`에 `grp = 'room'`(새 표 없음). `GET /api/companies/:id/setups/room/posts`는 참여한 휴대폰만(403 member, 400 device, 하루 읽기 상한은 `viewer()` 그대로), 최근 100개. 쓰기 `POST /api/posts {setup:"room"}` → `roomPost`: 하루 10개·네트워크 30개, 금액·개인정보 거절, 신고 3번 가림·차단·관리자 가림은 기존 그대로. 관리자 앱 글 목록 '회사·유형 광장' 거르기. 광장 소식 `room_posts`(참여한 회사에 남이 쓴 새 글 수). 앱: `Routes.COMPANY_BOARD`가 나눠요. 참여한 회사가 있으면 `PlazaHomeScreen`(자유 토의 카드 + `TalkSheet`, 근무·급여 정보, 고친 점), 없으면 기존 규칙 광장(맨 위 '회사 찾기' 카드). 전체 규칙 광장은 `Routes.COMPANY_BOARD_ALL`. '이 설정 쓰기'가 끝나면 그 회사 정보 광장을 한 줄 안내와 바로 열어요(`AppContainer.pendingPlazaNote`). 달력 알림 줄 `plazaRoom`(PlazaRoomLine), 급여 화면 `PlazaEntryLine`도 정보 광장으로.
+- **유형별 광장(444)** core `StylePlaza.plan(style, company)`: 현장 `style-field`(일당 시세 + 현장 이야기), 가게 `style-shop`(영업·매출 팁), 알바 `style-hourly`(지역 시급 + 알바 이야기), 투자 `style-invest`(종목 추천·리딩 글은 서버 `INVEST_ADVICE`가 거절, 신고 사유 `advice`). 유형 광장은 앱이 있는 휴대폰 누구나(공개 읽기 상한). 교대·일근은 회사가 없으면 규칙 광장 그대로.
+- **바뀔 때마다 묻기(445)** `AutoShare.check()`: 광장 파일(금액 없음)을 `CompanyStore.autoBase`(마지막으로 나누거나 물은 것, 휴대폰에만)와 core `ChangeAsk`로 견줘 같으면 아무것도 안 해요. `auto_share` null = 바뀔 때마다 묻기(기본, 줄 '야간 50% → 60%'), true = 저절로 나누기(하루 한 번 규칙 그대로, 스낵바 '나눴어요 · 되돌리기', 대기 중이면 대기만 취소, 보낸 것은 거둬요), false = 다시 묻지 않기. 묻는 창: 나눌게요(바로 보냄)·이번엔 안 할게요·'다음부터 묻지 않고 저절로 나누기'·'다시 묻지 않기'. 설정 스위치 `AUTO_SHARE_ROW`는 켬 = 저절로, 끔 = 묻기. 공개 근무주기 카드가 아직 올리기 전이면 묻지 않아요(한 번만 묻기). 제보·적용 뒤 base를 새로 잡아요.
+- 시험: 서버 `test/ai.test.mjs`, core `PlazaAITest`, 앱 `company/PlazaAIAppTest`(실제 node 서버), `PlazaAFAppTest` 셋째 시험(새 뜻), 사진 `AIScreenshotTest` 1120~1138(1122~1126은 실제 node 서버로 달력 카드 → 올리기 → 보내기 → 광장 보기 → 정보 광장).
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

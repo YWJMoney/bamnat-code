@@ -457,7 +457,9 @@ class PayViewModel(
 
     /** [PAYS-14] Keeps the rules a payslip pointed to; one tap on 되돌리기 brings the old ones back. */
     fun applySlipRules(result: com.bamnat.core.pay.SlipRulesResult) = update { p ->
-        result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames))
+        result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames),
+            // [PLAZA-30] 1.27 AI: the month it was checked against is what a 명세서 tick rests on (close or not, SlipProof says).
+            verified = com.bamnat.core.pay.PayslipCheck(result.month, result.gross, result.total, Today.millis(), com.bamnat.core.pay.SlipProof.RULES))
     }
 
     // ---- [PAYS-07] the company's own items ----

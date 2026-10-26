@@ -30,6 +30,8 @@ object StylePlaza {
         val alsoRoom: String? = null,
     )
 
+    /** The server's setup id of a room's talk (grp 'room'). */
+    const val ROOM = "room"
     const val FIELD = "style-field"
     const val SHOP = "style-shop"
     const val HOURLY = "style-hourly"

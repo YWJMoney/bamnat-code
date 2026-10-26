@@ -423,6 +423,11 @@ class CompanyClient(
     private val hidden: () -> String? = { null },
     /** [PLAZA-08] The install id for X-Device on a company's page, so a member gets its pay ways (결정 D79). */
     private val device: () -> String? = { null },
+    /**
+     * [PLAZA-30] 1.27 AI: what a 명세서 tick rests on, this calendar's matched month ([com.bamnat.core.pay.SlipProof]). A tick
+     * goes only with a month that matched, and with just the month and yes or no (결정 D68, AI-D3).
+     */
+    private val proof: () -> com.bamnat.core.pay.SlipProof? = { null },
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
@@ -721,7 +726,8 @@ class CompanyClient(
         job: String, region: String, topic: Boolean, cal: String = "", auto: Boolean = false): ReportStatus = serverCall {
         val body = JSONObject()
             .put("v", 1).put("device", device).put("company", company.trim()).put("dept", dept.trim())
-            .put("verified", verified).put("note", note.trim()).put("setup", setup)
+            .put("note", note.trim()).put("setup", setup)
+        proofOf(verified, body)
         if (ask) body.put("ask", true)
         if (job.isNotEmpty()) body.put("job", job)
         if (region.isNotEmpty()) body.put("region", region)
@@ -762,12 +768,19 @@ class CompanyClient(
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?): VoteResult =
         serverCall {
             val body = JSONObject().put("device", device).put("company", company).put("setup", setup).put("ok", ok)
-            if (ok && verified) body.put("verified", true)
+            if (ok) proofOf(verified, body) else body.put("verified", false)
             if (!ok && why != null) body.put("why", why)
             val o = request("POST", "/api/votes", body)
             VoteResult(o.optInt("points"), o.optInt("persons"), o.optInt("bad"), o.optInt("threshold", 3), o.optString("status") == "adopted",
                 o.optInt("trust"), o.optInt("agree"))
         }
+
+    /** [PLAZA-30] 1.27 AI: a tick goes with its matched month, or not at all; never a bare tick. */
+    private fun proofOf(verified: Boolean, body: JSONObject) {
+        val p = if (verified) proof()?.takeIf { it.counts } else null
+        body.put("verified", p != null)
+        if (p != null) body.put("proof", JSONObject().put("month", p.month.toString()).put("match", p.match))
+    }
 
     private fun status(o: JSONObject): ReportStatus {
         val c = o.getJSONObject("company")

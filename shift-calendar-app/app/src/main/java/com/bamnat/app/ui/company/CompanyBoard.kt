@@ -98,6 +98,8 @@ fun CompanyBoardScreen(
     onShare: () -> Unit,
     /** [PLZ-14] 임금표. */
     onRates: (() -> Unit)? = null,
+    /** [PLAZA-32] 1.27 AI: 회사 찾기, for a phone in no company yet: choosing one opens its 정보 광장. */
+    onFind: (() -> Unit)? = null,
 ) {
     val adopted by vm.adopted.collectAsStateWithLifecycle()
     val voting by vm.voting.collectAsStateWithLifecycle()
@@ -144,6 +146,16 @@ fun CompanyBoardScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
+                if (onFind != null) item {
+                    SoftCard(highlighted = true) {
+                        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("회사를 고르면 그 회사 분들끼리 이야기하는 ‘회사 정보 광장’이 열려요", style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f))
+                            TextButton(onClick = onFind) { Text("회사 찾기") }
+                        }
+                    }
+                }
                 item {
                     PrimaryTabRow(selectedTabIndex = if (adopted) 1 else 0) {
                         Tab(selected = !adopted, onClick = { vm.pick(false) }, text = { Text("투표 중") })
@@ -342,8 +354,10 @@ fun TalkSheet(holder: TalkHolder) {
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     ModalBottomSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
-            Text("토론", style = MaterialTheme.typography.titleLarge)
+            // [PLAZA-32] 1.27 AI: a room's talk is free talk under its own name.
+            Text(if (o.room) "자유 토의" else "토론", style = MaterialTheme.typography.titleLarge)
             Text(o.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            o.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp)) }
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 8.dp)) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
@@ -355,7 +369,7 @@ fun TalkSheet(holder: TalkHolder) {
                 when {
                     talk == null && o.error != null -> Text(o.error, style = MaterialTheme.typography.bodyMedium)
                     talk == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
-                    talk.posts.isEmpty() -> Text("아직 글이 없어요. 이 규칙이 맞는지, 다른 점이 있는지 처음 적어 주세요.",
+                    talk.posts.isEmpty() -> Text(if (o.room) "아직 글이 없어요. 처음 이야기를 꺼내 주세요." else "아직 글이 없어요. 이 규칙이 맞는지, 다른 점이 있는지 처음 적어 주세요.",
                         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
                     else -> {
                         // [PLZ-05] Answers sit under the post they answer.
@@ -397,7 +411,8 @@ fun TalkSheet(holder: TalkHolder) {
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
                 if (replyTo == null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
-                        listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안").forEach { (k, label) ->
+                        // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
+                        (if (o.room) listOf("talk" to "의견", "question" to "질문") else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")).forEach { (k, label) ->
                             com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
                         }
                     }
@@ -425,7 +440,7 @@ fun TalkSheet(holder: TalkHolder) {
                             replyTo != null -> "답글을 적어 주세요"
                             kind == "question" -> "궁금한 점을 적어 주세요"
                             kind == "proposal" -> "왜 바꿔야 하는지 한두 줄로 적어 주세요"
-                            else -> "이 규칙에 대해 적어 주세요"
+                            else -> o.hint ?: "이 규칙에 대해 적어 주세요"
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
@@ -462,7 +477,9 @@ fun TalkSheet(holder: TalkHolder) {
             title = { Text("이 글을 신고할까요?") },
             text = {
                 Column {
-                    listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보").forEach { (key, label) ->
+                    // [PLAZA-33] 1.27 AI: 투자 이야기 takes no 종목 추천·리딩 (결정 AI-D8).
+                    (listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보") +
+                        listOfNotNull(("advice" to "종목 추천·리딩").takeIf { o.company == com.bamnat.core.plaza.StylePlaza.INVEST })).forEach { (key, label) ->
                         Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { reason = key }.padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = reason == key, onClick = { reason = key })

@@ -10,6 +10,13 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.27.0 (통합이 다른 묶음 줄과 합쳐요).
+        Release(38, "1.27.0", listOf(
+            // AI 1.27 [PLAZA-32][PLAZA-34] (계획/1.27-AI-개발계획.md 443·445).
+            Line("회사 설정을 쓰면 광장이 ‘우리 회사 정보 광장’이 돼요. 같은 회사 분들끼리 이야기하고, 근무·급여를 바꾸면 ‘야간 50% → 60%’처럼 바뀐 것을 나눌지 물어요", "plaza.info"),
+            // AI 1.27 [PLAZA-30][PLAZA-33] (441·444).
+            Line("현장·가게·알바·투자는 각자 광장이 생겼어요. ‘명세서와 맞춰 봤어요’는 명세서로 맞춰 본 기록이 있을 때만 고를 수 있어요", "plaza.styles"),
+        )),
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.

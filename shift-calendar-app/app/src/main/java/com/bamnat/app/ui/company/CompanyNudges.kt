@@ -109,7 +109,7 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
     when (val open = sheet) {
         null -> Unit
         else -> if (open.second) {
-            RightSheet(open.first, onDismiss = { sheet = null }) { verified, done ->
+            RightSheet(open.first, proof = remember { vm.hasProof() }, onDismiss = { sheet = null }) { verified, done ->
                 vm.vote(true, verified) { ok ->
                     done(ok)
                     if (ok) {
@@ -222,7 +222,7 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
 /** 맞았어요: checked against a payslip counts double [COMM-03]. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RightSheet(a: AppliedSetup, onDismiss: () -> Unit, onVote: (Boolean, (Boolean) -> Unit) -> Unit) {
+private fun RightSheet(a: AppliedSetup, proof: Boolean = true, onDismiss: () -> Unit, onVote: (Boolean, (Boolean) -> Unit) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
@@ -235,7 +235,9 @@ private fun RightSheet(a: AppliedSetup, onDismiss: () -> Unit, onVote: (Boolean,
                 failed = false
                 onVote(verified) { ok -> busy = false; failed = !ok }
             }
-            ChoiceRow("급여 명세서와 맞춰 봤어요", "2점 · 가장 믿을 수 있어요", enabled = !busy) { send(true) }
+            // [PLAZA-30] 1.27 AI: only with a month this calendar matched against a payslip.
+            ChoiceRow("급여 명세서와 맞춰 봤어요", if (proof) "2점 · 가장 믿을 수 있어요" else "급여 화면에서 명세서로 맞춰 본 뒤 고를 수 있어요",
+                enabled = !busy && proof) { send(true) }
             ChoiceRow("근무표와 대충 맞아요", "1점", enabled = !busy) { send(false) }
             if (busy) CircularProgressIndicator(Modifier.size(22.dp).align(Alignment.CenterHorizontally), strokeWidth = 2.dp)
             if (failed) Text(companyProblem("offline"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)

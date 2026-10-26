@@ -147,6 +147,8 @@ class SettingsFilesBackup(
             "company:auto_dirty" to "저절로 나눌 바뀐 것이 남았는지, 이 휴대폰의 보내기 대기",
             "company:auto_sent_at" to "저절로 나눈 마지막 때, 하루 한 번을 세는 이 휴대폰의 것",
             "company:member" to "참여한 회사는 이 휴대폰의 설치 번호로 서버에 있어요",
+            // [PLAZA-34] 1.27 AI (결정 AI-D9): what was shared last, held against a change; asked again on a new phone.
+            "company:auto_base" to "광장에 마지막으로 나누거나 물은 설정(금액 없음), 바뀐 것을 견주는 이 휴대폰의 것",
             "inquiry" to "문의 기록은 이 휴대폰의 설치 번호로 열려요",
             "commute" to "출퇴근 장소의 지도 위 좌표는 다니는 파일에 넣지 않아요",
             "auto_backup" to "자동 백업 폴더와 열쇠(비밀값)",

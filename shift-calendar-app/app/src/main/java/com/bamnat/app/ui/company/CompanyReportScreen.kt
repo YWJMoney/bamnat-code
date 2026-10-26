@@ -87,6 +87,8 @@ fun CompanyReportScreen(
     onOpenSent: () -> Unit,
     /** [SPAT-05] The company's plaza page, opened after a setup from a public row went up. */
     onOpenCompany: (String) -> Unit = {},
+    /** [PLAZA-30] 1.27 AI: the main pay screen with 명세서로 맞춰 보기 open; null leaves the shortcut out. */
+    onMatch: (() -> Unit)? = null,
 ) {
     val sending by vm.sending.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
@@ -94,8 +96,12 @@ fun CompanyReportScreen(
     val fix = vm.start?.fix == true
     var company by rememberSaveable { mutableStateOf(vm.start?.company.orEmpty()) }
     var dept by rememberSaveable { mutableStateOf(vm.start?.dept.orEmpty()) }
-    val payslipMonth = vm.payslipMonth
-    var verified by rememberSaveable { mutableStateOf(payslipMonth != null) }
+    // [PLAZA-30] 1.27 AI: the tick only with a month this calendar matched; it follows a match done from here.
+    val payProfile by vm.payProfile.collectAsStateWithLifecycle()
+    val proof = remember(payProfile) { vm.proof(payProfile) }
+    val canTick = proof?.counts == true
+    var ticked by rememberSaveable { mutableStateOf(true) }
+    val verified = canTick && ticked
     var note by rememberSaveable { mutableStateOf(vm.startNote) }
     val cycleOnly by vm.cycleOnly.collectAsStateWithLifecycle()
     val public = vm.publicUse
@@ -120,7 +126,8 @@ fun CompanyReportScreen(
                 val s = sending
                 if (sent && s is CompanyReportViewModel.Sending.Sent) {
                     SentPanel(s.status, onDone = onDone, onOpenSent = onOpenSent,
-                        onOpenCompany = if (public != null && s.status.companyId.isNotEmpty()) ({ onOpenCompany(s.status.companyId) }) else null)
+                        // [PLAZA-30] 1.27 AI (442): every company report opens its plaza page, not only one from a public row.
+                        onOpenCompany = if (!topic && s.status.companyId.isNotEmpty()) ({ onOpenCompany(s.status.companyId) }) else null)
                 } else {
                     Column(
                         Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -154,17 +161,20 @@ fun CompanyReportScreen(
                         WhatGoes(preview)
                         Row(
                             Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
-                                .clickable(role = Role.Checkbox) { verified = !verified }.padding(vertical = 4.dp),
+                                .clickable(enabled = canTick, role = Role.Checkbox) { ticked = !ticked }.padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Checkbox(checked = verified, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+                            Checkbox(checked = verified, onCheckedChange = null, enabled = canTick, modifier = Modifier.padding(horizontal = 8.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("급여 명세서와 맞춰 봤어요", style = MaterialTheme.typography.bodyLarge)
-                                Text((payslipMonth?.let { "${it.monthValue}월 명세서로 맞춰 본 기록이 있어요. " } ?: "") + "명세서로 확인한 설정은 2점이라 더 빨리 채택돼요",
+                                Text("급여 명세서와 맞춰 봤어요", style = MaterialTheme.typography.bodyLarge,
+                                    color = if (canTick) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(com.bamnat.core.pay.SlipProof.words(proof),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
+                        if (!canTick && onMatch != null) androidx.compose.material3.TextButton(onClick = { vm.askMatch(); onMatch() },
+                            modifier = Modifier.padding(start = 40.dp)) { Text("명세서로 맞춰 보기") }
                         OutlinedTextField(
                             value = note, onValueChange = { note = it.take(500) },
                             label = { Text("동료에게 한마디 (선택)") },
