@@ -5254,6 +5254,8 @@ async function badges(env, actor, now) {
   for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
   if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
+  // 통합: AM의 기능 관리 대기 수를 /overview와 같은 이름 flagsWaiting으로 여기에 넣어요(AM의 flagOverview·FLAG_STORE_SQL로,
+  // can(actor, "flags") || can(actor, "ops")일 때만). 앱의 출시 › 기능 관리 배지(L.TABS.flags.badge)가 o.flagsWaiting을 읽어요.
   if (kept.size >= BADGES.maxKept) kept.clear();
   kept.set(key, { at: now, epoch, data });
   return data;
