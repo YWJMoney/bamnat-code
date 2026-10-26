@@ -146,6 +146,8 @@ fun PayScreen(
     onHelp: (() -> Unit)? = null,
     /** [SPAT-04] A public cycle just put in, for the first pay setup to start from. */
     fromCycle: Pair<com.bamnat.core.plaza.PublicCycle, String>? = null,
+    /** [PLAZA-30] 1.27 AI: opened from the plaza form's 명세서로 맞춰 보기, so the match opens at once. */
+    startMatching: Boolean = false,
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -252,7 +254,7 @@ fun PayScreen(
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
                 else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top,
-                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave)
+                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, startMatching = startMatching)
             }
         }
     }
@@ -272,6 +274,7 @@ private fun PayResult(
     onReport: ((String) -> Unit)? = null,
     onShareWay: (() -> Unit)? = null,
     onOpenLeave: () -> Unit = {},
+    startMatching: Boolean = false,
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
@@ -311,6 +314,8 @@ private fun PayResult(
     var raiseTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var importing by remember { mutableStateOf(false) }
     var matching by remember { mutableStateOf(false) }
+    // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 from the plaza form opens the match once, as its button here would.
+    androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() } }
     var slipRules by remember { mutableStateOf(false) }
     var plazaAsk by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }

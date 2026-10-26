@@ -285,7 +285,9 @@ async function route(request, env) {
  */
 const PUBLIC_PER_HOUR = 600;
 const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/history$/,
-  /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/];
+  /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/,
+  // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
+  /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
 const publicReads = new Map();
 
 async function publicAllowed(request, env, path) {
@@ -329,6 +331,9 @@ async function routeOnce(request, env, url) {
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
   if (path === "/api/board" && method === "GET") return json(await board(env, url));
+  // AI 1.27 [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work: the same talk, grp 'room'.
+  m = path.match(ROOM_PATH);
+  if (m && method === "GET") return talk(request, env, m[1], ROOM);
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/posts$/);
   if (m && method === "GET") return talk(request, env, m[1], m[2]);
   if (path === "/api/posts" && method === "POST") return post(request, env);
@@ -576,6 +581,12 @@ const COLUMNS = [
   "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   // X 1.25 끝
+  // AI 1.27 시작
+  // [PLAZA-30] What a 명세서 tick rested on ("2026-09|match" or "2026-09|gap"), and an older app's tick with nothing behind it.
+  "ALTER TABLE reports ADD COLUMN proof TEXT",
+  "ALTER TABLE reports ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE votes ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
+  // AI 1.27 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -1097,7 +1108,10 @@ export function readReport(body) {
     const why = personal(text);
     if (why) refuse(why, field);
   }
-  return { company, dept, deptNorm: normName(dept), verified: body.verified, note, setup, ask, job, region, topic, amends };
+  // AI 1.27 [PLAZA-30]: 명세서와 맞춰 봤어요 counts only with the month the phone matched and whether it matched.
+  const proof = readProof(body.proof);
+  return { company, dept, deptNorm: normName(dept), verified: body.verified && proofCounts(proof), claim: body.verified && !proof, proof, note, setup, ask,
+    job, region, topic, amends };
 }
 
 // ---- 직군별 광장 [PLZ-12][PLZ-13][PLZ-14] ----
@@ -1672,6 +1686,111 @@ function roomNews(env, dev, since) {
 }
 // AF 1.26 끝
 
+// AI 1.27 시작
+// ---- [PLAZA-30] 명세서와 맞춰 봤어요, with what it rests on ----
+//
+// The app ticks it only when this calendar matched a pay slip (결정 AI-D1~D4): the month and whether the month the app worked
+// out came within the match's tolerance. No amount, no total and no photo comes with it (D68). An older app's tick has
+// nothing behind it, so it counts as a plain report or 맞았어요 and is kept as a claim the developer can see.
+
+const PROOF_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+const PROOF_MONTHS = 13;
+
+/** The proof an app sent, or null; a malformed one is refused, as anything else malformed is. */
+export function readProof(raw, now = Date.now()) {
+  if (!given(raw)) return null;
+  object(raw, "proof");
+  const m = typeof raw.month === "string" ? raw.month.match(PROOF_MONTH) : null;
+  if (!m || typeof raw.match !== "boolean") refuse("proof", "proof");
+  const d = new Date(now + 9 * HOUR);
+  const back = (d.getUTCFullYear() - Number(m[1])) * 12 + (d.getUTCMonth() + 1 - Number(m[2]));
+  if (back < 0 || back > PROOF_MONTHS) refuse("proof", "proof");
+  return { month: raw.month, match: raw.match };
+}
+
+/** Whether [proof] makes a 명세서 tick count: a month that matched. */
+export const proofCounts = (proof) => Boolean(proof?.match);
+
+const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : "gap"}` : null);
+
+// ---- [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work ----
+//
+// The talk of a company's people among themselves, and of the kinds of work with no company (현장, 가게, 알바, 투자), in the
+// posts table that rule talks use (결정 AI-D5): grp 'room', so 신고 3번 가림, the developer's 가리기·지우기·30일 막기,
+// 이 사람 글 안 보기, 내 것 지우기 and 광장 소식 are the same. A company's room is for the phones that joined it (AI-D6),
+// counted like its pay reads; a kind's room for any phone with the app, held to the public reads an hour (AI-D7).
+
+export const ROOM = "room";
+export const STYLE_ROOMS = { "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
+const ROOM_LIMITS = { perDay: 10, perNetworkDay: 30, shown: 100 };
+/** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
+const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
+export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:field|shop|hourly|invest))\/setups\/room\/posts$/;
+
+/** The place of a room: a company (not hidden) or a kind of work's plaza; null when there is none. */
+async function roomPlace(env, id) {
+  if (Object.hasOwn(STYLE_ROOMS, id)) return { id, name: STYLE_ROOMS[id], style: true };
+  const c = await follow(env, id);
+  return !c || c.hidden || c.kind === "topic" ? null : c;
+}
+
+/** Who may read [place]'s room: a company's members (their reads counted as viewer() counts them), anyone with the app for a kind's plaza. */
+async function roomViewer(request, env, place) {
+  if (place.style) {
+    const id = deviceId(request.headers.get("x-device"));
+    return id ? { dev: await deviceHash(id), member: true } : { dev: null, member: false };
+  }
+  return viewer(request, env, place.id);
+}
+
+/** A post in a room: the same words as any post (no amounts, contacts or names), a reply under the same room's post. */
+async function roomPost(request, env, body) {
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (typeof body.company !== "string") refuse("company", "company");
+  const place = await roomPlace(env, body.company);
+  if (!place) return json({ error: "not_found" }, 404);
+  const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
+  if (text.length < 2) refuse("body", "body");
+  const why = personal(text);
+  if (why) refuse(why, "body");
+  if (place.id === "style-invest" && INVEST_ADVICE.test(text)) refuse("invest_advice", "body");
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  if (!place.style && !(await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0", dev, place.id))) {
+    return json({ error: "member" }, 403);
+  }
+  const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
+  if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  const net = await network(request, env, now);
+  if (!(await allow(env, `room|${dev}`, ROOM_LIMITS.perDay, DAY, now)) ||
+      !(await allow(env, `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  let parent = null;
+  if (given(body.parent)) {
+    const top = typeof body.parent === "string" ? await one(env, "SELECT id, parent FROM posts WHERE id = ? AND company_id = ? AND grp = ?",
+      body.parent, place.id, ROOM) : null;
+    if (!top) refuse("parent", "parent");
+    parent = top.parent ?? top.id;
+  }
+  const kind = given(body.kind) ? oneOf(body.kind, ["talk", "question"], "kind") : "talk";
+  const id = `p${randomId(15)}`;
+  await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
+      parent, kind, change, report_id, agree, disagree)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0)`, id, place.id, ROOM, dev, text, now, parent, kind);
+  return json({ id, at: iso(now) }, 201);
+}
+
+/** [PLAZA-35] 광장 소식: new posts in the rooms of the companies this phone joined, not its own, once a day in the digest. */
+function roomPostNews(env, dev, since) {
+  return stmt(env, `SELECT m.company_id, c.name, COUNT(*) AS n, MAX(p.created_at) AS at FROM members m
+      JOIN posts p ON p.company_id = m.company_id AND p.grp = 'room' AND p.status = 'shown' AND p.device != m.device AND p.created_at > ?2
+      JOIN companies c ON c.id = m.company_id
+    WHERE m.device = ?1 AND m.left = 0 GROUP BY m.company_id ORDER BY at DESC LIMIT 10`, dev, since);
+}
+// AI 1.27 끝
+
 
 async function state(env, companyId, grp, threshold, adopted) {
   const s = await score(env, companyId, grp);
@@ -1766,6 +1885,8 @@ async function report(request, env) {
       // [PLZ-02] Only a change of the rule in use counts as one.
       !adopted && active && r.amends === active.id ? active.id : null),
   ]);
+  // AI 1.27 [PLAZA-30] What the 명세서 tick rested on: the month and whether it matched, or an older app's bare claim.
+  if (r.proof || r.claim) await run(env, "UPDATE reports SET proof = ?, claim = ? WHERE id = ?", proofText(r.proof), r.claim ? 1 : 0, id);
   if (!adopted) await settle(env, c.id, grp, now);
   const reward = await newInfo(env, c, r, id, dev, now);
   const view = await reportView(env, id);
@@ -2097,7 +2218,9 @@ async function vote(request, env) {
   if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
   if (typeof body.ok !== "boolean") refuse("ok", "ok");
   const why = body.ok ? null : ["wrong", "name", "old"].includes(body.why) ? body.why : "wrong";
-  const verified = body.ok && body.verified === true;
+  // AI 1.27 [PLAZA-30] A pay-slip 맞았어요 needs the month the phone matched; an older app's bare one counts as a plain 맞았어요.
+  const proof = readProof(body.proof);
+  const verified = body.ok && body.verified === true && proofCounts(proof);
   const now = Date.now();
   const net = await network(request, env, now);
   if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
@@ -2113,6 +2236,7 @@ async function vote(request, env) {
   await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (company_id, grp, device) DO UPDATE SET cluster = excluded.cluster, ok = excluded.ok, verified = excluded.verified,
       why = excluded.why, net = excluded.net, at = excluded.at`, c.id, grp, dev, cluster, body.ok ? 1 : 0, verified ? 1 : 0, why, net.now, now);
+  await run(env, "UPDATE votes SET claim = ? WHERE company_id = ? AND grp = ? AND device = ?", body.ok && body.verified === true && !proof ? 1 : 0, c.id, grp, dev);
   if (body.ok && !rule) await settle(env, c.id, grp, now);
   const adopted = rule ?? (await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp));
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
@@ -2126,6 +2250,8 @@ const FLAGS = {
   personal: "개인 정보가 있어요",
   spam: "광고·도배",
   false: "일부러 틀린 정보",
+  // AI 1.27 [PLAZA-33] 투자 이야기: a 종목 추천 or 리딩 (결정 AI-D8).
+  advice: "종목 추천·리딩",
 };
 
 /** Why the developer hid a post, as its writer's app shows it. */
@@ -2134,6 +2260,8 @@ const HIDE_REASONS = {
   personal: "개인 정보가 있어요",
   spam: "광고나 도배예요",
   offtopic: "이 규칙과 상관없는 글이에요",
+  // AI 1.27 [PLAZA-33]
+  advice: "종목 추천이나 리딩 글이에요",
   flags: "신고가 모여 개발자가 확인하고 있어요",
 };
 
@@ -2201,6 +2329,8 @@ async function board(env, url) {
  * older version a newer one replaced, whose talk stays readable as part of the rule's history ([PLZ-04]).
  */
 async function talkable(env, companyId, grp, past = false) {
+  // AI 1.27 [PLAZA-32] A room is there as long as its company (or kind of work) is.
+  if (grp === ROOM) return roomPlace(env, companyId);
   const c = await follow(env, companyId);
   if (!c || c.hidden) return null;
   const live = await one(env, `SELECT
@@ -2220,9 +2350,16 @@ async function talk(request, env, companyId, grp) {
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
   // [PLAZA-08] A proposal's lines about pay are for the company's members (결정 D79, AF-D6); its shift lines are for all.
-  const member = (await viewer(request, env, c.id)).member;
+  // AI 1.27 [PLAZA-32] A company's room is only for its members; a kind's plaza for any phone with the app (AI-D6·D7).
+  const room = grp === ROOM;
+  const who = room ? await roomViewer(request, env, c) : await viewer(request, env, c.id);
+  if (room && !who.member) return json({ error: who.limited ? "rate_limited" : who.dev ? "member" : "device" }, who.limited ? 429 : who.dev ? 403 : 400);
+  const member = who.member;
   const lines = (change) => (member ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
-  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
+  const rows = room
+    ? await all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
+        ORDER BY created_at, r`, c.id, grp)
+    : await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const key = await authorKey(env);
   const hidden = await hiddenAuthors(key, request.headers.get("x-hide"));
@@ -2296,17 +2433,21 @@ async function talk(request, env, companyId, grp) {
   }
   const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
   // [COMM-11] How many more posts today, so the app can say so before a refusal.
-  const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `post|${me}`, Date.now()) : null;
+  const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${room ? "room" : "post"}|${me}`, Date.now()) : null;
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
-  const past = !(await talkable(env, c.id, grp));
-  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, LIMITS.postsPerDay - (used?.count ?? 0)) } } : {}) });
+  const past = !room && !(await talkable(env, c.id, grp));
+  const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
+    ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, perDay - (used?.count ?? 0)) } } : {}) });
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
 async function post(request, env) {
   if (await paused(env, "PLAZA_WRITE")) return json({ error: "paused" }, 503);
   const body = await readJson(request, LIMITS.reportBytes + 4096);
+  // AI 1.27 [PLAZA-32][PLAZA-33] A post in a company's or a kind of work's room.
+  if (body?.setup === ROOM) return roomPost(request, env, body);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
@@ -2444,7 +2585,7 @@ async function postVote(request, env, id) {
         await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (company_id, grp, device) DO UPDATE SET cluster = excluded.cluster, ok = excluded.ok, verified = excluded.verified,
             why = excluded.why, net = excluded.net, at = excluded.at`, r.company_id, r.grp, dev, cluster, body.ok ? 1 : 0,
-        body.ok && body.verified === true ? 1 : 0, body.ok ? null : "wrong", net.now, now);
+        body.ok && body.verified === true && proofCounts(readProof(body.proof)) ? 1 : 0, body.ok ? null : "wrong", net.now, now);
         if (body.ok && r.status === "pending") await settle(env, r.company_id, r.grp, now);
       }
     }
@@ -5016,7 +5157,8 @@ async function queue(env) {
       blocked: (Boolean(why) || s.networks < 2 || s.persons * 100 < adoptAgree * (s.persons + s.bad)) && s.persons >= 2 && s.points >= adoptPoints,
       turnedDown: why === "withdrawn" || why === "rejected" ? why : null,
       replaces: active ? { id: active.id, version: active.version } : null,
-      reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
+      // AI 1.27 [PLAZA-30] claim: an older app's 명세서 tick with nothing behind it, counted as a plain report.
+      reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, ...(r.claim === 1 ? { claim: true } : {}), note: r.note, at: iso(r.created_at) })),
       lines,
       changes: active ? diffLines(describe(JSON.parse(active.setup)), lines) : null,
     });
@@ -5435,21 +5577,23 @@ async function rateTo(env, actor, id, status, now) {
  * six letters of the install's hash, enough to see the same writer again and nothing more.
  */
 async function postList(env, url) {
-  const status = ["flagged", "hidden", "all"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
+  const status = ["flagged", "hidden", "all", "room"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
   const company = url.searchParams.get("company");
   const grp = url.searchParams.get("setup");
-  const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
+  // AI 1.27 [PLAZA-32] One room whole too: a company's (its id) or a kind of work's (style-…), setup "room".
+  const one_talk = company && (/^[A-Za-z0-9]{12}$/.test(company) || Object.hasOwn(STYLE_ROOMS, company)) && grp && (/^[0-9a-f]{16}$/.test(grp) || grp === ROOM);
+  const only = status === "room" ? "AND p.grp = 'room'" : "";
   const pg = page(url.searchParams);
   const like = companyLike(url.searchParams.get("q"));
   const rows = one_talk
-    ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+    ? await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
         WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at, p.rowid LIMIT 500`, company, grp)
     : status === "flagged"
-      ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+      ? await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') AND (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\')
           ORDER BY p.flags DESC, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
-      : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-          WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""}
+      : await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+          WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""} ${only}
           ORDER BY p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after);
   // [ADMIN-16] One talk comes whole; the lists come a page at a time.
   const next = one_talk ? null : sqlPage(rows, pg).next;
@@ -5481,8 +5625,9 @@ async function postList(env, url) {
     const muted = mutedUntil.has(p.device) ? { until: mutedUntil.get(p.device) } : null;
     out.push({
       id: p.id,
-      company: { id: p.company_id, name: p.name },
+      company: { id: p.company_id, name: p.name ?? STYLE_ROOMS[p.company_id] ?? p.company_id },
       setup: p.grp,
+      ...(p.grp === ROOM ? { room: Object.hasOwn(STYLE_ROOMS, p.company_id) ? "style" : "company" } : {}),
       dept: depts.get(key) ?? "",
       body: p.body,
       writer: p.device.slice(0, 6),
@@ -7330,7 +7475,7 @@ async function digest(request, env, url) {
 }
 
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms] = (await batch(env, [
+  const [changed, adopted, rates, results, rooms, roomPosts] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -7346,6 +7491,7 @@ async function newsItems(env, dev, since, now) {
     stmt(env, `SELECT x.kind, x.result, x.post_id, x.company_id, c.name, x.at FROM plaza_results x LEFT JOIN companies c ON c.id = x.company_id
       WHERE x.device = ? AND x.at > ? AND x.at <= ? ORDER BY x.at DESC LIMIT 20`, dev, since, now),
     roomNews(env, dev, since),
+    roomPostNews(env, dev, since),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -7356,6 +7502,8 @@ async function newsItems(env, dev, since, now) {
       ...(r.company_id ? { company: { id: r.company_id, name: r.name ?? "" } } : {}), at: iso(r.at) })),
     // [PLAZA-09] Something new in a company this phone joined: n other versions to look at.
     ...rooms.map((r) => ({ kind: "room", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
+    // AI 1.27 [PLAZA-35] New posts in 회사 정보 광장, n of them in one line.
+    ...roomPosts.map((r) => ({ kind: "room_posts", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

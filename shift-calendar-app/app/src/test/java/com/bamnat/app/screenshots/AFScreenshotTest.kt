@@ -141,7 +141,8 @@ class AFScreenshotTest : ScreenshotBase() {
         assertTrue(shows("(주)예시정밀 광장에 고쳐 올려요", exact = false))
         tapText("회사 광장에 저절로 나누기", exact = true)
         settle()
-        assertEquals(false, c.companyStore.autoShare.value)
+        // [PLAZA-34] 1.27 AI: off is 바꿀 때마다 묻기 again, not never.
+        assertNull(c.companyStore.autoShare.value)
         assertFalse(c.autoShare.waiting)
     }
 
@@ -235,7 +236,9 @@ class AFScreenshotTest : ScreenshotBase() {
         assertTrue(shows("회사 광장에 나눌까요?", exact = true))
         assertTrue(shows("같은 회사 사람들이 쓰게 근무 순서·계산 방식(금액·이름 빼고)을 나눌까요?", exact = true))
         assertEquals(1, c.autoShare.ask.value?.rewardMonths)
-        assertTrue(shows("나누지 않을래요", exact = true))
+        // [PLAZA-34] 1.27 AI: 이번엔 안 할게요 · 다시 묻지 않기 in place of the one no.
+        assertTrue(shows("이번엔 안 할게요", exact = true))
+        reveal("다시 묻지 않기", exact = true)
         assertNull(c.companyStore.autoShare.value)
     }
     @Test fun yesSharesAndOpensTheCompany() = shoot("1069_af_ask_yes", FOLDED) {
@@ -246,7 +249,8 @@ class AFScreenshotTest : ScreenshotBase() {
         assertTrue(shows("처음 알려 주는 급여 방식이면 프로 1개월을 드려요.", exact = true))
         tapText("나눌게요", exact = true)
         repeat(100) { if (opened == null) { Thread.sleep(20); settle() } }
-        assertEquals(true, c.companyStore.autoShare.value)
+        // [PLAZA-34] 1.27 AI: one yes is for this time; the next change asks again with what changed.
+        assertNull(c.companyStore.autoShare.value)
         assertEquals(1, m.autoSent)
         assertEquals("c1", opened)
         // Where yes leads: the company's 광장, as a member.

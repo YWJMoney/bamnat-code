@@ -133,6 +133,9 @@ export function adminLib() {
     trade: "직종 이름을 다시 확인해 주세요",
     until: "끝 날짜는 시작보다 뒤, 오늘 이후, 90일 안으로 정해 주세요",
     verified: "확인 여부를 다시 골라 주세요",
+    // AI 1.27 [PLAZA-30][PLAZA-33]
+    proof: "명세서로 맞춘 달을 다시 확인해 주세요",
+    invest_advice: "종목 추천·리딩·수익 보장 글은 올릴 수 없어요",
     version: "앱 버전을 다시 확인해 주세요",
     weak_password: "더 다양한 글자로 비밀번호를 만들어 주세요. 메일 주소와 같으면 안 돼요",
     withdrawn: "이미 내린 규칙이에요",

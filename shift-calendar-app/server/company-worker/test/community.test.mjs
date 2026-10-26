@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { trust, prune } from "../src/index.js";
-import { server, report, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, report, device, from, signIn, ORIGIN, slipProof } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -84,7 +84,7 @@ test("anyone can talk about a rule set; each writer is 참여자 N of that talk 
   // The sender, someone who agrees, someone who does not.
   // 3 points but only 67% agree: it stays up for a vote instead of being adopted on its own.
   await call("POST", "/api/votes", { device: device(3), company: c, setup: g, ok: false, why: "old" }, from(3));
-  const v = await call("POST", "/api/votes", { device: device(2), company: c, setup: g, ok: true, verified: true }, from(2));
+  const v = await call("POST", "/api/votes", { device: device(2), company: c, setup: g, ok: true, verified: true, proof: slipProof() }, from(2));
   assert.deepEqual([v.data.status, v.data.points, v.data.agree], ["pending", 3, 67]);
   assert.equal((await say(1, "저희 2팀은 이렇게 돌아요")).status, 201);
   assert.equal((await say(2, "명세서랑 맞춰 봤는데 맞아요")).status, 201);

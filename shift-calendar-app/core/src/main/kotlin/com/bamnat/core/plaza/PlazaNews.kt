@@ -50,6 +50,8 @@ object PlazaNews {
             "unmuted" -> "글쓰기 제한이 끝났어요. 다시 글을 쓸 수 있어요."
             // [PLAZA-09] 결정 D79: members hear of changes until the company's setup settles.
             "room" -> "${i.company ?: "참여한 회사"} 광장에 다르게 쓰는 판이 ${i.count.coerceAtLeast(1)}개 올라왔어요. 눌러서 바뀐 값만 봐요."
+            // [PLAZA-35] AI 1.27: new posts in 회사 정보 광장, n of them in one line a day.
+            "room_posts" -> "${i.company ?: "참여한 회사"} 정보 광장에 새 글이 ${i.count.coerceAtLeast(1)}개 올라왔어요."
             else -> null
         }
     }

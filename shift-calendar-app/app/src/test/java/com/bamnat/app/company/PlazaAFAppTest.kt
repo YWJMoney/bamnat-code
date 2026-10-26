@@ -164,38 +164,60 @@ class PlazaAFAppTest {
         c.scheduleRepository.setFirstPattern(WorkPattern.Rotation(today, listOf(t.first { it.name == "주간" }.id, null), today), today)
         c.companyStore.setApplied(null)
         c.companyStore.setDraft(CompanyDraft("자동나눔상사", "총무팀"))
+        c.companyStore.setAutoShare(null)
+        c.companyStore.autoBase = null
+        c.payStore.save(PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(today, 3_000_000))),
+            rules = CompanyRules(nightPremium = 0.5)), keepUndo = false)
         val before = c.companyApi
         withServer { base ->
             try {
                 c.companyApi = CompanyClient(base, device = { c.companyStore.device })
-                // Asked once, the first time a cycle or pay way is saved for a known company.
+                // [PLAZA-34] 1.27 AI: the first save for a known company asks about the whole setup.
                 assertNull(c.companyStore.autoShare.value)
                 assertTrue(c.autoShare.saved())
                 val ask = withTimeout(10_000) { while (c.autoShare.ask.value == null) delay(20); c.autoShare.ask.value!! }
                 assertEquals("자동나눔상사", ask.company)
                 assertEquals(1, ask.rewardMonths)
-                // 나눌게요: remembered, sent now, the company's 광장 opens.
-                c.autoShare.approve()
+                assertTrue(ask.first)
+                // 나눌게요 with 다음부터 묻지 않고 저절로 나누기: remembered, sent now, the company's 광장 opens.
+                c.autoShare.approve(always = true)
                 val opened = withTimeout(15_000) { while (c.autoShare.opened.value == null) delay(20); c.autoShare.opened.value!! }
+                c.autoShare.openedDone()
                 assertEquals(true, c.companyStore.autoShare.value)
                 assertEquals(opened, c.companyApi.search("자동나눔상사").single().id)
                 assertEquals(opened, c.companyStore.member.value?.first)
                 assertFalse(c.companyStore.autoDirty)
-                // The next change waits for its day: flushing sends nothing yet and keeps it waiting.
-                assertFalse(c.autoShare.saved())
+                // The same values saved again: nothing waits and nothing is said.
+                c.autoShare.check()
+                assertFalse(c.autoShare.waiting)
+                assertNull(c.autoShare.shared.value)
+                // A real change waits for its day, with one line and 되돌리기; flushing sends nothing yet.
+                c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false)
+                c.autoShare.check()
                 assertTrue(c.autoShare.waiting)
+                val line = c.autoShare.shared.value!!
+                assertTrue(line.queued)
+                assertEquals("야간 50% → 60%", line.line)
                 assertTrue(c.autoShare.flush())
                 assertTrue(c.autoShare.waiting)
                 assertTrue(OutboxJob.waiting(c) >= 1)
-                // 설정's switch stops it.
+                // 되돌리기 takes it off the queue.
+                c.autoShare.undo()
+                assertFalse(c.autoShare.waiting)
+                // 설정's switch off asks again each time; 다시 묻지 않기 stops it.
+                c.autoShare.set(null)
+                assertTrue(c.autoShare.saved())
                 c.autoShare.set(false)
                 assertFalse(c.autoShare.waiting)
                 assertFalse(c.autoShare.saved())
-                assertNull(c.autoShare.ask.value)
             } finally {
                 c.companyApi = before
                 c.companyStore.setDraft(null)
                 c.companyStore.setMember(null)
+                c.companyStore.setAutoShare(null)
+                c.companyStore.autoBase = null
+                c.autoShare.sharedDone()
+                c.payStore.save(null)
             }
         }
     }

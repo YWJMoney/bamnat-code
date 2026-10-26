@@ -184,7 +184,9 @@ class CompanyAppTest {
      */
     @Test fun theServerTakesWhatTheAppSends() = withServer { base ->
         // [PLAZA-08] 1.26 (결정 D79): the sender joined by sending, so it reads the pay way back.
-        val api = CompanyClient(base, device = { "app-test-device-0001" })
+        // [PLAZA-30] 1.27 AI: the 명세서 tick goes with a matched month, or not at all.
+        val api = CompanyClient(base, device = { "app-test-device-0001" },
+            proof = { com.bamnat.core.pay.SlipProof(java.time.YearMonth.now().minusMonths(1), true, com.bamnat.core.pay.SlipProof.MATCH) })
         val share = CompanyShare(senderSetup(), store, settings, today = { today })
         val sent = api.report("app-test-device-0001", "(주)예시정밀", "생산 2팀", true, "야간 가산은 22시부터예요", share.exportForServer())
         assertEquals("pending", sent.status)

@@ -1072,6 +1072,11 @@ fun CalendarScreen(
                     onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) },
                     onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) })
             })
+            // [PLAZA-32] 1.27 AI (443): a joined company's 정보 광장, one line from the calendar.
+            if (paint == null && viewingReceived == null && activeCalendar.id == com.bamnat.app.data.PersonalCalendar.MAIN) add(Notice("plazaRoom", "회사 정보 광장") {
+                com.bamnat.app.ui.company.PlazaRoomLine(Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    onOpen = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PLAZA) })
+            })
             // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
             if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
             // [SRV-04] The developer's notice, one line, only while it runs.

@@ -350,9 +350,12 @@ object PayCodec {
     /** [PAYS-02] The last month matched against a payslip. */
     private fun verified(v: PayslipCheck): JSONObject = JSONObject()
         .put("month", v.month.toString()).put("gross", v.gross).put("appTotal", v.appTotal).put("atMillis", v.atMillis)
+        // [PLAZA-30] 1.27 AI: how it was matched, for the 명세서 tick (a file before 1.27 reads as 맞춰 보기).
+        .put("source", v.source)
 
     private fun verifiedFrom(o: JSONObject): PayslipCheck? = runCatching {
-        PayslipCheck(YearMonth.parse(o.getString("month")), o.getLong("gross"), o.getLong("appTotal"), o.optLong("atMillis"))
+        PayslipCheck(YearMonth.parse(o.getString("month")), o.getLong("gross"), o.getLong("appTotal"), o.optLong("atMillis"),
+            o.optString("source").takeIf { it == com.bamnat.core.pay.SlipProof.RULES } ?: com.bamnat.core.pay.SlipProof.MATCH)
     }.getOrNull()
 
     /** [PAYX-15] Pay period and pay day; values out of range fall back to the calendar month. */

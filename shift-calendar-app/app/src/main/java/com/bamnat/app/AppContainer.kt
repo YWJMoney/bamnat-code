@@ -207,7 +207,16 @@ class AppContainer(context: Context) {
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
-        device = { companyStore.device })
+        device = { companyStore.device },
+        // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
+        proof = { slipProof() })
+    /** [PLAZA-32] 1.27 AI: the one line the company's 정보 광장 shows first after 이 설정 쓰기 (in memory, once). */
+    var pendingPlazaNote: String? = null
+    /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
+    var pendingMatch: Boolean = false
+    /** [PLAZA-30] 1.27 AI: what a 명세서 tick on the plaza rests on now; null for none. */
+    fun slipProof(): com.bamnat.core.pay.SlipProof? =
+        com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
