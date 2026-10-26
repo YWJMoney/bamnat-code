@@ -201,6 +201,8 @@ class PayViewModel(
         if (before == null || after == null || before == after) return
         // A month kept as it was ([closeMonth]) does not move.
         if ((after.verified ?: before.verified)?.month in closed.value) return
+        // A change that sets the payslip match itself (1.27 AI: 명세서 → 회사 규칙) has nothing matched before it to move.
+        if (after.verified != null && after.verified != before.verified) return
         val snap = snapshot.value ?: scope.schedule.snapshot.first()
         val prompt = withContext(Dispatchers.Default) {
             val total = { p: PayProfile, m: YearMonth ->
