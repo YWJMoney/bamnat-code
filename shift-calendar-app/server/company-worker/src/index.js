@@ -5774,6 +5774,8 @@ const INVITE = {
   usesPerHour: 10,
   usesPerDevice: 5,
   seenPerDay: 30,
+  // AG 1.27: more friends of one code than this from one network in an hour are noted (not refused).
+  burstPerHour: 2,
   package: "com.bamnat.app",
 };
 /** [INVITE-08] What the developer app may set, and the settings rows they are kept in. */
@@ -5821,6 +5823,16 @@ export function storeLink(code) {
   return `https://play.google.com/store/apps/details?id=${INVITE.package}&referrer=${encodeURIComponent(referrer)}`;
 }
 
+/**
+ * AG 1.27 [INVITE-13] The Play app itself by an Android intent link, the referrer kept as on the web link, and the web
+ * link when the Play app is missing (Chrome's intent: links; 확인 필요 for each messenger's own browser).
+ */
+export function playIntent(code, store = storeLink(code)) {
+  const referrer = encodeURIComponent(`utm_source=bamnat_invite&utm_content=${code}`);
+  return `intent://details?id=${INVITE.package}&referrer=${referrer}#Intent;scheme=market;package=com.android.vending;` +
+    `S.browser_fallback_url=${encodeURIComponent(store)};end`;
+}
+
 /** Why a reward was given, as the app names it. */
 const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
 
@@ -5835,17 +5847,22 @@ function invitePage(raw) {
   const code = inviteCodeOf(raw);
   if (!code) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   const store = storeLink(code);
+  // AG 1.27 [INVITE-13] A messenger's own browser (카카오톡, 네이버, 인스타그램, 페이스북, 라인) may open the Play web page,
+  // where an install can lose the referrer: there the Play app is opened straight, with the web page to fall back to.
+  const app = playIntent(code, store);
   const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>밤낮 초대</title>
 <style>body{font-family:system-ui,sans-serif;margin:0;padding:32px 16px;background:#f6f7fb;color:#1b1d24}main{max-width:420px;margin:auto}
 a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
 code{font-size:1.4em;letter-spacing:.08em}@media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head>
-<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. Play 스토어에서 받아 첫 설정을 마치면 친구에게 알릴 수 있어요.</p>
-<p><a class="b" href="${store}">Play 스토어에서 받기</a></p>
+<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. 이 링크로 Play 스토어에서 받으면 앱이 초대를 저절로 알아보고, 첫 설정 마지막에 친구에게 알릴 수 있어요.</p>
+<p><a class="b" id="go" href="${store}">Play 스토어에서 받기</a></p>
 <p>안드로이드 휴대폰에서 열어 주세요. 링크로 받지 못했다면 설치하고 7일 안에 앱의 설정 › 프로 › ‘초대 코드 넣기’에 <code>${shown}</code>를 넣어 주세요.</p>
 <p><small>이 페이지는 아무것도 저장하지 않아요.</small></p></main>
-<script>if(/Android/i.test(navigator.userAgent))location.replace(${JSON.stringify(store)});</script></body></html>`;
+<script>var u=navigator.userAgent,a=/Android/i.test(u),w=/KAKAOTALK|NAVER|Instagram|FBAN|FBAV|FB_IAB|Line\//i.test(u);
+if(a&&w)document.getElementById("go").href=${JSON.stringify(app)};
+if(a)location.replace(w?${JSON.stringify(app)}:${JSON.stringify(store)});</script></body></html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600", "referrer-policy": "no-referrer" } });
 }
 
@@ -5986,6 +6003,10 @@ async function invites(request, env, path, url) {
     await run(env, `INSERT OR IGNORE INTO invite_uses (invitee, phone, code, inviter, source, first_day, status, reason, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, dev, mark, code, owner.device, body.source, kstDay(now), self ? "refused" : "waiting", self ? "self" : "", now);
     if (self) await audit(env, now, "invite_refused", code, "self");
+    // AG 1.27 [INVITE-10] Many friends of one code from one network in an hour (the hour's hashed network, kept the
+    // hour as the other counters) are let in, as coworkers share a hospital's or a factory's Wi-Fi, and noted with
+    // the code only for the developer app's summary (결정 AG-D5).
+    else if (!(await allow(env, `invitenet|${net.now}|${code}`, INVITE.burstPerHour, HOUR, now))) await audit(env, now, "invite_burst", code, "");
     return json({ status: self ? "refused" : "waiting", reason: self ? "self" : null, days: set.days, daysLeft: self ? null : set.days }, 201);
   }
   if (path === "/api/invites/seen" && method === "POST") {
@@ -6033,7 +6054,7 @@ async function inviteSettingsRoute(request, env, method, now) {
  * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
  */
 async function rewardCounts(env, withInvites, now) {
-  const [rewardRows, counts, refused, top, codes, setRows] = (await batch(env, [
+  const [rewardRows, counts, refused, top, codes, setRows, bursts] = (await batch(env, [
     stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
     stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
     stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
@@ -6041,6 +6062,8 @@ async function rewardCounts(env, withInvites, now) {
       FROM invite_uses WHERE status IN ('credited', 'capped', 'qualified', 'waiting') GROUP BY code ORDER BY friends DESC LIMIT 5`),
     stmt(env, "SELECT COUNT(*) AS n FROM invite_codes"),
     stmt(env, INVITE_SETTINGS_SQL),
+    // AG 1.27 [INVITE-10] 몰림: friends of one code from one network in an hour, the last 30 days.
+    stmt(env, "SELECT target AS code, COUNT(*) AS n FROM audit WHERE action = 'invite_burst' AND at > ? GROUP BY target ORDER BY n DESC LIMIT 5", now - 30 * DAY),
   ])).map((r) => r.results ?? []);
   const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
   return [rewardRows, withInvites ? {
@@ -6048,6 +6071,8 @@ async function rewardCounts(env, withInvites, now) {
     expired: n("expired"), rules: readInviteSettings(setRows),
     refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
     top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),
+    bursts: bursts.reduce((a, b) => a + b.n, 0),
+    burstCodes: bursts.map((b) => ({ code: b.code, n: b.n })),
   } : undefined];
 }
 // AE 1.26 끝

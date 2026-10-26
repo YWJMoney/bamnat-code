@@ -283,3 +283,88 @@ test("the developer app's 보상 screen names invite rewards and sums up invites
   // A raw request without a device is refused, as for passes.
   assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/invites`), { DB: null })).status, 503);
 });
+
+// AG 1.27 시작 [INVITE-09][INVITE-10] 사용자 리뷰 2026-10-25: "7일을 사용한 친구 5명마다 보상 … 5명은 1달 10명 채우면 또 1달 …
+// 중복은 안되고 자기자신도 안돼". The months come for each five different friends who each used the app seven days,
+// never for one friend's days, never twice for one friend or one phone, never for oneself.
+test("each five different friends who each used seven days give one month: 5 → 1, 9 → 1, 10 → 2", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
+  const { call } = server();
+  const c = await code(call);
+  // One friend who keeps using the app for weeks is still one friend: no month for one person's days.
+  await use(call, 10, c);
+  for (let w = 0; w < 4; w++) {
+    t.mock.timers.tick(7 * DAY);
+    await seen(call, 10);
+  }
+  let v = await view(call);
+  assert.deepEqual([v.progress, v.friends, v.given], [1, 1, 0]);
+  // Four more: five friends, one month.
+  for (let n = 11; n < 15; n++) await use(call, n, c);
+  t.mock.timers.tick(7 * DAY);
+  for (let n = 11; n < 15; n++) await seen(call, n);
+  v = await view(call);
+  assert.deepEqual([v.progress, v.friends, v.given], [0, 5, 1]);
+  // Nine: still one month, four toward the next.
+  for (let n = 15; n < 19; n++) await use(call, n, c);
+  t.mock.timers.tick(7 * DAY);
+  for (let n = 15; n < 19; n++) await seen(call, n);
+  v = await view(call);
+  assert.deepEqual([v.progress, v.friends, v.given], [4, 9, 1]);
+  // The same friends opening again, and reporting again, change nothing.
+  for (let n = 10; n < 19; n++) {
+    await seen(call, n);
+    await use(call, n, c);
+  }
+  assert.deepEqual([(await view(call)).progress, (await view(call)).given], [4, 1]);
+  // The tenth: another month.
+  await use(call, 19, c);
+  t.mock.timers.tick(7 * DAY);
+  assert.equal((await seen(call, 19)).data.status, "credited");
+  v = await view(call);
+  assert.deepEqual([v.progress, v.friends, v.given], [0, 10, 2]);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(1))).data.waitingMonths, 2);
+});
+
+test("a friend's phone counts for one inviter once, and the inviter's own phone never", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
+  const { call } = server();
+  const a = await code(call, 1);
+  const b = await code(call, 2);
+  await use(call, 10, a);
+  // The same phone (mark 10) installed again and told with another inviter's code, or the same: not counted again.
+  assert.equal((await use(call, 11, b, { phoneN: 10 })).data.reason, "phone");
+  assert.equal((await use(call, 12, a, { phoneN: 10 })).data.reason, "phone");
+  // Inviter 1 on a second install of its own phone, and inviter 2 typing its own code.
+  assert.equal((await use(call, 13, a, { phoneN: 1, source: "typed" })).data.reason, "self");
+  assert.equal((await use(call, 2, b)).data.reason, "self");
+  t.mock.timers.tick(7 * DAY);
+  for (const n of [10, 11, 12, 13]) await seen(call, n);
+  assert.deepEqual([(await view(call, 1)).progress, (await view(call, 1)).friends], [1, 1]);
+  assert.deepEqual([(await view(call, 2)).progress, (await view(call, 2)).friends], [0, 0]);
+});
+
+test("many friends of one code from one network in an hour are let in and noted for the developer app", async () => {
+  const { call } = server();
+  const c = await code(call);
+  for (let n = 40; n < 45; n++) {
+    const r = await call("POST", "/api/invites/use", { code: c, source: "referrer", phone: mark(n) }, { "x-device": device(n), ...from(77) });
+    assert.equal(r.data.status, "waiting");
+  }
+  const owner = await signIn(call);
+  const r = (await call("GET", "/api/admin/rewards?status=paid", undefined, owner)).data;
+  // From the third friend of the same network in the hour, each is noted, with the code only.
+  assert.equal(r.invites.bursts, 3);
+  assert.deepEqual(r.invites.burstCodes, [{ code: c, n: 3 }]);
+});
+
+test("the invite page opens the Play app straight from a messenger's own browser, keeping the code", async () => {
+  const { call } = server();
+  const page = (await call("GET", "/i/ABCD2345")).text;
+  assert.ok(page.includes("intent://details?id=com.bamnat.app&referrer=utm_source%3Dbamnat_invite%26utm_content%3DABCD2345#Intent;scheme=market;package=com.android.vending;"));
+  assert.match(page, /KAKAOTALK/);
+  assert.match(page, /저절로/);
+  // Still nothing kept, and the plain Play link for every other browser.
+  assert.ok(page.includes(storeLink("ABCD2345")));
+});
+// AG 1.27 끝
