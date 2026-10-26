@@ -8564,10 +8564,12 @@ export async function flagOverview(env, actor, now = Date.now(), given = null) {
   if (!can(actor, "flags")) return {};
   const store = given ?? (await flagStore(env));
   const rows = flagKeys(store).map((k) => flagRow(store, k, now, null));
+  const due = rows.filter((r) => r.reviewDue || r.warnings.length || r.sunsetDue
+    || (r.state === "waiting" && r.checklist.every((c) => c.met !== false || c.type === "manual"))).length;
   return {
     flagAlerts: rows.filter((r) => r.alert && r.state !== "forced_off").map((r) => ({ key: r.key, name: r.name, since: r.onSince, reason: r.reason })),
-    flagsDue: rows.filter((r) => r.reviewDue || r.warnings.length || r.sunsetDue
-      || (r.state === "waiting" && r.checklist.every((c) => c.met !== false || c.type === "manual"))).length,
+    // flagsWaiting: the same number by the name AN's 출시 hub badge reads.
+    flagsDue: due, flagsWaiting: due,
   };
 }
 // AM 1.28 끝
