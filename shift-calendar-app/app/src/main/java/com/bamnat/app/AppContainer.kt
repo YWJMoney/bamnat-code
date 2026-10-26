@@ -211,6 +211,8 @@ class AppContainer(context: Context) {
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
+    /** [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle is picked from a company search. */
+    val leadShare by lazy { com.bamnat.app.company.LeadShare(this) }
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
     val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */

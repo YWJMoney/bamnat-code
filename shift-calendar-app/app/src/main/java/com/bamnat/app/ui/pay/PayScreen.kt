@@ -146,6 +146,8 @@ fun PayScreen(
     onHelp: (() -> Unit)? = null,
     /** [SPAT-04] A public cycle just put in, for the first pay setup to start from. */
     fromCycle: Pair<com.bamnat.core.plaza.PublicCycle, String>? = null,
+    /** [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기 in the easy setup; null leaves it out. */
+    companyFind: (@Composable () -> Unit)? = null,
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -236,6 +238,7 @@ fun PayScreen(
                         onDetailed = { detailedFrom = DetailedStart(it) },
                         onCancel = if (profile != null) ({ editingSetup = false }) else null,
                         fromCycle = fromCycle,
+                        companyFind = companyFind,
                     ) else PayWizard(
                         initial = detailed.from ?: profile,
                         onCancel = { detailedFrom = null },

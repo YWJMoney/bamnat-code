@@ -579,6 +579,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
     com.bamnat.app.ui.company.AutoShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
+    // [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle picked from a company search.
+    com.bamnat.app.ui.company.LeadShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
 
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
@@ -1145,7 +1147,9 @@ private fun AppNavHost(
                 // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
                 onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) },
                 // [SPAT-04] The public cycle in use, for the first pay setup of the main calendar.
-                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } })
+                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } },
+                // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay.
+                companyFind = if (calendar == PersonalCalendar.MAIN) ({ com.bamnat.app.ui.company.PayFindEntry() }) else null)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })

@@ -16,7 +16,38 @@ import java.time.DateTimeException
 import java.time.Instant
 
 /** A company found by name [COMM-01]: how many setups coworkers agreed on and how many are being checked. */
-data class CompanyHit(val id: String, val name: String, val alias: String?, val adopted: Int, val pending: Int)
+data class CompanyHit(
+    val id: String,
+    val name: String,
+    val alias: String?,
+    val adopted: Int,
+    val pending: Int,
+    /** [PLAZA-14] 1.27 AH: phones that use or sent this company's setups ("n명 쓰고 있어요"), its 대표 주기, its 사업장 count. */
+    val users: Int = 0,
+    val lead: LeadLine? = null,
+    val sites: Int = 0,
+)
+
+/**
+ * [PLAZA-14] 1.27 AH-D4: a company's 대표 주기 as the search lists it: the order by shift name (null a day off), the names
+ * that are days off, whether a pay way is there (never its values, D79) and who stands behind it.
+ */
+data class LeadLine(
+    val setup: String,
+    val dept: String,
+    val adopted: Boolean,
+    val steps: List<String?>?,
+    val weekly: List<String?>?,
+    val offs: Set<String>,
+    val pay: Boolean,
+    val ok: Int,
+    val bad: Int,
+    val doubted: Boolean = false,
+    val roster: Boolean = false,
+)
+
+/** [PLAZA-15] 1.27 AH: 맞아요·달라요 on one setup, 달라요 by where (order·time·pay·other), and this phone's own ("ok" or a why). */
+data class Opinion(val ok: Int = 0, val bad: Int = 0, val why: Map<String, Int> = emptyMap(), val mine: String? = null)
 
 /**
  * One setup coworkers shared for a company [COMM-01][COMM-03]: adopted, or still gathering points.
@@ -55,6 +86,10 @@ data class SharedSetup(
     val payHidden: Boolean = false,
     /** [PLAZA-09] 안정: three phones or more on it and nothing else sent or adopted for 30 days. */
     val stable: Boolean = false,
+    /** [PLAZA-14] 1.27 AH: its department's 대표 주기; [doubted] when too many said 달라요 for it to lead (AH-D7). */
+    val lead: Boolean = false,
+    val doubted: Boolean = false,
+    val opinion: Opinion = Opinion(),
 ) {
     val hasPay: Boolean get() = payHidden || runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
 }
@@ -430,9 +465,25 @@ class CompanyClient(
         if (CompanyText.norm(query).length < 2) return@serverCall emptyList()
         val o = request("GET", "/api/companies?q=" + URLEncoder.encode(query.trim().take(40), "UTF-8"))
         o.optJSONArray("companies").objects().map { c ->
-            CompanyHit(c.getString("id"), c.getString("name"), c.optStringOrNull("alias"), c.optInt("adopted"), c.optInt("pending"))
+            CompanyHit(c.getString("id"), c.getString("name"), c.optStringOrNull("alias"), c.optInt("adopted"), c.optInt("pending"),
+                users = c.optInt("users"), lead = c.optJSONObject("lead")?.let(::leadLine), sites = c.optInt("sites"))
         }
     }
+
+    /** [PLAZA-14] The search's 대표 주기 line of a company. */
+    private fun leadLine(l: JSONObject): LeadLine {
+        fun names(key: String) = l.optJSONArray(key)?.let { a -> (0 until a.length()).map { if (a.isNull(it)) null else a.getString(it) } }
+        return LeadLine(l.optString("setup"), l.optString("dept"), l.optBoolean("adopted"), names("steps"), names("weekly"),
+            l.optJSONArray("offs").strings().toSet(), l.optBoolean("pay"), l.optInt("ok"), l.optInt("bad"), l.optBoolean("doubted"),
+            l.optBoolean("roster"))
+    }
+
+    /** [PLAZA-15] 맞아요·달라요 of one setup as the server counts them. */
+    private fun opinion(o: JSONObject?): Opinion = if (o == null) Opinion() else Opinion(
+        o.optInt("ok"), o.optInt("bad"),
+        o.optJSONObject("why")?.let { w -> w.keys().asSequence().associateWith { w.optInt(it) } }.orEmpty(),
+        o.optStringOrNull("mine"),
+    )
 
     /** A company and its setups; one merged into another opens as that one. */
     override suspend fun company(id: String): CompanyPage = serverCall {
@@ -471,6 +522,9 @@ class CompanyClient(
                     support = s.optInt("support"),
                     payHidden = s.optBoolean("payHidden"),
                     stable = s.optBoolean("stable"),
+                    lead = s.optBoolean("lead"),
+                    doubted = s.optBoolean("doubted"),
+                    opinion = opinion(s.optJSONObject("opinion")),
                 )
             },
             member = o.optBoolean("member"),
@@ -758,7 +812,7 @@ class CompanyClient(
         ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"))
     }
 
-    /** 맞았어요 ([ok]) or 달라요 with what was wrong: wrong, old or name. */
+    /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?): VoteResult =
         serverCall {
             val body = JSONObject().put("device", device).put("company", company).put("setup", setup).put("ok", ok)

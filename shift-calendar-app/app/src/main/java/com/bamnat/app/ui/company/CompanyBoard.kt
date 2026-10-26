@@ -286,7 +286,7 @@ fun TrustLine(trust: Int, agree: Int, persons: Int, bad: Int, adopted: Boolean) 
 
 /** 맞았어요 · 달라요 on one setup, for anyone who knows the company; 달라요 asks what is off. */
 @Composable
-fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit) {
+fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com.bamnat.app.company.Opinion? = null) {
     var asking by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         val okText = if (mine == true) "맞았어요 ✓" else "맞았어요"
@@ -296,14 +296,16 @@ fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit) {
         if (mine == false) FilledTonalButton(onClick = { asking = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.ThumbDown, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(badText) }
         else OutlinedButton(onClick = { asking = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.ThumbDown, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(badText) }
     }
+    // [PLAZA-15] 1.27 AH: how others answered, 달라요 by where; one answer per phone, changed by answering again.
+    opinion?.let { o -> opinionLine(o)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
     if (asking) {
-        var why by remember { mutableStateOf("wrong") }
+        var why by remember { mutableStateOf(opinion?.mine?.takeIf { it in WHY_TEXT.keys } ?: "order") }
         AlertDialog(
             onDismissRequest = { asking = false },
             title = { Text("어디가 달라요?") },
             text = {
                 Column {
-                    listOf("wrong" to "근무 시간이나 계산 방식이 달라요", "old" to "예전 정보예요", "name" to "회사나 부서 이름이 달라요").forEach { (key, text) ->
+                    WHY_TEXT.entries.map { it.key to it.value }.forEach { (key, text) ->
                         Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { why = key }.padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = why == key, onClick = { why = key })
@@ -656,4 +658,21 @@ internal fun ago(at: Instant, now: Instant = Today.instant()): String {
         d.toDays() < 7 -> "${d.toDays()}일 전"
         else -> day(at)
     }
+}
+
+/** [PLAZA-15] 1.27 AH-D9: where a 달라요 says it differs; order·time·pay are counted apart for the 대표 (AH-D7). */
+internal val WHY_TEXT = linkedMapOf(
+    "order" to "근무 순서가 달라요",
+    "time" to "근무 시간이 달라요",
+    "pay" to "급여 항목이 달라요",
+    "old" to "예전 정보예요",
+    "name" to "회사나 부서 이름이 달라요",
+)
+
+/** "맞아요 3 · 달라요 2 (순서 1 · 시간 1)", or null before anyone answered. */
+internal fun opinionLine(o: com.bamnat.app.company.Opinion): String? {
+    if (o.ok + o.bad == 0) return null
+    val parts = listOf("order" to "순서", "time" to "시간", "pay" to "급여 항목", "other" to "그 밖")
+        .mapNotNull { (k, label) -> o.why[k]?.takeIf { it > 0 }?.let { "$label $it" } }
+    return "맞아요 ${o.ok} · 달라요 ${o.bad}" + if (parts.isEmpty()) "" else " (${parts.joinToString(" · ")})"
 }

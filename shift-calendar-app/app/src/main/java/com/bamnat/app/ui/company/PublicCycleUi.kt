@@ -247,6 +247,8 @@ fun PublicApplySheet(
     onShare: () -> Unit,
     /** 첫 설정: the order is handed on instead of written; the setup asks today itself. */
     pick: ((String) -> Unit)? = null,
+    /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). */
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
 ) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
@@ -316,8 +318,12 @@ fun PublicApplySheet(
                         busy = true
                         error = null
                         scope.launch {
-                            runCatching { PublicCycleFiles.apply(c, cycle, codes, if (needsToday) today else null) }
-                                .onSuccess { done = true }
+                            runCatching { PublicCycleFiles.apply(c, cycle, codes, if (needsToday) today else null, calendar) }
+                                .onSuccess {
+                                    done = true
+                                    // [PLAZA-14] 1.27 AH: once, "이 정보를 다른 사람이 사용해도 될까요?" (AH-D6).
+                                    c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar))
+                                }
                                 .onFailure { error = "달력에 넣지 못했어요. 한 번 더 눌러 주세요" }
                             busy = false
                         }
