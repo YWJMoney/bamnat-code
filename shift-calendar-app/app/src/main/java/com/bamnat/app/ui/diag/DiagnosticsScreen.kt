@@ -282,6 +282,8 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             "기기: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
             "시간대: ${Today.zone()}",
+            // [PERF-15] 1.28 AO: the last opening's time to the calendar's month, measured on this phone.
+            com.bamnat.app.diag.StartupStats.describe(container.startupStats.last),
         )
         val usage = EventBook.counts(events, now - 30L * 24 * 60 * 60 * 1000).map { (name, n) -> "$name: $n" }
             .ifEmpty { listOf("기록 없음") }

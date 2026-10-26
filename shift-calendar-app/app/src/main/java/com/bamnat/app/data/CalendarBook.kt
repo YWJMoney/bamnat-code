@@ -247,8 +247,15 @@ class CalendarBook(
     /** [MCAL-01] What the calendar tab works on now; a write started here stays with this calendar. */
     fun activeRepository(): ScheduleRepository = repository(_active.value)
 
-    /** [MCAL-01] The schedule on the calendar tab, following each switch. */
-    val activeSnapshot: Flow<ScheduleSnapshot> = _active.flatMapLatest { repository(it).snapshot }
+    /** [MCAL-01] The schedule on the calendar tab, following each switch. [PERF-08] One shared reading per calendar. */
+    val activeSnapshot: Flow<ScheduleSnapshot> = _active.flatMapLatest { repository(it).live }
+
+    /**
+     * [PERF-07] 1.28 AO: [activeSnapshot] for the calendar tab's first drawing: the months around [month] (asked at each
+     * switch, so another calendar also opens on the month on screen) first, then that calendar's whole history.
+     */
+    fun activeSnapshotAround(month: () -> java.time.YearMonth): Flow<ScheduleSnapshot> =
+        _active.flatMapLatest { repository(it).snapshotAround(month()) }
 
     /**
      * [MCAL-01] Every calendar whose alarms ring, with the name an alarm from it is told by; the main
@@ -257,7 +264,7 @@ class CalendarBook(
     val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
         .flatMapLatest { list ->
             if (list.isEmpty()) flowOf(emptyList())
-            else combine(list.map { cal -> repository(cal.id).snapshot.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }
+            else combine(list.map { cal -> repository(cal.id).live.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }
         }
 
     @Synchronized

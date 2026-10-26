@@ -135,11 +135,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.calendars.setActive(id)
     }
 
+    /**
+     * [PERF-07] 1.28 AO: the calendar draws its first month from the months around it (read first) and then the whole
+     * history. Until the whole history is there, a month whose neighbours were not read shows the spinner rather
+     * than days without their changes or wrong totals (a swipe two months away within the first moment).
+     */
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        kotlinx.coroutines.flow.combine(container.calendars.activeSnapshot,
-            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }) { s, p ->
+        kotlinx.coroutines.flow.combine(container.calendars.activeSnapshotAround { container.shownMonth.month.value },
+            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }, container.shownMonth.month) { s, p, m ->
+            if (!s.covers(m.minusMonths(1)) || !s.covers(m.plusMonths(1))) null
             // [HRLY-05] Hours on the calendar take the legal break off, as pay does.
-            if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s
+            else if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     /**
      * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that
@@ -681,8 +687,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    /** The calendar on screen as it is now; read once when nothing on screen holds it yet. */
-    private suspend fun currentSnapshot(): ScheduleSnapshot = snapshot.value ?: container.calendars.activeSnapshot.first()
+    /**
+     * The calendar on screen as it is now; read once when nothing on screen holds it yet. [PERF-07] Only the whole
+     * history: the months read first are for drawing, a write or a range works from every day.
+     */
+    private suspend fun currentSnapshot(): ScheduleSnapshot = snapshot.value?.takeIf { it.isComplete } ?: container.calendars.activeSnapshot.first()
 
     /** [CAL-09] Leave goes on a working day with hours, never on a day off. */
     private fun takesLeave(day: ResolvedDay) = day.leave == null && day.isWorkDay && day.shiftType?.hasTimes == true

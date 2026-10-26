@@ -68,7 +68,9 @@ object RemoteFiles {
     /** True when [signature] (base64 of 64 bytes) is one of [keys]' (base64 of 32 bytes) signature of [bytes]. */
     fun verify(bytes: ByteArray, signature: String, keys: List<String> = RemoteKeys.TRUSTED): Boolean {
         val sig = try { Base64.getDecoder().decode(signature.trim()) } catch (e: IllegalArgumentException) { return false }
-        return keys.any { k -> Ed25519.verify(Base64.getDecoder().decode(k), bytes, sig) }
+        // [PERF-19] 1.28 AO: the newest keys first. Files are signed with the 2026-10-26 key (listed just before its spare), and each
+        // key that does not match costs a whole check (tens of milliseconds on a phone, BigInteger arithmetic).
+        return keys.asReversed().any { k -> Ed25519.verify(Base64.getDecoder().decode(k), bytes, sig) }
     }
 
     /**
@@ -77,10 +79,35 @@ object RemoteFiles {
      */
     fun open(bytes: ByteArray, signature: String, kind: String, appVersion: Int, keys: List<String> = RemoteKeys.TRUSTED): RemoteFile {
         if (!verify(bytes, signature, keys)) throw RemoteFileException("signature")
+        return openChecked(bytes, kind, appVersion)
+    }
+
+    /**
+     * [PERF-19] 1.28 AO: a file whose signature this phone already checked (the same bytes, signature, keys and app;
+     * see the app's RemoteFilesStore): only what it is and which app it is for are looked at again.
+     */
+    fun openChecked(bytes: ByteArray, kind: String, appVersion: Int): RemoteFile {
         val f = parse(bytes)
         if (f.kind != kind) throw RemoteFileException("kind ${f.kind}")
         if (f.minApp > appVersion) throw RemoteFileException("needs app ${f.minApp}")
         return f
+    }
+
+    /**
+     * [PERF-19] What a checked file's mark holds: a SHA-256 over its bytes, its signature, the trusted keys and the app
+     * version, so a changed file, signature, key list (a key dropped in a later app) or app makes the check run again.
+     */
+    fun checkedMark(bytes: ByteArray, signature: String, keys: List<String>, appVersion: Int): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        md.update(bytes)
+        md.update(0)
+        md.update(signature.trim().toByteArray(Charsets.US_ASCII))
+        md.update(0)
+        md.update(keys.joinToString(",").toByteArray(Charsets.US_ASCII))
+        md.update(0)
+        md.update(appVersion.toString().toByteArray(Charsets.US_ASCII))
+        val hex = "0123456789abcdef"
+        return buildString(64) { for (b in md.digest()) append(hex[(b.toInt() shr 4) and 15]).append(hex[b.toInt() and 15]) }
     }
 
     /** The copy built into the app (trusted as part of the signed APK); null only if packaging lost it. */

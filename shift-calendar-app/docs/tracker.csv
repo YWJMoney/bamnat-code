@@ -893,3 +893,16 @@ PAYS-17,"순번 448 '이것만 넣으면 정확해져요': 비었거나 추정�
 PAYS-18,"순번 448 골든: 규칙만(명세서 없음) 달력 근무 → 급여 금액, 기존 골든 사례 그대로",2 (1.27.0),완료,,"RulesOnlyPayTest, PayGoldenCasesTest 그대로 통과"
 PAYS-19,"순번 449 '명세서와 맞춰 보기' 카드를 급여 합계 바로 아래로, 두 길 이름 '금액 비교하기(프로)'·'계산 방식 찾기', 설정 찾기·도움말·기능 목록",2 (1.27.0),완료,,"RuleNeedsCard.SlipMatchCard, PayScreen, FeatureRegistry pay.slipAudit·pay.slipRules, HelpFaq pay·payslipPhotos·photoCheck·rulesOnly, SettingsIndex; AJScreenshotTest 1150, VScreenshotTest"
 PAYS-20,"순번 449 뜬 자리에서 바로 고치기: 급여 내역 줄 풀이에 '이 값 고치기'(기본급·수당)·'계산 방식 고치기'(가산 줄), 명세서 읽은 줄 고치기",2 (1.27.0),완료,,"PayDialogs.LineDetailDialog onFix, RuleNeedsCard.lineFix·RATE_LINES, PayScreen"
+PERF-07,"순번 457 (1.28 AO, 검토 6-1 병목 1) 달력이 보이는 달 ±1달만 먼저 읽어 그리고 전체는 뒤이어 바꿔 끼움; 쓰기·통계·알람·위젯은 전체만",2 (1.28.0),진행 중,,
+PERF-08,"순번 457 같은 근무 일정 전체 읽기를 저장소마다 한 번만(shareIn): 달력·알림·알람·워치가 나눠 씀",2 (1.28.0),진행 중,,
+PERF-09,"순번 457 (병목 3) 화면이 컨테이너 전체를 기다리지 않음: setContent 먼저, 준비 전 스플래시, onCreate·onStart 몫은 준비된 뒤 같은 순서로; StartupTrace 컨테이너 기다림",2 (1.28.0),진행 중,,
+PERF-10,"순번 457 (병목 4) 첫 달 뒤 작업을 세 묶음으로 나눠 메인 스레드가 한가해진 뒤 간격을 두고 시작",2 (1.28.0),진행 중,,
+PERF-11,"순번 457 (병목 5) 달력 첫 구성 가볍게: 화면 아래 카드·광고 자리는 첫 달 뒤, Compose 보고서로 시작 경로 고침",2 (1.28.0),진행 중,,
+PERF-12,"순번 457 AppRoot 첫 결정·스플래시: 빈 프레임 없이",2 (1.28.0),진행 중,,
+PERF-13,"순번 457 (병목 2) androidx.baselineprofile 플러그인, :benchmark 생산자, Gradle 관리 에뮬레이터, 시작 프로필(DEX 배치), 손 규칙 넓힘",2 (1.28.0),진행 중,,
+PERF-14,"순번 457 GitHub Actions workflow_dispatch로 에뮬레이터에서 Baseline Profile 만들어 산출물로",2 (1.28.0),진행 중,,
+PERF-15,"순번 457 시작 시간(컨테이너 기다림·화면·첫 달, 차가운/따뜻한)을 휴대폰에 남기고 진단 화면에 마지막 시작 시간",2 (1.28.0),진행 중,,
+PERF-16,"순번 457 동의한 휴대폰의 사용 통계에 시작 시간(구간, 휴대폰 구별 없음), 처리방침 3.2 플래그 stats.more 뒤",2 (1.28.0),진행 중,,
+PERF-17,"순번 457 회사 서버 /api/events가 시작 시간을 받아 판별 구간으로 셈, /admin/api/metrics에 중앙값·90%",2 (1.28.0),진행 중,,
+PERF-18,"순번 457 관리자 앱 지표 '앱 시작 시간' 카드(판마다 중앙값·90%)",2 (1.28.0),진행 중,,
+PERF-19,"순번 457 그 밖의 시작 경로: 저장된 원격 파일 서명 다시 확인 줄이기(확인 지문, 새 키 먼저), 첫 화면에 안 쓰는 필드 늦게, 메인 스레드 읽기",2 (1.28.0),진행 중,,
