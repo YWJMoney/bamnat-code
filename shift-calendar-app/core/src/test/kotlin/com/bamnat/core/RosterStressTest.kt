@@ -94,4 +94,84 @@ class RosterStressTest {
         org.junit.Assert.assertEquals("clean photos: every cell of every line", 400, cleanPerfect)
         org.junit.Assert.assertEquals("OCR mistakes never go in quietly", 0, silentWrong)
     }
+
+    /**
+     * [READ-16] 1.27 AJ 순번 446: 400 photos read 4 ways each ([PhotoVariants]), every way with its own misreads — a letter
+     * like another (6%), a cell lost (5%), a Korean code read in the other alphabet ("OF" for 야, 3%) — plus 원근(뒤쪽 칸이
+     * 점점 넓어짐) and small print. Put together ([RosterVote]): photos read clean every way are all right, and with misreads no
+     * wrong cell goes in without yellow (조용히 틀린 값 0). Prints how many cells one reading and the put-together get right.
+     */
+    @Test fun fourReadingsPutTogether() {
+        val codes = DutyCodes(types)
+        var cleanPerfect = 0; var cleanCases = 0; var silentWrong = 0; var onceRight = 0; var voteRight = 0; var total = 0
+        repeat(400) { n ->
+            val noise = n % 4 != 0
+            val layout = Random(1000 + n)
+            val setName = codeSets.keys.toList()[n % 4]
+            val set = codeSets.getValue(setName)
+            val days = if (n % 9 == 0) 30 else 31
+            val names = 3 + n % 4
+            val scale = listOf(0.6, 1.0, 1.4)[n / 4 % 3]
+            val bend = if (n % 5 == 0) 0.000012 / scale else 0.0
+            val deg = listOf(0.0, 1.0, -2.0, 3.0)[n / 3 % 4]
+            val truth = (0 until names).associateWith { (1..days).associateWith { layout.nextInt(4) } }
+            val cell = (60 + layout.nextInt(40)) * scale; val rowH = (50 + layout.nextInt(30)) * scale; val h = (26 * scale).toInt()
+            val reads = (0 until 4).map { way ->
+                val r = Random(n * 31 + way)
+                val words = mutableListOf<RosterWord>()
+                val a = Math.toRadians(deg)
+                fun add(t: String, x0: Double, y: Double, w: Int) {
+                    val x = x0 + bend * x0 * x0
+                    val cx = x + w / 2.0 + r.nextInt(-2, 3); val cy = y + h / 2.0 + r.nextInt(-2, 3)
+                    val rx = cx * cos(a) - cy * sin(a) + 400; val ry = cx * sin(a) + cy * cos(a) + 400
+                    words += RosterWord(t, (rx - w / 2).toInt(), (ry - h / 2).toInt(), (rx + w / 2).toInt(), (ry + h / 2).toInt())
+                }
+                val left = 260 * scale
+                add("2026년 10월 근무표", left + 300, 0.0, (260 * scale).toInt())
+                for (d in 1..days) add("$d", left + (d - 1) * cell, 80 * scale, ((if (d < 10) 14 else 26) * scale).toInt())
+                truth.forEach { (i, m) ->
+                    val y = 80 * scale + rowH * (1 + i)
+                    add(listOf("김민지", "이수진", "박하늘", "최유리", "정다은", "한서연")[i], 40.0, y, (70 * scale).toInt())
+                    m.forEach { (d, k) ->
+                        var t = set[k]
+                        if (noise && r.nextInt(100) < 5) return@forEach
+                        if (noise && r.nextInt(100) < 6) t = confuse[t] ?: t
+                        else if (noise && setName != "DEN" && r.nextInt(100) < 3) t = listOf("OF", "D", "N", "O")[r.nextInt(4)]
+                        add(t, left + (d - 1) * cell, y, (max(14, t.length * 14) * scale).toInt())
+                    }
+                }
+                DutyRoster.analyse(words.shuffled(r), codes)
+            }
+            val voted = RosterVote.merge(reads)
+            fun right(row: RosterRow?, d: Int, k: Int): Boolean {
+                val off = k == 3 || setName == "police" && k == 2
+                val want = if (setName == "police" && k == 1) 3L else (k + 1).toLong()
+                return when (val got = row?.cells?.get(d)) {
+                    is DutyCell.Shift -> if (off) got.shiftTypeId == 4L else got.shiftTypeId == want
+                    is DutyCell.Off -> off
+                    else -> false
+                }
+            }
+            var ok = true
+            truth.forEach { (i, m) ->
+                val label = listOf("김민지", "이수진", "박하늘", "최유리", "정다은", "한서연")[i]
+                val once = reads[0].rows.firstOrNull { it.label.contains(label) }
+                val row = voted.rows.firstOrNull { it.label.contains(label) }
+                m.forEach { (d, k) ->
+                    total++
+                    if (right(once, d, k) && (once == null || d !in once.doubtful(days))) onceRight++
+                    val good = right(row, d, k)
+                    if (good && row != null && d !in row.doubtful(days)) voteRight++
+                    if (!good) ok = false
+                    val got = row?.cells?.get(d)
+                    if (!good && got != null && got !is DutyCell.Unknown && d !in row.doubtful(days)) silentWrong++
+                }
+            }
+            if (!noise) { cleanCases++; if (ok) cleanPerfect++ }
+        }
+        println("roster 4-way stress: cells=$total onceSure=$onceRight voteSure=$voteRight silentWrong=$silentWrong clean=$cleanPerfect/$cleanCases")
+        org.junit.Assert.assertEquals("clean photos read 4 ways: every cell", cleanCases, cleanPerfect)
+        org.junit.Assert.assertEquals("misreads never go in quietly after putting together", 0, silentWrong)
+        org.junit.Assert.assertTrue("putting together gets more cells sure than one reading", voteRight > onceRight)
+    }
 }

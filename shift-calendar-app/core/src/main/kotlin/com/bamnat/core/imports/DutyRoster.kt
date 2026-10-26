@@ -576,8 +576,8 @@ object DutyRoster {
         if (label.isBlank()) label.append(rightLabel)
         // [READ-03] A cell far from its column's middle may be the next day's: one to look at.
         val unsure = off.filter { (d, miss) -> miss > 0.3 && d in cells }.keys
-        // [READ-13] 1.27: a line written in 한글 codes (주·야·비·휴) with one Latin word ("OF" for 야, the bench's dim 조 표), or
-        // the other way round, has a misread cell: the word matched a code of the other alphabet. Looked at, never quiet.
+        // [READ-13] 1.27: a line written in 한글 codes (주·야·비·휴) with one Latin word ("OF" for 야, the bench's dim 조 표)
+        // has a misread cell: the word matched a code of the other alphabet. Looked at, never quiet.
         guessed += mixedScript(raws, cells)
         return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }, raws) to fit
     }
@@ -596,7 +596,9 @@ object DutyRoster {
         val judged = raws.filterKeys { d -> cells[d] is DutyCell.Shift || cells[d] == DutyCell.Off }.mapValues { (_, t) -> script(t) }.filterValues { it != null }
         if (judged.size < 5) return emptySet()
         val major = judged.values.groupingBy { it }.eachCount().maxBy { it.value }
-        if (major.value * 10 < judged.size * 6) return emptySet()
+        // Only a 한글 line: OCR turns a blurred 야 into "OF" or "O", never D·E·N into 한글, and a D·E·N roster with 휴·야간
+        // written in is common (DutyRosterTypingTest.doubtfulCells).
+        if (major.key != 'K' || major.value * 10 < judged.size * 6) return emptySet()
         return judged.filterValues { it != major.key }.keys
     }
 
@@ -674,13 +676,15 @@ object DutyRoster {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
             RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
                 parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes },
-                parts.flatMap { it.unsure }.toSet(), line = parts.first().line)
+                parts.flatMap { it.unsure }.toSet(), line = parts.first().line,
+                // [READ-19] 1.27: the words as read, for 고친 것 배우기 (two halves of one person kept them apart).
+                raw = parts.reversed().fold(emptyMap()) { acc, r -> acc + r.raw })
         }
         val blank = rows.filter { it.label.isBlank() }
         // Two blank lines whose days do not overlap are one person's two halves.
         val joined = if (blank.size == 2 && blank[0].cells.keys.intersect(blank[1].cells.keys).isEmpty()) {
             listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap(), blank[0].guessed + blank[1].guessed, blank[0].notes + blank[1].notes,
-                blank[0].unsure + blank[1].unsure, line = blank[0].line))
+                blank[0].unsure + blank[1].unsure, line = blank[0].line, raw = blank[0].raw + blank[1].raw))
         } else blank
         return named + joined
     }
