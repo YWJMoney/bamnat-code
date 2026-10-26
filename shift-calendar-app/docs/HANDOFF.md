@@ -498,6 +498,17 @@ shift-calendar-app/
 - **한 번 묻고 저절로 나누기** `company/AutoShare`: 근무 주기·급여 저장(`ShiftsViewModel`, `PayViewModel.saveSetup`, 기본 달력만)에서 회사를 알면 한 번 물어요(`AutoShareHost`/`AutoShareDialog`, `AppRoot`). 예 → 바로 보내고 그 회사 화면으로. 그 뒤 바뀌면 `autoDirty` → `OutboxJob.scheduleShare`(같은 JobService, ID 4404, 지난 보낸 때 + 24시간 최소 지연), 시작할 때 도는 일은 없어요. 끄기: 설정 › 개인정보·앱 정보 `AUTO_SHARE_ROW`. 키 `auto_share`·`auto_dirty`·`auto_sent_at`·`member`는 휴대폰에만(`SettingsFilesBackup.DEVICE_ONLY`, 새 휴대폰에서 다시 물음).
 - 시험: 서버 `test/plaza-af.test.mjs`, core `PlazaRoomTest`, 앱 `company/PlazaAFAppTest`(실제 node 서버와 끝에서 끝), 사진 `AFScreenshotTest` 1060~1069. 관리자 앱: 회사 목록 "참여 n", 회사 화면 "참여한 휴대폰 n대", 규칙 카드 "안정".
 
+### 6-23. 캡처로 채우기 맞춰 보기·묻지 않기, 메모 찾기·근무 기준 알림 (1.27.0 묶음 AK, INV-42~45·MEMO-03~08)
+
+계획과 결정(AK-D1~D8)은 프로젝트 파일(git 밖)의 `계획/1.27-AK-개발계획.md`, 메모장 비교 조사는 `research/1.27-AK-메모장-조사.md`. DB 판은 그대로(21)예요.
+
+- **맞춰 보기(core)** `invest/FillReconcile.reconcile(fills, trades, alerts, today, zone)`: 캡처 줄마다 SAME(이미 적음: 같은 날·종목·방향·수량, 단가는 `FillMath` 허용 오차, 시각 ±30분 · 나눠 적은 2~4줄 합도 같음) / DIFFERENT(같은 날·종목·방향인데 수량·단가가 다름, 또는 기다리던 알림과 단가가 다름 · 시각만 다르면 같음) / NEW. `sureNew`는 노란 값 없는 NEW, `toAsk`는 DIFFERENT + 노란 NEW. `fixed()`는 수량·단가·분만 바꿔요(메모·태그·수수료는 그대로).
+- **앱 흐름** `FillCaptureSheet`(이제 `InvestScreen`이 띄움, `vm.openCapture`): 이미 있음 n건(보기/접기) · 기록과 다른 체결 나란히(체크하면 캡처대로 고치기) · 아직 안 적은 체결만 체크(노란 칸은 확인 전엔 체크 안 됨). '넣기 n건'은 이제 바로 거래로 적어요(AK-D3, W의 시험도 바꿈). `InvestRepository.applyCapture`/`undoCapture` + 스낵바 '되돌리기'.
+- **묻지 않기** `invest_settings` 키 `fillTrust`(InvestBackup으로 백업). 켜지면 `sureNew`는 열자마자 넣고 "넣었어요 n건 · 되돌리기", 다름·노란 값은 계속 물어요(AK-D4). 다시 묻기: 시트의 '다시 묻기', 투자 탭 ⋮ 메뉴, 도움말 `investCaptureTrust`.
+- **메모 찾기** core `memo/MemoSearch`: 낱말마다 제목·내용·태그 앞부분·초성(ㅇㄱ)·날짜(오늘·어제·10/19·10월 19일)·그날 근무 이름을 봐요. `Cache`는 `updatedAtMillis`가 같으면 색인을 다시 만들지 않아요. 카드 본문은 `excerpt`(찾은 낱말 둘레 600자)라 5만 자 메모도 가벼워요. 달력 메모의 '근무별' 줄 칩('야간 날').
+- **근무 기준 알림** core `memo/ShiftMemoTime`: "다음 야간 때"·"쉬는 날" 글에서 다음 그 근무 출근 1시간 전(시간 없는 근무 08:00, 쉬는 날 09:00)을 제안, 알람 창 '근무에 맞춰' 칩. 알림은 절대 시각이라 근무표를 바꿔도 따라가지 않아요(AK-D6). 편집기의 '지난 주간(10/9) 메모 n개 보기'(`lastSame`).
+- 시험: core `FillReconcileTest`(8)·`MemoSearchTest`(10, 1,000개 색인 성능 포함), 앱 `invest/AKCaptureFlowTest`(지어낸 OCR 글자로 끝에서 끝), 사진 `AKScreenshotTest` 1160~1173(1173은 메모 1,000개·5만 자 10개 목록·찾기 1초 안).
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

@@ -164,6 +164,13 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
         }
     }
     sheet?.let { s -> InvestSheetHost(vm, s) { sheet = it } }
+    // [INV-40][INV-45] 체결 내역 캡처로 채우기: from the found trades, the ⋮ menu, or a screenshot shared from the gallery.
+    val capturing by vm.capturing.collectAsStateWithLifecycle()
+    val alerts by vm.alerts.collectAsStateWithLifecycle()
+    val shot by com.bamnat.app.invest.IncomingFills.shot.collectAsStateWithLifecycle()
+    var sharedShot by remember { mutableStateOf<android.net.Uri?>(null) }
+    LaunchedEffect(shot) { com.bamnat.app.invest.IncomingFills.take()?.let { sharedShot = it; vm.openCapture() } }
+    if (capturing) FillCaptureSheet(vm, alerts, sharedShot, onDismiss = { vm.closeCapture(); sharedShot = null })
 }
 
 /** Saved and deleted, with 되돌리기, on the screen's snackbar. */
@@ -198,6 +205,11 @@ private fun InvestHeader(vm: InvestViewModel, state: InvestState, open: (InvestS
                 val auto by vm.alertAuto.collectAsStateWithLifecycle()
                 DropdownMenuItem(text = { Text(if (auto) "체결 알림 바로 적기 끄기" else "체결 알림 오면 바로 적기") },
                     onClick = { menu = false; vm.setAlertAuto(!auto) })
+                // [INV-45][INV-44] 1.27 AK: the capture from anywhere, and 묻지 않기 turned back.
+                DropdownMenuItem(text = { Text("체결 내역 캡처로 채우기") }, onClick = { menu = false; vm.openCapture() })
+                val trust by vm.fillTrust.collectAsStateWithLifecycle()
+                DropdownMenuItem(text = { Text(if (trust) "캡처로 채우기: 넣기 전에 다시 묻기" else "캡처로 채우기: 묻지 않고 바로 넣기") },
+                    onClick = { menu = false; vm.setFillTrust(!trust) })
                 CsvKind.entries.forEach { k ->
                     DropdownMenuItem(text = { Text("${k.label} CSV로 내보내기") }, onClick = { menu = false; onCsv(k) })
                 }

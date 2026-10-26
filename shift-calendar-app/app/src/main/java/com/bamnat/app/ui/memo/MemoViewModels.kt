@@ -79,6 +79,9 @@ data class MemoListState(
     val notebook: com.bamnat.core.memo.MemoNotebook = com.bamnat.core.memo.MemoNotebook.CALENDAR,
     val calendars: List<com.bamnat.app.data.PersonalCalendar> = emptyList(),
     val activeCalendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    /** [MEMO-03] 1.27 AK: the shifts worked on days with a calendar memo (for '야간 날' chips), and the one chosen. */
+    val shifts: List<String> = emptyList(),
+    val shift: String? = null,
 ) {
     val manyCalendars: Boolean get() = calendars.size > 1
     val activeName: String get() = calendars.firstOrNull { it.id == activeCalendar }?.name ?: com.bamnat.app.data.PersonalCalendar.MAIN_NAME
@@ -87,7 +90,7 @@ data class MemoListState(
         get() = if (tab == MemoTab.CALENDAR) upcoming.sumOf { it.memos.size } + past.sumOf { it.memos.size } else general.size
     val filtering: Boolean
         get() = query.isNotBlank() || tag != null ||
-            (if (tab == MemoTab.CALENDAR) calendarFilter != CalendarFilter.ALL else generalFilter != GeneralFilter.ALL)
+            (if (tab == MemoTab.CALENDAR) calendarFilter != CalendarFilter.ALL || shift != null else generalFilter != GeneralFilter.ALL)
 }
 
 private data class MemoQuery(
@@ -97,6 +100,8 @@ private data class MemoQuery(
     val generalFilter: GeneralFilter = GeneralFilter.ALL,
     val sort: MemoSort = MemoSort.UPDATED,
     val tag: String? = null,
+    /** [MEMO-03] Only the memos of days with this shift. */
+    val shift: String? = null,
 )
 
 class MemoListViewModel(private val container: AppContainer) : ViewModel() {
@@ -104,6 +109,8 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     private val q = MutableStateFlow(MemoQuery())
     private val selection = MutableStateFlow<Set<Long>>(emptySet())
     private var visibleIds: Set<Long> = emptySet()
+    /** [MEMO-03][MEMO-04] 1.27 AK: each memo's search text, made once per saved version. */
+    private val searchCache = com.bamnat.core.memo.MemoSearch.Cache()
 
     private data class Where(
         val notebook: com.bamnat.core.memo.MemoNotebook,
@@ -150,7 +157,23 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
             .map { it.key }
         val tag = query.tag?.takeIf { it in tags }
-        val matching = inTab.filter { it.matches(query.query) && (tag == null || tag in it.tags) }
+        // [MEMO-03] 1.27 AK: the shift of a memo's day, from the calendar it belongs to, worked out once per day and calendar.
+        val shiftNames = HashMap<Pair<String, LocalDate>, String?>()
+        fun shiftOf(m: Memo, date: LocalDate): String? {
+            val cal = shiftCalendar(listOf(m), active) ?: return null
+            return shiftNames.getOrPut(cal to date) { snapshots[cal]?.resolver?.resolve(date)?.shiftType?.name }
+        }
+        val words = com.bamnat.core.memo.MemoSearch.words(query.query)
+        searchCache.keepOnly(all.mapTo(HashSet()) { it.id })
+        val matching = inTab.filter { m ->
+            (tag == null || tag in m.tags) &&
+                com.bamnat.core.memo.MemoSearch.matches(searchCache.of(m), words, today) { d -> shiftOf(m, d) }
+        }
+        val shifts = if (query.tab == MemoTab.CALENDAR) {
+            calendar.mapNotNull { m -> shiftOf(m, m.date!!) }.groupingBy { it }.eachCount().entries
+                .sortedByDescending { it.value }.map { it.key }
+        } else emptyList()
+        val shift = query.shift?.takeIf { it in shifts }
 
         var upcoming = emptyList<MemoDateGroup>()
         var past = emptyList<MemoDateGroup>()
@@ -159,6 +182,7 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             val month = YearMonth.from(today)
             val filtered = matching.filter { m ->
                 val d = m.date!!
+                if (shift != null && shiftOf(m, d) != shift) return@filter false
                 when (query.calendarFilter) {
                     CalendarFilter.ALL -> true
                     CalendarFilter.UPCOMING -> !d.isBefore(today)
@@ -209,6 +233,8 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             // Memos deleted elsewhere drop out of the selection.
             selection = selected.filterTo(HashSet()) { id -> all.any { it.id == id } },
             trashCount = trashCount,
+            shifts = shifts,
+            shift = shift,
         )
     }
 
@@ -226,7 +252,7 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setTab(tab: MemoTab) {
-        q.update { it.copy(tab = tab, tag = null) }
+        q.update { it.copy(tab = tab, tag = null, shift = null) }
         clearSelection()
     }
     fun setQuery(text: String) = q.update { it.copy(query = text) }
@@ -236,6 +262,8 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     fun setGeneralFilter(f: GeneralFilter) = q.update { it.copy(generalFilter = f) }
     fun setSort(sort: MemoSort) = q.update { it.copy(sort = sort) }
     fun toggleTag(tag: String) = q.update { it.copy(tag = if (it.tag == tag) null else tag) }
+    /** [MEMO-03] '야간 날': only the memos of days with that shift. */
+    fun toggleShift(name: String) = q.update { it.copy(shift = if (it.shift == name) null else name) }
 
     fun toggleSelected(id: Long) = selection.update { if (id in it) it - id else it + id }
     fun selectAllVisible() = selection.update { visibleIds }
@@ -448,10 +476,53 @@ class MemoEditorViewModel(
      * [SCHED-01] A time written in the memo that has not been answered yet: offered as a schedule, or,
      * when the memo is one already, as its new time. Null when there is nothing to ask.
      */
-    val scheduleOffer: StateFlow<MemoTime.Found?> = _memo.map { m ->
-        val found = MemoTime.find(m, Today.dateTime()) ?: return@map null
+    /** [MEMO-05] 1.27 AK: the calendar whose shifts this memo goes by (its own, else the one on screen). */
+    private val shiftCal = combine(_memo.map { it.calendars to it.onEveryCalendar }.distinctUntilChanged(), container.calendars.active) { _, active ->
+        (shiftCalendar(listOf(_memo.value), active) ?: active).takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN
+    }.distinctUntilChanged()
+
+    /** [MEMO-05] The next 60 days of that calendar, for '다음 야간 때' and the dialog's '근무에 맞춰' chips. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val shiftDays: StateFlow<List<com.bamnat.core.memo.ShiftMemoTime.Day>> = shiftCal.flatMapLatest { cal ->
+        container.calendars.repository(cal).snapshot.map { snap ->
+            val from = Today.date()
+            (0L..60L).mapNotNull { i ->
+                val d = snap.resolver.resolve(from.plusDays(i))
+                val type = d.shiftType ?: return@mapNotNull null
+                com.bamnat.core.memo.ShiftMemoTime.Day(d.date, type.name, d.isWorkDay, d.start)
+            }
+        }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * [SCHED-01] A time written in the memo that has not been answered yet: offered as a schedule, or,
+     * when the memo is one already, as its new time. Null when there is nothing to ask. [MEMO-05] 1.27 AK: with no clock
+     * time, words that name a shift ("다음 야간 때", "쉬는 날") are offered as that shift's time.
+     */
+    val scheduleOffer: StateFlow<MemoTime.Found?> = combine(_memo, shiftDays) { m, days ->
+        val now = Today.dateTime()
+        val found = MemoTime.find(m, now) ?: com.bamnat.core.memo.ShiftMemoTime.find(
+            (sequenceOf(m.title, m.body) + m.checklist.asSequence().map { it.text }).joinToString("\n"), now, days) ?: return@combine null
         found.takeIf { m.reminderAsked != it.key && m.reminder?.at != it.at }
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * [MEMO-06] 1.27 AK: the memos of the latest earlier day that had the same shift as this memo's day (인수인계 이어 보기),
+     * on the same calendar; null for an undated memo or when there is none.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val lastSameShift: StateFlow<Pair<String, List<Memo>>?> = combine(_memo.map { it.date to it.id }.distinctUntilChanged(), shiftCal) { di, cal -> di to cal }
+        .flatMapLatest { (di, cal) ->
+            val (date, id) = di
+            if (date == null) return@flatMapLatest kotlinx.coroutines.flow.flowOf(null)
+            combine(repo.memosFor(cal), container.calendars.repository(cal).snapshot) { memos, snap ->
+                val name = snap.resolver.resolve(date).shiftType?.name ?: return@combine null
+                val dated = memos.filter { it.id != id && it.date?.isBefore(date) == true && !it.isBlank }
+                val past = dated.map { it.date!! }.distinct().map { it to snap.resolver.resolve(it).shiftType?.name }
+                val day = com.bamnat.core.memo.ShiftMemoTime.lastSame(date, name, past) ?: return@combine null
+                "$name(${day.monthValue}/${day.dayOfMonth})" to dated.filter { it.date == day }.sortedWith(MemoOrdering)
+            }
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** [SCHED-01] Makes the memo a schedule (or a plain memo again with null); [answered] is the time this answers. */
     fun setReminder(reminder: MemoReminder?, answered: MemoTime.Found? = null) = update {

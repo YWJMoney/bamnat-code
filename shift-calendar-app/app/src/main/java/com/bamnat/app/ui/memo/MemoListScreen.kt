@@ -375,7 +375,7 @@ private fun SelectionBar(
 }
 
 @Composable
-private fun FilterRow(state: MemoListState, vm: MemoListViewModel) {
+private fun FilterRow(state: MemoListState, vm: MemoListViewModel) = Column {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -391,6 +391,17 @@ private fun FilterRow(state: MemoListState, vm: MemoListViewModel) {
         }
         for (tag in state.tags.take(MAX_TAG_CHIPS)) {
             FilterChip(selected = state.tag == tag, onClick = { vm.toggleTag(tag) }, label = { Text("#$tag") })
+        }
+    }
+    // [MEMO-03] 1.27 AK: the memos of one kind of shift's days ('야간 날'), on a row of their own so they are seen without scrolling.
+    if (state.tab == MemoTab.CALENDAR && state.shifts.isNotEmpty()) Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("근무별", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        for (name in state.shifts.take(MAX_SHIFT_CHIPS)) {
+            FilterChip(selected = state.shift == name, onClick = { vm.toggleShift(name) }, label = { Text("$name 날") })
         }
     }
 }
@@ -444,23 +455,31 @@ private fun SectionLabel(text: String) {
     )
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun DateHeader(date: LocalDate, day: ResolvedDay?, today: LocalDate) {
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(Fmt.dayTitle(date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        val days = ChronoUnit.DAYS.between(today, date)
-        val badge = when {
-            days == 0L -> "오늘"
-            days == 1L -> "내일"
-            days in 2..99 -> "D-$days"
-            else -> null
+    // [MEMO-07] 1.27 AK: with big letters the shift goes under the date instead of being cut to "주간…".
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(Fmt.dayTitle(date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            val days = ChronoUnit.DAYS.between(today, date)
+            val badge = when {
+                days == 0L -> "오늘"
+                days == 1L -> "내일"
+                days in 2..99 -> "D-$days"
+                else -> null
+            }
+            if (badge != null) {
+                Spacer(Modifier.width(6.dp))
+                Pill(badge, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
+            }
+            Spacer(Modifier.width(8.dp))
         }
-        if (badge != null) {
-            Spacer(Modifier.width(6.dp))
-            Pill(badge, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
-        }
-        Spacer(Modifier.weight(1f))
-        ShiftLabel(day)
+        ShiftLabel(day, Modifier.align(Alignment.CenterVertically))
     }
 }
 
@@ -525,7 +544,7 @@ private fun MemoCard(
                         Spacer(Modifier.width(6.dp))
                     }
                     Text(
-                        highlighted(memo.title.ifBlank { memo.preview }, query),
+                        highlighted(memo.title.ifBlank { memo.preview.take(com.bamnat.core.memo.MemoSearch.CARD_CHARS) }, query),
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -602,8 +621,9 @@ private fun MemoContent(memo: Memo, query: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
+        // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         Text(
-            highlighted(memo.body.trim(), query),
+            highlighted(com.bamnat.core.memo.MemoSearch.excerpt(memo.body, query), query),
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 8,
             overflow = TextOverflow.Ellipsis,
@@ -731,3 +751,4 @@ internal fun highlighted(text: String, query: String): AnnotatedString {
 }
 
 private const val MAX_TAG_CHIPS = 12
+private const val MAX_SHIFT_CHIPS = 6
