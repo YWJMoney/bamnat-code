@@ -108,7 +108,10 @@ fun PatternScreen(
     val draft0 = vm.draft
     // [SPAT-07] 1.27 AH: after 패턴 삭제 the screen stays, empty, to look the company up again.
     var cleared by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(existing) {
+    val scroll = rememberScrollState()
+    // Back to the top, where the note and 회사 이름으로 근무주기 찾기 are.
+    LaunchedEffect(cleared) { if (cleared) scroll.animateScrollTo(0) }
+    LaunchedEffect(existing, cleared) {
         if (cleared && existing == null && draft0.initialized) draft0.forget()
         draft0.initFrom(existing, today, if (startWeekdays) types.firstOrNull { !it.isOff && it.hasTimes }?.id else null)
     }
@@ -168,7 +171,7 @@ fun PatternScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

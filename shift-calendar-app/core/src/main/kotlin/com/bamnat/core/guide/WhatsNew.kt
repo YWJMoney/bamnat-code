@@ -10,6 +10,13 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.27.0 (통합 folds the bundles' lines).
+        Release(38, "1.27.0", listOf(
+            // [SPAT-07][PLAZA-14][PLAZA-15] Bundle AH.
+            Line("회사 이름을 치는 대로 같은 회사 분들의 대표 주기와 쓰는 사람 수가 바로 보여요. 고른 주기를 나누면 그 회사(또는 사업장)의 대표 주기가 되고, 맞아요·달라요로 다듬어요", "plaza.leadCycle"),
+            // [PLAZA-16] Bundle AH.
+            Line("급여 설정에서 ‘우리 회사 급여 방식 찾기’로 같은 회사 분들이 확인한 계산 방식을 가져와 내 금액만 넣어요", "plaza.payFind"),
+        )),
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.

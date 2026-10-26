@@ -498,6 +498,20 @@ shift-calendar-app/
 - **한 번 묻고 저절로 나누기** `company/AutoShare`: 근무 주기·급여 저장(`ShiftsViewModel`, `PayViewModel.saveSetup`, 기본 달력만)에서 회사를 알면 한 번 물어요(`AutoShareHost`/`AutoShareDialog`, `AppRoot`). 예 → 바로 보내고 그 회사 화면으로. 그 뒤 바뀌면 `autoDirty` → `OutboxJob.scheduleShare`(같은 JobService, ID 4404, 지난 보낸 때 + 24시간 최소 지연), 시작할 때 도는 일은 없어요. 끄기: 설정 › 개인정보·앱 정보 `AUTO_SHARE_ROW`. 키 `auto_share`·`auto_dirty`·`auto_sent_at`·`member`는 휴대폰에만(`SettingsFilesBackup.DEVICE_ONLY`, 새 휴대폰에서 다시 물음).
 - 시험: 서버 `test/plaza-af.test.mjs`, core `PlazaRoomTest`, 앱 `company/PlazaAFAppTest`(실제 node 서버와 끝에서 끝), 사진 `AFScreenshotTest` 1060~1069. 관리자 앱: 회사 목록 "참여 n", 회사 화면 "참여한 휴대폰 n대", 규칙 카드 "안정".
 
+### 6-20. 치는 대로 찾기·대표 주기·맞아요/달라요·급여 방식 찾기 (1.27.0 묶음 AH, SPAT-07·08, PLAZA-14~18)
+
+계획과 결정(AH-D1~D10, 개인정보 처리방침 초안 7장)은 프로젝트 파일(git 밖)의 `계획/1.27-AH-개발계획.md`.
+
+- **치는 대로 찾기(436)** `ui/company/CompanyInline.kt` `CompanyInlineResults`: 두 글자부터 공개 자료(`PublicCycles.search`)는 바로, 회사 서버는 `INLINE_PAUSE_MS` 300ms 쉰 뒤 `INLINE_WAIT_MS` 2.5초까지만 기다려요(느리면 공개 자료만 보이고 한 줄 안내). 순서: 서버 회사(대표 주기·n명 쓰고 있어요·맞아요·급여 방식 있음·사업장 n곳, AH-I4) → 공개 자료 → '여기 없어요, 직접 추가'(`FirstProviderCard` → `PublicApplySheet`). 첫 설정·새 달력의 `SetupSteps.CompanyStep` 이름 칸 바로 아래(서버 행은 `CompanySearchDialog(initialOpen)`로 그 회사 화면). 이름 맞춤 core `CompanyMatch`(지에스=GS, 띄어쓰기·(주)·대소문자, 3음절 넘으면 자모 하나 틀려도, AH-I1) — `PublicCycles.search`도 써요.
+- **새 달력 '이 설정 쓰기'(437)** 원인: `CompanyDetailScreen`의 `applied`는 휴대폰 전체(기본 달력)라 새 달력에서도 '다시 넣기'. 고르는 중(`onPick != null`)엔 무시(AH-D2). `PublicApplySheet(calendar)`·`PublicCycleFiles.apply(calendar)`는 추가 달력이면 그 달력 일정에만 넣고 `PublicUse`는 기본 달력만.
+- **주기 삭제는 처음처럼(437)** `ShiftsViewModel.clearPattern` → `LeadShare.forget(cal)`: 기본 달력이면 applied·PublicUse·회사 이름 초안·참여를 비우고 서버에 쓰는 중 끔(`use … false`)·`leave`. 근무 주기 화면은 기본 달력이면 닫지 않고 위로 올라가 "근무주기를 지웠어요"와 '회사 이름으로 근무주기 찾기'를 보여요(AH-D3).
+- **한 번 묻기와 대표 주기(438)** `company/LeadShare`(`AppContainer.leadShare`, `LeadShareHost`는 `AppRoot`의 `AutoShareHost` 옆): 공개 자료·직접 추가로 고른 주기가 달력에 들어가면(`PublicApplySheet`, 첫 설정·새 달력 저장 `SetupViewModel.save`) "이 정보를 다른 사람이 사용해도 될까요?" 한 번. 예 = D79 한 번 승인(`auto_share` true, AH-D6), 아니오 = 처음이면 `auto_share` false + 공개 자료 나누기 카드도 다시 안 물음(`inviteNever`). 예이면 `decide()`: 회사 없음/대표 없음 → 보내고 "이제 ‘회사’의 대표 주기가 됐어요!", 같은 순서(조만 다른 회전 포함, core `CycleMatch.same`, AH-D5·I2)가 대표면 보내지 않고 맞아요 한 표, 다른 순서가 대표면 사업장 이름을 묻고(`NeedSite`) 그 이름을 부서로 보내 '회사 · 사업장' 대표. 보내는 것은 `serverSetup()`(근무 이름·시간·순서·요일만, 회사 이름·공개 행 id·급여 없음).
+- **서버(438·439)** `index.js`의 `// AH 1.27` 블록: `leadOf()`(달라요 많은 판 빼고 채택 먼저, 그다음 `support()` 높은 판), `markLeads()`가 회사 화면 판마다 `lead`·`doubted`·`opinion{ok,bad,why{order,time,pay,other},mine}`, `searchLead()`가 검색 회사마다 `users`·`sites`·`lead{setup,dept,steps,weekly,offs,pay,ok,bad,doubted}`(초성 검색도). `DOUBT = {votes:5, share:40}`: 맞아요+달라요 5표 넘고 달라요 40% 넘으면 대표에서 빠지고(`doubted`), 쓰는 판이 그렇게 되면 기다리던 판이 `outweighs` 없이 채택("rival"). 표는 기존 `votes` 한 휴대폰 한 표(바꾸면 덮어씀), `why`에 `order|time|pay` 더함(`VOTE_WHY`). 보상 규칙은 그대로.
+- **맞아요·달라요(439)** `VoteButtons(opinion)`: 달라요 이유 근무 순서·근무 시간·급여 항목·예전 정보·회사나 부서 이름, 아래에 "맞아요 n · 달라요 n (순서 n · 시간 n · 급여 항목 n)"(`opinionLine`), 내 표는 `opinion.mine`. `SetupCard` 칩 "대표 주기 · 찾는 분께 먼저 보여요" / "달라요가 많아요 · 다시 확인 중". 관리자 앱 규칙 카드에 이유별 수·"대표에서 빠짐", 설정 화면에 기준 안내(`data-doubt`).
+- **급여 방식 찾기(440)** `PayQuickSetup(companyFind)` 첫 질문에 `PayFindEntry`(기본 달력·서버 켜짐) → `PayFindSheet` 한 화면에 한 질문: 회사 이름 → "급여 방식 있음 · 맞아요 n명"만(D79) → '이 급여 방식 쓰기' = `PayFind.use`(참여 → 다시 읽은 대표 판 파일, 급여 설정이 없으면 `pendingPay`로 `CompanyPayScreen`이 금액만 물음, 있으면 `applyRules`). 없으면 `PayFind.none`이 회사 이름 초안을 두고 간편 설정 → 저장 때 AutoShare 한 번 묻기.
+- **오늘 근무로 자리 찾기(AH-I3)** `PublicCycleUi.TodayFinder`: "오늘 근무가 뭐예요? → 내일은요? → 모레는요?" 칩, 하나로 좁혀지면 그날을 골라요(core `CycleOrders.positions`·`kinds`).
+- 새 설정 값·새 표·새 원격 kind 없음(투표 `why` 값만 늘었어요). 시험: 서버 `test/plaza-ah.test.mjs`·`test/ui/admin-ui.test.mjs` [PLAZA-15], core `CompanyMatchTest`, 앱 `company/PlazaAHAppTest`(실제 node 서버와 끝에서 끝 5개), 사진 `AHScreenshotTest` 1100~1115.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

@@ -200,12 +200,8 @@ fun CompanyFindScreen(
                                     if (setup) TextButton(onClick = { byHand(r.query) }) { Text("‘${r.query.trim()}’ 근무를 처음부터 직접 정할게요") }
                                     else if (ready && vm.server) TextButton(onClick = { byHand(r.query) }) { Text("지금 쓰는 내 설정을 ‘${r.query.trim()}’로 나눌게요") }
                                 }
-                            } else {
-                                // [SPAT-02] The public rows below are the answer; the way to set it by hand stays one line.
-                                TextButton(onClick = { byHand(r.query) }) {
-                                    Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
-                                }
                             }
+                            // [SPAT-02][SPAT-07] Otherwise the public rows below are the answer, and '여기 없어요' comes after them.
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // [PLAZA-03] 초성 찾기 only offers companies whose rule is in use, so a guess never leads to an empty page.
@@ -214,9 +210,6 @@ fun CompanyFindScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 r.hits.forEach { hit -> CompanyRow(hit) { keyboard?.hide(); onOpen(hit.id) } }
-                                TextButton(onClick = { byHand(r.query) }) {
-                                    Text(if (ready) "여기 없어요. ‘${r.query}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query}’로 직접 설정할게요")
-                                }
                             }
                         }
                         is CompanyFindViewModel.Result.Failed -> Offline(r.code, onRetry = vm::retry) { byHand(r.query) }
@@ -225,6 +218,12 @@ fun CompanyFindScreen(
                 // [SPAT-02] The public rows under the coworkers' setups, never looking like one of them (D79).
                 PublicCycleSection(query, onPick = onPublic, onPay = onPay, onShare = onShare,
                     browse = result is CompanyFindViewModel.Result.Idle)
+                // [SPAT-07] 1.27 AH (사용자 2026-10-25): the coworkers' companies, then the public rows, then '여기 없어요' last.
+                (result as? CompanyFindViewModel.Result.Found)?.takeIf { it.hits.isNotEmpty() || PublicCycles.search(it.query).isNotEmpty() }?.let { r ->
+                    TextButton(onClick = { byHand(r.query) }) {
+                        Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
+                    }
+                }
                 if (onBoard != null) {
                     OutlinedButton(onClick = { keyboard?.hide(); onBoard() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Forum, null, Modifier.size(18.dp))

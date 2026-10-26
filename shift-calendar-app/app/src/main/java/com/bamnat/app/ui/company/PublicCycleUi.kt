@@ -426,6 +426,7 @@ private fun TodayInCycle(cycle: PublicCycle, codes: String, picked: Int?, onPick
     Text("오늘이 주기의 몇 번째 날인가요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
     Text("회사 근무표에서 오늘 칸을 찾아 같은 날을 눌러 주세요. 같은 회사라도 조마다 오늘이 달라요.",
         style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+    TodayFinder(codes, types, onPick)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         codes.forEachIndexed { i, code ->
             val t = types[code]
@@ -452,6 +453,42 @@ private fun TodayInCycle(cycle: PublicCycle, codes: String, picked: Int?, onPick
             style = MaterialTheme.typography.bodyMedium, color = scheme.primary,
         )
     }
+}
+
+/**
+ * [PLAZA-18] 1.27 AH-I3: the place found by the shifts the user knows — today's, then tomorrow's and the day after's only
+ * while more than one day of the order fits — instead of counting days on the company's sheet.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TodayFinder(codes: String, types: Map<Char, ShiftType>, onPick: (Int) -> Unit) {
+    val kinds = remember(codes) { CycleOrders.kinds(codes) }
+    if (kinds.size < 2) return
+    var said by remember(codes) { mutableStateOf("") }
+    val fits = remember(codes, said) {
+        if (said.isEmpty()) codes.indices.toList() else CycleOrders.positions(codes, said[0], said.getOrNull(1), said.getOrNull(2))
+    }
+    val asks = listOf("오늘 근무가 뭐예요?", "내일은요?", "모레는요?")
+    Text(if (said.isEmpty()) "모르겠으면 · ${asks[0]}" else asks.getOrElse(said.length) { "" }, style = MaterialTheme.typography.labelLarge)
+    if (fits.size > 1 && said.length < 3) {
+        val next = remember(codes, said) { fits.map { codes[(it + said.length) % codes.length] }.distinct() }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            next.forEach { code ->
+                androidx.compose.material3.AssistChip(
+                    onClick = {
+                        said += code
+                        val left = CycleOrders.positions(codes, said[0], said.getOrNull(1), said.getOrNull(2))
+                        if (left.size == 1) onPick(left.single())
+                    },
+                    label = { Text(types[code]?.name ?: "휴무") },
+                )
+            }
+        }
+    } else if (said.isNotEmpty()) {
+        Text(if (fits.size == 1) "${fits.single() + 1}번째 날이에요" else "아래에서 골라 주세요 (${fits.joinToString(", ") { "${it + 1}" }}번째 날 중)",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
+    if (said.isNotEmpty()) TextButton(onClick = { said = "" }) { Text("다시 고르기") }
 }
 
 /** After the cycle is in: what comes next, the pay with its usual allowances, or the plaza when the pay is set. */
