@@ -1309,7 +1309,7 @@ function adminApp(L, BUILD) {
     }
     if (name === "community" && id) {
       const first = S.data.posts?.posts?.[0];
-      return { title: first ? first.company.name : "토론", sub: first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
+      return { title: first ? first.company.name : "토론", sub: first?.room ? (first.room === "style" ? "유형 광장 이야기" : "회사 정보 광장 자유 토의") : first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
     }
     if (name === "account") return { title: "내 계정", back: phone ? href("more") : null };
     if (name === "more") return { title: "더 보기" };
@@ -1510,6 +1510,8 @@ function adminApp(L, BUILD) {
 
   function groupCard(g, open, editable) {
     const verified = g.reports.filter((r) => r.verified).length;
+    // AI 1.27 [PLAZA-30] Ticks from older apps with no matched month behind them.
+    const claims = g.reports.filter((r) => r.claim).length;
     const kind = g.blocked && g.replaces ? '<span class="pill warn">새 버전 후보</span>'
       : g.replaces ? `<span class="pill">지금 v${g.replaces.version}와 달라요</span>` : '<span class="pill info">새 규칙</span>';
     const gist = g.changes ? "" : g.lines.find(([label]) => label === "근무")?.[1];
@@ -1522,7 +1524,7 @@ function adminApp(L, BUILD) {
     return `<article class="card">
       <div class="head"><h3>${esc(g.company.name)}${g.dept ? ` <span class="dept">${esc(g.dept)}</span>` : ""}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</h3>${kind}</div>
       ${twin?.diff ? `<p class="gist twin"><b>${esc(twin.diff)}</b></p>` : ""}
-      <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""} · ${day(g.reports[0].at)}</p>
+      <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""}${claims ? ` · 명세서 확인(근거 없음) ${claims}건` : ""} · ${day(g.reports[0].at)}</p>
       ${gist ? `<p class="gist">${esc(gist)}</p>` : ""}
       <div class="score"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}점</b></div>
       ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
@@ -1534,7 +1536,7 @@ function adminApp(L, BUILD) {
       ${g.changes ? changes(g.changes) : ""}
       ${siblings ? `<p class="meta">같은 회사 다른 부서 제보 ${siblings}건도 기다려요</p>` : ""}
       <details data-key="${key}"${S.opened.get(key) ?? open ? " open" : ""}><summary>보낸 설정</summary>${lines(g.lines)}</details>
-      ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
+      ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : r.claim ? "명세서 확인(근거 없음) · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
       ${g.bad ? `<p class="note bad">달라요 ${g.bad}명</p>` : ""}
       <div class="actions">
         ${can("community") && g.posts ? `<a class="btn ghost" href="${href("community", `${g.company.id}.${g.setup}`)}">토론 ${g.posts}개 읽기</a>` : ""}
@@ -1572,7 +1574,7 @@ function adminApp(L, BUILD) {
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
       : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
         <div class="toolbar"><input id="search" type="search" placeholder="회사 이름으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="토론 찾기"></div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
@@ -1599,7 +1601,7 @@ function adminApp(L, BUILD) {
     const edit = can("community", "edit");
     const n = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
       <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
         .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="직종으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="임금표 찾기"></div>
@@ -1632,13 +1634,13 @@ function adminApp(L, BUILD) {
       : p.kept ? '<span class="pill ok">확인함</span>' : "";
     const on = picking && S.postPick.has(p.id);
     return `<article class="card${on ? " picked" : ""}">
-      <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
+      <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
       <blockquote>${esc(p.body)}</blockquote>
       ${p.reasons.length ? `<p class="meta">신고 이유: ${p.reasons.map((r) => `${esc(r.text)} ${r.n}`).join(", ")}</p>` : ""}
       ${p.hidden ? `<p class="note warn">${esc(p.hidden.text)}</p>` : ""}
       <div class="actions">
-        ${talk ? "" : `<a class="btn ghost" href="${href("community", `${p.company.id}.${p.setup}`)}">이 토론 전부</a>`}
+        ${talk ? "" : `<a class="btn ghost" href="${href("community", `${p.company.id}.${p.setup}`)}">${p.room ? "이 광장 글 전부" : "이 토론 전부"}</a>`}
         ${edit ? `${p.status === "hidden" || p.flags ? `<button class="btn" data-act="post-show" data-id="${p.id}">${p.status === "hidden" ? "다시 보이기" : "문제없음"}</button>` : ""}
           ${p.status === "hidden" ? "" : `<button class="btn" data-act="post-hide" data-id="${p.id}">가리기</button>`}
           <button class="btn" data-act="post-mute" data-id="${p.id}">30일 쓰기 막기</button>

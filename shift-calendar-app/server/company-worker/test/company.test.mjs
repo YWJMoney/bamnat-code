@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { normName, personal, cleanSetup, readReport, fingerprint, describe as words, support } from "../src/index.js";
-import { server, setup, report, device, from } from "./helpers.mjs";
+import { server, setup, report, device, from, slipProof } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -351,7 +351,7 @@ test("맞았어요 adds a coworker; 달라요 takes theirs away", async () => {
   // A 달라요 from someone who said 맞았어요 replaces it.
   v = await call("POST", "/api/votes", body(2, { ok: false, why: "old" }), from(2));
   assert.deepEqual([v.data.persons, v.data.points, v.data.bad], [1, 1, 1]);
-  v = await call("POST", "/api/votes", body(3, { ok: true, verified: true }), from(3));
+  v = await call("POST", "/api/votes", body(3, { ok: true, verified: true, proof: slipProof() }), from(3));
   // [COMM-07] 3 points, but 2 of 3 voters (67%) are fewer than the 75% it takes on its own.
   assert.deepEqual([v.data.status, v.data.persons, v.data.points, v.data.agree, v.data.trust], ["pending", 2, 3, 67, 67]);
   v = await call("POST", "/api/votes", body(6, { ok: true }), from(6));

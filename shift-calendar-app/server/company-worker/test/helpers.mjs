@@ -124,5 +124,14 @@ export function setup() {
 
 /** A report body: the app's install id, the company as the sender typed it, and the file. */
 export function report(n, extra = {}) {
-  return { v: 1, device: device(n), company: "예시정밀", dept: "", verified: false, note: "", setup: setup(), ...extra };
+  // AI 1.27 [PLAZA-30] A 명세서 tick from 1.27 comes with the month it matched; a test of an older app passes proof: null.
+  const proof = extra.verified === true && !("proof" in extra) ? { proof: slipProof() } : {};
+  return { v: 1, device: device(n), company: "예시정밀", dept: "", verified: false, note: "", setup: setup(), ...proof, ...extra };
+}
+
+/** AI 1.27 [PLAZA-30] Last month (Korean time), matched: what the app sends with a 명세서 tick. */
+export function slipProof(match = true, back = 1) {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, 1));
+  return { month: `${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, "0")}`, match };
 }
