@@ -1015,3 +1015,34 @@ test("[FLAG-36] the flag's page edits its app range: saved on the server, said i
   assert.match(u.text("#main"), /모든 앱 판에서 조건대로 켜져요/);
   assert.deepEqual(u.errors, []);
 });
+
+// ---- AO 1.28 [PERF-18] 지표 › 앱 시작 시간 ----
+
+test("[PERF-18] 지표: 앱 시작 시간 shows each version's middle value and 90%, and 데이터 부족 under 30 phones", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u0 = await asOwner(env, t);
+  await u0.go("#/metrics");
+  assert.match(u0.text("#startup-card"), /아직 받은 시작 시간이 없어요/);
+  const day = new Date(Date.now() + 9 * 3600e3 - 86400e3).toISOString().slice(0, 10);
+  const ins = DB.db.prepare("INSERT INTO usage_startup VALUES (?, ?, ?, ?, ?, ?)");
+  ins.run(day, "1.28.0", "cold", "firstMonth", 1000, 20);
+  ins.run(day, "1.28.0", "cold", "firstMonth", 1500, 12);
+  ins.run(day, "1.28.0", "cold", "firstMonth", 4000, 3);
+  ins.run(day, "1.28.0", "cold", "container", 100, 35);
+  ins.run(day, "1.28.0", "warm", "firstMonth", 300, 30);
+  ins.run(day, "1.27.0", "cold", "firstMonth", 3000, 4);
+  const u = await asOwner(env, t);
+  await u.go("#/metrics");
+  await u.settle(30);
+  const rows = u.$$("#startup-card li").map((li) => li.textContent.replace(/\s+/g, " ").trim());
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /^1\.28\.0/);
+  assert.match(rows[0], /1초 · 90% 1\.5초/);
+  assert.match(rows[0], /준비 기다림 35대 · 가운데 0\.1초/);
+  assert.match(rows[0], /다시 열기 첫 달 30대 · 가운데 0\.3초/);
+  assert.doesNotMatch(rows[0], /데이터 부족/);
+  assert.match(rows[1], /^1\.27\.0.*3초 · 90% 3초.*데이터 부족/);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});

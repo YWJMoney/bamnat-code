@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.share.ShareLinkId
 import com.bamnat.app.ui.AppRoot
@@ -28,54 +29,85 @@ class MainActivity : ComponentActivity() {
         AppLock.onConfirmed(it.resultCode == RESULT_OK)
     }
 
-    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+    /**
+     * [PERF-09] 1.28 AO (검토 6-1 병목 3): the container once this screen has it. Until then the window and Compose are
+     * made (side by side with the container's own thread) and the splash screen stays; nothing of the app is drawn.
+     */
+    private val shown = androidx.compose.runtime.mutableStateOf<AppContainer?>(null)
+    /** [PERF-09] [onStart]'s part ran for this start (it waits for the container too); [onStop]'s part only follows it. */
+    private var startDone = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        installSplashScreen().setKeepOnScreenCondition { shown.value == null }
         super.onCreate(savedInstanceState)
-        StartupTrace.mark(StartupTrace.Step.ACTIVITY)
+        StartupTrace.activityCreated(restoring = savedInstanceState != null)
         HomeRequests.onCreate(
             restoring = savedInstanceState != null,
             awaitingResult = savedInstanceState?.getBoolean(KEY_AWAITING) == true,
             leftAt = savedInstanceState?.getLong(KEY_LEFT_AT) ?: 0L,
         )
+        enableEdgeToEdge()
+        setContent { shown.value?.let { Content(it) } }
+        val app = application as BamnatApp
+        val ready = app.readyContainer()
+        if (ready != null) {
+            StartupTrace.containerReached(0)
+            open(ready, savedInstanceState)
+        } else {
+            // [PERF-09] The rest of the opening runs on the main thread as soon as the container is whole, in the same order.
+            val waitFrom = System.nanoTime()
+            lifecycleScope.launch {
+                val c = app.awaitContainer()
+                StartupTrace.containerReached(System.nanoTime() - waitFrom)
+                open(c, savedInstanceState)
+            }
+        }
+    }
+
+    /** [PERF-09] What [onCreate] did with the container, then [onStart]'s part if the screen is already started, then the app. */
+    private fun open(container: AppContainer, savedInstanceState: Bundle?) {
         if (savedInstanceState == null) {
-            appContainer.telemetry.event(DiagEvents.APP_OPEN)
+            container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
             NoticeLinks.read(intent)
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
-        enableEdgeToEdge()
-        val container = appContainer
-        setContent {
-            val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
-            // [SHFT-05] 야간 근무 중 어둡게 turns into dark or the phone's theme as the night shift starts and ends.
-            val themeMode = com.bamnat.app.ui.theme.rememberThemeMode(settings.themeMode, container)
-            val dark = when (themeMode) {
-                ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-            }
-            // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
-            DisposableEffect(settings.appLock) {
-                AppLock.secure(window, settings.appLock)
-                onDispose { }
-            }
-            // Status bar icons follow the app theme, not only the system one.
-            DisposableEffect(dark) {
-                enableEdgeToEdge(
-                    statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
-                    navigationBarStyle = SystemBarStyle.auto(LIGHT_SCRIM, DARK_SCRIM) { dark },
-                )
-                onDispose { }
-            }
-            BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
-                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
-                    AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
-                    // [LOCK-01] Over the app, so the screen the user was on is still there after.
-                    val locked by AppLock.locked.collectAsStateWithLifecycle()
-                    if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
-                }
+        // [LOCK-01] 앱 잠금 is decided before the first frame of the app, as when onStart came after setContent.
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !startDone) started(container)
+        shown.value = container
+    }
+
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+    @androidx.compose.runtime.Composable
+    private fun Content(container: AppContainer) {
+        val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+        // [SHFT-05] 야간 근무 중 어둡게 turns into dark or the phone's theme as the night shift starts and ends.
+        val themeMode = com.bamnat.app.ui.theme.rememberThemeMode(settings.themeMode, container)
+        val dark = when (themeMode) {
+            ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+        }
+        // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
+        DisposableEffect(settings.appLock) {
+            AppLock.secure(window, settings.appLock)
+            onDispose { }
+        }
+        // Status bar icons follow the app theme, not only the system one.
+        DisposableEffect(dark) {
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                navigationBarStyle = SystemBarStyle.auto(LIGHT_SCRIM, DARK_SCRIM) { dark },
+            )
+            onDispose { }
+        }
+        BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
+                AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
+                // [LOCK-01] Over the app, so the screen the user was on is still there after.
+                val locked by AppLock.locked.collectAsStateWithLifecycle()
+                if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
             }
         }
     }
@@ -114,12 +146,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // [PERF-09] Before the container is whole this part waits for it ([open] runs it).
+        shown.value?.let(::started)
+    }
+
+    private fun started(c: AppContainer) {
+        startDone = true
         // [LOCK-01] Read before HomeRequests clears whether a screen the app opened is being returned from.
-        AppLock.onStart(this, appContainer.settingsRepository.settings.value.appLock, HomeRequests.awaitingResult)
+        AppLock.onStart(this, c.settingsRepository.settings.value.appLock, HomeRequests.awaitingResult)
         HomeRequests.onStart()
-        appContainer.verifyAlarms()
+        c.verifyAlarms()
         // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
-        val c = appContainer
         // [PERF-03] 324-2 (검토 A6): at most once in [CATCH_UP_EVERY]; a day turns over far less often than the app
         // comes back. 알람 점검 and the 정식 출시 switch below keep running every time (they keep their own pace).
         val now = android.os.SystemClock.elapsedRealtime()
@@ -137,6 +174,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        // [PERF-15] A screen gone before its month showed gives no startup sample.
+        if (!isChangingConfigurations) StartupTrace.activityStopped()
+        if (!startDone) return
+        startDone = false
         HomeRequests.onStop(isChangingConfigurations)
         AppLock.onStop(isChangingConfigurations)
     }

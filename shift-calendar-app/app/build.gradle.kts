@@ -5,6 +5,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // [PERF-13] 1.28 AO: takes the profile :benchmark makes (benchmark/README.md) and adds the benchmarkRelease build.
+    id("androidx.baselineprofile")
 }
 
 // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
@@ -91,13 +93,8 @@ android {
             signingConfigs.findByName("upload")?.let { signingConfig = it }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        // [PERF-03] 324-5: release code, shrunk the same way, signed with the debug key and profileable, for the
-        // :benchmark module on a real phone. Never uploaded.
-        create("benchmark") {
-            initWith(getByName("release"))
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-        }
+        // [PERF-03][PERF-13] The build :benchmark measures is now the baselineprofile plugin's benchmarkRelease
+        // (release code, shrunk the same way, debug key, profileable: src/benchmarkRelease). Never uploaded.
     }
 
     // [OPS-24] Lint fails the build on what would crash an older phone or a missing permission; what was there
@@ -241,6 +238,8 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     // [PERF-01] Installs src/main/baseline-prof.txt on phones that got the APK outside Play, so the start is compiled ahead too.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    // [PERF-13] 1.28 AO: the module that makes the profile (on a Gradle managed emulator or a phone).
+    baselineProfile(project(":benchmark"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
@@ -263,4 +262,15 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.15.1")
     testImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("androidx.compose.ui:ui-test-junit4")
+}
+
+// [PERF-13][PERF-14] 1.28 AO: the made profile is kept in the source (src/main/generated/baselineProfiles, beside the
+// hand-written src/main/baseline-prof.txt, both used) and is made only on request (`:app:generateBaselineProfile`, or
+// the baseline-profile workflow), never during a normal build. The startup part of it orders the start-up classes
+// first in the dex (dexLayoutOptimization), so a cold start reads fewer pages.
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    saveInSrc = true
+    mergeIntoMain = true
+    dexLayoutOptimization = true
 }

@@ -79,6 +79,15 @@ class StartupBudgetTest {
             "trace=${StartupTrace.Step.entries.associateWith { StartupTrace.millis(it) }} screen: $words"
     }
 
+    /** [PERF-10] Runs the main thread (its idle moments start the next group) until every waiting group started. */
+    private fun untilAllGroups(c: AppContainer, limitMillis: Long = 15_000) {
+        val end = System.currentTimeMillis() + limitMillis
+        while (c.laterGroups < 3 && System.currentTimeMillis() < end) {
+            Thread.sleep(20)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+    }
+
     private fun lazyBuilt(c: AppContainer, name: String): Boolean {
         val field = AppContainer::class.java.getDeclaredField("$name\$delegate").apply { isAccessible = true }
         return (field.get(c) as Lazy<*>).isInitialized()
@@ -98,9 +107,17 @@ class StartupBudgetTest {
             assertNotNull("the activity started", activity)
             assertNotNull("the calendar showed its month: ${scenario.shown()}", calendar)
             val toMonth = calendar!! - activity!!
+            // [PERF-09] 1.28 AO: when the screen had the container; here it was built before the screen, so no wait.
+            val reached = StartupTrace.millis(StartupTrace.Step.CONTAINER_WAIT)
+            assertNotNull("[PERF-09] the screen noted when it had the container", reached)
+            assertTrue("the container reached the screen before its month", reached!! <= calendar)
             // Kept in the test report (system-out) so a slower start shows before it fails.
-            println("[PERF-01] container ${built} ms, activity to month ${toMonth} ms")
+            println("[PERF-01] container ${built} ms, activity to month ${toMonth} ms, screen had the container at ${reached - activity} ms")
             assertTrue("activity to month took $toMonth ms (budget $FIRST_MONTH_BUDGET_MS)", toMonth <= FIRST_MONTH_BUDGET_MS)
+            // [PERF-15] The opening was kept for 진단, as a cold one (this process started for it).
+            val last = c.startupStats.last
+            assertNotNull("[PERF-15] the opening's times are kept on the phone", last)
+            assertEquals(StartupTrace.Kind.COLD, last!!.kind)
         }
     }
 
@@ -125,6 +142,11 @@ class StartupBudgetTest {
         // by name: one-off jobs of the start (a Pro check, the alarm check) end at their own pace and are not counted.
         c.afterFirstFrame()
         c.afterFirstFrame()
+        // [PERF-10] 1.28 AO: right after the month only the first group (settings followers) is running.
+        val atOnce = c.kept.toList() - c.keptBeforeLater!!.toSet()
+        assertEquals("[PERF-10] the first group: $atOnce", setOf("today notice", "widgetweek", "widgetflow", "widgetmemo", "trialnotice"), atOnce.toSet())
+        untilAllGroups(c)
+        assertEquals("every waiting group started", 3, c.laterGroups)
         val first = c.keptBeforeLater!!
         assertTrue("[PERF-03] ${first.size} jobs before the first month (budget $FIRST_JOBS_BUDGET): $first", first.size <= FIRST_JOBS_BUDGET)
         assertTrue("the alarms are planned from the start", "schedule" in first && "bootcopy" in first)
@@ -143,16 +165,45 @@ class StartupBudgetTest {
             assertNotNull("the calendar showed its month: ${scenario.shown()}", StartupTrace.millis(StartupTrace.Step.CALENDAR))
             val before = c.keptBeforeLater!!
             assertTrue("${before.size} jobs before the month (budget $FIRST_JOBS_BUDGET): $before", before.size <= FIRST_JOBS_BUDGET)
+            // [PERF-10] The network, phone-calendar and watch group waits for idle moments after the month.
+            assertFalse("the watch does not start with the month: ${c.kept}", "watch" in c.kept)
+            assertTrue("the widgets follow the data from the month on", "widgetweek" in c.kept)
+            untilAllGroups(c)
             assertTrue("widgets and the watch follow the data after the month", "watch" in c.kept && "widgetweek" in c.kept)
+            assertTrue("money before the network group", c.kept.indexOf("money") < c.kept.indexOf("watch"))
         }
     }
 
     /** [PERF-03] Started for an alarm or a widget, with no calendar to wait for, the jobs still start. */
     @Test fun withoutACalendarTheWaitingJobsStartAnyway() {
         val c = app.container
-        val end = System.currentTimeMillis() + 15_000
+        val end = System.currentTimeMillis() + 20_000
         while ("watch" !in c.kept && System.currentTimeMillis() < end) Thread.sleep(50)
         assertTrue("the waiting jobs started without a calendar: ${c.kept}", "watch" in c.kept)
+    }
+
+    /** [PERF-15] 1.28 AO: what an opening is: cold for a new process's first screen, warm later, none for a turn or a stop. */
+    @Test fun openingsAreToldApart() {
+        StartupTrace.begin()
+        StartupTrace.activityCreated(restoring = false)
+        StartupTrace.containerReached(30_000_000)
+        val cold = StartupTrace.monthDrawn()
+        assertEquals(StartupTrace.Kind.COLD, cold!!.kind)
+        assertEquals(30L, cold.containerWait)
+        assertEquals("the second month drawn is no opening", null, StartupTrace.monthDrawn())
+        // A turn of the phone makes the screen again: no opening.
+        StartupTrace.activityCreated(restoring = true)
+        assertEquals(null, StartupTrace.monthDrawn())
+        // The app brought back while its process ran: warm, timed from the screen.
+        StartupTrace.activityCreated(restoring = false)
+        StartupTrace.containerReached(0)
+        val warm = StartupTrace.monthDrawn()
+        assertEquals(StartupTrace.Kind.WARM, warm!!.kind)
+        assertEquals(0L, warm.activity)
+        // Left before the month (another tab first, back pressed): nothing.
+        StartupTrace.activityCreated(restoring = false)
+        StartupTrace.activityStopped()
+        assertEquals(null, StartupTrace.monthDrawn())
     }
 
     @Test fun eachStepIsNotedOnce() {

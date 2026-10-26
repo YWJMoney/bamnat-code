@@ -51,7 +51,7 @@ class PhoneCalendarSync(private val c: AppContainer, private val today: () -> Lo
         val chosen = c.settingsRepository.settings.map { it.phoneCalendars }.distinctUntilChanged()
         val open = c.featureGate.state.map { it.allows(Feature.DEVICE_CALENDAR) }.distinctUntilChanged()
         val days: Flow<Any?> = combine(chosen, c.calendars.calendars) { ids, list -> list.filter { it.id in ids } }.flatMapLatest { list ->
-            if (list.isEmpty()) flowOf(Unit) else combine(list.map { c.calendars.repository(it.id).snapshot }) { Unit }
+            if (list.isEmpty()) flowOf(Unit) else combine(list.map { c.calendars.repository(it.id).live }) { Unit }
         }
         combine(chosen, open, days, c.calendars.calendars) { _, _, _, _ -> Unit }.debounce(DEBOUNCE_MILLIS).collect { sync() }
     }

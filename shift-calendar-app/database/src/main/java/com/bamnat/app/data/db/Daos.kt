@@ -79,6 +79,10 @@ interface DayEntryDao {
     @Query("SELECT * FROM day_entries")
     suspend fun getAll(): List<DayEntryEntity>
 
+    /** [PERF-07] 1.28 AO: the days of a few months (the calendar's first month before the whole history). */
+    @Query("SELECT * FROM day_entries WHERE epochDay BETWEEN :from AND :to")
+    suspend fun inRange(from: Long, to: Long): List<DayEntryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<DayEntryEntity>)
 
@@ -97,6 +101,10 @@ interface DayExtraDao {
 
     @Query("SELECT * FROM day_extras WHERE epochDay = :epochDay ORDER BY position, id")
     suspend fun onDay(epochDay: Long): List<DayExtraEntity>
+
+    /** [PERF-07] 1.28 AO: extra work of a few months, by the epochDay index. */
+    @Query("SELECT * FROM day_extras WHERE epochDay BETWEEN :from AND :to ORDER BY epochDay, position, id")
+    suspend fun inRange(from: Long, to: Long): List<DayExtraEntity>
 
     @Query("SELECT * FROM day_extras WHERE coveredShiftTypeId = :shiftTypeId")
     suspend fun covering(shiftTypeId: Long): List<DayExtraEntity>

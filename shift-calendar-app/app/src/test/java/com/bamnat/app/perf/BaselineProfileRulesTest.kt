@@ -48,7 +48,11 @@ class BaselineProfileRulesTest {
     @Test fun theStartIsCovered() {
         // The classes a cold start cannot avoid, up to the calendar's month.
         val start = listOf("Lcom/bamnat/app/BamnatApp;", "Lcom/bamnat/app/MainActivity;", "Lcom/bamnat/app/AppContainer;",
-            "Lcom/bamnat/app/ui/AppRootKt;", "Lcom/bamnat/app/data/ScheduleRepository;", "Lcom/bamnat/app/data/db/AppDatabase;")
+            "Lcom/bamnat/app/ui/AppRootKt;", "Lcom/bamnat/app/data/ScheduleRepository;", "Lcom/bamnat/app/data/db/AppDatabase;",
+            // [PERF-14] 1.28 AO: the windowed first month, the startup times and the signed files opened at start.
+            "Lcom/bamnat/app/data/ScheduleSnapshot;", "Lcom/bamnat/app/data/CalendarScope;",
+            "Lcom/bamnat/app/diag/StartupStats;", "Lcom/bamnat/app/remote/RemoteFilesStore;",
+            "Lcom/bamnat/core/remote/RemoteFile;", "Lcom/bamnat/core/time/Today;")
         val patterns = rules.map { descriptorPattern(DESCRIPTOR.find(it)!!.groupValues[1]) }
         for (c in start) assertTrue("$c is in the profile", patterns.any { it.matches(c) })
         assertTrue("the calendar screen is in the profile", classes.filter { it.startsWith("Lcom/bamnat/app/ui/calendar/") }

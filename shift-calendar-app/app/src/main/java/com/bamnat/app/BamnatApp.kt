@@ -8,8 +8,27 @@ import com.bamnat.app.diag.CrashLog
 
 class BamnatApp : Application() {
     /** Built on first use: after a reboot the app may start before the phone is unlocked [REL-10]. */
-    val container: AppContainer by lazy { AppContainer(this).also { it.start(); StartupTrace.mark(StartupTrace.Step.CONTAINER) } }
+    val container: AppContainer by lazy {
+        AppContainer(this).also {
+            it.start()
+            StartupTrace.mark(StartupTrace.Step.CONTAINER)
+            built.complete(it)
+        }
+    }
     @Volatile private var building: Thread? = null
+    /** [PERF-09] 1.28 AO: the container once it is whole, for a screen that would rather not block waiting for it. */
+    private val built = kotlinx.coroutines.CompletableDeferred<AppContainer>()
+
+    /** [PERF-09] The container when it is already built, else null (it is being built, or not started yet while locked). */
+    fun readyContainer(): AppContainer? = if (built.isCompleted) built.getCompleted() else null
+
+    /**
+     * [PERF-09] The container, waiting without blocking the caller's thread while the start's own thread builds it.
+     * When no thread is building it (a locked phone just unlocked), it is built here, off the main thread.
+     */
+    suspend fun awaitContainer(): AppContainer =
+        readyContainer() ?: if (building != null) built.await()
+        else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { container }
 
     override fun onCreate() {
         StartupTrace.begin()

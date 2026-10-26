@@ -1,0 +1,44 @@
+name: Baseline Profile (밤낮)
+# [PERF-13][PERF-14] 1.28 AO: makes app/src/main/generated/baselineProfiles/{baseline-prof.txt,startup-prof.txt} on a
+# Gradle managed emulator (benchmark/build.gradle.kts, pixel6Api34) and uploads them. Run by hand only (Actions tab ›
+# Baseline Profile › Run workflow); nothing is committed here: the owner downloads the artifact and commits the two
+# files (shift-calendar-app/benchmark/README.md, HANDOFF 6-27).
+on:
+  workflow_dispatch:
+concurrency:
+  group: baseline-profile
+  cancel-in-progress: false
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      # The emulator needs hardware acceleration; GitHub's Linux runners have KVM but not for the runner user.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Generate the profile
+        run: >-
+          sh ./gradlew --no-daemon --console=plain :app:generateBaselineProfile
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          -Pandroid.experimental.testOptions.managedDevices.setupTimeoutMinutes=20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baseline-profile
+          path: |
+            shift-calendar-app/app/src/main/generated/baselineProfiles/
+            shift-calendar-app/benchmark/build/outputs/androidTest-results/
+          if-no-files-found: error

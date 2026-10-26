@@ -2738,7 +2738,7 @@ function adminApp(L, BUILD) {
     const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
         <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
       : '<p class="meta">공유 서버가 연결되지 않았어요. 관리 › 서버 상태를 봐 주세요.</p>'}</section>`;
-    return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${funnel}${shares}${events}</div>`;
+    return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${startupCard(d) /* AO 1.28 */}${funnel}${shares}${events}</div>`;
   }
 
   /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
@@ -2765,6 +2765,25 @@ function adminApp(L, BUILD) {
 
   const dayLabels = (d) => (d.dayList ?? []).map((x) => x.slice(5).replace("-", "/"));
   const mins = (m) => (m === null || m === undefined ? "–" : m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.round(m / 6) / 10}시간` : `${Math.round(m / 144) / 10}일`);
+
+  // AO 1.28 시작 [PERF-18] 앱 시작 시간: what consenting phones (사용 통계 + 처리방침 3.2) sent, per app version.
+  const startupSec = (ms) => (ms >= 20000 ? "15초 넘음" : `${Math.round(ms / 100) / 10}초`);
+  function startupCard(d) {
+    const st = d.startup;
+    if (!st) return "";
+    const line = (label, part) => (part ? `${label} ${part.phones}대 · 가운데 ${startupSec(part.p50)} · 90% ${startupSec(part.p90)}` : "");
+    const rows = st.versions.map((v) => {
+      const month = v.cold?.firstMonth;
+      const few = !month || month.phones < st.few;
+      const small = [line("준비 기다림", v.cold?.container), line("화면까지", v.cold?.activity), line("다시 열기 첫 달", v.warm?.firstMonth)].filter(Boolean).join(" · ");
+      return `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${esc(small || "새로 열기 값 없음")}</small></span>
+        <span class="row-side"><b>${month ? `${startupSec(month.p50)} · 90% ${startupSec(month.p90)}` : "–"}</b>${few ? '<span class="pill">데이터 부족</span>' : ""}<span class="meta">${month ? `${month.phones}대` : ""}</span></span></div></li>`;
+    }).join("");
+    return `<section class="card" id="startup-card"><h2>앱 시작 시간</h2>
+      <p class="hint">새로 열었을 때 달력의 첫 달이 보이기까지 걸린 시간이에요(가운데 값 · 10대 중 9대가 그 안). 사용 통계와 처리방침 3.2에 동의한 휴대폰만, 휴대폰을 구별하지 않고 구간으로만 받아요. 판마다 ${st.few}대 미만이면 숫자가 흔들려요. Play Console › Android vitals의 시작 시간과 같이 보세요.</p>
+      ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 시작 시간이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}</section>`;
+  }
+  // AO 1.28 끝
 
   function activeCard(d) {
     const a = d.active;

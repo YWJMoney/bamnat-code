@@ -239,6 +239,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM usage_events WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     // AM 1.28 [FLAG-30]
     stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
+    stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
   ]);
@@ -639,6 +640,11 @@ const LATE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS posts_flagged ON posts (flags, created_at) WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')",
   "CREATE INDEX IF NOT EXISTS audit_action ON audit (action, id)",
   // AN 1.28 끝
+  // AO 1.28 시작 [PERF-17] How long the app took to open on consenting phones, as counts per bucket: per day, app version,
+  // kind (cold: a new process, warm: it was running) and step (container wait, screen, first month). No phone, no time.
+  `CREATE TABLE IF NOT EXISTS usage_startup (day TEXT NOT NULL, app TEXT NOT NULL, kind TEXT NOT NULL, step TEXT NOT NULL,
+    bucket INTEGER NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app, kind, step, bucket))`,
+  // AO 1.28 끝
 ];
 
 const schemas = new WeakMap();
@@ -4495,7 +4501,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/switches" && method === "POST") return setSwitch(request, env, now);
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
-  if (path === "/metrics" && method === "GET") return json(await metrics(env, url, now));
+  if (path === "/metrics" && method === "GET") {
+    const m = await metrics(env, url, now);
+    m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
+    return json(m);
+  }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
   if (path === "/remote" && method === "GET") return json(await remoteState(env, now, url.searchParams.get("fresh") === "1"));
   if (path === "/shares" && method === "GET") return shareReports(env);
@@ -7151,6 +7161,12 @@ async function usage(request, env) {
   const flagRows = [...flagDays].flatMap(([day, keys]) => [[day, "*"], ...keys.map((k) => [day, k])]);
   const stmts = [...days].map((day) => stmt(env, `INSERT INTO usage_days (day, app, phones) VALUES (?, ?, 1)
     ON CONFLICT (day, app) DO UPDATE SET phones = phones + 1`, day, app));
+  // AO 1.28 [PERF-17] Startup times, counted once on the bundle's newest day; a wrong part is left out, the rest counts.
+  const startupDay = [...days].sort().at(-1);
+  for (const [kind, step, bucket] of startupRows(body.startup)) {
+    stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
+      ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));
+  }
   // D1 binds at most 100 values a query: 16 rows of six.
   for (let i = 0; i < rows.length; i += 16) {
     const part = rows.slice(i, i + 16);
@@ -7166,6 +7182,84 @@ async function usage(request, env) {
   await batch(env, stmts);
   return skipped ? json({ ok: true, skipped }) : new Response(null, { status: 204 });
 }
+
+// AO 1.28 시작 ------------------------------------------------------------------------------------------------
+/**
+ * [PERF-16][PERF-17] The bucket edges (ms) the app rounds a startup time up to (app diag/StartupStats.BUCKETS): only
+ * these values are taken, so no phone's exact time is kept. 20000 means over 15 seconds.
+ */
+export const STARTUP_BUCKETS = [100, 200, 300, 400, 500, 700, 1000, 1500, 2000, 3000, 4000, 6000, 10000, 15000, 20000];
+/** What each kind of opening may carry: a cold one from the process start, a warm one from the screen. */
+const STARTUP_STEPS = { cold: ["container", "activity", "firstMonth"], warm: ["container", "firstMonth"] };
+
+/**
+ * [PERF-17] `startup: {container, activity, firstMonth, warm: {container, firstMonth}}` → [kind, step, bucket] rows.
+ * Anything else (a missing part, a number off the edges, an unknown key) is left out without refusing the bundle.
+ */
+export function startupRows(startup) {
+  const rows = [];
+  if (!startup || typeof startup !== "object" || Array.isArray(startup)) return rows;
+  const take = (kind, part) => {
+    if (!part || typeof part !== "object" || Array.isArray(part)) return;
+    for (const step of STARTUP_STEPS[kind]) {
+      const v = part[step];
+      if (Number.isInteger(v) && STARTUP_BUCKETS.includes(v)) rows.push([kind, step, v]);
+    }
+  };
+  take("cold", startup);
+  take("warm", startup.warm);
+  return rows;
+}
+
+/** [PERF-17] The bucket where [share] of the phones are at or under, from {bucket → phones}. */
+function bucketQuantile(hist, total, share) {
+  let seen = 0;
+  for (const b of STARTUP_BUCKETS) {
+    seen += hist.get(b) ?? 0;
+    if (seen >= total * share) return b;
+  }
+  return STARTUP_BUCKETS.at(-1);
+}
+
+const appOrder = (a, b) => {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pb[i] - pa[i];
+  return 0;
+};
+
+/**
+ * [PERF-17] 지표 › 앱 시작 시간: per app version (newest first, at most 6) and kind, each step's phones, middle value and
+ * 90th percentile (the bucket's upper edge: "at most"). Under 30 phones a version says 데이터 부족 in the admin app.
+ */
+async function startupMetrics(env, from, to) {
+  const rows = await all(env, `SELECT app, kind, step, bucket, SUM(phones) AS phones FROM usage_startup
+    WHERE day BETWEEN ? AND ? GROUP BY app, kind, step, bucket`, from, to);
+  const byApp = new Map();
+  for (const r of rows) {
+    const key = `${r.app}|${r.kind}|${r.step}`;
+    if (!byApp.has(r.app)) byApp.set(r.app, new Map());
+    const hist = byApp.get(r.app);
+    if (!hist.has(key)) hist.set(key, new Map());
+    hist.get(key).set(r.bucket, (hist.get(key).get(r.bucket) ?? 0) + r.phones);
+  }
+  const versions = [...byApp.keys()].sort(appOrder).slice(0, 6).map((app) => {
+    const out = { app };
+    for (const [kind, steps] of Object.entries(STARTUP_STEPS)) {
+      const part = {};
+      for (const step of steps) {
+        const hist = byApp.get(app).get(`${app}|${kind}|${step}`);
+        if (!hist) continue;
+        const phones = [...hist.values()].reduce((n, v) => n + v, 0);
+        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5), p90: bucketQuantile(hist, phones, 0.9) };
+      }
+      if (Object.keys(part).length) out[kind] = part;
+    }
+    return out;
+  });
+  return { versions, few: 30 };
+}
+// AO 1.28 끝 --------------------------------------------------------------------------------------------------
 
 /**
  * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share

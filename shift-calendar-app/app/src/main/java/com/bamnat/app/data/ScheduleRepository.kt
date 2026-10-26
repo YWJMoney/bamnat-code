@@ -32,6 +32,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.time.Today
@@ -46,6 +52,12 @@ data class ScheduleSnapshot(
     val kinds: ExtraKinds = ExtraKinds(),
     /** [HRLY-05] 법정 휴게 자동 빼기 from the calendar's pay setup, so hours match pay. */
     val legalBreaks: Boolean = false,
+    /**
+     * [PERF-07] 1.28 AO: the days this snapshot read, when it read only a few months around the month on screen
+     * ([ScheduleRepository.snapshotAround]); null for the whole history. Days outside it are not known: only
+     * the calendar draws from such a snapshot, and only inside it ([covers]).
+     */
+    val window: ClosedRange<LocalDate>? = null,
 ) {
     constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
         this(shiftTypes, listOfNotNull(pattern), entries, kinds)
@@ -54,6 +66,25 @@ data class ScheduleSnapshot(
     val typesById: Map<Long, ShiftType> by lazy { shiftTypes.associateBy { it.id } }
     val isEmpty: Boolean get() = patterns.isEmpty() && entries.isEmpty()
     val hasPattern: Boolean get() = patterns.isNotEmpty()
+
+    /** [PERF-07] Whether this holds every day, not only the months around the first one drawn. */
+    val isComplete: Boolean get() = window == null
+
+    /** [PERF-07] Whether [date]'s day is known here. */
+    fun covers(date: LocalDate): Boolean = window?.contains(date) ?: true
+
+    /** [PERF-07] Whether every day of [month] is known here. */
+    fun covers(month: java.time.YearMonth): Boolean = covers(month.atDay(1)) && covers(month.atEndOfMonth())
+
+    companion object {
+        /**
+         * [PERF-07] The months read first: the one on screen and two either side. The month view works
+         * out the months next to it too (last month's figures for the change line, weeks and night shifts that cross a
+         * month's edge), so the month on screen and one swipe either way are drawn from known days.
+         */
+        fun windowOf(month: java.time.YearMonth): ClosedRange<LocalDate> =
+            month.minusMonths(2).atDay(1)..month.plusMonths(2).atEndOfMonth()
+    }
 }
 
 class ScheduleRepository(
@@ -63,6 +94,11 @@ class ScheduleRepository(
     /** [PAYX-09] The user's names for each kind, used in the change log. */
     private val extraName: (Long) -> String = { ExtraKinds().name(it) },
     private val clock: () -> Long = Today::millis,
+    /**
+     * [PERF-08] 1.28 AO: where [live] keeps one reading of the schedule for every screen and job that follows it.
+     * Null (tests that make a repository of their own) makes [live] the same as [snapshot].
+     */
+    private val shareScope: kotlinx.coroutines.CoroutineScope? = null,
 ) {
     private val changeDao = db.dayChangeDao()
 
@@ -109,6 +145,58 @@ class ScheduleRepository(
         combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged()) { t, p, e, k -> ScheduleSnapshot(t, p, e, k) }
             .flowOn(Dispatchers.Default)
             .onEach { lastSnapshot = it }
+
+    /**
+     * [PERF-08] 1.28 AO: [snapshot] read once and handed to everything that keeps following it (the calendar, the
+     * alarms, the day notices, the watch, the pay and stats screens). [snapshot] is a cold flow, so each of them
+     * used to run the whole-history query and build the days again, several at once while the app starts.
+     * Kept while anyone follows it and 5 seconds after; with nobody left the value goes too (no stale first value
+     * for the next one). A one-off read right after a write keeps using [snapshot], which always reads afresh.
+     */
+    val live: Flow<ScheduleSnapshot> = shareScope?.let { scope ->
+        snapshot
+            // A calendar removed while followed closes its database: the sharing ends instead of failing the app's scope.
+            .catch { e -> if (e !is IllegalStateException && e !is android.database.SQLException) throw e }
+            .shareIn(scope, SharingStarted.WhileSubscribed(SHARE_KEEP_MILLIS, replayExpirationMillis = 0), replay = 1)
+    } ?: snapshot
+
+    /**
+     * [PERF-07] 1.28 AO (검토 6-1 병목 1): the months around [month] read by themselves first (an indexed range query
+     * instead of every day ever written), then the whole history once it is read. The calendar draws its first month
+     * from the first value; the second has the same days there, so nothing on screen moves. When the whole history
+     * comes first (or was read already) the window is never sent.
+     */
+    fun snapshotAround(month: java.time.YearMonth): Flow<ScheduleSnapshot> = kotlinx.coroutines.flow.channelFlow {
+        val lock = kotlinx.coroutines.sync.Mutex()
+        var whole = false
+        val early = launch {
+            val w = runCatching { windowSnapshot(month) }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+                ?: return@launch
+            lock.withLock { if (!whole) send(w) }
+        }
+        live.collect { s ->
+            lock.withLock {
+                whole = true
+                early.cancel()
+                send(s)
+            }
+        }
+    }
+
+    /** [PERF-07] The shift types, the work order and the days of [month] ± 2 months ([ScheduleSnapshot.windowOf]), marked with that window. */
+    suspend fun windowSnapshot(month: java.time.YearMonth): ScheduleSnapshot {
+        val window = ScheduleSnapshot.windowOf(month)
+        val from = window.start.toEpochDay()
+        val to = window.endInclusive.toEpochDay()
+        val types = shiftTypeDao.getAll()
+        val periods = patternDao.getAll()
+        val rows = dayEntryDao.inRange(from, to)
+        val extras = extraDao.inRange(from, to)
+        val k = kinds.first()
+        return kotlinx.coroutines.withContext(Dispatchers.Default) {
+            ScheduleSnapshot(types.map { it.toModel() }, periods.mapNotNull { it.toModel() }, assembleDays(rows, extras), k, window = window)
+        }
+    }
 
     /**
      * [UX-10] 1.25 Z (U7): the latest [snapshot] any screen saw, so a screen opened again starts from it instead of
@@ -475,6 +563,8 @@ class ScheduleRepository(
         const val MAX_EXTRA_MINUTES = 24 * 60
         /** Pieces of extra work one day can hold. */
         const val MAX_EXTRAS = 6
+        /** [PERF-08] How long [live] keeps reading after its last follower left (a screen turned, a tab switched). */
+        const val SHARE_KEEP_MILLIS = 5_000L
     }
 }
 

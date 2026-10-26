@@ -23,6 +23,8 @@ class UsageStats(
     private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val post: (String, JSONObject) -> Unit = { url, body -> serverRequest(url, "POST", "/api/events", body) },
+    /** [PERF-16] 1.28 AO: startup times added to the bundle when [StartupStats.allowed]; null sends none. */
+    private val startup: StartupStats? = null,
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -45,7 +47,8 @@ class UsageStats(
     val sentDay: LocalDate? get() = prefs.getLong(K_SENT_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(LocalDate::ofEpochDay)
 
     fun preview(flagsOn: List<String>? = null): String? = synchronized(lock) {
-        book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() }?.let { withFlags(it, flagsOn) }
+        book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() }
+            ?.let { withStartup(JSONObject(withFlags(it, flagsOn))).toString() }
     }
 
     /**
@@ -55,8 +58,14 @@ class UsageStats(
     private fun withFlags(body: String, flagsOn: List<String>?): String =
         if (flagsOn == null) body else JSONObject(body).put("flagsOn", org.json.JSONArray(flagsOn.sorted())).toString()
 
+    /** [PERF-16] AO 1.28: the bundle with its `startup` part when there is one to send (gated by [StartupStats.policyAllows]). */
+    private fun withStartup(body: JSONObject): JSONObject = body.apply { startup?.payload()?.let { put("startup", it) } }
+
     /** Turning it off forgets everything not sent yet. */
-    fun clear() = synchronized(lock) { prefs.edit().clear().apply() }
+    fun clear() = synchronized(lock) {
+        prefs.edit().clear().apply()
+        startup?.clear() // [PERF-16]
+    }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
     fun forgetUnless(on: Boolean) {
@@ -74,12 +83,13 @@ class UsageStats(
         val body = synchronized(lock) { book().bundle(day, BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
             ?: return@withContext false
         try {
-            post(baseUrl, JSONObject(withFlags(body, flagsOn)))
+            post(baseUrl, withStartup(JSONObject(withFlags(body, flagsOn))))
         } catch (e: CompanyException) {
             // A bad bundle would fail every day; it is dropped. No connection is tried tomorrow.
             if (e.code == "offline" || e.code == "rate_limited" || e.code.startsWith("http_5")) return@withContext false
         }
         synchronized(lock) { prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day).apply() }
+        startup?.sent() // [PERF-16]
         true
     }
 
