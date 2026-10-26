@@ -143,6 +143,20 @@ export function adminLib() {
     push: "웹 푸시가 연결되지 않은 서버예요",
     subscription: "알림 구독 정보를 읽지 못했어요. 알림을 껐다 다시 켜 주세요",
     quiet: "조용한 시간을 0~23시로 골라 주세요",
+    // AM 1.28 [FLAG-21]~[FLAG-33] 기능 관리.
+    retired: "정식 출시 스위치는 은퇴했어요. 기능 관리 › 결제(프로 구독)에서 조건을 확인해 주세요",
+    flag: "모르는 기능이에요. 새로 고친 뒤 다시 골라 주세요",
+    last_type: "근무 유형을 모두 숨길 수는 없어요. 적어도 하나는 보여야 해요",
+    conditions: "켜지는 조건을 다시 확인해 주세요",
+    manual: "모르는 확인 항목이에요",
+    flagsOn: "켜진 기능 목록을 읽지 못했어요",
+    force: "강제로 켜기·끄기·풀기 가운데 하나를 골라 주세요",
+    review_at: "다시 볼 날은 오늘부터 1년 안의 날짜로 골라 주세요",
+    flag_until: "강제 기한은 지금부터 1년 안으로 정해 주세요",
+    policy: "처리방침 판과 날짜(게시 ≤ 시행 ≤ 동의 없이 시행)를 다시 확인해 주세요",
+    type: "근무 유형을 다시 골라 주세요",
+    show: "보이기·숨기기 가운데 하나를 골라 주세요",
+    why: "이유를 적어 주세요(300자까지). 나중에 다른 관리자가 이 기록으로 판단해요",
   };
   const errorText = (code) => ERRORS[code] ?? "처리하지 못했어요. 잠시 뒤 다시 해 주세요";
 
@@ -195,6 +209,11 @@ export function adminLib() {
     versions: { show: "conflict" },
     audit: { actor: "", kind: "", from: "", to: "" },
     ops: { month: "" },
+    // [ADMUX-33] 오늘 › 할 일 keeps 받은함's 보기; [ADMUX-32] 이달 할 일 keeps 운영's month.
+    home: { view: "all" },
+    chores: { month: "" },
+    // AM 1.28 [ADMUX-21][ADMUX-25] 기능 관리: which state, words, list or timeline.
+    flags: { show: "all", q: "", view: "" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -242,21 +261,147 @@ export function adminLib() {
     return p;
   }
 
-  // ---- [ADMUX-03] the bottom tabs ----
+  // ---- [ADMUX-30] six hubs (1.28 통합계획 2-2) ----
+
+  /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
+  const HUBS = [
+    { key: "today", label: "오늘", icon: "home", tabs: ["home"] },
+    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "dev", "templates", "sla"] },
+    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "companies", "shares", "adopt"] },
+    { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
+    { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "rewards", "server", "account"] },
+  ];
 
   /**
-   * The four tabs at the bottom of a phone: the ones the admin chose if they can still see them, else
-   * the first visible screens; the fifth is 더 보기. [current] is which tab lights up, so a screen not in
-   * the tabs lights 더 보기, and [back] says whether that screen shows a back button.
+   * Each tab: its name, who sees it ([area] one area or any of several, [owner] the owner only), what its number
+   * counts — only what this admin must do — and [old], the menu names it had before 1.28, so the palette still
+   * finds it. A number with [count] false shows on its tab but is not added to the hub's (여러 판 are the same
+   * setups 검토 counts). [strip] is the word the '지금 기다리는 것' line uses.
    */
-  function bottomTabs(visible, chosen = [], current = "home") {
-    const keys = visible.map((n) => n.key);
-    let tabs = (Array.isArray(chosen) ? chosen : []).filter((k) => keys.includes(k));
-    if (!tabs.includes("home")) tabs.unshift("home");
+  const TABS = {
+    home: { label: "오늘", old: "홈 받은함 할 일 지금 할 일 inbox home" },
+    inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
+    // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
+    dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
+    templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },
+    sla: { label: "답 목표", area: "settings", old: "설정 답 목표 SLA" },
+    review: { label: "검토", area: "review", badge: (o) => reviewCount(o), old: "제보 앱에 없는 방식 달라요 review" },
+    versions: { label: "여러 판", area: "companies", badge: (o) => o.versionConflicts ?? 0, count: false, old: "versions" },
+    community: { label: "토론·임금표", area: "community", badge: (o) => o.flaggedPosts ?? 0, strip: "신고 글", old: "토론 임금표 신고된 글 community" },
+    companies: { label: "회사", area: "companies", old: "회사·규칙 companies" },
+    shares: { label: "공유 링크", area: "shares", old: "공유 링크 신고 shares" },
+    adopt: { label: "채택 규칙", area: "settings", old: "설정 자동 채택 맞았어요 비율 채택 보상 상한 settings" },
+    // [ADMUX-40][FLAG-27] 기능 관리 and 근무 유형 (AM): the flags area, which admins with 운영 보기 got when 1.28 came (SINCE.flags).
+    flags: { label: "기능 관리", area: "flags", badge: (o) => o.flagsWaiting ?? 0, strip: "기능 확인", old: "운영 기능 스위치 정식 출시 다크머지 결제 광고 flags ops" },
+    types: { label: "근무 유형", area: "flags", old: "근무 유형 노출 types" },
+    notices: { label: "앱 공지", area: "ops", old: "공지 notices 운영" },
+    chores: { label: "이달 할 일", area: "ops", badge: (o) => o.opsLeft ?? 0, old: "이달 할 일 chores 운영" },
+    gates: { label: "출시 관문", area: "metrics", old: "지표 출시 관문 원격 갱신 gates" },
+    metrics: { label: "지표", area: "metrics", old: "통계 metrics" },
+    effects: { label: "기능별 효과", area: "metrics", old: "플래그 효과 effects" },
+    audit: { label: "활동 기록", area: "audit", old: "audit" },
+    admins: { label: "관리자", owner: true, badge: (o) => (o.admins?.waiting ?? 0) + (o.admins?.phones ?? 0), strip: "승인 대기", old: "관리자 휴대폰 admins" },
+    // [ADMUX-32] 친구 초대 규칙 moved here from 설정; it is the settings area, so either opens the tab.
+    rewards: { label: "보상", area: ["rewards", "settings"], badge: (o, me) => (can(me, "rewards") ? o.owed ?? 0 : 0), strip: "드릴 보상", old: "설정 친구 초대 rewards" },
+    server: { label: "서버 상태", owner: true, old: "설정 서버 상태 server" },
+    account: { label: "내 계정·이 기기", old: "설정 이 기기 알림 화면 색 테마 글자 크기 아래 탭 소리 저장한 보기 앱 설치 단축키 비밀번호 로그아웃 account settings" },
+  };
+
+  /** Whether [me] sees tab [key]. */
+  function tabVisible(key, me) {
+    const t = TABS[key];
+    if (!t || !me) return false;
+    if (t.owner) return Boolean(me.owner);
+    if (!t.area) return true;
+    return (Array.isArray(t.area) ? t.area : [t.area]).some((a) => can(me, a));
+  }
+
+  /** The hubs [me] sees, each with only the tabs [me] sees; a hub with none is left out. */
+  const visibleHubs = (me) => HUBS.map((h) => ({ ...h, tabs: h.tabs.filter((t) => tabVisible(t, me)) })).filter((h) => h.tabs.length);
+
+  /** Routes that are not a tab of their own, and the hub each belongs to. */
+  const EXTRA_HUB = { settings: "manage", inbox: "today", ops: "release", more: null };
+
+  /** The hub a route belongs to (null for 더 보기). */
+  function hubOf(name) {
+    if (Object.hasOwn(EXTRA_HUB, name)) return EXTRA_HUB[name];
+    return HUBS.find((h) => h.tabs.includes(name))?.key ?? null;
+  }
+
+  /** [ADMUX-34] A tab's number: what [me] must do there. */
+  const tabBadge = (key, o, me) => (TABS[key]?.badge && tabVisible(key, me) ? TABS[key].badge(o ?? {}, me) || 0 : 0);
+
+  /** [ADMUX-34] A hub's number: its tabs' numbers, each thing once (a tab with count: false is not added). */
+  function hubBadge(hub, o, me) {
+    const h = HUBS.find((x) => x.key === (hub?.key ?? hub));
+    return h ? h.tabs.filter((t) => TABS[t].count !== false).reduce((n, t) => n + tabBadge(t, o, me), 0) : 0;
+  }
+
+  /**
+   * [ADMUX-31] '지금 기다리는 것' on a hub's first tab: its tabs with something waiting and their number. On 오늘
+   * it is one item per other hub.
+   */
+  function waiting(hubKey, o, me) {
+    if (hubKey === "today") {
+      return visibleHubs(me).filter((h) => h.key !== "today")
+        .map((h) => ({ hub: h.key, tab: h.tabs[0], label: h.label, n: hubBadge(h, o, me) })).filter((x) => x.n);
+    }
+    const h = visibleHubs(me).find((x) => x.key === hubKey);
+    return (h?.tabs ?? []).map((t) => ({ hub: hubKey, tab: t, label: TABS[t].strip ?? TABS[t].label, n: tabBadge(t, o, me) })).filter((x) => x.n);
+  }
+
+  /**
+   * [ADMUX-30] The phone's bottom tabs: 오늘 and three more hubs (the admin's choice if they still see them, else
+   * in hub order), then 더 보기 for the rest. When every hub fits there is no 더 보기. [current] is the route
+   * shown, so the right one lights up; [back] says the screen sits under 더 보기.
+   */
+  function bottomHubs(hubs, chosen = [], current = "home") {
+    const keys = hubs.map((h) => h.key);
+    const here = hubOf(current);
+    if (keys.length <= 5) return { tabs: keys, lit: here ?? keys[0], back: false, more: false };
+    let tabs = (Array.isArray(chosen) ? chosen : []).filter((k) => keys.includes(k) && k !== "today");
+    tabs.unshift("today");
     for (const k of keys) if (tabs.length < 4 && !tabs.includes(k)) tabs.push(k);
     tabs = tabs.slice(0, 4);
-    const inTabs = tabs.includes(current);
-    return { tabs, lit: inTabs ? current : "more", back: !inTabs && current !== "more" };
+    const inTabs = here !== null && tabs.includes(here);
+    return { tabs, lit: inTabs ? here : "more", back: !inTabs && current !== "more", more: true };
+  }
+
+  // ---- [ADMUX-35] old addresses ----
+
+  /**
+   * Where a pre-1.28 address goes now, filters kept: 받은함 is 오늘's 할 일, 운영 is the 출시 hub (이달 할 일 when
+   * a month was in it). Every other screen kept its name; #/settings lists where its cards went.
+   */
+  function redirect(route) {
+    const p = route.params ?? {};
+    if (route.name === "inbox") return { name: "home", id: null, params: { view: p.view ?? "all" } };
+    if (route.name === "ops") return p.month ? { name: "chores", id: null, params: { month: p.month } } : { name: "flags", id: null, params: {} };
+    return route;
+  }
+
+  /** A saved address as it is written now. */
+  function migrateHash(hash) {
+    if (!String(hash ?? "").startsWith("#/")) return hash;
+    const r = redirect(parseRoute(hash));
+    return routeHash(r.name, r.id, r.params);
+  }
+
+  /**
+   * [ADMUX-35] This device's choices from before 1.28: saved views get their new addresses, and bottom tabs
+   * chosen as screens become the hubs those screens are in. Done once (v 2).
+   */
+  function migratePrefs(prefs) {
+    if (!prefs || prefs.v === 2) return prefs;
+    const keys = HUBS.map((h) => h.key);
+    const tabs = [];
+    for (const k of Array.isArray(prefs.tabs) ? prefs.tabs : []) {
+      const hub = keys.includes(k) ? k : hubOf(k);
+      if (hub && hub !== "today" && !tabs.includes(hub)) tabs.push(hub);
+    }
+    const views = (Array.isArray(prefs.views) ? prefs.views : []).map((v) => ({ ...v, hash: migrateHash(v.hash) }));
+    return { ...prefs, tabs: tabs.slice(0, 3), views, v: 2 };
   }
 
   // ---- 개발사항 ----
@@ -410,8 +555,12 @@ export function adminLib() {
 
   // ---- [ADMUX-04] keys ----
 
-  /** Where g and a letter go. */
-  const GO = { b: "inbox", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "ops", m: "metrics", a: "admins", l: "audit", s: "settings" };
+  /**
+   * Where g and a letter go. [ADMUX-36] The letters from before 1.28 still work (g b is 오늘's 할 일, g o the 출시
+   * hub, g s the list of where 설정 went); f, n, p and u are new.
+   */
+  const GO = { b: "home", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "flags", m: "metrics",
+    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account" };
 
   /**
    * What a key press means, or null: [key] as KeyboardEvent.key, [mods] {ctrl, meta, alt, shift},
@@ -437,10 +586,12 @@ export function adminLib() {
   /** The list of keys for the ? screen, as [keys, what]. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["[ / ]", "상세에서 이전·다음 항목"], ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
-    ["1~9", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g i · g d · g r", "홈·문의·개발사항·검토로"], ["g c · g t · g w · g o", "회사·토론·보상·운영으로"],
-    ["g m · g a · g l · g s", "지표·관리자·활동 기록·설정으로"], ["?", "이 목록"],
+    ["Esc · Backspace", "뒤로"], ["1~6", "허브: 오늘·문의·광장·출시·분석·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
+    ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g i · g d", "문의·개발사항으로"],
+    ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
+    ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -536,9 +687,301 @@ export function adminLib() {
     return "개발자 확인 대기";
   }
 
+  // ---- AM 1.28 기능 관리(다크머지) 판단기 [FLAG-21][ADMUX-23][ADMUX-24] ----
+  // The server (index.js) and the developer app's 미리 보기 use this one evaluator, so what the screen says a phone
+  // would do is what the server computes. The phone app has its own copy in core (com.bamnat.core.flags.FlagEval,
+  // 묶음 AL) with the same order: 1 강제 끔 → 2 앱 버전 밖 → 3 관리자 휴대폰 미리 보기 → 4 강제 켬 → 5 조건.
+  // The condition JSON is AL's (AL-D1): date {from | policy}, policy {version}, consent {key, unknownMeets}, profile {key},
+  // app {min, max} (versionCode), workType {in}, rollout {percent}, manual {key}, admin, any {of}.
+
+  const FLAG_KST = 9 * 3600e3;
+  const flagDay = (ms) => new Date(ms + FLAG_KST).toISOString().slice(0, 10);
+  const FLAG_DATE = /^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+  const WORK_TYPES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
+  const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "시급", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+  /** What a 동의 (consent) condition can name, and how the screens say it (core FlagEval.CONSENTS). */
+  const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)" };
+  /** What a 정보 (profile) condition can name: the user gave the app what the feature needs (core FlagEval.PROFILE). */
+  const PROFILE_NAMES = { "setup.done": "첫 설정을 마침", "pay.setup": "급여 설정을 마침", "company.linked": "회사를 연결함" };
+  /** Facts only a person can confirm (manual): who confirmed and when is kept on the server (core FlagEval.MANUAL). */
+  const MANUAL_NAMES = {
+    "play.production": "Play 프로덕션 승인",
+    "play.subscription": "정기 결제 상품 활성",
+    "data.safety": "Play 데이터 보안 답 고침",
+  };
+  const MANUAL_KEY = /^[a-z][a-z0-9]{1,19}(\.[a-z0-9]{1,30}){1,2}$/;
+  const POLICY_VERSION = /^\d{1,2}\.\d{1,2}$/;
+
+  /** -1, 0, 1 for two policy or app version names ("3.1" < "3.10", "1.27.0" < "1.28.0"). */
+  function versionCompare(a, b) {
+    const x = String(a).split(".").map(Number);
+    const y = String(b).split(".").map(Number);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (x[i] ?? 0) - (y[i] ?? 0);
+      if (d) return d < 0 ? -1 : 1;
+    }
+    return 0;
+  }
+
+  /**
+   * A condition list as stored, checked: { list } or { error } in words. Kinds: date, policy, consent, profile, app,
+   * workType, rollout, manual, admin, and any (one of several, one level deep).
+   */
+  function checkConditions(list, depth = 0) {
+    if (!Array.isArray(list) || list.length > 12) return { error: "조건은 12개까지 목록으로 적어 주세요" };
+    const out = [];
+    for (const [i, c] of list.entries()) {
+      const at = `${i + 1}번째 조건`;
+      if (!c || typeof c !== "object") return { error: `${at}을 읽지 못했어요` };
+      if (c.type === "date") {
+        if (c.policy != null) {
+          if (c.from != null || !POLICY_VERSION.test(c.policy)) return { error: `${at}: 처리방침 시행일은 3.1처럼 판만 적어 주세요` };
+          out.push({ type: "date", policy: c.policy });
+        } else {
+          if (!FLAG_DATE.test(c.from ?? "")) return { error: `${at}: 날짜는 2026-11-10처럼 적어 주세요` };
+          out.push({ type: "date", from: c.from });
+        }
+      } else if (c.type === "policy") {
+        if (!POLICY_VERSION.test(c.version ?? "")) return { error: `${at}: 처리방침 판은 3.1처럼 적어 주세요` };
+        out.push({ type: "policy", version: c.version });
+      } else if (c.type === "consent") {
+        if (!Object.hasOwn(CONSENT_NAMES, c.key ?? "")) return { error: `${at}: 동의 종류는 ${Object.keys(CONSENT_NAMES).join(", ")} 가운데 하나예요` };
+        out.push({ type: "consent", key: c.key, ...(c.unknownMeets === true ? { unknownMeets: true } : {}) });
+      } else if (c.type === "profile") {
+        if (!Object.hasOwn(PROFILE_NAMES, c.key ?? "")) return { error: `${at}: 정보는 ${Object.keys(PROFILE_NAMES).join(", ")} 가운데 하나예요` };
+        out.push({ type: "profile", key: c.key });
+      } else if (c.type === "app") {
+        const ok = (v) => v === undefined || v === null || (Number.isInteger(v) && v > 0 && v < 1000000);
+        if (!ok(c.min) || !ok(c.max) || (c.min == null && c.max == null)) return { error: `${at}: 앱 버전 번호(versionCode)를 숫자로 적어 주세요` };
+        if (c.min != null && c.max != null && c.max < c.min) return { error: `${at}: 앱 버전 끝 번호가 시작보다 작아요` };
+        out.push({ type: "app", min: c.min ?? null, max: c.max ?? null });
+      } else if (c.type === "workType") {
+        if (!Array.isArray(c.in) || !c.in.length || !c.in.every((w) => WORK_TYPES.includes(w))) return { error: `${at}: 근무 유형은 ${WORK_TYPES.join(", ")}에서 골라요` };
+        out.push({ type: "workType", in: [...new Set(c.in)] });
+      } else if (c.type === "rollout") {
+        if (!Number.isInteger(c.percent) || c.percent < 0 || c.percent > 100) return { error: `${at}: 비율은 0~100 사이 숫자예요` };
+        out.push({ type: "rollout", percent: c.percent });
+      } else if (c.type === "manual") {
+        if (!MANUAL_KEY.test(c.key ?? "")) return { error: `${at}: 확인 이름은 play.production처럼 적어요` };
+        out.push({ type: "manual", key: c.key });
+      } else if (c.type === "admin") {
+        out.push({ type: "admin" });
+      } else if (c.type === "any" && depth === 0) {
+        const inner = checkConditions(c.of, 1);
+        if (inner.error) return { error: `${at}(또는): ${inner.error}` };
+        if (inner.list.length < 2) return { error: `${at}: '또는'은 두 개 이상을 묶어요` };
+        out.push({ type: "any", of: inner.list });
+      } else {
+        return { error: `${at}: 모르는 종류예요` };
+      }
+    }
+    return { list: out };
+  }
+
+  /** The day a date condition waits for: its own, or its policy version's effective day (null when not in the calendar). */
+  const dateFrom = (c, policy) => c.from ?? (policy ?? []).find((x) => x.version === c.policy)?.effective ?? null;
+
+  /** One condition in words, as the checklist and the editor say it. */
+  function conditionLabel(c, policy = []) {
+    const md = (d) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일`;
+    const year = (d) => (d.slice(0, 4) === "2026" ? md(d) : `${d.slice(0, 4)}년 ${md(d)}`);
+    if (c.type === "date") {
+      const from = dateFrom(c, policy);
+      if (c.policy) return `처리방침 ${c.policy} 시행일${from ? `(${year(from)})` : "(일정에 없음)"}부터`;
+      return `${year(c.from)}(한국 시간 0시)부터`;
+    }
+    if (c.type === "policy") {
+      const p = (policy ?? []).find((x) => x.version === c.version);
+      const free = p ? p.heldUntil ?? p.effective : null;
+      return `처리방침 ${c.version}에 동의했거나 ${free ? `${year(free)}이 지남` : "보류가 끝남"}`;
+    }
+    if (c.type === "consent") return (CONSENT_NAMES[c.key] ?? c.key) + (c.unknownMeets ? "(묻기 전에는 켬)" : "");
+    if (c.type === "profile") return PROFILE_NAMES[c.key] ?? c.key;
+    if (c.type === "app") return c.min != null && c.max != null ? `앱 번호 ${c.min}~${c.max}` : c.min != null ? `앱 번호 ${c.min} 이상` : `앱 번호 ${c.max} 이하`;
+    if (c.type === "workType") return `근무 유형 ${c.in.map((w) => WORK_NAMES[w] ?? w).join("·")}`;
+    if (c.type === "rollout") return `휴대폰 ${c.percent}%에 먼저`;
+    if (c.type === "manual") return `${MANUAL_NAMES[c.key] ?? c.key}(관리자가 확인)`;
+    if (c.type === "admin") return "관리자 휴대폰";
+    if (c.type === "any") return c.of.map((x) => conditionLabel(x, policy)).join(" 또는 ");
+    return c.type;
+  }
+
+  /** Conditions as the editor's lines ("date >= 2026-11-10", "date >= policy 3.1", "policy 3.1 or date >= 2026-11-24"). */
+  function conditionText(list) {
+    const one = (c) => ({
+      date: () => (c.policy ? `date >= policy ${c.policy}` : `date >= ${c.from}`), policy: () => `policy ${c.version}`,
+      consent: () => `consent ${c.key}${c.unknownMeets ? "?" : ""}`, profile: () => `profile ${c.key}`,
+      app: () => (c.min != null && c.max != null ? `app ${c.min}..${c.max}` : c.min != null ? `app >= ${c.min}` : `app <= ${c.max}`),
+      workType: () => `workType ${c.in.join(",")}`, rollout: () => `rollout ${c.percent}%`, manual: () => `manual ${c.key}`, admin: () => "admin",
+      any: () => c.of.map(one).join(" or "),
+    })[c.type]?.() ?? "";
+    return (list ?? []).map(one).join("\n");
+  }
+
+  /** [ADMUX-23] The editor's lines back to conditions, with the first mistake by line. */
+  function parseConditions(text) {
+    const lines = String(text ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+    const one = (part) => {
+      const t = part.trim();
+      let m;
+      if ((m = t.match(/^(?:date|날짜)\s*>=\s*(?:policy|처리방침)\s+(\S+)$/i))) return { type: "date", policy: m[1] };
+      if ((m = t.match(/^(?:date|날짜)\s*>=\s*(\S+)$/i))) return { type: "date", from: m[1] };
+      if ((m = t.match(/^(?:policy|처리방침)\s*(?:>=\s*)?(\S+)$/i))) return { type: "policy", version: m[1] };
+      if ((m = t.match(/^(?:consent|동의)\s+(\S+?)(\?)?$/i))) return { type: "consent", key: m[1], ...(m[2] ? { unknownMeets: true } : {}) };
+      if ((m = t.match(/^(?:profile|정보)\s+(\S+)$/i))) return { type: "profile", key: m[1] };
+      if ((m = t.match(/^(?:app|앱)\s*>=\s*(\d+)$/i))) return { type: "app", min: Number(m[1]) };
+      if ((m = t.match(/^(?:app|앱)\s*<=\s*(\d+)$/i))) return { type: "app", max: Number(m[1]) };
+      if ((m = t.match(/^(?:app|앱)\s+(\d+)\s*\.\.\s*(\d+)$/i))) return { type: "app", min: Number(m[1]), max: Number(m[2]) };
+      if ((m = t.match(/^(?:worktype|유형)\s+([A-Za-z,\s]+)$/i))) return { type: "workType", in: m[1].split(/[,\s]+/).filter(Boolean).map((w) => w.toUpperCase()) };
+      if ((m = t.match(/^(?:rollout|비율)\s+(\d+)\s*%?$/i))) return { type: "rollout", percent: Number(m[1]) };
+      if ((m = t.match(/^(?:manual|확인)\s+(\S+)$/i))) return { type: "manual", key: m[1] };
+      if (/^(?:admin|관리자)$/i.test(t)) return { type: "admin" };
+      return null;
+    };
+    const list = [];
+    for (const [i, line] of lines.entries()) {
+      const got = line.split(/\s+(?:or|또는)\s+/i).map(one);
+      if (got.some((g) => !g)) return { error: `${i + 1}째 줄을 읽지 못했어요: "${line}"` };
+      list.push(got.length > 1 ? { type: "any", of: got } : got[0]);
+    }
+    return checkConditions(list);
+  }
+
+  /**
+   * Whether one condition holds: true, false, or "phone" (it depends on each phone, and no phone was given).
+   * [ctx] { now, policy, checks: {manualKey: …}, phone: null | {app, agreed, installed, consents: {key: true|false},
+   * workType, profile: [keys], bucket, admin, preview} }. Unknown (not in the calendar, not asked) is not met, as in core.
+   */
+  function conditionMet(c, ctx) {
+    const phone = ctx.phone ?? null;
+    const today = flagDay(ctx.now);
+    if (c.type === "date") {
+      const from = dateFrom(c, ctx.policy);
+      return Boolean(from) && today >= from;
+    }
+    if (c.type === "manual") return Boolean(ctx.checks?.[c.key]);
+    if (c.type === "policy") {
+      // Held: posted, not past its held-until day, installed before it was posted and not agreed (core PolicyCalendar.holds).
+      const p = (ctx.policy ?? []).find((x) => x.version === c.version);
+      if (!p) return false;
+      if (today < p.posted || today >= (p.heldUntil ?? p.effective)) return true;
+      if (!phone) return "phone";
+      const agreed = Boolean(phone.agreed && POLICY_VERSION.test(phone.agreed) && versionCompare(phone.agreed, c.version) >= 0);
+      return agreed || Boolean(phone.installed && phone.installed >= p.posted);
+    }
+    if (c.type === "rollout") {
+      if (c.percent >= 100) return true;
+      if (c.percent <= 0) return false;
+      return phone ? Number(phone.bucket ?? 0) < c.percent : "phone";
+    }
+    if (c.type === "any") {
+      const got = c.of.map((x) => conditionMet(x, ctx));
+      return got.includes(true) ? true : got.includes("phone") ? "phone" : false;
+    }
+    if (!phone) return "phone";
+    if (c.type === "consent") {
+      const v = phone.consents?.[c.key];
+      return v === true || (v === undefined && Boolean(c.unknownMeets));
+    }
+    if (c.type === "profile") return (phone.profile ?? []).includes(c.key);
+    if (c.type === "app") return Number.isInteger(phone.app) && (c.min == null || phone.app >= c.min) && (c.max == null || phone.app <= c.max);
+    if (c.type === "workType") return c.in.includes(phone.workType);
+    if (c.type === "admin") return Boolean(phone.admin);
+    return false;
+  }
+
+  /** 1.28 통합 [FLAG-36] An app versionCode range in words ("39~45", "39 이상", "45 이하", "모든 판"). */
+  const appRange = (lo, hi) => (lo != null && hi != null ? `${lo}~${hi}` : lo != null ? `${lo} 이상` : hi != null ? `${hi} 이하` : "모든 판");
+
+  /** A force (on or off) still in effect at [now]: an until that passed means it ended. */
+  const forceOf = (o, now) => (o && (o.force === "on" || o.force === "off") && !(o.until && Date.parse(o.until) <= now) ? o.force : null);
+
+  /**
+   * [FLAG-21] One flag's state: { on, state, source, reason, conditions: [{c, label, met}], next }. state is one of
+   * forced_off, forced_on, on, waiting (conditions left), off. With no phone (the server's view), conditions that
+   * depend on the phone are "phone" and do not hold the flag back: on means "on for the phones that meet them".
+   */
+  function evalFlag(flag, override, ctx) {
+    const now = ctx.now ?? Date.now();
+    const c2 = { ...ctx, now };
+    const conds = Array.isArray(override?.conditions) ? override.conditions : flag.conditions ?? [];
+    const conditions = conds.map((c) => ({ c, label: conditionLabel(c, ctx.policy), met: conditionMet(c, c2) }));
+    const dates = [];
+    const walk = (c) => {
+      if (c.type === "any") return c.of.forEach(walk);
+      const from = c.type === "date" ? dateFrom(c, ctx.policy) : null;
+      if (from && from > flagDay(now)) dates.push(from);
+    };
+    conds.forEach(walk);
+    const next = dates.sort()[0] ?? null;
+    const force = forceOf(override, now);
+    const phone = ctx.phone ?? null;
+    const base = { conditions, next };
+    // [FLAG-04] A legal flag turned on by a preview or a force still needs its policy conditions (core policyOnly).
+    const policyLeft = flag.risk === "LEGAL" ? conditions.find((x) => x.c.type === "policy" && x.met === false) : null;
+    if (force === "off") return { ...base, on: false, state: "forced_off", source: "force", reason: `강제로 껐어요${override.why ? `: ${override.why}` : ""}` };
+    const app = conditions.find((x) => x.c.type === "app");
+    if (phone && app && app.met === false) return { ...base, on: false, state: "off", source: "app", reason: "이 앱 버전에서는 꺼져요(앱 버전 밖)" };
+    // 1.28 통합 [FLAG-36] AL-D3: the override's own versionCode range, step 2 as in core FlagEval.
+    const lo = override?.minApp ?? flag.minApp ?? null;
+    const hi = override?.maxApp ?? flag.maxApp ?? null;
+    if (phone && Number.isInteger(phone.app) && ((lo != null && phone.app < lo) || (hi != null && phone.app > hi))) {
+      return { ...base, on: false, state: "off", source: "app", reason: `이 앱 판(${phone.app})에서는 꺼져요(앱 판 범위 ${appRange(lo, hi)} 밖)` };
+    }
+    if (phone && phone.admin && phone.preview) {
+      if (policyLeft) return { ...base, on: false, state: "waiting", source: "admin", reason: `미리 보기를 켰지만 법적 조건이 남아 꺼져 있어요: ${policyLeft.label}` };
+      return { ...base, on: true, state: "on", source: "admin", reason: "관리자 휴대폰의 미리 보기라 켜져요" };
+    }
+    if (force === "on") {
+      if (policyLeft) return { ...base, on: false, state: "waiting", source: "force", reason: `강제로 켰지만 법적 기능이라 처리방침 조건을 기다려요: ${policyLeft.label}` };
+      return { ...base, on: true, state: "forced_on", source: "force", reason: `강제로 켰어요${override.why ? `: ${override.why}` : ""}` };
+    }
+    if (!conds.length) {
+      return { ...base, on: Boolean(flag.default), state: flag.default ? "on" : "off", source: "default", reason: flag.default ? "기본으로 켜져 있어요" : "기본으로 꺼져 있어요" };
+    }
+    const left = conditions.filter((x) => x.met === false);
+    if (!left.length) {
+      const varies = conditions.filter((x) => x.met === "phone");
+      return { ...base, on: true, state: "on", source: "conditions",
+        reason: varies.length ? `조건을 채워 켜졌어요. ${varies.map((x) => x.label).join(", ")}은(는) 휴대폰마다 달라요` : "조건을 모두 채워 켜졌어요" };
+    }
+    const words = left.map((x) => x.label).join(", ");
+    if (flag.default) return { ...base, on: true, state: "on", source: "default", reason: `기본으로 켜져 있어요(남은 조건: ${words})` };
+    const tail = left.every((x) => x.c.type === "manual") ? " 확인하면 바로 켜져요." : left.every((x) => x.c.type === "date") ? " 그날 저절로 켜져요." : "";
+    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. ${words}이(가) 남았어요.${tail}` };
+  }
+
+  /** Whole days from [now] to the KST start of [day] ("15일 남음"), or null. */
+  function daysLeft(day, now = Date.now()) {
+    if (!day || !FLAG_DATE.test(day)) return null;
+    return Math.ceil((Date.parse(`${day}T00:00:00+09:00`) - now) / 86400000);
+  }
+
+  /**
+   * [FLAG-29] 처리방침 9항: a change is announced 7 days before it applies, 30 days when it is unfavourable to users.
+   * Warnings for a flag: its basis version gives too little notice, or a date condition comes before that version applies.
+   */
+  function noticeWarnings(flag, conds, policy = []) {
+    const out = [];
+    const v = String(flag.basis?.policy ?? "").split(" ")[0];
+    const p = v ? (policy ?? []).find((x) => x.version === v) : null;
+    if (!p) return out;
+    const gap = Math.round((Date.parse(`${p.effective}T00:00:00Z`) - Date.parse(`${p.posted}T00:00:00Z`)) / 86400000);
+    const need = p.unfavourable ? 30 : 7;
+    if (gap < need) out.push(`처리방침 ${p.version}는 게시(${p.posted})에서 시행(${p.effective})까지 ${gap}일이에요. ${p.unfavourable ? "불리한 변경은 30일" : "7일"} 전에 알려야 해요(처리방침 9항)`);
+    const early = (conds ?? []).filter((c) => c.type === "date" && c.from && c.from < p.effective).map((c) => c.from);
+    if (early.length) out.push(`날짜 조건(${early[0]})이 근거 처리방침 ${p.version}의 시행일(${p.effective})보다 일러요`);
+    return out;
+  }
+  // ---- AM 1.28 끝 ----
+
   return {
-    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, bottomTabs, likeFirst, words,
+    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
+    HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion,
+    // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
+    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
+    WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
   };
 }

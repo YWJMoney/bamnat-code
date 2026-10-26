@@ -58,7 +58,10 @@ class TierAppTest {
         settings.update { it.copy(previewTier = preview) }
         val remote = RemoteConfigStore(context).apply { save(config) }
         val pro = ProStore(context).apply(edit)
-        return FeatureGate(settings, remote, pro, scope, installedAt = { now.minusSeconds(86_400 * 30) }, debug = debug,
+        // [FLAG-08] A 1.27 answer (no flags) is read as forces on the billing·ads·free.* rows.
+        val flags = com.bamnat.app.flags.Flags(remote.config, emptyList(), scope, now = { now },
+            facts = { com.bamnat.core.flags.PhoneFacts(now = now, serverNow = now, versionCode = 39, agreed = setOf("3.1")) })
+        return FeatureGate(settings, remote, pro, scope, flags, installedAt = { now.minusSeconds(86_400 * 30) }, debug = debug,
             clock = { now }, zone = { zone }).state.value
     }
 

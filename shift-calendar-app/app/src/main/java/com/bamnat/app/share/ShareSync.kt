@@ -57,12 +57,12 @@ class ShareSync(
             else combine(others.flatMap { cal ->
                 val money = c.calendars.money(cal.id)
                 val pay = c.calendars.pay(cal.id)
-                listOf(c.calendars.repository(cal.id).snapshot, money.jobs, money.sales, money.entries, pay.profile, pay.closed) +
+                listOf(c.calendars.repository(cal.id).live, money.jobs, money.sales, money.entries, pay.profile, pay.closed) +
                     ShareLinkKey.all(cal.id).map { c.shareLinksOf(it).link }
             }) { Unit }
         }
         val reads: List<Flow<Any?>> = listOf(
-            c.scheduleRepository.snapshot, c.memoRepository.memos, c.memoRepository.sharing, c.moneyRepository.jobs, c.moneyRepository.sales,
+            c.scheduleRepository.live, c.memoRepository.memos, c.memoRepository.sharing, c.moneyRepository.jobs, c.moneyRepository.sales,
             c.moneyRepository.entries, c.payStore.profile, c.payStore.closed, c.settingsRepository.settings, added,
             // [FEAT-15] A feed goes off with 프로, and on again with it.
             c.featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.ICS_FEED) }.distinctUntilChanged(),

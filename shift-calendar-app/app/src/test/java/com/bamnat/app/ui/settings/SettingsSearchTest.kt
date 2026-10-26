@@ -118,4 +118,16 @@ class SettingsSearchTest {
         assertEquals("새 답이 온 문의 1개 · 답을 기다리는 문의 1개", standing(list) { it.id == "a" })
         assertEquals("보낸 문의 1개에 모두 답했어요", standing(listOf(inquiry("a", "answered", 1))) { false })
     }
+
+    // ---- 1.28 통합 [FLAG-39] ----
+    @Test fun featureStateIsFoundAndAnswered() {
+        val hit = SettingsIndex.search("기능 상태").first()
+        assertEquals(com.bamnat.app.ui.diag.FLAG_SECTION, hit.title)
+        assertEquals(SettingPlace.Screen(SettingsGo.DIAGNOSTICS), hit.place)
+        assertEquals("기능 상태", first("결제 언제 켜져요"))
+        assertEquals("기능 켜고 끄기", first("기능 끄기"))
+        assertEquals("flagState", HelpFaq.search("결제는 언제 켜져요").first().id)
+        assertTrue(HelpFaq.about("알람 점검").any { it.id == "flagState" })
+        assertEquals(HelpAction.Go(SettingsGo.DIAGNOSTICS), HelpFaq.topics().single { it.id == "flagState" }.action?.second)
+    }
 }

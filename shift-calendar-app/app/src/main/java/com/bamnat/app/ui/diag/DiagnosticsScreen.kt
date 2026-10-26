@@ -282,6 +282,8 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             "기기: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
             "시간대: ${Today.zone()}",
+            // [PERF-15] 1.28 AO: the last opening's time to the calendar's month, measured on this phone.
+            com.bamnat.app.diag.StartupStats.describe(container.startupStats.last),
         )
         val usage = EventBook.counts(events, now - 30L * 24 * 60 * 60 * 1000).map { (name, n) -> "$name: $n" }
             .ifEmpty { listOf("기록 없음") }
@@ -297,6 +299,8 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
                 // [MEAS-08] 328: the person sees what stopped before "점검 내용과 함께 문의하기" sends it.
                 "앱 멈춤" to crashes,
                 "최근 이벤트 ${minOf(events.size, RECENT)}개" to recent,
+                // [FLAG-14] 1.28 AL: the dark-merge rows, in the text too (the screen shows them as [FlagStatusCard]).
+                FLAG_SECTION to flagReportLines(container),
             ),
         )
     }
@@ -471,7 +475,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                 }
             }
-            items(report.sections, key = { it.first }) { (title, lines) ->
+            // [FLAG-14] 1.28 AL: 기능 상태 with its checklists (and an admin phone's preview switches).
+            item { FlagStatusCard() }
+            items(report.sections.filter { it.first != FLAG_SECTION }, key = { it.first }) { (title, lines) ->
                 SectionCard(title = title) {
                     for (line in lines) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {

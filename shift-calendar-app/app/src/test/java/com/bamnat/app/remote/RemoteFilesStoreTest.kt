@@ -113,4 +113,34 @@ class RemoteFilesStoreTest {
         assertEquals(listOf("rates"), store().refresh(now))
         assertEquals(15_000L, care())
     }
+
+    /** [PERF-19] 1.28 AO: a saved file checked once is not checked again at each start, but any change is. */
+    @Test fun aCheckedFileIsNotCheckedAgainUntilSomethingChanges() = runBlocking {
+        publish("rates", 2027010101, rates2027)
+        assertEquals(listOf("rates"), store().refresh(now))
+        val mark = java.io.File(tmp.root, "rates.json.ok")
+        assertTrue("the download leaves its mark", mark.exists())
+        // Next start with the mark: the same file is laid over without the signature check.
+        RateTable.use(null)
+        store().applySaved()
+        assertEquals(15_000L, care())
+        // A file changed on the phone no longer matches its mark: checked again, and its signature fails.
+        val json = java.io.File(tmp.root, "rates.json")
+        json.writeText(json.readText().replace("0.010", "0.020"))
+        RateTable.use(null)
+        store().applySaved()
+        assertEquals(14_170L, care())
+        // A later app that no longer trusts the key: the mark names the old key list, so the check runs and refuses.
+        publish("rates", 2027010102, rates2027)
+        assertEquals(listOf("rates"), store().refresh(now, force = true))
+        RateTable.use(null)
+        val other = Base64.getEncoder().encodeToString(ByteArray(32) { 7 })
+        RemoteFilesStore(tmp.root, fetcher, 33, listOf(other)).applySaved()
+        assertEquals(14_170L, care())
+        // Without a mark (files saved by 1.27 and older) the file is checked and the mark written then.
+        mark.delete()
+        store().applySaved()
+        assertEquals(15_000L, care())
+        assertTrue(mark.exists())
+    }
 }

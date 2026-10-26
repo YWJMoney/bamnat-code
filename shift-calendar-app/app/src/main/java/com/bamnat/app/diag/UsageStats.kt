@@ -23,6 +23,8 @@ class UsageStats(
     private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val post: (String, JSONObject) -> Unit = { url, body -> serverRequest(url, "POST", "/api/events", body) },
+    /** [PERF-16] 1.28 AO: startup times added to the bundle when [StartupStats.allowed]; null sends none. */
+    private val startup: StartupStats? = null,
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -44,10 +46,26 @@ class UsageStats(
     /** [ALRM-02] The last day a bundle went, for 서버 연결 점검; null before any did. */
     val sentDay: LocalDate? get() = prefs.getLong(K_SENT_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(LocalDate::ofEpochDay)
 
-    fun preview(): String? = synchronized(lock) { book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
+    fun preview(flagsOn: List<String>? = null): String? = synchronized(lock) {
+        book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() }
+            ?.let { withStartup(JSONObject(withFlags(it, flagsOn))).toString() }
+    }
+
+    /**
+     * [FLAG-16] 1.28 AL: with the `stats.more` row on (처리방침 3.2 and its own yes), the keys of the dark-merge rows on
+     * this phone, sorted: the same list on every phone with the same rows, so it tells no phone apart.
+     */
+    private fun withFlags(body: String, flagsOn: List<String>?): String =
+        if (flagsOn == null) body else JSONObject(body).put("flagsOn", org.json.JSONArray(flagsOn.sorted())).toString()
+
+    /** [PERF-16] AO 1.28: the bundle with its `startup` part when there is one to send (gated by [StartupStats.policyAllows]). */
+    private fun withStartup(body: JSONObject): JSONObject = body.apply { startup?.payload()?.let { put("startup", it) } }
 
     /** Turning it off forgets everything not sent yet. */
-    fun clear() = synchronized(lock) { prefs.edit().clear().apply() }
+    fun clear() = synchronized(lock) {
+        prefs.edit().clear().apply()
+        startup?.clear() // [PERF-16]
+    }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
     fun forgetUnless(on: Boolean) {
@@ -58,19 +76,20 @@ class UsageStats(
      * Sends the finished days when [allowed] (the user's yes and the developer's switch) and not yet today.
      * A failure keeps them for tomorrow; days older than a week are dropped by [UsageBook].
      */
-    suspend fun sendIfDue(allowed: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun sendIfDue(allowed: Boolean, flagsOn: List<String>? = null): Boolean = withContext(Dispatchers.IO) {
         if (!allowed || baseUrl.isBlank()) return@withContext false
         val day = today()
         if (prefs.getLong(K_SENT_DAY, Long.MIN_VALUE) >= day) return@withContext false
         val body = synchronized(lock) { book().bundle(day, BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
             ?: return@withContext false
         try {
-            post(baseUrl, JSONObject(body))
+            post(baseUrl, withStartup(JSONObject(withFlags(body, flagsOn))))
         } catch (e: CompanyException) {
             // A bad bundle would fail every day; it is dropped. No connection is tried tomorrow.
             if (e.code == "offline" || e.code == "rate_limited" || e.code.startsWith("http_5")) return@withContext false
         }
         synchronized(lock) { prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day).apply() }
+        startup?.sent() // [PERF-16]
         true
     }
 

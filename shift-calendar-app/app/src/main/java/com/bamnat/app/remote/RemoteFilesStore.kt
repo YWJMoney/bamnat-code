@@ -80,7 +80,15 @@ class RemoteFilesStore(
         val json = File(dir, "$kind.json")
         val sig = File(dir, "$kind.json.sig")
         if (!json.exists() || !sig.exists()) return null
-        RemoteFiles.open(json.readBytes(), sig.readText(), kind, appVersion, keys)
+        val bytes = json.readBytes()
+        val signature = sig.readText()
+        // [PERF-19] 1.28 AO (검토 6-1 병목 3): this ran the Ed25519 check (BigInteger arithmetic, up to three keys) for
+        // every saved file on every start, inside the container the first screen waits for. The check is now
+        // run once per file, signature, key list and app version; the mark beside the file says it passed.
+        val mark = RemoteFiles.checkedMark(bytes, signature, keys, appVersion)
+        val ok = File(dir, "$kind.json.ok")
+        if (runCatching { ok.readText().trim() }.getOrNull() == mark) return RemoteFiles.openChecked(bytes, kind, appVersion)
+        RemoteFiles.open(bytes, signature, kind, appVersion, keys).also { runCatching { write(ok, mark.toByteArray(Charsets.US_ASCII)) } }
     }.getOrNull()
 
     /** Lays every saved file over the built-in data; call once when the app starts. */
@@ -120,6 +128,8 @@ class RemoteFilesStore(
             dir.mkdirs()
             write(File(dir, "$kind.json.sig"), sig.toByteArray(Charsets.US_ASCII))
             write(File(dir, "$kind.json"), bytes)
+            // [PERF-19] Checked just now: the next start need not check it again.
+            runCatching { write(File(dir, "$kind.json.ok"), RemoteFiles.checkedMark(bytes, sig, keys, appVersion).toByteArray(Charsets.US_ASCII)) }
             changed += kind
         }
         if (reached) runCatching { dir.mkdirs(); stamp.writeText(now.toString()) }

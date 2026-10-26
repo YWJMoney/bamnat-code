@@ -349,7 +349,7 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
         floatingActionButton = {
             ExtendedFloatingActionButton(onClick = {
                 // [SRV-04] Paused by the developer: said here, not after the form is filled.
-                if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
+                if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
                     notice = com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
                 } else rules.ensure { adding = true }
             }, text = { Text("시세 알려 주기") }, icon = { Icon(Icons.Filled.Add, null) })

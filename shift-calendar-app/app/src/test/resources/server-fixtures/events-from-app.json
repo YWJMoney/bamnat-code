@@ -1,0 +1,41 @@
+{
+  "at": "2026-11-28T03:00:00Z",
+  "body": {
+    "v": 1,
+    "app": "1.28.0",
+    "days": [
+      {
+        "day": "2026-11-27",
+        "events": {
+          "open": 2
+        },
+        "recent": [
+          "open"
+        ]
+      }
+    ],
+    "flagsOn": [
+      "ads",
+      "billing",
+      "company.report",
+      "inquiry.photos",
+      "plaza.news",
+      "stats.more",
+      "type.business",
+      "type.day",
+      "type.field",
+      "type.hourly",
+      "type.shift",
+      "usage.stats"
+    ],
+    "startup": {
+      "container": 100,
+      "activity": 300,
+      "firstMonth": 1500,
+      "warm": {
+        "container": 100,
+        "firstMonth": 400
+      }
+    }
+  }
+}

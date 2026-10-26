@@ -485,11 +485,32 @@ abstract class ScreenshotBase {
             List(hold + 1) { at(from.toFloat()) } + (1..30).map { k -> at(from + (to - from) * k / 30f) } + listOf(at(to.toFloat()))
         }
 
-        /** Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = settings). */
-        fun tab(index: Int, wide: Boolean) = gesture { w, h, d ->
-            val p = if (wide) 40 * d to (45 + index * 62) * d
-            else w * (index + 0.5f) / 5 to h - 40 * d
-            listOf(p, p)
+        /**
+         * Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = settings).
+         *
+         * [QA-05] On a busy CI runner a tap can land while the bar is still being put together after the first frame
+         * (1.28 [PERF-09] moved work there) and is lost: shots-b on c78434b stayed on the calendar three times. So the
+         * tab under the finger must read as chosen afterwards, or it is tapped again, at most [TAB_TRIES] times.
+         */
+        fun tab(index: Int, wide: Boolean) {
+            var at = 0f to 0f
+            repeat(TAB_TRIES) {
+                gesture { w, h, d ->
+                    at = if (wide) 40 * d to (45 + index * 62) * d else w * (index + 0.5f) / 5 to h - 40 * d
+                    listOf(at, at)
+                }
+                if (tabChosenAt(at.first, at.second) != false) return
+            }
+        }
+
+        /** Whether the tab at ([x], [y]) is the chosen one; null when no tab is there (a screen without the bar). */
+        private fun tabChosenAt(x: Float, y: Float): Boolean? {
+            val under = nodes().filter { n ->
+                val b = n.boundsInWindow
+                n.config.getOrNull(SemanticsProperties.Selected) != null && x in b.left..b.right && y in b.top..b.bottom
+            }
+            if (under.isEmpty()) return null
+            return under.any { it.config.getOrNull(SemanticsProperties.Selected) == true }
         }
 
         /** [SET-01] Opens a group from the settings list. */
@@ -868,6 +889,8 @@ abstract class ScreenshotBase {
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L
+        /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
+        const val TAB_TRIES = 3
         /** [QA-08] Once more, for a screen that has drawn nothing at all yet. */
         const val EMPTY_WAIT_NANOS = 15_000_000_000L
 

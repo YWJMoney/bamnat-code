@@ -46,6 +46,14 @@ class StartupBenchmark {
 class BaselineProfileGenerator {
     @get:Rule val rule = BaselineProfileRule()
 
+    // [PERF-14] 1.28 AO: the start alone also goes into the startup profile, which orders the start-up classes
+    // first in the dex (dexLayoutOptimization in app/build.gradle.kts); the tab walk only into the Baseline Profile.
+    @Test fun start() = rule.collect(packageName = PACKAGE, includeInStartupProfile = true) {
+        pressHome()
+        startActivityAndWait()
+        device.wait(Until.hasObject(By.pkg(PACKAGE).depth(0)), 5_000)
+    }
+
     @Test fun generate() = rule.collect(packageName = PACKAGE) {
         pressHome()
         startActivityAndWait()

@@ -84,7 +84,7 @@ class PayViewModel(
     val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
     val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
+        scope.schedule.live.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     /** [LEAVE-01] The calendar's 연차 원장 today. */
     val leave: StateFlow<com.bamnat.core.leave.LeaveSummary?> =
         scope.leave.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

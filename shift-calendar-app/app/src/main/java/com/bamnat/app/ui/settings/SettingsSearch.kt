@@ -253,6 +253,9 @@ internal object SettingsIndex {
         screen("급여", "명세서와 맞춰 보기", SettingsGo.PAY, "맞춰 보기", "맞춰보기", "금액 비교하기", "계산 방식 찾기", "명세서 비교", "실제 입금액",
             "사진으로 회사 방식 맞추기", "명세서로 맞춰 보기"),
         screen("급여", "이것만 넣으면 정확해져요", SettingsGo.PAY, "규칙만", "명세서 없이", "시수", "월 소정근로시간", "기본급 넣기", "필수 값", "0원"),
+        // ---- 1.28 통합 [FLAG-39] AL 6장이 남긴 것: 진단 › 기능 상태 (FlagStatusCard) ----
+        screen("${A.title} › 알람 점검", com.bamnat.app.ui.diag.FLAG_SECTION, SettingsGo.DIAGNOSTICS, "켜진 기능", "언제 켜져", "왜 꺼져", "결제 언제",
+            "광고 언제", "대기 중", "남은 조건", "다크머지", "관리자 미리 보기", "시간 단위 연차"),
     )
 
     /** The best fits for [query], best first. */

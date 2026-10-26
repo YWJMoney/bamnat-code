@@ -310,7 +310,7 @@ fun ShareDialog(
             }
             val current = link
             // [SRV-04] The developer can pause new links for a while; links already made keep working.
-            val createPaused = current == null && container.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE)
+            val createPaused = current == null && container.flags.paused(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE)
             if (createPaused) {
                 Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

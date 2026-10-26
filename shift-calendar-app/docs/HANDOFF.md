@@ -1,11 +1,24 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-26, 앱 1.27.0(versionCode 38, 워치 100038) 기준이에요. 맨 위 0-new항이 지금 판(1.27.0), 0-a항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-26, 앱 1.28.0(versionCode 39, 워치 100039) 기준이에요. 맨 위 0-new항이 지금 판(1.28.0), 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0-new. 지금 판: 1.27.0 리뷰 반영·사진 인식 개선 (2026-10-26)
+## 0-new. 지금 판: 1.28.0 다크머지(기능 플래그)·관리자 앱 여섯 허브·앱 로딩 (2026-10-26)
+
+사용자 지시(2026-10-26 07:45Z·08:24Z): 앱 로딩이 느림, 처리방침·기간 근거로 다크머지된 기능이 그날 저절로 켜지게, 관리자 앱에서 켜진 것·대기 중인 것과 다시 끄기(이유 자세히), 정식 출시 스위치 은퇴, 근무 유형 노출 온오프(최고 관리자 휴대폰은 모두 보기), 강제 끔은 최고 관리자 + 그가 허락한 관리자(D97), 관리자 앱 메뉴 혁신, 검토 보고서 제안 모두 수용(D98). 통합 브랜치 `claude/project-thread-hms2jz`(main d6b525f에서). main PR [#127](https://github.com/YWJMoney/-/pull/127). 결정 D97~D101(비공개 `계획/결정-목록.md`).
+
+- **기능 플래그(다크머지) 앱 쪽(묶음 AL, FLAG-01~19)**: 6-24항. core `flags/`(`FlagCatalog`·`FlagEval`·`PolicyCalendar`)가 원본이고, 결제·광고는 `billing`·`ads`(LEGAL: 처리방침 3.1 시행 11-10·보류 11-24·Play 프로덕션 승인·정기 결제 상품 활성의 관리자 확인)가 조건을 채우면 휴대폰이 스스로 켜요. 정식 출시 스위치·held 마스크·`paused()`는 없어졌어요. 근무 유형 노출, 진단 '기능 상태', 관리자 미리 보기.
+- **기능 관리 서버·관리자 앱(묶음 AM, FLAG-20~33·ADMUX-21~29)**: 6-25항. `/api/config`의 `flags`·`policy`·`serverTime`, 옛 앱용 `billingLive`·`freeFeatures`·`off`는 서버가 계속 계산. 1.27 설정(`billing_live`·`free_features`·`switches_off`·`auto_rested`)은 처음 요청 때 `migrateFlags`가 한 번 덮어쓰기로 옮겨요. 강제 끔 권한 `flagOff`(D97), 법적 플래그 하루 전·켜짐 알림(D99, 방해 금지 시간 무시 D101).
+- **관리자 앱 여섯 허브(묶음 AN, ADMUX-30~42)**: 6-26항. 오늘·문의·광장·출시·분석·관리, `/badges`(15초)·`/today`·`/basics`, 색인 넷. `/overview`·`/inbox`는 옛 탭용으로 남김(1.29에서 지울지 판단).
+- **앱 시작 빠르게(묶음 AO, PERF-07~19)**: 6-27항. 보이는 달 ±2달 먼저, 화면이 컨테이너를 기다리지 않음, 첫 달 뒤 작업 세 묶음, Baseline Profile 플러그인·워크플로, 시작 시간(구간 값)을 `stats.more`일 때만 사용 통계로.
+- **통합 교차 점검(FLAG-34~39)**: 장부는 core 한 곳(`FlagCatalogExportTest`가 서버 `src/flag-catalog.js`를 만듦), 서버↔앱 계약 시험(`test/contract.test.mjs` ↔ `flags/ServerContractTest`, 같은 `server-fixtures/`), 덮어쓰기 앱 판 범위, D101, 옛 관리자 앱 끄기, 화면 시험 기다림. `StartupStats.policyAllows`는 `AppContainer`에서 `flags.on(STATS_MORE)`로 이었어요.
+- **처리방침 3.2(순번 459, D100)**: 게시 2026-10-28, 시행 2026-11-27(수집 항목이 늘어 30일). 1-9항에 '더 보내기'(켜진 기능 목록, 앱 시작 시간 0.1초~15초 구간 값, 따로 동의), 1-5항 기능 켜짐 확인, 1-7항 최고 관리자 휴대폰 표시. 날짜는 `PolicyCalendar.SEED`·`LegalPagesTest`와 같고, 게시일이 바뀌면 앱을 다시 만들지 않고 관리자 앱 기능 관리 › 일정 › 처리방침 일정에서 고쳐요. 이용약관은 1.1 그대로. `docs/play-data-safety.md` 1.28.0장('기타 앱 성능 데이터'에 분석 목적 더함).
+- 회사 서버: 새 비밀값 없음. 새 표 `flag_overrides`·`flag_checks`·`flag_history`·`flag_state`·`usage_flags`·`usage_startup`과 색인 넷은 첫 요청 때 `ready()`가 만들어요. `APP_CODES`에 1.28.0. 공유 서버는 바뀐 것 없음. 앱 DB 21 그대로, 새 권한·새 SDK 없음.
+- 사용자 몫: 회사 서버 배포 → PR 합치기(처리방침 3.2 게시) → 휴대폰 확인 → Play 1.28.0 → Baseline Profile 워크플로(main에 합친 뒤 Actions에 보임)를 돌려 두 파일 커밋 → Play 승인 날 기능 관리에서 `billing`의 Play 확인 두 개. 자세한 차례는 비공개 `release/1.28.0/사용자가-해야-할-일.md`. 다음 판은 비공개 `인계/다음-스레드-시작-1.29.md`.
+
+## 0-a. 앞 판: 1.27.0 리뷰 반영·사진 인식 개선 (2026-10-26)
 
 사용자 지시(2026-10-25 23:46Z): 1.26 동작 확인 리뷰(초대 보상·자동 인식, 회사 찾기·새 달력·대표 주기·맞아요/달라요·급여 찾기, 광장 흐름·명세서 확인·회사 정보 광장·유형별 광장·바꿀 때마다 나누기, 사진 인식·규칙만 급여·맞춰 보기 자리, 투자 캡처·메모장) + 혁신점 + 흐름 점검 + 처리방침 시행일 검토. 통합 브랜치 `claude/project-thread-eb02i3`(main 8479074에서), main PR [#126](https://github.com/YWJMoney/-/pull/126). 결정 D83~D96(비공개 `계획/결정-목록.md`).
 
@@ -19,7 +32,7 @@
 - 회사 서버: `// AG 1.27`·`// AH 1.27`·`// AI 1.27` 블록, 새 비밀값·새 표 없음(새 칸 `reports.proof`·`reports.claim`·`votes.claim`은 스스로 더함), `APP_CODES`에 1.27.0. DB 21 그대로.
 - 시험·사용자 몫: 비공개 `release/1.27.0/사용자가-해야-할-일.md`. 다음 판은 비공개 `인계/다음-스레드-시작-1.28.md`.
 
-## 0-a. 앞 판: 1.26.0 회사 근무주기 찾기·회사별 광장·메뉴 순서·친구 초대 (2026-10-25)
+## 0-b. 앞 판: 1.26.0 회사 근무주기 찾기·회사별 광장·메뉴 순서·친구 초대 (2026-10-25)
 
 사용자 지시(2026-10-25): 조사한 회사별 교대주기 148곳을 앱에 넣어 검색으로 근무주기를 맞추고 급여·광장까지 이끌기, 첫 화면·메뉴 순서 바꾸기, 초대한 사람 프로권. 검토 뒤 결정 D79(한 번 승인 뒤 저절로 나누기 + 회사를 고른 사람끼리만 급여 방식). 통합 브랜치 `claude/project-thread-77nxxd`, main PR #125(1.25.0 #124 포함).
 
@@ -569,6 +582,65 @@ shift-calendar-app/
 - **맞춰 보기 자리·이름(PAYS-19·20)** 급여 합계 바로 아래 `SlipMatchCard` "명세서와 맞춰 보기": '금액 비교하기'(프로)·'계산 방식 찾기'(무료). 회사 규칙 카드에는 '처음부터 설정'만. 급여 내역 줄 풀이(`LineDetailDialog`)에 '이 값 고치기'(기본급·수당)·'계산 방식 고치기'(가산 줄).
 - **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
 - 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
+
+### 6-24. 기능 플래그(다크 머지)·정식 출시 스위치 은퇴·근무 유형 노출·진단 기능 상태 (1.28.0 묶음 AL, FLAG-01~19)
+
+계획과 결정(AL-D1~D7), 통합에 넘기는 것, 처리방침 3.2 §1-9 초안은 프로젝트 파일(git 밖)의 `계획/1.28-AL-개발계획.md`.
+
+- **장부(core `flags/`)** `Flag`(이름·하는 일·꺼 둔 까닭·근거 `Basis`·위험 `Risk.NORMAL|LEGAL`·정리 예정 판·담당·만든 판·`minApp`/`maxApp`), `Condition`(date·policy·consent·profile·app·workType·rollout·manual·admin·any), 서버 덮어쓰기 `FlagOverride`(force on/off·why·until·conditions·판 범위·`confirmed` 손 확인 사실). 행은 `FlagCatalog`: `billing`·`ads`(LEGAL, 처리방침 3.1 시행일·보류·Play 프로덕션·정기 결제 확인, ads는 + Google 동의 길), `type.*` 6개, `leave.hourly`, 옛 기능 스위치 6개(plaza.write…), `stats.more`(LEGAL, 처리방침 3.2 + 사용 통계 + `usage.stats.more` 동의), `free.<FEATURE>`.
+- **판단 순서** `FlagEval.state`: 강제 끔 → 앱 판 밖 → 관리자 미리 보기 → 강제 켬 → 조건(모두 채우면 켬, 모르는 조건이 있으면 기본값). LEGAL 행은 서버가 확인한 시각(`RemoteConfigStore.serverNow()`: 마지막 config의 `serverTime` + 같은 부팅이면 경과)으로 한국 날짜를 보고, 처리방침 조건이 남으면 미리 보기·강제 켬도 안 켜져요. 처리방침 판·시행일은 `PolicyCalendar`(3.1 씨앗, 3.2는 게시 2026-10-28·시행 2026-11-27로 처리방침 페이지와 같음, 서버 `policy`가 덮음).
+- **서버 답** `/api/config`의 `flags`·`policy`·`serverTime`(앱 `flags/FlagJson.kt`). `flags`가 없는 옛 서버는 `LaunchConfig.overrides()`가 1.27과 똑같이 바꿔요: `billingLive` true → billing·ads 강제 켬, 한 번이라도 받은 false → 강제 끔, `freeFeatures` → free.X 켬, `off` → 그 스위치 행 끔. 정식 출시 스위치 자체와 `paused()`·held 마스크는 앱에서 없어졌어요.
+- **앱** `AppContainer.flags`(`flags/Flags.kt`): config·동의·유형·급여 설정·관리자·미리 보기·광고 동의·한국 자정마다 다시. `on(key)`·`paused(ServerSwitch)`·`types(keep)`·`statsOn()`. `FeatureGate`의 live = billing 행, 무료로 연 기능 = 켜진 free.* 중 프로 기능만. 광고 SDK·띠·보상형은 `FlagCatalog.ADS`. 회사 사실·설치 해시는 첫 화면 뒤(`flagsWarm`)에만 읽어 시작 예산은 그대로.
+- **근무 유형 노출** 숨긴 유형은 새로 고르는 곳(첫 질문·첫 설정·하는 일 찾기·근무 형태 바꾸기)에서만 빠지고, 쓰던 유형(`keep`)·백업·회사 파일은 그대로. 모두 숨기면 교대. 최고 관리자 휴대폰(`/api/passes`의 `admin.owner`)은 '숨김 · 관리자에게만 보여요'로 봐요.
+- **진단 '기능 상태'** `ui/diag/FlagStatusCard.kt`(알람 점검 화면): 꺼진 것·서버 강제 먼저, 행마다 상태·출처·이유·조건 체크리스트, 보고서 글에도. 관리자 휴대폰은 행마다 '관리자 미리 보기'(`FlagPreviews`, 휴대폰에만, 백업 안 함).
+- **사용 통계** `flagsOn`(켜진 키, 미리 보기 제외)은 `stats.more`가 켜졌을 때만 보내요. 3.2 시행 뒤 사용 통계를 켠 휴대폰에 한 번 묻는 카드 `statsMore`(`ui/flags/StatsMoreConsent.kt`)와 설정 › 사용 통계 줄, 설정 `usageStatsMore`(백업됨). AO의 시작 시간도 `Flags.on("stats.more")`를 써요.
+- 시험: core `FlagEvalTest`(21), 앱 `flags/FlagsAppTest`(11)·`TierAppTest`·`OperationsAppTest`·`AdAndLicenseRulesTest`, 사진 `ALScreenshotTest` 1200~1207.
+### 6-25. 서버 기능 관리(다크머지)·관리자 앱 '기능 관리'·근무 유형 (1.28.0 묶음 AM, FLAG-20~33·ADMUX-21~29)
+
+계획·통합에 넘기는 것은 프로젝트 파일(git 밖)의 `계획/1.28-AM-개발계획.md`. 휴대폰 쪽 판단기·장부는 6-24(묶음 AL), 관리자 앱 허브는 묶음 AN.
+
+- **장부(FLAG-20)** `src/index.js` `FLAG_CATALOG`(키는 core `FlagCatalog`과 같음: `billing`·`ads`·`type.*` 6개·`leave.hourly`·옛 스위치 6개·`stats.more`, `free.<FEATURE>`는 `flagDef`가 이름 규칙으로 만듦). 이름이 `FLAGS`가 아닌 까닭: `FLAGS`는 글 신고 이유. 조건 JSON은 AL-D1(`date{from|policy}`·`policy{version}`·`consent{key,unknownMeets}`·`profile{key}`·`app{min,max}`·`workType{in}`·`rollout{percent}`·`manual{key}`·`admin`·`any{of}`). 처리방침 일정 `POLICY_CALENDAR`(3.2는 게시 10-28·시행 11-27, 관리자 앱에서 고침 → settings `policy_overrides`).
+- **판단기 하나(FLAG-21)** `src/admin-lib.js`의 `evalFlag`(1 강제 끔 → 2 앱 판 밖 → 3 미리 보기 → 4 강제 켬 → 5 조건, LEGAL은 3·4에서도 policy 조건)를 서버(`serverEval`, 휴대폰마다 다른 조건은 "phone"으로 막지 않음)와 관리자 앱 미리 보기가 같이 써요. 표 `flag_overrides`(강제·이유·기한·다시 볼 날·바꾼 조건·누가·auto), `flag_checks`(확인했어요), `flag_history`(전과 후), `flag_state`(서버가 본 켜짐·그때·하루 전 알림한 날), `usage_flags`(날·앱 판·플래그별 휴대폰 수, '*'가 분모).
+- **/api/config(FLAG-22)** 옛 칸 그대로(`billingLive` = 서버가 본 billing, `freeFeatures` = `free.*` 강제 켬, `off` = 옛 스위치 강제 끔) + `flags`(덮어쓴 것만, manual이 있는 플래그는 늘 `confirmed`와 함께) + `policy` + `serverTime`. 1.27 settings(`billing_live`·`free_features`·`switches_off`·`auto_rested`)는 `migrateFlags`가 한 번(`flags_migrated`) 덮어쓰기로 옮김(FLAG-23). `paused()`·`/switches`·자동 쉼도 플래그(FLAG-24, `/switches`는 이제 `why` 필수).
+- **정식 출시일(FLAG-25)** `recordLaunch`: billing이 서버 눈에 처음 켜진 순간(매시 17분 `flagTick`, 확인·덮어쓰기·config 때) `launched_at`을 INSERT OR IGNORE, 다시 안 바뀜. `POST /launch`는 410 `retired`, GET은 그대로. 감사 보상은 `POST /flags/billing/thanks`.
+- **권한(FLAG-27, D97)** 영역 `flags`(보기/고치기), 예/아니요 `flagOff`(TOGGLES, 기본 없음). 강제 끔은 최고 관리자나 flagOff, 강제 켬·LEGAL 조건·LEGAL 확인·처리방침·감사 보상은 최고 관리자만. 1.28 전 관리자는 운영 보기가 있으면 기능 관리 보기(`SINCE.flags`). `/api/passes` `admin.owner`(FLAG-26).
+- **법적 안전(FLAG-28·29, D99)** `flagTick`이 LEGAL 플래그가 내일 저절로 켜지면 하루 전, 켜지면 그때 웹 푸시(`PUSH_KINDS.flags`, urgent). 켜진 뒤 24시간 `/overview`의 `flagAlerts`로 홈 맨 위 카드(`flagAlertCard`). `noticeWarnings`: 근거 판의 게시→시행이 7일(불리하면 30일)보다 짧거나 날짜 조건이 시행일보다 이르면 경고. `flagsDue`는 메뉴 숫자.
+- **사용 통계(FLAG-30)** `/api/events`가 `flagsOn`(맨 위 = 가장 새 날, 또는 날마다)을 받아 알려진 키만 날 합계로. `startup`(묶음 AO)은 막지 않고 받아요(세는 것은 AO).
+- **관리자 앱(ADMUX-21~28)** `src/admin-app.js`의 `// ---- AM 1.28 기능 관리 ----` 구역: `flagsView`(칩·찾기·무리별 줄·`?view=timeline` 일정), `flagView`(상태·체크리스트·확인했어요·근거·휴대폰·전후·강제·조건 편집·미리 보기·기록·결제의 감사 보상), `typesView`, `flagAlertCard`, `FLAG_ACTIONS/FORMS/CHANGES`(ACTIONS 등에 펼침). NAV에 `flags`·`types`(AN이 출시 허브로 옮김). 설정의 정식 출시 카드와 운영의 스위치 버튼은 기능 관리로 가는 길만 남김.
+- 시험: `test/flags.test.mjs`(11), `test/ui/admin-ui.test.mjs` 끝 6개, 고친 money·invite·digest·operations·accounts·admin·admin-server·dev 시험.
+- **1.28 통합 교차 점검 더함(FLAG-34~39)**
+  - **장부는 한 곳(FLAG-34)**: core `FlagCatalog`가 원본이에요. `core/src/test/.../FlagCatalogExportTest`가 `server/company-worker/src/flag-catalog.js`(`CORE_FLAGS`·`CORE_FREE`·`CORE_POLICY`·`CORE_NAMES`)를 만들고, 파일이 낡으면 실패해요. 글을 고칠 때는 `FlagCatalog.kt`를 고치고 `BAMNAT_WRITE_FLAG_CATALOG=1 ./gradlew -p core test --tests '*FlagCatalogExportTest*' --rerun` 다음 `npm test`. 서버 `FLAG_CATALOG`는 `CORE_FLAGS` 그대로, `free.<FEATURE>`는 `CORE_FREE` 글에 기능 이름(`FREE_FEATURES`)을 넣고, `POLICY_CALENDAR`의 3.1·3.2는 `CORE_POLICY` 날짜(2.5·3.0만 서버에). core `Flag`에 `group`(`FlagGroup`: money·type·law·server·stats·free)이 생겼고 옛 스위치 6개의 `since`는 1.22.0. 관리자 앱 근거 줄은 `basis.note`도 보여요. `test/contract.test.mjs`가 admin-lib의 조건 이름(`CONSENT_NAMES`·`PROFILE_NAMES`·`MANUAL_NAMES`·`WORK_NAMES`)이 core와 같은지, 번들에 장부가 한 번만 들어가는지 봐요.
+  - **계약 시험(FLAG-35)**: `test/contract.test.mjs`가 `/api/config`·`/api/passes` 실제 답(처음 서버, 1.27 설정 옮김, Play 확인 하나·둘, 강제 끔+이유+기한·근무 유형 숨김·앱 판 범위·최고 관리자/관리자 휴대폰, 3.2 뒤)을 `app/src/test/resources/server-fixtures/*.json`과 비교해요(바뀌면 `UPDATE_FIXTURES=1 npm test`). 앱 `flags/ServerContractTest`(Robolectric)가 같은 파일을 `LaunchConfig.parse`·`TierClient.readPasses`·`FlagEval`·`Flags.types`로 읽어 휴대폰 상태를 확인하고, 앱이 만든 사용 통계 몸(`flagsOn`)을 `events-from-app.json`으로 남겨(`BAMNAT_WRITE_FIXTURES=1`) 서버 시험이 받아 키별 합계만 남는지 봐요(`app` 판 이름은 비교에서 뺌).
+  - **앱 판 범위(FLAG-36, AL-D3)**: `flag_overrides.min_app`·`max_app`(COLUMNS), `POST /api/admin/flags/<key>/range {minApp, maxApp, why}`(권한은 조건과 같음: LEGAL은 최고 관리자), `/api/config` `flags.<key>.minApp/maxApp`(범위만 있어도 보냄), `evalFlag` 2단계, 기록 `flag_range`. 관리자 앱 상세 '켜지는 조건' 카드 아래 '앱 판 범위 고치기'(범위 없애기). 앱은 AL 때부터 `FlagJson`·`FlagEval` 2단계로 읽어요.
+  - **D101(FLAG-37)**: `notifyAdmins(..., { ignoreQuiet })`. `flagTick`의 LEGAL 하루 전·켜짐 알림만 방해 금지 시간을 무시하고, 다른 알림은 그대로.
+  - **옛 관리자 앱(FLAG-38)**: `why` 없는 `POST /api/admin/switches` 끄기는 400 대신 '옛 관리자 앱에서 끔'(`OLD_APP_WHY`)으로 채워 플래그 기록·활동 기록(`switch_off` 내용)에 남겨요. 켜기는 원래 이유가 필요 없어요.
+  - **화면 시험 기다림(FLAG-39)**: `test/ui/admin-ui.test.mjs`의 `t.go`가 `t.idle()`로 `#main[aria-busy]`·`#progress.on`이 꺼질 때까지(최대 5초) 기다려요. 원인: 고정 60ms 안에 화면 요청이 끝나지 않으면(옆에서 Gradle이 돌 때) 뼈대만 보여 "[ADMUX-01] chores/types shows something"이 가끔 실패. 앱 설정 찾기에 '기능 상태'(알람 점검으로 감), 도움말 `flagState` 한 줄.
+### 6-26. 관리자 앱 여섯 허브·설정 나누기·할 일 하나로·가벼운 메뉴 숫자 (1.28.0 묶음 AN, ADMUX-30~42)
+
+계획과 결정(AN-D1~D6), 전후 사진 목록은 프로젝트 파일(git 밖)의 `계획/1.28-AN-개발계획.md`, 사진은 `1.28/admin/before_*`·`after_*`(폰 390·폴드 880·컴퓨터 1440 × 밝게·어둡게).
+
+- **허브(ADMUX-30)** `admin-lib.js`의 `HUBS`(today·ask·plaza·release·insight·manage와 탭 목록)와 `TABS`(탭마다 이름·권한 영역(`area`, 배열이면 하나만 있어도)·`owner`·`badge(o, me)`·`count: false`·`strip`·옛 이름 `old`). `tabVisible`·`visibleHubs`·`hubOf`·`bottomHubs`(오늘과 3개 + 더 보기, 다 들어가면 더 보기 없음). 앱은 `hubs()`·`tabOk()`·`tabName()`·`hubNow()`, 틀은 `shell()`(사이드바 `li[data-hub]`와 `.subnav`, 제목 아래 `#hubtabs`, 아래 탭 `data-nav` = 허브 키)과 `paintFrame()`. 허브는 마지막에 본 탭(`lastTab`)으로 열려요. 더 보기(`moreView`)는 아래 탭에 없는 허브와 그 탭들.
+- **기다리는 것(ADMUX-31)·숫자(ADMUX-34)** `L.tabBadge`·`L.hubBadge`(탭 숫자의 합, 여러 판은 `count: false`라 더하지 않음, 오늘은 숫자 없음), 더 보기는 아래 탭에 없는 허브만 더해요. `L.waiting(hub)` → `waitingStrip()`(`#waiting`, 숫자가 바뀌면 `updateBadges()`가 다시 칠해요). 출시 › 기능 관리 숫자는 AM의 `o.flagsWaiting`을 읽어요(없으면 0).
+- **설정 나누기(ADMUX-32)** 채택 규칙 `adoptView`(광장), 답 목표 `slaView`(문의), 친구 초대 규칙 `inviteSettingsCard`는 `rewardsView` 아래(관리 › 보상, settings 권한만이면 그 카드만), 서버 상태 `serverView`(관리), 이 기기·알림·설치·단축키는 `accountView`. `#/settings`는 `movedView`(옮긴 곳 링크 + 최고 관리자에게 정식 출시 카드 — AM이 기능 관리로 바꾸며 지워요).
+- **할 일 하나로(ADMUX-33)** 받은함 화면을 없애고 오늘의 `todoCard`가 같은 목록(`/inbox`와 같은 `inboxItems`)을 오늘까지·이번 주·내 것·모두(`#/home?view=`)로 보여요. 맡기·열기·내일 볼게요·바로 답하기(`quick-reply` 폼, 답하고 닫기도). 운영 화면은 앱 공지 `noticesView`·이달 할 일 `choresView`(`#/chores?month=`)·기능 스위치 `switchesView`(기능 관리 자리), 지표의 관문은 `gatesCard`로 떼어 출시 › 출시 관문 `gatesView`에도.
+- **옛 주소·기기 설정(ADMUX-35)** `L.redirect`(inbox → home?view, ops → flags 또는 chores?month), `readRoute`가 옮기고 `fixAddress()`가 주소를 바꿔 써요. `L.migratePrefs`가 저장한 보기 주소와 화면으로 고른 아래 탭을 허브로 한 번 옮겨요(`v: 2`).
+- **키·명령창(ADMUX-36)** `1`~`6` 허브(문의 답 칸에서는 자주 쓰는 답), `[`·`]` 허브 안 탭(문의를 열었을 때는 앞뒤 문의), `g`+글자는 그대로에 `g f`·`g n`·`g p`·`g u` 더함. 명령창 화면 줄은 '허브 › 탭'이고 `old`의 옛 메뉴 이름으로도 찾아져요.
+- **속도(ADMUX-37~39)** 서버 `GET /api/admin/badges`(`badges()`: 누구인지·build·billingLive·메뉴 숫자만, `BADGE_SQL`을 `overview()`와 같이 씀, 관리자 id·owner·권한마다 15초 `badgeMemory`, GET·HEAD가 아닌 요청과 시간마다 일이 끝나면 `badgesChanged()`로 바로 무효), `GET /api/admin/today`(오늘 화면만), `GET /api/admin/basics`(채택 설정·답 목표·이유 문구). 앱 `enter()`는 /badges로 틀을 그린 뒤 `load()`(화면 데이터만)와 `loadBasics()`를 기다리지 않고, 30초·90초 `poll()`은 `refreshBadges()`만(문의 상세는 다시 읽고, 오늘은 숫자가 바뀌었을 때만). 보내는 요청 뒤엔 숫자를 바로 다시 물어요. 색인 넷 `LATE_INDEXES`: `inquiries_created`·`inquiries_bad`(rating = -1만)·`posts_flagged`(신고 글만)·`audit_action`. `tools/bundle.mjs`가 `adminPrebuilt()`로 관리자 앱 파일과 build를 `dist/worker.js`에 미리 넣어요(wrangler deploy·시험은 예전처럼 처음 요청 때 만듦). `/overview`·`/inbox`는 열려 있던 1.27 탭을 위해 남겼어요.
+- **AM과 합친 자리(1.28 통합)** `VIEWS` 표의 flags·types는 AM의 `flagsView`/`flagView`·`typesView`, effects는 통합이 만든 `effectsView`(서버 `GET /api/admin/effects` = `flagEffects`: 플래그마다 켜진 휴대폰 비율과 서버가 켜짐·꺼짐을 본 때 앞뒤 7일 문제 신고·서버 오류, 지표 권한, 기능 관리 권한이 있으면 줄이 상세로). 자리표(`placeholder`·`switchesView`)는 지웠어요: 1.27 기능 스위치는 기능 관리의 플래그(이유 필수). 탭 flags·types의 권한은 `flags` 하나(AN-D3의 ops 대신, 1.27 운영 보기 관리자는 서버 `SINCE.flags`로 보기). `/badges`는 `FLAG_STORE_SQL`을 같은 batch로 읽어 `billingLive`(서버가 본 billing)와 `flagOverview`의 `flagsWaiting`·`flagsDue`·`flagAlerts`를 넣고, 앱 `refreshBadges()`는 `flagAlerts`가 바뀌면 오늘을 다시 그려요. 기능 관리 쓰기는 다른 쓰기처럼 `fetch`의 finally에서, 매시 `flagTick`은 `scheduled`의 `.finally(badgesChanged)`로 배지 보관을 비워요. `#/settings`(movedView)의 정식 출시 카드는 결제·광고 조건으로 가는 링크로 바뀌었어요.
+- 시험: 서버 `test/admin-an.test.mjs`(5: /badges = /overview 숫자, 15초 보관·보내면 무효, 권한마다, /today = /inbox·/basics 모양, 색인 넷이 쿼리 계획에 쓰임), `test/accounts.test.mjs` 번들 시험(미리 만든 파일과 ETag가 서버가 만든 것과 같음), `test/admin-lib.test.mjs` AN 4개, `test/ui/admin-ui.test.mjs` AN 9개(역할별 허브(문의만·광장만), 기능 스위치 끄기 → 서버, 옛 주소, 숫자, 설정 나누기 저장, 바로 답하기, 키·명령창, /badges 실패해도 화면, 옛 기기 설정).
+### 6-27. 앱 시작 빠르게: 보이는 달 먼저·화면이 기다리지 않음·작업 나눔·Baseline Profile·실제 휴대폰 시작 시간 (1.28.0 묶음 AO, PERF-07~19)
+
+계획·원인 표·JVM 전후 숫자는 프로젝트 파일(git 밖)의 `계획/1.28-AO-개발계획.md`.
+
+- **보이는 달 먼저(PERF-07·08)** `ScheduleRepository.snapshotAround(month)`가 보이는 달 ±2달(`ScheduleSnapshot.windowOf`)만 `DayEntryDao/DayExtraDao.inRange`로 먼저 읽어 보내고, 전체(`live`)가 오면 바꿔 끼워요. 창 스냅숏은 `window`가 있고 `isComplete=false`라서 `covers(month)`로 확인한 뒤에만 써요. `CalendarViewModel.snapshot`은 M-1·M+1이 덮일 때만 값을 내고, 쓰기·실행 취소·통계용 `currentSnapshot()`은 전체만 써요. 전체 읽기는 저장소마다 한 번(`live` = `shareIn(appScope, WhileSubscribed(5초))`), 달력·알림·워치·급여·통계·돈·공유·휴대폰 캘린더가 나눠 써요. 쓰고 바로 읽는 한 번 읽기(`snapshot.first()`)는 그대로 차가운 흐름이에요.
+- **화면이 기다리지 않음(PERF-09·12)** `MainActivity.onCreate`가 스플래시(`setKeepOnScreenCondition`)와 `setContent`를 먼저 하고, 컨테이너는 `BamnatApp.awaitContainer()`로 기다린 뒤 예전 onCreate·onStart 몫을 같은 순서로 해요(`open()`·`started()`). 잠금(AppLock)·BootAlarms·잠긴 부팅 동작은 같아요. `StartupTrace`에 `CONTAINER_WAIT`·차가운/따뜻한 시작 구분.
+- **첫 달 뒤 작업 세 묶음(PERF-10)** `AppContainer.startLater`: 1묶음(오늘 알림·위젯 3개·체험 알림)은 바로, 2묶음(돈·메모 일정·투자·휴가)은 메인 스레드가 한가해진 뒤 0.6초, 3묶음(광장·공유·휴대폰 캘린더·워치·출퇴근)은 1.5초 뒤. WorkManager는 쓰지 않았어요(새 의존성과 시작 initializer가 생기고, 이 작업들은 데이터를 따라가는 흐름이라서).
+- **달력 첫 구성(PERF-11)** `FirstMonth.settled` 전에는 달력 아래 카드와 옆 달 페이지를 만들지 않아요. 달력 가져오기 알림(`countNew`)은 첫 달 뒤(최대 3초 기다림).
+- **Baseline Profile(PERF-13·14)** 루트·`:app`·`:benchmark`에 `androidx.baselineprofile` 1.3.4. `:benchmark`가 프로필을 만들어요(Gradle 관리 에뮬레이터 `pixel6Api34`, `-Pbamnat.profileOnPhone`이면 연결한 휴대폰). 앱은 `saveInSrc`·`mergeIntoMain`·`dexLayoutOptimization`, 빌드 중 자동 생성은 꺼 둠. 측정 빌드는 플러그인의 `benchmarkRelease`(예전 `benchmark` 빌드 타입은 없앰, `app/src/benchmarkRelease`). 손으로 쓴 `baseline-prof.txt`는 그대로 두고 시작 경로 클래스를 더 넣었어요.
+  - **사용자 할 일**: GitHub › Actions › **Baseline Profile (밤낮)** › Run workflow → Artifacts `baseline-profile`을 내려받아 `baseline-prof.txt`·`startup-prof.txt`를 `shift-calendar-app/app/src/main/generated/baselineProfiles/`에 넣고 커밋(`benchmark/README.md` A).
+- **실제 휴대폰 시작 시간(PERF-15~18)** 앱 `diag/StartupStats`: 마지막 시작은 늘 남겨 ‘알람 점검’ 기기 부분에 보여요(동의 필요 없음). 사용 통계에는 `startup: {container, activity, firstMonth, warm:{container, firstMonth}}`(15개 구간 값의 중앙값, 횟수·기기 정보 없음)를 **사용 통계 동의 + `StartupStats.policyAllows()`**일 때만 실어요. `policyAllows`는 통합에서 `AppContainer`가 `flags.on(FlagCatalog.STATS_MORE)`로 이었어요(처리방침 3.2 시행 + 사용 통계 + 따로 동의). 서버 `usage_startup` 표(400일), `/admin/api/metrics`의 `startup`, 관리자 앱 지표 ‘앱 시작 시간’ 카드(판마다 가운데·90%, 30대 미만 데이터 부족).
+- **그 밖(PERF-19)** 저장된 원격 파일은 확인 지문(`$kind.json.ok`, 바이트·서명·열쇠·앱 판의 SHA-256)이 같으면 Ed25519 확인을 건너뛰어요. 열쇠는 새 것부터 확인.
+- 시험: 앱 `WindowedSnapshotTest` 6, `StartupStatsTest` 6, `StartupBudgetTest` 7(21/7 예산 그대로), `RemoteFilesStoreTest` 7, `BaselineProfileRulesTest` 3, `perf/StartupTimingsReport`(무거운 사용자 548일 JVM 숫자); 서버 `startup-ao.test.mjs` 4, 관리자 UI `[PERF-18]` 1.
 
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 

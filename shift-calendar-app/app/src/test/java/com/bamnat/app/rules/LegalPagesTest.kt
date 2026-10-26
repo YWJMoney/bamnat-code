@@ -229,4 +229,27 @@ class LegalPagesTest {
         assertTrue(terms.contains("이용약관 1.1 · 앱 버전 1.27.0 기준 · 게시일 2026년 10월 27일 · 시행일 2026년 11월 10일"))
         assertTrue(terms.contains("이 약관은 2026년 11월 10일부터 시행합니다"))
     }
+
+    /**
+     * [FLAG-16][PERF-16] 3.2 for 1.28.0 (결정 D100, 순번 459): the dates the `stats.more` flag waits for are the dates the
+     * page says, and the page names what the one extra yes sends in the app's own words and buckets (not milliseconds).
+     */
+    @Test fun policy32NamesTheExtraUsageItemsAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 28) && v.effective == java.time.LocalDate.of(2026, 11, 27) && v.heldUntil == null)
+        assertTrue(text.contains("처리방침 3.2 · 앱 버전 1.28.0 기준 · 게시일 2026년 10월 28일 · 시행일 2026년 11월 27일"))
+        assertTrue("3.2 is the newest version line", text.indexOf("처리방침 3.2 ·") < text.indexOf("처리방침 3.1 ·"))
+        assertTrue(text.contains("3.2에서 바뀐 점: 앱 1.28.0부터"))
+        assertTrue("the card's own title", text.contains("“${com.bamnat.app.ui.flags.STATS_MORE_TITLE}”"))
+        assertTrue("the settings row", text.contains("‘켜진 기능 목록·앱 시작 시간도 보내기’"))
+        val b = com.bamnat.app.diag.StartupStats.BUCKETS
+        assertTrue(b.first() == 100L && b[b.size - 2] == 15_000L)
+        assertTrue("buckets, as the app sends them", text.contains("0.1초~15초의 정해진 구간 값"))
+        assertFalse("no milliseconds", text.contains("밀리초"))
+        assertTrue(text.contains("앱 1.28.0부터: 기능 켜짐 확인"))
+        assertTrue(text.contains("최고 관리자의 휴대폰에서는 숨긴 근무 유형도 ‘${com.bamnat.core.flags.TypeExposure.HIDDEN_MARK}’로 보입니다"))
+    }
 }

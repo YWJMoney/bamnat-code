@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- [PERF-03] The benchmark build only: the benchmark can read the app's start-up trace. -->
+<!-- [PERF-03] [PERF-03][PERF-13] The benchmarkRelease build only: the benchmark can read the app's start-up trace. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>

@@ -1,0 +1,83 @@
+{
+  "state": "1.27 settings moved (정식 출시 on, MONEY_STATS free, PLAZA_WRITE off), 2026-10-26",
+  "config": {
+    "v": 1,
+    "billingLive": true,
+    "launchedAt": "2026-10-26T01:00:00.000Z",
+    "thanksMonths": 1,
+    "freeFeatures": [
+      "MONEY_STATS"
+    ],
+    "adQuietDays": 3,
+    "trialAskDays": 7,
+    "notices": [],
+    "off": [
+      "PLAZA_WRITE"
+    ],
+    "flags": {
+      "billing": {
+        "force": "on",
+        "why": "1.27까지의 정식 출시 스위치가 켜져 있었어요",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "ads": {
+        "force": "on",
+        "why": "1.27까지의 정식 출시 스위치가 켜져 있었어요",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "plaza.write": {
+        "force": "off",
+        "why": "1.27까지의 기능 스위치로 꺼져 있었어요",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "free.MONEY_STATS": {
+        "force": "on",
+        "why": "1.27까지 무료로 연 기능이었어요",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      }
+    },
+    "policy": [
+      {
+        "version": "2.5",
+        "posted": "2026-10-22",
+        "effective": "2026-11-21",
+        "heldUntil": null
+      },
+      {
+        "version": "3.0",
+        "posted": "2026-10-25",
+        "effective": "2026-11-24",
+        "heldUntil": null
+      },
+      {
+        "version": "3.1",
+        "posted": "2026-10-27",
+        "effective": "2026-11-10",
+        "heldUntil": "2026-11-24"
+      },
+      {
+        "version": "3.2",
+        "posted": "2026-10-28",
+        "effective": "2026-11-27",
+        "heldUntil": null
+      }
+    ],
+    "serverTime": "2026-10-26T01:00:00.000Z"
+  }
+}

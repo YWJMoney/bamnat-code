@@ -442,7 +442,7 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
     }
 
     /** [SRV-04] The developer paused writing in the plaza: the talk is read only for now. */
-    val writePaused: Boolean get() = c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
+    val writePaused: Boolean get() = c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
 
     /** [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. */
     fun hide(p: com.bamnat.app.company.TalkPost) {
@@ -967,7 +967,7 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false) {
         if (topic && job.isEmpty()) { _sending.value = Sending.Failed("job", "job"); return }
         // [SRV-04] The developer paused new reports; nothing is sent and the form stays as written.
-        if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) { _sending.value = Sending.Failed("paused", "report"); return }
+        if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) { _sending.value = Sending.Failed("paused", "report"); return }
         if (!topic) CompanyText.personal(company)?.let { _sending.value = Sending.Failed(it, "company"); return }
         CompanyText.personal(dept)?.let { _sending.value = Sending.Failed(it, "dept"); return }
         CompanyText.personal(note)?.let { _sending.value = Sending.Failed(it, "note"); return }

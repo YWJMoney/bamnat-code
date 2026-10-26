@@ -260,11 +260,17 @@ fun CalendarScreen(
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     // [PERF-01] The month is there: Android's "Fully drawn" for this start, and the startup budget's last step.
     androidx.activity.compose.ReportDrawnWhen { snapshot != null }
+    // [PERF-11] 1.28 AO: false until the first month of this run is on screen; see [FirstMonth].
+    val settled by FirstMonth.settled
     LaunchedEffect(snapshot != null) {
         if (snapshot != null) {
-            com.bamnat.app.StartupTrace.mark(com.bamnat.app.StartupTrace.Step.CALENDAR)
+            // [PERF-15] 1.28 AO: the opening's times, kept on this phone (진단) and summed up for 사용 통계 when allowed.
+            com.bamnat.app.StartupTrace.monthDrawn()?.let(context.appContainer.startupStats::record)
             // [PERF-03] The month is there: the jobs that waited for it start now.
             context.appContainer.afterFirstFrame()
+            // [PERF-11] The frame after it brings the neighbouring months and the cards under the month.
+            androidx.compose.runtime.withFrameNanos { }
+            FirstMonth.settled.value = true
         }
     }
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -1004,6 +1010,9 @@ fun CalendarScreen(
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
                 add(Notice("policy31", "처리방침 3.1") { com.bamnat.app.ui.pro.PolicyConsentNotice() })
+            // [FLAG-16] 1.28 AL: once 처리방침 3.2 is in force, one ask for 사용 통계's two extra items.
+            if (paint == null && viewingReceived == null && com.bamnat.app.ui.flags.statsMoreAsks(LocalContext.current.appContainer))
+                add(Notice("statsMore", "사용 통계") { com.bamnat.app.ui.flags.StatsMoreNotice() })
             // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
             // AG 1.27 [INVITE-10]: first, so it is never folded in "알림 n개 더 보기" (리뷰 2026-10-25); it shows only
             // for a phone that did not answer at the end of the first setup, and after the report the friend's own invite.
@@ -1202,7 +1211,8 @@ fun CalendarScreen(
                     state = pagerState,
                     // [CAL-08] The list is as tall as its month; the grid is always six weeks.
                     modifier = Modifier.fillMaxWidth().then(if (showList) Modifier.animateContentSize() else Modifier.height(cellHeight * GRID_ROWS)),
-                    beyondViewportPageCount = if (showList) 0 else 1,
+                    // [PERF-11] The months either side are made once the first month is on screen, not with it.
+                    beyondViewportPageCount = if (showList || !settled) 0 else 1,
                     key = { it },
                     verticalAlignment = Alignment.Top,
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
@@ -1253,7 +1263,8 @@ fun CalendarScreen(
             // can always be scrolled clear of it.
             Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
-            calendarParts.filter { !it.part.above && it.shown }.forEach { placed ->
+            // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
+            if (settled) calendarParts.filter { !it.part.above && it.shown }.forEach { placed ->
                 when (placed.part) {
                     CalendarPart.DAY_CARD -> {
                         if (!wide) {
@@ -2480,4 +2491,13 @@ private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: 
         confirmButton = { Button(onClick = { onAnswer(true, keep) }) { Text("대근으로") } },
         dismissButton = { TextButton(onClick = { onAnswer(false, keep) }) { Text("근무일로 바꾸기") } },
     )
+}
+
+/**
+ * [PERF-11] 1.28 AO: whether this run's first calendar month is on screen. Until then the calendar makes only its
+ * month and what sits above it; the months either side and the cards under the month (day card, hours, rest check,
+ * memos) follow one frame later. Once per process: coming back to the tab later draws everything at once.
+ */
+internal object FirstMonth {
+    val settled = androidx.compose.runtime.mutableStateOf(false)
 }

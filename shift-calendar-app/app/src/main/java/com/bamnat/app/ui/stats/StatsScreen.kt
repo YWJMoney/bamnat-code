@@ -88,7 +88,7 @@ class StatsViewModel(
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
+        scope.schedule.live.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     private val payCalculator = PayCalculator()

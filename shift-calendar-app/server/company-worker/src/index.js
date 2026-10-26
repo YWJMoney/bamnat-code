@@ -23,7 +23,9 @@
 //                                 permissions the owner gave it
 // *      /api/admin/dev...        개발사항 gathered from questions, each with its own history [ADMIN-10][ADMIN-11]
 // *      /api/admin/templates...  자주 쓰는 답 shared by admins; inquiries also take 내가 맡기 and notes [ADMIN-12]
-// GET    /api/config              the 정식 출시 switch and what goes with it, for every app once a day [MON-02]
+// GET    /api/config              the 정식 출시 switch and what goes with it, for every app once a day [MON-02];
+//                                 AM 1.28 [FLAG-22] with flags (overrides), policy (처리방침 일정) and serverTime
+// *      /api/admin/flags...      AM 1.28 [FLAG-21] 기능 관리: overrides, confirmations, /types, /policy, /checks
 // GET    /api/passes              header X-Device: this install's 프로 passes and admin phone link [MON-08][MON-09]
 // POST   /api/passes/code         a recovery code for the backup; /claim moves passes to a new phone with it
 // POST   /api/admin-link          a six-digit code from the developer app ties this phone to that admin
@@ -48,7 +50,10 @@
 // once and can take a report back.
 
 import { adminFile, adminBuild } from "./admin-app.js";
+import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
+// 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
+import { CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -140,22 +145,28 @@ const AREAS = {
   metrics: "지표",
   shares: "공유 링크 신고",
   audit: "활동 기록",
+  // AM 1.28 [FLAG-27] 기능 관리(다크머지): looking and changing conditions; forcing a feature off is its own yes or no,
+  // the owner's until given (결정 D97). Forcing on and legal confirmations stay the owner's.
+  flags: "기능 관리",
+  flagOff: "기능 강제로 끄기",
 };
 const LEVELS = ["none", "view", "edit"];
 const VIEW_ONLY = ["audit"];
 /** [ADMIN-10] Areas that are a yes or no: a look at them means nothing, so "view" is stored as "none". */
-const TOGGLES = ["devStatus", "takedown"];
+const TOGGLES = ["devStatus", "takedown", "flagOff"];
 /**
  * [ADMIN-10] What an account made before an area existed gets: every admin may add, change and delete
  * 개발사항, so the admin already invited keeps working without a visit to the admins screen. 처리 stays
  * the owner's until given.
  */
-const SINCE = { dev: () => "edit" };
+// AM 1.28 [FLAG-27] Admins from before 1.28 who could see 운영 see 기능 관리 too (the switches moved there); changing stays
+// the owner's to give.
+const SINCE = { dev: () => "edit", flags: (p) => (p?.ops === "view" || p?.ops === "edit" ? "view" : "none") };
 const PRESETS = {
-  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view" } },
-  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", ops: "none", metrics: "none", shares: "edit", audit: "none" } },
-  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", takedown: "none", ops: "view", metrics: "none", shares: "view", audit: "none" } },
-  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", takedown: "none", ops: "view", metrics: "view", shares: "view", audit: "view" } },
+  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" } },
+  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", ops: "none", metrics: "none", shares: "edit", audit: "none", flags: "none", flagOff: "none" } },
+  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", takedown: "none", ops: "view", metrics: "none", shares: "view", audit: "none", flags: "view", flagOff: "none" } },
+  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", takedown: "none", ops: "view", metrics: "view", shares: "view", audit: "view", flags: "view", flagOff: "none" } },
 };
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
@@ -171,6 +182,8 @@ export default {
       return json({ error: "server" }, 500);
     } finally {
       if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
+      // AN 1.28 [ADMUX-37] Anything sent may change what the developer app's badges count.
+      if (request.method !== "GET" && request.method !== "HEAD") badgesChanged();
     }
   },
   // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
@@ -178,7 +191,9 @@ export default {
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
-      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env)));
+      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
+      // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
+      .then(() => flagTick(env, Date.now())).finally(badgesChanged));
   },
 };
 
@@ -222,6 +237,9 @@ export async function prune(env, now) {
     // question's photos 90 days after it closed, its words stay until the question goes.
     stmt(env, "DELETE FROM usage_days WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     stmt(env, "DELETE FROM usage_events WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
+    // AM 1.28 [FLAG-30]
+    stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
+    stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
   ]);
@@ -535,6 +553,21 @@ const SCHEMA = [
     left INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (device, cal))`,
   "CREATE INDEX IF NOT EXISTS members_company ON members (company_id, left)",
   // AF 1.26 끝
+  // AM 1.28 시작
+  // [FLAG-21] What the developer app overrides per flag: a force (on/off, until when, 다시 볼 날), changed conditions,
+  // why, who and when; auto 1 for the hourly job's own rests. [FLAG-21] 확인했어요 on facts only a person knows.
+  `CREATE TABLE IF NOT EXISTS flag_overrides (key TEXT PRIMARY KEY, force TEXT, why TEXT NOT NULL DEFAULT '', conditions TEXT, until INTEGER,
+    review_at TEXT, by_name TEXT NOT NULL DEFAULT '', by_id TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, auto INTEGER NOT NULL DEFAULT 0)`,
+  "CREATE TABLE IF NOT EXISTS flag_checks (key TEXT PRIMARY KEY, by_name TEXT NOT NULL, by_id TEXT NOT NULL, at INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '')",
+  // [FLAG-21] Every change with what it was before and after (the activity log keeps a line; this keeps it whole).
+  `CREATE TABLE IF NOT EXISTS flag_history (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, at INTEGER NOT NULL, action TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT '', actor_id TEXT NOT NULL DEFAULT '', before TEXT, after TEXT, why TEXT NOT NULL DEFAULT '')`,
+  "CREATE INDEX IF NOT EXISTS flag_history_key ON flag_history (key, id)",
+  // [FLAG-25][FLAG-28] What the server last saw of each flag (on or not, since when) and the day it warned of.
+  "CREATE TABLE IF NOT EXISTS flag_state (key TEXT PRIMARY KEY, on_now INTEGER NOT NULL, since INTEGER NOT NULL, warned TEXT)",
+  // [FLAG-30] Per day and app version: how many phones that sent their flag list had each flag on ('*': how many sent one).
+  "CREATE TABLE IF NOT EXISTS usage_flags (day TEXT NOT NULL, app TEXT NOT NULL, flag TEXT NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app, flag))",
+  // AM 1.28 끝
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -587,6 +620,9 @@ const COLUMNS = [
   "ALTER TABLE reports ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE votes ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
   // AI 1.27 끝
+  // 1.28 통합 [FLAG-36] AL-D3: an override's app versionCode range (판단 2단계 '앱 판 밖').
+  "ALTER TABLE flag_overrides ADD COLUMN min_app INTEGER",
+  "ALTER TABLE flag_overrides ADD COLUMN max_app INTEGER",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -595,6 +631,20 @@ const LATE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS inquiries_assignee ON inquiries (assignee, status)",
   "CREATE INDEX IF NOT EXISTS audit_actor ON audit (actor_id, at)",
   // H 1.23 끝
+  // AN 1.28 시작
+  // [ADMUX-38] What the developer app's badges and 오늘 read most: questions by the day they came, the open ones
+  // people found unhelpful (only those rows), posts the flags put in front of an admin (only those rows), and
+  // the activity log by kind of action.
+  "CREATE INDEX IF NOT EXISTS inquiries_created ON inquiries (created_at)",
+  "CREATE INDEX IF NOT EXISTS inquiries_bad ON inquiries (status) WHERE rating = -1",
+  "CREATE INDEX IF NOT EXISTS posts_flagged ON posts (flags, created_at) WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')",
+  "CREATE INDEX IF NOT EXISTS audit_action ON audit (action, id)",
+  // AN 1.28 끝
+  // AO 1.28 시작 [PERF-17] How long the app took to open on consenting phones, as counts per bucket: per day, app version,
+  // kind (cold: a new process, warm: it was running) and step (container wait, screen, first month). No phone, no time.
+  `CREATE TABLE IF NOT EXISTS usage_startup (day TEXT NOT NULL, app TEXT NOT NULL, kind TEXT NOT NULL, step TEXT NOT NULL,
+    bucket INTEGER NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app, kind, step, bucket))`,
+  // AO 1.28 끝
 ];
 
 const schemas = new WeakMap();
@@ -626,7 +676,8 @@ function ready(env) {
       }
       await env.DB.batch(LATE_INDEXES.map((sql) => env.DB.prepare(sql)));
       await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
-    }).catch((e) => {
+    // AM 1.28 [FLAG-23] the 1.27 switches become flag overrides, once per database.
+    }).then(() => migrateFlags(env)).catch((e) => {
       schemas.delete(env.DB);
       throw e;
     });
@@ -4289,6 +4340,8 @@ function secretIssue(env, name, least) {
  */
 function areaFor(path) {
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
+  // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
+  if (path === "/badges" || path === "/today" || path === "/basics") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -4296,8 +4349,11 @@ function areaFor(path) {
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings" || path === "/settings/sla" || path === "/settings/invite") return "settings";
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
-  if (path.startsWith("/notices") || path === "/switches" || path === "/ops") return "ops";
-  if (path === "/metrics" || path === "/remote") return "metrics";
+  // AM 1.28 [FLAG-27] the switches are flags now: 기능 관리 (forcing off checks flagOff as well).
+  if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
+  if (path.startsWith("/notices") || path === "/ops") return "ops";
+  // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과 reads flag numbers beside the other numbers.
+  if (path === "/metrics" || path === "/remote" || path === "/effects") return "metrics";
   if (path.startsWith("/shares")) return "shares";
   if (path === "/audit") return "audit";
   return "owner";
@@ -4369,6 +4425,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
   if (path === "/overview" && method === "GET") return json(await overview(env, actor));
+  // AN 1.28 [ADMUX-37] /overview in three: numbers for the menu, the 오늘 screen, and what rarely changes.
+  if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
+  if (path === "/today" && method === "GET") return json(await today(env, actor, now));
+  if (path === "/basics" && method === "GET") return json(await basics(env));
+  if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMUX-17] 할 일 받은함: everything this admin may act on, nearest deadline first.
   if (path === "/inbox" && method === "GET") return json(await inbox(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
@@ -4413,7 +4474,12 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/settings/invite") return inviteSettingsRoute(request, env, method, now);
   // [MON-10] The 정식 출시 switch and [MON-09] admins' phones are the owner's (areaFor gives "owner").
   if (path === "/launch" && method === "GET") return json(await launchView(env));
-  if (path === "/launch" && method === "POST") return setLaunch(request, env, now);
+  // AM 1.28 [FLAG-25] 정식 출시 is the billing flag now: the switch is retired, GET still answers.
+  if (path === "/launch" && method === "POST") return json({ error: "retired", field: "launch" }, 410);
+  // AM 1.28 [FLAG-21] 기능 관리.
+  if (path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) {
+    return flagRoute(request, env, url, path, method, actor, now);
+  }
   if (path === "/devices" && method === "GET") return json(await phoneList(env));
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
@@ -4435,7 +4501,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/switches" && method === "POST") return setSwitch(request, env, now);
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
-  if (path === "/metrics" && method === "GET") return json(await metrics(env, url, now));
+  if (path === "/metrics" && method === "GET") {
+    const m = await metrics(env, url, now);
+    m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
+    return json(m);
+  }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
   if (path === "/remote" && method === "GET") return json(await remoteState(env, now, url.searchParams.get("fresh") === "1"));
   if (path === "/shares" && method === "GET") return shareReports(env);
@@ -4549,6 +4619,8 @@ const PUSH_KINDS = {
   urgent: { label: "급한 문의(문제 신고·결제)", area: "inquiries" },
   flagged: { label: "신고로 가려진 글", area: "community" },
   join: { label: "승인을 기다리는 관리자", area: "owner" },
+  // AM 1.28 [FLAG-28] 결정 D99: a legal flag the day before it turns on by itself, and once it did.
+  flags: { label: "기능 관리(결제·광고 같은 법적 기능이 켜지기 하루 전·켜짐)", area: "flags" },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
@@ -4649,8 +4721,10 @@ async function deliver(env, keys, rows, message, now) {
  * [ADMIN-19] News of [kind] to every admin's browser that asked for it, outside its quiet time and only
  * for admins who may see it. Without VAPID secrets (or with nobody asking) it returns at once; it never
  * throws, so whatever called it goes on as if nothing was sent.
+ * 1.28 통합 [FLAG-37] 결정 D101: [ignoreQuiet] sends inside quiet time too — only a legal flag's day-before and turned-on
+ * news (D99's safety net is pointless if it arrives after the payments started); every other kind keeps quiet time.
  */
-export async function notifyAdmins(env, kind, message, now = Date.now()) {
+export async function notifyAdmins(env, kind, message, now = Date.now(), { ignoreQuiet = false } = {}) {
   try {
     const keys = pushReady(env);
     if (!keys || !env.DB || !Object.hasOwn(PUSH_KINDS, kind)) return { sent: 0, gone: 0 };
@@ -4660,7 +4734,7 @@ export async function notifyAdmins(env, kind, message, now = Date.now()) {
       WHERE (',' || s.kinds || ',') LIKE ? OR (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`, `%,${also},%`);
     const to = rows.filter((r) => {
       const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { owner: false, perms: readPerms(r.perms) } : null;
-      return actor && mayGet(actor, kind) && !quietNow(r.quiet_from, r.quiet_to, now);
+      return actor && mayGet(actor, kind) && (ignoreQuiet || !quietNow(r.quiet_from, r.quiet_to, now));
     });
     if (!to.length) return { sent: 0, gone: 0 };
     return await deliver(env, keys, to, { tag: kind, ...message }, now);
@@ -4965,6 +5039,8 @@ const AUDIT_KINDS = {
   dev: ["dev_*"],
   ops: ["notice_*", "switch_*", "ops_*", "share_remove", "launch_*"],
   settings: ["settings", "sla"],
+  // AM 1.28 [FLAG-21]
+  flags: ["flag_*", "policy_edit", "launch_*", "type_*", "switch_*", "auto_rest", "auto_resume"],
 };
 
 /** A KST day (YYYY-MM-DD) as the time it starts, or null. */
@@ -5064,30 +5140,47 @@ function auditAbout(r) {
   return { label: "", link: null };
 }
 
+/**
+ * AN 1.28 [ADMUX-37] The counts behind the developer app's menu numbers, each with the area an admin needs to see
+ * it. /badges reads only these; /overview reads them among its other numbers.
+ */
+const BADGE_SQL = {
+  pending: ["review", "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')"],
+  asks: ["review", "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'"],
+  flagged: ["review", `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`],
+  inquiries: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'"],
+  devTodo: ["dev", "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'todo'"],
+  owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
+  flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
+  // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
+  versionConflicts: ["companies", `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
+      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
+      WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`],
+  waiting: ["owner", "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'"],
+  // [MON-09] Admins' phones waiting for the owner's 승인.
+  phones: ["owner", "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'"],
+};
+
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
   // One trip to the database for every number: the home screen waits on this call.
   const now = Date.now();
   const today = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
   const counts = { settings: `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`,
-    // [MON-10] Every screen shows whether 정식 출시 is on.
-    live: "SELECT value FROM settings WHERE key = 'billing_live'",
     // [ADMUX-06] 오늘 내가 처리한 것 (sign-ins left out), and the answer targets.
     doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, today],
     sla: SLA_SQL };
   // [ADMIN-17] The home screen's 최근 활동, so it does not read 50 lines of /audit for ten.
   if (can(actor, "audit")) counts.recent = `${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`;
   if (can(actor, "review")) {
-    counts.pending = "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')";
-    counts.asks = "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'";
-    counts.flagged = `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
-      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`;
+    for (const k of ["pending", "asks", "flagged"]) counts[k] = BADGE_SQL[k][1];
     counts.reports = "SELECT COUNT(*) AS n FROM reports";
     counts.queueGroups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
       FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 5`;
   }
   if (can(actor, "inquiries")) {
-    counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
+    counts.inquiries = BADGE_SQL.inquiries[1];
     // [ADMIN-12] 오늘 할 일: the waiting questions I took, and the ones nobody took yet.
     counts.inquiriesMine = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee = ?", actor.id];
     counts.inquiriesFree = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NULL";
@@ -5105,14 +5198,14 @@ async function overview(env, actor) {
   }
   if (can(actor, "dev")) {
     // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
-    counts.devTodo = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'todo'";
+    counts.devTodo = BADGE_SQL.devTodo[1];
     counts.devDoing = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'doing'";
     counts.devMine = ["SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status IN ('todo', 'doing') AND assignee = ?", actor.id];
   }
-  if (can(actor, "rewards")) counts.owed = "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'";
+  if (can(actor, "rewards")) counts.owed = BADGE_SQL.owed[1];
   if (can(actor, "community")) {
     // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
-    counts.flaggedPosts = "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')";
+    counts.flaggedPosts = BADGE_SQL.flaggedPosts[1];
     counts.flaggedPostsLate = ["SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND status = 'hidden' AND hide_reason = 'flags' AND hidden_at < ?",
       Date.now() - (LIMITS.hiddenReviewDays - 7) * DAY];
     counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
@@ -5122,18 +5215,16 @@ async function overview(env, actor) {
   if (can(actor, "companies")) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
     counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
-    // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
-    counts.versionConflicts = `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
-      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
-      WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`;
+    counts.versionConflicts = BADGE_SQL.versionConflicts[1];
   }
   // [ADMIN-14] 이달 할 일 still open on the home screen.
   if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
   if (actor.owner) {
-    counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
-    // [MON-09] Admins' phones waiting for the owner's 승인.
-    counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
+    counts.waiting = BADGE_SQL.waiting[1];
+    counts.phones = BADGE_SQL.phones[1];
   }
+  // AM 1.28 [FLAG-22][ADMUX-27] the flags ride in the same trip too (billingLive, 홈 경고, 메뉴 숫자).
+  Object.assign(counts, FLAG_STORE_SQL);
   // [ADMUX-17] 받은함's statements ride in the same trip, for the menu badge (what is past its deadline).
   for (const [k, v] of Object.entries(inboxQueries(actor, now))) counts[`inbox_${k}`] = v;
   const keys = Object.keys(counts);
@@ -5142,7 +5233,7 @@ async function overview(env, actor) {
   // AH 1.27 [PLAZA-15] doubt: when 달라요 take a version out of the lead (AH-D7), shown on the settings page.
   const out = { me: me(actor), settings: readSettings(got.settings), doubt: DOUBT, reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
-  const rows = new Set(["settings", "waiting", "phones", "live", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
+  const rows = new Set([...Object.keys(FLAG_STORE_SQL), "settings", "waiting", "phones", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
   for (const k of keys) {
     if (rows.has(k) || k.startsWith("inbox_")) continue;
     out[k] = got[k][0].n;
@@ -5182,10 +5273,110 @@ async function overview(env, actor) {
   }
   out.queue = queue;
   if (actor.owner) out.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
-  out.billingLive = got.live[0]?.value === "1";
+  // [MON-10] Every screen shows whether 정식 출시 is on: AM 1.28 [FLAG-22] the billing flag by the server's view.
+  // [ADMUX-27][FLAG-28] flagAlerts (legal flags on for under 24 hours) and flagsDue for the home screen and the menu.
+  const flagStoreNow = storeFrom(got.flagOverrides, got.flagChecks, got.flagPolicy, got.flagState);
+  out.billingLive = serverEval(flagStoreNow, "billing", now).on;
+  Object.assign(out, await flagOverview(env, actor, now, flagStoreNow));
   if (got.opsDone) out.opsLeft = opsItems(kstDay(Date.now()).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
   return out;
 }
+
+// AN 1.28 시작
+
+/**
+ * [ADMUX-37] An admin's badge numbers are kept this long in the worker's memory, per database and per admin
+ * with their permissions; any request that sends something (badgesChanged) makes the next read fresh.
+ */
+const BADGES = { keepMs: 15_000, maxKept: 200 };
+let badgeEpoch = 0;
+const badgeMemory = new WeakMap();
+
+function badgesChanged() {
+  badgeEpoch++;
+}
+
+/**
+ * [ADMUX-37] The developer app's menu numbers and who is signed in, nothing else: what the app polls every
+ * 30 or 90 seconds and reads beside (never before) the screen's own data.
+ */
+async function badges(env, actor, now) {
+  let kept = badgeMemory.get(env.DB);
+  if (!kept) badgeMemory.set(env.DB, (kept = new Map()));
+  const key = `${actor.id}|${actor.owner ? 1 : 0}|${JSON.stringify(actor.perms ?? {})}`;
+  const hit = kept.get(key);
+  if (hit && hit.epoch === badgeEpoch && now - hit.at < BADGES.keepMs) return hit.data;
+  const epoch = badgeEpoch;
+  // AM 1.28 [FLAG-22] billingLive is the billing flag by the server's view; the flag store rides in the same trip.
+  const q = Object.fromEntries(Object.entries(FLAG_STORE_SQL).map(([k, sql]) => [k, [sql]]));
+  for (const [k, [area, sql]] of Object.entries(BADGE_SQL)) if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql];
+  if (can(actor, "ops")) q.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
+  const keys = Object.keys(q);
+  const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
+  const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
+  const store = storeFrom(got.flagOverrides, got.flagChecks, got.flagPolicy, got.flagState);
+  const data = { me: me(actor), build: adminBuild(), billingLive: serverEval(store, "billing", now).on };
+  for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
+  if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
+  if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
+  // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as /overview's flagsDue) and the
+  // legal flags on for under 24 hours (오늘's top card), for admins who may see 기능 관리.
+  Object.assign(data, await flagOverview(env, actor, now, store));
+  if (kept.size >= BADGES.maxKept) kept.clear();
+  kept.set(key, { at: now, epoch, data });
+  return data;
+}
+
+/**
+ * [ADMUX-33][ADMUX-37] The 오늘 screen, read only while it is shown: one 할 일 list (받은함's, nearest deadline
+ * first), the numbers above it, who holds how many questions and the recent activity.
+ */
+async function today(env, actor, now) {
+  const start = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
+  const q = {
+    doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, start],
+  };
+  for (const [k, v] of Object.entries(inboxQueries(actor, now))) q[`inbox_${k}`] = Array.isArray(v) ? v : [v];
+  if (can(actor, "audit")) q.recent = [`${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`];
+  if (can(actor, "inquiries")) {
+    q.inquiriesToday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ?", start];
+    q.inquiriesYesterday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ? AND created_at < ?", start - DAY, start];
+    q.inquiriesBad = ["SELECT COUNT(*) AS n FROM inquiries WHERE rating = -1 AND status != 'closed'"];
+    q.assigned = ["SELECT assignee AS id, assignee_name AS name, COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NOT NULL GROUP BY assignee ORDER BY n DESC"];
+  }
+  if (can(actor, "review")) q.reports = ["SELECT COUNT(*) AS n FROM reports"];
+  if (can(actor, "community")) q.posts = ["SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'"];
+  if (can(actor, "companies")) {
+    q.companies = ["SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"];
+    q.rules = ["SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"];
+  }
+  const keys = Object.keys(q);
+  const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
+  const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
+  const inbox = Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]]));
+  const out = { todo: inboxItems(inbox, actor, now), doneToday: got.doneToday[0].n };
+  for (const k of ["inquiriesToday", "inquiriesYesterday", "inquiriesBad", "reports", "posts", "companies", "rules"]) if (got[k]) out[k] = got[k][0].n;
+  if (inbox.inquiries) {
+    // How many waiting questions reach their answer target before today ends.
+    const sla = readSla(inbox.sla);
+    out.slaLateToday = inbox.inquiries.filter((r) => r.last === "user" && r.updated_at + sla[slaKey(r.kind)] * HOUR < start + DAY).length;
+    out.assigned = got.assigned.map((a) => ({ id: a.id, name: a.name ?? "", n: a.n }));
+  }
+  if (got.recent) {
+    out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
+      detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
+  }
+  return out;
+}
+
+/** [ADMUX-37] What the screens share and rarely changes: the 채택 settings, the answer targets and the reason words. */
+async function basics(env) {
+  const [settings, sla] = await batch(env, [env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`), env.DB.prepare(SLA_SQL)]);
+  return { settings: readSettings(settings.results), sla: readSla(sla.results), doubt: DOUBT, reasons: REASONS, answers: ANSWERS,
+    hideReasons: HIDE_REASONS, flagReasons: FLAGS };
+}
+
+// AN 1.28 끝
 
 /** Rows of [list] grouped by company and setup. */
 function byGroup(list) {
@@ -5873,60 +6064,40 @@ const MONEY = {
 const FEATURE = /^[A-Z][A-Z_]{1,39}$/;
 
 async function launchState(env) {
-  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('billing_live', 'launched_at', 'thanks_months', 'free_features')");
+  // AM 1.28 [FLAG-22] billingLive and freeFeatures come from the flags now (billing by the server's view, free.* forced on).
+  const [rows, store] = await Promise.all([all(env, "SELECT key, value FROM settings WHERE key IN ('launched_at', 'thanks_months')"), flagStore(env)]);
   const get = (k) => rows.find((r) => r.key === k)?.value;
   const thanks = Number(get("thanks_months"));
-  let free = [];
-  try {
-    free = JSON.parse(get("free_features") ?? "[]").filter((f) => typeof f === "string" && FEATURE.test(f));
-  } catch {
-    free = [];
-  }
   const launched = Number(get("launched_at"));
+  const now = Date.now();
+  const legacy = legacyFlags(store, now);
   return {
-    billingLive: get("billing_live") === "1",
+    billingLive: serverEval(store, "billing", now).on,
     launchedAt: Number.isFinite(launched) && launched > 0 ? launched : null,
     thanksMonths: Number.isInteger(thanks) && thanks >= 0 ? thanks : MONEY.thanksMonths,
-    freeFeatures: free,
+    freeFeatures: legacy.free,
+    off: legacy.off,
+    store,
   };
 }
 
-/** [MON-02] What every app reads once a day: the 정식 출시 switch and what goes with it. No device, nothing kept. */
+/**
+ * [MON-02] What every app reads once a day: the 정식 출시 switch and what goes with it. No device, nothing kept.
+ * AM 1.28 [FLAG-22] 1.28 apps read flags (only what the server overrides), policy and serverTime; apps up to 1.27 keep
+ * reading billingLive, freeFeatures and off, which the server works out from the same flags.
+ */
 async function config(env) {
-  const [s, ops] = await Promise.all([launchState(env), opsState(env)]);
   const now = Date.now();
+  const [s, notices] = await Promise.all([launchState(env), noticeRows(env)]);
+  // The first answer that finds billing on records the launch, if the hourly job has not yet.
+  const launchedAt = s.launchedAt ?? (s.billingLive ? await recordLaunch(env, s.store, now) : null);
   return {
-    v: 1, billingLive: s.billingLive, launchedAt: s.launchedAt ? iso(s.launchedAt) : null, thanksMonths: s.thanksMonths,
+    v: 1, billingLive: s.billingLive, launchedAt: launchedAt ? iso(launchedAt) : null, thanksMonths: s.thanksMonths,
     freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
     // [SRV-04] 공지 running now (the app picks the ones for its version) and what is switched off.
-    notices: ops.notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: ops.off,
+    notices: notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: s.off,
+    flags: configFlags(s.store, now), policy: configPolicy(s.store), serverTime: iso(now),
   };
-}
-
-/** [MON-10] The owner's switch. The first time it goes on is the launch; switching it off and on keeps that day. */
-async function setLaunch(request, env, now) {
-  const body = await readJson(request, 4096);
-  const before = await launchState(env);
-  const live = body.billingLive ?? before.billingLive;
-  if (typeof live !== "boolean") refuse("billingLive", "billingLive");
-  const thanks = body.thanksMonths ?? before.thanksMonths;
-  if (!Number.isInteger(thanks) || thanks < 0 || thanks > 12) refuse("thanksMonths", "thanksMonths");
-  const free = body.freeFeatures ?? before.freeFeatures;
-  if (!Array.isArray(free) || free.length > MONEY.freeFeatures || !free.every((f) => typeof f === "string" && FEATURE.test(f))) {
-    refuse("freeFeatures", "freeFeatures");
-  }
-  const launchedAt = before.launchedAt ?? (live ? now : null);
-  await batch(env, [
-    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_live', ?)", live ? "1" : "0"),
-    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('thanks_months', ?)", String(thanks)),
-    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('free_features', ?)", JSON.stringify([...new Set(free)])),
-    ...(launchedAt ? [stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('launched_at', ?)", String(launchedAt))] : []),
-  ]);
-  if (live !== before.billingLive) await audit(env, now, live ? "launch_on" : "launch_off", "", launchedAt ? iso(launchedAt) : "");
-  if (thanks !== before.thanksMonths || JSON.stringify(free) !== JSON.stringify(before.freeFeatures)) {
-    await audit(env, now, "launch_settings", "", `감사 ${thanks}개월 · 무료로 연 기능 ${free.join(",") || "없음"}`);
-  }
-  return json(await launchView(env));
 }
 
 async function launchView(env) {
@@ -5970,7 +6141,7 @@ async function installOf(request) {
 async function passes(env, dev, now) {
   const [rows, link, code, s] = await Promise.all([
     all(env, "SELECT months, status, paid_at, deferred, rule_id FROM rewards WHERE device = ?", dev),
-    one(env, "SELECT status, admin_name FROM admin_devices WHERE device = ?", dev),
+    one(env, "SELECT status, admin_name, admin FROM admin_devices WHERE device = ?", dev),
     one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
     launchState(env),
   ]);
@@ -5981,7 +6152,8 @@ async function passes(env, dev, now) {
     waitingMonths: p.waiting,
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
-    admin: link ? { status: link.status, name: link.admin_name } : null,
+    // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
+    admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id } : null,
     code: Boolean(code),
     checkedAt: iso(now),
   };
@@ -6725,24 +6897,27 @@ export function readAction(a) {
   return { kind: "URL", url: url.toString(), ...(label ? { label } : {}) };
 }
 
-async function opsState(env) {
-  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('notices', 'switches_off')");
-  const read = (k) => {
-    try {
-      const v = JSON.parse(rows.find((r) => r.key === k)?.value ?? "[]");
-      return Array.isArray(v) ? v : [];
-    } catch {
-      return [];
-    }
-  };
-  return {
-    notices: read("notices").filter((n) => n && typeof n.id === "string" && Number.isFinite(n.from) && Number.isFinite(n.until)),
-    off: read("switches_off").filter((s) => Object.hasOwn(SWITCHES, s)),
-  };
+/** [SRV-04] The notices as stored. */
+async function noticeRows(env) {
+  const row = await one(env, "SELECT value FROM settings WHERE key = 'notices'");
+  try {
+    const v = JSON.parse(row?.value ?? "[]");
+    return (Array.isArray(v) ? v : []).filter((n) => n && typeof n.id === "string" && Number.isFinite(n.from) && Number.isFinite(n.until));
+  } catch {
+    return [];
+  }
 }
 
-/** [SRV-04] Whether the developer switched [name] off. */
-const paused = async (env, name) => (await opsState(env)).off.includes(name);
+async function opsState(env) {
+  // AM 1.28 [FLAG-24] what is switched off is the six switch flags forced off.
+  await migrateFlags(env);
+  const [notices, forced] = await Promise.all([noticeRows(env), all(env, "SELECT key, until FROM flag_overrides WHERE force = 'off'")]);
+  const now = Date.now();
+  return { notices, off: forced.filter((r) => SWITCH_FLAGS[r.key] && !(r.until && r.until <= now)).map((r) => SWITCH_FLAGS[r.key]) };
+}
+
+/** [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. */
+const paused = (env, name) => switchOff(env, name);
 
 const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
   minApp: n.minApp ?? null, maxApp: n.maxApp ?? null, audience: n.audience ?? null, action: n.action ?? null });
@@ -6816,14 +6991,25 @@ async function removeNotice(env, id, now) {
   return json(await noticeList(env, now));
 }
 
+/** [FLAG-38] What a 끄기 from a developer app cached before 1.28 (no why) is recorded with. */
+const OLD_APP_WHY = "옛 관리자 앱에서 끔";
+
+/**
+ * [SRV-04] 기능 스위치, kept for the 운영 screen's old buttons: AM 1.28 [FLAG-24] it forces the switch's flag off (with why)
+ * or back to its conditions, under the same rule as 기능 관리 (결정 D97: forcing off is the owner's or flagOff's).
+ */
 async function setSwitch(request, env, now) {
   const body = await readJson(request, 1024);
   if (!Object.hasOwn(SWITCHES, body.key)) refuse("key", "key");
   if (typeof body.off !== "boolean") refuse("off", "off");
-  const s = await opsState(env);
-  const off = body.off ? [...new Set([...s.off, body.key])] : s.off.filter((k) => k !== body.key);
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('switches_off', ?)", JSON.stringify(off));
-  await audit(env, now, body.off ? "switch_off" : "switch_on", body.key, SWITCHES[body.key]);
+  const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === body.key);
+  // 1.28 통합 [FLAG-38] A developer app cached before 1.28 sends no why: its 끄기 still works, and the record says where it came from.
+  const given = typeof body.why === "string" ? body.why.trim() : "";
+  const old = body.off && !given;
+  const res = await setFlagForce(new Request("https://switch/", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ force: body.off ? "off" : null, why: old ? OLD_APP_WHY : given }) }), env, env.actor, key, now);
+  if (res.status !== 200) return res;
+  await audit(env, now, body.off ? "switch_off" : "switch_on", body.key, old ? `${SWITCHES[body.key]} · ${OLD_APP_WHY}` : SWITCHES[body.key]);
   return json(await noticeList(env, now));
 }
 
@@ -6961,8 +7147,26 @@ async function usage(request, env) {
   }
   const app = body.app;
   if (days.size === 0) return json({ ok: true, skipped });
+  // AM 1.28 [FLAG-30] Which flags were on (only phones with stats.more on send it): per day, the list sent with the day or,
+  // once for the bundle, flagsOn at the top for its newest day. '*' counts the phones that sent a list at all.
+  const listOf = (v) => {
+    if (v === undefined || v === null) return null;
+    if (!Array.isArray(v) || v.length > 200) refuse("flagsOn", "flagsOn");
+    return [...new Set(v.filter((k) => typeof k === "string" && k.length <= 60 && flagDef(k)))];
+  };
+  const flagDays = new Map();
+  const top = listOf(body.flagsOn);
+  if (top) flagDays.set([...days].sort().at(-1), top);
+  for (const d of body.days) if (days.has(d.day) && d.flagsOn !== undefined) flagDays.set(d.day, listOf(d.flagsOn) ?? []);
+  const flagRows = [...flagDays].flatMap(([day, keys]) => [[day, "*"], ...keys.map((k) => [day, k])]);
   const stmts = [...days].map((day) => stmt(env, `INSERT INTO usage_days (day, app, phones) VALUES (?, ?, 1)
     ON CONFLICT (day, app) DO UPDATE SET phones = phones + 1`, day, app));
+  // AO 1.28 [PERF-17] Startup times, counted once on the bundle's newest day; a wrong part is left out, the rest counts.
+  const startupDay = [...days].sort().at(-1);
+  for (const [kind, step, bucket] of startupRows(body.startup)) {
+    stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
+      ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));
+  }
   // D1 binds at most 100 values a query: 16 rows of six.
   for (let i = 0; i < rows.length; i += 16) {
     const part = rows.slice(i, i + 16);
@@ -6970,9 +7174,92 @@ async function usage(request, env) {
       ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
     ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
   }
+  for (let i = 0; i < flagRows.length; i += 25) {
+    const part = flagRows.slice(i, i + 25);
+    stmts.push(stmt(env, `INSERT INTO usage_flags (day, app, flag, phones) VALUES ${part.map(() => "(?, ?, ?, 1)").join(", ")}
+      ON CONFLICT (day, app, flag) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, k]) => [day, app, k])));
+  }
   await batch(env, stmts);
   return skipped ? json({ ok: true, skipped }) : new Response(null, { status: 204 });
 }
+
+// AO 1.28 시작 ------------------------------------------------------------------------------------------------
+/**
+ * [PERF-16][PERF-17] The bucket edges (ms) the app rounds a startup time up to (app diag/StartupStats.BUCKETS): only
+ * these values are taken, so no phone's exact time is kept. 20000 means over 15 seconds.
+ */
+export const STARTUP_BUCKETS = [100, 200, 300, 400, 500, 700, 1000, 1500, 2000, 3000, 4000, 6000, 10000, 15000, 20000];
+/** What each kind of opening may carry: a cold one from the process start, a warm one from the screen. */
+const STARTUP_STEPS = { cold: ["container", "activity", "firstMonth"], warm: ["container", "firstMonth"] };
+
+/**
+ * [PERF-17] `startup: {container, activity, firstMonth, warm: {container, firstMonth}}` → [kind, step, bucket] rows.
+ * Anything else (a missing part, a number off the edges, an unknown key) is left out without refusing the bundle.
+ */
+export function startupRows(startup) {
+  const rows = [];
+  if (!startup || typeof startup !== "object" || Array.isArray(startup)) return rows;
+  const take = (kind, part) => {
+    if (!part || typeof part !== "object" || Array.isArray(part)) return;
+    for (const step of STARTUP_STEPS[kind]) {
+      const v = part[step];
+      if (Number.isInteger(v) && STARTUP_BUCKETS.includes(v)) rows.push([kind, step, v]);
+    }
+  };
+  take("cold", startup);
+  take("warm", startup.warm);
+  return rows;
+}
+
+/** [PERF-17] The bucket where [share] of the phones are at or under, from {bucket → phones}. */
+function bucketQuantile(hist, total, share) {
+  let seen = 0;
+  for (const b of STARTUP_BUCKETS) {
+    seen += hist.get(b) ?? 0;
+    if (seen >= total * share) return b;
+  }
+  return STARTUP_BUCKETS.at(-1);
+}
+
+const appOrder = (a, b) => {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pb[i] - pa[i];
+  return 0;
+};
+
+/**
+ * [PERF-17] 지표 › 앱 시작 시간: per app version (newest first, at most 6) and kind, each step's phones, middle value and
+ * 90th percentile (the bucket's upper edge: "at most"). Under 30 phones a version says 데이터 부족 in the admin app.
+ */
+async function startupMetrics(env, from, to) {
+  const rows = await all(env, `SELECT app, kind, step, bucket, SUM(phones) AS phones FROM usage_startup
+    WHERE day BETWEEN ? AND ? GROUP BY app, kind, step, bucket`, from, to);
+  const byApp = new Map();
+  for (const r of rows) {
+    const key = `${r.app}|${r.kind}|${r.step}`;
+    if (!byApp.has(r.app)) byApp.set(r.app, new Map());
+    const hist = byApp.get(r.app);
+    if (!hist.has(key)) hist.set(key, new Map());
+    hist.get(key).set(r.bucket, (hist.get(key).get(r.bucket) ?? 0) + r.phones);
+  }
+  const versions = [...byApp.keys()].sort(appOrder).slice(0, 6).map((app) => {
+    const out = { app };
+    for (const [kind, steps] of Object.entries(STARTUP_STEPS)) {
+      const part = {};
+      for (const step of steps) {
+        const hist = byApp.get(app).get(`${app}|${kind}|${step}`);
+        if (!hist) continue;
+        const phones = [...hist.values()].reduce((n, v) => n + v, 0);
+        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5), p90: bucketQuantile(hist, phones, 0.9) };
+      }
+      if (Object.keys(part).length) out[kind] = part;
+    }
+    return out;
+  });
+  return { versions, few: 30 };
+}
+// AO 1.28 끝 --------------------------------------------------------------------------------------------------
 
 /**
  * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share
@@ -7121,7 +7408,7 @@ const METRIC_MAX_DAYS = 180;
  * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
  * carried ("1.24.0 (35)") are learned on top.
  */
-const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38 };
+const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38, "1.28.0": 39 };
 
 function appVersions(rows) {
   const all = rows.reduce((n, x) => n + x.phones, 0);
@@ -7830,8 +8117,13 @@ export async function autoRest(env, now) {
   }
   if (!changed) return { used, kv, rested: mine.map((r) => r.key) };
   notices = notices.filter((n) => n.until > now - 30 * DAY).slice(-NOTICE.max);
+  // AM 1.28 [FLAG-24] Rests are forced-off flags marked auto; going back on lifts only those, never a force by hand.
+  const flagOf = (k) => Object.keys(SWITCH_FLAGS).find((f) => SWITCH_FLAGS[f] === k);
   await batch(env, [
-    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('switches_off', ?)", JSON.stringify(off)),
+    ...off.filter((k) => !s.off.includes(k)).map((k) => stmt(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto)
+      VALUES (?, 'off', '오늘 사용이 많아 내일까지 쉬어요(자동)', NULL, NULL, NULL, '', 'system', ?, 1)
+      ON CONFLICT (key) DO UPDATE SET force = 'off', why = excluded.why, until = NULL, by_name = '', by_id = 'system', at = excluded.at, auto = 1`, flagOf(k), now)),
+    ...s.off.filter((k) => !off.includes(k)).map((k) => stmt(env, "UPDATE flag_overrides SET force = NULL, at = ? WHERE key = ? AND auto = 1", now, flagOf(k))),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(notices)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_rested', ?)", JSON.stringify(mine)),
   ]);
@@ -7896,6 +8188,626 @@ async function shareStats(env, days) {
     return null;
   }
 }
+
+// AM 1.28 시작
+// ---- 기능 플래그(다크머지) [FLAG-20]~[FLAG-33] ----
+//
+// Every feature that ships switched off, waits for a date, a policy or a person's confirmation, or can be switched off
+// in an incident is one row of FLAG_CATALOG (the same keys as the app's core FlagCatalog, 묶음 AL; a test compares the
+// keys with the contract, 통합계획 2-1). The phone decides by itself from the conditions it was built with; the server
+// only sends what overrides them (/api/config flags) and keeps who changed what, when and why. The order of the
+// decision is in src/admin-lib.js evalFlag, which this server and the developer app's 미리 보기 share.
+
+const FL = adminLib();
+
+/** The six 기능 스위치 of 1.22 (SWITCHES) as flags, for apps up to 1.27 that read /api/config off. */
+const SWITCH_FLAGS = { "plaza.write": "PLAZA_WRITE", "company.report": "COMPANY_REPORT", "inquiry.photos": "INQUIRY_PHOTOS",
+  "share.create": "SHARE_CREATE", "usage.stats": "USAGE_STATS", "plaza.news": "PLAZA_NEWS" };
+
+const TYPE_FLAGS = { SHIFT: "type.shift", DAY: "type.day", HOURLY: "type.hourly", FIELD: "type.field", BUSINESS: "type.business", INVEST: "type.invest" };
+
+/**
+ * [FLAG-20] The catalog. 이름·하는 일·꺼 둔 이유·근거·위험·기본값·조건·정리 예정 판 are what the developer app shows and the
+ * conditions the app ships with. 1.28 통합 [FLAG-34]: they come from the app's core FlagCatalog through the generated
+ * src/flag-catalog.js (core FlagCatalogExportTest writes it and fails while it is old), so there is one book.
+ */
+export const FLAG_CATALOG = CORE_FLAGS;
+
+/** The keys of the contract (통합계획 2-1) and the integrator's stats.more; free.<FEATURE> are made on demand. */
+export const FLAG_KEYS = FLAG_CATALOG.map((f) => f.key);
+
+/** [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>. */
+const FREE_FEATURES = { NO_ADS: "광고 없음", PAYSLIP_MATCH: "명세서 대조", PAY_RULE_IMPORT: "임금 규칙 자동 인식", PAY_BULK_EDIT: "값 일괄 적용",
+  MONEY_STATS: "돈 통계", MORE_CALENDARS: "달력 여러 개", PAY_REPORT: "급여 리포트 PDF·CSV", WORK_COMPARE: "근무·급여 비교",
+  DEVICE_CALENDAR: "휴대폰 캘린더에 근무 쓰기", ICS_FEED: "캘린더 구독 주소", AUTO_BACKUP: "매일 자동 백업", MORE_LINKS: "공유 링크 여러 개, 1년까지",
+  ROSTER_PDF: "근무표 PDF", SURE_ALARM: "끄기 미션·일어났는지 확인", LEAVE_PAYOUT: "미사용 연차수당 계산", TAX_FORECAST: "세금 예측·실수령" };
+/** [FLAG-34] free.<FEATURE>, the same pattern as core FlagCatalog.free. */
+const FREE_KEY = new RegExp(CORE_FREE.pattern);
+
+/** A flag by key: the catalog's, or a free.<FEATURE> made from core's words and the feature's Korean name; null for anything else. */
+function flagDef(key) {
+  const known = FLAG_CATALOG.find((f) => f.key === key);
+  if (known) return known;
+  const m = FREE_KEY.exec(key ?? "");
+  if (!m) return null;
+  const label = FREE_FEATURES[m[1]] ?? m[1];
+  const fill = (t) => t.replaceAll(CORE_FREE.slot, label);
+  const { pattern, slot, ...row } = CORE_FREE;
+  return { ...row, key, name: fill(CORE_FREE.name), what: fill(CORE_FREE.what), whyOff: fill(CORE_FREE.whyOff) };
+}
+
+/**
+ * [FLAG-33] 처리방침 판마다 게시일·시행일·동의 없이도 시행되는 날(heldUntil). The developer app can change these (the owner),
+ * so a date moved again needs no app release. unfavourable: 이용자에게 불리한 변경(30일 전 고지, 처리방침 9항).
+ * [FLAG-34] The versions the app ships with (core PolicyCalendar.SEED: 3.1, 3.2) take their dates from it; 3.2's are a
+ * placeholder until 순번 459 fixes them (관리자 앱에서 고쳐요).
+ */
+const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true };
+const POLICY_CALENDAR = [
+  { version: "2.5", posted: "2026-10-22", effective: "2026-11-21", heldUntil: null },
+  { version: "3.0", posted: "2026-10-25", effective: "2026-11-24", heldUntil: null },
+  ...CORE_POLICY,
+].map((p) => ({ ...p, unfavourable: POLICY_UNFAVOURABLE[p.version] ?? false }));
+
+/** [FLAG-25] The newest release this server knows (APP_CODES), to tell which flags are past their 정리 예정 판. */
+const latestRelease = () => Object.keys(APP_CODES).sort(FL.versionCompare).at(-1);
+
+const FLAG_LIMITS = { why: 300, untilDays: 365, history: 100 };
+
+const flagMigrations = new WeakMap();
+
+/**
+ * [FLAG-23] Once per database: the 1.27 settings become overrides. 정식 출시 on → billing and ads forced on (the
+ * same as before: both started together), 무료로 연 기능 → free.<FEATURE> forced on, 기능 스위치 off → forced off (the
+ * hourly job's own rests keep auto). The old rows stay, unread, and a second run changes nothing.
+ */
+function migrateFlags(env) {
+  let done = flagMigrations.get(env.DB);
+  if (!done) {
+    done = (async () => {
+      if ((await one(env, "SELECT value FROM settings WHERE key = 'flags_migrated'"))?.value) return;
+      const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('billing_live', 'free_features', 'switches_off', 'auto_rested')");
+      const get = (k) => rows.find((r) => r.key === k)?.value;
+      const list = (k) => {
+        try {
+          const v = JSON.parse(get(k) ?? "[]");
+          return Array.isArray(v) ? v : [];
+        } catch {
+          return [];
+        }
+      };
+      const now = Date.now();
+      const put = [];
+      const add = (key, force, why, auto = 0) => put.push(stmt(env, `INSERT OR IGNORE INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto)
+        VALUES (?, ?, ?, NULL, NULL, NULL, '옮김(1.28)', 'system', ?, ?)`, key, force, why, now, auto));
+      if (get("billing_live") === "1") {
+        add("billing", "on", "1.27까지의 정식 출시 스위치가 켜져 있었어요");
+        add("ads", "on", "1.27까지의 정식 출시 스위치가 켜져 있었어요");
+      }
+      for (const f of list("free_features")) if (typeof f === "string" && FEATURE.test(f)) add(`free.${f}`, "on", "1.27까지 무료로 연 기능이었어요");
+      const auto = new Set(list("auto_rested").map((r) => r?.key));
+      for (const s of list("switches_off")) {
+        const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === s);
+        if (key) add(key, "off", auto.has(s) ? "오늘 사용이 많아 내일까지 쉬어요(자동)" : "1.27까지의 기능 스위치로 꺼져 있었어요", auto.has(s) ? 1 : 0);
+      }
+      put.push(stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('flags_migrated', ?)", iso(now)));
+      await batch(env, put);
+      if (put.length > 1) {
+        await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'flag_migrate', '', ?, '', '')", now, `${put.length - 1}개를 기능 관리로 옮겼어요`);
+      }
+    })().catch((e) => {
+      flagMigrations.delete(env.DB);
+      throw e;
+    });
+    flagMigrations.set(env.DB, done);
+  }
+  return done;
+}
+
+/** An override row as the API and evalFlag see it. */
+function readOverride(r) {
+  if (!r) return null;
+  let conditions = null;
+  try {
+    conditions = r.conditions ? JSON.parse(r.conditions) : null;
+  } catch {
+    conditions = null;
+  }
+  return { force: r.force === "on" || r.force === "off" ? r.force : null, why: r.why ?? "", conditions: Array.isArray(conditions) ? conditions : null,
+    until: r.until ? iso(r.until) : null, reviewAt: r.review_at ?? null, by: r.by_name ?? "", byId: r.by_id ?? "", at: iso(r.at), auto: r.auto === 1,
+    // 1.28 통합 [FLAG-36] AL-D3: outside this versionCode range the phone turns the flag off (판단 2단계).
+    minApp: r.min_app ?? null, maxApp: r.max_app ?? null };
+}
+
+/** [FLAG-33] The calendar with the owner's changes, and versions the owner added. */
+function mergePolicy(raw) {
+  let over = {};
+  try {
+    over = JSON.parse(raw ?? "{}") ?? {};
+  } catch {
+    over = {};
+  }
+  const out = POLICY_CALENDAR.map((p) => ({ ...p, ...(over[p.version] ?? {}), changed: Object.hasOwn(over, p.version) }));
+  for (const [version, p] of Object.entries(over)) if (!out.some((x) => x.version === version)) out.push({ version, heldUntil: null, unfavourable: false, ...p, changed: true });
+  return out.sort((a, b) => FL.versionCompare(a.version, b.version));
+}
+
+/** [FLAG-21] Everything a decision needs, in one trip: overrides, confirmations, the policy calendar, what the server saw. */
+const FLAG_STORE_SQL = {
+  flagOverrides: "SELECT * FROM flag_overrides",
+  flagChecks: "SELECT key, by_name, by_id, at, note FROM flag_checks",
+  flagPolicy: "SELECT value FROM settings WHERE key = 'policy_overrides'",
+  flagState: "SELECT key, on_now, since, warned FROM flag_state",
+};
+
+async function flagStore(env) {
+  await migrateFlags(env);
+  const [o, c, p, s] = (await batch(env, Object.values(FLAG_STORE_SQL).map((sql) => env.DB.prepare(sql)))).map((r) => r.results);
+  return storeFrom(o, c, p, s);
+}
+
+/** The store from the rows of FLAG_STORE_SQL (also read inside the home screen's one batch). */
+function storeFrom(o, c, p, s) {
+  return {
+    overrides: new Map(o.map((r) => [r.key, readOverride(r)])),
+    checks: Object.fromEntries(c.map((r) => [r.key, { by: r.by_name, byId: r.by_id, at: iso(r.at), note: r.note ?? "" }])),
+    policy: mergePolicy(p[0]?.value),
+    state: new Map(s.map((r) => [r.key, r])),
+  };
+}
+
+/** Every flag there is: the catalog and the free.<FEATURE> rows that have an override. */
+const flagKeys = (store) => [...FLAG_KEYS, ...[...store.overrides.keys()].filter((k) => !FLAG_KEYS.includes(k) && flagDef(k))];
+
+/** The server's view of [key] at [now]: conditions that depend on a phone do not hold it back. */
+const serverEval = (store, key, now = Date.now()) => FL.evalFlag(flagDef(key), store.overrides.get(key) ?? null,
+  { now, policy: store.policy, checks: store.checks, phone: null });
+
+/** [FLAG-24] Whether one of the six switch flags is forced off now; read on every write it guards. */
+async function switchOff(env, name) {
+  await migrateFlags(env);
+  const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === name);
+  const r = await one(env, "SELECT force, until FROM flag_overrides WHERE key = ?", key);
+  return FL.forceOf(r ? { force: r.force, until: r.until ? iso(r.until) : null } : null, Date.now()) === "off";
+}
+
+/** The manual keys a condition list waits on (inside '또는' too). */
+const manualKeys = (list) => [...new Set((list ?? []).flatMap((c) => (c.type === "manual" ? [c.key] : c.type === "any" ? manualKeys(c.of) : [])))];
+
+/**
+ * [FLAG-22] What /api/config says about flags: only what the server overrides, as 통합계획 2-1 shapes them, plus
+ * confirmed (AL-D2): the manual facts the developer confirmed, for every flag that waits on one (a phone with no
+ * answer from the server treats a manual condition as unknown, so such a flag is always sent).
+ */
+function configFlags(store, now) {
+  const out = {};
+  for (const key of flagKeys(store)) {
+    const def = flagDef(key);
+    const o = store.overrides.get(key) ?? null;
+    const force = FL.forceOf(o, now);
+    const manual = manualKeys(o?.conditions ?? def.conditions);
+    const ranged = o?.minApp != null || o?.maxApp != null;
+    if (!force && !o?.conditions && !manual.length && !ranged) continue;
+    const confirmed = Object.fromEntries(manual.filter((k) => store.checks[k]).map((k) => [k, store.checks[k].at]));
+    // 1.28 통합 [FLAG-36] minApp/maxApp (AL-D3) go with every flag sent; null is no end.
+    out[key] = { force, why: force ? o.why : "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null,
+      minApp: o?.minApp ?? null, maxApp: o?.maxApp ?? null, confirmed };
+  }
+  return out;
+}
+
+/** [FLAG-22] The calendar as the app reads it. */
+const configPolicy = (store) => store.policy.map((p) => ({ version: p.version, posted: p.posted, effective: p.effective, heldUntil: p.heldUntil ?? null }));
+
+/** [FLAG-22] For apps up to 1.27: free.<FEATURE> forced on, and the six switches forced off by their old names. */
+function legacyFlags(store, now) {
+  const free = [];
+  const off = [];
+  for (const key of flagKeys(store)) {
+    const m = FREE_KEY.exec(key);
+    if (m && serverEval(store, key, now).on) free.push(m[1]);
+    if (SWITCH_FLAGS[key] && FL.forceOf(store.overrides.get(key), now) === "off") off.push(SWITCH_FLAGS[key]);
+  }
+  return { free, off };
+}
+
+/**
+ * [FLAG-25] The first moment billing is on by the server's view is the launch (launchedAt): thank-you months and passes
+ * count from it. Written once; never moved again, whatever happens to the flag later.
+ */
+async function recordLaunch(env, store, now) {
+  if (!serverEval(store, "billing", now).on) return null;
+  const had = await one(env, "SELECT value FROM settings WHERE key = 'launched_at'");
+  if (had && Number(had.value) > 0) return Number(had.value);
+  await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('launched_at', ?)", String(now));
+  const kept = Number((await one(env, "SELECT value FROM settings WHERE key = 'launched_at'"))?.value);
+  if (kept === now) await audit(env, now, "launch_recorded", "billing", `정식 출시일 ${iso(now)}`);
+  return kept;
+}
+
+/**
+ * [FLAG-25][FLAG-28] The hourly job (17분) and every change: forces whose until passed end, a flag the server sees turn on
+ * or off is written down (when, for the 24 hours of 홈 경고), the launch is recorded, and admins with 기능 관리 hear of a
+ * legal flag the day before it turns on by itself and once it did (D99).
+ */
+export async function flagTick(env, now = Date.now(), { push = true } = {}) {
+  let store = await flagStore(env);
+  const ended = [...store.overrides.entries()].filter(([, o]) => (o.force && o.until && Date.parse(o.until) <= now));
+  for (const [key, o] of ended) {
+    await run(env, "UPDATE flag_overrides SET force = NULL, until = NULL WHERE key = ?", key);
+    await flagHistory(env, now, key, "flag_expire", o, { ...o, force: null, until: null }, "정한 기한이 끝났어요", { system: true });
+  }
+  if (ended.length) store = await flagStore(env);
+  const news = [];
+  for (const key of flagKeys(store)) {
+    const def = flagDef(key);
+    const ev = serverEval(store, key, now);
+    const was = store.state.get(key);
+    if (!was) {
+      await run(env, "INSERT OR IGNORE INTO flag_state (key, on_now, since, warned) VALUES (?, ?, ?, NULL)", key, ev.on ? 1 : 0, now);
+    } else if ((was.on_now === 1) !== ev.on) {
+      await run(env, "UPDATE flag_state SET on_now = ?, since = ? WHERE key = ?", ev.on ? 1 : 0, now, key);
+      await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, '', '')", now,
+        ev.on ? "flag_auto_on" : "flag_auto_off", key, ev.reason.slice(0, 300));
+      if (def.risk === "LEGAL" && ev.on) news.push({ title: `${def.name}이(가) 켜졌어요`, body: "24시간 동안 홈 맨 위에서 한 번에 강제로 끌 수 있어요.", url: `/admin/#/flags/${key}`, legal: true });
+    }
+    // D99: the day before a legal flag would turn on by itself (its date comes, nothing else left).
+    if (def.risk === "LEGAL" && !ev.on && ev.state === "waiting") {
+      const tomorrow = serverEval(store, key, now + DAY);
+      const day = kstDay(now + DAY);
+      if (tomorrow.on && was?.warned !== day) {
+        await run(env, "UPDATE flag_state SET warned = ? WHERE key = ?", day, key);
+        news.push({ title: `내일 ${def.name}이(가) 저절로 켜져요`, body: `${day} 0시(한국 시간)에 켜져요. 미루려면 기능 관리에서 강제로 꺼 주세요.`, url: `/admin/#/flags/${key}`, legal: true });
+      }
+    }
+  }
+  await recordLaunch(env, store, now);
+  // [FLAG-37] D101: these two are a legal flag's, so they go inside an admin's quiet time too.
+  if (push) for (const { legal, ...n } of news) await notifyAdmins(env, "flags", { ...n, urgent: true }, now, { ignoreQuiet: legal === true });
+  return news;
+}
+
+/** [FLAG-21] One change, kept whole (before and after) for the flag's own history, and a line in 활동 기록. */
+async function flagHistory(env, now, key, action, before, after, why, { system = false } = {}) {
+  const who = system ? "" : env.actor ? actorName(env) : "";
+  const id = system ? "" : env.actor?.id ?? "";
+  await run(env, "INSERT INTO flag_history (key, at, action, actor, actor_id, before, after, why) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", key, now, action,
+    who, id, before === null || before === undefined ? null : JSON.stringify(before), after === null || after === undefined ? null : JSON.stringify(after), why ?? "");
+  await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, ?, ?)", now, action, key, String(why ?? "").slice(0, 300), who, id);
+}
+
+/** [FLAG-30] Of the phones that sent which flags were on (stats.more), how many had each, per flag, over [days] days. */
+async function flagShares(env, now, days = 7) {
+  const from = kstDay(now - days * DAY);
+  const rows = await all(env, "SELECT flag, SUM(phones) AS phones FROM usage_flags WHERE day >= ? GROUP BY flag", from);
+  const base = rows.find((r) => r.flag === "*")?.phones ?? 0;
+  return { base, share: Object.fromEntries(rows.filter((r) => r.flag !== "*").map((r) => [r.flag, base ? Math.round((1000 * r.phones) / base) / 10 : null])) };
+}
+
+/** [FLAG-21][ADMUX-21] One flag as the list and the detail show it. */
+function flagRow(store, key, now, shares) {
+  const def = flagDef(key);
+  const o = store.overrides.get(key) ?? null;
+  const ev = serverEval(store, key, now);
+  const conds = o?.conditions ?? def.conditions;
+  const release = latestRelease();
+  const legal = def.risk === "LEGAL";
+  const manual = (c) => manualKeys([c]);
+  return {
+    key, name: def.name, group: def.group, what: def.what, whyOff: def.whyOff, basis: def.basis, risk: def.risk, default: def.default, sunset: def.sunset,
+    owner: def.owner, since: def.since, switchKey: SWITCH_FLAGS[key] ?? null, conditions: conds, catalogConditions: def.conditions, override: o,
+    on: ev.on, state: ev.state, source: ev.source, reason: ev.reason, next: ev.next, daysLeft: FL.daysLeft(ev.next, now),
+    checklist: ev.conditions.map((x) => ({ label: x.label, met: x.met, type: x.c.type, keys: manual(x.c) })),
+    warnings: FL.noticeWarnings(def, conds, store.policy),
+    sunsetDue: Boolean(def.sunset && release && FL.versionCompare(release, def.sunset) >= 0),
+    reviewDue: Boolean(o?.reviewAt && o.reviewAt <= kstDay(now)),
+    onShare: shares?.share?.[key] ?? null,
+    onSince: store.state.get(key)?.since ? iso(store.state.get(key).since) : null,
+    alert: Boolean(legal && ev.on && store.state.get(key)?.since && now - store.state.get(key).since < DAY),
+    manualKeys: manualKeys(conds),
+  };
+}
+
+/** Who may do what to a flag (D97): the owner everything; 기능 강제로 끄기 (flagOff) for force off; the rest by area. */
+function flagMay(actor, def, step, current) {
+  if (actor.owner) return true;
+  const legal = def.risk === "LEGAL";
+  if (step === "on") return false;
+  if (step === "off") return can(actor, "flagOff", "edit");
+  if (step === "clear") return current === "on" ? can(actor, "flagOff", "edit") : !legal && can(actor, "flagOff", "edit");
+  if (step === "conditions") return !legal && can(actor, "flags", "edit");
+  return false;
+}
+
+/** What the screens tell an admin about their own reach, so buttons lock with the reason instead of failing. */
+const flagReach = (actor) => ({ owner: Boolean(actor.owner), edit: can(actor, "flags", "edit"), off: Boolean(actor.owner || can(actor, "flagOff", "edit")) });
+
+/** [ADMUX-21] The list, with the calendar and the confirmations. */
+async function flagList(env, actor, now) {
+  const store = await flagStore(env);
+  const shares = await flagShares(env, now);
+  return {
+    serverTime: iso(now), release: latestRelease(), reach: flagReach(actor), policy: store.policy, checks: store.checks, manualNames: FL.MANUAL_NAMES,
+    freeFeatures: FREE_FEATURES, statsPhones: shares.base,
+    flags: flagKeys(store).map((k) => flagRow(store, k, now, shares)),
+  };
+}
+
+/** [ADMUX-22] One flag: the row, its whole history, phones it is on for by app version, and problems before and after. */
+async function flagDetail(env, actor, key, now) {
+  const def = flagDef(key);
+  if (!def) return json({ error: "not_found" }, 404);
+  const store = await flagStore(env);
+  const shares = await flagShares(env, now);
+  const row = flagRow(store, key, now, shares);
+  const pivot = store.state.get(key)?.since ?? now;
+  const from = kstDay(pivot - 7 * DAY);
+  const to = kstDay(pivot + 7 * DAY);
+  const [history, versions, bugs, errors, series] = (await batch(env, [
+    stmt(env, "SELECT * FROM flag_history WHERE key = ? ORDER BY id DESC LIMIT ?", key, FLAG_LIMITS.history),
+    stmt(env, `SELECT f.app, SUM(f.phones) AS on_phones, (SELECT SUM(b.phones) FROM usage_flags b WHERE b.flag = '*' AND b.app = f.app AND b.day >= ?) AS base
+      FROM usage_flags f WHERE f.flag = ? AND f.day >= ? GROUP BY f.app ORDER BY on_phones DESC`, kstDay(now - 7 * DAY), key, kstDay(now - 7 * DAY)),
+    stmt(env, "SELECT created_at FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", pivot - 7 * DAY, pivot + 7 * DAY),
+    stmt(env, "SELECT key, count FROM counters WHERE key >= ? AND key <= ?", `errors|${from}`, `errors|${to}`),
+    stmt(env, `SELECT f.day, f.phones, (SELECT SUM(b.phones) FROM usage_flags b WHERE b.flag = '*' AND b.day = f.day) AS base
+      FROM (SELECT day, SUM(phones) AS phones FROM usage_flags WHERE flag = ? AND day >= ? GROUP BY day) f ORDER BY f.day`, key, kstDay(now - 28 * DAY)),
+  ])).map((r) => r.results);
+  const errBefore = errors.filter((e) => e.key.slice(7) < kstDay(pivot)).reduce((n, e) => n + e.count, 0);
+  const errAfter = errors.filter((e) => e.key.slice(7) >= kstDay(pivot)).reduce((n, e) => n + e.count, 0);
+  const parse = (v) => {
+    try {
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  };
+  return json({
+    ...row, serverTime: iso(now), reach: flagReach(actor), policy: store.policy, checks: store.checks, manualNames: FL.MANUAL_NAMES,
+    statsPhones: shares.base, launchedAt: key === "billing" ? (await launchState(env)).launchedAt : undefined,
+    thanksMonths: key === "billing" ? (await launchState(env)).thanksMonths : undefined,
+    history: history.map((h) => ({ id: h.id, at: iso(h.at), action: h.action, actor: h.actor || "시스템", actorId: h.actor_id || null, before: parse(h.before), after: parse(h.after), why: h.why })),
+    versions: versions.map((v) => ({ app: v.app, code: APP_CODES[v.app] ?? null, phones: v.on_phones, share: v.base ? Math.round((1000 * v.on_phones) / v.base) / 10 : null })),
+    series: series.map((x) => ({ day: x.day, share: x.base ? Math.round((1000 * x.phones) / x.base) / 10 : null, phones: x.phones })),
+    compare: { pivot: iso(pivot), days: 7, bugsBefore: bugs.filter((b) => b.created_at < pivot).length, bugsAfter: bugs.filter((b) => b.created_at >= pivot).length,
+      errorsBefore: errBefore, errorsAfter: errAfter, measured: store.state.has(key) },
+  });
+}
+
+/** A day (YYYY-MM-DD, KST) or a moment as ms, at most a year ahead and after now; null when not given. */
+function readUntil(v, field, now) {
+  if (v === undefined || v === null || v === "") return null;
+  const ms = typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00+09:00`) : Date.parse(String(v));
+  if (!Number.isFinite(ms) || ms <= now || ms > now + FLAG_LIMITS.untilDays * DAY) refuse(field, field);
+  return ms;
+}
+
+/**
+ * 1.28 통합 [FLAG-36] AL-D3: the app versionCode range of a flag (both null: every version), with why. Outside it the
+ * phone turns the flag off before anything else but a force off (판단 2단계). Who may: as for its conditions.
+ */
+async function setFlagRange(request, env, actor, key, now) {
+  const def = flagDef(key);
+  if (!def) return json({ error: "flag", field: "key" }, 404);
+  if (!flagMay(actor, def, "conditions")) return json({ error: "no_permission", area: def.risk === "LEGAL" ? "owner" : "flags" }, 403);
+  const body = await readJson(request, 2048);
+  const code = (v, field) => (v === undefined || v === null || v === "" ? null : Number.isInteger(v) && v > 0 && v < 1_000_000 ? v : refuse("app", field));
+  const minApp = code(body.minApp, "minApp");
+  const maxApp = code(body.maxApp, "maxApp");
+  if (minApp !== null && maxApp !== null && maxApp < minApp) refuse("app", "maxApp");
+  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
+  const store = await flagStore(env);
+  const before = store.overrides.get(key) ?? null;
+  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto, min_app, max_app) VALUES (?, NULL, ?, NULL, NULL, NULL, ?, ?, ?, 0, ?, ?)
+    ON CONFLICT (key) DO UPDATE SET min_app = excluded.min_app, max_app = excluded.max_app, by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at`,
+  key, why, actorName(env), actor.id, now, minApp, maxApp);
+  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
+  await flagHistory(env, now, key, "flag_range", before, after, why);
+  await flagTick(env, now);
+  return flagDetail(env, actor, key, now);
+}
+
+/** [FLAG-21][FLAG-27][ADMUX-23] Force on, force off (reason required, 다시 볼 날), or back to the conditions. */
+async function setFlagForce(request, env, actor, key, now) {
+  const def = flagDef(key);
+  if (!def) return json({ error: "flag", field: "key" }, 404);
+  const body = await readJson(request, 4096);
+  const force = body.force === "on" || body.force === "off" ? body.force : body.force === null ? null : refuse("force", "force");
+  const store = await flagStore(env);
+  const before = store.overrides.get(key) ?? null;
+  const current = FL.forceOf(before, now);
+  const step = force ?? "clear";
+  if (!flagMay(actor, def, step, current)) {
+    return json({ error: "no_permission", area: step === "off" || (step === "clear" && current === "on") ? "flagOff" : "owner" }, 403);
+  }
+  const why = plainText(body.why, FLAG_LIMITS.why, "why", force !== null);
+  const until = force ? readUntil(body.until, "flag_until", now) : null;
+  const realDay = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`))
+    && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+  const review = force === "off" && body.reviewAt ? (realDay(body.reviewAt) && body.reviewAt >= kstDay(now) && body.reviewAt <= kstDay(now + FLAG_LIMITS.untilDays * DAY)
+    ? body.reviewAt : refuse("review_at", "reviewAt")) : null;
+  // [FLAG-32] At least one way of working stays to choose.
+  if (force === "off" && def.group === "type") {
+    const left = Object.values(TYPE_FLAGS).filter((k) => k !== key && serverEval(store, k, now).on);
+    if (!left.length) return json({ error: "last_type", field: "key" }, 409);
+  }
+  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 0)
+    ON CONFLICT (key) DO UPDATE SET force = excluded.force, why = excluded.why, until = excluded.until, review_at = excluded.review_at,
+      by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at, auto = 0`,
+  key, force, why, until, review, actorName(env), actor.id, now);
+  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
+  const action = def.group === "type" && force !== "on" ? (force === "off" ? "type_hide" : "type_show") : force === "off" ? "flag_force_off" : force === "on" ? "flag_force_on" : "flag_clear";
+  await flagHistory(env, now, key, action, before, after, why || (force === null ? "조건대로 되돌림" : ""));
+  await flagTick(env, now);
+  return flagDetail(env, actor, key, now);
+}
+
+/** [FLAG-21][ADMUX-23] The conditions changed (checked), or back to the app's own (null). */
+async function setFlagConditions(request, env, actor, key, now) {
+  const def = flagDef(key);
+  if (!def) return json({ error: "flag", field: "key" }, 404);
+  if (!flagMay(actor, def, "conditions")) return json({ error: "no_permission", area: def.risk === "LEGAL" ? "owner" : "flags" }, 403);
+  const body = await readJson(request, 8192);
+  let conditions = null;
+  if (body.conditions !== null && body.conditions !== undefined) {
+    const checked = FL.checkConditions(body.conditions);
+    if (checked.error) return json({ error: "conditions", field: "conditions", detail: checked.error }, 400);
+    const unknown = JSON.stringify(checked.list).match(/"type":"manual","key":"([^"]+)"/g)?.map((m) => m.slice(23, -1)).filter((k) => !Object.hasOwn(FL.MANUAL_NAMES, k)) ?? [];
+    if (unknown.length) return json({ error: "conditions", field: "conditions", detail: `모르는 확인 이름이에요: ${unknown[0]}` }, 400);
+    conditions = checked.list;
+  }
+  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
+  const store = await flagStore(env);
+  const before = store.overrides.get(key) ?? null;
+  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto) VALUES (?, NULL, ?, ?, NULL, NULL, ?, ?, ?, 0)
+    ON CONFLICT (key) DO UPDATE SET conditions = excluded.conditions, by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at`,
+  key, why, conditions ? JSON.stringify(conditions) : null, actorName(env), actor.id, now);
+  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
+  await flagHistory(env, now, key, "flag_conditions", before, after, why);
+  await flagTick(env, now);
+  return flagDetail(env, actor, key, now);
+}
+
+/** [FLAG-21][FLAG-27] 확인했어요 on a manual condition (or taken back): the owner's when any legal flag waits on it. */
+async function setFlagCheck(request, env, actor, name, now) {
+  if (!Object.hasOwn(FL.MANUAL_NAMES, name)) return json({ error: "manual", field: "key" }, 404);
+  // The flags that wait on it now: the catalog's conditions or the ones the developer app put in their place.
+  const store = await flagStore(env);
+  const users = flagKeys(store).map(flagDef).filter((f) => manualKeys(store.overrides.get(f.key)?.conditions ?? f.conditions).includes(name));
+  const legal = users.some((f) => f.risk === "LEGAL");
+  if (!actor.owner && (legal || !can(actor, "flags", "edit"))) return json({ error: "no_permission", area: legal ? "owner" : "flags" }, 403);
+  const body = await readJson(request, 2048);
+  if (typeof body.done !== "boolean") refuse("done", "done");
+  const note = plainText(body.note, FLAG_LIMITS.why, "note");
+  const was = await one(env, "SELECT * FROM flag_checks WHERE key = ?", name);
+  if (body.done) {
+    await run(env, "INSERT OR REPLACE INTO flag_checks (key, by_name, by_id, at, note) VALUES (?, ?, ?, ?, ?)", name, actorName(env), actor.id, now, note);
+  } else {
+    await run(env, "DELETE FROM flag_checks WHERE key = ?", name);
+  }
+  for (const f of users.length ? users : [{ key: name }]) {
+    await flagHistory(env, now, f.key, body.done ? "flag_check" : "flag_uncheck", was ? { check: name, at: iso(was.at), by: was.by_name } : null,
+      body.done ? { check: name, at: iso(now), by: actorName(env) } : null, `${FL.MANUAL_NAMES[name]}${note ? ` · ${note}` : ""}`);
+  }
+  await flagTick(env, now);
+  return json(await flagList(env, actor, now));
+}
+
+/** [FLAG-33] The owner moves a policy version's dates (or adds a version), with why. */
+async function setPolicy(request, env, actor, now) {
+  if (!actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
+  const body = await readJson(request, 2048);
+  if (!/^\d{1,2}\.\d{1,2}$/.test(body.version ?? "")) refuse("policy", "version");
+  const day = (v, field, optional = false) => (optional && (v === null || v === undefined || v === "") ? null
+    : typeof v === "string" && /^20\d\d-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`)) ? v : refuse("policy", field));
+  const posted = day(body.posted, "posted");
+  const effective = day(body.effective, "effective");
+  const heldUntil = day(body.heldUntil, "heldUntil", true);
+  if (effective < posted || (heldUntil && heldUntil < effective)) refuse("policy", "effective");
+  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
+  const raw = (await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value;
+  let over = {};
+  try {
+    over = JSON.parse(raw ?? "{}") ?? {};
+  } catch {
+    over = {};
+  }
+  const before = mergePolicy(raw).find((p) => p.version === body.version) ?? null;
+  over[body.version] = { posted, effective, heldUntil, unfavourable: Boolean(body.unfavourable) };
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)", JSON.stringify(over));
+  await flagHistory(env, now, `policy.${body.version}`, "policy_edit", before, over[body.version], why);
+  await flagTick(env, now);
+  return json(await flagList(env, actor, now));
+}
+
+/** [FLAG-25] 감사 보상 개월 (thanksMonths), the owner's, now on billing's screen. */
+async function setThanks(request, env, actor, now) {
+  if (!actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
+  const body = await readJson(request, 1024);
+  if (!Number.isInteger(body.thanksMonths) || body.thanksMonths < 0 || body.thanksMonths > 12) refuse("thanksMonths", "thanksMonths");
+  const before = (await launchState(env)).thanksMonths;
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('thanks_months', ?)", String(body.thanksMonths));
+  if (before !== body.thanksMonths) await flagHistory(env, now, "billing", "launch_thanks", { thanksMonths: before }, { thanksMonths: body.thanksMonths }, `감사 보상 ${body.thanksMonths}개월`);
+  return flagDetail(env, actor, "billing", now);
+}
+
+/** [FLAG-32][ADMUX-26] The six ways of working, shown or hidden. */
+async function typeList(env, actor, now) {
+  const store = await flagStore(env);
+  return {
+    reach: flagReach(actor),
+    types: Object.entries(TYPE_FLAGS).map(([style, key]) => ({ style, key, ...flagRow(store, key, now, null), label: FL.WORK_NAMES[style] })),
+  };
+}
+
+/** [FLAG-21]~[FLAG-33] /api/admin/flags, /flags/:key(/force|/conditions|/thanks), /checks/:name, /policy, /types. */
+async function flagRoute(request, env, url, path, method, actor, now) {
+  if (path === "/flags" && method === "GET") return json(await flagList(env, actor, now));
+  if (path === "/policy" && method === "POST") return setPolicy(request, env, actor, now);
+  if (path === "/types" && method === "GET") return json(await typeList(env, actor, now));
+  if (path === "/types" && method === "POST") {
+    const body = await readJson(request, 2048);
+    const key = TYPE_FLAGS[body.type] ?? refuse("type", "type");
+    if (typeof body.show !== "boolean") refuse("show", "show");
+    const res = await setFlagForce(new Request(request.url, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ force: body.show ? null : "off", why: body.why ?? "" }) }), env, actor, key, now);
+    return res.status === 200 ? json(await typeList(env, actor, now)) : res;
+  }
+  let m = path.match(/^\/checks\/([a-z0-9.]{3,60})$/);
+  if (m && method === "POST") return setFlagCheck(request, env, actor, m[1], now);
+  m = path.match(/^\/flags\/([A-Za-z0-9._]{2,50})(\/force|\/conditions|\/range|\/thanks)?$/);
+  if (!m || !flagDef(m[1])) return json({ error: "not_found" }, 404);
+  if (method === "GET" && !m[2]) return flagDetail(env, actor, m[1], now);
+  if (method === "POST" && m[2] === "/force") return setFlagForce(request, env, actor, m[1], now);
+  if (method === "POST" && m[2] === "/conditions") return setFlagConditions(request, env, actor, m[1], now);
+  if (method === "POST" && m[2] === "/range") return setFlagRange(request, env, actor, m[1], now);
+  if (method === "POST" && m[2] === "/thanks" && m[1] === "billing") return setThanks(request, env, actor, now);
+  return json({ error: "not_found" }, 404);
+}
+
+/** [ADMUX-27][FLAG-28] The home screen's part: legal flags on for less than 24 hours, and how many flags want a look. */
+export async function flagOverview(env, actor, now = Date.now(), given = null) {
+  if (!can(actor, "flags")) return {};
+  const store = given ?? (await flagStore(env));
+  const rows = flagKeys(store).map((k) => flagRow(store, k, now, null));
+  const due = rows.filter((r) => r.reviewDue || r.warnings.length || r.sunsetDue
+    || (r.state === "waiting" && r.checklist.every((c) => c.met !== false || c.type === "manual"))).length;
+  return {
+    flagAlerts: rows.filter((r) => r.alert && r.state !== "forced_off").map((r) => ({ key: r.key, name: r.name, since: r.onSince, reason: r.reason })),
+    // flagsWaiting: the same number by the name AN's 출시 hub badge reads.
+    flagsDue: due, flagsWaiting: due,
+  };
+}
+/**
+ * 1.28 통합 [ADMUX-40][FLAG-30] 분석 › 기능별 효과: every flag with the share of phones it was on for (stats.more, last
+ * 7 days) and, once the server saw it turn on or off, problem reports and server errors 7 days before and after,
+ * the same numbers the flag's own page shows (flagDetail), for all flags in one trip.
+ */
+async function flagEffects(env, actor, now) {
+  const store = await flagStore(env);
+  const shares = await flagShares(env, now);
+  const rows = flagKeys(store).map((k) => flagRow(store, k, now, shares));
+  const measured = rows.filter((r) => store.state.get(r.key)?.since);
+  const pivots = measured.map((r) => store.state.get(r.key).since);
+  const lo = pivots.length ? Math.min(...pivots) - 7 * DAY : now;
+  const hi = pivots.length ? Math.max(...pivots) + 7 * DAY : now;
+  const [bugs, errors] = pivots.length ? (await batch(env, [
+    stmt(env, "SELECT created_at FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", lo, hi),
+    stmt(env, "SELECT key, count FROM counters WHERE key >= ? AND key <= ?", `errors|${kstDay(lo)}`, `errors|${kstDay(hi)}`),
+  ])).map((r) => r.results) : [[], []];
+  const around = (pivot) => {
+    const b = bugs.filter((x) => x.created_at >= pivot - 7 * DAY && x.created_at < pivot + 7 * DAY);
+    const e = errors.filter((x) => x.key.slice(7) >= kstDay(pivot - 7 * DAY) && x.key.slice(7) <= kstDay(pivot + 7 * DAY));
+    return { pivot: iso(pivot), days: 7, bugsBefore: b.filter((x) => x.created_at < pivot).length, bugsAfter: b.filter((x) => x.created_at >= pivot).length,
+      errorsBefore: e.filter((x) => x.key.slice(7) < kstDay(pivot)).reduce((n, x) => n + x.count, 0),
+      errorsAfter: e.filter((x) => x.key.slice(7) >= kstDay(pivot)).reduce((n, x) => n + x.count, 0) };
+  };
+  return {
+    serverTime: iso(now), statsPhones: shares.base, flagsReach: can(actor, "flags"),
+    flags: rows.map((r) => ({ key: r.key, name: r.name, group: r.group, risk: r.risk, state: r.state, on: r.on, onShare: r.onShare,
+      compare: store.state.get(r.key)?.since ? around(store.state.get(r.key).since) : null })),
+  };
+}
+// AM 1.28 끝
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
