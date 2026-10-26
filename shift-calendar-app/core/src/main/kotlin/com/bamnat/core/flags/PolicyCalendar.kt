@@ -43,8 +43,10 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
 
     companion object {
         /**
-         * 3.1 from `ops/PolicyConsent` (결정 D84). 3.2 (사용 통계에 켜진 기능 목록·앱 시작 시간, 순번 459) is a placeholder the
-         * integrator asked for: posted 2026-10-28, effective 30 days later; the server overrides it when it is fixed.
+         * 3.1 from `ops/PolicyConsent` (결정 D84). 3.2 (사용 통계에 켜진 기능 목록·앱 시작 시간, 순번 459, 결정 D100) as the
+         * published page says (`privacy/index.html`, `LegalPagesTest`): posted 2026-10-28, effective 2026-11-27 (30 days, items
+         * added), no hold (its own yes is the gate). If the page goes up on another day, the server's `policy` (관리자 앱
+         * 기능 관리 › 일정 › 처리방침 일정) moves both dates without a new app.
          */
         val SEED = PolicyCalendar(listOf(
             PolicyVersion(PolicyConsent.VERSION, PolicyConsent.POSTED, PolicyConsent.EFFECTIVE, PolicyConsent.HELD_UNTIL),

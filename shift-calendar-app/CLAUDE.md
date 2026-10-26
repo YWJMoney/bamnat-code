@@ -18,6 +18,7 @@
 - 문서는 바뀐 부분만 고치거나 더해요.
 - `play-services-ads`는 25.2.0에 묶어 둬요. 25.3.0부터 Kotlin 2.3 메타데이터라 지금 Kotlin(2.1.21)이 읽지 못해요. Kotlin을 올릴 때 같이 올려요.
 - 처리방침(`../privacy/index.html`)·이용약관(`../terms/index.html`)의 판이나 시행일을 바꾸면 `LegalPagesTest`와 프로젝트 파일 `legal/` 복사본도 같이 고쳐요. 결제·광고는 기능 플래그 `billing`·`ads`(core `flags/FlagCatalog`, 처리방침 3.1 시행·보류·Play 승인·정기 결제 조건, 1.28부터 정식 출시 스위치를 대신함)가 켜지기 전에는 꺼져 있어야 해요. 법적(LEGAL) 플래그는 서버 시각으로 판단하고 처리방침 조건을 서버 강제로도 건너뛰지 않아요.
+- 서버로 새로 보내는 정보(예: 사용 통계에 새 항목)는 처리방침 개정판과 그 항목의 따로 동의를 조건으로 하는 LEGAL 플래그(1.28의 `stats.more`처럼) 뒤에서만 보내요. 플래그 장부의 글·조건은 core `FlagCatalog.kt`만 고치고 `BAMNAT_WRITE_FLAG_CATALOG=1 ./gradlew -p core test --tests '*FlagCatalogExportTest*' --rerun` 다음 `(cd server/company-worker && npm test)`를 돌려요(서버 `src/flag-catalog.js`를 손으로 고치지 않아요).
 
 ## 판을 끝낼 때 (문서 갱신 점검표)
 
