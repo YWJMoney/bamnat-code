@@ -7408,7 +7408,7 @@ const METRIC_MAX_DAYS = 180;
  * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
  * carried ("1.24.0 (35)") are learned on top.
  */
-const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38 };
+const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38, "1.28.0": 39 };
 
 function appVersions(rows) {
   const all = rows.reduce((n, x) => n + x.phones, 0);

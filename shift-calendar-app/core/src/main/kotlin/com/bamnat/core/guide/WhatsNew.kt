@@ -10,12 +10,16 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
-        // 1.28.0 — 통합 folds the bundles' lines (each bundle adds only its own).
+        // 1.28.0 (계획/1.28-다크머지-관리자앱-로딩-통합계획.md; 통합 folded AL·AO into four lines, AM·AN are the developer's app).
         Release(39, "1.28.0", listOf(
-            // [FLAG-15] Bundle AL.
-            Line("‘알람 점검’ 화면 아래 ‘기능 상태’에서 기능마다 켜졌는지, 꺼졌으면 왜 그런지(남은 조건) 보여요. 문의할 때 그 부분을 보내 주시면 돼요"),
-            // [PERF-07][PERF-08][PERF-09] Bundle AO.
-            Line("앱이 더 빨리 열려요. 달력은 보이는 달부터 먼저 그리고, 나머지 준비는 첫 달이 보인 뒤에 나눠서 해요. 마지막으로 연 시간은 ‘알람 점검’ 화면에서 볼 수 있어요"),
+            // [PERF-07][PERF-08][PERF-09][PERF-10] Bundle AO.
+            Line("앱이 더 빨리 열려요. 달력은 보이는 달부터 먼저 그리고, 나머지 준비는 달이 보인 뒤에 조금씩 나눠서 해요"),
+            // [PERF-15] Bundle AO.
+            Line("앱을 여는 데 걸린 시간을 ‘알람 점검’ 화면에서 볼 수 있어요", "alarm.check"),
+            // [FLAG-14] Bundle AL.
+            Line("‘알람 점검’ 화면 아래 ‘기능 상태’에서 기능마다 켜졌는지, 꺼졌으면 왜 그런지(남은 조건) 보여요. 문의할 때 그 부분을 보내 주시면 돼요", "alarm.check"),
+            // [FLAG-16][PERF-16] Bundles AL·AO.
+            Line("사용 통계를 보내는 분께 처리방침 3.2가 시행된 뒤 한 번 더 물어요. ‘동의’를 고른 경우에만 켜진 기능 목록과 앱 여는 데 걸린 시간을 함께 보내요", "privacy.usageStats"),
         )),
         // 1.27.0 (계획/1.27-리뷰반영-사진인식-통합계획.md; 통합 folded AG·AH·AI·AJ·AK into eight lines).
         Release(38, "1.27.0", listOf(
