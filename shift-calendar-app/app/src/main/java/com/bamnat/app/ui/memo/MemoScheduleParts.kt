@@ -262,7 +262,7 @@ internal fun scheduleStart(found: MemoTime.Found?, current: MemoReminder?, date:
 private fun ShiftTimeChips(times: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion>, at: LocalDateTime, onPick: (LocalDateTime) -> Unit) {
     Text("근무에 맞춰", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (sug in times) androidx.compose.material3.FilterChip(
+        for (sug in times) com.bamnat.app.ui.components.FilterChip(
             selected = at == sug.at,
             onClick = { onPick(sug.at) },
             label = { Text(sug.label) },
