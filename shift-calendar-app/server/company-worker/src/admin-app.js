@@ -45,8 +45,15 @@ const hashText = (text) => {
   return h.toString(36);
 };
 
+// AN 1.28 [ADMUX-39] tools/bundle.mjs writes these two already made into dist/worker.js, so a fresh worker copy
+// sends the app without building it first; left null (wrangler deploy, the tests), they are made on first ask.
 let builtFiles = null;
 let builtVersion = null;
+
+/** AN 1.28 [ADMUX-39] The files and build name as tools/bundle.mjs puts them into dist/worker.js. */
+export function adminPrebuilt() {
+  return { files: adminFiles(), version: adminBuild() };
+}
 
 /** [ADMUX-08] A name for this build of the app's files; /api/admin/overview sends it as build. */
 export function adminBuild() {
@@ -243,6 +250,7 @@ line-height:1.25rem;text-align:center;font-style:normal}
   .main{padding:1.25rem 1.5rem 3rem}
   .bar{padding:.5rem 1.5rem}
   .bar .mark{display:none}
+  .hubtabs{padding:0 1.5rem .5rem}
   .toast{bottom:1.5rem}
 }
 @media (min-width:1024px){
@@ -253,12 +261,39 @@ line-height:1.25rem;text-align:center;font-style:normal}
   .side .group{display:block;margin:1rem .75rem .35rem;font-size:.72rem;font-weight:800;letter-spacing:.04em;color:color-mix(in srgb,var(--nav-fg) 70%,transparent)}
   .nav a{flex-direction:row;gap:.75rem;padding:.6rem .75rem;font-size:.92rem;text-align:left}
   .nav .badge{position:static;margin-left:auto}
+  .nav li.open .subnav{display:grid}
+  .nav .subnav a{padding:.45rem .75rem;font-size:.86rem;font-weight:700;color:var(--nav-fg)}
+  .nav .subnav a[aria-current=page]{background:var(--nav-hi);color:var(--nav-on);box-shadow:inset 3px 0 0 var(--gold)}
   .side .who{display:flex;align-items:center;gap:.6rem;padding:.6rem .75rem;border-radius:var(--r-sm);color:var(--nav-on);text-decoration:none}
   .side .who:hover{background:var(--nav-hi)}
   .side .who small{display:block;color:var(--nav-fg);font-size:.75rem;font-weight:600}
   .side .compact-only{display:none}
   .avatar{flex:none;display:inline-grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--gold);color:#15192B;font-weight:900}
 }
+
+/* ---- AN 1.28 [ADMUX-30][ADMUX-31][ADMUX-33] hubs: the tabs under the title, the sidebar's open hub, what waits ---- */
+.hubtabs{display:flex;gap:.25rem;max-width:72rem;margin:0 auto;padding:0 .75rem .45rem;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain}
+.hubtabs[hidden]{display:none}
+.hubtabs::-webkit-scrollbar{display:none}
+.hubtabs a{flex:none;display:inline-flex;align-items:center;gap:.35rem;min-height:2.75rem;padding:0 .95rem;border-radius:999px;color:var(--muted);
+font-weight:800;font-size:.9rem;text-decoration:none;white-space:nowrap}
+.hubtabs a:hover{background:var(--hover);color:var(--fg)}
+.hubtabs a[aria-current=page]{background:var(--accent-soft);color:var(--accent)}
+.subnav{display:none;list-style:none;margin:.1rem 0 .35rem;padding:0 0 0 2.15rem;gap:.05rem}
+.waiting{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:0 .25rem .85rem;font-size:.88rem;color:var(--muted)}
+.waiting b{color:var(--fg);font-weight:800;margin-right:.2rem}
+.waiting a{display:inline-flex;align-items:center;gap:.35rem;min-height:2.5rem;padding:0 .8rem;border-radius:999px;background:var(--soft);color:var(--fg);
+font-weight:700;text-decoration:none}
+.waiting a:hover{background:var(--hover)}
+.waiting a .n{color:var(--bad);font-weight:900}
+.waiting .dot{display:none}
+.todo-card .waiting{margin:0 0 .75rem}
+.todo-card .rows{box-shadow:none;margin-bottom:.5rem}
+.rows.inbox>li>details.quick{margin:0 1rem .75rem;border-top:0;padding-top:0}
+.quick form{display:grid;gap:.5rem}
+.quick textarea{min-height:5.5rem}
+.section svg{width:1.15rem;height:1.15rem}
+.soon .pill{margin-left:auto}
 
 /* ---- buttons and fields ---- */
 .icon-btn{display:inline-grid;place-items:center;width:2.75rem;height:2.75rem;border:0;border-radius:var(--r-sm);background:none;cursor:pointer;flex:none;color:inherit}
@@ -400,7 +435,6 @@ a.tile:hover{border-color:var(--accent)}
 /* The phone lists what waits; wider screens show the counts as tiles, with the activity beside. [ADMUX-06] The
    queue of what to answer first shows on both. */
 @media (max-width:599.98px){.tiles{display:none}}
-@media (min-width:600px){.todo-card .todo,.todo-card>.hint{display:none}.todo-card:not(:has(.queue-list)){display:none}}
 .stats{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;margin:0 .25rem 1rem;font-size:.86rem;color:var(--muted)}
 .stats b{color:var(--fg);font-size:1rem;margin-left:.3rem}
 .tile.hot{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
@@ -532,7 +566,9 @@ margin:.75rem 0 0;padding:.6rem .75rem;background:var(--raised);border:1px solid
 .version.best{border-color:var(--gold)}
 .version p{margin:0 0 .4rem}
 .rows.inbox .row-side{flex-wrap:wrap;justify-content:flex-end}
-@media (min-width:600px){.bulkbar{bottom:1rem}}
+.rows.inbox .row-main a{color:inherit;text-decoration:none}
+.rows.inbox .row-main a:hover{text-decoration:underline}
+@media (min-width:600px){.bulkbar{bottom:1rem}.rows.inbox .row-side{flex-direction:row;align-items:center}}
 .dev-body{margin:.6rem 0 0;white-space:pre-wrap;font-size:.94rem}
 .history{list-style:none;margin:0;padding:0}
 .history li{padding:.6rem 0;border-top:1px solid var(--line);font-size:.88rem}
@@ -677,31 +713,19 @@ function adminApp(L, BUILD) {
     inbox: '<path d="M3.5 13.5 6 5h12l2.5 8.5V19h-17z"/><path d="M3.5 13.5H9l1 2h4l1-2h5.5"/>',
     versions: '<rect x="3.5" y="7" width="11" height="13" rx="1.5"/><path d="M8 7V4.5h12.5V17H14.5"/>',
     shares: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    // AN 1.28 [ADMUX-30] 출시: a flag on its pole.
+    release: '<path d="M5.5 21V3.5"/><path d="M5.5 4.5h11.5l-2.5 4 2.5 4H5.5"/>',
   };
-  /** Where each screen lives and who sees it; badges count what waits for someone there. */
-  const NAV = [
-    { key: "home", label: "홈", group: "main" },
-    // [ADMUX-17] Everything waiting, nearest deadline first; the badge is what is past its deadline.
-    { key: "inbox", label: "받은함", group: "main", badge: (o) => o.inboxLate ?? 0 },
-    { key: "review", label: "검토", area: "review", group: "main", badge: (o) => L.reviewCount(o) },
-    { key: "inquiries", label: "문의", area: "inquiries", group: "main", badge: (o) => o.inquiries ?? 0 },
-    // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
-    { key: "dev", label: "개발사항", area: "dev", group: "main", badge: (o) => (can("devStatus", "edit") ? o.devTodo ?? 0 : 0) },
-    { key: "companies", label: "회사", area: "companies", group: "main" },
-    // [ADMUX-18] Departments with more than one live version of their rule.
-    { key: "versions", label: "여러 판", area: "companies", group: "main", badge: (o) => o.versionConflicts ?? 0 },
-    // [COMM-06] The talk on rule sets: what people flagged first.
-    { key: "community", label: "토론", area: "community", group: "main", badge: (o) => o.flaggedPosts ?? 0 },
-    { key: "rewards", label: "보상", area: "rewards", group: "main", badge: (o) => o.owed ?? 0 },
-    // [SRV-05] Reported share links live on the share server; this screen reads them through the company server.
-    { key: "shares", label: "공유 링크", area: "shares", group: "main" },
-    // [SRV-04][ADMIN-14] Notices, switches and this month's chores; the badge is the chores left.
-    { key: "ops", label: "운영", area: "ops", group: "manage", badge: (o) => o.opsLeft ?? 0 },
-    { key: "metrics", label: "지표", area: "metrics", group: "manage" },
-    { key: "admins", label: "관리자", owner: true, group: "manage", badge: (o) => (o.admins?.waiting ?? 0) + (o.admins?.phones ?? 0) },
-    { key: "audit", label: "활동 기록", area: "audit", group: "manage" },
-    { key: "settings", label: "설정", group: "manage" },
-  ];
+  // AN 1.28 시작
+  /**
+   * [ADMUX-30] Where each screen lives and who sees it: the six hubs and their tabs are src/admin-lib.js HUBS and
+   * TABS (1.28 통합계획 2-2), shown as this admin may see them. Badges count only what the admin must do there.
+   */
+  const hubs = () => L.visibleHubs(S.me);
+  const tabOk = (key) => L.tabVisible(key, S.me);
+  const tabName = (key) => L.TABS[key]?.label ?? key;
+  const hubNow = () => hubs().find((h) => h.key === L.hubOf(S.route.name)) ?? null;
+  // AN 1.28 끝
   const LEVEL_NAMES = { none: "없음", view: "보기", edit: "고치기" };
   /** [ADMIN-10][ADMIN-15] Areas that are a yes or no: the server says which (me.toggles). */
   const toggles = () => S.me?.toggles ?? S.data.admins?.toggles ?? ["devStatus"];
@@ -770,11 +794,15 @@ function adminApp(L, BUILD) {
   // ---- [ADMUX-03] this device's choices, kept in the browser only ----
 
   const PREF_KEY = "bamnat-admin-prefs";
-  const PREFS = { theme: "system", size: "normal", tabs: [], sound: false, next: true, views: [], loginMode: "account" };
+  const PREFS = { theme: "system", size: "normal", tabs: [], sound: false, next: true, views: [], loginMode: "account", v: 2 };
   function readPrefs() {
     try {
       const v = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}");
-      return { ...PREFS, ...(v && typeof v === "object" ? v : {}) };
+      const was = { ...PREFS, v: 1, ...(v && typeof v === "object" ? v : {}) };
+      // AN 1.28 [ADMUX-35] Saved views and bottom tabs from before the hubs, moved once and kept.
+      const now = L.migratePrefs(was);
+      if (now !== was && Object.keys(v ?? {}).length) localStorage.setItem(PREF_KEY, JSON.stringify(now));
+      return now;
     } catch {
       return { ...PREFS };
     }
@@ -888,8 +916,9 @@ function adminApp(L, BUILD) {
     rewards: { status: "rewardTab", q: "rewardQuery" },
     companies: { q: "query" },
     metrics: { days: "metricDays", from: "metricFrom", to: "metricTo" },
-    ops: { month: "opsMonth" },
-    inbox: { view: "inboxView" },
+    // AN 1.28 [ADMUX-33][ADMUX-35] 오늘 › 할 일 keeps 받은함's 보기, 이달 할 일 keeps 운영's month.
+    chores: { month: "opsMonth" },
+    home: { view: "inboxView" },
     versions: { show: "versionShow" },
   };
   function paramsOf(name) {
@@ -957,7 +986,12 @@ function adminApp(L, BUILD) {
       if (!res.ok) throw Object.assign(new Error(data.error || "server"), { data, status: res.status });
       const etag = res.headers.get("etag");
       if (method === "GET" && etag) etags.set(path, { etag, data: structuredClone(data) });
-      if (method !== "GET") etags.clear();
+      if (method !== "GET") {
+        etags.clear();
+        // AN 1.28 [ADMUX-37] What was just changed may change the menu numbers: asked again, not waited for.
+        badgesAt = 0;
+        if (S.phase === "app") setTimeout(() => refreshBadges(), 0);
+      }
       return data;
     } finally {
       S.busy--;
@@ -997,13 +1031,21 @@ function adminApp(L, BUILD) {
 
   // ---- routes ----
 
+  /**
+   * The screen the address names. AN 1.28 [ADMUX-35] An address from before 1.28 goes to its new place with its
+   * filters (#/inbox → 오늘, #/ops → 출시); a tab this admin may not see, or no known screen, is 오늘.
+   */
   function readRoute() {
-    const route = L.parseRoute(location.hash);
-    const known = [...NAV.map((n) => n.key), "account", "more"];
-    if (!known.includes(route.name)) Object.assign(route, { name: "home", id: null, params: {} });
-    const nav = NAV.find((n) => n.key === route.name);
-    if (nav && !visible(nav)) Object.assign(route, { name: "home", id: null, params: {} });
+    const route = L.redirect(L.parseRoute(location.hash));
+    const known = [...Object.keys(L.TABS), "settings", "more"];
+    if (!known.includes(route.name) || (L.TABS[route.name] && !tabOk(route.name))) return { name: "home", id: null, params: {} };
     return route;
+  }
+
+  /** [ADMUX-35] After an old address was followed, the address bar shows the new one (no new history step). */
+  function fixAddress() {
+    const path = (h) => h.split("?")[0];
+    if (path(location.hash) !== path(href(S.route.name, S.route.id))) syncUrl();
   }
 
   function go(name, id) {
@@ -1012,11 +1054,50 @@ function adminApp(L, BUILD) {
     else location.hash = next;
   }
 
+  // ---- AN 1.28 [ADMUX-37] the menu numbers, apart from the screens ----
+
+  /** When the numbers were last asked for; a write sets it back to 0 so the next look asks again. */
+  let badgesAt = 0;
+  const BADGES_FRESH = 15000;
+  const countsKey = () => JSON.stringify(Object.fromEntries(Object.entries(S.overview ?? {}).filter(([, v]) => typeof v === "number" || (v && typeof v === "object" && "waiting" in v))));
+
   /**
-   * Fetches what the current screen shows; the home numbers come along so badges stay right. [ADMUX-01]
-   * Each call has a number: an answer for a screen the admin already left is dropped instead of drawn.
+   * [ADMUX-37] The menu numbers and who is signed in (/badges): never waited for by a screen. Within 15 seconds of
+   * the last answer nothing is asked unless [force]. A change of permissions draws the menu again.
    */
-  async function load({ quiet = false, overview = true } = {}) {
+  async function refreshBadges(force = false) {
+    if (S.phase !== "app" || (!force && Date.now() - badgesAt < BADGES_FRESH)) return;
+    badgesAt = Date.now();
+    try {
+      const b = await api("/badges");
+      const before = JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]);
+      S.overview = { ...(S.overview ?? {}), ...b };
+      S.me = b.me;
+      S.newBuild = Boolean(b.build && b.build !== BUILD);
+      if (S.phase !== "app") return;
+      if (JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]) !== before) render({ keepScroll: true });
+      else {
+        paintBanners();
+        updateBadges();
+      }
+    } catch {
+      badgesAt = 0;
+    }
+  }
+
+  /** [ADMUX-37] What the screens share and rarely changes (/basics): 채택 settings, answer targets, reason words. */
+  async function loadBasics() {
+    const b = await api("/basics");
+    S.basics = true;
+    S.overview = { ...(S.overview ?? {}), ...b };
+  }
+
+  /**
+   * Fetches what the current screen shows, and only that. [ADMUX-01] Each call has a number: an answer for a
+   * screen the admin already left is dropped instead of drawn. AN 1.28 [ADMUX-37] The menu numbers are not
+   * waited for: they come on their own (refreshBadges) and only change the numbers.
+   */
+  async function load({ quiet = false } = {}) {
     const { name, id } = S.route;
     const key = routeKey();
     const n = seq.next("load");
@@ -1024,20 +1105,19 @@ function adminApp(L, BUILD) {
       if (seq.current("load", n)) fn(d);
     };
     const jobs = [];
+    refreshBadges();
     try {
-      if (overview) {
-        jobs.push(api("/overview").then(keep((o) => {
-          S.overview = o;
-          S.me = o.me;
-          // [ADMUX-08] The server has a newer app than this tab: one tap reloads it.
-          S.newBuild = Boolean(o.build && o.build !== BUILD);
-        })));
-      }
+      // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
+      if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; })));
+      // The reason words (검토, 토론), the 채택 settings and answer targets, once.
+      if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
       if (name === "inquiries" && (!id || wide())) jobs.push(loadInquiries(n));
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
+      // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
+      if (name === "templates") jobs.push(loadTemplates({ strict: true }));
       if (name === "companies" && !id) jobs.push(api(`/companies?q=${encodeURIComponent(S.query)}`).then(keep((d) => { S.data.list = d; })));
       if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then(keep((d) => { S.data.company = d; })));
       if (name === "community") {
@@ -1047,37 +1127,35 @@ function adminApp(L, BUILD) {
         if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
       }
-      if (name === "rewards") {
+      if (name === "rewards" && can("rewards")) {
         jobs.push(api(`/rewards?status=${S.rewardTab}${S.rewardQuery ? `&q=${encodeURIComponent(S.rewardQuery)}` : ""}`).then(keep((d) => { S.data.rewards = d; })));
       }
+      // [INVITE-08][ADMUX-32] 친구 초대 rules, moved from 설정 to 관리 › 보상.
+      if (name === "rewards" && can("settings")) jobs.push(api("/settings/invite").then(keep((d) => { S.data.inviteSettings = d; })));
       if (name === "admins") jobs.push(api("/admins").then(keep((d) => { S.data.admins = d; })), api("/devices").then(keep((d) => { S.data.phones = d; })));
       if (name === "audit") jobs.push(api(`/audit${auditQuery()}`).then(keep((d) => { S.data.audit = d; })));
-      if (name === "ops") {
-        jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })), api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
-      }
-      if (name === "metrics") {
+      // [ADMUX-32] 운영 in three tabs of 출시: 앱 공지, 이달 할 일, and the 기능 스위치 inside 기능 관리 until AM's screen.
+      if (name === "notices" || (name === "flags" && typeof flagsView !== "function")) jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })));
+      if (name === "chores") jobs.push(api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
+      if (name === "metrics" || name === "gates") {
         const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
-        jobs.push(api(`/metrics?${range}`).then(keep((d) => { S.data.metrics = d; })));
+        jobs.push(api(`/metrics?${name === "gates" ? "days=28" : range}`).then(keep((d) => { S.data[name === "gates" ? "gates" : "metrics"] = d; })));
         // [ADMUX-15] The remote files are read from the site by the server; a slow site does not hold the screen.
-        api("/remote").then(keep((d) => { S.data.remote = d; if (S.route.name === "metrics") render({ keepScroll: true }); })).catch(() => {});
+        api("/remote").then(keep((d) => { S.data.remote = d; if (S.route.name === "metrics" || S.route.name === "gates") render({ keepScroll: true }); })).catch(() => {});
       }
-      if (name === "inbox") jobs.push(api("/inbox").then(keep((d) => { S.data.inbox = d; })));
       if (name === "versions") jobs.push(api(`/versions?show=${S.versionShow}`).then(keep((d) => { S.data.versions = d; })));
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
-      // [ADMIN-19] 알림 on this device; [ADMIN-15] the owner's server state comes from /server now.
-      if (name === "settings") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
-      // [INVITE-08] 친구 초대 rules.
-      if (name === "settings" && can("settings")) jobs.push(api("/settings/invite").then(keep((d) => { S.data.inviteSettings = d; })));
-      if (name === "settings" && S.me?.owner) {
-        jobs.push(api("/server").then(keep((d) => { S.server = d; })));
-        // [MON-10] The 정식 출시 card is the owner's; S.me is known from the last overview.
-        jobs.push(api("/launch").then(keep((d) => { S.data.launch = d; })));
-      }
+      // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
+      if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
+      // [ADMIN-15] The owner's server state.
+      if (name === "server") jobs.push(api("/server").then(keep((d) => { S.server = d; })));
+      // [MON-10] The 정식 출시 card stays where it was (#/settings) until AM's 기능 관리 takes its place.
+      if (name === "settings" && S.me?.owner) jobs.push(api("/launch").then(keep((d) => { S.data.launch = d; })));
       const results = await Promise.allSettled(jobs);
       const failed = results.find((r) => r.status === "rejected" && !r.reason?.quiet);
       if (seq.current("load", n)) {
         // [ADMUX-01] Nothing came for the screen: it says so with a button to try again, not a skeleton forever.
-        S.failed = failed && results.some((r, i) => r.status === "rejected" && (i > 0 || !overview)) ? key : "";
+        S.failed = failed ? key : "";
         if (failed && !quiet) fail(failed.reason);
       }
     } catch (e) {
@@ -1113,13 +1191,15 @@ function adminApp(L, BUILD) {
   }
 
   /** [ADMIN-12] The answers every admin shares; until the server has them, the ones built in. */
-  async function loadTemplates() {
+  async function loadTemplates({ strict = false } = {}) {
     try {
       const d = await api("/templates");
       S.templates = d.templates;
       S.topicNames = d.topicNames;
-    } catch {
+    } catch (e) {
       S.templates = null;
+      // AN 1.28 On its own screen a failure says so (with 다시 불러오기) instead of showing the built-in answers.
+      if (strict) throw e;
     }
   }
 
@@ -1143,62 +1223,68 @@ function adminApp(L, BUILD) {
       return;
     }
     const y = window.scrollY;
-    const items = NAV.filter(visible);
-    const tabs = L.bottomTabs(items, S.prefs.tabs, S.route.name);
-    const key = JSON.stringify([items.map((n) => n.key), tabs.tabs, S.me?.name, S.me?.owner]);
+    const list = hubs();
+    const bottom = L.bottomHubs(list, S.prefs.tabs, S.route.name);
+    const key = JSON.stringify([list.map((h) => [h.key, h.tabs]), bottom.tabs, bottom.more, S.me?.name, S.me?.owner]);
     if (key !== shellKey || !document.getElementById("main")) {
-      app.innerHTML = shell(items, tabs);
+      app.innerHTML = shell(list, bottom);
       shellKey = key;
     }
-    paintFrame(items, tabs);
+    paintFrame(list, bottom);
     paintMain();
     if (keepScroll) window.scrollTo(0, y);
   }
 
-  function navLink(n, cls, lit) {
-    const count = n.badge ? n.badge(S.overview ?? {}) : 0;
-    return `<a class="${cls}" href="${href(n.key)}"${lit ? ' aria-current="page"' : ""} data-nav="${n.key}">${icon(P[n.key])}
-      <span class="nav-label">${esc(n.label)}</span><i class="badge" data-badge="${n.key}">${count || ""}</i></a>`;
+  // AN 1.28 시작
+  /** [ADMUX-30] The tab of each hub the admin was on last (this visit), so a hub opens where it was left. */
+  const lastTab = {};
+
+  /** [ADMUX-30] A hub in the sidebar, the rail or the bottom bar; its number is what waits for the admin there. */
+  function hubLink(h, cls) {
+    return `<a class="${cls}" href="${href(h.tabs[0])}" data-nav="${h.key}">${icon(P[h.icon])}
+      <span class="nav-label">${esc(h.label)}</span><i class="badge" data-badge="hub:${h.key}"></i></a>`;
   }
 
-  function shell(items, tabs) {
-    const groups = [["main", "업무"], ["manage", "관리"]];
-    const bottom = tabs.tabs.map((k) => items.find((n) => n.key === k)).filter(Boolean);
-    const rest = items.filter((n) => !tabs.tabs.includes(n.key));
-    const more = { key: "more", label: "더 보기", badge: (o) => rest.reduce((n, x) => n + (x.badge ? x.badge(o) : 0), 0) };
+  /**
+   * [ADMUX-30] The frame: on a phone the bottom bar (오늘·문의·광장·출시 and 더 보기 when not every hub fits), on an
+   * unfolded Fold the six-item rail, on a computer the sidebar with the open hub's tabs under it. Each hub's tabs
+   * are also the row under the title (#hubtabs), hidden when the hub has only one.
+   */
+  function shell(list, bottom) {
+    const more = { key: "more", label: "더 보기", icon: "more", tabs: ["more"] };
+    const inBar = bottom.tabs.map((k) => list.find((h) => h.key === k)).filter(Boolean);
     return `
       <div id="banners"></div>
       <a class="skip" href="#main">본문으로 건너뛰기</a>
       <div class="shell">
         <aside class="side" aria-label="메뉴">
           <div class="brand-row"><img src="/admin/icon.svg" alt=""><b>밤낮 관리자</b></div>
-          ${groups.map(([g, label]) => {
-            const list = items.filter((n) => n.group === g);
-            return list.length ? `<p class="group">${label}</p><ul class="nav">${list.map((n) => `<li>${navLink(n, "", false)}</li>`).join("")}</ul>` : "";
-          }).join("")}
+          <ul class="nav">${list.map((h) => `<li data-hub="${h.key}">${hubLink(h, "")}${h.tabs.length > 1 ? `<ul class="subnav" aria-label="${esc(h.label)} 안 화면">${h.tabs.map((t) =>
+            `<li><a href="${href(t)}" data-tab="${t}"><span>${esc(tabName(t))}</span><i class="badge" data-badge="tab:${t}"></i></a></li>`).join("")}</ul>` : ""}</li>`).join("")}</ul>
           <div class="foot">
-            <a class="who" href="${href("account")}" data-nav="account">
+            <a class="who" href="${href("account")}" data-tab="account">
               <span class="avatar" aria-hidden="true">${esc((S.me?.name ?? "?").slice(0, 1))}</span>
               <span><b>${esc(S.me?.name ?? "")}</b><small>${S.me?.owner ? "최고 관리자" : esc(S.me?.email ?? "")}</small></span></a>
-            <!-- On the narrow rail the account link is an icon; the wide sidebar shows the name card instead. -->
-            <ul class="nav compact-only">${navLink({ key: "account", label: "내 계정" }, "", false)}</ul>
           </div>
         </aside>
         <div class="content">
           <header class="top">
             <div class="bar" id="bar"></div>
+            <nav class="hubtabs" id="hubtabs" hidden></nav>
             <div id="progress" class="progress${S.busy ? " on" : ""}"></div>
           </header>
           <main class="main" id="main" tabindex="-1"></main>
         </div>
       </div>
-      <nav class="tabs" aria-label="메뉴">${bottom.map((n) => navLink(n, "tab", false)).join("")}${navLink(more, "tab", false)}</nav>`;
+      <nav class="tabs" aria-label="메뉴">${inBar.map((h) => hubLink(h, "tab")).join("")}${bottom.more ? hubLink(more, "tab") : ""}</nav>`;
   }
 
-  /** The parts of the frame that change with the screen: banners, the title bar, which menu item is lit. */
-  function paintFrame(items, tabs) {
+  /** The parts of the frame that change with the screen: banners, the title bar, the hub's tabs, what is lit. */
+  function paintFrame(list = hubs(), bottom = L.bottomHubs(list, S.prefs.tabs, S.route.name)) {
     paintBanners();
-    const { title, sub, back } = heading(tabs);
+    const here = L.hubOf(S.route.name);
+    if (here && L.TABS[S.route.name]) lastTab[here] = S.route.name;
+    const { title, sub, back } = heading(bottom);
     const bar = document.getElementById("bar");
     if (bar) {
       bar.innerHTML = `${back ? `<a class="icon-btn" href="${back}" aria-label="뒤로">${icon(P.back)}</a>` : '<img class="mark" src="/admin/icon.svg" alt="">'}
@@ -1207,17 +1293,35 @@ function adminApp(L, BUILD) {
         <button class="icon-btn" data-act="shortcuts" aria-label="단축키" title="단축키 (?)">${icon(P.help)}</button>
         <button class="icon-btn" data-act="refresh" aria-label="새로 고침" title="새로 고침 (R)">${icon(P.refresh)}</button>`;
     }
+    // [ADMUX-30] The open hub's tabs under the title: none for a hub of one tab, or on a detail with its back button.
+    const hub = list.find((h) => h.key === here);
+    const row = document.getElementById("hubtabs");
+    if (row) {
+      const show = Boolean(hub && hub.tabs.length > 1 && !S.route.id && L.TABS[S.route.name]);
+      row.hidden = !show;
+      row.setAttribute("aria-label", hub ? `${hub.label} 안 화면` : "화면");
+      row.innerHTML = show ? hub.tabs.map((t) => `<a href="${href(t)}" data-tab="${t}"${t === S.route.name ? ' aria-current="page"' : ""}>${esc(tabName(t))}<i class="badge" data-badge="tab:${t}"></i></a>`).join("") : "";
+      row.querySelector("[aria-current]")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
     for (const el of document.querySelectorAll("[data-nav]")) {
       const k = el.dataset.nav;
-      const lit = el.classList.contains("tab") ? k === tabs.lit : k === S.route.name;
+      const lit = el.classList.contains("tab") ? k === bottom.lit : k === here;
       if (lit) el.setAttribute("aria-current", "page");
       else el.removeAttribute("aria-current");
-      el.setAttribute("href", href(k));
+      const h = list.find((x) => x.key === k);
+      el.setAttribute("href", k === "more" ? href("more") : h ? href(lastTab[k] && h.tabs.includes(lastTab[k]) ? lastTab[k] : h.tabs[0]) : href(k));
+      el.closest("li")?.classList.toggle("open", lit && !el.classList.contains("tab"));
     }
-    updateBadges(items, tabs);
+    for (const el of document.querySelectorAll(".side [data-tab]")) {
+      if (el.dataset.tab === S.route.name) el.setAttribute("aria-current", "page");
+      else el.removeAttribute("aria-current");
+      el.setAttribute("href", href(el.dataset.tab));
+    }
+    updateBadges(list, bottom);
     const left = (S.overview?.inquiries ?? 0) + (S.overview?.pending ?? 0);
     document.title = left ? `(${left}) 밤낮 관리자` : "밤낮 관리자";
   }
+  // AN 1.28 끝
 
   /** Offline, answers from the phone's copy, a newer app, 큐 모드. */
   function paintBanners() {
@@ -1247,7 +1351,8 @@ function adminApp(L, BUILD) {
     const shut = new Set([...main.querySelectorAll("details:not([open])")].map(keyOf));
     const focus = document.activeElement && main.contains(document.activeElement) ? document.activeElement : null;
     const at = focus?.id ? { id: focus.id, start: focus.selectionStart ?? null, end: focus.selectionEnd ?? null } : null;
-    main.innerHTML = view();
+    // AN 1.28 [ADMUX-31] '지금 기다리는 것' above a hub's first tab.
+    main.innerHTML = waitingStrip() + view();
     rememberOpened();
     for (const id of KEEP) {
       const el = document.getElementById(id);
@@ -1279,13 +1384,20 @@ function adminApp(L, BUILD) {
     if (S.cursor >= 0) markCursor();
   }
 
-  function updateBadges(items = NAV.filter(visible), tabs = L.bottomTabs(items, S.prefs.tabs, S.route.name)) {
+  /**
+   * AN 1.28 [ADMUX-34] Every number in the frame from the last /badges: a hub's is what the admin must do there,
+   * each thing once; a tab's is its own; 더 보기 adds only the hubs it holds. The '지금 기다리는 것' line follows.
+   */
+  function updateBadges(list = hubs(), bottom = L.bottomHubs(list, S.prefs.tabs, S.route.name)) {
     const o = S.overview ?? {};
-    for (const n of NAV) {
-      document.querySelectorAll(`[data-badge="${n.key}"]`).forEach((el) => { el.textContent = (n.badge ? n.badge(o) : 0) || ""; });
+    const rest = list.filter((h) => !bottom.tabs.includes(h.key)).reduce((n, h) => n + L.hubBadge(h, o, S.me), 0);
+    for (const el of document.querySelectorAll("[data-badge]")) {
+      const [kind, key] = el.dataset.badge.split(":");
+      const n = kind === "hub" ? (key === "more" ? rest : L.hubBadge(key, o, S.me)) : kind === "tab" ? L.tabBadge(key, o, S.me) : 0;
+      el.textContent = n || "";
     }
-    const rest = items.filter((n) => !tabs.tabs.includes(n.key)).reduce((n, x) => n + (x.badge ? x.badge(o) : 0), 0);
-    document.querySelectorAll('[data-badge="more"]').forEach((el) => { el.textContent = rest || ""; });
+    const strip = document.getElementById("waiting");
+    if (strip) strip.innerHTML = waitingItems(strip.dataset.hub);
     // [ADMUX-08] The installed app's icon shows how many questions wait.
     try {
       if (o.inquiries) navigator.setAppBadge?.(o.inquiries)?.catch?.(() => {});
@@ -1295,7 +1407,28 @@ function adminApp(L, BUILD) {
     }
   }
 
-  function heading(tabs) {
+  /** [ADMUX-31] Where an item of '지금 기다리는 것' opens: the tab, already filtered to what waits. */
+  function waitingLink(x) {
+    if (x.tab === "inquiries") return L.routeHash("inquiries", null, { status: "open", sort: "sla" });
+    if (x.tab === "dev") return L.routeHash("dev", null, { status: "todo" });
+    if (x.tab === "community") return L.routeHash("community", null, { show: "flagged" });
+    return href(x.tab);
+  }
+
+  function waitingItems(hubKey) {
+    const list = L.waiting(hubKey, S.overview ?? {}, S.me);
+    return `<b>지금 기다리는 것</b>${list.length ? list.map((x) => `<a href="${waitingLink(x)}">${esc(x.label)} <span class="n">${x.n}</span></a>`).join('<span class="dot" aria-hidden="true">·</span>')
+      : '<span class="meta">없어요</span>'}`;
+  }
+
+  /** [ADMUX-31] The line above a hub's first tab; 오늘 draws its own inside the 할 일 card. */
+  function waitingStrip() {
+    const hub = hubNow();
+    if (!hub || hub.key === "today" || S.route.id || hub.tabs[0] !== S.route.name || !hub.tabs.some((t) => L.TABS[t].badge)) return "";
+    return `<p class="waiting" id="waiting" data-hub="${hub.key}">${waitingItems(hub.key)}</p>`;
+  }
+
+  function heading(bottom) {
     const { name, id } = S.route;
     const phone = !matchMedia("(min-width:600px)").matches;
     if (name === "companies" && id) return { title: S.data.company?.name ?? "회사", sub: "회사·규칙", back: href("companies") };
@@ -1311,12 +1444,50 @@ function adminApp(L, BUILD) {
       const first = S.data.posts?.posts?.[0];
       return { title: first ? first.company.name : "토론", sub: first?.room ? (first.room === "style" ? "유형 광장 이야기" : "회사 정보 광장 자유 토의") : first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
     }
-    if (name === "account") return { title: "내 계정", back: phone ? href("more") : null };
     if (name === "more") return { title: "더 보기" };
-    const n = NAV.find((x) => x.key === name);
-    // [ADMUX-03] A screen that is not one of the four tabs has a way back to 더 보기 on a phone.
-    return { title: name === "home" ? "밤낮 관리자" : n?.label ?? "", back: phone && tabs?.back ? href("more") : null };
+    // [ADMUX-32] #/settings is now the list of where its cards went.
+    if (name === "settings") return { title: "설정은 자리를 옮겼어요", back: href("account") };
+    const hub = hubNow();
+    // [ADMUX-30] The hub is the title; its tabs are the row under it (a hub of one tab says the tab's name instead).
+    const title = hub ? (hub.tabs.length > 1 ? hub.label : tabName(name)) : tabName(name);
+    // [ADMUX-03] A hub that is not one of the bottom tabs has a way back to 더 보기 on a phone.
+    return { title: name === "home" ? "오늘" : title, sub: hub && hub.tabs.length > 1 && !phone ? tabName(name) : "", back: phone && bottom?.back ? href("more") : null };
   }
+
+  /**
+   * AN 1.28 [ADMUX-40] Every tab's screen in one table. 기능 관리·근무 유형·기능별 효과 are AM's (flagsView, flagView,
+   * typesView, effectsView): when the integration brings them they are used by name, and until then a tidy
+   * placeholder (기능 관리 keeps the 1.27 기능 스위치 so nothing is lost).
+   */
+  const VIEWS = {
+    home: () => homeView(),
+    inquiries: (id) => (id ? inquiryView() : inquiriesView()),
+    dev: (id) => (id ? devView() : devListView()),
+    templates: () => templatesView(),
+    sla: () => slaView(),
+    review: () => reviewView(),
+    versions: () => versionsView(),
+    community: () => communityView(),
+    companies: (id) => (id ? companyView(S.data.company) : companiesView()),
+    shares: () => sharesView(),
+    adopt: () => adoptView(),
+    flags: (id) => (typeof flagsView === "function" ? (id && typeof flagView === "function" ? flagView() : flagsView()) : switchesView()),
+    types: () => (typeof typesView === "function" ? typesView()
+      : placeholder("근무 유형", "어떤 근무 유형(교대·주간·시간제·현장·사업자·투자)을 새로 고르는 곳에 보일지 정하는 화면이 여기에 와요. 쓰던 달력은 그대로예요.")),
+    notices: () => noticesView(),
+    chores: () => choresView(),
+    gates: () => gatesView(),
+    metrics: () => metricsView(),
+    effects: () => (typeof effectsView === "function" ? effectsView()
+      : placeholder("기능별 효과", "기능을 켜기 전과 켠 뒤의 사용·문의·오류를 나란히 보는 화면이 여기에 와요. 그동안은 지표에서 기간을 골라 비교해 주세요.", `<a class="btn" href="${href("metrics")}">지표 보기</a>`)),
+    audit: () => auditView(),
+    admins: () => adminsView(),
+    rewards: () => rewardsView(),
+    server: () => serverView(),
+    account: () => accountView(),
+    settings: () => movedView(),
+    more: () => moreView(),
+  };
 
   function view() {
     const { name, id } = S.route;
@@ -1325,34 +1496,22 @@ function adminApp(L, BUILD) {
       return `<div class="failed" role="alert">${icon(P.refresh)}<h2>불러오지 못했어요</h2><p>${S.online ? "서버가 잠시 답하지 않아요." : "인터넷 연결을 확인해 주세요."}</p>
         <button class="btn primary" data-act="refresh">다시 불러오기</button></div>`;
     }
-    if (name === "home") return homeView();
-    if (name === "inbox") return inboxView();
-    if (name === "versions") return versionsView();
-    if (name === "review") return reviewView();
-    if (name === "inquiries") return id ? inquiryView() : inquiriesView();
-    if (name === "dev") return id ? devView() : devListView();
-    if (name === "companies") return id ? companyView(S.data.company) : companiesView();
-    if (name === "community") return communityView();
-    if (name === "rewards") return rewardsView();
-    if (name === "admins") return adminsView();
-    if (name === "audit") return auditView();
-    if (name === "ops") return opsView();
-    if (name === "metrics") return metricsView();
-    if (name === "shares") return sharesView();
-    if (name === "settings") return settingsView();
-    if (name === "account") return accountView();
-    if (name === "more") return moreView();
-    return "";
+    return VIEWS[name]?.(id) ?? "";
   }
+
+  /** [ADMUX-40] A tab whose screen comes with another bundle: what it will do, nothing broken. */
+  const placeholder = (title, text, action = "") => `<section class="card soon"><div class="card-head"><h2>${esc(title)}</h2><span class="pill info">준비 중</span></div>
+    <p class="hint">${esc(text)}</p>${action ? `<div class="actions start">${action}</div>` : ""}</section>`;
 
   /** Whether the current screen has anything to show yet. */
   function hasData() {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: S.overview, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList,
-      companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards, admins: d.admins, audit: d.audit,
-      ops: d.ops && d.notices, metrics: d.metrics, inbox: d.inbox, versions: d.versions, shares: d.shares, settings: true, account: true, more: true,
+      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
+      companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
+      notices: d.notices, chores: d.ops, flags: typeof flagsView === "function" || d.notices, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares,
+      server: S.server, adopt: S.basics, sla: S.basics, types: true, effects: true, settings: true, account: true, more: true,
     }[name]);
   }
 
@@ -1364,11 +1523,18 @@ function adminApp(L, BUILD) {
   /** [ADMIN-16] 더 보기 under a paged list. */
   const moreButton = (next, act, total, shown) => (next ? `<div class="more"><button class="btn" data-act="${act}">더 보기${total ? ` <span class="meta">${shown}/${total}</span>` : ""}</button></div>` : "");
 
-  // ---- home [ADMUX-06] ----
+  // ---- 오늘 [ADMUX-06] AN 1.28 [ADMUX-33] ----
 
+  /**
+   * [ADMUX-33] 오늘: the one 할 일 list (what 1.27 had as 지금 할 일 and 받은함), nearest deadline first, filtered by
+   * 오늘까지·이번 주·내 것·모두 (in the address), with 맡기, 바로 답하기 and 내일 볼게요 in place. Below it the
+   * numbers and how they moved, who holds how many and the recent activity. [ADMUX-40] AM's 기능 알림 on top.
+   */
   function homeView() {
-    const o = S.overview;
-    if (!o) return skeleton(3);
+    const t = S.data.today;
+    const top = typeof flagAlertCard === "function" ? flagAlertCard() : "";
+    if (!t) return top + skeleton(3);
+    const o = { ...(S.overview ?? {}), ...t };
     const hour = new Date().getHours();
     const hi = hour < 6 ? "늦은 밤이에요" : hour < 12 ? "좋은 아침이에요" : hour < 18 ? "좋은 오후예요" : "좋은 저녁이에요";
     const tiles = [];
@@ -1384,73 +1550,73 @@ function adminApp(L, BUILD) {
       tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), true);
     }
     if (can("review")) {
-      // [ADMUX-10] The menu badge's number, with what it is made of (점검 보고서 하: badge 6 next to 검토 대기 5).
+      // [ADMUX-10] The menu badge's number, with what it is made of.
       tile("검토 대기", L.reviewCount(o), `제보 ${o.pending ?? 0} · 앱에 없는 방식 ${o.asks ?? 0} · 달라요 ${o.flagged ?? 0}`, href("review"), true);
     }
     if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", L.routeHash("dev", null, { status: "todo" }), can("devStatus", "edit"));
-    if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", href("community"), true);
+    if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", L.routeHash("community", null, { show: "flagged" }), true);
     if (can("rewards")) tile("보상 대기", o.owed, "드릴 프로 기간", href("rewards"), false);
     if (S.me.owner) tile("승인 대기 관리자", o.admins?.waiting, "가입한 관리자", href("admins"), true);
-    // [ADMIN-14] 이달 할 일 in place of reminder mail (결정 D1).
-    if (can("ops")) tile("이달 할 일", o.opsLeft, "요율·공휴일·처리방침 점검", href("ops"), false);
+    // [ADMIN-14] 이달 할 일 in place of reminder mail (결정 D1), now 출시 › 이달 할 일.
+    if (can("ops")) tile("이달 할 일", o.opsLeft, "요율·공휴일·처리방침 점검", href("chores"), false);
     const stats = [];
     if (can("companies")) stats.push(["회사", o.companies], ["쓰는 규칙", o.rules]);
     if (can("review")) stats.push(["모든 제보", o.reports]);
     if (can("community")) stats.push(["토론 글", o.posts]);
-    // [ADMUX-06] 지금 할 일: the waiting questions nearest their target, then setups and flagged posts,
-    // each with the one step it most likely needs, right here.
-    const editInq = can("inquiries", "edit");
-    const queue = (o.queue ?? []).map((x) => {
-      if (x.type === "inquiry") {
-        const mine = x.assignee?.id === S.me.id;
-        return `<li><span class="q-main"><b><a href="${href("inquiries", x.id)}">${esc(KIND_NAMES[x.kind] ?? "문의")} · ${esc(x.text || "(내용 없음)")}</a></b>
-          <small>${esc(ago(x.at))}${x.same ? ` · 나도 ${x.same}` : ""}${x.assignee ? ` · ${mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음"}</small></span>
-          ${slaPill(x.slaLeft)}${editInq && !x.assignee ? `<button class="btn small" data-act="queue-assign" data-id="${x.id}">맡기</button>` : ""}
-          <a class="btn small${mine ? " primary" : ""}" href="${href("inquiries", x.id)}">답하기</a></li>`;
-      }
-      if (x.type === "group") {
-        return `<li><span class="q-main"><b><a href="${L.routeHash("review", null, { show: "groups" })}">제보 · ${esc(x.company)}${x.dept ? ` ${esc(x.dept)}` : ""}</a></b>
-          <small>${x.n}건 · ${esc(ago(x.at))}부터</small></span><a class="btn small" href="${L.routeHash("review", null, { show: "groups" })}">검토</a></li>`;
-      }
-      return `<li><span class="q-main"><b><a href="${href("community")}">신고된 글 · ${esc(x.company)}</a></b><small>${esc(x.text)}</small></span>
-        <span class="pill ${x.hidden ? "bad" : "warn"}">${x.hidden ? "가려짐" : `신고 ${x.flags}`}</span><a class="btn small" href="${href("community")}">보기</a></li>`;
-    });
-    const todo = [];
-    // [ADMIN-12] An entry opens its screen already filtered, so the first tap lands on the work.
-    const add = (n, text, to, tone) => n && todo.push(`<li><a href="${to}"><span class="dot ${tone}" aria-hidden="true"></span>${esc(text)}<small>${n}건</small></a></li>`);
-    if (S.me.owner) add(o.admins?.waiting, "승인을 기다리는 관리자", href("admins"), "bad");
-    if (can("inquiries")) {
-      add(o.inquiriesMine, "내가 맡은, 답을 기다리는 문의", inq({ who: "mine", sort: "sla" }), "bad");
-      add(o.inquiriesFree, "아무도 맡지 않은 문의", inq({ who: "free", sort: "sla" }), "bad");
-      add(o.inquiriesLate, "하루 넘게 답을 기다리는 문의(놓친 문의)", inq({ who: "late" }), "bad");
-    }
-    if (can("dev")) {
-      add(o.devMine, "내가 맡은 개발사항", L.routeHash("dev", null, { who: "mine" }), "");
-      if (can("devStatus", "edit")) add(o.devTodo, "처리를 기다리는 개발사항(접수)", L.routeHash("dev", null, { status: "todo" }), "warn");
-    }
-    if (can("review")) {
-      add(o.asks, "앱에 없는 방식", L.routeHash("review", null, { show: "asks" }), "warn");
-      add(o.flagged, "달라요가 달린 규칙", L.routeHash("review", null, { show: "flagged" }), "warn");
-    }
-    // [COMM-08] The rules promise a look within 30 days of a post the flags hid.
-    if (can("community")) add(o.flaggedPostsLate, "신고로 가려진 지 3주 넘은 글(30일 안에 확인)", L.routeHash("community", null, { show: "hidden" }), "bad");
-    if (can("rewards")) add(o.owed, "드릴 보상", href("rewards"), "");
-    if (can("ops")) add(o.opsLeft, "이달 운영 할 일", href("ops"), "");
     const feed = o.recent ?? null;
     const people = (o.assigned ?? []).length ? `<section class="card"><h2>누가 몇 건 맡았나</h2><ul class="people">${o.assigned.map((a) =>
       `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul></section>` : "";
-    return `<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
+    const views = S.prefs.views.filter((v) => String(v.hash).startsWith("#/"));
+    return `${top}<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
         <p>${o.doneToday ? `오늘 ${o.doneToday}건 처리했어요. ` : ""}${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, toggles()))}`}</p></div>
-      ${S.prefs.views.length ? `<nav class="chips" aria-label="저장한 보기">${S.prefs.views.filter((v) => String(v.hash).startsWith("#/")).map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
-      <section class="card todo-card"><div class="card-head"><h2>지금 할 일</h2><a class="btn small ghost" href="${href("inbox")}">받은함${o.inboxLate ? ` · 기한 넘김 ${o.inboxLate}` : ""}</a>${S.queue ? "" : can("inquiries", "edit") && o.inquiries ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
-        ${queue.length ? `<ul class="queue-list">${queue.join("")}</ul>` : ""}
-        ${todo.length ? `<ul class="todo">${todo.join("")}</ul>` : queue.length ? "" : '<p class="hint">기다리는 일이 없어요. 새로 오면 여기와 메뉴에 숫자로 보여요.</p>'}</section>
+      ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
+      ${todoCard(t.todo)}
       <div class="tiles">${tiles.join("")}</div>
       ${stats.length ? `<p class="stats">${stats.map(([k, v]) => `<span>${esc(k)}<b>${v ?? 0}</b></span>`).join("")}</p>` : ""}
       <div class="cols">${people}
         ${can("audit") ? `<section class="card"><div class="card-head"><h2>최근 활동</h2><a class="btn small ghost" href="${href("audit")}">모두 보기</a></div>
           ${feed === null ? '<div class="card skeleton short"></div>' : feed.length ? `<ul class="feed">${feed.map(feedItem).join("")}</ul>` : '<p class="hint">아직 활동이 없어요.</p>'}</section>` : ""}
       </div>`;
+  }
+
+  /**
+   * [ADMUX-33] 할 일: everything waiting on this admin's areas in one list. 받은함's rules: a question's deadline is
+   * its answer target, a post the flags hid 30 days, a setup or 임금표 entry a week, the month's chores its end.
+   */
+  function todoCard(d) {
+    const c = d?.counts ?? {};
+    const editInq = can("inquiries", "edit");
+    const head = `<div class="card-head"><h2>할 일</h2>${S.queue ? "" : editInq && (S.overview?.inquiries ?? 0) ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
+      <p class="waiting" id="waiting" data-hub="today">${waitingItems("today")}</p>
+      <div class="segmented" role="group" aria-label="할 일 보기">${seg("inbox-view", "today", S.inboxView, "오늘까지", c.today)}${seg("inbox-view", "week", S.inboxView, "이번 주", c.week)}
+        ${seg("inbox-view", "mine", S.inboxView, "내 것", c.mine)}${seg("inbox-view", "all", S.inboxView, "모두", c.all)}</div>`;
+    const now = Date.parse(d.now);
+    const kst = new Date(now + 9 * 3600e3);
+    const todayEnd = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 3600e3;
+    const hide = snoozed();
+    const list = d.items.filter((x) => !hide[`${x.type}:${x.id}`]).filter((x) => (S.inboxView === "all" ? true : S.inboxView === "mine" ? x.mine
+      : x.due && Date.parse(x.due) < (S.inboxView === "today" ? todayEnd : todayEnd + 6 * 864e5)));
+    const hidden = Object.keys(hide).length;
+    const again = hidden ? `<p class="meta">내일로 미룬 ${hidden}개는 숨겼어요. <button class="btn small ghost" data-act="inbox-unsnooze">다시 보기</button></p>` : "";
+    if (!list.length) {
+      return `<section class="card todo-card">${head}<p class="hint">${S.inboxView === "all" ? "기다리는 일이 없어요." : "이 보기에는 기다리는 일이 없어요."} 새로 오면 여기와 메뉴에 숫자로 보여요.</p>${again}</section>`;
+    }
+    const flagged = (x) => x.type === "flagged_post" || x.type === "hidden_post";
+    return `<section class="card todo-card">${head}
+      <p class="hint">내 권한 안에서 기다리는 일을 기한이 가까운 것부터 모았어요. '내일 볼게요'는 이 기기에서만 내일 아침까지 숨겨요.</p>
+      <ul class="rows inbox">${list.map((x) => {
+        const answer = x.type === "inquiry" && editInq && (!x.assignee || x.mine) ? `<details class="quick" data-key="qr:${esc(x.id)}"><summary>바로 답하기</summary>
+          <form data-form="quick-reply" data-id="${esc(x.id)}"><label class="sr" for="qr-${esc(x.id)}">답</label>
+            <textarea id="qr-${esc(x.id)}" name="text" maxlength="4000" required placeholder="보낸 분 앱에 보일 답을 적어요"></textarea>
+            <div class="actions"><button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">보내기</button></div></form></details>` : "";
+        return `<li><div class="row">
+        <span class="row-main"><b class="wrap"><a href="${inboxLink(x)}">${esc(INBOX_NAMES[x.type] ?? x.type)} · ${esc(x.title)}</a></b>
+          <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>
+        <span class="row-side">${dueText(x, Date.now())}
+          ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
+          <a class="btn small${x.type === "inquiry" ? "" : " primary"}" href="${inboxLink(x)}">${x.type === "inquiry" ? "열기" : "보기"}</a>
+          <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}">내일 볼게요</button></span></div>${answer}</li>`;
+      }).join("")}</ul>${again}</section>`;
   }
 
   function feedItem(e) {
@@ -2226,10 +2392,13 @@ function adminApp(L, BUILD) {
           <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${w.months}">지급하기</button>`
           : `<button class="btn" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}
       </li>`).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
+    // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
+    const rules = can("settings") ? inviteSettingsCard(can("settings", "edit")) : "";
+    if (!can("rewards")) return rules;
     return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="회사나 부서로 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${csvButton("rewards", r?.status === S.rewardTab ? r.rewards : null)}</div>
       ${inviteSummaryView(r?.invites)}
-      <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요.</p>${body}`;
+      <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요.</p>${body}${rules}`;
   }
 
   // AE 1.26 시작
@@ -2242,7 +2411,7 @@ function adminApp(L, BUILD) {
       <small>친구 ${t.friends}명 · 채움 ${t.counted} · 사용 기간 채우는 중 ${t.waiting}</small></div></li>`).join("")}</ul>` : "";
     return `<section class="card" aria-label="친구 초대"><h3>친구 초대</h3>
       <p>초대 코드 ${v.codes}개 · 보상 받음 ${v.credited}명 · 다음 보상 기다림 ${v.qualified ?? 0}명 · 상한 넘음 ${v.capped}명 · 사용 기간 채우는 중 ${v.waiting}명 · 끝남 ${v.expired ?? 0}명</p>
-      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 설정 › 친구 초대에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${burstLine(v)}${top}</section>`;
+      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 아래 친구 초대 카드에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${burstLine(v)}${top}</section>`;
   }
 
   /**
@@ -2325,7 +2494,7 @@ function adminApp(L, BUILD) {
     if (!p) return "";
     const pill = (d) => (d.status === "approved" ? '<span class="pill ok">프로 무료</span>' : '<span class="pill warn">승인 대기</span>');
     return `<h2 class="section">관리자 휴대폰<span class="count">${p.devices.length}</span></h2>
-      <p class="hint">관리자가 내 정보 › '내 휴대폰 밤낮 연결'로 만든 코드를 앱에 넣으면 여기에 나와요. 승인하면 그 휴대폰은 프로를 무료로 써요. 한 사람당 ${p.perAdmin}대, 관리자를 지우면 같이 끊겨요.</p>
+      <p class="hint">관리자가 관리 › 내 계정·이 기기의 '내 휴대폰 밤낮 연결'로 만든 코드를 앱에 넣으면 여기에 나와요. 승인하면 그 휴대폰은 프로를 무료로 써요. 한 사람당 ${p.perAdmin}대, 관리자를 지우면 같이 끊겨요.</p>
       ${p.devices.length ? `<ul class="rows">${p.devices.map((d) => `<li class="item">
         <div class="row-main"><b>${esc(d.adminName)}의 휴대폰</b><small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
         ${pill(d)}
@@ -2436,21 +2605,28 @@ function adminApp(L, BUILD) {
   const NOTICE_STATE = { on: ["ok", "보이는 중"], later: ["info", "예정"], ended: ["", "끝남"] };
   const kstDate = (iso) => new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10);
 
-  function opsView() {
-    const n = S.data.notices;
+  /** AN 1.28 [ADMUX-32] 출시 › 이달 할 일 (1.27 운영's first card). */
+  function choresView() {
     const o = S.data.ops;
     const edit = can("ops", "edit");
-    if (!n || !o) return skeleton(3);
+    if (!o) return skeleton(2);
     const [y, m] = o.month.split("-").map(Number);
     const left = o.items.filter((i) => !i.done).length;
-    const chores = `<section class="card"><div class="card-head"><h2>${y}년 ${m}월에 할 일</h2>
+    return `<section class="card"><div class="card-head"><h2>${y}년 ${m}월에 할 일</h2>
         <div class="actions start"><button class="icon-btn" data-act="ops-month" data-d="-1" aria-label="지난달">${icon(P.back)}</button>
         <button class="icon-btn" data-act="ops-month" data-d="1" aria-label="다음 달">${icon(P.chevron)}</button></div></div>
       <p class="hint">해마다 이 달에 하는 일이에요. ${left ? `${left}개 남았어요.` : "모두 마쳤어요."} 근거는 docs/ops-calendar.md에 있어요.</p>
       <ul class="rows">${o.items.map((i) => `<li><div class="row"><span class="row-main"><b class="wrap" title="${esc(i.text)}">${esc(i.text)}</b><small>${esc(i.source)}</small></span>
         <span class="row-side">${edit ? `<button class="btn small${i.done ? "" : " primary"}" data-act="ops-tick" data-key="${i.key}" data-done="${i.done ? "" : "1"}">${i.done ? "되돌리기" : "마침"}</button>`
           : `<span class="pill ${i.done ? "ok" : ""}">${i.done ? "마침" : "남음"}</span>`}</span></div></li>`).join("")}</ul></section>`;
-    const notices = `<section class="card"><div class="card-head"><h2>앱 공지</h2>${edit ? `<button class="btn small primary" data-act="notice-new">${icon(P.plus)}새 공지</button>` : ""}</div>
+  }
+
+  /** AN 1.28 [ADMUX-32] 출시 › 앱 공지 (1.27 운영's second card). */
+  function noticesView() {
+    const n = S.data.notices;
+    const edit = can("ops", "edit");
+    if (!n) return skeleton(2);
+    return `<section class="card"><div class="card-head"><h2>앱 공지</h2>${edit ? `<button class="btn small primary" data-act="notice-new">${icon(P.plus)}새 공지</button>` : ""}</div>
       <p class="hint">앱 달력 위에 한 줄로 보이고, 누르면 내용이 열려요. 사용자가 닫으면 그 공지는 다시 보이지 않아요. 앱은 하루에 한 번, 그리고 열 때 새로 받아요.</p>
       ${n.notices.length ? `<ul class="rows">${n.notices.map((x) => {
         const [tone, label] = NOTICE_STATE[x.state] ?? ["", x.state];
@@ -2460,13 +2636,23 @@ function adminApp(L, BUILD) {
           <span class="row-side"><span class="pill ${tone}">${label}</span>${edit ? `<button class="btn small" data-act="notice-edit" data-id="${x.id}">고치기</button>
             <button class="btn small" data-act="notice-remove" data-id="${x.id}">내리기</button>` : ""}</span></div></li>`;
       }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>`;
-    const switches = `<section class="card"><h2>기능 스위치</h2>
+  }
+
+  /**
+   * AN 1.28 [ADMUX-40] 출시 › 기능 관리 until AM's screen (flagsView) is wired: the 1.27 기능 스위치, unchanged, so
+   * switching a feature off is never lost on the way.
+   */
+  function switchesView() {
+    const n = S.data.notices;
+    const edit = can("ops", "edit");
+    if (!n) return skeleton(2);
+    return `${placeholder("기능 관리", "다크머지 기능 목록(켜짐·대기·강제로 끔·일정표)이 여기에 와요. 그동안 아래 기능 스위치로 서버 기능을 잠시 꺼요.")}
+      <section class="card"><h2>기능 스위치</h2>
       <p class="hint">문제가 생겼을 때 앱 업데이트 없이 그 기능만 잠시 꺼요. 서버도 바로 받지 않고, 앱은 하루 안에 따라와요. 끈 기능은 앱에 "잠시 쉬고 있어요"로 보여요.</p>
       <ul class="rows">${n.switches.map((w) => `<li><div class="row"><span class="row-main"><b>${esc(w.label)}</b><small>${esc(w.key)}</small></span>
         <span class="row-side"><span class="pill ${w.off ? "bad" : "ok"}">${w.off ? "꺼짐" : "켜짐"}</span>
         ${edit ? `<button class="btn small${w.off ? " primary" : ""}" data-act="switch" data-key="${w.key}" data-off="${w.off ? "" : "1"}">${w.off ? "다시 켜기" : "끄기"}</button>` : ""}</span></div></li>`).join("")}</ul>
       ${edit ? "" : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}</section>`;
-    return `<div class="grid two">${chores}${notices}${switches}</div>`;
   }
 
   function openNotice(x) {
@@ -2510,13 +2696,7 @@ function adminApp(L, BUILD) {
       ${d ? `<p class="meta">${esc(d.from)} ~ ${esc(d.to)} (${d.days}일)</p>` : ""}`;
     if (!d) return head + skeleton(3);
     const pct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
-    const gates = `<section class="card"><h2>출시 관문</h2>
-      <p class="hint">사용 통계 보내기에 동의한 분들만 세요(첫 실행에서 묻고, 언제든 끌 수 있어요). 하루 평균 30대 미만이면 숫자가 흔들려서 "데이터 부족"으로 보여요. 지금 하루 평균 ${d.daily}대예요.</p>
-      <ul class="rows">${d.gates.map((g) => {
-        const [tone, label] = GATE_STATE[g.status] ?? ["", g.status];
-        return `<li><div class="row"><span class="row-main"><b>${esc(g.gate)} · ${esc(g.name)}</b><small>기준 ${esc(g.rule)}</small></span>
-          <span class="row-side"><b>${g.value === null ? "" : pct(g.value)}</b><span class="pill ${tone}">${label}</span></span></div></li>`;
-      }).join("")}</ul></section>`;
+    const gates = gatesCard(d);
     const f = d.funnel;
     const funnel = `<section class="card"><h2>프로 전환</h2>
       <dl class="kv"><dt>프로 화면을 본 휴대폰(날 합)</dt><dd>${f.paywall}</dd><dt>무료 체험 시작</dt><dd>${f.trial}</dd><dt>구독 시작</dt><dd>${f.subscribe}</dd>
@@ -2540,8 +2720,28 @@ function adminApp(L, BUILD) {
     const about = (v) => (sh?.approximate !== false ? `대략 ${v}` : v);
     const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
         <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
-      : '<p class="meta">공유 서버가 연결되지 않았어요. 설정 → 서버 상태를 봐 주세요.</p>'}</section>`;
+      : '<p class="meta">공유 서버가 연결되지 않았어요. 관리 › 서버 상태를 봐 주세요.</p>'}</section>`;
     return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${funnel}${shares}${events}</div>`;
+  }
+
+  /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
+  function gatesCard(d) {
+    const pct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
+    return `<section class="card"><h2>출시 관문</h2>
+      <p class="hint">사용 통계 보내기에 동의한 분들만 세요(첫 실행에서 묻고, 언제든 끌 수 있어요). 하루 평균 30대 미만이면 숫자가 흔들려서 "데이터 부족"으로 보여요. 지금 하루 평균 ${d.daily}대예요.</p>
+      <ul class="rows">${d.gates.map((g) => {
+        const [tone, label] = GATE_STATE[g.status] ?? ["", g.status];
+        return `<li><div class="row"><span class="row-main"><b>${esc(g.gate)} · ${esc(g.name)}</b><small>기준 ${esc(g.rule)}</small></span>
+          <span class="row-side"><b>${g.value === null ? "" : pct(g.value)}</b><span class="pill ${tone}">${label}</span></span></div></li>`;
+      }).join("")}</ul></section>`;
+  }
+
+  /** AN 1.28 [ADMUX-32] 출시 › 출시 관문: the gates over the last 28 days and the remote files, also on 지표. */
+  function gatesView() {
+    const d = S.data.gates;
+    if (!d) return skeleton(2);
+    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">분석 › 지표</a>로 가요.</p>
+      <div class="grid two">${gatesCard(d)}${remoteCard()}</div>`;
   }
 
   // ---- [ADMUX-13]~[ADMUX-16] 1.25 지표 ----
@@ -2618,7 +2818,7 @@ function adminApp(L, BUILD) {
       <p class="meta">${esc(r.base)} · ${esc(ago(r.at))} 읽음</p></section>`;
   }
 
-  // ---- [ADMUX-17] 받은함 ----
+  // ---- [ADMUX-17] 받은함: AN 1.28 [ADMUX-33] now 오늘's 할 일 ----
 
   const INBOX_NAMES = { inquiry: "문의", group: "제보", ask: "앱에 없는 방식", doubted: "달라요 달린 규칙", hidden_post: "신고로 가려진 글", flagged_post: "신고된 글",
     rate: "임금표", dev: "개발사항 접수", rewards: "보상", ops: "이달 운영", admin: "승인 대기 관리자", phone: "관리자 휴대폰" };
@@ -2645,7 +2845,7 @@ function adminApp(L, BUILD) {
     if (x.type === "rate") return L.routeHash("community", null, { show: "rates" });
     if (x.type === "dev") return href("dev", x.id);
     if (x.type === "rewards") return href("rewards");
-    if (x.type === "ops") return href("ops");
+    if (x.type === "ops") return href("chores");
     return href("admins");
   }
 
@@ -2654,36 +2854,6 @@ function adminApp(L, BUILD) {
     const left = Math.round((Date.parse(x.due) - now) / 60000);
     const t = L.slaText(left);
     return `<span class="pill ${t.tone}">${esc(left < 0 ? t.text.replace("목표", "기한") : `기한 ${t.text}`)}</span>`;
-  }
-
-  function inboxView() {
-    const d = S.data.inbox;
-    const c = d?.counts ?? {};
-    const head = `<div class="segmented" role="group" aria-label="보기">${seg("inbox-view", "today", S.inboxView, "오늘까지", c.today)}${seg("inbox-view", "week", S.inboxView, "이번 주", c.week)}
-        ${seg("inbox-view", "mine", S.inboxView, "내 것", c.mine)}${seg("inbox-view", "all", S.inboxView, "모두", c.all)}</div>
-      <p class="hint">내 권한 안에서 기다리는 일을 기한이 가까운 것부터 모았어요. 문의는 답 목표, 신고로 가려진 글은 30일 안 확인, 제보·임금표는 받은 지 7일, 운영 할 일은 그 달 말일이 기한이에요. '내일 볼게요'는 이 기기에서만 내일 아침까지 숨겨요.</p>`;
-    if (!d) return head + skeleton(3);
-    const now = Date.parse(d.now);
-    const kst = new Date(now + 9 * 3600e3);
-    const todayEnd = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 3600e3;
-    const hide = snoozed();
-    const list = d.items.filter((x) => !hide[`${x.type}:${x.id}`]).filter((x) => (S.inboxView === "all" ? true : S.inboxView === "mine" ? x.mine
-      : x.due && Date.parse(x.due) < (S.inboxView === "today" ? todayEnd : todayEnd + 6 * 864e5)));
-    const hidden = Object.keys(hide).length;
-    if (!list.length) {
-      return head + empty(S.inboxView === "all" ? "기다리는 일이 없어요" : "이 보기에는 기다리는 일이 없어요", "새로 오면 여기와 메뉴에 숫자로 보여요.",
-        hidden ? `<button class="btn" data-act="inbox-unsnooze">내일로 미룬 ${hidden}개 다시 보기</button>` : "");
-    }
-    const editInq = can("inquiries", "edit");
-    const flagged = (x) => x.type === "flagged_post" || x.type === "hidden_post";
-    return head + `<ul class="rows inbox">${list.map((x) => `<li><div class="row">
-        <span class="row-main"><b class="wrap"><a href="${inboxLink(x)}">${esc(INBOX_NAMES[x.type] ?? x.type)} · ${esc(x.title)}</a></b>
-          <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>
-        <span class="row-side">${dueText(x, Date.now())}
-          ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
-          <a class="btn small primary" href="${inboxLink(x)}">${x.type === "inquiry" ? "답하기" : "열기"}</a>
-          <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}">내일 볼게요</button></span></div></li>`).join("")}</ul>
-      ${hidden ? `<p class="meta">내일로 미룬 ${hidden}개는 숨겼어요. <button class="btn small ghost" data-act="inbox-unsnooze">다시 보기</button></p>` : ""}`;
   }
 
   // ---- [ADMUX-18] 같은 회사 여러 판 ----
@@ -2770,13 +2940,13 @@ function adminApp(L, BUILD) {
 
   const SLA_NAMES = [["slaBug", "문제 신고"], ["slaQuestion", "질문"], ["slaIdea", "건의·제안"], ["slaOther", "그 밖의 이야기"]];
 
-  function settingsView() {
+  // AN 1.28 시작
+  /** [ADMUX-32] 광장 › 채택 규칙 (1.27 설정's 자동 채택 card): when a setup is adopted by itself and what it earns. */
+  function adoptView() {
     const s = S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 };
     const edit = can("settings", "edit");
-    const sla = S.slaDraft ?? S.overview?.sla ?? { slaBug: 8, slaQuestion: 24, slaIdea: 72, slaOther: 72 };
     const auto = (s.autoReward ?? 1) ? 1 : 0;
-    return `<div class="grid two">
-      ${can("settings") ? `<section class="card">
+    return `<section class="card">
         <h2>자동 채택</h2>
         ${stepper("adoptPoints", "채택 점수", s.adoptPoints, "점", edit)}
         <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 이 점수가 되면 자동으로 채택해요. 명세서로 맞춰 본 제보는 2점, 나머지는 1점이에요.</p>
@@ -2790,31 +2960,64 @@ function adminApp(L, BUILD) {
         ${stepper("amendPersons", "쓰는 규칙 고치기", s.amendPersons ?? 3, "명", edit)}
         <p class="hint">토론의 고치자는 제안이나 개정 제보에 이만큼 맞아요가 모이면 개발자 없이 다음 버전으로 바꿔요. 이전 버전은 이력에 남아요.</p>
         <label class="switch"><input type="checkbox" data-change="auto-reward"${auto ? " checked" : ""}${edit ? "" : " disabled"}><span class="track" aria-hidden="true"></span><span>보상 자동 지급</span></label>
-        <p class="hint">켜면 채택될 때 처음 보낸 세 분과 제안한 분께 바로 프로를 드려요. 그 뒤 분들은 보상 화면에서 정해요. 투표한 분께는 드리지 않아요.</p>
+        <p class="hint">켜면 채택될 때 처음 보낸 세 분과 제안한 분께 바로 프로를 드려요. 그 뒤 분들은 관리 › 보상에서 정해요. 투표한 분께는 드리지 않아요.</p>
         ${stepper("rewardCapMonths", "한 사람 상한", s.rewardCapMonths ?? 3, "개월", edit)}
         ${stepper("rewardCapDays", "상한을 세는 기간", s.rewardCapDays ?? 90, "일", edit)}
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
-      </section>
-      ${inviteSettingsCard(edit)}
-      <section class="card"><h2>답 목표</h2>
-        <p class="hint">문의 종류마다 이 시간 안에 첫 답을 하려고 해요. 목록과 홈의 남은 시간, 놓친 문의가 이걸 따라요. 1~168시간이에요.</p>
-        ${SLA_NAMES.map(([k, label]) => stepper(k, label, sla[k], "시간", edit, "sla-step")).join("")}
-        ${edit ? `<div class="actions">${S.slaDraft ? '<button class="btn ghost" data-act="sla-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-sla"${S.slaDraft ? "" : " disabled"}>저장</button></div>` : ""}
-      </section>` : ""}
-      ${pushCard()}
-      ${prefsCard()}
-      ${S.me?.owner ? launchCard() : ""}
-      <section class="card"><h2>앱으로 설치</h2>
-        <p class="hint">${S.installed ? "이 기기에는 앱으로 설치돼 있어요." : "홈 화면에 두면 앱처럼 바로 열리고, 주소창 없이 넓게 보여요."}</p>
-        <div class="actions start">${S.installPrompt ? `<button class="btn primary" data-act="install">${icon(P.install)}지금 설치</button>` : ""}
-          <a class="btn" href="/admin/install">설치 방법 보기</a></div></section>
-      ${S.me?.owner ? `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) : skeleton(1)}
-        <p class="meta">회사 ${S.overview?.companies ?? 0} · 쓰는 규칙 ${S.overview?.rules ?? 0} · 제보 ${S.overview?.reports ?? 0} · 앱 판 ${esc(BUILD)}</p></section>` : ""}
-      <section class="card"><h2>단축키</h2><p class="hint">키보드가 있으면 <span class="kbd">?</span>로 단축키를, <span class="kbd">Ctrl</span>+<span class="kbd">K</span>로 찾기·이동을 열어요.</p>
-        <div class="actions start"><button class="btn" data-act="shortcuts">단축키 보기</button></div></section>
-      </div>`;
+      </section>`;
   }
+
+  /** [ADMUX-32] 문의 › 답 목표 (1.27 설정's card): the hours to a first answer, per kind of question. */
+  function slaView() {
+    const edit = can("settings", "edit");
+    const sla = S.slaDraft ?? S.overview?.sla ?? { slaBug: 8, slaQuestion: 24, slaIdea: 72, slaOther: 72 };
+    return `<section class="card"><h2>답 목표</h2>
+        <p class="hint">문의 종류마다 이 시간 안에 첫 답을 하려고 해요. 목록과 오늘의 남은 시간, 놓친 문의가 이걸 따라요. 1~168시간이에요.</p>
+        ${SLA_NAMES.map(([k, label]) => stepper(k, label, sla[k], "시간", edit, "sla-step")).join("")}
+        ${edit ? `<div class="actions">${S.slaDraft ? '<button class="btn ghost" data-act="sla-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-sla"${S.slaDraft ? "" : " disabled"}>저장</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
+      </section>`;
+  }
+
+  /** [ADMUX-30] 문의 › 자주 쓰는 답 (1.27 had it only as a box over a question): the shared answers, by topic. */
+  function templatesView() {
+    const list = S.templates;
+    if (!list) return skeleton(2);
+    const names = S.topicNames ?? {};
+    const edit = can("inquiries", "edit");
+    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.</p>
+        ${edit ? `<button class="btn primary" data-act="templates">${icon(P.plus)}새 답</button>` : ""}</div>
+      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}</b>
+        <small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
+        ${edit ? `<div class="actions"><button type="button" class="btn small" data-act="template-edit" data-id="${x.id}">고치기</button>
+        <button type="button" class="btn small danger" data-act="template-remove" data-id="${x.id}">지우기</button></div>` : ""}</li>`).join("")}</ul>`
+        : empty("자주 쓰는 답이 없어요", "새 답을 넣으면 모든 관리자의 답 칸 아래에 보여요.")}`;
+  }
+
+  /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
+  function serverView() {
+    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) : skeleton(1)}
+        <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
+  }
+
+  /**
+   * [ADMUX-32] #/settings from before 1.28: where each card went, one tap away, in this admin's tabs only. The
+   * 정식 출시 card stays here for the owner until AM's 기능 관리 (billing·ads) replaces it.
+   */
+  function movedView() {
+    const rows = [
+      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "광장 › 채택 규칙"],
+      ["rewards", "친구 초대 보상 규칙", "관리 › 보상"],
+      ["sla", "문의 답 목표", "문의 › 답 목표"],
+      ["account", "이 기기(화면 색·글자 크기·아래 탭·소리)·이 기기 알림·앱으로 설치·단축키", "관리 › 내 계정·이 기기"],
+      ["server", "서버 상태", "관리 › 서버 상태"],
+      ["flags", "기능 스위치(정식 출시는 기능 관리의 billing·ads로 바뀌어요)", "출시 › 기능 관리"],
+    ].filter(([t]) => tabOk(t));
+    return `<p class="hint">설정 화면에 있던 것은 하는 일에 맞는 허브로 옮겼어요. 누르면 바로 가요.</p>
+      <ul class="rows">${rows.map(([t, what, where]) => `<li><a class="row" href="${href(t)}"><span class="row-main"><b>${esc(what)}</b><small>${esc(where)}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
+      ${S.me?.owner ? launchCard() : ""}`;
+  }
+  // AN 1.28 끝
 
   /** [ADMIN-19] 알림 on this device: which news, quiet hours, a test. */
   function pushCard() {
@@ -2850,19 +3053,21 @@ function adminApp(L, BUILD) {
   /** [ADMUX-03][ADMUX-05] What this device remembers: colours, text size, the bottom tabs, sounds, saved views. */
   function prefsCard() {
     const p = S.prefs;
-    const items = NAV.filter(visible).filter((n) => n.key !== "home");
-    const tabs = L.bottomTabs(NAV.filter(visible), p.tabs, "home").tabs;
+    // AN 1.28 [ADMUX-30] The bottom tabs are hubs: 오늘 and three of the others (only when not every hub fits).
+    const list = hubs();
+    const bottom = L.bottomHubs(list, p.tabs, "home");
+    const items = list.filter((h) => h.key !== "today");
     const opt = (v, label, cur) => `<option value="${v}"${cur === v ? " selected" : ""}>${label}</option>`;
     return `<section class="card prefs"><h2>이 기기</h2><p class="hint">이 기기와 브라우저에만 남아요. 다른 관리자에게는 보이지 않아요.</p>
       <div class="fieldset"><label for="pref-theme">화면 색</label><div class="field"><select id="pref-theme" data-change="pref-theme">${opt("system", "기기 설정을 따라요", p.theme)}${opt("light", "밝게", p.theme)}${opt("dark", "어둡게", p.theme)}</select></div></div>
       <div class="fieldset"><label for="pref-size">글자 크기</label><div class="field"><select id="pref-size" data-change="pref-size">${opt("small", "작게", p.size)}${opt("normal", "보통", p.size)}${opt("large", "크게", p.size)}</select></div></div>
-      <p class="label">휴대폰 아래 탭(홈 말고 3개까지)</p>
-      <div class="chips" role="group" aria-label="아래 탭">${items.map((n) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${n.key}"${tabs.includes(n.key) ? " checked" : ""}> ${esc(n.label)}</label>`).join("")}</div>
+      ${bottom.more ? `<p class="label">휴대폰 아래 탭(오늘 말고 3개까지, 나머지는 더 보기)</p>
+      <div class="chips" role="group" aria-label="아래 탭">${items.map((h) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${h.key}"${bottom.tabs.includes(h.key) ? " checked" : ""}> ${esc(h.label)}</label>`).join("")}</div>` : ""}
       <label class="switch"><input type="checkbox" data-change="pref-sound"${p.sound ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>새 문의가 오면 작은 소리</span></label>
       <label class="switch"><input type="checkbox" data-change="pref-next"${p.next ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>문의를 닫으면 다음 문의 열기</span></label>
       <p class="label">저장한 보기</p>
       ${p.views.length ? `<ul class="rows">${p.views.map((v, i) => `<li class="item"><a class="row-main" href="${esc(v.hash)}"><b>${esc(v.name)}</b><small>${esc(v.hash)}</small></a>
-        <button class="btn small ghost" data-act="view-remove" data-i="${i}">지우기</button></li>`).join("")}</ul>` : '<p class="hint">목록 화면에서 찾기·이동(Ctrl+K)의 "지금 보기 저장"으로 거른 목록을 저장해 두고 한 번에 열어요.</p>'}
+        <button class="btn small ghost" data-act="view-remove" data-i="${i}">지우기</button></li>`).join("")}</ul>` : '<p class="hint">목록 화면에서 찾기·이동(Ctrl+K)의 "지금 보기 저장"으로 거른 목록을 저장해 두고 오늘에서 한 번에 열어요.</p>'}
     </section>`;
   }
 
@@ -2899,7 +3104,7 @@ function adminApp(L, BUILD) {
   function accountView() {
     const m = S.me;
     if (!m) return skeleton();
-    const done = S.overview?.doneToday ?? 0;
+    const done = S.data.today?.doneToday ?? 0;
     return `<div class="grid two">
       <section class="card"><div class="card-head"><h2>${esc(m.name)}</h2>${m.owner ? '<span class="pill gold">최고 관리자</span>' : ""}</div>
         ${m.owner ? '<p class="hint">Cloudflare의 ADMIN_PASSWORD로 로그인했어요. 모든 화면을 쓰고 관리자를 초대·승인해요.</p>'
@@ -2921,6 +3126,14 @@ function adminApp(L, BUILD) {
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
+      ${pushCard()}
+      ${prefsCard()}
+      <section class="card"><h2>앱으로 설치</h2>
+        <p class="hint">${S.installed ? "이 기기에는 앱으로 설치돼 있어요." : "홈 화면에 두면 앱처럼 바로 열리고, 주소창 없이 넓게 보여요."}</p>
+        <div class="actions start">${S.installPrompt ? `<button class="btn primary" data-act="install">${icon(P.install)}지금 설치</button>` : ""}
+          <a class="btn" href="/admin/install">설치 방법 보기</a></div></section>
+      <section class="card"><h2>단축키</h2><p class="hint">키보드가 있으면 <span class="kbd">1</span>~<span class="kbd">6</span>으로 허브를, <span class="kbd">[</span> <span class="kbd">]</span>로 허브 안 탭을 옮기고, <span class="kbd">?</span>로 단축키를, <span class="kbd">Ctrl</span>+<span class="kbd">K</span>로 찾기·이동을 열어요.</p>
+        <div class="actions start"><button class="btn" data-act="shortcuts">단축키 보기</button></div></section>
       </div>`;
   }
 
@@ -2928,13 +3141,15 @@ function adminApp(L, BUILD) {
   const pwInput = (id, name, auto, extra = "") => `<div class="pw"><input id="${id}" name="${name}" type="password" autocomplete="${auto}" required${extra}>
     <button class="btn small ghost show" type="button" data-act="pw-show" data-for="${id}" aria-pressed="false" aria-label="비밀번호 보기">보기</button></div>`;
 
+  /** [ADMUX-30] 더 보기 on a phone: the hubs not in the bottom bar (분석·관리 by default), each with its tabs. */
   function moreView() {
-    const items = NAV.filter(visible);
-    const tabs = L.bottomTabs(items, S.prefs.tabs, "more").tabs;
-    const rest = items.filter((n) => !tabs.includes(n.key));
+    const list = hubs();
+    const bottom = L.bottomHubs(list, S.prefs.tabs, "more");
     const o = S.overview ?? {};
-    return `<ul class="rows">${[...rest, { key: "account", label: "내 계정" }].map((n) => `<li><a class="row" href="${href(n.key)}">
-      ${icon(P[n.key])}<span class="row-main"><b>${esc(n.label)}</b></span>${n.badge && n.badge(o) ? `<i class="badge">${n.badge(o)}</i>` : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>
+    const rest = list.filter((h) => !bottom.tabs.includes(h.key));
+    return `${rest.map((h) => `<h2 class="section">${icon(P[h.icon])}${esc(h.label)}${L.hubBadge(h, o, S.me) ? `<span class="count">${L.hubBadge(h, o, S.me)}</span>` : ""}</h2>
+      <ul class="rows">${h.tabs.map((t) => `<li><a class="row" href="${href(t)}"><span class="row-main"><b>${esc(tabName(t))}</b></span>
+        ${L.tabBadge(t, o, S.me) ? `<i class="badge">${L.tabBadge(t, o, S.me)}</i>` : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>`).join("")}
       <div class="actions start"><button class="btn wide" data-act="logout">${icon(P.logout)}로그아웃</button></div>`;
   }
 
@@ -3091,8 +3306,10 @@ function adminApp(L, BUILD) {
 
   function paletteEntries() {
     const out = S.recent.filter((x) => x.to !== L.routeHash(S.route.name, S.route.id, {}));
-    out.push(...NAV.filter(visible).map((n) => ({ label: n.label, hint: "화면", kind: "화면", to: href(n.key) })));
-    out.push({ label: "내 계정", hint: "화면 account", kind: "화면", to: href("account") });
+    // AN 1.28 [ADMUX-36] Every tab as 허브 › 탭, found also by the menu names it had before 1.28.
+    for (const h of hubs()) {
+      for (const t of h.tabs) out.push({ label: h.tabs.length > 1 ? `${h.label} › ${tabName(t)}` : h.label, hint: `화면 ${L.TABS[t].old ?? ""}`, kind: "화면", to: href(t) });
+    }
     for (const v of S.prefs.views) out.push({ label: v.name, hint: "저장한 보기", kind: "보기", to: v.hash });
     for (const q of S.data.inquiries?.inquiries ?? []) out.push({ label: q.preview.slice(0, 60) || "(내용 없음)", hint: `문의 ${KIND_NAMES[q.kind] ?? ""} ${q.topicName ?? ""}`, kind: "문의", to: href("inquiries", q.id) });
     for (const x of S.data.devList?.items ?? []) out.push({ label: x.title, hint: "개발사항", kind: "개발사항", to: href("dev", x.id) });
@@ -3103,7 +3320,7 @@ function adminApp(L, BUILD) {
       { label: "화면 색 바꾸기(밝게·어둡게)", hint: "테마 theme dark light", kind: "할 일", act: "theme-next" },
       { label: "로그아웃", hint: "logout", kind: "할 일", act: "logout" },
     );
-    if (!S.route.id && (BIND[S.route.name] || S.route.name === "audit")) out.push({ label: "지금 보기 저장", hint: "save view", kind: "할 일", act: "view-save" });
+    if (!S.route.id && (BIND[S.route.name] || S.route.name === "audit") && S.route.name !== "home") out.push({ label: "지금 보기 저장", hint: "save view", kind: "할 일", act: "view-save" });
     if (can("inquiries", "edit")) out.push({ label: "큐 모드로 답하기", hint: "queue", kind: "할 일", act: "queue-start" });
     return out;
   }
@@ -3139,10 +3356,11 @@ function adminApp(L, BUILD) {
   }
 
   function openShortcuts() {
-    const items = NAV.filter(visible);
+    // AN 1.28 [ADMUX-36] 1~6 are the hubs, always the same number whatever the admin sees.
+    const shown = new Set(hubs().map((h) => h.key));
     openDialog(`<div class="box"><h2>단축키</h2>
       <div class="keys">${L.KEYS.map(([k, what]) => `<span class="kbd">${esc(k)}</span><span>${esc(what)}</span>`).join("")}
-        ${items.slice(0, 9).map((n, i) => `<span class="kbd">${i + 1}</span><span>${esc(n.label)} (문의를 연 동안은 자주 쓰는 답)</span>`).join("")}
+        ${L.HUBS.map((h, i) => (shown.has(h.key) ? `<span class="kbd">${i + 1}</span><span>${esc(h.label)} (문의 답 칸에서는 자주 쓰는 답)</span>` : "")).join("")}
         <span class="kbd">R</span><span>새로 고침 (문의를 연 동안은 답 칸으로)</span></div>
       <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`, "wide");
   }
@@ -3303,7 +3521,7 @@ function adminApp(L, BUILD) {
     if (dataKey) S.data[dataKey] = null;
     syncUrl();
     render({ keepScroll: true });
-    load({ overview: false });
+    load();
   }
 
   async function copy(text, done = "복사했어요") {
@@ -3329,11 +3547,10 @@ function adminApp(L, BUILD) {
       toast({ system: "기기 설정 색을 따라요", light: "밝게 보여요", dark: "어둡게 보여요" }[S.prefs.theme]);
     },
     "view-save": () => {
-      const n = NAV.find((x) => x.key === S.route.name);
-      const name = `${n?.label ?? S.route.name}${S.route.name === "inquiries" && S.inquiryQuery ? ` "${S.inquiryQuery}"` : ""} ${new Date().toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}`;
+      const name = `${tabName(S.route.name)}${S.route.name === "inquiries" && S.inquiryQuery ? ` "${S.inquiryQuery}"` : ""} ${new Date().toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}`;
       S.prefs.views = [...S.prefs.views.filter((v) => v.hash !== href(S.route.name)), { name, hash: href(S.route.name) }].slice(-12);
       savePrefs();
-      toast("이 보기를 저장했어요. 홈과 찾기·이동(Ctrl+K)에서 바로 열어요");
+      toast("이 보기를 저장했어요. 오늘과 찾기·이동(Ctrl+K)에서 바로 열어요");
     },
     "view-remove": ({ i }) => {
       S.prefs.views = S.prefs.views.filter((_, k) => k !== Number(i));
@@ -3612,6 +3829,8 @@ function adminApp(L, BUILD) {
     },
     templates: async () => {
       if (!S.templates) await loadTemplates();
+      // AN 1.28 On 문의 › 자주 쓰는 답 the list is the screen: the box only adds one ("목록으로" closes it).
+      if (S.route.name === "templates" && dialog.open && dialog.querySelector('form[data-form="template-add"][data-id]:not([data-id=""])')) return dialog.close();
       openTemplates();
     },
     "template-remove": ({ id }) => confirmBox("이 답을 지울까요?", "모든 관리자의 목록에서 빠져요.", "지우기", async () => {
@@ -3619,7 +3838,7 @@ function adminApp(L, BUILD) {
       if (r) {
         S.templates = r.templates;
         if (S.data.inquiry?.templates) S.data.inquiry.templates = S.data.inquiry.templates.filter((t) => t.id !== Number(id));
-        openTemplates();
+        if (S.route.name !== "templates") openTemplates();
         render({ keepScroll: true });
       }
     }),
@@ -3796,7 +4015,7 @@ function adminApp(L, BUILD) {
       const next = new Date(Date.UTC(y, m - 1 + Number(d), 1));
       S.opsMonth = next.toISOString().slice(0, 7);
       syncUrl();
-      load({ overview: false });
+      load();
     },
     "ops-tick": async ({ key, done }) => {
       const o = await act(() => api("/ops", "POST", { month: S.data.ops.month, key, done: Boolean(done) }), done ? "마쳤어요" : "되돌렸어요");
@@ -4001,6 +4220,8 @@ function adminApp(L, BUILD) {
     S.phase = "login";
     S.me = null;
     S.overview = null;
+    S.basics = false;
+    badgesAt = 0;
     S.data = {};
     S.error = "";
     S.queue = null;
@@ -4162,6 +4383,15 @@ function adminApp(L, BUILD) {
       window.scrollTo(0, document.body.scrollHeight);
       load({ quiet: true });
     },
+    // AN 1.28 [ADMUX-33] 바로 답하기 on 오늘's 할 일: the same answer as on the question, without opening it.
+    "quick-reply": async (form, submitter) => {
+      const text = form.elements.text.value.trim();
+      if (!text) return toast(ERRORS.text);
+      const close = submitter?.dataset.close === "1";
+      const q = await act(() => api(`/inquiries/${form.dataset.id}/reply`, "POST", { text, ...(close ? { close: true } : {}) }),
+        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      if (q) load({ quiet: true });
+    },
     "inquiry-note": async (form) => {
       const q = await act(() => api(`/inquiries/${S.route.id}/notes`, "POST", { text: form.elements.text.value }), "메모를 남겼어요");
       if (q) {
@@ -4179,7 +4409,7 @@ function adminApp(L, BUILD) {
       if (S.route.name === "inquiries" && S.route.id) {
         S.data.inquiry = await api(`/inquiries/${S.route.id}`).catch(() => S.data.inquiry);
       }
-      if (id) openTemplates();
+      if (id && S.route.name !== "templates") openTemplates();
       else dialog.close();
       render({ keepScroll: true });
     },
@@ -4419,9 +4649,9 @@ function adminApp(L, BUILD) {
       savePrefs();
     },
     "pref-tab": (t) => {
-      // Home and three more: a fourth one in takes the place of the one that has been there longest.
-      const items = NAV.filter(visible);
-      let now = L.bottomTabs(items, S.prefs.tabs, "home").tabs.filter((k) => k !== "home");
+      // AN 1.28 [ADMUX-30] 오늘 and three hubs: a fourth one in takes the place of the one that has been there longest.
+      const list = hubs();
+      let now = L.bottomHubs(list, S.prefs.tabs, "home").tabs.filter((k) => k !== "today");
       let out = "";
       if (t.checked) {
         now = [...now.filter((k) => k !== t.value), t.value];
@@ -4429,10 +4659,10 @@ function adminApp(L, BUILD) {
       } else {
         now = now.filter((k) => k !== t.value);
       }
-      S.prefs.tabs = ["home", ...now];
+      S.prefs.tabs = now;
       savePrefs();
-      const name = (k) => NAV.find((n) => n.key === k)?.label ?? k;
-      if (out) toast(`아래 탭은 홈과 3개까지라 ${name(out)} 대신 ${name(t.value)}을(를) 넣었어요`);
+      const name = (k) => L.HUBS.find((h) => h.key === k)?.label ?? k;
+      if (out) toast(`아래 탭은 오늘과 3개까지라 ${name(out)} 대신 ${name(t.value)}을(를) 넣었어요`);
       render({ keepScroll: true });
     },
   };
@@ -4472,8 +4702,8 @@ function adminApp(L, BUILD) {
     dev: () => ["devQuery", "devList", () => loadDev()],
     companies: () => ["query", "list", async () => { S.data.list = await api(`/companies?q=${encodeURIComponent(S.query)}`); }],
     inquiries: () => ["inquiryQuery", "inquiries", () => loadInquiries()],
-    community: () => ["postQuery", S.postFilter === "rates" ? "rates" : "posts", () => load({ overview: false, quiet: true })],
-    rewards: () => ["rewardQuery", "rewards", () => load({ overview: false, quiet: true })],
+    community: () => ["postQuery", S.postFilter === "rates" ? "rates" : "posts", () => load({ quiet: true })],
+    rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
   };
 
   // toggle does not bubble, so it is caught on the way down.
@@ -4596,8 +4826,7 @@ function adminApp(L, BUILD) {
         gTimer = setTimeout(() => { gKey = ""; }, 1200);
         return;
       case "go": {
-        const n = NAV.find((x) => x.key === a.to);
-        if (n && visible(n)) {
+        if (a.to === "settings" || tabOk(a.to)) {
           stop();
           go(a.to);
         }
@@ -4621,12 +4850,21 @@ function adminApp(L, BUILD) {
         return;
       }
       case "step": {
-        if (!detail) return;
-        const nb = neighbours();
-        const to = a.by > 0 ? nb.next : nb.prev;
-        if (to) {
+        if (detail) {
+          const nb = neighbours();
+          const to = a.by > 0 ? nb.next : nb.prev;
+          if (to) {
+            stop();
+            go("inquiries", to);
+          }
+          return;
+        }
+        // AN 1.28 [ADMUX-36] Elsewhere [ and ] go through the open hub's tabs.
+        const tabs = hubNow()?.tabs ?? [];
+        const at = tabs.indexOf(S.route.name);
+        if (at >= 0 && !S.route.id && tabs.length > 1) {
           stop();
-          go("inquiries", to);
+          go(tabs[(at + a.by + tabs.length) % tabs.length]);
         }
         return;
       }
@@ -4669,11 +4907,11 @@ function adminApp(L, BUILD) {
           stop();
           return ACTIONS.template({ i: a.n - 1 });
         }
-        // 1~9 go to the screens in the menu's order everywhere else.
-        const items = NAV.filter(visible);
-        if (!detail && items[a.n - 1]) {
+        // AN 1.28 [ADMUX-36] 1~6 are the hubs everywhere else, always the same number; a hub opens on its last tab.
+        const hub = L.HUBS[a.n - 1] && hubs().find((h) => h.key === L.HUBS[a.n - 1].key);
+        if (!detail && hub) {
           stop();
-          go(items[a.n - 1].key);
+          go(lastTab[hub.key] && hub.tabs.includes(lastTab[hub.key]) ? lastTab[hub.key] : hub.tabs[0]);
         }
         return;
       }
@@ -4736,7 +4974,7 @@ function adminApp(L, BUILD) {
     const next = readRoute();
     const moved = before.name !== next.name || before.id !== next.id;
     // [ADMUX-01] Settings changed and not saved: asked before they are dropped.
-    if (moved && (S.draft || S.slaDraft) && before.name === "settings" && !confirm("저장하지 않은 설정이 있어요. 버리고 나갈까요?")) {
+    if (moved && ((S.draft && before.name === "adopt") || (S.slaDraft && before.name === "sla")) && !confirm("저장하지 않은 설정이 있어요. 버리고 나갈까요?")) {
       history.replaceState(null, "", `/admin/${href(before.name, before.id)}`);
       return;
     }
@@ -4745,6 +4983,8 @@ function adminApp(L, BUILD) {
     if (moved && dialog.open && !S.relogin) dialog.close();
     S.route = next;
     applyParams(next);
+    // AN 1.28 [ADMUX-35] An old address shows as the new one.
+    fixAddress();
     if (moved) {
       S.draft = null;
       S.slaDraft = null;
@@ -4779,9 +5019,10 @@ function adminApp(L, BUILD) {
   });
 
   /**
-   * [ADMUX-08] Fresh numbers while the app is open: every 30 seconds on the home screen and on a question
-   * (where someone else may be answering), every 90 seconds elsewhere, never while the tab is hidden.
-   * A new question can chime (설정 › 이 기기).
+   * [ADMUX-08] Fresh numbers while the app is open: every 30 seconds on 오늘 and on a question (where someone else
+   * may be answering), every 90 seconds elsewhere, never while the tab is hidden. A new question can chime
+   * (관리 › 내 계정·이 기기). AN 1.28 [ADMUX-37] Only the numbers (/badges) are asked; an open question comes again
+   * too, and 오늘 when its numbers moved.
    */
   function schedule() {
     clearInterval(pollTimer);
@@ -4792,21 +5033,11 @@ function adminApp(L, BUILD) {
   async function poll() {
     if (document.visibilityState !== "visible" || S.phase !== "app" || !S.online || dialog.open) return;
     const before = S.overview?.inquiries ?? 0;
+    const was = countsKey();
+    await refreshBadges(true);
     const typingNow = document.activeElement?.closest?.("#main") && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-    if (S.route.name === "home" || (S.route.name === "inquiries" && S.route.id && !typingNow)) {
-      await load({ quiet: true });
-    } else {
-      try {
-        const o = await api("/overview");
-        S.overview = o;
-        S.me = o.me;
-        S.newBuild = Boolean(o.build && o.build !== BUILD);
-        paintBanners();
-        updateBadges();
-      } catch {
-        // Tried again next time.
-      }
-    }
+    if (S.route.name === "inquiries" && S.route.id && !typingNow) await load({ quiet: true });
+    else if (S.route.name === "home" && !typingNow && countsKey() !== was) await load({ quiet: true });
     if (S.prefs.sound && (S.overview?.inquiries ?? 0) > before) chime();
   }
 
@@ -4824,18 +5055,25 @@ function adminApp(L, BUILD) {
     S.installPrompt = null;
   });
 
-  /** Opens the app: the numbers (with the home screen's recent activity) first, then the screen's own data. */
+  /**
+   * Opens the app. AN 1.28 [ADMUX-37] Who is signed in and the menu numbers come first (/badges, light), the frame
+   * is drawn, then the screen asks for its own data; the shared words come beside it.
+   */
   async function enter() {
-    S.overview = await api("/overview");
-    S.me = S.overview.me;
-    S.newBuild = Boolean(S.overview.build && S.overview.build !== BUILD);
+    const b = await api("/badges");
+    badgesAt = Date.now();
+    S.overview = { ...b };
+    S.me = b.me;
+    S.newBuild = Boolean(b.build && b.build !== BUILD);
     S.phase = "app";
     S.route = readRoute();
     applyParams(S.route);
     if (!location.hash) history.replaceState(null, "", `/admin/${href(S.route.name)}`);
+    else fixAddress();
     render();
-    if (S.route.name !== "home") load({ quiet: true, overview: false });
+    load({ quiet: true });
     schedule();
+    loadBasics().then(() => { if (S.phase === "app") render({ keepScroll: true }); }).catch(() => {});
     if ("serviceWorker" in navigator && "PushManager" in window) currentPush();
   }
 

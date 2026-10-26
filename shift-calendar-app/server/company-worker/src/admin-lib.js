@@ -195,6 +195,9 @@ export function adminLib() {
     versions: { show: "conflict" },
     audit: { actor: "", kind: "", from: "", to: "" },
     ops: { month: "" },
+    // [ADMUX-33] 오늘 › 할 일 keeps 받은함's 보기; [ADMUX-32] 이달 할 일 keeps 운영's month.
+    home: { view: "all" },
+    chores: { month: "" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -242,21 +245,147 @@ export function adminLib() {
     return p;
   }
 
-  // ---- [ADMUX-03] the bottom tabs ----
+  // ---- [ADMUX-30] six hubs (1.28 통합계획 2-2) ----
+
+  /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
+  const HUBS = [
+    { key: "today", label: "오늘", icon: "home", tabs: ["home"] },
+    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "dev", "templates", "sla"] },
+    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "companies", "shares", "adopt"] },
+    { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
+    { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "rewards", "server", "account"] },
+  ];
 
   /**
-   * The four tabs at the bottom of a phone: the ones the admin chose if they can still see them, else
-   * the first visible screens; the fifth is 더 보기. [current] is which tab lights up, so a screen not in
-   * the tabs lights 더 보기, and [back] says whether that screen shows a back button.
+   * Each tab: its name, who sees it ([area] one area or any of several, [owner] the owner only), what its number
+   * counts — only what this admin must do — and [old], the menu names it had before 1.28, so the palette still
+   * finds it. A number with [count] false shows on its tab but is not added to the hub's (여러 판 are the same
+   * setups 검토 counts). [strip] is the word the '지금 기다리는 것' line uses.
    */
-  function bottomTabs(visible, chosen = [], current = "home") {
-    const keys = visible.map((n) => n.key);
-    let tabs = (Array.isArray(chosen) ? chosen : []).filter((k) => keys.includes(k));
-    if (!tabs.includes("home")) tabs.unshift("home");
+  const TABS = {
+    home: { label: "오늘", old: "홈 받은함 할 일 지금 할 일 inbox home" },
+    inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
+    // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
+    dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
+    templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },
+    sla: { label: "답 목표", area: "settings", old: "설정 답 목표 SLA" },
+    review: { label: "검토", area: "review", badge: (o) => reviewCount(o), old: "제보 앱에 없는 방식 달라요 review" },
+    versions: { label: "여러 판", area: "companies", badge: (o) => o.versionConflicts ?? 0, count: false, old: "versions" },
+    community: { label: "토론·임금표", area: "community", badge: (o) => o.flaggedPosts ?? 0, strip: "신고 글", old: "토론 임금표 신고된 글 community" },
+    companies: { label: "회사", area: "companies", old: "회사·규칙 companies" },
+    shares: { label: "공유 링크", area: "shares", old: "공유 링크 신고 shares" },
+    adopt: { label: "채택 규칙", area: "settings", old: "설정 자동 채택 맞았어요 비율 채택 보상 상한 settings" },
+    // [ADMUX-40] 기능 관리 and 근무 유형 are AM's screens; until the server has the flags area, 운영 may see them.
+    flags: { label: "기능 관리", area: ["flags", "ops"], badge: (o) => o.flagsWaiting ?? 0, strip: "기능 확인", old: "운영 기능 스위치 정식 출시 다크머지 결제 광고 flags ops" },
+    types: { label: "근무 유형", area: ["flags", "ops"], old: "근무 유형 노출 types" },
+    notices: { label: "앱 공지", area: "ops", old: "공지 notices 운영" },
+    chores: { label: "이달 할 일", area: "ops", badge: (o) => o.opsLeft ?? 0, old: "이달 할 일 chores 운영" },
+    gates: { label: "출시 관문", area: "metrics", old: "지표 출시 관문 원격 갱신 gates" },
+    metrics: { label: "지표", area: "metrics", old: "통계 metrics" },
+    effects: { label: "기능별 효과", area: "metrics", old: "플래그 효과 effects" },
+    audit: { label: "활동 기록", area: "audit", old: "audit" },
+    admins: { label: "관리자", owner: true, badge: (o) => (o.admins?.waiting ?? 0) + (o.admins?.phones ?? 0), strip: "승인 대기", old: "관리자 휴대폰 admins" },
+    // [ADMUX-32] 친구 초대 규칙 moved here from 설정; it is the settings area, so either opens the tab.
+    rewards: { label: "보상", area: ["rewards", "settings"], badge: (o, me) => (can(me, "rewards") ? o.owed ?? 0 : 0), strip: "드릴 보상", old: "설정 친구 초대 rewards" },
+    server: { label: "서버 상태", owner: true, old: "설정 서버 상태 server" },
+    account: { label: "내 계정·이 기기", old: "설정 이 기기 알림 화면 색 테마 글자 크기 아래 탭 소리 저장한 보기 앱 설치 단축키 비밀번호 로그아웃 account settings" },
+  };
+
+  /** Whether [me] sees tab [key]. */
+  function tabVisible(key, me) {
+    const t = TABS[key];
+    if (!t || !me) return false;
+    if (t.owner) return Boolean(me.owner);
+    if (!t.area) return true;
+    return (Array.isArray(t.area) ? t.area : [t.area]).some((a) => can(me, a));
+  }
+
+  /** The hubs [me] sees, each with only the tabs [me] sees; a hub with none is left out. */
+  const visibleHubs = (me) => HUBS.map((h) => ({ ...h, tabs: h.tabs.filter((t) => tabVisible(t, me)) })).filter((h) => h.tabs.length);
+
+  /** Routes that are not a tab of their own, and the hub each belongs to. */
+  const EXTRA_HUB = { settings: "manage", inbox: "today", ops: "release", more: null };
+
+  /** The hub a route belongs to (null for 더 보기). */
+  function hubOf(name) {
+    if (Object.hasOwn(EXTRA_HUB, name)) return EXTRA_HUB[name];
+    return HUBS.find((h) => h.tabs.includes(name))?.key ?? null;
+  }
+
+  /** [ADMUX-34] A tab's number: what [me] must do there. */
+  const tabBadge = (key, o, me) => (TABS[key]?.badge && tabVisible(key, me) ? TABS[key].badge(o ?? {}, me) || 0 : 0);
+
+  /** [ADMUX-34] A hub's number: its tabs' numbers, each thing once (a tab with count: false is not added). */
+  function hubBadge(hub, o, me) {
+    const h = HUBS.find((x) => x.key === (hub?.key ?? hub));
+    return h ? h.tabs.filter((t) => TABS[t].count !== false).reduce((n, t) => n + tabBadge(t, o, me), 0) : 0;
+  }
+
+  /**
+   * [ADMUX-31] '지금 기다리는 것' on a hub's first tab: its tabs with something waiting and their number. On 오늘
+   * it is one item per other hub.
+   */
+  function waiting(hubKey, o, me) {
+    if (hubKey === "today") {
+      return visibleHubs(me).filter((h) => h.key !== "today")
+        .map((h) => ({ hub: h.key, tab: h.tabs[0], label: h.label, n: hubBadge(h, o, me) })).filter((x) => x.n);
+    }
+    const h = visibleHubs(me).find((x) => x.key === hubKey);
+    return (h?.tabs ?? []).map((t) => ({ hub: hubKey, tab: t, label: TABS[t].strip ?? TABS[t].label, n: tabBadge(t, o, me) })).filter((x) => x.n);
+  }
+
+  /**
+   * [ADMUX-30] The phone's bottom tabs: 오늘 and three more hubs (the admin's choice if they still see them, else
+   * in hub order), then 더 보기 for the rest. When every hub fits there is no 더 보기. [current] is the route
+   * shown, so the right one lights up; [back] says the screen sits under 더 보기.
+   */
+  function bottomHubs(hubs, chosen = [], current = "home") {
+    const keys = hubs.map((h) => h.key);
+    const here = hubOf(current);
+    if (keys.length <= 5) return { tabs: keys, lit: here ?? keys[0], back: false, more: false };
+    let tabs = (Array.isArray(chosen) ? chosen : []).filter((k) => keys.includes(k) && k !== "today");
+    tabs.unshift("today");
     for (const k of keys) if (tabs.length < 4 && !tabs.includes(k)) tabs.push(k);
     tabs = tabs.slice(0, 4);
-    const inTabs = tabs.includes(current);
-    return { tabs, lit: inTabs ? current : "more", back: !inTabs && current !== "more" };
+    const inTabs = here !== null && tabs.includes(here);
+    return { tabs, lit: inTabs ? here : "more", back: !inTabs && current !== "more", more: true };
+  }
+
+  // ---- [ADMUX-35] old addresses ----
+
+  /**
+   * Where a pre-1.28 address goes now, filters kept: 받은함 is 오늘's 할 일, 운영 is the 출시 hub (이달 할 일 when
+   * a month was in it). Every other screen kept its name; #/settings lists where its cards went.
+   */
+  function redirect(route) {
+    const p = route.params ?? {};
+    if (route.name === "inbox") return { name: "home", id: null, params: { view: p.view ?? "all" } };
+    if (route.name === "ops") return p.month ? { name: "chores", id: null, params: { month: p.month } } : { name: "flags", id: null, params: {} };
+    return route;
+  }
+
+  /** A saved address as it is written now. */
+  function migrateHash(hash) {
+    if (!String(hash ?? "").startsWith("#/")) return hash;
+    const r = redirect(parseRoute(hash));
+    return routeHash(r.name, r.id, r.params);
+  }
+
+  /**
+   * [ADMUX-35] This device's choices from before 1.28: saved views get their new addresses, and bottom tabs
+   * chosen as screens become the hubs those screens are in. Done once (v 2).
+   */
+  function migratePrefs(prefs) {
+    if (!prefs || prefs.v === 2) return prefs;
+    const keys = HUBS.map((h) => h.key);
+    const tabs = [];
+    for (const k of Array.isArray(prefs.tabs) ? prefs.tabs : []) {
+      const hub = keys.includes(k) ? k : hubOf(k);
+      if (hub && hub !== "today" && !tabs.includes(hub)) tabs.push(hub);
+    }
+    const views = (Array.isArray(prefs.views) ? prefs.views : []).map((v) => ({ ...v, hash: migrateHash(v.hash) }));
+    return { ...prefs, tabs: tabs.slice(0, 3), views, v: 2 };
   }
 
   // ---- 개발사항 ----
@@ -410,8 +539,12 @@ export function adminLib() {
 
   // ---- [ADMUX-04] keys ----
 
-  /** Where g and a letter go. */
-  const GO = { b: "inbox", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "ops", m: "metrics", a: "admins", l: "audit", s: "settings" };
+  /**
+   * Where g and a letter go. [ADMUX-36] The letters from before 1.28 still work (g b is 오늘's 할 일, g o the 출시
+   * hub, g s the list of where 설정 went); f, n, p and u are new.
+   */
+  const GO = { b: "home", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "flags", m: "metrics",
+    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account" };
 
   /**
    * What a key press means, or null: [key] as KeyboardEvent.key, [mods] {ctrl, meta, alt, shift},
@@ -437,10 +570,12 @@ export function adminLib() {
   /** The list of keys for the ? screen, as [keys, what]. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["[ / ]", "상세에서 이전·다음 항목"], ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
-    ["1~9", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g i · g d · g r", "홈·문의·개발사항·검토로"], ["g c · g t · g w · g o", "회사·토론·보상·운영으로"],
-    ["g m · g a · g l · g s", "지표·관리자·활동 기록·설정으로"], ["?", "이 목록"],
+    ["Esc · Backspace", "뒤로"], ["1~6", "허브: 오늘·문의·광장·출시·분석·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
+    ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g i · g d", "문의·개발사항으로"],
+    ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
+    ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -537,7 +672,8 @@ export function adminLib() {
   }
 
   return {
-    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, bottomTabs, likeFirst, words,
+    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
+    HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion,
   };

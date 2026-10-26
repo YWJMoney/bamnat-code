@@ -570,6 +570,20 @@ shift-calendar-app/
 - **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
 - 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
 
+### 6-26. 관리자 앱 여섯 허브·설정 나누기·할 일 하나로·가벼운 메뉴 숫자 (1.28.0 묶음 AN, ADMUX-30~42)
+
+계획과 결정(AN-D1~D6), 전후 사진 목록은 프로젝트 파일(git 밖)의 `계획/1.28-AN-개발계획.md`, 사진은 `1.28/admin/before_*`·`after_*`(폰 390·폴드 880·컴퓨터 1440 × 밝게·어둡게).
+
+- **허브(ADMUX-30)** `admin-lib.js`의 `HUBS`(today·ask·plaza·release·insight·manage와 탭 목록)와 `TABS`(탭마다 이름·권한 영역(`area`, 배열이면 하나만 있어도)·`owner`·`badge(o, me)`·`count: false`·`strip`·옛 이름 `old`). `tabVisible`·`visibleHubs`·`hubOf`·`bottomHubs`(오늘과 3개 + 더 보기, 다 들어가면 더 보기 없음). 앱은 `hubs()`·`tabOk()`·`tabName()`·`hubNow()`, 틀은 `shell()`(사이드바 `li[data-hub]`와 `.subnav`, 제목 아래 `#hubtabs`, 아래 탭 `data-nav` = 허브 키)과 `paintFrame()`. 허브는 마지막에 본 탭(`lastTab`)으로 열려요. 더 보기(`moreView`)는 아래 탭에 없는 허브와 그 탭들.
+- **기다리는 것(ADMUX-31)·숫자(ADMUX-34)** `L.tabBadge`·`L.hubBadge`(탭 숫자의 합, 여러 판은 `count: false`라 더하지 않음, 오늘은 숫자 없음), 더 보기는 아래 탭에 없는 허브만 더해요. `L.waiting(hub)` → `waitingStrip()`(`#waiting`, 숫자가 바뀌면 `updateBadges()`가 다시 칠해요). 출시 › 기능 관리 숫자는 AM의 `o.flagsWaiting`을 읽어요(없으면 0).
+- **설정 나누기(ADMUX-32)** 채택 규칙 `adoptView`(광장), 답 목표 `slaView`(문의), 친구 초대 규칙 `inviteSettingsCard`는 `rewardsView` 아래(관리 › 보상, settings 권한만이면 그 카드만), 서버 상태 `serverView`(관리), 이 기기·알림·설치·단축키는 `accountView`. `#/settings`는 `movedView`(옮긴 곳 링크 + 최고 관리자에게 정식 출시 카드 — AM이 기능 관리로 바꾸며 지워요).
+- **할 일 하나로(ADMUX-33)** 받은함 화면을 없애고 오늘의 `todoCard`가 같은 목록(`/inbox`와 같은 `inboxItems`)을 오늘까지·이번 주·내 것·모두(`#/home?view=`)로 보여요. 맡기·열기·내일 볼게요·바로 답하기(`quick-reply` 폼, 답하고 닫기도). 운영 화면은 앱 공지 `noticesView`·이달 할 일 `choresView`(`#/chores?month=`)·기능 스위치 `switchesView`(기능 관리 자리), 지표의 관문은 `gatesCard`로 떼어 출시 › 출시 관문 `gatesView`에도.
+- **옛 주소·기기 설정(ADMUX-35)** `L.redirect`(inbox → home?view, ops → flags 또는 chores?month), `readRoute`가 옮기고 `fixAddress()`가 주소를 바꿔 써요. `L.migratePrefs`가 저장한 보기 주소와 화면으로 고른 아래 탭을 허브로 한 번 옮겨요(`v: 2`).
+- **키·명령창(ADMUX-36)** `1`~`6` 허브(문의 답 칸에서는 자주 쓰는 답), `[`·`]` 허브 안 탭(문의를 열었을 때는 앞뒤 문의), `g`+글자는 그대로에 `g f`·`g n`·`g p`·`g u` 더함. 명령창 화면 줄은 '허브 › 탭'이고 `old`의 옛 메뉴 이름으로도 찾아져요.
+- **속도(ADMUX-37~39)** 서버 `GET /api/admin/badges`(`badges()`: 누구인지·build·billingLive·메뉴 숫자만, `BADGE_SQL`을 `overview()`와 같이 씀, 관리자 id·owner·권한마다 15초 `badgeMemory`, GET·HEAD가 아닌 요청과 시간마다 일이 끝나면 `badgesChanged()`로 바로 무효), `GET /api/admin/today`(오늘 화면만), `GET /api/admin/basics`(채택 설정·답 목표·이유 문구). 앱 `enter()`는 /badges로 틀을 그린 뒤 `load()`(화면 데이터만)와 `loadBasics()`를 기다리지 않고, 30초·90초 `poll()`은 `refreshBadges()`만(문의 상세는 다시 읽고, 오늘은 숫자가 바뀌었을 때만). 보내는 요청 뒤엔 숫자를 바로 다시 물어요. 색인 넷 `LATE_INDEXES`: `inquiries_created`·`inquiries_bad`(rating = -1만)·`posts_flagged`(신고 글만)·`audit_action`. `tools/bundle.mjs`가 `adminPrebuilt()`로 관리자 앱 파일과 build를 `dist/worker.js`에 미리 넣어요(wrangler deploy·시험은 예전처럼 처음 요청 때 만듦). `/overview`·`/inbox`는 열려 있던 1.27 탭을 위해 남겼어요.
+- **AM과 나눈 자리** `VIEWS` 표의 flags·types·effects는 `typeof flagsView`·`flagView`·`typesView`·`effectsView`가 있으면 그것을, 없으면 `switchesView()`·`placeholder()`. 오늘 맨 위 `flagAlertCard()`도 있으면 불러요. 기능 관리 자리표는 지금 `/notices`를 읽어 스위치를 보여 줘요(AM 화면이 들어오면 `load()`의 그 줄을 바꿔요).
+- 시험: 서버 `test/admin-an.test.mjs`(5: /badges = /overview 숫자, 15초 보관·보내면 무효, 권한마다, /today = /inbox·/basics 모양, 색인 넷이 쿼리 계획에 쓰임), `test/accounts.test.mjs` 번들 시험(미리 만든 파일과 ETag가 서버가 만든 것과 같음), `test/admin-lib.test.mjs` AN 4개, `test/ui/admin-ui.test.mjs` AN 9개(역할별 허브(문의만·광장만), 기능 스위치 끄기 → 서버, 옛 주소, 숫자, 설정 나누기 저장, 바로 답하기, 키·명령창, /badges 실패해도 화면, 옛 기기 설정).
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
