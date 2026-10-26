@@ -157,7 +157,9 @@ const TOGGLES = ["devStatus", "takedown", "flagOff"];
  * 개발사항, so the admin already invited keeps working without a visit to the admins screen. 처리 stays
  * the owner's until given.
  */
-const SINCE = { dev: () => "edit" };
+// AM 1.28 [FLAG-27] Admins from before 1.28 who could see 운영 see 기능 관리 too (the switches moved there); changing stays
+// the owner's to give.
+const SINCE = { dev: () => "edit", flags: (p) => (p?.ops === "view" || p?.ops === "edit" ? "view" : "none") };
 const PRESETS = {
   manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" } },
   reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", ops: "none", metrics: "none", shares: "edit", audit: "none", flags: "none", flagOff: "none" } },
@@ -7961,14 +7963,17 @@ async function shareStats(env, days) {
 
 const FL = adminLib();
 
-/** [FLAG-20] Condition helpers, so the catalog reads like the review's table. */
+/** [FLAG-20] Condition helpers, so the catalog reads like core FlagCatalog (AL-D1 JSON). */
 const C = {
   date: (from) => ({ type: "date", from }),
+  effective: (policy) => ({ type: "date", policy }),
   policy: (version) => ({ type: "policy", version }),
-  any: (...of) => ({ type: "any", of }),
   manual: (key) => ({ type: "manual", key }),
-  consent: (kind) => ({ type: "consent", kind }),
+  consent: (key, unknownMeets = false) => ({ type: "consent", key, ...(unknownMeets ? { unknownMeets: true } : {}) }),
 };
+
+/** [FLAG-25] 정식 출시 retired: what the switch and the 3.1 hold did together (결정 D84), as core FlagCatalog.launch. */
+const LAUNCH = [C.effective("3.1"), C.policy("3.1"), C.manual("play.production"), C.manual("play.subscription")];
 
 /** The six 기능 스위치 of 1.22 (SWITCHES) as flags, for apps up to 1.27 that read /api/config off. */
 const SWITCH_FLAGS = { "plaza.write": "PLAZA_WRITE", "company.report": "COMPANY_REPORT", "inquiry.photos": "INQUIRY_PHOTOS",
@@ -7995,18 +8000,19 @@ const switchFlag = (key, name, what, req) => ({
  */
 export const FLAG_CATALOG = [
   {
-    key: "billing", group: "money", name: "결제(프로 구독)", risk: "LEGAL", default: false, sunset: "1.31.0", owner: "dd", since: "1.28.0",
+    key: "billing", group: "money", name: "결제(프로 구독)", risk: "LEGAL", default: false, sunset: "1.30.0", owner: "dd", since: "1.28.0",
     what: "프로 구독을 팔고 프로 기능을 잠가요. 처음 켜진 순간이 정식 출시일(launchedAt)이 되어, 그 전에 설치한 휴대폰의 감사 보상과 보상 이용권이 이날부터 시작해요.",
     whyOff: "처리방침 3.1이 시행되고(동의하지 않은 휴대폰은 11월 24일부터) Play 프로덕션 승인·정기 결제 상품·데이터 보안 답이 준비되기 전에는 모두 무료여야 해요. 일찍 켜면 알리지 않은 결제가 돼요.",
     basis: { policy: "3.1 1-6항", decision: "D84·D98·D99", req: "MON-02" },
-    conditions: [C.date("2026-11-10"), C.any(C.policy("3.1"), C.date("2026-11-24")), C.manual("play.production"), C.manual("play.subscription"), C.manual("datasafety.billing")],
+    conditions: LAUNCH,
   },
   {
-    key: "ads", group: "money", name: "광고(띠·보상형)", risk: "LEGAL", default: false, sunset: "1.31.0", owner: "dd", since: "1.28.0",
+    key: "ads", group: "money", name: "광고(띠·보상형)", risk: "LEGAL", default: false, sunset: "1.30.0", owner: "dd", since: "1.28.0",
     what: "프로가 아닌 휴대폰에 정해진 띠 한 곳과 사용자가 고르는 보상형 광고를 보여요(알람·잠금·첫 설정 화면에는 없음).",
     whyOff: "광고는 처리방침 1-8항 시행, Google 광고 동의, Play의 광고 포함·데이터 보안 선언이 끝난 뒤에만 켜요. 결제와 따로 끌 수 있게 나눴어요.",
     basis: { policy: "3.1 1-8항", decision: "D84·D98·D99", req: "MON-07" },
-    conditions: [C.date("2026-11-10"), C.any(C.policy("3.1"), C.date("2026-11-24")), C.manual("play.production"), C.manual("datasafety.ads"), C.consent("ads")],
+    // AL-D5: not asked yet counts as given, so the SDK can show Google's consent screen; a no turns it off.
+    conditions: [...LAUNCH, C.consent("ads", true)],
   },
   typeFlag("SHIFT", "교대", "주야간 교대"),
   typeFlag("DAY", "일근", "주 5일 낮 근무"),
@@ -8028,11 +8034,11 @@ export const FLAG_CATALOG = [
   switchFlag("usage.stats", "사용 통계 받기", "동의한 휴대폰이 하루 한 번 보내는 사용 통계(휴대폰 구별 없음)를 서버가 받아요.", "STAT-01"),
   switchFlag("plaza.news", "광장 소식 알림", "내 규칙이 바뀌거나 채택됐다는 광장 소식을 앱이 받아요.", "COMM-10"),
   {
-    key: "stats.more", group: "stats", name: "사용 통계 더 보내기(켜진 기능·시작 시간)", risk: "LEGAL", default: false, sunset: "1.32.0", owner: "dd", since: "1.28.0",
+    key: "stats.more", group: "stats", name: "사용 통계 더 보내기(켜진 기능·시작 시간)", risk: "LEGAL", default: false, sunset: null, owner: "dd", since: "1.28.0",
     what: "사용 통계에 동의한 휴대폰이 켜진 기능 목록(flagsOn)과 앱 시작 시간(startup)을 더 보내요. 휴대폰을 구별하지 않고 날마다 합계만 남아요.",
     whyOff: "서버로 새 정보를 보내는 일이라 처리방침 3.2(1-9항) 시행과 따로 동의, Play 데이터 보안 답을 고친 뒤에만 켜요.",
     basis: { policy: "3.2 1-9항", decision: "D98", req: "FLAG-30" },
-    conditions: [C.policy("3.2"), C.consent("usage.stats.more"), C.manual("datasafety.stats")],
+    conditions: [C.effective("3.2"), C.consent("usage"), C.consent("usage.stats.more")],
   },
 ];
 
@@ -8190,35 +8196,24 @@ async function switchOff(env, name) {
   return FL.forceOf(r ? { force: r.force, until: r.until ? iso(r.until) : null } : null, Date.now()) === "off";
 }
 
-/**
- * [FLAG-22] Conditions as a phone can check them: a confirmation the server holds (manual) is dropped once given, and
- * an "or" with a confirmed one in it is met. Null when the flag has neither its own conditions nor a manual one.
- */
-function phoneConditions(def, o, checks) {
-  const base = o?.conditions ?? def.conditions;
-  const hasManual = (c) => c.type === "manual" || (c.type === "any" && c.of.some(hasManual));
-  if (!o?.conditions && !base.some(hasManual)) return null;
-  const out = [];
-  for (const c of base) {
-    if (c.type === "manual") {
-      if (!checks[c.key]) out.push(c);
-    } else if (c.type === "any") {
-      if (!c.of.some((x) => x.type === "manual" && checks[x.key])) out.push({ type: "any", of: c.of.filter((x) => !(x.type === "manual" && checks[x.key])) });
-    } else out.push(c);
-  }
-  return out;
-}
+/** The manual keys a condition list waits on (inside '또는' too). */
+const manualKeys = (list) => [...new Set((list ?? []).flatMap((c) => (c.type === "manual" ? [c.key] : c.type === "any" ? manualKeys(c.of) : [])))];
 
-/** [FLAG-22] What /api/config says about flags: only the ones the server overrides, as 통합계획 2-1 shapes them. */
+/**
+ * [FLAG-22] What /api/config says about flags: only what the server overrides, as 통합계획 2-1 shapes them, plus
+ * confirmed (AL-D2): the manual facts the developer confirmed, for every flag that waits on one (a phone with no
+ * answer from the server treats a manual condition as unknown, so such a flag is always sent).
+ */
 function configFlags(store, now) {
   const out = {};
   for (const key of flagKeys(store)) {
     const def = flagDef(key);
     const o = store.overrides.get(key) ?? null;
     const force = FL.forceOf(o, now);
-    const conditions = phoneConditions(def, o, store.checks);
-    if (!force && !conditions) continue;
-    out[key] = { force, why: force ? o.why : "", conditions, until: force && o.until ? o.until : null };
+    const manual = manualKeys(o?.conditions ?? def.conditions);
+    if (!force && !o?.conditions && !manual.length) continue;
+    const confirmed = Object.fromEntries(manual.filter((k) => store.checks[k]).map((k) => [k, store.checks[k].at]));
+    out[key] = { force, why: force ? o.why : "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null, confirmed };
   }
   return out;
 }
@@ -8318,7 +8313,7 @@ function flagRow(store, key, now, shares) {
   const conds = o?.conditions ?? def.conditions;
   const release = latestRelease();
   const legal = def.risk === "LEGAL";
-  const manual = (c) => (c.type === "manual" ? [c.key] : c.type === "any" ? c.of.flatMap(manual) : []);
+  const manual = (c) => manualKeys([c]);
   return {
     key, name: def.name, group: def.group, what: def.what, whyOff: def.whyOff, basis: def.basis, risk: def.risk, default: def.default, sunset: def.sunset,
     owner: def.owner, since: def.since, switchKey: SWITCH_FLAGS[key] ?? null, conditions: conds, catalogConditions: def.conditions, override: o,
@@ -8330,7 +8325,7 @@ function flagRow(store, key, now, shares) {
     onShare: shares?.share?.[key] ?? null,
     onSince: store.state.get(key)?.since ? iso(store.state.get(key).since) : null,
     alert: Boolean(legal && ev.on && store.state.get(key)?.since && now - store.state.get(key).since < DAY),
-    manualKeys: [...new Set(conds.flatMap(manual))],
+    manualKeys: manualKeys(conds),
   };
 }
 
@@ -8422,7 +8417,9 @@ async function setFlagForce(request, env, actor, key, now) {
   }
   const why = plainText(body.why, FLAG_LIMITS.why, "why", force !== null);
   const until = force ? readUntil(body.until, "flag_until", now) : null;
-  const review = force === "off" && body.reviewAt ? (/^\d{4}-\d{2}-\d{2}$/.test(body.reviewAt) && body.reviewAt >= kstDay(now) && body.reviewAt <= kstDay(now + FLAG_LIMITS.untilDays * DAY)
+  const realDay = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`))
+    && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+  const review = force === "off" && body.reviewAt ? (realDay(body.reviewAt) && body.reviewAt >= kstDay(now) && body.reviewAt <= kstDay(now + FLAG_LIMITS.untilDays * DAY)
     ? body.reviewAt : refuse("review_at", "reviewAt")) : null;
   // [FLAG-32] At least one way of working stays to choose.
   if (force === "off" && def.group === "type") {
@@ -8469,7 +8466,9 @@ async function setFlagConditions(request, env, actor, key, now) {
 /** [FLAG-21][FLAG-27] 확인했어요 on a manual condition (or taken back): the owner's when any legal flag waits on it. */
 async function setFlagCheck(request, env, actor, name, now) {
   if (!Object.hasOwn(FL.MANUAL_NAMES, name)) return json({ error: "manual", field: "key" }, 404);
-  const users = FLAG_CATALOG.filter((f) => JSON.stringify(f.conditions).includes(`"key":"${name}"`));
+  // The flags that wait on it now: the catalog's conditions or the ones the developer app put in their place.
+  const store = await flagStore(env);
+  const users = flagKeys(store).map(flagDef).filter((f) => manualKeys(store.overrides.get(f.key)?.conditions ?? f.conditions).includes(name));
   const legal = users.some((f) => f.risk === "LEGAL");
   if (!actor.owner && (legal || !can(actor, "flags", "edit"))) return json({ error: "no_permission", area: legal ? "owner" : "flags" }, 403);
   const body = await readJson(request, 2048);
