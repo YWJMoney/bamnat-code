@@ -132,7 +132,8 @@ class AIScreenshotTest : ScreenshotBase() {
         companyOn()
         ownPay()
         var matched = false
-        content { CompanyReportScreen(CompanyReportViewModel(c), onBack = {}, onDone = {}, onOpenSent = {}, onMatch = { matched = true }) }
+        val vm = CompanyReportViewModel(c)
+        content { CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}, onMatch = { matched = true }) }
         settle()
         reveal("급여 명세서와 맞춰 봤어요", exact = true)
         assertTrue(shows("이 달력에서 명세서로 맞춰 본 기록이 없어요", exact = false))
@@ -144,7 +145,8 @@ class AIScreenshotTest : ScreenshotBase() {
     @Test fun aMatchedMonthOpensTheTick() = shoot("1121_ai_tick_on", PHONE_393) {
         companyOn()
         ownPay(PayslipCheck(YearMonth.now().minusMonths(1), 2_800_000, 2_801_000, 0))
-        content { CompanyReportScreen(CompanyReportViewModel(c), onBack = {}, onDone = {}, onOpenSent = {}, onMatch = {}) }
+        val vm = CompanyReportViewModel(c)
+        content { CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}, onMatch = {}) }
         settle()
         reveal("급여 명세서와 맞춰 봤어요", exact = true)
         assertTrue(shows("명세서로 맞춰 본 기록이 있어요 · 일치", exact = false))
@@ -263,7 +265,8 @@ class AIScreenshotTest : ScreenshotBase() {
     @Test fun thePlazaTopLeadsToACompany() = shoot("1130_ai_board_find", PHONE) {
         companyOn()
         var found = false
-        content { CompanyBoardScreen(CompanyBoardViewModel(c), onBack = {}, onOpen = {}, onShare = {}, onFind = { found = true }) }
+        val vm = CompanyBoardViewModel(c)
+        content { CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onFind = { found = true }) }
         settle()
         assertTrue(shows("회사를 고르면 그 회사 분들끼리 이야기하는 ‘회사 정보 광장’이 열려요", exact = true))
         tapText("회사 찾기", exact = true)

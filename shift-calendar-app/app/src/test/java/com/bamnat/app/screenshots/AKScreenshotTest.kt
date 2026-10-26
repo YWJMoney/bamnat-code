@@ -82,7 +82,8 @@ class AKScreenshotTest : ScreenshotBase() {
         assertTrue(shows("이미 적은 체결 1건은 건너뛰어요"))
         assertTrue(shows("기록과 다른 체결 1건 · 고칠까요?"))
         assertTrue(shows("아직 안 적은 체결 2건"))
-        assertTrue(shows("수량 × 단가가 금액과 안 맞아요", exact = false))
+        // Below 1.27 AJ's scanner button on a folded phone: scrolled to.
+        reveal("수량 × 단가가 금액과 안 맞아요", exact = false)
         // NAVER is ticked; the yellow SK하이닉스 is not until looked at; 카카오 stays as written unless ticked.
         tapText("넣기 1건", exact = true)
         val t = trades()

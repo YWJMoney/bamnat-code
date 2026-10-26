@@ -213,7 +213,7 @@ class AGScreenshotTest : ScreenshotBase() {
 
     @Test fun aLockedFeatureOffersThreeWays() = shoot("1086_ag_pro_sheet", PHONE_393) {
         lockedPay().invoke(this)
-        tapText("명세서로 맞춰 보기", scrolls = 30)
+        tapText("금액 비교하기", scrolls = 30)
         reveal("‘명세서 대조’ · 프로 기능이에요")
         assertTrue(shows("광고 보고 오늘 하루 열기", exact = true))
         assertTrue(shows("미리 보기에서는 광고가 나오지 않아요"))
@@ -226,7 +226,7 @@ class AGScreenshotTest : ScreenshotBase() {
     @Test fun theSheetMakesTheLinkAfterTheLine() = shoot("1087_ag_pro_sheet_invite", PHONE_393) {
         api.viewAnswer = view()
         lockedPay().invoke(this)
-        tapText("명세서로 맞춰 보기", scrolls = 30)
+        tapText("금액 비교하기", scrolls = 30)
         tapText("친구 초대 링크 만들기", exact = true)
         reveal("설치 번호와 휴대폰 표시")
         assertEquals(emptyList<String>(), sent())
@@ -241,8 +241,8 @@ class AGScreenshotTest : ScreenshotBase() {
     @Test fun theLockPanelOffersTheInviteToo() = shoot("1088_ag_lock_panel", PHONE_393) {
         c.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
         settle()
+        val gate = app.container.featureGate.state.value
         content {
-            val gate = app.container.featureGate.state.value
             androidx.compose.foundation.layout.Column {
                 com.bamnat.app.ui.pro.ProLock(com.bamnat.app.tier.Feature.WORK_COMPARE, gate) {
                     androidx.compose.material3.Text("이달과 지난달 비교")
@@ -294,7 +294,7 @@ class AGScreenshotTest : ScreenshotBase() {
 
     @Test fun theSheetAtLargeText() = shoot("1091_ag_pro_sheet_200", PHONE_393, fontScale = 2f) {
         lockedPay().invoke(this)
-        tapText("명세서로 맞춰 보기", scrolls = 30)
+        tapText("금액 비교하기", scrolls = 30)
         reveal("친구 초대로 프로 이용권 받기", exact = true)
         noCuts("sheet_200")
     }
