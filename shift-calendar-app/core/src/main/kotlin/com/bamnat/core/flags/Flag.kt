@@ -33,7 +33,19 @@ data class Flag(
     /** [FLAG-02] Step 2: outside this versionCode range the flag is off; the server may set its own range. */
     val minApp: Int? = null,
     val maxApp: Int? = null,
+    /** [FLAG-34] Which heading the developer app lists it under (the server's catalog is made from this book). */
+    val group: FlagGroup = FlagGroup.SERVER,
 )
+
+/** [FLAG-34] The developer app's headings for the book; [key] is the name the server and its screens use. */
+enum class FlagGroup(val key: String, val words: String) {
+    MONEY("money", "결제·광고"),
+    TYPE("type", "근무 유형"),
+    LAW("law", "법 시행"),
+    SERVER("server", "서버 기능"),
+    STATS("stats", "사용 통계"),
+    FREE("free", "무료로 연 프로 기능"),
+}
 
 /** [FLAG-04] LEGAL rows (payments, ads, new data sent) read the date the server confirmed and keep their policy check. */
 enum class Risk(val words: String) { NORMAL("보통"), LEGAL("법적") }

@@ -1,0 +1,67 @@
+{
+  "state": "2026-11-12, both Play confirmations",
+  "config": {
+    "v": 1,
+    "billingLive": true,
+    "launchedAt": "2026-11-12T03:00:00.000Z",
+    "thanksMonths": 1,
+    "freeFeatures": [],
+    "adQuietDays": 3,
+    "trialAskDays": 7,
+    "notices": [],
+    "off": [],
+    "flags": {
+      "billing": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {
+          "play.production": "2026-11-09T01:00:00.000Z",
+          "play.subscription": "2026-11-12T03:00:00.000Z"
+        }
+      },
+      "ads": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {
+          "play.production": "2026-11-09T01:00:00.000Z",
+          "play.subscription": "2026-11-12T03:00:00.000Z"
+        }
+      }
+    },
+    "policy": [
+      {
+        "version": "2.5",
+        "posted": "2026-10-22",
+        "effective": "2026-11-21",
+        "heldUntil": null
+      },
+      {
+        "version": "3.0",
+        "posted": "2026-10-25",
+        "effective": "2026-11-24",
+        "heldUntil": null
+      },
+      {
+        "version": "3.1",
+        "posted": "2026-10-27",
+        "effective": "2026-11-10",
+        "heldUntil": "2026-11-24"
+      },
+      {
+        "version": "3.2",
+        "posted": "2026-10-28",
+        "effective": "2026-11-27",
+        "heldUntil": null
+      }
+    ],
+    "serverTime": "2026-11-12T03:00:00.000Z"
+  }
+}

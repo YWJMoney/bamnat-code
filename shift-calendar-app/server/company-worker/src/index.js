@@ -52,6 +52,8 @@
 import { adminFile, adminBuild } from "./admin-app.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
+// 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
+import { CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -617,6 +619,9 @@ const COLUMNS = [
   "ALTER TABLE reports ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE votes ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
   // AI 1.27 끝
+  // 1.28 통합 [FLAG-36] AL-D3: an override's app versionCode range (판단 2단계 '앱 판 밖').
+  "ALTER TABLE flag_overrides ADD COLUMN min_app INTEGER",
+  "ALTER TABLE flag_overrides ADD COLUMN max_app INTEGER",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -4706,8 +4711,10 @@ async function deliver(env, keys, rows, message, now) {
  * [ADMIN-19] News of [kind] to every admin's browser that asked for it, outside its quiet time and only
  * for admins who may see it. Without VAPID secrets (or with nobody asking) it returns at once; it never
  * throws, so whatever called it goes on as if nothing was sent.
+ * 1.28 통합 [FLAG-37] 결정 D101: [ignoreQuiet] sends inside quiet time too — only a legal flag's day-before and turned-on
+ * news (D99's safety net is pointless if it arrives after the payments started); every other kind keeps quiet time.
  */
-export async function notifyAdmins(env, kind, message, now = Date.now()) {
+export async function notifyAdmins(env, kind, message, now = Date.now(), { ignoreQuiet = false } = {}) {
   try {
     const keys = pushReady(env);
     if (!keys || !env.DB || !Object.hasOwn(PUSH_KINDS, kind)) return { sent: 0, gone: 0 };
@@ -4717,7 +4724,7 @@ export async function notifyAdmins(env, kind, message, now = Date.now()) {
       WHERE (',' || s.kinds || ',') LIKE ? OR (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`, `%,${also},%`);
     const to = rows.filter((r) => {
       const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { owner: false, perms: readPerms(r.perms) } : null;
-      return actor && mayGet(actor, kind) && !quietNow(r.quiet_from, r.quiet_to, now);
+      return actor && mayGet(actor, kind) && (ignoreQuiet || !quietNow(r.quiet_from, r.quiet_to, now));
     });
     if (!to.length) return { sent: 0, gone: 0 };
     return await deliver(env, keys, to, { tag: kind, ...message }, now);
@@ -6974,6 +6981,9 @@ async function removeNotice(env, id, now) {
   return json(await noticeList(env, now));
 }
 
+/** [FLAG-38] What a 끄기 from a developer app cached before 1.28 (no why) is recorded with. */
+const OLD_APP_WHY = "옛 관리자 앱에서 끔";
+
 /**
  * [SRV-04] 기능 스위치, kept for the 운영 screen's old buttons: AM 1.28 [FLAG-24] it forces the switch's flag off (with why)
  * or back to its conditions, under the same rule as 기능 관리 (결정 D97: forcing off is the owner's or flagOff's).
@@ -6983,10 +6993,13 @@ async function setSwitch(request, env, now) {
   if (!Object.hasOwn(SWITCHES, body.key)) refuse("key", "key");
   if (typeof body.off !== "boolean") refuse("off", "off");
   const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === body.key);
+  // 1.28 통합 [FLAG-38] A developer app cached before 1.28 sends no why: its 끄기 still works, and the record says where it came from.
+  const given = typeof body.why === "string" ? body.why.trim() : "";
+  const old = body.off && !given;
   const res = await setFlagForce(new Request("https://switch/", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ force: body.off ? "off" : null, why: body.why ?? "" }) }), env, env.actor, key, now);
+    body: JSON.stringify({ force: body.off ? "off" : null, why: old ? OLD_APP_WHY : given }) }), env, env.actor, key, now);
   if (res.status !== 200) return res;
-  await audit(env, now, body.off ? "switch_off" : "switch_on", body.key, SWITCHES[body.key]);
+  await audit(env, now, body.off ? "switch_off" : "switch_on", body.key, old ? `${SWITCHES[body.key]} · ${OLD_APP_WHY}` : SWITCHES[body.key]);
   return json(await noticeList(env, now));
 }
 
@@ -8093,84 +8106,18 @@ async function shareStats(env, days) {
 
 const FL = adminLib();
 
-/** [FLAG-20] Condition helpers, so the catalog reads like core FlagCatalog (AL-D1 JSON). */
-const C = {
-  date: (from) => ({ type: "date", from }),
-  effective: (policy) => ({ type: "date", policy }),
-  policy: (version) => ({ type: "policy", version }),
-  manual: (key) => ({ type: "manual", key }),
-  consent: (key, unknownMeets = false) => ({ type: "consent", key, ...(unknownMeets ? { unknownMeets: true } : {}) }),
-};
-
-/** [FLAG-25] 정식 출시 retired: what the switch and the 3.1 hold did together (결정 D84), as core FlagCatalog.launch. */
-const LAUNCH = [C.effective("3.1"), C.policy("3.1"), C.manual("play.production"), C.manual("play.subscription")];
-
 /** The six 기능 스위치 of 1.22 (SWITCHES) as flags, for apps up to 1.27 that read /api/config off. */
 const SWITCH_FLAGS = { "plaza.write": "PLAZA_WRITE", "company.report": "COMPANY_REPORT", "inquiry.photos": "INQUIRY_PHOTOS",
   "share.create": "SHARE_CREATE", "usage.stats": "USAGE_STATS", "plaza.news": "PLAZA_NEWS" };
 
 const TYPE_FLAGS = { SHIFT: "type.shift", DAY: "type.day", HOURLY: "type.hourly", FIELD: "type.field", BUSINESS: "type.business", INVEST: "type.invest" };
 
-const typeFlag = (style, name, what) => ({
-  key: TYPE_FLAGS[style], group: "type", name: `${name} 근무 유형`, risk: "NORMAL", default: true, conditions: [], sunset: null, owner: "dd", since: "1.28.0",
-  what: `첫 질문, 근무 형태 화면, 새 달력 만들기, 직업 찾기, 둘러보기 예시와 유형별 광장 목록에서 '${name}'(${what})을 새로 고를 수 있어요.`,
-  whyOff: "보이는 게 기본이에요. 숨기면 새로 고르는 곳에서만 빠지고, 이미 그 유형을 쓰는 달력·백업 복원·회사 파일은 그대로 열려요. 최고 관리자로 연결된 휴대폰에는 숨긴 유형도 보여요.",
-  basis: { decision: "D98", req: "FLAG-32" },
-});
-
-const switchFlag = (key, name, what, req) => ({
-  key, group: "server", name, risk: "NORMAL", default: true, conditions: [], sunset: null, owner: "dd", since: "1.22.0",
-  what, whyOff: "켜져 있는 게 기본이에요. 스팸·사고·사용량이 몰릴 때 강제로 끄면 앱은 '잠시 쉬고 있어요'로 보이고 서버도 받지 않아요.",
-  basis: { decision: "D97", req },
-});
-
 /**
- * [FLAG-20] The catalog. 이름·하는 일·꺼 둔 이유·근거 are what the developer app shows; conditions are the ones the app ships
- * with. 통합: these words and conditions must match core FlagCatalog (묶음 AL); the test checks the keys only.
+ * [FLAG-20] The catalog. 이름·하는 일·꺼 둔 이유·근거·위험·기본값·조건·정리 예정 판 are what the developer app shows and the
+ * conditions the app ships with. 1.28 통합 [FLAG-34]: they come from the app's core FlagCatalog through the generated
+ * src/flag-catalog.js (core FlagCatalogExportTest writes it and fails while it is old), so there is one book.
  */
-export const FLAG_CATALOG = [
-  {
-    key: "billing", group: "money", name: "결제(프로 구독)", risk: "LEGAL", default: false, sunset: "1.30.0", owner: "dd", since: "1.28.0",
-    what: "프로 구독을 팔고 프로 기능을 잠가요. 처음 켜진 순간이 정식 출시일(launchedAt)이 되어, 그 전에 설치한 휴대폰의 감사 보상과 보상 이용권이 이날부터 시작해요.",
-    whyOff: "처리방침 3.1이 시행되고(동의하지 않은 휴대폰은 11월 24일부터) Play 프로덕션 승인·정기 결제 상품·데이터 보안 답이 준비되기 전에는 모두 무료여야 해요. 일찍 켜면 알리지 않은 결제가 돼요.",
-    basis: { policy: "3.1 1-6항", decision: "D84·D98·D99", req: "MON-02" },
-    conditions: LAUNCH,
-  },
-  {
-    key: "ads", group: "money", name: "광고(띠·보상형)", risk: "LEGAL", default: false, sunset: "1.30.0", owner: "dd", since: "1.28.0",
-    what: "프로가 아닌 휴대폰에 정해진 띠 한 곳과 사용자가 고르는 보상형 광고를 보여요(알람·잠금·첫 설정 화면에는 없음).",
-    whyOff: "광고는 처리방침 1-8항 시행, Google 광고 동의, Play의 광고 포함·데이터 보안 선언이 끝난 뒤에만 켜요. 결제와 따로 끌 수 있게 나눴어요.",
-    basis: { policy: "3.1 1-8항", decision: "D84·D98·D99", req: "MON-07" },
-    // AL-D5: not asked yet counts as given, so the SDK can show Google's consent screen; a no turns it off.
-    conditions: [...LAUNCH, C.consent("ads", true)],
-  },
-  typeFlag("SHIFT", "교대", "주야간 교대"),
-  typeFlag("DAY", "일근", "주 5일 낮 근무"),
-  typeFlag("HOURLY", "시급", "알바·시간제"),
-  typeFlag("FIELD", "현장", "일용·프리랜서 현장"),
-  typeFlag("BUSINESS", "자영업", "가게·사업자"),
-  typeFlag("INVEST", "투자", "매매 기록"),
-  {
-    key: "leave.hourly", group: "law", name: "시간 단위 연차", risk: "NORMAL", default: false, sunset: "1.40.0", owner: "dd", since: "1.28.0",
-    what: "연차를 시간 단위로 쓰고 남은 시간을 계산해요(연차 원장·급여).",
-    whyOff: "근로기준법 개정의 시간 단위 연차가 2027년 6월 10일 시행이라 그 전에는 하루 단위 규칙이 맞아요. 앱 안의 날짜 조건이라 인터넷이 없어도 그날 켜져요.",
-    basis: { law: "근로기준법 개정(2027-06-10 시행)", decision: "D98", req: "LEAVE-12" },
-    conditions: [C.date("2027-06-10")],
-  },
-  switchFlag("plaza.write", "광장 글쓰기(글·답글·제안·임금표)", "회사 광장과 유형별 광장에 글·답글·고치자는 제안·임금표를 올려요.", "SRV-04"),
-  switchFlag("company.report", "회사 규칙 보내기", "회사 근무·급여 방식(금액 없이)을 광장에 보내요.", "SRV-04"),
-  switchFlag("inquiry.photos", "문의 사진 받기", "문의에 사진 두 장까지 붙여 보내요.", "SRV-06"),
-  switchFlag("share.create", "근무표 링크 새로 만들기", "근무표를 링크로 나누는 새 링크를 만들어요(이미 만든 링크는 그대로).", "SRV-05"),
-  switchFlag("usage.stats", "사용 통계 받기", "동의한 휴대폰이 하루 한 번 보내는 사용 통계(휴대폰 구별 없음)를 서버가 받아요.", "STAT-01"),
-  switchFlag("plaza.news", "광장 소식 알림", "내 규칙이 바뀌거나 채택됐다는 광장 소식을 앱이 받아요.", "COMM-10"),
-  {
-    key: "stats.more", group: "stats", name: "사용 통계 더 보내기(켜진 기능·시작 시간)", risk: "LEGAL", default: false, sunset: null, owner: "dd", since: "1.28.0",
-    what: "사용 통계에 동의한 휴대폰이 켜진 기능 목록(flagsOn)과 앱 시작 시간(startup)을 더 보내요. 휴대폰을 구별하지 않고 날마다 합계만 남아요.",
-    whyOff: "서버로 새 정보를 보내는 일이라 처리방침 3.2(1-9항) 시행과 따로 동의, Play 데이터 보안 답을 고친 뒤에만 켜요.",
-    basis: { policy: "3.2 1-9항", decision: "D98", req: "FLAG-30" },
-    conditions: [C.effective("3.2"), C.consent("usage"), C.consent("usage.stats.more")],
-  },
-];
+export const FLAG_CATALOG = CORE_FLAGS;
 
 /** The keys of the contract (통합계획 2-1) and the integrator's stats.more; free.<FEATURE> are made on demand. */
 export const FLAG_KEYS = FLAG_CATALOG.map((f) => f.key);
@@ -8180,31 +8127,33 @@ const FREE_FEATURES = { NO_ADS: "광고 없음", PAYSLIP_MATCH: "명세서 대�
   MONEY_STATS: "돈 통계", MORE_CALENDARS: "달력 여러 개", PAY_REPORT: "급여 리포트 PDF·CSV", WORK_COMPARE: "근무·급여 비교",
   DEVICE_CALENDAR: "휴대폰 캘린더에 근무 쓰기", ICS_FEED: "캘린더 구독 주소", AUTO_BACKUP: "매일 자동 백업", MORE_LINKS: "공유 링크 여러 개, 1년까지",
   ROSTER_PDF: "근무표 PDF", SURE_ALARM: "끄기 미션·일어났는지 확인", LEAVE_PAYOUT: "미사용 연차수당 계산", TAX_FORECAST: "세금 예측·실수령" };
-const FREE_KEY = /^free\.([A-Z][A-Z_]{1,39})$/;
+/** [FLAG-34] free.<FEATURE>, the same pattern as core FlagCatalog.free. */
+const FREE_KEY = new RegExp(CORE_FREE.pattern);
 
-/** A flag by key: the catalog's, or a free.<FEATURE> made from the feature's name; null for anything else. */
+/** A flag by key: the catalog's, or a free.<FEATURE> made from core's words and the feature's Korean name; null for anything else. */
 function flagDef(key) {
   const known = FLAG_CATALOG.find((f) => f.key === key);
   if (known) return known;
   const m = FREE_KEY.exec(key ?? "");
   if (!m) return null;
   const label = FREE_FEATURES[m[1]] ?? m[1];
-  return { key, group: "free", name: `무료로 연 프로 기능: ${label}`, risk: "NORMAL", default: false, conditions: [], sunset: null, owner: "dd", since: "1.19.0",
-    what: `프로 기능 '${label}'을 정식 출시 뒤에도 모두에게 열어요. 강제로 켜면 열리고, 풀면 다시 프로 기능이 돼요.`,
-    whyOff: "프로 기능이라 정식 출시 뒤에는 잠겨 있는 게 기본이에요.", basis: { decision: "MON-02", req: "MON-02" } };
+  const fill = (t) => t.replaceAll(CORE_FREE.slot, label);
+  const { pattern, slot, ...row } = CORE_FREE;
+  return { ...row, key, name: fill(CORE_FREE.name), what: fill(CORE_FREE.what), whyOff: fill(CORE_FREE.whyOff) };
 }
 
 /**
  * [FLAG-33] 처리방침 판마다 게시일·시행일·동의 없이도 시행되는 날(heldUntil). The developer app can change these (the owner),
  * so a date moved again needs no app release. unfavourable: 이용자에게 불리한 변경(30일 전 고지, 처리방침 9항).
+ * [FLAG-34] The versions the app ships with (core PolicyCalendar.SEED: 3.1, 3.2) take their dates from it; 3.2's are a
+ * placeholder until 순번 459 fixes them (관리자 앱에서 고쳐요).
  */
+const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true };
 const POLICY_CALENDAR = [
-  { version: "2.5", posted: "2026-10-22", effective: "2026-11-21", heldUntil: null, unfavourable: true },
-  { version: "3.0", posted: "2026-10-25", effective: "2026-11-24", heldUntil: null, unfavourable: true },
-  { version: "3.1", posted: "2026-10-27", effective: "2026-11-10", heldUntil: "2026-11-24", unfavourable: false },
-  // 통합 요청: 3.2는 사용 통계에 켜진 기능·시작 시간을 더하는 판(순번 459 법 검토). 날짜는 자리표시, 관리자 앱에서 고쳐요.
-  { version: "3.2", posted: "2026-10-28", effective: "2026-11-27", heldUntil: null, unfavourable: true },
-];
+  { version: "2.5", posted: "2026-10-22", effective: "2026-11-21", heldUntil: null },
+  { version: "3.0", posted: "2026-10-25", effective: "2026-11-24", heldUntil: null },
+  ...CORE_POLICY,
+].map((p) => ({ ...p, unfavourable: POLICY_UNFAVOURABLE[p.version] ?? false }));
 
 /** [FLAG-25] The newest release this server knows (APP_CODES), to tell which flags are past their 정리 예정 판. */
 const latestRelease = () => Object.keys(APP_CODES).sort(FL.versionCompare).at(-1);
@@ -8271,7 +8220,9 @@ function readOverride(r) {
     conditions = null;
   }
   return { force: r.force === "on" || r.force === "off" ? r.force : null, why: r.why ?? "", conditions: Array.isArray(conditions) ? conditions : null,
-    until: r.until ? iso(r.until) : null, reviewAt: r.review_at ?? null, by: r.by_name ?? "", byId: r.by_id ?? "", at: iso(r.at), auto: r.auto === 1 };
+    until: r.until ? iso(r.until) : null, reviewAt: r.review_at ?? null, by: r.by_name ?? "", byId: r.by_id ?? "", at: iso(r.at), auto: r.auto === 1,
+    // 1.28 통합 [FLAG-36] AL-D3: outside this versionCode range the phone turns the flag off (판단 2단계).
+    minApp: r.min_app ?? null, maxApp: r.max_app ?? null };
 }
 
 /** [FLAG-33] The calendar with the owner's changes, and versions the owner added. */
@@ -8341,9 +8292,12 @@ function configFlags(store, now) {
     const o = store.overrides.get(key) ?? null;
     const force = FL.forceOf(o, now);
     const manual = manualKeys(o?.conditions ?? def.conditions);
-    if (!force && !o?.conditions && !manual.length) continue;
+    const ranged = o?.minApp != null || o?.maxApp != null;
+    if (!force && !o?.conditions && !manual.length && !ranged) continue;
     const confirmed = Object.fromEntries(manual.filter((k) => store.checks[k]).map((k) => [k, store.checks[k].at]));
-    out[key] = { force, why: force ? o.why : "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null, confirmed };
+    // 1.28 통합 [FLAG-36] minApp/maxApp (AL-D3) go with every flag sent; null is no end.
+    out[key] = { force, why: force ? o.why : "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null,
+      minApp: o?.minApp ?? null, maxApp: o?.maxApp ?? null, confirmed };
   }
   return out;
 }
@@ -8401,7 +8355,7 @@ export async function flagTick(env, now = Date.now(), { push = true } = {}) {
       await run(env, "UPDATE flag_state SET on_now = ?, since = ? WHERE key = ?", ev.on ? 1 : 0, now, key);
       await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, '', '')", now,
         ev.on ? "flag_auto_on" : "flag_auto_off", key, ev.reason.slice(0, 300));
-      if (def.risk === "LEGAL" && ev.on) news.push({ title: `${def.name}이(가) 켜졌어요`, body: "24시간 동안 홈 맨 위에서 한 번에 강제로 끌 수 있어요.", url: `/admin/#/flags/${key}` });
+      if (def.risk === "LEGAL" && ev.on) news.push({ title: `${def.name}이(가) 켜졌어요`, body: "24시간 동안 홈 맨 위에서 한 번에 강제로 끌 수 있어요.", url: `/admin/#/flags/${key}`, legal: true });
     }
     // D99: the day before a legal flag would turn on by itself (its date comes, nothing else left).
     if (def.risk === "LEGAL" && !ev.on && ev.state === "waiting") {
@@ -8409,12 +8363,13 @@ export async function flagTick(env, now = Date.now(), { push = true } = {}) {
       const day = kstDay(now + DAY);
       if (tomorrow.on && was?.warned !== day) {
         await run(env, "UPDATE flag_state SET warned = ? WHERE key = ?", day, key);
-        news.push({ title: `내일 ${def.name}이(가) 저절로 켜져요`, body: `${day} 0시(한국 시간)에 켜져요. 미루려면 기능 관리에서 강제로 꺼 주세요.`, url: `/admin/#/flags/${key}` });
+        news.push({ title: `내일 ${def.name}이(가) 저절로 켜져요`, body: `${day} 0시(한국 시간)에 켜져요. 미루려면 기능 관리에서 강제로 꺼 주세요.`, url: `/admin/#/flags/${key}`, legal: true });
       }
     }
   }
   await recordLaunch(env, store, now);
-  if (push) for (const n of news) await notifyAdmins(env, "flags", { ...n, urgent: true }, now);
+  // [FLAG-37] D101: these two are a legal flag's, so they go inside an admin's quiet time too.
+  if (push) for (const { legal, ...n } of news) await notifyAdmins(env, "flags", { ...n, urgent: true }, now, { ignoreQuiet: legal === true });
   return news;
 }
 
@@ -8530,6 +8485,31 @@ function readUntil(v, field, now) {
   const ms = typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00+09:00`) : Date.parse(String(v));
   if (!Number.isFinite(ms) || ms <= now || ms > now + FLAG_LIMITS.untilDays * DAY) refuse(field, field);
   return ms;
+}
+
+/**
+ * 1.28 통합 [FLAG-36] AL-D3: the app versionCode range of a flag (both null: every version), with why. Outside it the
+ * phone turns the flag off before anything else but a force off (판단 2단계). Who may: as for its conditions.
+ */
+async function setFlagRange(request, env, actor, key, now) {
+  const def = flagDef(key);
+  if (!def) return json({ error: "flag", field: "key" }, 404);
+  if (!flagMay(actor, def, "conditions")) return json({ error: "no_permission", area: def.risk === "LEGAL" ? "owner" : "flags" }, 403);
+  const body = await readJson(request, 2048);
+  const code = (v, field) => (v === undefined || v === null || v === "" ? null : Number.isInteger(v) && v > 0 && v < 1_000_000 ? v : refuse("app", field));
+  const minApp = code(body.minApp, "minApp");
+  const maxApp = code(body.maxApp, "maxApp");
+  if (minApp !== null && maxApp !== null && maxApp < minApp) refuse("app", "maxApp");
+  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
+  const store = await flagStore(env);
+  const before = store.overrides.get(key) ?? null;
+  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto, min_app, max_app) VALUES (?, NULL, ?, NULL, NULL, NULL, ?, ?, ?, 0, ?, ?)
+    ON CONFLICT (key) DO UPDATE SET min_app = excluded.min_app, max_app = excluded.max_app, by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at`,
+  key, why, actorName(env), actor.id, now, minApp, maxApp);
+  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
+  await flagHistory(env, now, key, "flag_range", before, after, why);
+  await flagTick(env, now);
+  return flagDetail(env, actor, key, now);
 }
 
 /** [FLAG-21][FLAG-27][ADMUX-23] Force on, force off (reason required, 다시 볼 날), or back to the conditions. */
@@ -8680,11 +8660,12 @@ async function flagRoute(request, env, url, path, method, actor, now) {
   }
   let m = path.match(/^\/checks\/([a-z0-9.]{3,60})$/);
   if (m && method === "POST") return setFlagCheck(request, env, actor, m[1], now);
-  m = path.match(/^\/flags\/([A-Za-z0-9._]{2,50})(\/force|\/conditions|\/thanks)?$/);
+  m = path.match(/^\/flags\/([A-Za-z0-9._]{2,50})(\/force|\/conditions|\/range|\/thanks)?$/);
   if (!m || !flagDef(m[1])) return json({ error: "not_found" }, 404);
   if (method === "GET" && !m[2]) return flagDetail(env, actor, m[1], now);
   if (method === "POST" && m[2] === "/force") return setFlagForce(request, env, actor, m[1], now);
   if (method === "POST" && m[2] === "/conditions") return setFlagConditions(request, env, actor, m[1], now);
+  if (method === "POST" && m[2] === "/range") return setFlagRange(request, env, actor, m[1], now);
   if (method === "POST" && m[2] === "/thanks" && m[1] === "billing") return setThanks(request, env, actor, now);
   return json({ error: "not_found" }, 404);
 }

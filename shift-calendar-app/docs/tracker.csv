@@ -948,3 +948,9 @@ ADMUX-39,"순번 456 관리자 앱 파일(adminFiles)을 tools/bundle.mjs가 묶
 ADMUX-40,"순번 456 출시 허브 자리: 기능 관리·근무 유형·기능별 효과를 VIEWS 한 표에서 AM 화면으로 연결, 오늘 맨 위 flagAlertCard, 메뉴 숫자 flagsWaiting (1.28 통합: 자리표 없앰, 기능별 효과 화면)",2 (1.28.0),완료,,"VIEWS 표(flags: flagsView/flagView, types: typesView, effects: effectsView + GET /api/admin/effects flagEffects), homeView 맨 위 flagAlertCard, /badges flagsWaiting·flagAlerts·billingLive(FLAG_STORE_SQL 같은 batch). 시험 서버 admin-an 통합 2개(/badges = /overview flagsDue, 강제 켬 뒤 바로 카드, flags 없는 관리자 숫자·화면 없음, /effects 권한), 화면 [ADMUX-01] 모든 탭, [ADMUX-40](스위치 = 플래그 강제 끔 → 서버 off, 근무 유형, 기능별 효과 목록), [ADMUX-27](앱에서 강제 켬 → 오늘 카드 → 끄면 사라짐)"
 ADMUX-41,"순번 456 그대로 지키기: 쓰던 글, 되돌리기 8초, 끊겼을 때 저장된 화면, 새 판 안내, 그 자리 다시 로그인, 대비 4.5:1, 360px 가로 넘침 없음, 큰 글자, 어둡게",2 (1.28.0),완료,,"쓰던 글·되돌리기·저장된 화면·새 판·그 자리 로그인 시험 그대로 통과(test:ui 27). 360px 24개 탭 가로 넘침 없음(Playwright), 폰·폴드·컴퓨터 밝게·어둡게 사진 54장"
 ADMUX-42,"순번 456 README 개발자 앱 표·HANDOFF 6-26·추적표, 화면 사진 전후(폰 390·폴드 880·컴퓨터 1440, 밝게·어둡게)",2 (1.28.0),완료,,"README 개발자 앱 허브 표·키·속도, HANDOFF 6-26, 사진 1.28/admin/before_*(18)·after_*(54), 계획 1.28-AN-개발계획.md"
+FLAG-34,"1.28 통합 플래그 장부 한 곳: core FlagCatalog를 서버 src/flag-catalog.js로 만들어 냄(이름·하는 일·꺼 둔 이유·근거·위험·기본값·조건·정리 예정 판·처리방침 일정·조건 이름), 낡으면 시험이 실패",2 (1.28.0),진행 중,,
+FLAG-35,"1.28 통합 서버·앱 계약 시험: 서버가 /api/config·/api/passes 실제 답을 상태별로 server-fixtures에 쓰고 앱이 LaunchConfig.parse·FlagEval로 읽어 휴대폰 상태 확인, 앱이 만든 /api/events(flagsOn)를 서버가 받아 키별 합계만 남김",2 (1.28.0),진행 중,,
+FLAG-36,"1.28 통합 플래그 덮어쓰기 앱 판 범위(minApp·maxApp, AL-D3): 서버 저장·검사·/api/config 전송, 관리자 앱 상세에서 고침, 앱 판단 2단계",2 (1.28.0),진행 중,,
+FLAG-37,"1.28 통합 법적 플래그 하루 전·켜짐 알림은 관리자 방해 금지 시간을 무시(결정 D101), 다른 알림은 그대로",2 (1.28.0),진행 중,,
+FLAG-38,"1.28 통합 옛 관리자 앱 호환: why 없는 POST /api/admin/switches 끄기는 '옛 관리자 앱에서 끔'으로 채워 기록",2 (1.28.0),진행 중,,
+FLAG-39,"1.28 통합 설정 찾기에 진단 › 기능 상태, 도움말 한 줄, 관리자 앱 화면 시험 [ADMUX-01] 기다림 고침(화면 요청이 끝날 때까지)",2 (1.28.0),진행 중,,

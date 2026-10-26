@@ -890,6 +890,9 @@ export function adminLib() {
     return false;
   }
 
+  /** 1.28 통합 [FLAG-36] An app versionCode range in words ("39~45", "39 이상", "45 이하", "모든 판"). */
+  const appRange = (lo, hi) => (lo != null && hi != null ? `${lo}~${hi}` : lo != null ? `${lo} 이상` : hi != null ? `${hi} 이하` : "모든 판");
+
   /** A force (on or off) still in effect at [now]: an until that passed means it ended. */
   const forceOf = (o, now) => (o && (o.force === "on" || o.force === "off") && !(o.until && Date.parse(o.until) <= now) ? o.force : null);
 
@@ -919,6 +922,12 @@ export function adminLib() {
     if (force === "off") return { ...base, on: false, state: "forced_off", source: "force", reason: `강제로 껐어요${override.why ? `: ${override.why}` : ""}` };
     const app = conditions.find((x) => x.c.type === "app");
     if (phone && app && app.met === false) return { ...base, on: false, state: "off", source: "app", reason: "이 앱 버전에서는 꺼져요(앱 버전 밖)" };
+    // 1.28 통합 [FLAG-36] AL-D3: the override's own versionCode range, step 2 as in core FlagEval.
+    const lo = override?.minApp ?? flag.minApp ?? null;
+    const hi = override?.maxApp ?? flag.maxApp ?? null;
+    if (phone && Number.isInteger(phone.app) && ((lo != null && phone.app < lo) || (hi != null && phone.app > hi))) {
+      return { ...base, on: false, state: "off", source: "app", reason: `이 앱 판(${phone.app})에서는 꺼져요(앱 판 범위 ${appRange(lo, hi)} 밖)` };
+    }
     if (phone && phone.admin && phone.preview) {
       if (policyLeft) return { ...base, on: false, state: "waiting", source: "admin", reason: `미리 보기를 켰지만 법적 조건이 남아 꺼져 있어요: ${policyLeft.label}` };
       return { ...base, on: true, state: "on", source: "admin", reason: "관리자 휴대폰의 미리 보기라 켜져요" };
@@ -972,7 +981,7 @@ export function adminLib() {
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion,
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
-    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom,
+    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
   };
 }

@@ -1,0 +1,122 @@
+{
+  "state": "2026-11-12, billing forced off until 11-20, plaza.write off, INVEST hidden, share.create from 40",
+  "config": {
+    "v": 1,
+    "billingLive": false,
+    "launchedAt": "2026-11-12T03:00:00.000Z",
+    "thanksMonths": 1,
+    "freeFeatures": [],
+    "adQuietDays": 3,
+    "trialAskDays": 7,
+    "notices": [],
+    "off": [
+      "PLAZA_WRITE"
+    ],
+    "flags": {
+      "billing": {
+        "force": "off",
+        "why": "결제 오류 조사 중",
+        "conditions": null,
+        "until": "2026-11-19T15:00:00.000Z",
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {
+          "play.production": "2026-11-09T01:00:00.000Z",
+          "play.subscription": "2026-11-12T03:00:00.000Z"
+        }
+      },
+      "ads": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {
+          "play.production": "2026-11-09T01:00:00.000Z",
+          "play.subscription": "2026-11-12T03:00:00.000Z"
+        }
+      },
+      "type.invest": {
+        "force": "off",
+        "why": "캡처 인식 검증 중",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "plaza.write": {
+        "force": "off",
+        "why": "도배",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "share.create": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": 40,
+        "maxApp": null,
+        "confirmed": {}
+      }
+    },
+    "policy": [
+      {
+        "version": "2.5",
+        "posted": "2026-10-22",
+        "effective": "2026-11-21",
+        "heldUntil": null
+      },
+      {
+        "version": "3.0",
+        "posted": "2026-10-25",
+        "effective": "2026-11-24",
+        "heldUntil": null
+      },
+      {
+        "version": "3.1",
+        "posted": "2026-10-27",
+        "effective": "2026-11-10",
+        "heldUntil": "2026-11-24"
+      },
+      {
+        "version": "3.2",
+        "posted": "2026-10-28",
+        "effective": "2026-11-27",
+        "heldUntil": null
+      }
+    ],
+    "serverTime": "2026-11-12T03:00:00.000Z"
+  },
+  "ownerPasses": {
+    "until": null,
+    "waitingMonths": 0,
+    "items": [],
+    "deferred": 0,
+    "admin": {
+      "status": "approved",
+      "name": "최고 관리자",
+      "owner": true
+    },
+    "code": false,
+    "checkedAt": "2026-11-12T03:00:00.000Z"
+  },
+  "memberPasses": {
+    "until": null,
+    "waitingMonths": 0,
+    "items": [],
+    "deferred": 0,
+    "admin": {
+      "status": "pending",
+      "name": "민지",
+      "owner": false
+    },
+    "code": false,
+    "checkedAt": "2026-11-12T03:00:00.000Z"
+  }
+}

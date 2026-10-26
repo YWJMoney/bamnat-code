@@ -59,7 +59,7 @@ test("[FLAG-22] /api/config: 1.27 apps read the same fields; 1.28 apps read flag
   assert.equal(cfg.serverTime, new Date(NOW).toISOString());
   // Only what the server overrides: the flags waiting on a confirmation (unconfirmed yet), nothing for the rest.
   assert.deepEqual(Object.keys(cfg.flags).sort(), ["ads", "billing"]);
-  assert.deepEqual(cfg.flags.billing, { force: null, why: "", conditions: null, until: null, confirmed: {} });
+  assert.deepEqual(cfg.flags.billing, { force: null, why: "", conditions: null, until: null, minApp: null, maxApp: null, confirmed: {} });
   assert.deepEqual(cfg.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-27", heldUntil: null });
 
   const owner = await signIn(call);
@@ -68,7 +68,7 @@ test("[FLAG-22] /api/config: 1.27 apps read the same fields; 1.28 apps read flag
   await call("POST", "/api/admin/flags/free.MONEY_STATS/force", { force: "on", why: "돈 통계 모두에게" }, owner);
   const after = (await call("GET", "/api/config")).data;
   assert.deepEqual(Object.keys(after.flags.billing.confirmed), ["play.production"]);
-  assert.deepEqual(after.flags["plaza.write"], { force: "off", why: "도배", conditions: null, until: "2026-10-27T15:00:00.000Z", confirmed: {} });
+  assert.deepEqual(after.flags["plaza.write"], { force: "off", why: "도배", conditions: null, until: "2026-10-27T15:00:00.000Z", minApp: null, maxApp: null, confirmed: {} });
   assert.equal(after.flags["free.MONEY_STATS"].force, "on");
   assert.deepEqual([after.off, after.freeFeatures], [["PLAZA_WRITE"], ["MONEY_STATS"]]);
   // The server stops taking what is forced off (the old switch), and the force ends by itself.

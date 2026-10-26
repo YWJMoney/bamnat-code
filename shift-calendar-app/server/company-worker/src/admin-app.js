@@ -793,7 +793,7 @@ function adminApp(L, BUILD) {
     inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
     rate_set: "임금표 처리",
     // AM 1.28 [FLAG-21][FLAG-25][FLAG-32]
-    flag_force_off: "기능 강제로 끔", flag_force_on: "기능 강제로 켬", flag_clear: "기능 강제 풀기", flag_conditions: "기능 조건 바꿈",
+    flag_force_off: "기능 강제로 끔", flag_force_on: "기능 강제로 켬", flag_clear: "기능 강제 풀기", flag_conditions: "기능 조건 바꿈", flag_range: "기능 앱 판 범위 바꿈",
     flag_check: "확인했어요", flag_uncheck: "확인 취소", flag_auto_on: "기능이 조건대로 켜짐", flag_auto_off: "기능이 조건대로 꺼짐",
     flag_expire: "강제 기한이 끝남", flag_migrate: "1.27 스위치를 기능 관리로 옮김", policy_edit: "처리방침 일정 고침",
     launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
@@ -3697,12 +3697,13 @@ function adminApp(L, BUILD) {
         }).join("");
         return `<li class="${cls}"><span class="mark" aria-hidden="true">${mark}</span><span class="c-main">${esc(c.label)}<small>${what}</small></span>${manual}</li>`;
       }).join("")}</ul>` : `<p class="meta">조건이 없어요. ${r.default ? "기본으로 켜져 있어요." : "기본으로 꺼져 있고, 강제로 켜야 열려요."}</p>`}
-      ${lockCheck && r.manualKeys.length ? `<p class="help">확인: ${esc(lockCheck)}</p>` : ""}</section>`;
+      ${lockCheck && r.manualKeys.length ? `<p class="help">확인: ${esc(lockCheck)}</p>` : ""}
+      ${flagRangeBlock(r, reach)}</section>`;
 
     const b = r.basis ?? {};
     const about = `<section class="card"><h2>무엇이고 왜 꺼 뒀나</h2>
       <dl class="kv"><dt>하는 일</dt><dd>${esc(r.what)}</dd><dt>꺼 둔 이유</dt><dd>${esc(r.whyOff)}</dd>
-        <dt>근거</dt><dd>${[b.policy ? `<a href="${PRIVACY_URL}" target="_blank" rel="noopener">처리방침 ${esc(b.policy)}</a>` : "", b.law ? esc(b.law) : "",
+        <dt>근거</dt><dd>${[b.policy ? `<a href="${PRIVACY_URL}" target="_blank" rel="noopener">처리방침 ${esc(b.policy)}</a>` : "", b.law ? esc(b.law) : "", b.note ? esc(b.note) : "",
           b.decision ? `결정 ${esc(b.decision)}` : "", b.req ? esc(b.req) : ""].filter(Boolean).join(" · ") || "–"}</dd>
         <dt>담당·만든 판</dt><dd>${esc(r.owner)} · ${esc(r.since)}${r.sunset ? ` · 정리 예정 ${esc(r.sunset)}` : ""}</dd>
         ${r.switchKey ? `<dt>옛 이름</dt><dd>기능 스위치 ${esc(r.switchKey)}(1.27까지의 앱은 이 이름으로 읽어요)</dd>` : ""}</dl></section>`;
@@ -3732,6 +3733,33 @@ function adminApp(L, BUILD) {
     return `${top}<div class="grid two">${list}${about}${phones}${billing}${sim}</div>${hist}`;
   }
 
+  /**
+   * 1.28 통합 [FLAG-36] AL-D3 앱 판 범위: the versionCode range the flag works in (판단 2단계). Outside it a phone keeps it
+   * off whatever else holds, so a feature that breaks on one version can be kept from it without a force for everyone.
+   */
+  function flagRangeBlock(r, reach) {
+    const lo = r.override?.minApp ?? null;
+    const hi = r.override?.maxApp ?? null;
+    const lock = flagLock(r, reach, "conditions");
+    return `<h3 class="section">앱 판 범위</h3>
+      <p class="meta">${lo == null && hi == null ? "모든 앱 판에서 조건대로 켜져요." : `앱 번호 ${esc(L.appRange(lo, hi))}에서만 켜질 수 있어요. 그 밖의 판은 다른 조건과 상관없이 꺼져요.`}</p>
+      <div class="actions start">${lockedBtn("앱 판 범위 고치기", lock, `data-act="flag-range" data-key="${esc(r.key)}"`)}</div>
+      ${lock ? `<p class="help">앱 판 범위: ${esc(lock)}</p>` : ""}`;
+  }
+
+  function openFlagRange(key) {
+    const r = S.data.flag;
+    const lo = r.override?.minApp ?? "";
+    const hi = r.override?.maxApp ?? "";
+    openDialog(`<form data-form="flag-range" data-key="${esc(key)}"><h2>${esc(r.name)}의 앱 판 범위</h2>
+      <p>앱 번호(versionCode)가 이 범위 밖인 휴대폰은 이 기능을 꺼요. 강제로 끈 것 다음으로 먼저 따져요. 비우면 그쪽 끝이 없어요.</p>
+      <div class="fieldset"><label for="fr-min">이 번호부터</label><input id="fr-min" name="minApp" type="number" min="1" max="999999" inputmode="numeric" value="${esc(lo)}" placeholder="예: 39"></div>
+      <div class="fieldset"><label for="fr-max">이 번호까지</label><input id="fr-max" name="maxApp" type="number" min="1" max="999999" inputmode="numeric" value="${esc(hi)}" placeholder="비우면 끝 없음"></div>
+      <div class="fieldset"><label for="fr-why">이유(필수)</label><input id="fr-why" name="why" maxlength="300" required></div>
+      <div class="actions">${lo !== "" || hi !== "" ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>범위 없애기</button>' : ""}
+        <button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
+  }
+
   /** One side of a history line in words. */
   function flagSummary(o) {
     if (!o) return "없음";
@@ -3741,6 +3769,7 @@ function adminApp(L, BUILD) {
     const parts = [];
     if (o.force) parts.push(`강제로 ${o.force === "on" ? "켬" : "끔"}`);
     if (o.conditions) parts.push(`조건 ${L.conditionText(o.conditions).replace(/\n/g, " · ")}`);
+    if (o.minApp != null || o.maxApp != null) parts.push(`앱 판 ${L.appRange(o.minApp, o.maxApp)}`);
     return parts.join(", ") || "조건대로";
   }
 
@@ -3911,6 +3940,7 @@ function adminApp(L, BUILD) {
       }, "primary");
     },
     "flag-cond": ({ key }) => openFlagConditions(key),
+    "flag-range": ({ key }) => openFlagRange(key),
     "flag-check": ({ name, done }) => {
       const label = S.data.flag?.manualNames?.[name] ?? name;
       if (done) {
@@ -3959,6 +3989,18 @@ function adminApp(L, BUILD) {
         conditions = got.list;
       }
       const d = await act(() => api(`/flags/${encodeURIComponent(form.dataset.key)}/conditions`, "POST", { conditions, why }), reset ? "앱 조건으로 되돌렸어요" : "조건을 바꿨어요");
+      if (!d) return;
+      dialog.close();
+      S.data.flag = d;
+      render({ keepScroll: true });
+    },
+    "flag-range": async (form, submitter) => {
+      const reset = submitter?.name === "reset";
+      const data = new FormData(form);
+      const num = (k) => (reset || !String(data.get(k) ?? "").trim() ? null : Number(data.get(k)));
+      const why = String(data.get("why") ?? "").trim() || (reset ? "앱 판 범위를 없앰" : "");
+      const d = await act(() => api(`/flags/${encodeURIComponent(form.dataset.key)}/range`, "POST", { minApp: num("minApp"), maxApp: num("maxApp"), why }),
+        reset ? "앱 판 범위를 없앴어요" : "앱 판 범위를 바꿨어요. 휴대폰은 하루 안에 따라와요");
       if (!d) return;
       dialog.close();
       S.data.flag = d;

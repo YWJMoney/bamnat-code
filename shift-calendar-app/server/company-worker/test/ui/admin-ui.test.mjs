@@ -58,9 +58,23 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
       el.click();
       await t.settle();
     },
+    /**
+     * 1.28 통합 [FLAG-39] Waits until the screen's requests are answered (#main aria-busy, the progress bar) and it painted.
+     * A fixed 60 ms was too short while Gradle builds ran beside the tests: the screen still showed its skeleton and
+     * "[ADMUX-01] … shows something" failed now and then (chores, types). Capped, so a screen that never settles fails
+     * on its own assertion instead of hanging.
+     */
+    idle: async (cap = 5000) => {
+      const busy = () => window.document.querySelector('#main[aria-busy="true"], #progress.on');
+      const end = Date.now() + cap;
+      await t.settle(2);
+      while (busy() && Date.now() < end) await new Promise((r) => setTimeout(r, 5));
+      await t.settle(2);
+    },
     go: async (h) => {
       window.location.hash = h;
       await t.settle();
+      await t.idle();
     },
     type: async (s, value) => {
       const el = window.document.querySelector(s);
@@ -967,5 +981,37 @@ test("[ADMUX-26] 근무 유형: hide with a reason, never the last one", async (
   assert.match(last.getAttribute("title"), /마지막 남은 유형/);
   await u.click('#main [data-act="type-show"][data-type="INVEST"]');
   assert.equal((await u.api("GET", "/api/admin/types")).types.find((x) => x.style === "INVEST").on, true);
+  assert.deepEqual(u.errors, []);
+});
+
+// ---- 1.28 통합 [FLAG-36][FLAG-38] ----
+
+test("[FLAG-36] the flag's page edits its app range: saved on the server, said in words, in the history, and taken off again", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/flags/share.create");
+  assert.match(u.text("#main"), /모든 앱 판에서 조건대로 켜져요/);
+  await u.click('#main [data-act="flag-range"]');
+  assert.ok(u.$('dialog form[data-form="flag-range"]'));
+  u.$("#fr-min").value = "40";
+  u.$("#fr-why").value = "39의 링크 오류";
+  u.$('dialog form[data-form="flag-range"]').requestSubmit();
+  await u.settle(30);
+  await u.idle();
+  assert.match(u.text("#toast"), /앱 판 범위를 바꿨어요/);
+  const d = await u.api("GET", "/api/admin/flags/share.create");
+  assert.deepEqual([d.override.minApp, d.override.maxApp, d.history[0].action, d.history[0].why], [40, null, "flag_range", "39의 링크 오류"]);
+  assert.match(u.text("#main"), /앱 번호 40 이상에서만/);
+  assert.match(u.text("#main .feed"), /기능 앱 판 범위 바꿈/);
+  assert.equal((await u.api("GET", "/api/config")).flags["share.create"].minApp, 40);
+  // 범위 없애기: back to every version.
+  await u.click('#main [data-act="flag-range"]');
+  const form = u.$('dialog form[data-form="flag-range"]');
+  form.requestSubmit(form.querySelector('[name="reset"]'));
+  await u.settle(30);
+  await u.idle();
+  assert.equal((await u.api("GET", "/api/admin/flags/share.create")).override.minApp, null);
+  assert.match(u.text("#main"), /모든 앱 판에서 조건대로 켜져요/);
   assert.deepEqual(u.errors, []);
 });
