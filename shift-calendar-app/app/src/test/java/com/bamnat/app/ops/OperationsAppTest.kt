@@ -56,8 +56,9 @@ class OperationsAppTest {
         assertEquals(33, n.minApp)
         assertNull(n.maxApp)
         assertEquals(setOf(ServerSwitch.PLAZA_WRITE), c.off)
-        assertTrue(c.paused(ServerSwitch.PLAZA_WRITE))
-        assertFalse(c.paused(ServerSwitch.SHARE_CREATE))
+        // [FLAG-10] 1.28: a 1.27 server's switch is the row forced off.
+        assertEquals(com.bamnat.core.flags.Force.OFF, c.overrides()["plaza.write"]?.force)
+        assertNull(c.overrides()["share.create"])
         // Saved and read back the same, so the last good answer survives a restart.
         assertEquals(c, LaunchConfig.fromSaved(c.toJson().toString()))
         // An old server says nothing of either: nothing is shown, nothing is paused.

@@ -57,9 +57,12 @@ data class LaunchConfig(
      * forces (AL-D6): 정식 출시 on/off → billing·ads forced on/off, 무료로 연 기능 → `free.*` on, 쉬는 기능 → off.
      */
     fun overrides(): Map<String, FlagOverride> = flags ?: buildMap {
-        val launch = if (billingLive) Force.ON else Force.OFF
-        put(FlagCatalog.BILLING, FlagOverride(force = launch, why = "정식 출시 스위치(옛 서버)"))
-        put(FlagCatalog.ADS, FlagOverride(force = launch, why = "정식 출시 스위치(옛 서버)"))
+        // A phone that never heard from a server ([fetchedAt] null) has no switch to read: the rows' own conditions decide.
+        val launch = if (billingLive) Force.ON else if (fetchedAt != null) Force.OFF else null
+        if (launch != null) {
+            put(FlagCatalog.BILLING, FlagOverride(force = launch, why = "정식 출시 스위치(옛 서버)"))
+            put(FlagCatalog.ADS, FlagOverride(force = launch, why = "정식 출시 스위치(옛 서버)"))
+        }
         freeFeatures.forEach { put(FlagCatalog.FREE_PREFIX + it.name, FlagOverride(force = Force.ON, why = "무료로 연 기능(옛 서버)")) }
         off.forEach { put(FlagCatalog.switchKey(it), FlagOverride(force = Force.OFF, why = "기능 스위치(옛 서버)")) }
     }

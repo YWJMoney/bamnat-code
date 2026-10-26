@@ -570,6 +570,19 @@ shift-calendar-app/
 - **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
 - 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
 
+### 6-24. 기능 플래그(다크 머지)·정식 출시 스위치 은퇴·근무 유형 노출·진단 기능 상태 (1.28.0 묶음 AL, FLAG-01~19)
+
+계획과 결정(AL-D1~D7), 통합에 넘기는 것, 처리방침 3.2 §1-9 초안은 프로젝트 파일(git 밖)의 `계획/1.28-AL-개발계획.md`.
+
+- **장부(core `flags/`)** `Flag`(이름·하는 일·꺼 둔 까닭·근거 `Basis`·위험 `Risk.NORMAL|LEGAL`·정리 예정 판·담당·만든 판·`minApp`/`maxApp`), `Condition`(date·policy·consent·profile·app·workType·rollout·manual·admin·any), 서버 덮어쓰기 `FlagOverride`(force on/off·why·until·conditions·판 범위·`confirmed` 손 확인 사실). 행은 `FlagCatalog`: `billing`·`ads`(LEGAL, 처리방침 3.1 시행일·보류·Play 프로덕션·정기 결제 확인, ads는 + Google 동의 길), `type.*` 6개, `leave.hourly`, 옛 기능 스위치 6개(plaza.write…), `stats.more`(LEGAL, 처리방침 3.2 + 사용 통계 + `usage.stats.more` 동의), `free.<FEATURE>`.
+- **판단 순서** `FlagEval.state`: 강제 끔 → 앱 판 밖 → 관리자 미리 보기 → 강제 켬 → 조건(모두 채우면 켬, 모르는 조건이 있으면 기본값). LEGAL 행은 서버가 확인한 시각(`RemoteConfigStore.serverNow()`: 마지막 config의 `serverTime` + 같은 부팅이면 경과)으로 한국 날짜를 보고, 처리방침 조건이 남으면 미리 보기·강제 켬도 안 켜져요. 처리방침 판·시행일은 `PolicyCalendar`(3.1 씨앗, 3.2는 자리값 2026-10-28 게시·2026-11-27 시행, 서버 `policy`가 덮음).
+- **서버 답** `/api/config`의 `flags`·`policy`·`serverTime`(앱 `flags/FlagJson.kt`). `flags`가 없는 옛 서버는 `LaunchConfig.overrides()`가 1.27과 똑같이 바꿔요: `billingLive` true → billing·ads 강제 켬, 한 번이라도 받은 false → 강제 끔, `freeFeatures` → free.X 켬, `off` → 그 스위치 행 끔. 정식 출시 스위치 자체와 `paused()`·held 마스크는 앱에서 없어졌어요.
+- **앱** `AppContainer.flags`(`flags/Flags.kt`): config·동의·유형·급여 설정·관리자·미리 보기·광고 동의·한국 자정마다 다시. `on(key)`·`paused(ServerSwitch)`·`types(keep)`·`statsOn()`. `FeatureGate`의 live = billing 행, 무료로 연 기능 = 켜진 free.* 중 프로 기능만. 광고 SDK·띠·보상형은 `FlagCatalog.ADS`. 회사 사실·설치 해시는 첫 화면 뒤(`flagsWarm`)에만 읽어 시작 예산은 그대로.
+- **근무 유형 노출** 숨긴 유형은 새로 고르는 곳(첫 질문·첫 설정·하는 일 찾기·근무 형태 바꾸기)에서만 빠지고, 쓰던 유형(`keep`)·백업·회사 파일은 그대로. 모두 숨기면 교대. 최고 관리자 휴대폰(`/api/passes`의 `admin.owner`)은 '숨김 · 관리자에게만 보여요'로 봐요.
+- **진단 '기능 상태'** `ui/diag/FlagStatusCard.kt`(알람 점검 화면): 꺼진 것·서버 강제 먼저, 행마다 상태·출처·이유·조건 체크리스트, 보고서 글에도. 관리자 휴대폰은 행마다 '관리자 미리 보기'(`FlagPreviews`, 휴대폰에만, 백업 안 함).
+- **사용 통계** `flagsOn`(켜진 키, 미리 보기 제외)은 `stats.more`가 켜졌을 때만 보내요. 3.2 시행 뒤 사용 통계를 켠 휴대폰에 한 번 묻는 카드 `statsMore`(`ui/flags/StatsMoreConsent.kt`)와 설정 › 사용 통계 줄, 설정 `usageStatsMore`(백업됨). AO의 시작 시간도 `Flags.on("stats.more")`를 써요.
+- 시험: core `FlagEvalTest`(21), 앱 `flags/FlagsAppTest`(11)·`TierAppTest`·`OperationsAppTest`·`AdAndLicenseRulesTest`, 사진 `ALScreenshotTest` 1200~1207.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

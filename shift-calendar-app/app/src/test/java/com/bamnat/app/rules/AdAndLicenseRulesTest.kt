@@ -42,11 +42,22 @@ class AdAndLicenseRulesTest {
     @Test fun adsFollowTheRules() {
         assertTrue("배너는 AdRules.banner를 따라요", read("ui/components/AdSlot.kt").contains("AdRules.banner("))
         assertTrue("보상형은 AdRules.rewardedOffer를 따라요", read("ads/RewardedAds.kt").contains("AdRules.rewardedOffer("))
-        // Nothing before the 정식 출시 switch, and nothing for 프로: the SDK and consent start only then.
+        // [FLAG-09][FLAG-18] Nothing while the `ads` row is off (it replaced the 정식 출시 switch), and nothing for 프로:
+        // the SDK and consent start only then.
         val activity = read("MainActivity.kt").lines()
         val at = activity.indexOfFirst { it.contains("ads.start(") }
         val start = activity[at - 1] + activity[at]
-        assertTrue(start, start.contains("AdRules.sdkMayStart(") && start.contains("billingLive") && start.contains("Feature.NO_ADS"))
+        assertTrue(start, start.contains("AdRules.sdkMayStart(") && start.contains("FlagCatalog.ADS") && start.contains("Feature.NO_ADS"))
+        // The banner and the rewarded ad read the same row, never the old switch.
+        for (f in listOf("ui/components/AdSlot.kt", "ads/RewardedAds.kt")) {
+            assertTrue(f, read(f).contains("FlagCatalog.ADS") && !read(f).contains("billingLive"))
+        }
+        // The row waits for the billing conditions (3.1 시행·보류·Play 승인·정기 결제) and Google's consent path.
+        val ads = com.bamnat.core.flags.FlagCatalog.ADS_FLAG
+        assertEquals(com.bamnat.core.flags.Risk.LEGAL, ads.risk)
+        assertFalse(ads.default)
+        assertTrue(ads.conditions.containsAll(com.bamnat.core.flags.FlagCatalog.BILLING_FLAG.conditions))
+        assertTrue(ads.conditions.any { it is com.bamnat.core.flags.Condition.Consent && it.key == "ads" })
         // [SRV-07] Nor in the first three days after install: the consent form waits for the first possible ad.
         assertTrue(start, start.contains("installedAt") && start.contains("adQuietDays"))
         val installed = java.time.Instant.parse("2027-03-01T00:00:00Z")

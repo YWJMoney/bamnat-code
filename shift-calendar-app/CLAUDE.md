@@ -17,7 +17,7 @@
 - 있었던 일만 실제 날짜로 적어요. 법·세금·Play 정책 같은 바깥 사실은 원문을 찾아 출처를 문서와 주석에 적고, 못 찾으면 "확인 필요"로 남겨요.
 - 문서는 바뀐 부분만 고치거나 더해요.
 - `play-services-ads`는 25.2.0에 묶어 둬요. 25.3.0부터 Kotlin 2.3 메타데이터라 지금 Kotlin(2.1.21)이 읽지 못해요. Kotlin을 올릴 때 같이 올려요.
-- 처리방침(`../privacy/index.html`)·이용약관(`../terms/index.html`)의 판이나 시행일을 바꾸면 `LegalPagesTest`와 프로젝트 파일 `legal/` 복사본도 같이 고쳐요. 결제·광고는 정식 출시 스위치(`/api/config`의 `billingLive`) 전에는 꺼져 있어야 해요.
+- 처리방침(`../privacy/index.html`)·이용약관(`../terms/index.html`)의 판이나 시행일을 바꾸면 `LegalPagesTest`와 프로젝트 파일 `legal/` 복사본도 같이 고쳐요. 결제·광고는 기능 플래그 `billing`·`ads`(core `flags/FlagCatalog`, 처리방침 3.1 시행·보류·Play 승인·정기 결제 조건, 1.28부터 정식 출시 스위치를 대신함)가 켜지기 전에는 꺼져 있어야 해요. 법적(LEGAL) 플래그는 서버 시각으로 판단하고 처리방침 조건을 서버 강제로도 건너뛰지 않아요.
 
 ## 판을 끝낼 때 (문서 갱신 점검표)
 
