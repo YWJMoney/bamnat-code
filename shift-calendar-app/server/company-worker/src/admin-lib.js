@@ -279,8 +279,8 @@ export function adminLib() {
     // [ADMUX-40] 기능 관리 and 근무 유형 are AM's screens; until the server has the flags area, 운영 may see them.
     flags: { label: "기능 관리", area: ["flags", "ops"], badge: (o) => o.flagsWaiting ?? 0, strip: "기능 확인", old: "운영 기능 스위치 정식 출시 다크머지 결제 광고 flags ops" },
     types: { label: "근무 유형", area: ["flags", "ops"], old: "근무 유형 노출 types" },
-    notices: { label: "앱 공지", area: "ops", old: "운영 공지 notices" },
-    chores: { label: "이달 할 일", area: "ops", badge: (o) => o.opsLeft ?? 0, old: "운영 이달 할 일 chores" },
+    notices: { label: "앱 공지", area: "ops", old: "공지 notices 운영" },
+    chores: { label: "이달 할 일", area: "ops", badge: (o) => o.opsLeft ?? 0, old: "이달 할 일 chores 운영" },
     gates: { label: "출시 관문", area: "metrics", old: "지표 출시 관문 원격 갱신 gates" },
     metrics: { label: "지표", area: "metrics", old: "통계 metrics" },
     effects: { label: "기능별 효과", area: "metrics", old: "플래그 효과 effects" },

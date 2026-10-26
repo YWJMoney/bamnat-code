@@ -531,3 +531,216 @@ test("[PLAZA-15] 회사·규칙: 맞아요·달라요 by where, 대표에서 빠
   assert.match(u.text("#main"), /5표 이상이고 달라요가 40%를 넘으면/);
   assert.deepEqual(u.errors, []);
 });
+
+// ---- AN 1.28 시작: 여섯 허브, 옛 주소, 메뉴 숫자, 설정 나누기, 할 일 하나로 (끝에서 끝: 화면 → 서버) ----
+
+const SUPPORT = { review: "none", inquiries: "edit", dev: "edit", devStatus: "none", companies: "none", rewards: "none", settings: "none",
+  community: "none", takedown: "none", ops: "none", metrics: "none", shares: "none", audit: "none" };
+
+/** An approved admin with [perms], signed in on a tab of their own. */
+async function asMember(s, perms = SUPPORT, hash = "") {
+  const APP = { "x-admin": "1", origin: ORIGIN };
+  const owner = await signIn(s.call);
+  const inv = await s.call("POST", "/api/admin/invites", { email: "minji@example.com", perms }, owner);
+  const token = inv.data.link.split("#")[1];
+  await s.call("POST", "/api/admin/join", { token, name: "민지", password: "minji-answers-2026" }, { ...APP, ...from(40) });
+  const id = (await s.call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === "minji@example.com").id;
+  await s.call("POST", `/api/admin/admins/${id}`, { status: "active" }, owner);
+  const res = await s.call("POST", "/api/admin/login", { email: "minji@example.com", password: "minji-answers-2026" }, { ...APP, ...from(40) });
+  const t = await tab(s.env, { hash, cookie: res.headers.get("set-cookie").split(";")[0] });
+  await t.settle(20);
+  return t;
+}
+
+const sideHubs = (t) => t.$$(".side .nav > li").map((li) => li.dataset.hub);
+const bottom = (t) => t.$$(".tabs [data-nav]").map((a) => a.dataset.nav);
+
+test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs they may use", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  assert.deepEqual(sideHubs(t), ["today", "ask", "plaza", "release", "insight", "manage"]);
+  assert.deepEqual(bottom(t), ["today", "ask", "plaza", "release", "more"]);
+  // A hub's tabs sit under the title, and in the sidebar under the open hub.
+  await t.go("#/review");
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "companies", "shares", "adopt"]);
+  assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
+  assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
+  assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
+  // A hub of one tab has no tab row; 분석 sits under 더 보기 on the phone, which is lit there.
+  await t.go("#/home");
+  assert.ok(t.$("#hubtabs").hidden);
+  await t.go("#/metrics");
+  assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "more");
+  // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
+  const u = await asMember(s);
+  assert.deepEqual(sideHubs(u), ["today", "ask", "manage"]);
+  assert.deepEqual(bottom(u), ["today", "ask", "manage"], "every hub fits: no 더 보기");
+  await u.go("#/inquiries");
+  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "dev", "templates"]);
+  await u.go("#/account");
+  assert.ok(u.$("#hubtabs").hidden, "관리 has one tab for 민지");
+  // A tab 민지 cannot use goes to 오늘.
+  await u.go("#/review");
+  assert.equal(u.window.location.hash, "#/home");
+  await u.go("#/adopt");
+  assert.equal(u.window.location.hash, "#/home");
+  assert.deepEqual([...t.errors, ...u.errors], []);
+});
+
+test("[ADMUX-35] the 1.27 addresses lead to the new tabs and keep their filters; #/settings says where things went", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/inbox?view=mine");
+  assert.equal(t.window.location.hash, "#/home?view=mine");
+  assert.equal(t.$('[data-act="inbox-view"][aria-pressed="true"]').dataset.key, "mine");
+  await t.go("#/ops?month=2026-09");
+  assert.equal(t.window.location.hash, "#/chores?month=2026-09");
+  await t.go("#/ops");
+  assert.equal(t.window.location.hash, "#/flags");
+  await t.go("#/settings");
+  const links = t.$$("#main .rows a.row").map((a) => a.getAttribute("href"));
+  for (const h of ["#/adopt", "#/rewards", "#/sla", "#/account", "#/server", "#/flags"]) assert.ok(links.includes(h), h);
+  assert.equal(t.$('.side [aria-current="page"]')?.dataset.nav, "manage");
+  // An old address opened fresh, before signing in, too.
+  const u = await tab(env, { hash: "#/inbox?view=today", cookie: t.jar.cookie });
+  assert.equal(u.window.location.hash, "#/home?view=today");
+  assert.deepEqual([...t.errors, ...u.errors], []);
+});
+
+test("[ADMUX-34] menu numbers: each thing counted once, 더 보기 only its own hubs", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const badge = (k) => Number(t.text(`.tabs [data-badge="hub:${k}"]`) || 0);
+  const side = (k) => Number(t.text(`.side [data-badge="hub:${k}"]`) || 0);
+  assert.equal(badge("ask"), 3, "three questions wait");
+  assert.equal(badge("plaza"), 1, "one report");
+  assert.equal(side("today"), 0, "오늘 adds nothing of its own: its list is the others' things");
+  assert.equal(badge("more"), side("insight") + side("manage"));
+  // The strip on 문의 says what waits, and opens it filtered.
+  await t.go("#/inquiries");
+  const strip = t.$("#waiting a");
+  assert.match(strip.textContent, /답 대기\s*3/);
+  assert.equal(strip.getAttribute("href"), "#/inquiries?sort=sla");
+  // An answer makes the number go down without waiting for the next poll.
+  const id = (await s.call("GET", "/api/admin/inquiries", undefined, await signIn(s.call))).data.inquiries[0].id;
+  await t.go(`#/inquiries/${id}`);
+  t.$("#reply").value = "고쳤어요. 업데이트해 주세요";
+  t.$('form[data-form="reply"]').requestSubmit(t.$('form[data-form="reply"] [data-close="1"]'));
+  await t.settle(40);
+  assert.equal(badge("ask"), 2);
+  assert.deepEqual(t.errors, []);
+});
+
+test("[ADMUX-32] 설정 split: 채택 규칙 on 광장 and 답 목표 on 문의 save to the server; 서버 상태 on 관리", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const owner = await signIn(s.call);
+  const basics = async () => (await s.call("GET", "/api/admin/basics", undefined, owner)).data;
+  const before = await basics();
+  await t.go("#/adopt");
+  await t.click('[data-act="step"][data-key="adoptPoints"][data-d="1"]');
+  await t.click('[data-act="save-settings"]');
+  assert.match(t.text("#toast"), /저장했어요/);
+  assert.equal((await basics()).settings.adoptPoints, before.settings.adoptPoints + 1);
+  await t.go("#/sla");
+  await t.click('[data-act="sla-step"][data-key="slaBug"][data-d="1"]');
+  await t.click('[data-act="save-sla"]');
+  assert.equal((await basics()).sla.slaBug, before.sla.slaBug + 1);
+  await t.go("#/server");
+  assert.match(t.text("#main"), /서버 상태/);
+  // 이 기기 is on 내 계정: colours, text size, bottom tabs, install, shortcuts.
+  await t.go("#/account");
+  for (const w of [/화면 색/, /글자 크기/, /아래 탭/, /단축키/]) assert.match(t.text("#main"), w);
+  assert.deepEqual(t.errors, []);
+});
+
+test("[ADMUX-33] 오늘's 할 일: the filters live in the address, and 바로 답하기 answers on the server", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  await t.click('[data-act="inbox-view"][data-key="mine"]');
+  assert.equal(t.window.location.hash, "#/home?view=mine");
+  await t.click('[data-act="inbox-view"][data-key="all"]');
+  const form = t.$('#main form[data-form="quick-reply"]');
+  assert.ok(form, "a question can be answered from the list");
+  const id = form.dataset.id;
+  form.elements.text.value = "다음 판에서 고쳐요";
+  form.requestSubmit(form.querySelector('[data-close="1"]'));
+  await t.settle(40);
+  assert.match(t.text("#toast"), /답하고 닫았어요/);
+  const owner = await signIn(s.call);
+  const q = (await s.call("GET", `/api/admin/inquiries/${id}`, undefined, owner)).data;
+  assert.equal(q.status ?? q.inquiry?.status, "closed");
+  assert.match(JSON.stringify(q), /다음 판에서 고쳐요/);
+  assert.ok(!t.$(`#main form[data-form="quick-reply"][data-id="${id}"]`), "it left the list");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[ADMUX-36] 1~6 open the hubs, [ and ] the tabs, and the palette knows the old names", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.key("2");
+  assert.equal(t.window.location.hash, "#/inquiries");
+  await t.key("]");
+  assert.equal(t.window.location.hash, "#/dev");
+  await t.key("[");
+  await t.key("[");
+  assert.equal(t.window.location.hash, "#/sla", "round to the hub's last tab");
+  await t.key("4");
+  assert.equal(t.window.location.hash, "#/flags");
+  // A hub opens on the tab it was left on.
+  await t.key("2");
+  assert.equal(t.window.location.hash, "#/sla");
+  await t.key("g");
+  await t.key("b");
+  assert.equal(t.window.location.hash, "#/home");
+  for (const [word, to] of [["받은함", "#/home"], ["운영", "#/flags"], ["친구 초대", "#/rewards"]]) {
+    await t.key("k", { ctrlKey: true });
+    await t.type("#pal", word);
+    t.$("#pal").dispatchEvent(new t.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await t.settle();
+    assert.equal(t.window.location.hash, to, word);
+  }
+  await t.key("?");
+  assert.match(t.text("dialog"), /1~6/);
+  assert.deepEqual(t.errors, []);
+});
+
+test("[ADMUX-37] the screen does not wait for the menu numbers, and polling asks only for them", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const asked = [];
+  const real = t.window.fetch;
+  let broken = true;
+  t.window.fetch = async (input, init) => {
+    const path = new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname;
+    asked.push(path);
+    if (broken && path === "/api/admin/badges") return new t.window.Response("{}", { status: 500 });
+    return real(input, init);
+  };
+  await t.go("#/inquiries");
+  assert.equal(t.$$("#main .rows .row").length, 3, "the list came though /badges did not");
+  assert.ok(!asked.includes("/api/admin/overview"), "/overview is not asked any more");
+  broken = false;
+  asked.length = 0;
+  await t.go("#/companies");
+  t.window.document.dispatchEvent(new t.window.Event("visibilitychange"));
+  await t.settle();
+  assert.ok(!asked.includes("/api/admin/today"), "오늘's data only on 오늘");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[ADMUX-35] bottom tabs and saved views kept on this device from 1.27 move to the hubs once", async () => {
+  const { env } = await world();
+  const old = { theme: "dark", tabs: ["inbox", "review", "ops", "audit"], views: [{ name: "내 것", hash: "#/inbox?view=mine" }, { name: "답함", hash: "#/inquiries?status=answered" }] };
+  const signed = await signedIn(env);
+  const t = await tab(env, { cookie: signed.jar.cookie, storage: { "bamnat-admin-prefs": JSON.stringify(old) } });
+  await t.settle(20);
+  const now = JSON.parse(t.window.localStorage.getItem("bamnat-admin-prefs"));
+  assert.equal(now.v, 2);
+  assert.equal(now.theme, "dark");
+  assert.deepEqual(now.tabs, ["plaza", "release", "insight"]);
+  assert.deepEqual(now.views.map((v) => v.hash), ["#/home?view=mine", "#/inquiries?status=answered"]);
+  assert.deepEqual(bottom(t), ["today", "plaza", "release", "insight", "more"]);
+  assert.deepEqual(t.errors, []);
+});
+// AN 1.28 끝

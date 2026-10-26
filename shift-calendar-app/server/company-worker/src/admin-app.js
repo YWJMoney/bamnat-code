@@ -798,7 +798,7 @@ function adminApp(L, BUILD) {
   function readPrefs() {
     try {
       const v = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}");
-      const was = { ...PREFS, ...(v && typeof v === "object" ? v : {}) };
+      const was = { ...PREFS, v: 1, ...(v && typeof v === "object" ? v : {}) };
       // AN 1.28 [ADMUX-35] Saved views and bottom tabs from before the hubs, moved once and kept.
       const now = L.migratePrefs(was);
       if (now !== was && Object.keys(v ?? {}).length) localStorage.setItem(PREF_KEY, JSON.stringify(now));
