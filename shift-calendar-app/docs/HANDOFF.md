@@ -570,6 +570,20 @@ shift-calendar-app/
 - **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
 - 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
 
+### 6-25. 서버 기능 관리(다크머지)·관리자 앱 '기능 관리'·근무 유형 (1.28.0 묶음 AM, FLAG-20~33·ADMUX-21~29)
+
+계획·통합에 넘기는 것은 프로젝트 파일(git 밖)의 `계획/1.28-AM-개발계획.md`. 휴대폰 쪽 판단기·장부는 6-24(묶음 AL), 관리자 앱 허브는 묶음 AN.
+
+- **장부(FLAG-20)** `src/index.js` `FLAG_CATALOG`(키는 core `FlagCatalog`과 같음: `billing`·`ads`·`type.*` 6개·`leave.hourly`·옛 스위치 6개·`stats.more`, `free.<FEATURE>`는 `flagDef`가 이름 규칙으로 만듦). 이름이 `FLAGS`가 아닌 까닭: `FLAGS`는 글 신고 이유. 조건 JSON은 AL-D1(`date{from|policy}`·`policy{version}`·`consent{key,unknownMeets}`·`profile{key}`·`app{min,max}`·`workType{in}`·`rollout{percent}`·`manual{key}`·`admin`·`any{of}`). 처리방침 일정 `POLICY_CALENDAR`(3.2는 자리표시 10-28/11-27, 관리자 앱에서 고침 → settings `policy_overrides`).
+- **판단기 하나(FLAG-21)** `src/admin-lib.js`의 `evalFlag`(1 강제 끔 → 2 앱 판 밖 → 3 미리 보기 → 4 강제 켬 → 5 조건, LEGAL은 3·4에서도 policy 조건)를 서버(`serverEval`, 휴대폰마다 다른 조건은 "phone"으로 막지 않음)와 관리자 앱 미리 보기가 같이 써요. 표 `flag_overrides`(강제·이유·기한·다시 볼 날·바꾼 조건·누가·auto), `flag_checks`(확인했어요), `flag_history`(전과 후), `flag_state`(서버가 본 켜짐·그때·하루 전 알림한 날), `usage_flags`(날·앱 판·플래그별 휴대폰 수, '*'가 분모).
+- **/api/config(FLAG-22)** 옛 칸 그대로(`billingLive` = 서버가 본 billing, `freeFeatures` = `free.*` 강제 켬, `off` = 옛 스위치 강제 끔) + `flags`(덮어쓴 것만, manual이 있는 플래그는 늘 `confirmed`와 함께) + `policy` + `serverTime`. 1.27 settings(`billing_live`·`free_features`·`switches_off`·`auto_rested`)는 `migrateFlags`가 한 번(`flags_migrated`) 덮어쓰기로 옮김(FLAG-23). `paused()`·`/switches`·자동 쉼도 플래그(FLAG-24, `/switches`는 이제 `why` 필수).
+- **정식 출시일(FLAG-25)** `recordLaunch`: billing이 서버 눈에 처음 켜진 순간(매시 17분 `flagTick`, 확인·덮어쓰기·config 때) `launched_at`을 INSERT OR IGNORE, 다시 안 바뀜. `POST /launch`는 410 `retired`, GET은 그대로. 감사 보상은 `POST /flags/billing/thanks`.
+- **권한(FLAG-27, D97)** 영역 `flags`(보기/고치기), 예/아니요 `flagOff`(TOGGLES, 기본 없음). 강제 끔은 최고 관리자나 flagOff, 강제 켬·LEGAL 조건·LEGAL 확인·처리방침·감사 보상은 최고 관리자만. 1.28 전 관리자는 운영 보기가 있으면 기능 관리 보기(`SINCE.flags`). `/api/passes` `admin.owner`(FLAG-26).
+- **법적 안전(FLAG-28·29, D99)** `flagTick`이 LEGAL 플래그가 내일 저절로 켜지면 하루 전, 켜지면 그때 웹 푸시(`PUSH_KINDS.flags`, urgent). 켜진 뒤 24시간 `/overview`의 `flagAlerts`로 홈 맨 위 카드(`flagAlertCard`). `noticeWarnings`: 근거 판의 게시→시행이 7일(불리하면 30일)보다 짧거나 날짜 조건이 시행일보다 이르면 경고. `flagsDue`는 메뉴 숫자.
+- **사용 통계(FLAG-30)** `/api/events`가 `flagsOn`(맨 위 = 가장 새 날, 또는 날마다)을 받아 알려진 키만 날 합계로. `startup`(묶음 AO)은 받아서 버리지 않고 AO가 셈.
+- **관리자 앱(ADMUX-21~28)** `src/admin-app.js`의 `// ---- AM 1.28 기능 관리 ----` 구역: `flagsView`(칩·찾기·무리별 줄·`?view=timeline` 일정), `flagView`(상태·체크리스트·확인했어요·근거·휴대폰·전후·강제·조건 편집·미리 보기·기록·결제의 감사 보상), `typesView`, `flagAlertCard`, `FLAG_ACTIONS/FORMS/CHANGES`(ACTIONS 등에 펼침). NAV에 `flags`·`types`(AN이 출시 허브로 옮김). 설정의 정식 출시 카드와 운영의 스위치 버튼은 기능 관리로 가는 길만 남김.
+- 시험: `test/flags.test.mjs`(11), `test/ui/admin-ui.test.mjs` 끝 6개, 고친 money·invite·digest·operations·accounts·admin·admin-server·dev 시험.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
