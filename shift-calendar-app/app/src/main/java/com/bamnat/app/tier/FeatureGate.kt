@@ -77,7 +77,7 @@ enum class Feature(val label: String, val minTier: Tier) {
 }
 
 /**
- * [MON-02] What the gate knows now. Before the 정식 출시 switch ([live] false) every feature is open,
+ * [MON-02] What the gate knows now. Before the `billing` row is on ([live] false; [FLAG-08] was the 정식 출시 switch) every feature is open,
  * as in every version so far; [access] says why this phone has 프로, and until when.
  */
 data class Gate(
@@ -110,6 +110,8 @@ class FeatureGate(
     private val remote: RemoteConfigStore,
     private val pro: ProStore,
     scope: CoroutineScope,
+    /** [FLAG-08] The dark-merge rows: `billing` is the retired 정식 출시 switch, `free.*` the features opened to everyone. */
+    private val flags: com.bamnat.app.flags.Flags,
     private val installedAt: () -> Instant?,
     private val debug: Boolean = com.bamnat.app.BuildConfig.DEBUG,
     private val clock: () -> Instant = Today::instant,
@@ -118,24 +120,29 @@ class FeatureGate(
     private val tick = MutableStateFlow(0L)
     private val preview = settings.settings.map { it.previewTier }.distinctUntilChanged()
 
-    val state: StateFlow<Gate> = combine(preview, remote.config, pro.state, tick) { p, config, sources, _ -> gate(p, config, sources) }
+    val state: StateFlow<Gate> = combine(preview, remote.config, pro.state, tick, flags.byKey) { p, config, sources, _, rows -> gate(p, config, sources, rows) }
         .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.Eagerly, gate(settings.current.previewTier, remote.current, pro.current))
+        .stateIn(scope, SharingStarted.Eagerly, gate(settings.current.previewTier, remote.current, pro.current, flags.byKey.value))
 
     fun allows(feature: Feature): Boolean = state.value.allows(feature)
 
     /** Works the answer out again: on coming back to the app, and when a pass or a day ends. */
     fun refresh() {
+        // [FLAG-07] Coming back to the app looks at every dark-merge row again too.
+        flags.refresh()
         tick.value++
     }
 
-    private fun gate(previewTier: Tier?, config: LaunchConfig, s: ProState): Gate {
+    private fun gate(previewTier: Tier?, config: LaunchConfig, s: ProState, rows: Map<String, com.bamnat.core.flags.FlagState>): Gate {
+        // [FLAG-08] The `billing` row in place of the 정식 출시 switch; `free.<FEATURE>` rows open a 프로 feature, never lock a free one.
+        val live = rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.on == true
+        val free = Feature.entries.filter { it.minTier > Tier.FREE && rows[com.bamnat.core.flags.FlagCatalog.FREE_PREFIX + it.name]?.on == true }.toSet()
         // [MON-02] The alarm check screen's preview counts before the launch and in debug builds only.
-        if (previewTier != null && (debug || !config.billingLive)) {
+        if (previewTier != null && (debug || !live)) {
             val on = previewTier >= Tier.PRO
             return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), preview = true)
         }
-        val access = ProAccess.resolve(s.sources(config, installedAt(), zone()), clock(), zone())
-        return Gate(live = config.billingLive, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = config.freeFeatures)
+        val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live), clock(), zone())
+        return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free)
     }
 }

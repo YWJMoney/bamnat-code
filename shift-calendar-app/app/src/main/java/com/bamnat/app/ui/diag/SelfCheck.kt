@@ -114,7 +114,7 @@ object ServerCheck {
         val config = c.remoteConfig.current
         Facts(
             companyMillis, shareMillis, linksApp, config.fetchedAt,
-            com.bamnat.core.ops.ServerSwitch.entries.filter { config.paused(it) }.map { it.label },
+            com.bamnat.core.ops.ServerSwitch.entries.filter { c.flags.paused(it) }.map { it.label },
             com.bamnat.app.company.OutboxJob.waiting(c),
             c.usageStats.sentDay, c.settingsRepository.current.shareUsageStats,
         )

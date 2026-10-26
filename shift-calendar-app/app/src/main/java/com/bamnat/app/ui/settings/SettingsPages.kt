@@ -649,12 +649,14 @@ internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
         on,
         onChange = onChange,
     )
+    // [FLAG-16] 1.28 AL: 처리방침 3.2's extra items, their own yes.
+    com.bamnat.app.ui.flags.StatsMoreRow()
     if (on) TextButton(onClick = { show = true }) { Text("보낼 내용 보기") }
     if (show) {
         AlertDialog(
             onDismissRequest = { show = false },
             title = { Text("보낼 내용") },
-            text = { Text(c.usageStats.preview() ?: "아직 보낼 내용이 없어요. 하루가 지나면 그날 쓴 기능 이름과 횟수가 여기 보여요.") },
+            text = { Text(c.usageStats.preview(c.flags.statsOn()) ?: "아직 보낼 내용이 없어요. 하루가 지나면 그날 쓴 기능 이름과 횟수가 여기 보여요.") },
             confirmButton = { TextButton(onClick = { show = false }) { Text("확인") } },
         )
     }

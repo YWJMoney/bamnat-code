@@ -155,7 +155,7 @@ class LeadShare(private val c: AppContainer) {
     }
 
     private suspend fun send(pick: Pick, dept: String, setup: JSONObject): ReportStatus {
-        if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) throw CompanyException("paused")
+        if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) throw CompanyException("paused")
         val status = c.companyApi.report(c.companyStore.device, pick.company.trim().take(40), dept, setup, pick.cal, auto = false)
         if (!status.again) c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
         status.member?.takeIf { it.joined && pick.cal == PersonalCalendar.MAIN }?.let { c.companyStore.setMember(status.companyId, status.company) }

@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.28.0 — 통합 folds the bundles' lines (each bundle adds only its own).
+        Release(39, "1.28.0", listOf(
+            // [FLAG-15] Bundle AL.
+            Line("‘알람 점검’ 화면 아래 ‘기능 상태’에서 기능마다 켜졌는지, 꺼졌으면 왜 그런지(남은 조건) 보여요. 문의할 때 그 부분을 보내 주시면 돼요"),
+        )),
         // 1.27.0 (계획/1.27-리뷰반영-사진인식-통합계획.md; 통합 folded AG·AH·AI·AJ·AK into eight lines).
         Release(38, "1.27.0", listOf(
             // [READ-13][READ-17] Bundle AJ.

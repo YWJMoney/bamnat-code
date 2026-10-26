@@ -236,7 +236,7 @@ class AutoShare(private val c: AppContainer) {
     /** One report of the setup as it is now, marked auto. The company's id comes back; null when there was nothing to send. */
     private suspend fun send(force: Boolean): String? {
         if (!force && !waiting) return null
-        if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) throw CompanyException("paused")
+        if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) throw CompanyException("paused")
         val (name, dept) = company() ?: run { c.companyStore.autoDirty = false; return null }
         val setup = c.companyShare.exportForServer()
         val status = try {

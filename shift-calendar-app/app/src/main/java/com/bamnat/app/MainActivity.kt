@@ -127,11 +127,11 @@ class MainActivity : ComponentActivity() {
             lastCatchUp = now
             c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
         }
-        // [MON-02] The 정식 출시 switch, passes and Play's purchases. [MON-07] Google's consent form and
-        // the ads SDK start only when an ad may show: after the switch, without 프로, with ad ids, and
+        // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and
+        // the ads SDK start only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and
         // [SRV-07] not in the first three days after install.
         c.syncPro()
-        if (com.bamnat.core.tier.AdRules.sdkMayStart(c.remoteConfig.current.billingLive, c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
+        if (com.bamnat.core.tier.AdRules.sdkMayStart(c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS), c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
