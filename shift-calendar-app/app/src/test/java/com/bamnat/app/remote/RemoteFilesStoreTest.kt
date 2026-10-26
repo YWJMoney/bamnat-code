@@ -96,4 +96,21 @@ class RemoteFilesStoreTest {
         assertTrue(store().refresh(now).isEmpty())
         assertEquals(14_170L, care())
     }
+
+    /** [REMOTE-08] 1.27: the 2026-10-26 key signs .sig2; the old .sig is only a fallback (결정 D83). */
+    @Test fun theNewSig2IsReadFirstAndTheOldSigStillWorksAlone() = runBlocking {
+        val b = """{"format":1,"kind":"rates","version":2027010101,"issued":"2027-01-01","minApp":33,"data":$rates2027}""".toByteArray()
+        site["remote/v1/rates.json"] = b
+        // Only a .sig2 (a file changed after the old keys were lost, like cycles.json): taken.
+        site["remote/v1/rates.json.sig2"] = sign(b).toByteArray()
+        assertEquals(listOf("rates"), store().refresh(now))
+        assertEquals(15_000L, care())
+    }
+
+    @Test fun aBrokenSig2FallsBackToTheOldSig() = runBlocking {
+        publish("rates", 2027010101, rates2027)
+        site["remote/v1/rates.json.sig2"] = sign("other".toByteArray()).toByteArray()
+        assertEquals(listOf("rates"), store().refresh(now))
+        assertEquals(15_000L, care())
+    }
 }

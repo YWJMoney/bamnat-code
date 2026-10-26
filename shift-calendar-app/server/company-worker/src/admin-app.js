@@ -2592,7 +2592,7 @@ function adminApp(L, BUILD) {
     return `<section class="card"><div class="card-head"><h2>원격 갱신</h2><button class="btn small ghost" data-act="remote-refresh">${icon(P.refresh)}다시 읽기</button></div>
       <p class="hint">앱이 하루에 한 번 받는 서명된 계산 자료예요. ${ok}/${r.files.length}개 서명 확인. '받을 수 있는 휴대폰'은 마지막 7일 앱 판 가운데 최소 앱 번호 이상의 비율이에요(앱은 어느 판을 쓰는지 보내지 않아요).</p>
       <ul class="rows">${r.files.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(REMOTE_NAMES[f.kind] ?? f.kind)}</b>
-        <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터` : "사이트에 없어요"}</small></span>
+        <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터${f.valid && f.oldApps === false ? " · 1.26 이하 앱은 앱 안 값" : ""}` : "사이트에 없어요"}</small></span>
         <span class="row-side">${f.found ? `<span class="pill ${f.valid ? "ok" : "bad"}">${f.valid ? "서명 맞음" : f.signed ? "서명 틀림" : "서명 없음"}</span>
           <b title="받을 수 있는 휴대폰">${f.reach === null ? "–" : `${f.reach}%`}</b>` : '<span class="pill bad">없음</span>'}</span></div></li>`).join("")}</ul>
       <p class="meta">${esc(r.base)} · ${esc(ago(r.at))} 읽음</p></section>`;

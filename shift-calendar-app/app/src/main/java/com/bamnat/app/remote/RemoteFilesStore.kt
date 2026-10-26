@@ -101,12 +101,16 @@ class RemoteFilesStore(
         for (kind in RemoteFiles.KINDS) {
             val bytes = fetcher.get(RemoteFiles.path(kind)) ?: continue
             reached = true
-            val sig = fetcher.get(RemoteFiles.path(kind) + ".sig")?.toString(Charsets.US_ASCII) ?: continue
-            val file = try {
-                RemoteFiles.open(bytes, sig, kind, appVersion, keys)
-            } catch (e: RemoteFileException) {
-                continue
+            // [REMOTE-08] .sig2 (2026-10-26 key) first, then the old .sig; the first that checks out wins.
+            var sig: String? = null
+            var file: RemoteFile? = null
+            for (ext in RemoteKeys.SIGNATURES) {
+                val s = fetcher.get(RemoteFiles.path(kind) + ext)?.toString(Charsets.US_ASCII) ?: continue
+                file = try { RemoteFiles.open(bytes, s, kind, appVersion, keys) } catch (e: RemoteFileException) { continue }
+                sig = s
+                break
             }
+            if (file == null || sig == null) continue
             if (file.version <= version(kind)) continue
             try {
                 apply(file)

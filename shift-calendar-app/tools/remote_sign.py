@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Signs and checks the remote data files (remote/v1/*.json at the top of the repository) [REMOTE-01].
 
-The app trusts a file downloaded from GitHub Pages only when <name>.json.sig holds an Ed25519 signature of
-the file's exact bytes by a key listed in core RemoteKeys.TRUSTED (결정 D3).
+The app trusts a file downloaded from GitHub Pages only when <name>.json.sig2 (or the old <name>.json.sig)
+holds an Ed25519 signature of the file's exact bytes by a key listed in core RemoteKeys.TRUSTED (결정 D3).
+
+[REMOTE-08] 1.27 (결정 D83): the 2022-10-22/23 keys were lost, so 'sign' writes <name>.json.sig2 with the
+2026-10-26 key and never touches <name>.json.sig. Apps up to 1.26 only read .sig and only trust the old keys:
+while a file is unchanged its old .sig still checks out for them; once a file changes, its old .sig no longer
+matches and 'check' says so (those apps keep the data they shipped with, nothing breaks).
 
 The private key is never in this repository. It lives in the project's private release-key/ folder and is
 passed by path, either with --key or the BAMNAT_REMOTE_KEY environment variable. This script never prints it.
@@ -10,8 +15,8 @@ passed by path, either with --key or the BAMNAT_REMOTE_KEY environment variable.
 Usage (from shift-calendar-app/):
   python3 tools/remote_sign.py keygen --out /path/outside/repo/bamnat-remote-ed25519.pem
   python3 tools/remote_sign.py pub --key <pem>            # the base64 public key for RemoteKeys.TRUSTED
-  python3 tools/remote_sign.py sign --key <pem> [files]   # default: every remote/v1/*.json
-  python3 tools/remote_sign.py check [files]              # exit 1 when a signature is missing or wrong
+  python3 tools/remote_sign.py sign --key <pem> [files]   # default: every remote/v1/*.json -> <name>.json.sig2
+  python3 tools/remote_sign.py check [--need-sig2] [files] # exit 1 when a signature is missing or wrong
 
 Needs the 'cryptography' package (pip install cryptography).
 """
@@ -62,8 +67,25 @@ def raw_public(pub):
 def trusted_keys():
     text = KEYS_KT.read_text(encoding="utf-8")
     block = text[text.index("val TRUSTED"):]
-    block = block[: block.index(")")]
+    block = block[: block.index("\n    )")]
+    block = "\n".join(l.split("//")[0] for l in block.splitlines())
     return re.findall(r'"([A-Za-z0-9+/=]{40,})"', block)
+
+
+def verifies(sig_path, data, keys):
+    if not sig_path.exists():
+        return None
+    try:
+        sig = base64.b64decode(sig_path.read_text(encoding="ascii").strip(), validate=True)
+    except Exception:
+        return False
+    for k in keys:
+        try:
+            k.verify(sig, data)
+            return True
+        except InvalidSignature:
+            pass
+    return False
 
 
 def files(args):
@@ -110,7 +132,7 @@ def cmd_sign(a):
     for p in files(a.files):
         check_shape(p)
         sig = base64.b64encode(key.sign(p.read_bytes())).decode()
-        p.with_name(p.name + ".sig").write_text(sig + "\n", encoding="ascii")
+        p.with_name(p.name + ".sig2").write_text(sig + "\n", encoding="ascii")
         print("signed", p.relative_to(REPO))
 
 
@@ -119,17 +141,14 @@ def cmd_check(a):
     bad = 0
     for p in files(a.files):
         check_shape(p)
-        s = p.with_name(p.name + ".sig")
-        ok = False
-        if s.exists():
-            sig = base64.b64decode(s.read_text(encoding="ascii").strip())
-            for k in keys:
-                try:
-                    k.verify(sig, p.read_bytes())
-                    ok = True
-                except InvalidSignature:
-                    pass
-        print(("ok   " if ok else "BAD  ") + str(p.relative_to(REPO)))
+        data = p.read_bytes()
+        new = verifies(p.with_name(p.name + ".sig2"), data, keys)
+        old = verifies(p.with_name(p.name + ".sig"), data, keys)
+        ok = bool(new) or (new is None and bool(old))
+        if a.need_sig2 and not new:
+            ok = False
+        note = {True: "old .sig ok (1.26 이하 앱도 받음)", False: "old .sig 맞지 않음 (1.26 이하 앱은 앱 안 값)", None: "old .sig 없음 (1.26 이하 앱은 앱 안 값)"}[old]
+        print(("ok   " if ok else "BAD  ") + str(p.relative_to(REPO)) + ("  .sig2 ok" if new else "  .sig2 없음") + "  · " + note)
         bad += 0 if ok else 1
     if bad:
         fail(f"{bad} file(s) unsigned or signed by an unknown key: run 'sign' with the release key.")
@@ -146,6 +165,7 @@ def main():
     s.add_argument("--key")
     s.add_argument("files", nargs="*")
     c = sub.add_parser("check")
+    c.add_argument("--need-sig2", action="store_true", help="every file must carry a .sig2 (1.27 and later)")
     c.add_argument("files", nargs="*")
     a = ap.parse_args()
     {"keygen": cmd_keygen, "pub": cmd_pub, "sign": cmd_sign, "check": cmd_check}[a.cmd](a)

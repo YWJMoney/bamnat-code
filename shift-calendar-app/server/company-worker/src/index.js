@@ -6923,8 +6923,10 @@ export async function playVitals(env, now) {
 export const REMOTE = {
   kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles"],
   base: "https://ywjmoney.github.io/-/remote/v1",
-  // The same two keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file).
-  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ="],
+  // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file). [REMOTE-08] The last two are the
+  // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2.
+  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=",
+    "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=", "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E="],
   keepMs: 10 * 60 * 1000,
 };
 const remoteKept = new WeakMap();
@@ -6974,7 +6976,8 @@ async function remoteState(env, now, fresh = false) {
   }
   const phones = week.reduce((n, x) => n + x.phones, 0);
   const files = await Promise.all(REMOTE.kinds.map(async (kind) => {
-    const [bytes, sig] = await Promise.all([get(`${kind}.json`), get(`${kind}.json.sig`)]);
+    // [REMOTE-08] .sig2 (1.27 key) first, the old .sig for apps up to 1.26 second.
+    const [bytes, sig2, sig1] = await Promise.all([get(`${kind}.json`), get(`${kind}.json.sig2`), get(`${kind}.json.sig`)]);
     if (!bytes) return { kind, found: false };
     let f = null;
     try {
@@ -6987,7 +6990,9 @@ async function remoteState(env, now, fresh = false) {
     const unknown = week.filter((x) => codes[x.app] === undefined).reduce((n, x) => n + x.phones, 0);
     return {
       kind, found: true, readable: f.kind === kind && f.format === 1, version: f.version ?? null, issued: f.issued ?? null, minApp,
-      source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig), valid: sig ? await signedBy(bytes, new TextDecoder().decode(sig)) : false,
+      source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig2 || sig1),
+      valid: (sig2 ? await signedBy(bytes, new TextDecoder().decode(sig2)) : false) || (sig1 ? await signedBy(bytes, new TextDecoder().decode(sig1)) : false),
+      oldApps: sig1 ? await signedBy(bytes, new TextDecoder().decode(sig1)) : false,
       reach: phones ? Math.round((1000 * able) / phones) / 10 : null, unknown,
     };
   }));
