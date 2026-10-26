@@ -444,6 +444,8 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   DB.db.prepare("INSERT INTO settings (key, value) VALUES ('invite_friends', '1')").run();
   DB.db.prepare("UPDATE invite_uses SET first_day = '2000-01-01'").run();
   assert.equal((await call("POST", "/api/invites/seen", {}, { "x-device": device(2) })).data.status, "credited");
+  // AG 1.27 [INVITE-10] Friends of one code crowding from one network are noted for a look, not refused.
+  DB.db.prepare("INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'invite_burst', ?, '', '', '')").run(Date.now(), made.data.code);
   const t = await signedIn(env);
   await t.go("#/rewards");
   await t.click('[data-act="reward-tab"][data-key="paid"]');
@@ -451,8 +453,9 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
   assert.match(main, /보상 받음 1명/);
-  assert.match(main, /친구 1명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
+  assert.match(main, /최근 30일 몰림 1번/);
   assert.deepEqual(t.errors, []);
 });
 
@@ -463,7 +466,7 @@ test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends,
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
-  assert.match(card().textContent, /친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음/);
   assert.match(card().textContent, /1년 상한\s+−\s+없음/);
   const step = async (key, d) => {
     t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
@@ -473,7 +476,7 @@ test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends,
   await step("friends", -1);
   await step("days", 1);
   await step("capMonths", 1);
-  assert.match(card().textContent, /친구 3명이 8일 넘게 쓸 때마다 프로 1개월 · 1년에 1개월까지/);
+  assert.match(card().textContent, /친구 3명이 각자 8일 이상 쓰면 프로 1개월, 3명 더 채울 때마다 또 1개월 · 1년에 1개월까지/);
   card().querySelector('[data-act="save-friend"]').click();
   await t.settle(30);
   const rows = Object.fromEntries(DB.db.prepare("SELECT key, value FROM settings WHERE key LIKE 'invite_%'").all().map((r) => [r.key, r.value]));
@@ -499,5 +502,28 @@ test("[PLAZA-13] 회사·규칙: how many phones joined a company, and 안정 on
   await u.settle(20);
   assert.match(u.text("#main"), /참여한 휴대폰 5대/);
   assert.ok(u.$$("#main .pill.ok").some((p) => p.textContent === "안정"), "a settled rule says so");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[PLAZA-15] 회사·규칙: 맞아요·달라요 by where, 대표에서 빠짐, and the rule on the settings page (1.27 AH)", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env } = s;
+  const a = await call("POST", "/api/reports", report(1, { company: "의견화학" }), from(1));
+  await call("POST", "/api/reports", report(2, { company: "의견화학" }), from(2));
+  const c = a.data.company.id;
+  // A third 맞아요 adopts it (three points).
+  await call("POST", "/api/votes", { device: device(6), company: c, setup: a.data.setup, ok: true }, from(6));
+  for (const [n, why] of [[3, "order"], [4, "order"], [5, "pay"], [7, "time"]]) {
+    await call("POST", "/api/votes", { device: device(n), company: c, setup: a.data.setup, ok: false, why }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go(`#/companies/${c}`);
+  await u.settle(20);
+  assert.match(u.text("#main"), /맞았어요 3 · 달라요 4 \(순서 2 · 시간 1 · 급여 항목 1\)/);
+  assert.ok(u.$$("#main .pill.warn").some((p) => p.textContent === "대표에서 빠짐"));
+  await u.go("#/settings");
+  await u.settle(20);
+  assert.match(u.text("#main"), /5표 이상이고 달라요가 40%를 넘으면/);
   assert.deepEqual(u.errors, []);
 });

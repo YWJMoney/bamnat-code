@@ -16,6 +16,11 @@ data class PayslipCheck(
     /** What the app came to for the same month with the settings kept. */
     val appTotal: Long,
     val atMillis: Long,
+    /**
+     * [PLAZA-30] How it was matched: [SlipProof.MATCH] (명세서로 맞춰 보기, within [PayslipMatch.tolerance]) or [SlipProof.RULES]
+     * (명세서로 회사 방식 맞추기, within [SlipRulesResult.CLOSE_SHARE]).
+     */
+    val source: String = SlipProof.MATCH,
 )
 
 /**

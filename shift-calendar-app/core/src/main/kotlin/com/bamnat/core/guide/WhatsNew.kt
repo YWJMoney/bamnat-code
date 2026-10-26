@@ -10,6 +10,25 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.27.0 (계획/1.27-리뷰반영-사진인식-통합계획.md; 통합 folded AG·AH·AI·AJ·AK into eight lines).
+        Release(38, "1.27.0", listOf(
+            // [READ-13][READ-17] Bundle AJ.
+            Line("사진 인식을 다시 만들었어요. 한 장을 여러 방법으로 읽어 맞춰 보고, 사진 옆에 읽은 칸을 보여 주며 ‘사진과 내용이 같은가요?’를 물어요. 다른 칸만 눌러 고치면 돼요", "photo.sameCheck"),
+            // [PAYS-16][PAYS-17][PAYS-19] Bundle AJ.
+            Line("명세서 없이 회사 규칙만으로도 달력 근무로 급여를 계산해요. 비어 있는 기본급·시수는 급여 합계 아래 ‘이것만 넣으면 정확해져요’에서 바로 넣어요", "pay.ruleNeeds"),
+            // [SPAT-07][PLAZA-14][PLAZA-15][PLAZA-16] Bundle AH.
+            Line("회사 이름을 치는 대로 같은 회사 분들의 대표 주기와 쓰는 사람 수가 바로 보여요. 고른 주기를 나누면 그 회사(또는 사업장)의 대표가 되고, 급여 방식도 같은 회사 분들 것을 가져와요", "plaza.leadCycle"),
+            // AI 1.27 [PLAZA-30][PLAZA-32][PLAZA-33][PLAZA-34] (계획/1.27-AI-개발계획.md 441·443·444·445).
+            Line("회사 설정을 쓰면 광장이 ‘우리 회사 정보 광장’이 돼요. 근무·급여를 바꾸면 바뀐 것을 나눌지 묻고, ‘명세서와 맞춰 봤어요’는 명세서로 맞춰 본 기록이 있을 때만 붙어요", "plaza.info"),
+            // AG 1.27 [INVITE-10][INVITE-11] Bundle AG.
+            Line("친구 초대 링크로 깔면 앱이 저절로 알아봐요. 친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월", "pro.invite"),
+            // AG 1.27 [MON-12][INVITE-12] Bundle AG.
+            Line("프로 기능을 누르면 ‘광고 보고 오늘 하루 열기’와 ‘친구 초대로 프로 받기’를 함께 보여요. 설정 맨 위에서 친구 초대와 ‘불편한 점 알려 주기’를 바로 해요", "grow.card"),
+            // [MEMO-03][MEMO-05] Bundle AK.
+            Line("메모를 초성·날짜·그날 근무(야간)로 찾고, ‘다음 야간 때’라고 쓰면 그 근무 출근 1시간 전에 알려 드려요", "memo.shiftRemind"),
+            // [INV-42][INV-44] Bundle AK.
+            Line("투자 ‘체결 내역 캡처로 채우기’가 이미 적은 건 건너뛰고, 다르면 고칠지 묻고, 새 것만 확인해요. 믿으면 ‘다음부터 묻지 않고 바로 넣기’", "invest.captureTrust"),
+        )),
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.
@@ -18,7 +37,7 @@ object WhatsNew {
             Line("회사 이름으로 공개 자료의 근무주기를 찾아 순서와 오늘 날짜만 맞추면 달력에 들어가요", "plaza.cycles"),
             Line("우리 회사가 없으면 처음으로 넣어 광장에 올려요. 급여 정보까지 올리면 보상을 드려요", "plaza.cycles"),
             // [INVITE-02][INVITE-03] Bundle AE.
-            Line("설정 › 프로 › ‘친구 초대’로 링크를 보내요. 깐 친구 5명이 7일 넘게 쓸 때마다 나에게 프로 1개월", "pro.invite"),
+            Line("설정 › 프로 › ‘친구 초대’로 링크를 보내요. 깐 친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월", "pro.invite"),
             // AF (계획/1.26-AF-개발계획.md): 결정 D79.
             Line("다니는 회사 광장에 근무 순서·계산 방식을 한 번 허락하면 저절로 나누고, 참여한 회사에서는 다른 분들이 바꾼 값만 골라 써요", "plaza.room"),
         )),

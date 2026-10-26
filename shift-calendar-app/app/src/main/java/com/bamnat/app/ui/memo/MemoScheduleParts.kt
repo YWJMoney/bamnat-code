@@ -136,6 +136,8 @@ internal fun ScheduleDialog(
     onDismiss: () -> Unit,
     onSave: (MemoReminder) -> Unit,
     now: () -> LocalDateTime = Today::dateTime,
+    /** [MEMO-05] 1.27 AK: '근무에 맞춰' — the next of each shift ahead (출근 1시간 전) and the next day off. */
+    shiftTimes: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion> = emptyList(),
 ) {
     val context = LocalContext.current
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }
@@ -163,6 +165,7 @@ internal fun ScheduleDialog(
                     OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date)) }
                     OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") ")) }
                 }
+                if (shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }
                 if (!ahead) {
                     Text("지난 시각이에요. 날짜나 시각을 바꿔 주세요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
@@ -252,3 +255,17 @@ internal fun scheduleStart(found: MemoTime.Found?, current: MemoReminder?, date:
         val nextHour = now.plusHours(1).withMinute(0).withSecond(0).withNano(0)
         if (date != null && date.isAfter(now.toLocalDate())) date.atTime(LocalTime.of(9, 0)) else nextHour
     }
+
+/** [MEMO-05] 1.27 AK: 근무에 맞춰 — a chip per next shift (출근 1시간 전) and the next day off. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ShiftTimeChips(times: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion>, at: LocalDateTime, onPick: (LocalDateTime) -> Unit) {
+    Text("근무에 맞춰", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (sug in times) com.bamnat.app.ui.components.FilterChip(
+            selected = at == sug.at,
+            onClick = { onPick(sug.at) },
+            label = { Text(sug.label) },
+        )
+    }
+}

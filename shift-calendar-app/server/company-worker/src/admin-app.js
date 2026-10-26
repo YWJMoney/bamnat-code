@@ -1309,7 +1309,7 @@ function adminApp(L, BUILD) {
     }
     if (name === "community" && id) {
       const first = S.data.posts?.posts?.[0];
-      return { title: first ? first.company.name : "토론", sub: first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
+      return { title: first ? first.company.name : "토론", sub: first?.room ? (first.room === "style" ? "유형 광장 이야기" : "회사 정보 광장 자유 토의") : first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
     }
     if (name === "account") return { title: "내 계정", back: phone ? href("more") : null };
     if (name === "more") return { title: "더 보기" };
@@ -1510,6 +1510,8 @@ function adminApp(L, BUILD) {
 
   function groupCard(g, open, editable) {
     const verified = g.reports.filter((r) => r.verified).length;
+    // AI 1.27 [PLAZA-30] Ticks from older apps with no matched month behind them.
+    const claims = g.reports.filter((r) => r.claim).length;
     const kind = g.blocked && g.replaces ? '<span class="pill warn">새 버전 후보</span>'
       : g.replaces ? `<span class="pill">지금 v${g.replaces.version}와 달라요</span>` : '<span class="pill info">새 규칙</span>';
     const gist = g.changes ? "" : g.lines.find(([label]) => label === "근무")?.[1];
@@ -1522,7 +1524,7 @@ function adminApp(L, BUILD) {
     return `<article class="card">
       <div class="head"><h3>${esc(g.company.name)}${g.dept ? ` <span class="dept">${esc(g.dept)}</span>` : ""}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</h3>${kind}</div>
       ${twin?.diff ? `<p class="gist twin"><b>${esc(twin.diff)}</b></p>` : ""}
-      <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""} · ${day(g.reports[0].at)}</p>
+      <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""}${claims ? ` · 명세서 확인(근거 없음) ${claims}건` : ""} · ${day(g.reports[0].at)}</p>
       ${gist ? `<p class="gist">${esc(gist)}</p>` : ""}
       <div class="score"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}점</b></div>
       ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
@@ -1534,7 +1536,7 @@ function adminApp(L, BUILD) {
       ${g.changes ? changes(g.changes) : ""}
       ${siblings ? `<p class="meta">같은 회사 다른 부서 제보 ${siblings}건도 기다려요</p>` : ""}
       <details data-key="${key}"${S.opened.get(key) ?? open ? " open" : ""}><summary>보낸 설정</summary>${lines(g.lines)}</details>
-      ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
+      ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : r.claim ? "명세서 확인(근거 없음) · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
       ${g.bad ? `<p class="note bad">달라요 ${g.bad}명</p>` : ""}
       <div class="actions">
         ${can("community") && g.posts ? `<a class="btn ghost" href="${href("community", `${g.company.id}.${g.setup}`)}">토론 ${g.posts}개 읽기</a>` : ""}
@@ -1572,7 +1574,7 @@ function adminApp(L, BUILD) {
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
       : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
         <div class="toolbar"><input id="search" type="search" placeholder="회사 이름으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="토론 찾기"></div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
@@ -1599,7 +1601,7 @@ function adminApp(L, BUILD) {
     const edit = can("community", "edit");
     const n = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
       <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
         .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="직종으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="임금표 찾기"></div>
@@ -1632,13 +1634,13 @@ function adminApp(L, BUILD) {
       : p.kept ? '<span class="pill ok">확인함</span>' : "";
     const on = picking && S.postPick.has(p.id);
     return `<article class="card${on ? " picked" : ""}">
-      <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
+      <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
       <blockquote>${esc(p.body)}</blockquote>
       ${p.reasons.length ? `<p class="meta">신고 이유: ${p.reasons.map((r) => `${esc(r.text)} ${r.n}`).join(", ")}</p>` : ""}
       ${p.hidden ? `<p class="note warn">${esc(p.hidden.text)}</p>` : ""}
       <div class="actions">
-        ${talk ? "" : `<a class="btn ghost" href="${href("community", `${p.company.id}.${p.setup}`)}">이 토론 전부</a>`}
+        ${talk ? "" : `<a class="btn ghost" href="${href("community", `${p.company.id}.${p.setup}`)}">${p.room ? "이 광장 글 전부" : "이 토론 전부"}</a>`}
         ${edit ? `${p.status === "hidden" || p.flags ? `<button class="btn" data-act="post-show" data-id="${p.id}">${p.status === "hidden" ? "다시 보이기" : "문제없음"}</button>` : ""}
           ${p.status === "hidden" ? "" : `<button class="btn" data-act="post-hide" data-id="${p.id}">가리기</button>`}
           <button class="btn" data-act="post-mute" data-id="${p.id}">30일 쓰기 막기</button>
@@ -2186,6 +2188,13 @@ function adminApp(L, BUILD) {
       </section>` : ""}</div></div>`;
   }
 
+  /** AH 1.27 [PLAZA-15] " (순서 2 · 시간 1)": where the 달라요 say a rule is wrong. */
+  function whyLine(why) {
+    if (!why) return "";
+    const parts = [["order", "순서"], ["time", "시간"], ["pay", "급여 항목"], ["other", "그 밖"]].filter(([k]) => why[k] > 0).map(([k, n]) => `${n} ${why[k]}`);
+    return parts.length ? ` (${parts.join(" · ")})` : "";
+  }
+
   function ruleCard(r, edit) {
     const [tone, label] = r.withdrawn ? ["bad", "내림"] : r.superseded ? ["", "이전 버전"] : ["ok", "쓰는 중"];
     // [PLZ-06] 내리기·다시 올리기 need 광장 규칙 내리기 (결정 D35).
@@ -2193,8 +2202,8 @@ function adminApp(L, BUILD) {
       : r.superseded ? "" : `<button class="btn danger" data-act="withdraw-rule" data-id="${r.id}">내리기</button>`;
     return `<div class="rule${r.withdrawn || r.superseded ? " dim" : ""}">
       <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
-        <p class="meta">${r.source === "auto" ? "자동 채택" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}</p></div>
-        <span class="pill ${tone}">${label}</span>${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
+        <p class="meta">${r.source === "auto" ? "자동 채택" : r.source === "rival" ? "더 믿을 판으로 바뀜" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}${whyLine(r.why)}</p></div>
+        <span class="pill ${tone}">${label}</span>${r.doubted ? '<span class="pill warn" title="달라요가 많아 앱에서 대표 주기로 보이지 않아요">대표에서 빠짐</span>' : ""}${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
       <details><summary>내용</summary>${lines(r.lines)}</details>
       ${action ? `<div class="actions">${action}</div>` : ""}
     </div>`;
@@ -2233,12 +2242,23 @@ function adminApp(L, BUILD) {
       <small>친구 ${t.friends}명 · 채움 ${t.counted} · 사용 기간 채우는 중 ${t.waiting}</small></div></li>`).join("")}</ul>` : "";
     return `<section class="card" aria-label="친구 초대"><h3>친구 초대</h3>
       <p>초대 코드 ${v.codes}개 · 보상 받음 ${v.credited}명 · 다음 보상 기다림 ${v.qualified ?? 0}명 · 상한 넘음 ${v.capped}명 · 사용 기간 채우는 중 ${v.waiting}명 · 끝남 ${v.expired ?? 0}명</p>
-      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 설정 › 친구 초대에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${top}</section>`;
+      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 설정 › 친구 초대에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${burstLine(v)}${top}</section>`;
   }
 
-  /** [INVITE-08] The rules in one line: "친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음". */
+  /**
+   * [INVITE-08] AG 1.27 [INVITE-09] The rules in one line, read as the user meant them (리뷰 2026-10-25): months for each
+   * group of different friends, not for one friend's days. "친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음".
+   */
   function inviteRuleWords(r) {
-    return `친구 ${r.friends}명이 ${r.days}일 넘게 쓸 때마다 프로 ${r.months}개월 · ${r.capMonths ? `1년에 ${r.capMonths}개월까지` : "상한 없음"}.`;
+    return `친구 ${r.friends}명이 각자 ${r.days}일 이상 쓰면 프로 ${r.months}개월, ${r.friends}명 더 채울 때마다 또 ${r.months}개월 · ` +
+      `${r.capMonths ? `1년에 ${r.capMonths}개월까지` : "상한 없음"}. 같은 친구·같은 휴대폰은 한 번, 자기 초대는 안 세요.`;
+  }
+
+  /** AG 1.27 [INVITE-10] 몰림: friends of one code from one network within an hour, let in but worth a look. */
+  function burstLine(v) {
+    if (!v.bursts) return "";
+    const codes = (v.burstCodes ?? []).map((b) => `${esc(b.code)} ${b.n}`).join(" · ");
+    return `<p class="hint warn">최근 30일 몰림 ${v.bursts}번(같은 네트워크에서 한 시간에 같은 코드로 친구 3명 넘게): ${codes}. 같은 회사 와이파이일 수 있어 막지는 않았어요.</p>`;
   }
 
   /** [INVITE-08] 설정 › 친구 초대: the developer's numbers, applied by the server to every invite from then on. */
@@ -2592,7 +2612,7 @@ function adminApp(L, BUILD) {
     return `<section class="card"><div class="card-head"><h2>원격 갱신</h2><button class="btn small ghost" data-act="remote-refresh">${icon(P.refresh)}다시 읽기</button></div>
       <p class="hint">앱이 하루에 한 번 받는 서명된 계산 자료예요. ${ok}/${r.files.length}개 서명 확인. '받을 수 있는 휴대폰'은 마지막 7일 앱 판 가운데 최소 앱 번호 이상의 비율이에요(앱은 어느 판을 쓰는지 보내지 않아요).</p>
       <ul class="rows">${r.files.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(REMOTE_NAMES[f.kind] ?? f.kind)}</b>
-        <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터` : "사이트에 없어요"}</small></span>
+        <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터${f.valid && f.oldApps === false ? " · 1.26 이하 앱은 앱 안 값" : ""}` : "사이트에 없어요"}</small></span>
         <span class="row-side">${f.found ? `<span class="pill ${f.valid ? "ok" : "bad"}">${f.valid ? "서명 맞음" : f.signed ? "서명 틀림" : "서명 없음"}</span>
           <b title="받을 수 있는 휴대폰">${f.reach === null ? "–" : `${f.reach}%`}</b>` : '<span class="pill bad">없음</span>'}</span></div></li>`).join("")}</ul>
       <p class="meta">${esc(r.base)} · ${esc(ago(r.at))} 읽음</p></section>`;
@@ -2762,6 +2782,7 @@ function adminApp(L, BUILD) {
         <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 이 점수가 되면 자동으로 채택해요. 명세서로 맞춰 본 제보는 2점, 나머지는 1점이에요.</p>
         ${stepper("adoptAgree", "맞았어요 비율", s.adoptAgree ?? 75, "%", edit)}
         <p class="hint">투표한 분 가운데 이만큼이 맞았어요라고 해야 자동으로 채택해요. 모자라면 검토에 남아 개발자가 정해요. 앱의 신뢰도는 이 비율과 점수를 함께 봐요.</p>
+        <p class="hint" data-doubt>대표에서 빠지는 기준: 맞아요·달라요가 ${S.overview?.doubt?.votes ?? 5}표 이상이고 달라요가 ${S.overview?.doubt?.share ?? 40}%를 넘으면 앱의 대표 주기에서 빠지고 같은 사업장의 다음 판이 대표가 돼요. 다음 판이 채택 조건을 채우면 지지로 이기지 않아도 채택돼요.</p>
         ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월", edit)}
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
         ${stepper("adoptPersons", "채택에 필요한 사람", s.adoptPersons ?? 3, "명", edit)}

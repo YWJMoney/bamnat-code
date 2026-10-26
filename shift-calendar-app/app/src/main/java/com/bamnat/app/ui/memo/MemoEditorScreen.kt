@@ -114,6 +114,10 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     val day by vm.day.collectAsStateWithLifecycle()
     val offer by vm.scheduleOffer.collectAsStateWithLifecycle()
     val calendars by vm.calendars.collectAsStateWithLifecycle()
+    // [MEMO-05][MEMO-06] 1.27 AK: the calendar's shifts ahead, and the last memo of the same shift.
+    val shiftDays by vm.shiftDays.collectAsStateWithLifecycle()
+    val lastSame by vm.lastSameShift.collectAsStateWithLifecycle()
+    var showLast by remember { mutableStateOf(false) }
     val context = LocalContext.current
     // [SCHED-01] The schedule dialog, and the found time it answers when it was opened from the offer.
     var scheduling by remember { mutableStateOf(false) }
@@ -262,6 +266,13 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
+            // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
+            lastSame?.let { (label, memos) ->
+                if (memos.isNotEmpty()) TextButton(onClick = { showLast = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    Icon(Icons.Filled.Event, null, Modifier.size(18.dp))
+                    Text("  지난 $label 메모 ${memos.size}개 보기")
+                }
+            }
             // [UX-12] 1.25 Z (U19): a long memo's 맨 밑으로 / 맨 위로, shown while it is scrolled and gone 2 s after.
             var jumpShown by remember { mutableStateOf(false) }
             LaunchedEffect(bodyScroll.isScrollInProgress) {
@@ -376,6 +387,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime()),
             current = memo.reminder,
             onDismiss = { scheduling = false },
+            shiftTimes = remember(shiftDays) { com.bamnat.core.memo.ShiftMemoTime.suggestions(shiftDays, Today.dateTime()) },
             onSave = { r ->
                 vm.setReminder(r, answered = answering)
                 scheduling = false
@@ -383,6 +395,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             },
         )
     }
+
+    if (showLast) lastSame?.let { (label, memos) -> LastShiftDialog(label, memos) { showLast = false } }
 
     if (confirmDelete) {
         ConfirmDialog(
@@ -708,3 +722,22 @@ internal class CaretFollow {
 
 /** [UX-12] How long 맨 밑으로 stays after the scroll stops. */
 private const val JUMP_SHOWN_MILLIS = 2_000L
+
+/** [MEMO-06] 1.27 AK: the memos of the last day with the same shift, to read while writing today's. */
+@Composable
+private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("지난 $label 메모") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (m in memos) Column {
+                    if (m.title.isNotBlank()) Text(m.title, style = MaterialTheme.typography.titleSmall)
+                    val body = if (m.isChecklist) m.checklist.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.checked) "☑ " else "☐ ") + it.text } else m.body
+                    Text(com.bamnat.core.memo.MemoSearch.excerpt(body, ""), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
+}

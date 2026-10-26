@@ -223,7 +223,7 @@ object ConsentSummary {
             Change.USAGE_STATS -> SettingsLinks.open(SettingsPage.PRIVACY, "사용 통계 보내기")
             Change.NEWS -> SettingsLinks.open(SettingsPage.NOTICES, "밤낮 소식")
             Change.ADS -> SettingsLinks.open(SettingsPage.PRIVACY, "광고 개인정보 선택")
-            Change.PRO -> com.bamnat.app.ui.pro.openPro()
+            Change.PRO -> com.bamnat.app.ui.pro.goPro()
             Change.NOTIFICATIONS -> SystemSettings.appNotifications(context)
             Change.FULL_SCREEN -> if (Build.VERSION.SDK_INT >= 34) SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
             Change.EXACT -> if (Build.VERSION.SDK_INT >= 31) SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))

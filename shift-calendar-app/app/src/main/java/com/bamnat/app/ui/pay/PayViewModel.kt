@@ -185,6 +185,12 @@ class PayViewModel(
 
     fun undo() = viewModelScope.launch { payStore.undo() }
 
+    /** [PAYS-17] 1.27: a kind of work's times put in from the pay screen's "이것만 넣으면 정확해져요". */
+    fun setShiftTimes(type: com.bamnat.core.model.ShiftType, start: java.time.LocalTime, end: java.time.LocalTime, breakMinutes: Int) =
+        viewModelScope.launch {
+            container.calendars.repository(calendarId).saveShiftType(type.copy(start = start, end = end, breakMinutes = breakMinutes))
+        }
+
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
         val before = payStore.profile.value
         payStore.update(transform)
@@ -201,6 +207,8 @@ class PayViewModel(
         if (before == null || after == null || before == after) return
         // A month kept as it was ([closeMonth]) does not move.
         if ((after.verified ?: before.verified)?.month in closed.value) return
+        // A change that sets the payslip match itself (1.27 AI: 명세서 → 회사 규칙) has nothing matched before it to move.
+        if (after.verified != null && after.verified != before.verified) return
         val snap = snapshot.value ?: scope.schedule.snapshot.first()
         val prompt = withContext(Dispatchers.Default) {
             val total = { p: PayProfile, m: YearMonth ->
@@ -446,7 +454,8 @@ class PayViewModel(
      */
     suspend fun slipRules(profile: PayProfile, snapshot: ScheduleSnapshot, read: com.bamnat.core.pay.PayslipRead,
                           rules: List<com.bamnat.core.pay.RuleChange>): com.bamnat.core.pay.SlipRulesResult? {
-        val month = read.month ?: YearMonth.from(Today.date()).minusMonths(1)
+        // [PAYS-16] A payslip is last month's; the company's rules alone are worked out on the month on screen.
+        val month = read.month ?: if (read.lines.isEmpty()) this.month.value else YearMonth.from(Today.date()).minusMonths(1)
         val result = withContext(Dispatchers.Default) {
             com.bamnat.core.pay.SlipRules.infer(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month,
                 snapshot.resolver::resolve, read, ruleChanges = rules, calculator = calculator)
@@ -457,7 +466,9 @@ class PayViewModel(
 
     /** [PAYS-14] Keeps the rules a payslip pointed to; one tap on 되돌리기 brings the old ones back. */
     fun applySlipRules(result: com.bamnat.core.pay.SlipRulesResult) = update { p ->
-        result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames))
+        result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames),
+            // [PLAZA-30] 1.27 AI: the month it was checked against is what a 명세서 tick rests on (close or not, SlipProof says).
+            verified = com.bamnat.core.pay.PayslipCheck(result.month, result.gross, result.total, Today.millis(), com.bamnat.core.pay.SlipProof.RULES))
     }
 
     // ---- [PAYS-07] the company's own items ----

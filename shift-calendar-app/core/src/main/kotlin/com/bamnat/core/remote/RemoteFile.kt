@@ -8,7 +8,8 @@ import java.util.Base64
 /**
  * [REMOTE-01] One remote data file (결정 D3): `remote/v1/<kind>.json` at the top of the repository, served by
  * GitHub Pages next to the privacy policy (`https://ywjmoney.github.io/-/remote/v1/`), with `<kind>.json.sig`
- * beside it holding the Ed25519 signature of the file's exact bytes in base64. The same JSON ships inside
+ * beside it holding the Ed25519 signature of the file's exact bytes in base64 (and, from 1.27, `<kind>.json.sig2`
+ * with the signature by the 2026-10-26 key, [RemoteKeys.SIGNATURES]). The same JSON ships inside
  * the app (core resources), so a phone that never goes online has the data the release had.
  *
  * ```
@@ -102,5 +103,18 @@ object RemoteKeys {
         // Files are still signed with the first key; this one lets a later release switch keys, or recover from a
         // lost one, without stranding phones that never updated.
         "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=",
+        // [REMOTE-08] 2026-10-26 key (결정 D83): the two keys above were lost with the old project, so 1.27 signs
+        // every file again with this one, private half in release-key/bamnat-remote-ed25519-2026-10-26.pem. The
+        // new signature goes in <kind>.json.sig2 so the old .sig files that 1.26 and older apps check stay as
+        // they were (those apps never trust this key).
+        "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=",
+        // [REMOTE-08] its spare, private half in release-key/bamnat-remote-ed25519-2026-10-26-2.pem.
+        "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E=",
     )
+
+    /**
+     * [REMOTE-08] Where a file's signature is, in the order a phone asks: the 2026-10-26 keys sign `.sig2`; `.sig`
+     * holds the old signature for apps up to 1.26 and is only there while the file has not changed since.
+     */
+    val SIGNATURES: List<String> = listOf(".sig2", ".sig")
 }

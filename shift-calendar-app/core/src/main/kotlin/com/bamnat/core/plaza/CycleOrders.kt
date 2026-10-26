@@ -85,4 +85,19 @@ object CycleOrders {
     }
 
     const val MAX = 62
+
+    /**
+     * [PLAZA-18] 1.27 AH-I3 오늘 근무만 누르면 자리 찾기: the days of [codes] today can be, given today's kind and, when asked,
+     * tomorrow's (휴무 and 비번 count apart, as the order says them). One left is the answer; several ask one more day.
+     */
+    fun positions(codes: String, today: Char, tomorrow: Char? = null, after: Char? = null): List<Int> {
+        if (codes.isEmpty()) return emptyList()
+        val n = codes.length
+        return codes.indices.filter { i ->
+            codes[i] == today && (tomorrow == null || codes[(i + 1) % n] == tomorrow) && (after == null || codes[(i + 2) % n] == after)
+        }
+    }
+
+    /** The kinds a day of [codes] can be, in the order's own order, for the "오늘 근무가 뭐예요?" chips. */
+    fun kinds(codes: String): List<Char> = codes.toList().distinct()
 }

@@ -94,6 +94,8 @@ fun PayQuickSetup(
      * in, marked 확인 필요, for a first pay setup.
      */
     fromCycle: Pair<PublicCycle, String>? = null,
+    /** [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, on the first question (main calendar only). */
+    companyFind: (@Composable () -> Unit)? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
@@ -158,6 +160,7 @@ fun PayQuickSetup(
                 FORM -> {
                     StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
+                    companyFind?.invoke()
                     SlipEntry { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
                     val first = cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed
@@ -332,13 +335,14 @@ internal fun SlipRulesDialog(
     }
 
     if (read == null) {
-        PayslipFillDialog("명세서로 회사 방식 맞추기", onDismiss = onDismiss,
+        // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
+        PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
             rules = RuleTarget(kinds, shiftTypes, fiveOrMore) { changes, _ -> ticked = changes }) { r -> analyse(r) }
         return
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (result != null) "이렇게 바꿀게요" else "명세서로 회사 방식 맞추기") },
+        title = { Text(if (result != null) "이렇게 바꿀게요" else "회사 계산 방식 찾기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val res = result
@@ -348,7 +352,8 @@ internal fun SlipRulesDialog(
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
                     }
-                    failed -> Text("명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
+                    failed -> Text(if (read?.lines.isNullOrEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍어 주세요."
+                        else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
@@ -364,6 +369,15 @@ internal fun SlipRulesDialog(
 /** What a payslip changed, and how close the month now comes to it. */
 @Composable
 internal fun SlipRulesSummary(res: SlipRulesResult) {
+    // [PAYS-16] Rules alone: the month by the rules and the calendar; nothing to compare yet.
+    if (!res.withSlip) {
+        Text("${res.month.year}년 ${res.month.monthValue}월 규칙으로 계산 ${won(res.total)}", style = MaterialTheme.typography.titleSmall)
+        Text("달력에 넣은 근무와 이 규칙으로 계산해요. 기본급·월 소정근로시간처럼 꼭 필요한 값이 비어 있으면 급여 합계 바로 아래에서 바로 넣을 수 있어요.",
+            style = MaterialTheme.typography.bodyMedium)
+        res.changes.forEach { Row { Text("•  "); Text(it, style = MaterialTheme.typography.bodyMedium) } }
+        res.hints.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        return
+    }
     Text("${res.month.year}년 ${res.month.monthValue}월 명세서 ${won(res.gross)} · 앱 계산 ${won(res.total)}",
         style = MaterialTheme.typography.titleSmall)
     Text(

@@ -396,6 +396,8 @@ class PayScreenshotTest : ScreenshotBase() {
     @Test fun phonePublicGradeHugeText() = shoot("435_phone_public_grade_huge_text", PHONE, 1.5f) {
         payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(occupation = com.bamnat.core.pay.Occupation.PUBLIC) }).invoke(this)
         // The 연차 card above it is longer since 1.22 묶음 D, and 1.23 묶음 K's cards come before it: steps, each within reveal's scrolls.
+        // 1.27 AJ's two cards under the total too.
+        reveal("계산 방식 찾기", exact = true)
         reveal("상담용 묶음 (급여·근무시간·연차)", exact = true)
         reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)

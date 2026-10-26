@@ -290,8 +290,8 @@ class XScreenshotTest : ScreenshotBase() {
         inquiriesOn()
         shoot("888_x_help_setup_again", FOLDED) {
             askFromScreen(InquiryStart(help = true))
-            reveal("처음 설정을 놓치셨나요? 처음 설정 다시 받기", exact = true)
-            tapText("처음 설정을 놓치셨나요? 처음 설정 다시 받기", exact = true)
+            // 1.27 AH: more answers above it now, so it is scrolled to further.
+            tapText("처음 설정을 놓치셨나요? 처음 설정 다시 받기", exact = true, scrolls = 20)
             settle()
             assertTrue(shows("지금 달력은 그대로예요", exact = false))
         }

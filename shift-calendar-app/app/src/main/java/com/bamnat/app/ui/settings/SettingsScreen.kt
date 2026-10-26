@@ -704,6 +704,8 @@ private fun SettingsHub(
         }
         // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
         if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
+        // AG 1.27 [INVITE-11][INVITE-12] 친구 초대 and '불편한 점 알려 주기' at the top, not only on the 프로 screen.
+        com.bamnat.app.ui.grow.GrowSettingsCard()
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
         // [EASY-08][OBS-03] 내 정보 (알고 있는 것·추정·모르는 것) and 밤낮이 한 일, before the groups.
@@ -723,9 +725,12 @@ private fun SettingsHub(
         // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
-        // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there.
+        // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         if (LocalContext.current.appContainer.inviteApi.enabled) {
-            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "친구가 깔고 다른 날 한 번 더 열면 프로 1개월 · 초대 코드 넣기", false) { SettingsLinks.go(SettingsGo.PRO) }
+            val inviteRules by LocalContext.current.appContainer.invites.store.state.collectAsStateWithLifecycle()
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 초대 코드 넣기", false) {
+                SettingsLinks.go(SettingsGo.PRO)
+            }
         }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)

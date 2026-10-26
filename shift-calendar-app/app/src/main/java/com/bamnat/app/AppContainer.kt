@@ -207,10 +207,21 @@ class AppContainer(context: Context) {
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
-        device = { companyStore.device })
+        device = { companyStore.device },
+        // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
+        proof = { slipProof() })
+    /** [PLAZA-32] 1.27 AI: the one line the company's 정보 광장 shows first after 이 설정 쓰기 (in memory, once). */
+    var pendingPlazaNote: String? = null
+    /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
+    var pendingMatch: Boolean = false
+    /** [PLAZA-30] 1.27 AI: what a 명세서 tick on the plaza rests on now; null for none. */
+    fun slipProof(): com.bamnat.core.pay.SlipProof? =
+        com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
+    /** [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle is picked from a company search. */
+    val leadShare by lazy { com.bamnat.app.company.LeadShare(this) }
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
     val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
@@ -269,7 +280,11 @@ class AppContainer(context: Context) {
         runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
     }
     /** [MON-02] The 정식 출시 switch and what goes with it, from the company server once a day. */
-    val remoteConfig = com.bamnat.app.tier.RemoteConfigStore(appContext)
+    val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext, held = { policyAsks() })
+
+    /** [PRIV-03] 결정 D84: this phone was installed before 처리방침 3.1 was posted and has not said yes yet. */
+    fun policyAsks(): Boolean = com.bamnat.core.ops.PolicyConsent.asks(
+        installedAt?.atZone(com.bamnat.core.time.Today.zone())?.toLocalDate(), remoteConfig.policyAgreed(), com.bamnat.core.time.Today.date())
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
      * built-in data as the app starts.
@@ -312,6 +327,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
             setupDone = { settingsRepository.current.workStyle != null }, installedAt = { installedAt }, referrer = { referrerSource })
     }
+    /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
+    val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
 
     /**
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
@@ -464,6 +481,8 @@ class AppContainer(context: Context) {
 
     @OptIn(FlowPreview::class)
     fun start() {
+        // [PRIV-03] The 3.1 hold is looked at again now that the container is whole (결정 D84); no job of its own.
+        remoteConfig.recheck()
         // [STAT-01] A no that came another way (a restored backup) forgets what waited, without a job of its own.
         usageStats.forgetUnless(settingsRepository.current.shareUsageStats)
         keep("schedule") {

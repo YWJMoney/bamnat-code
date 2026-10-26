@@ -1,11 +1,25 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-25, 앱 1.26.0(versionCode 37, 워치 100037) 기준이에요. 맨 위 0-new항이 지금 판(1.26.0), 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-26, 앱 1.27.0(versionCode 38, 워치 100038) 기준이에요. 맨 위 0-new항이 지금 판(1.27.0), 0-a항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0-new. 지금 판: 1.26.0 회사 근무주기 찾기·회사별 광장·메뉴 순서·친구 초대 (2026-10-25)
+## 0-new. 지금 판: 1.27.0 리뷰 반영·사진 인식 개선 (2026-10-26)
+
+사용자 지시(2026-10-25 23:46Z): 1.26 동작 확인 리뷰(초대 보상·자동 인식, 회사 찾기·새 달력·대표 주기·맞아요/달라요·급여 찾기, 광장 흐름·명세서 확인·회사 정보 광장·유형별 광장·바꿀 때마다 나누기, 사진 인식·규칙만 급여·맞춰 보기 자리, 투자 캡처·메모장) + 혁신점 + 흐름 점검 + 처리방침 시행일 검토. 통합 브랜치 `claude/project-thread-eb02i3`(main 8479074에서), main PR [#126](https://github.com/YWJMoney/-/pull/126). 결정 D83~D96(비공개 `계획/결정-목록.md`).
+
+- **원격 서명 열쇠 새로(REMOTE-08, D83)**: 옛 열쇠를 잃어 2026-10-26 본·예비 Ed25519 열쇠를 만들고 공개키를 core `RemoteKeys.TRUSTED`와 회사 서버 `REMOTE`에 더했어요(옛 공개키도 남김). `remote/v1/*.json`은 새 열쇠로 `.sig2`, 옛 `.sig`는 1.26 이하 앱용으로 그대로. 앱은 `.sig2`를 먼저 봐요(`RemoteFilesStore`). 서명은 `tools/remote_sign.py sign --key <비공개 경로>` → `check --need-sig2`. 비공개 열쇠는 저장소 밖(7항).
+- **친구 초대 자동 인식·초대 자리·문의 권하기(묶음 AG, INVITE-09~13·MON-12)**: 6-19항.
+- **치는 대로 찾기·대표 주기·맞아요/달라요·급여 방식 찾기(묶음 AH, SPAT-07·08·PLAZA-14~19)**: 6-20항.
+- **명세서 근거·회사 정보 광장·유형별 광장·바뀔 때마다 묻기(묶음 AI, PLAZA-30~37)**: 6-21항.
+- **사진 여러 번 읽고 합의·사진과 같은가요·규칙만으로 급여·맞춰 보기 자리(묶음 AJ, READ-12~19·PAYS-16~20)**: 6-22항. 새 SDK `play-services-mlkit-document-scanner` 16.0.0(휴대폰 안, 권한 없음), 새 설정 파일 `read_fixes`(백업).
+- **투자 캡처 맞춰 보기·메모 찾기·근무 기준 알림(묶음 AK, INV-42~45·MEMO-03~08)**: 6-23항.
+- **처리방침 3.1·이용약관 1.1(PRIV-03, D84)**: 게시 2026-10-27, 시행 2026-11-10(프로덕션 승인 예정일로 앞당김). 3.1 게시 전에 깐 휴대폰에는 달력 위 동의 카드 `ui/pro/PolicyConsentNotice`(core `ops/PolicyConsent`: `POSTED` 10-27·`EFFECTIVE` 11-10·`HELD_UNTIL` 11-24). 동의하지 않은 휴대폰은 `RemoteConfig`가 11-24 전까지 정식 출시 스위치를 가려요(결제·광고 없음). 게시일이 바뀌면 `POSTED`와 처리방침·약관 날짜를 같이 고쳐요. `docs/play-data-safety.md` 1.27.0장(바뀌는 답 없음).
+- 회사 서버: `// AG 1.27`·`// AH 1.27`·`// AI 1.27` 블록, 새 비밀값·새 표 없음(새 칸 `reports.proof`·`reports.claim`·`votes.claim`은 스스로 더함), `APP_CODES`에 1.27.0. DB 21 그대로.
+- 시험·사용자 몫: 비공개 `release/1.27.0/사용자가-해야-할-일.md`. 다음 판은 비공개 `인계/다음-스레드-시작-1.28.md`.
+
+## 0-a. 앞 판: 1.26.0 회사 근무주기 찾기·회사별 광장·메뉴 순서·친구 초대 (2026-10-25)
 
 사용자 지시(2026-10-25): 조사한 회사별 교대주기 148곳을 앱에 넣어 검색으로 근무주기를 맞추고 급여·광장까지 이끌기, 첫 화면·메뉴 순서 바꾸기, 초대한 사람 프로권. 검토 뒤 결정 D79(한 번 승인 뒤 저절로 나누기 + 회사를 고른 사람끼리만 급여 방식). 통합 브랜치 `claude/project-thread-77nxxd`, main PR #125(1.25.0 #124 포함).
 
@@ -498,6 +512,64 @@ shift-calendar-app/
 - **한 번 묻고 저절로 나누기** `company/AutoShare`: 근무 주기·급여 저장(`ShiftsViewModel`, `PayViewModel.saveSetup`, 기본 달력만)에서 회사를 알면 한 번 물어요(`AutoShareHost`/`AutoShareDialog`, `AppRoot`). 예 → 바로 보내고 그 회사 화면으로. 그 뒤 바뀌면 `autoDirty` → `OutboxJob.scheduleShare`(같은 JobService, ID 4404, 지난 보낸 때 + 24시간 최소 지연), 시작할 때 도는 일은 없어요. 끄기: 설정 › 개인정보·앱 정보 `AUTO_SHARE_ROW`. 키 `auto_share`·`auto_dirty`·`auto_sent_at`·`member`는 휴대폰에만(`SettingsFilesBackup.DEVICE_ONLY`, 새 휴대폰에서 다시 물음).
 - 시험: 서버 `test/plaza-af.test.mjs`, core `PlazaRoomTest`, 앱 `company/PlazaAFAppTest`(실제 node 서버와 끝에서 끝), 사진 `AFScreenshotTest` 1060~1069. 관리자 앱: 회사 목록 "참여 n", 회사 화면 "참여한 휴대폰 n대", 규칙 카드 "안정".
 
+### 6-23. 캡처로 채우기 맞춰 보기·묻지 않기, 메모 찾기·근무 기준 알림 (1.27.0 묶음 AK, INV-42~45·MEMO-03~08)
+
+계획과 결정(AK-D1~D8)은 프로젝트 파일(git 밖)의 `계획/1.27-AK-개발계획.md`, 메모장 비교 조사는 `research/1.27-AK-메모장-조사.md`. DB 판은 그대로(21)예요.
+
+- **맞춰 보기(core)** `invest/FillReconcile.reconcile(fills, trades, alerts, today, zone)`: 캡처 줄마다 SAME(이미 적음: 같은 날·종목·방향·수량, 단가는 `FillMath` 허용 오차, 시각 ±30분 · 나눠 적은 2~4줄 합도 같음) / DIFFERENT(같은 날·종목·방향인데 수량·단가가 다름, 또는 기다리던 알림과 단가가 다름 · 시각만 다르면 같음) / NEW. `sureNew`는 노란 값 없는 NEW, `toAsk`는 DIFFERENT + 노란 NEW. `fixed()`는 수량·단가·분만 바꿔요(메모·태그·수수료는 그대로).
+- **앱 흐름** `FillCaptureSheet`(이제 `InvestScreen`이 띄움, `vm.openCapture`): 이미 있음 n건(보기/접기) · 기록과 다른 체결 나란히(체크하면 캡처대로 고치기) · 아직 안 적은 체결만 체크(노란 칸은 확인 전엔 체크 안 됨). '넣기 n건'은 이제 바로 거래로 적어요(AK-D3, W의 시험도 바꿈). `InvestRepository.applyCapture`/`undoCapture` + 스낵바 '되돌리기'.
+- **묻지 않기** `invest_settings` 키 `fillTrust`(InvestBackup으로 백업). 켜지면 `sureNew`는 열자마자 넣고 "넣었어요 n건 · 되돌리기", 다름·노란 값은 계속 물어요(AK-D4). 다시 묻기: 시트의 '다시 묻기', 투자 탭 ⋮ 메뉴, 도움말 `investCaptureTrust`.
+- **메모 찾기** core `memo/MemoSearch`: 낱말마다 제목·내용·태그 앞부분·초성(ㅇㄱ)·날짜(오늘·어제·10/19·10월 19일)·그날 근무 이름을 봐요. `Cache`는 `updatedAtMillis`가 같으면 색인을 다시 만들지 않아요. 카드 본문은 `excerpt`(찾은 낱말 둘레 600자)라 5만 자 메모도 가벼워요. 달력 메모의 '근무별' 줄 칩('야간 날').
+- **근무 기준 알림** core `memo/ShiftMemoTime`: "다음 야간 때"·"쉬는 날" 글에서 다음 그 근무 출근 1시간 전(시간 없는 근무 08:00, 쉬는 날 09:00)을 제안, 알람 창 '근무에 맞춰' 칩. 알림은 절대 시각이라 근무표를 바꿔도 따라가지 않아요(AK-D6). 편집기의 '지난 주간(10/9) 메모 n개 보기'(`lastSame`).
+- 시험: core `FillReconcileTest`(8)·`MemoSearchTest`(10, 1,000개 색인 성능 포함), 앱 `invest/AKCaptureFlowTest`(지어낸 OCR 글자로 끝에서 끝), 사진 `AKScreenshotTest` 1160~1173(1173은 메모 1,000개·5만 자 10개 목록·찾기 1초 안).
+### 6-21. 회사 정보 광장·유형별 광장·명세서 근거·바뀔 때마다 묻기 (1.27.0 묶음 AI, PLAZA-30~37)
+
+계획과 결정(AI-D1~D11)은 프로젝트 파일(git 밖)의 `계획/1.27-AI-개발계획.md`. 처리방침 초안도 그 6장에 있어요.
+
+- **명세서 근거(441)** core `SlipProof.of(PayProfile.verified, 이번 달)`: 이 달력에서 맞춰 본 달(13개월 안)과 맞았는지만. `PayslipCheck.source`(`match` 맞춰 보기 0.5%·`rules` 회사 방식 맞추기 1%)는 급여 파일에 있어 백업돼요. `PayViewModel.applySlipRules`도 기록해요. 앱 `CompanyClient(proof = …)`가 체크에 `proof {month, match}`만 붙이고 근거가 없으면 체크를 보내지 않아요. 제보 화면 체크는 근거가 있을 때만 켜지고, 없으면 '명세서로 맞춰 보기'(급여 화면 맞춰 보기를 바로 열어요, `AppContainer.pendingMatch`). 맞아요 시트도 같아요. 서버 `readProof`: 근거 없는 체크(옛 앱)는 보통 제보·투표로 세고 `claim`으로 남겨요(관리자 앱 "명세서 확인(근거 없음)").
+- **회사 정보 광장(443)** 기존 토론 표 `posts`에 `grp = 'room'`(새 표 없음). `GET /api/companies/:id/setups/room/posts`는 참여한 휴대폰만(403 member, 400 device, 하루 읽기 상한은 `viewer()` 그대로), 최근 100개. 쓰기 `POST /api/posts {setup:"room"}` → `roomPost`: 하루 10개·네트워크 30개, 금액·개인정보 거절, 신고 3번 가림·차단·관리자 가림은 기존 그대로. 관리자 앱 글 목록 '회사·유형 광장' 거르기. 광장 소식 `room_posts`(참여한 회사에 남이 쓴 새 글 수). 앱: `Routes.COMPANY_BOARD`가 나눠요. 참여한 회사가 있으면 `PlazaHomeScreen`(자유 토의 카드 + `TalkSheet`, 근무·급여 정보, 고친 점), 없으면 기존 규칙 광장(맨 위 '회사 찾기' 카드). 전체 규칙 광장은 `Routes.COMPANY_BOARD_ALL`. '이 설정 쓰기'가 끝나면 그 회사 정보 광장을 한 줄 안내와 바로 열어요(`AppContainer.pendingPlazaNote`). 달력 알림 줄 `plazaRoom`(PlazaRoomLine), 급여 화면 `PlazaEntryLine`도 정보 광장으로.
+- **유형별 광장(444)** core `StylePlaza.plan(style, company)`: 현장 `style-field`(일당 시세 + 현장 이야기), 가게 `style-shop`(영업·매출 팁), 알바 `style-hourly`(지역 시급 + 알바 이야기), 투자 `style-invest`(종목 추천·리딩 글은 서버 `INVEST_ADVICE`가 거절, 신고 사유 `advice`). 유형 광장은 앱이 있는 휴대폰 누구나(공개 읽기 상한). 교대·일근은 회사가 없으면 규칙 광장 그대로.
+- **바뀔 때마다 묻기(445)** `AutoShare.check()`: 광장 파일(금액 없음)을 `CompanyStore.autoBase`(마지막으로 나누거나 물은 것, 휴대폰에만)와 core `ChangeAsk`로 견줘 같으면 아무것도 안 해요. `auto_share` null = 바뀔 때마다 묻기(기본, 줄 '야간 50% → 60%'), true = 저절로 나누기(하루 한 번 규칙 그대로, 스낵바 '나눴어요 · 되돌리기', 대기 중이면 대기만 취소, 보낸 것은 거둬요), false = 다시 묻지 않기. 묻는 창: 나눌게요(바로 보냄)·이번엔 안 할게요·'다음부터 묻지 않고 저절로 나누기'·'다시 묻지 않기'. 설정 스위치 `AUTO_SHARE_ROW`는 켬 = 저절로, 끔 = 묻기. 공개 근무주기 카드가 아직 올리기 전이면 묻지 않아요(한 번만 묻기). 제보·적용 뒤 base를 새로 잡아요.
+- 시험: 서버 `test/ai.test.mjs`, core `PlazaAITest`, 앱 `company/PlazaAIAppTest`(실제 node 서버), `PlazaAFAppTest` 셋째 시험(새 뜻), 사진 `AIScreenshotTest` 1120~1138(1122~1126은 실제 node 서버로 달력 카드 → 올리기 → 보내기 → 광장 보기 → 정보 광장).
+### 6-19. 친구 초대 자동 인식·잘 보이는 초대 자리·프로 기능 시트·문의 권하기 (1.27.0 묶음 AG, INVITE-09~13·MON-12)
+
+계획과 결정(AG-D1~D6)은 프로젝트 파일(git 밖)의 `계획/1.27-AG-개발계획.md`.
+
+- **규칙은 그대로, 글을 고침(INVITE-09)**: 서버 `settleInvites`는 원래 '사용 기간을 채운 서로 다른 친구 N명마다 M개월'이에요(시험 `invite.test.mjs` AG 블록: 한 친구가 오래 써도 0, 5명 1개월, 9명 1개월, 10명 2개월, 다시 알려도·같은 휴대폰·자기 초대 안 셈). 글은 core `InviteTerms.words()` "친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)", 짧은 꼴 `short()`, 진행 아래 `InviteRules.toNext` "다음 프로까지 2명". 관리자 앱 `inviteRuleWords`도 같은 뜻.
+- **자동 인식(INVITE-10, AG-D2)**: `Invites.peek()`가 첫 설정 **중**에 Play 리퍼러를 휴대폰 안에서 읽어요(보내는 것 없음, 한 번). 첫 설정 마지막 화면(`SetupHost`, 추가 달력·다시 받기 제외)은 리퍼러 코드가 있으면 버튼이 '저장하고 초대한 분께 알리기'(위에 보내는 것 한 줄 `inviteUseConsent`), 아래 '알리지 않고 저장'. 누르면 `Invites.agree()`가 `agreed`를 남기고 바로 `POST /api/invites/use`, 인터넷이 없으면 다음 `sync()`가 다시 보내요. 다른 길로 첫 설정을 마친 휴대폰은 달력 `NoticeStack`의 **맨 앞** `inviteArrival`(접히지 않음). 알린 뒤 같은 자리에 답과 '당신도 …' + '내 초대 링크 만들기'(`Invites.relay()`, 닫으면 `relayClosed`). 손으로 코드 넣기(`mayType`)는 리퍼러 코드가 없을 때만(AG-D3). 친구 보상은 없음(AG-D1).
+- **서버**: `/i/<코드>` 안내 페이지가 앱 안 브라우저(카카오톡·네이버·인스타그램·페이스북·라인)면 `playIntent()`의 `intent://details?…&referrer=…#Intent;scheme=market;package=com.android.vending;S.browser_fallback_url=…;end`로 Play 앱을 열어요. `/api/invites/use`에서 같은 1시간 네트워크 해시·같은 코드로 3번째부터 감사 기록 `invite_burst`(막지 않음, AG-D5) → 관리자 앱 보상 › 친구 초대 요약 '최근 30일 몰림 n번'(`rewardCounts` `bursts`·`burstCodes`).
+- **프로 기능 시트(MON-12, AG-D4)** `ui/pro/ProOffer.kt`: `openPro()`(잠긴 프로 기능을 누르는 모든 곳)가 프로 화면 대신 시트(`ProOfferHost`, AppRoot 한 곳): 프로(체험) → `ads/RewardedAds.kt`의 `DayPassOption`(기존 `DayPassButton` 규칙 그대로, 등급 미리 보기에서는 누를 수 없는 같은 버튼과 "미리 보기에서는 광고가 나오지 않아요") → '친구 초대로 프로 이용권 받기'. 바로 프로 화면은 `goPro()`(체험 동의 '프로 둘러보기', 점검 화면, 잠금 패널 버튼). 잠금 패널(`ProLock`)에도 초대 버튼. 출시 전(billingLive 꺼짐)엔 잠긴 것이 없어 안 떠요.
+- **초대 자리(INVITE-11)**: 한 컴포저블 `InviteShareAction`(링크가 있으면 바로 공유, 없으면 한 줄 동의 뒤 만들기)을 프로 화면 카드·설정 맨 위·달력 카드·시트가 같이 써요. 설정 맨 위 `ui/grow/GrowSettingsCard` '함께 만들어요'(회사 서버가 있을 때만, 닫으면 30일, 기능 스위치 `grow.card`), 달력 `inviteNudge` `InviteNudgeNotice`(설치 3일 뒤·보인 날 그날만·2주에 한 번·'그만 보기' = 기능 스위치 `invite.nudge`). 빈도 규칙은 core `guide/GrowNudges`.
+- **문의 권하기(INVITE-12)**: 설정 맨 위 카드의 '불편한 점 알려 주기'(`GrowAsk.feedback` → 기존 `InquiryLinks.ask`), 도움말 첫 탭 '문의하기' 위 한 줄(서버 문의일 때), 달력 `crashAsk` `CrashAskNotice`(`diag/CrashLog` 새 기록마다 한 번, 7일 안, '점검 내용과 함께 알려 주기' = withCheck 문의), 달력 스낵바 되돌리기 하루 3번째에 한 줄(2주에 한 번, `GrowStore.undone`).
+- **저장**: `GrowStore`(설정 파일 `grow`, 휴대폰에만 `DEVICE_ONLY`), `InviteState.agreed`·`relayClosed`(기존 `invite` 파일). 켜고 끄기는 기능 사전 스위치(백업됨).
+- 시험: 서버 `test/invite.test.mjs`(AG 4개), `test/ui/admin-ui.test.mjs`(몰림 줄), core `GrowNudgesTest`·`InviteRulesTest`, 앱 `tier/InviteAutoAppTest`(실제 node 서버: 첫 설정 중 peek → 마지막 버튼 → 서버 waiting, 인터넷 없을 때 저절로 다시, 7일 → '1/5명'·'다음 프로까지 4명'), 사진 `AGScreenshotTest` 1080~1092.
+### 6-20. 치는 대로 찾기·대표 주기·맞아요/달라요·급여 방식 찾기 (1.27.0 묶음 AH, SPAT-07·08, PLAZA-14~18)
+
+계획과 결정(AH-D1~D10, 개인정보 처리방침 초안 7장)은 프로젝트 파일(git 밖)의 `계획/1.27-AH-개발계획.md`.
+
+- **치는 대로 찾기(436)** `ui/company/CompanyInline.kt` `CompanyInlineResults`: 두 글자부터 공개 자료(`PublicCycles.search`)는 바로, 회사 서버는 `INLINE_PAUSE_MS` 300ms 쉰 뒤 `INLINE_WAIT_MS` 2.5초까지만 기다려요(느리면 공개 자료만 보이고 한 줄 안내). 순서: 서버 회사(대표 주기·n명 쓰고 있어요·맞아요·급여 방식 있음·사업장 n곳, AH-I4) → 공개 자료 → '여기 없어요, 직접 추가'(`FirstProviderCard` → `PublicApplySheet`). 첫 설정·새 달력의 `SetupSteps.CompanyStep` 이름 칸 바로 아래(서버 행은 `CompanySearchDialog(initialOpen)`로 그 회사 화면). 이름 맞춤 core `CompanyMatch`(지에스=GS, 띄어쓰기·(주)·대소문자, 3음절 넘으면 자모 하나 틀려도, AH-I1) — `PublicCycles.search`도 써요.
+- **새 달력 '이 설정 쓰기'(437)** 원인: `CompanyDetailScreen`의 `applied`는 휴대폰 전체(기본 달력)라 새 달력에서도 '다시 넣기'. 고르는 중(`onPick != null`)엔 무시(AH-D2). `PublicApplySheet(calendar)`·`PublicCycleFiles.apply(calendar)`는 추가 달력이면 그 달력 일정에만 넣고 `PublicUse`는 기본 달력만.
+- **주기 삭제는 처음처럼(437)** `ShiftsViewModel.clearPattern` → `LeadShare.forget(cal)`: 기본 달력이면 applied·PublicUse·회사 이름 초안·참여를 비우고 서버에 쓰는 중 끔(`use … false`)·`leave`. 근무 주기 화면은 기본 달력이면 닫지 않고 위로 올라가 "근무주기를 지웠어요"와 '회사 이름으로 근무주기 찾기'를 보여요(AH-D3).
+- **한 번 묻기와 대표 주기(438)** `company/LeadShare`(`AppContainer.leadShare`, `LeadShareHost`는 `AppRoot`의 `AutoShareHost` 옆): 공개 자료·직접 추가로 고른 주기가 달력에 들어가면(`PublicApplySheet`, 첫 설정·새 달력 저장 `SetupViewModel.save`) "이 정보를 다른 사람이 사용해도 될까요?" 한 번. 예 = D79 한 번 승인(`auto_share` true, AH-D6), 아니오 = 처음이면 `auto_share` false + 공개 자료 나누기 카드도 다시 안 물음(`inviteNever`). 예이면 `decide()`: 회사 없음/대표 없음 → 보내고 "이제 ‘회사’의 대표 주기가 됐어요!", 같은 순서(조만 다른 회전 포함, core `CycleMatch.same`, AH-D5·I2)가 대표면 보내지 않고 맞아요 한 표, 다른 순서가 대표면 사업장 이름을 묻고(`NeedSite`) 그 이름을 부서로 보내 '회사 · 사업장' 대표. 보내는 것은 `serverSetup()`(근무 이름·시간·순서·요일만, 회사 이름·공개 행 id·급여 없음).
+- **서버(438·439)** `index.js`의 `// AH 1.27` 블록: `leadOf()`(달라요 많은 판 빼고 채택 먼저, 그다음 `support()` 높은 판), `markLeads()`가 회사 화면 판마다 `lead`·`doubted`·`opinion{ok,bad,why{order,time,pay,other},mine}`, `searchLead()`가 검색 회사마다 `users`·`sites`·`lead{setup,dept,steps,weekly,offs,pay,ok,bad,doubted}`(초성 검색도). `DOUBT = {votes:5, share:40}`: 맞아요+달라요 5표 넘고 달라요 40% 넘으면 대표에서 빠지고(`doubted`), 쓰는 판이 그렇게 되면 기다리던 판이 `outweighs` 없이 채택("rival"). 표는 기존 `votes` 한 휴대폰 한 표(바꾸면 덮어씀), `why`에 `order|time|pay` 더함(`VOTE_WHY`). 보상 규칙은 그대로.
+- **맞아요·달라요(439)** `VoteButtons(opinion)`: 달라요 이유 근무 순서·근무 시간·급여 항목·예전 정보·회사나 부서 이름, 아래에 "맞아요 n · 달라요 n (순서 n · 시간 n · 급여 항목 n)"(`opinionLine`), 내 표는 `opinion.mine`. `SetupCard` 칩 "대표 주기 · 찾는 분께 먼저 보여요" / "달라요가 많아요 · 다시 확인 중". 관리자 앱 규칙 카드에 이유별 수·"대표에서 빠짐", 설정 화면에 기준 안내(`data-doubt`).
+- **급여 방식 찾기(440)** `PayQuickSetup(companyFind)` 첫 질문에 `PayFindEntry`(기본 달력·서버 켜짐) → `PayFindSheet` 한 화면에 한 질문: 회사 이름 → "급여 방식 있음 · 맞아요 n명"만(D79) → '이 급여 방식 쓰기' = `PayFind.use`(참여 → 다시 읽은 대표 판 파일, 급여 설정이 없으면 `pendingPay`로 `CompanyPayScreen`이 금액만 물음, 있으면 `applyRules`). 없으면 `PayFind.none`이 회사 이름 초안을 두고 간편 설정 → 저장 때 AutoShare 한 번 묻기.
+- **오늘 근무로 자리 찾기(AH-I3)** `PublicCycleUi.TodayFinder`: "오늘 근무가 뭐예요? → 내일은요? → 모레는요?" 칩, 하나로 좁혀지면 그날을 골라요(core `CycleOrders.positions`·`kinds`).
+- 새 설정 값·새 표·새 원격 kind 없음(투표 `why` 값만 늘었어요). 시험: 서버 `test/plaza-ah.test.mjs`·`test/ui/admin-ui.test.mjs` [PLAZA-15], core `CompanyMatchTest`, 앱 `company/PlazaAHAppTest`(실제 node 서버와 끝에서 끝 5개), 사진 `AHScreenshotTest` 1100~1115.
+### 6-22. 사진 여러 번 읽고 합의·사진과 같은가요·규칙만으로 급여·맞춰 보기 자리 (1.27.0 묶음 AJ, READ-12~19·PAYS-16~20)
+
+계획·결정(AJ-D1~)·정확도 숫자·앱 흐름 점검은 프로젝트 파일(git 밖)의 `계획/1.27-AJ-개발계획.md`, 방법 비교와 출처는 `research/1.27-AJ-사진인식-조사.md`.
+
+- **여러 번 읽고 합의(READ-13)** core `imports/PhotoVariants`(회색 화소: 조명 펴기 FLAT·대비 CONTRAST·이진화 BINARY·글자 상자 확대 UP2·반전 INVERT, `plan()`이 사진 통계로 고름), `RosterVote`(칸마다 다수결, 갈린 칸은 노란 칸, 단어는 `anchor` 읽기에서), `pay/SlipVote`(줄마다; 다른 읽기가 하나라도 다르면 노란 줄, 명세서 자기 합계가 **원 단위까지** 맞을 때만(`adds`) 그 줄들을 확실로), `invest/FillVote`(같은 자리 체결끼리 비교, 같은 이름 두 건도 따로). 앱 `ImagePrep.plan/variant`(2400px, UP2는 ≤3600px, 메모리 부족이면 그 방식 건너뜀), `RosterScanner.scan`·`PayslipScanner.scan`이 진행(`n/m번째 방법으로 읽는 중`)을 알려요. 사진은 휴대폰 안에서만(D68).
+- **사진 품질(READ-14)** core `PhotoQuality`: 60점 아래면 "다시 찍어 주세요"와 까닭 한 줄(`RosterResult.advice`, `ScanButtons`).
+- **문서 스캐너(READ-15)** `imports/DocScanner.ScannerButton` "스캐너로 반듯하게 찍기": `play-services-mlkit-document-scanner:16.0.0`(FULL, JPEG, 1장, 갤러리 가져오기 허용). 화면·모델은 Play 서비스가 받고 앱 권한은 늘지 않아요. 못 쓰는 휴대폰은 `DocScanner.UNAVAILABLE` 안내. 한 달 근무 넣기·첫 설정 듀티표·명세서·체결 캡처. 출시 빌드 APK 8.58MB·AAB 22.27MB(예산 안).
+- **사진과 같은가요(READ-17·18)** 듀티표 `ui/imports/SameAsPhoto`(사진의 날짜 줄·내 줄을 잘라 읽은 칸과 날짜마다 맞춰 나란히, '네, 같아요'·'다른 곳이 있어요' → 누른 칸만 `CellDialog`), `DutyRosterViewModel.sameAsPhoto/askSameAgain`, `SetupViewModel.rosterSame/fixRosterDay`. 명세서 `ui/pay/PayslipCheck`(`PhotoThumb` 눌러 크게, `SlipCheck`, `SlipLineDialog` 종류·금액 고치기·줄 더하기·빼기). 확실하지 않은 명세서는 답하기 전 채우기가 막혀요.
+- **고친 것 배우기(READ-19)** core `RosterLearn.word`(모르는 글자·추측한 칸만), `SlipNames`(줄 이름 → 종류, 금액은 배우지 않음). 앱 `data/ReadFixBook`(설정 파일 `read_fixes`, `SettingsFilesBackup.PARTS`로 백업): 같은 글자를 같은 근무로 2번(`RosterLearn.TIMES`) 고치면 `DutyCodeBook`에.
+- **규칙만으로 급여(PAYS-16~18)** `SlipRules.infer`가 명세서 없이 규칙만으로도 결과(`withSlip=false`), `PayslipFillDialog(rulesOnly = true)` "규칙으로 계산하기". core `RuleOnlyNeeds`(기본급·시수·근무 시각·수당 금액·5인 이상 중 비었거나 추정인 값) → `ui/pay/RuleNeedsCard` "이것만 넣으면 정확해져요"(값마다 '넣기', 시수·5인·근무 시각 창), 달력 요약 줄 "n개만 넣으면 정확해져요"(`MonthSummaryBar.payNeeds`). 기존 골든 그대로.
+- **맞춰 보기 자리·이름(PAYS-19·20)** 급여 합계 바로 아래 `SlipMatchCard` "명세서와 맞춰 보기": '금액 비교하기'(프로)·'계산 방식 찾기'(무료). 회사 규칙 카드에는 '처음부터 설정'만. 급여 내역 줄 풀이(`LineDetailDialog`)에 '이 값 고치기'(기본급·수당)·'계산 방식 고치기'(가산 줄).
+- **다른 묶음 파일** AK의 `InvestFillCapture.kt`를 조금 고쳤어요: `take(text, voted)`, 공유로 받은 캡처도 `PayslipScanner.scan`의 합의 체결을 씀. 확인 화면 흐름은 AK(순번 450).
+- 시험: core `PhotoFixTest`, `RosterStressTest.fourReadingsPutTogether`(400장×4), `PayslipStressTest.fourReadingsPutTogether`(600×4), `FillStressTest.threeReadingsPutTogether`(600×3), `PhotoBenchTest`(실제 엔진 표본), `RulesOnlyPayTest`; 앱 `imports/PhotoCheckTest`(끝에서 끝 5개), 사진 `AJScreenshotTest` 1140~1152(1141은 첫 설정 작은 휴대폰).
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
@@ -505,6 +577,7 @@ shift-calendar-app/
 - 인수인계 묶음: 비공개 메모(사용자 근무·급여 조건, 서버 주소, 결정 기록), 개발 계획서 내보낸 파일, 법·Play 준비 메모, UX 리뷰,
   서버 배포 안내서와 출시용 `worker.js`, Play Console 답안, 처리방침 사본, 스토어 이미지 안내
 - 서명 키 묶음: `bamnat-upload.jks`, `keystore.properties`. 비밀이에요. git과 채팅에 넣지 않고, 내용을 화면에 출력하지 않아요.
+- 원격 자료 서명 열쇠(1.27.0부터 2026-10-26 본·예비 Ed25519 두 파일): 프로젝트의 `release-key/`에만 두고 사용자도 따로 보관해요. 업로드 키와 같이 비밀이에요(결정 D83).
 - 출시 파일(APK, AAB)은 키가 있으면 다시 만들 수 있어서 옮기지 않아도 돼요.
 - 개발 계획서는 Claude Docs 문서였어요. 새 계정에서는 내보낸 파일을 보고, 필요하면 새 문서로 다시 만들어요.
 - Cloudflare 계정, Google Play Console, GitHub 저장소는 그대로예요. 옮길 것이 없어요.

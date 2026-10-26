@@ -229,6 +229,8 @@ private object Routes {
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
     const val PLAZA_RATES = "plaza_rates"
+    /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
+    const val COMPANY_BOARD_ALL = "company_board_all"
     /** [ADMIN-02] 설정 > 문의하기. */
     const val INQUIRY = "inquiry"
     /** [SHR-14] 우리 조 모아 보기: links put together under a 6-letter code. */
@@ -577,8 +579,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).
+    com.bamnat.app.ui.pro.ProOfferHost(container)
+
     // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
-    com.bamnat.app.ui.company.AutoShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
+    // [PLAZA-34] 1.27 AI: each change asks with what changed; 저절로 나누기 says it in one line with 되돌리기.
+    com.bamnat.app.ui.company.AutoShareHost(container, snackbar = snackbar,
+        onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } })
+    // [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle picked from a company search.
+    com.bamnat.app.ui.company.LeadShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
 
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
@@ -1145,7 +1154,11 @@ private fun AppNavHost(
                 // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
                 onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) },
                 // [SPAT-04] The public cycle in use, for the first pay setup of the main calendar.
-                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } })
+                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } },
+                // [PLAZA-30] 1.27 AI: the plaza form's 명세서로 맞춰 보기, once.
+                startMatching = remember { container.pendingMatch.also { container.pendingMatch = false } },
+                // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay.
+                companyFind = if (calendar == PersonalCalendar.MAIN) ({ com.bamnat.app.ui.company.PayFindEntry() }) else null)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
@@ -1211,7 +1224,12 @@ private fun AppNavHost(
                             else -> {
                                 // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
                                 if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
-                                snackbar.showSnackbar("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
+                                val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
+                                // [PLAZA-32] 1.27 AI (443): the company's 정보 광장 opens at once, with one line on what just happened.
+                                if (container.companyApi.enabled && container.companyStore.member.value != null) {
+                                    container.pendingPlazaNote = "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
+                                    nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }
+                                } else snackbar.showSnackbar(done)
                             }
                         }
                     }
@@ -1220,10 +1238,35 @@ private fun AppNavHost(
             )
         }
         composable(Routes.COMPANY_BOARD) {
+            // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
+            val member by container.companyStore.member.collectAsStateWithLifecycle()
+            val style = remember { container.calendars.styleOf(PersonalCalendar.MAIN, container.settingsRepository.current.workStyle) }
+            val plan = remember(member) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
+            if (container.companyApi.enabled && plan.room != null) {
+                val home = appViewModel(key = "plaza-home-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it) }
+                com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
+                    onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
+                    onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
+                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                    onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
+                return@composable
+            }
             val vm = appViewModel { CompanyBoardViewModel(it) }
             CompanyBoardScreen(
                 vm = vm,
                 onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
+                onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
+                onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind()) { launchSingleTop = true } }) else null,
+            )
+        }
+        // [PLAZA-32] 1.27 AI: every company's rules, from a company's or a kind of work's plaza.
+        composable(Routes.COMPANY_BOARD_ALL) {
+            val vm = appViewModel { CompanyBoardViewModel(it) }
+            CompanyBoardScreen(
+                vm = vm,
+                onBack = { nav.popFrom(Routes.COMPANY_BOARD_ALL) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
                 onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                 onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
@@ -1242,6 +1285,8 @@ private fun AppNavHost(
                 onOpenSent = { nav.navigate(Routes.COMPANY_SENT) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
                 // [SPAT-05] Sent from a public row: that company's plaza page, in place of the form.
                 onOpenCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
+                // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 on the main pay; back comes to this form with the tick open.
+                onMatch = { nav.navigate(Routes.pay(PersonalCalendar.MAIN)) { launchSingleTop = true } },
             )
         }
         composable(Routes.COMPANY_SENT) {

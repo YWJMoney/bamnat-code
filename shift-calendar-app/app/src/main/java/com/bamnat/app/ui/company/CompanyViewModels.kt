@@ -275,6 +275,10 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
                 launch { runCatching { c.companyApi.use(c.companyStore.device, page.id, setup.id, true, com.bamnat.app.company.AutoShare.CAL) } }
                 c.companyStore.setApplied(AppliedSetup(page.id, page.name, setup.dept, setup.id, setup.version, setup.adopted, Today.instant()))
                 c.companyStore.setDraft(null)
+                // [PLAZA-32] 1.27 AI: a member already (page.member) is one here too, so 광장 opens to this company's room.
+                c.companyStore.setMember(page.id, page.name)
+                // [PLAZA-34] What was just put in is what the plaza has: saving it again asks nothing.
+                c.autoShare.rebase()
                 c.companyStore.pendingPay = if (result.pendingPay) text else null
                 c.telemetry.event("company_apply", if (setup.adopted) "adopted" else "pending")
                 loadRoom()
@@ -416,13 +420,20 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         /** [COMM-13] What this phone posted lately, in memory for as long as the app runs; never stored. */
         @Volatile var sentHere: List<com.bamnat.core.plaza.RepeatGuard.Sent> = emptyList()
     }
-    data class Open(val company: String, val setup: String, val title: String, val talk: com.bamnat.app.company.Talk? = null, val error: String? = null)
+    data class Open(
+        val company: String, val setup: String, val title: String, val talk: com.bamnat.app.company.Talk? = null, val error: String? = null,
+        /** [PLAZA-32][PLAZA-33] 1.27 AI: a company's or a kind of work's room (setup "room"), with its own hint and note. */
+        val hint: String? = null,
+        val note: String? = null,
+    ) {
+        val room: Boolean get() = setup == com.bamnat.core.plaza.StylePlaza.ROOM
+    }
 
     private val _open = MutableStateFlow<Open?>(null)
     val open: StateFlow<Open?> = _open.asStateFlow()
 
-    fun show(company: String, setup: String, title: String) {
-        _open.value = Open(company, setup, title)
+    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null) {
+        _open.value = Open(company, setup, title, hint = hint, note = note)
         reload()
     }
 
@@ -905,6 +916,12 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     val draft: StateFlow<CompanyDraft?> = c.companyStore.draft
     /** [PAYS-02] The month a payslip was matched on this phone; only the yes or no goes out, never the figures. */
     val payslipMonth: java.time.YearMonth? get() = c.payStore.profile.value?.verified?.month
+    /** [PLAZA-30] 1.27 AI: the main pay, for what the 명세서 tick rests on as it changes (a match done from the form). */
+    val payProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = c.payStore.profile
+    fun proof(p: com.bamnat.core.pay.PayProfile?): com.bamnat.core.pay.SlipProof? =
+        com.bamnat.core.pay.SlipProof.of(p?.verified, java.time.YearMonth.from(Today.date()))
+    /** [PLAZA-30] Opens the main pay screen's 명세서로 맞춰 보기. */
+    fun askMatch() { c.pendingMatch = true }
     val applied: StateFlow<AppliedSetup?> = c.companyStore.applied
     val sent: StateFlow<List<SentReport>> = c.companyStore.sent
     private val _statuses = MutableStateFlow<Map<String, ReportStatus?>>(emptyMap())
@@ -965,6 +982,8 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
                 c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
                 // [PLAZA-07] Sending a company's setup joins it (결정 D79).
                 status.member?.takeIf { it.joined }?.let { c.companyStore.setMember(status.companyId, status.company) }
+                // [PLAZA-34] 1.27 AI: what went is what the plaza has of this phone; the same values saved again ask nothing.
+                if (!topic) c.companyStore.autoBase = setup.toString()
                 _statuses.value = _statuses.value + (status.id to status)
                 c.companyStore.setDraft(null)
                 // [SPAT-05] The way on from a public row ends here; the plaza page it went to opens next.
@@ -1085,6 +1104,9 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
             done(sent)
         }
     }
+
+    /** [PLAZA-30] 1.27 AI: whether 명세서와 맞춰 봤어요 may be chosen (a matched month on this calendar). */
+    fun hasProof(): Boolean = c.slipProof()?.counts == true
 
     /** "나중에": asked again in a week. */
     fun later() = c.companyStore.voteLaterUntil(Today.millis() + 7L * 24 * 60 * 60 * 1000)

@@ -157,7 +157,14 @@ private fun FileCard(title: String, text: String, onClick: () -> Unit) {
 // ---- 2. the company ----
 
 @Composable
-internal fun CompanyStep(vm: SetupViewModel, d: SetupDraft, onSearch: (() -> Unit)?, onOpenFile: () -> Unit) {
+internal fun CompanyStep(
+    vm: SetupViewModel,
+    d: SetupDraft,
+    onSearch: (() -> Unit)?,
+    onOpenFile: () -> Unit,
+    onOpenCompany: (String) -> Unit = {},
+    inline: Boolean = true,
+) {
     StepHeader(
         "어느 회사에서 일하세요?",
         when {
@@ -183,6 +190,17 @@ internal fun CompanyStep(vm: SetupViewModel, d: SetupDraft, onSearch: (() -> Uni
         keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
         modifier = Modifier.fillMaxWidth(),
     )
+    // [SPAT-07] 1.27 AH (사용자 2026-10-25): what is there shows under the name as it is typed, no 찾기 needed — the
+    // company server's (대표 주기·쓰는 사람) after a short pause, the public rows at once, then '여기 없어요, 직접 추가'.
+    if (onSearch != null && inline && d.source == null) {
+        com.bamnat.app.ui.company.CompanyInlineResults(
+            query = name,
+            onServer = if (vm.companySearch) { hit -> onOpenCompany(hit.id) } else null,
+            onPick = { cycle, codes -> vm.pickPublic(cycle, codes) },
+            calendar = vm.calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN,
+            limit = 3,
+        )
+    }
     if (onSearch != null) {
         OutlinedButton(onClick = onSearch, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Icon(Icons.Filled.Search, null)
@@ -248,8 +266,8 @@ private fun SourceCard(source: SetupSource, d: SetupDraft, onChange: () -> Unit)
 
 /** [COMM-01] 회사 찾기 inside the first setup: a setup is only picked here and saved with the rest. */
 @Composable
-internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDismiss: () -> Unit) {
-    var openId by remember { mutableStateOf<String?>(null) }
+internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDismiss: () -> Unit, initialOpen: String? = null) {
+    var openId by remember { mutableStateOf(initialOpen) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             val id = openId

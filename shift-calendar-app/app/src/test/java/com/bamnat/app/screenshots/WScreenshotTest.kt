@@ -200,7 +200,7 @@ class WScreenshotTest : ScreenshotBase() {
     })
     @Test fun captureGuide() = shoot("863_w_capture_guide", PHONE, foundWithoutPrice {
         tapText("체결 내역 캡처로 채우기")
-        assertTrue(shows("체결 내역 캡처로 단가 채우기"))
+        assertTrue(shows("체결 내역 캡처로 채우기", exact = true))
         assertTrue(shows("이런 화면이면 돼요"))
     })
     @Test fun captureGuideSmall() = shoot("864_w_capture_guide_small", SMALL_PHONE, foundWithoutPrice { tapText("체결 내역 캡처로 채우기") })
@@ -217,19 +217,23 @@ class WScreenshotTest : ScreenshotBase() {
     }
     @Test fun captureAsksInYellow() = shoot("865_w_capture_review_ask", FOLDED, captureRead {
         assertTrue(shows("수량 × 단가가 금액과 안 맞아요", exact = false))
-        assertTrue(shows("노란 칸을 모두 확인해야 채울 수 있어요"))
-        // Nothing is filled while a row disagrees.
-        tapText("단가 채우기")
-        assertTrue(runBlocking { InvestRepository.of(c.database).pendingAlerts.first() }.all { it.price == 0.0 })
+        assertTrue(shows("노란 칸은 확인해야 넣을 수 있어요"))
+        // [INV-43] 1.27 AK: the sure row goes in as a trade; the yellow one waits, unfilled.
+        tapText("넣기 1건", exact = true)
+        val repo = InvestRepository.of(c.database)
+        assertEquals(71_500.0, runBlocking { repo.now().trades }.single().price, 0.0)
+        assertTrue(runBlocking { repo.pendingAlerts.first() }.single().let { it.symbol == "035720" && it.price == 0.0 })
     })
     @Test fun captureFixedAndFilled() = shoot("866_w_capture_filled", FOLDED, captureRead {
         // The user looks at the capture and fixes the misread price: 41,250.
         typeInto("단가 확인", "41250")
-        tapText("단가 채우기")
-        val after = runBlocking { InvestRepository.of(c.database).pendingAlerts.first() }
-        assertEquals(71_500.0, after.single { it.name == "삼성전자" }.price, 0.0)
-        assertEquals(41_250.0, after.single { it.symbol == "035720" }.price, 0.0)
-        assertTrue(after.all { it.filledBy == TradeAlerts.BY_CAPTURE })
+        tapText("넣기 2건", exact = true)
+        val repo = InvestRepository.of(c.database)
+        val t = runBlocking { repo.now().trades }
+        assertEquals(71_500.0, t.single { it.name == "삼성전자" }.price, 0.0)
+        assertEquals(41_250.0, t.single { it.symbol == "035720" }.price, 0.0)
+        // [INV-43] Written, so no longer waiting (결정 AK-D3).
+        assertTrue(runBlocking { repo.pendingAlerts.first() }.isEmpty())
     })
     @Test fun captureDark() = shoot("867_w_capture_review_dark", FOLDED_NIGHT, captureRead())
     @Test fun filledLinesWaitForSave() = shoot("868_w_found_filled", PHONE, style(WorkStyle.INVEST) {

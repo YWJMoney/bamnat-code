@@ -68,6 +68,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
+import kotlinx.coroutines.launch
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.CompanyShare
 import com.bamnat.app.ui.components.ConfirmDialog
@@ -79,8 +81,14 @@ import com.bamnat.core.schedule.ShiftRole
 import com.bamnat.core.setup.SetupDraft
 import com.bamnat.core.setup.SetupStep
 
-/** The button at the bottom of a step: what it does, and why it cannot yet when it cannot. */
-private data class Primary(val label: String, val enabled: Boolean = true, val hint: String? = null, val onClick: () -> Unit)
+/**
+ * The button at the bottom of a step: what it does, and why it cannot yet when it cannot. AG 1.27 [INVITE-10]: a [note]
+ * said above it whatever its state (what the button sends), and a [secondary] way under it.
+ */
+private data class Primary(
+    val label: String, val enabled: Boolean = true, val hint: String? = null,
+    val note: String? = null, val secondary: Pair<String, () -> Unit>? = null, val onClick: () -> Unit,
+)
 
 /**
  * [SETUP-01][SETUP-02] The first setup: one question a screen, a bar that shows how far along it is and
@@ -131,9 +139,36 @@ fun SetupHost(
     LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     val onOpenFile = { openFile.launch(arrayOf(BackupManager.MIME_TYPE, CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
     var searching by remember { mutableStateOf(false) }
+    // [SPAT-07] 1.27 AH: a company tapped in the list under the name opens the search at its page.
+    var openCompany by remember { mutableStateOf<String?>(null) }
     var longShifts by remember { mutableStateOf<List<ShiftType>>(emptyList()) }
 
-    val primary = primaryFor(d, vm, onLongShifts = { longShifts = it })
+    // AG 1.27 [INVITE-10] 친구 초대 recognised by itself (결정 AG-D2): Play's referrer is read on the phone as the last
+    // screen comes, and its one button says it tells the inviter; '알리지 않고 저장' sends nothing. Not for an added
+    // calendar or 처음 설정 다시 받기 (that phone has been set up).
+    val inviteContainer = LocalContext.current.appContainer
+    var inviteCode by remember { mutableStateOf<String?>(null) }
+    val atSummary = d.step == SetupStep.SUMMARY && !fixing && vm.calendarId == null && !vm.again
+    LaunchedEffect(atSummary) {
+        if (atSummary && inviteContainer.inviteApi.enabled) {
+            inviteCode = runCatching { inviteContainer.invites.peek() }.getOrNull()
+            if (inviteCode != null) runCatching { inviteContainer.invites.loadRules() }
+        }
+    }
+    val inviteDays by inviteContainer.invites.store.state.collectAsStateWithLifecycle()
+    val primary = primaryFor(d, vm, onLongShifts = { longShifts = it }).let { p ->
+        val code = inviteCode
+        if (p == null || !atSummary || code == null) p
+        else p.copy(
+            label = "저장하고 초대한 분께 알리기",
+            note = "친구 초대 링크로 오셨어요. " + com.bamnat.app.ui.pro.inviteUseConsent(code, inviteDays.rules.days),
+            secondary = "알리지 않고 저장" to { inviteContainer.invites.decline(); p.onClick() },
+            onClick = {
+                inviteContainer.appScope.launch { inviteContainer.invites.agree(code) }
+                p.onClick()
+            },
+        )
+    }
     val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
     val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
@@ -215,7 +250,8 @@ fun SetupHost(
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
                             onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
-                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { searching = true }, onOpenFile = onOpenFile)
+                        SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { openCompany = null; searching = true }, onOpenFile = onOpenFile,
+                            onOpenCompany = { openCompany = it; searching = true }, inline = !searching)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)
                         SetupStep.ORDER -> OrderStep(vm, d)
@@ -238,7 +274,7 @@ fun SetupHost(
         ) { CircularProgressIndicator() }
     }
 
-    if (searching) CompanySearchDialog(vm, initialQuery = d.companyName, onDismiss = { searching = false })
+    if (searching) CompanySearchDialog(vm, initialQuery = d.companyName, onDismiss = { searching = false; openCompany = null }, initialOpen = openCompany)
     if (leaving) {
         ConfirmDialog(
             title = "새 달력을 그만 만들까요?",
@@ -320,6 +356,14 @@ private fun BottomButton(p: Primary, busy: Boolean) {
             Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            p.note?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(bottom = 8.dp),
+                )
+            }
             if (p.hint != null && !p.enabled) {
                 Text(
                     p.hint,
@@ -339,6 +383,9 @@ private fun BottomButton(p: Primary, busy: Boolean) {
                 } else {
                     Text(p.label, style = MaterialTheme.typography.titleMedium)
                 }
+            }
+            p.secondary?.let { (label, go) ->
+                TextButton(onClick = go, enabled = p.enabled && !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
             }
         }
     }

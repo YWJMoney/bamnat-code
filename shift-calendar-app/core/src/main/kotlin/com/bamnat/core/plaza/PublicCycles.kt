@@ -213,7 +213,10 @@ object PublicCycles {
                 }
             }
             val all = fields(c)
-            if (words.any { w -> all.none { w in it } }) return null
+            if (words.any { w -> all.none { w in it } }) {
+                // [PLAZA-17] 1.27 AH-I1: the name said the other way (GS ↔ 지에스) or with one 자모 wrong, after every exact one.
+                return if (words.size == 1) CompanyMatch.fit(c.company, q)?.let { 3 + it } else null
+            }
             val first = words.first()
             return when {
                 name.startsWith(first) -> 0

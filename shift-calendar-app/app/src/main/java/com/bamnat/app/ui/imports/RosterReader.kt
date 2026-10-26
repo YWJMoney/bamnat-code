@@ -22,13 +22,15 @@ data class RosterResult(
     val rows: List<RosterRow>, val month: YearMonth?, val from: RosterFrom, val error: String? = null,
     /** [READ-04][READ-05] A photo's words and picture, for 사진 위에서 누르기 and 무엇을 읽었는지 보기. */
     val scan: RosterScanner.Scan? = null,
+    /** [READ-14] 1.27: the photo read, but poorly: "사진이 흐려요. …" (yellow cells are likely). */
+    val advice: String? = null,
 )
 
 object RosterReader {
     const val NOTHING = "날짜 줄(1 2 3 …)과 근무 줄을 찾지 못했어요. 표 전체가 반듯하게 나오게 다시 찍어 보세요."
 
-    suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate): RosterResult {
-        val scan = runCatching { RosterScanner.scan(context, uri, codes) }
+    suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
+        val scan = runCatching { RosterScanner.scan(context, uri, codes, progress) }
         val error = scan.exceptionOrNull()?.let { e ->
             (e as? com.bamnat.app.pay.OcrModel.NotReady)?.message ?: "사진을 열지 못했어요. 다른 사진으로 해 보세요."
         }
@@ -37,7 +39,10 @@ object RosterReader {
         val rows = s?.read?.rows.orEmpty()
         // [ROST-04] "10월 근무표" over the table, as it reads from the photo.
         val month = DutyRoster.monthIn(list.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
-        return RosterResult(rows, month, RosterFrom.PHOTO, error ?: problem(s?.read?.problem).takeIf { rows.isEmpty() }, s)
+        // [READ-14] A photo too dark, blurred or small to read well says so, with what to do, even when it read something.
+        val retake = s?.quality?.takeIf { it.retake }?.line
+        return RosterResult(rows, month, RosterFrom.PHOTO, error ?: problem(s?.read?.problem).takeIf { rows.isEmpty() }?.let { p -> retake?.let { "$p $it" } ?: p }, s,
+            advice = retake.takeIf { rows.isNotEmpty() })
     }
 
     /** [READ-04] The photo read again along the lines the user tapped: the row of dates (if any) and their own line. */

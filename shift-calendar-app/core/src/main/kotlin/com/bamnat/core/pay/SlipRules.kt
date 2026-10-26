@@ -21,10 +21,15 @@ data class SlipRulesResult(
     val gross: Long,
     val hints: List<String>,
 ) {
+    /**
+     * [PAYS-16] 1.27: false when only the company's rules were given (사용자 "규칙만으로 임금이 정확해야해", 명세서 없음): [gross] is
+     * 0, there is nothing to compare, and [total] is the month by the rules and the calendar.
+     */
+    val withSlip: Boolean get() = gross > 0
     val gap: Long get() = gross - total
     val gapPercent: Double get() = if (gross == 0L) 0.0 else gap * 100.0 / gross
     /** Within 1% of the payslip: close enough to trust the rules worked out (계획/1.25-V-개발계획.md 376). */
-    val close: Boolean get() = abs(gap) <= maxOf(PayslipMatch.TOLERANCE_WON, (gross * CLOSE_SHARE).roundToLong())
+    val close: Boolean get() = withSlip && abs(gap) <= maxOf(PayslipMatch.TOLERANCE_WON, (gross * CLOSE_SHARE).roundToLong())
 
     companion object {
         const val CLOSE_SHARE = 0.01
@@ -60,7 +65,7 @@ object SlipRules {
         isHoliday: ((LocalDate) -> Boolean)? = null,
         calculator: PayCalculator = PayCalculator(),
     ): SlipRulesResult? {
-        val slip = read.payslip() ?: return null
+        val slip = read.payslip() ?: return rulesOnly(profile, month, resolve, ruleText, ruleChanges, isHoliday, calculator)
         fun run(p: PayProfile) = calculator.calculate(p, month, resolve, checks = false, isHoliday = isHoliday)
         val from = profile.period.start(month)
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(profile.period.end(month)) }.map(resolve).toList()
@@ -210,6 +215,42 @@ object SlipRules {
         hints += matched.hints.map { it.text }
         val total = run(matched.profile).total
         return SlipRulesResult(month, matched.profile, changes, total, slip.gross, hints)
+    }
+
+    /**
+     * [PAYS-16] 1.27 순번 448: the company's rules without a payslip (회사 계산 방법 사진·글만). They go into [profile] as they
+     * would with one, and the month is worked out from the calendar; nothing is compared and nothing is guessed from
+     * amounts. Null when no rule was given either. What the rules leave to the user (기본급, 시수, 근무 시각 …) is
+     * [RuleOnlyNeeds]'s to ask.
+     */
+    fun rulesOnly(
+        profile: PayProfile,
+        month: YearMonth,
+        resolve: (LocalDate) -> ResolvedDay,
+        ruleText: String? = null,
+        ruleChanges: List<RuleChange> = emptyList(),
+        isHoliday: ((LocalDate) -> Boolean)? = null,
+        calculator: PayCalculator = PayCalculator(),
+    ): SlipRulesResult? {
+        var p = profile
+        val changes = mutableListOf<String>()
+        val from = profile.period.start(month)
+        val shiftTypes = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(profile.period.end(month)) }
+            .mapNotNull { resolve(it).shiftType }.distinctBy { it.id }.toList()
+        ruleText?.takeIf { it.isNotBlank() }?.let { text ->
+            val found = RuleText.read(text, shiftTypes = shiftTypes, fiveOrMore = p.fiveOrMoreEmployees).filter { it.confidence >= 0.6 }
+            if (found.isNotEmpty()) {
+                p = RuleText.apply(p, found.map { it.change }, month)
+                changes += found.map { "회사 계산 방법: ${it.change.summary}" }
+            }
+        }
+        if (ruleChanges.isNotEmpty()) {
+            p = RuleText.apply(p, ruleChanges, month)
+            changes += ruleChanges.map { "회사 계산 방법: ${it.summary}" }
+        }
+        if (changes.isEmpty()) return null
+        val total = calculator.calculate(p, month, resolve, checks = false, isHoliday = isHoliday).total
+        return SlipRulesResult(month, p, changes, total, 0, listOf("명세서를 넣으면 실제 입금액·기본급과 맞춰 볼 수 있어요"))
     }
 
     private fun snap(rate: Double, usual: List<Double>): Double? = usual.firstOrNull { abs(rate - it) <= SNAP }

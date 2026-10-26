@@ -106,7 +106,13 @@ fun PatternScreen(
     val existing = loadedPattern.pattern
     // The draft lives in the ViewModel so a trip to the shift type screen does not lose it.
     val draft0 = vm.draft
-    LaunchedEffect(Unit) {
+    // [SPAT-07] 1.27 AH: after 패턴 삭제 the screen stays, empty, to look the company up again.
+    var cleared by rememberSaveable { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    // Back to the top, where the note and 회사 이름으로 근무주기 찾기 are.
+    LaunchedEffect(cleared) { if (cleared) scroll.animateScrollTo(0) }
+    LaunchedEffect(existing, cleared) {
+        if (cleared && existing == null && draft0.initialized) draft0.forget()
         draft0.initFrom(existing, today, if (startWeekdays) types.firstOrNull { !it.isOff && it.hasTimes }?.id else null)
     }
     if (!draft0.initialized) return
@@ -165,7 +171,7 @@ fun PatternScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -196,6 +202,16 @@ fun PatternScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (cleared && existing == null && onFindCompany != null) {
+                // [SPAT-07] 1.27 AH-D3: as the first time — the company is looked up again, and if it is not there it can be given.
+                com.bamnat.app.ui.company.SoftCard(highlighted = true) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("근무주기를 지웠어요", style = MaterialTheme.typography.titleSmall)
+                        Text("처음처럼 회사 이름으로 다시 찾아보세요. 없으면 직접 넣고 같은 회사 분들께 나눌 수 있어요.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             if (onFindCompany != null) {
                 OutlinedButton(onClick = onFindCompany, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.Search, null, Modifier.size(18.dp))
@@ -503,7 +519,8 @@ fun PatternScreen(
             onDismiss = { confirmClear = false },
             onConfirm = {
                 confirmClear = false
-                vm.clearPattern(onBack)
+                // [SPAT-07] 1.27 AH: the main calendar stays here to find its cycle again; an added one goes back as before.
+                if (onFindCompany != null) vm.clearPattern { cleared = true } else vm.clearPattern(onBack)
             },
         )
     }

@@ -144,10 +144,22 @@ class CompanyStore(context: Context) {
     private val _autoShare = MutableStateFlow(if (prefs.contains("auto_share")) prefs.getBoolean("auto_share", false) else null)
     val autoShare: StateFlow<Boolean?> = _autoShare.asStateFlow()
 
-    fun setAutoShare(on: Boolean) {
+    /** [PLAZA-34] 1.27 AI: null is 바뀔 때마다 묻기 again (the key goes), true 저절로 나누기, false 나누지 않기. */
+    fun setAutoShare(on: Boolean?) {
         _autoShare.value = on
-        prefs.edit().putBoolean("auto_share", on).apply { if (!on) putBoolean("auto_dirty", false) }.apply()
+        prefs.edit().apply {
+            if (on == null) remove("auto_share") else putBoolean("auto_share", on)
+            if (on != true) putBoolean("auto_dirty", false)
+        }.apply()
     }
+
+    /**
+     * [PLAZA-34] 1.27 AI: the plaza file last shared or asked about (no amounts: CompanyShare.exportForServer), which a saved
+     * change is held against so the same values saved again ask nothing. On this phone only, as the sending it counts.
+     */
+    var autoBase: String?
+        get() = prefs.getString("auto_base", null)
+        set(v) = prefs.edit().apply { if (v == null) remove("auto_base") else putString("auto_base", v) }.apply()
 
     /** A change waits to be shared, at most once a day ([autoSentAt] the last time, epoch ms). */
     var autoDirty: Boolean
@@ -191,6 +203,8 @@ class CompanyStore(context: Context) {
         _applied.value?.let { setApplied(it.copy(vote = null)) }
         // [PLAZA-07] The server forgot the companies joined with everything else.
         setMember(null)
+        // [PLAZA-34] And what it had of this phone: the next save is the first again.
+        autoBase = null
     }
 
     fun setApplied(a: AppliedSetup?) {

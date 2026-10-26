@@ -114,6 +114,9 @@ class SetupViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    /** [READ-15] A line to show, e.g. why the document scanner could not run. */
+    fun say(text: String) { _message.value = text }
+
     fun consumeMessage() {
         _message.value = null
     }
@@ -504,8 +507,31 @@ class SetupViewModel(
         current.types.map { com.bamnat.core.imports.DutyType(it.id, it.name, it.label, it.isOff, it.start, com.bamnat.core.model.NightShift.of(it)) },
     )
 
+    /**
+     * [READ-17] 1.27 "사진과 내용이 같은가요?" for the setup's roster photo: null while asked, false while fixing, true once
+     * the same. [rosterRank] is the picked line's place in the table, to find it on the photo.
+     */
+    private val _rosterSame = MutableStateFlow<Boolean?>(null)
+    val rosterSame: StateFlow<Boolean?> = _rosterSame.asStateFlow()
+    var rosterRank = 0
+        private set
+
+    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes }
+
+    /** [READ-17] One day of the roster's month fixed from the photo card: painted, given leave, or left off (휴무). */
+    fun fixRosterDay(date: LocalDate, cell: com.bamnat.core.imports.DutyCell?) {
+        when (cell) {
+            is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + (date to cell.shiftTypeId), leaves = it.leaves - date) }
+            com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + (date to null), leaves = it.leaves - date) }
+            is com.bamnat.core.imports.DutyCell.Leave -> update { it.copy(leaves = it.leaves + (date to cell.leave)) }
+            else -> Unit
+        }
+    }
+
     fun readRoster(how: suspend (com.bamnat.core.imports.DutyCodes) -> com.bamnat.app.ui.imports.RosterResult) {
         _rosterReading.value = true
+        _rosterSame.value = null
+        rosterRank = 0
         viewModelScope.launch {
             val r = how(rosterCodes())
             _rosterReading.value = false
@@ -558,6 +584,7 @@ class SetupViewModel(
         leavesUndo = current.leaves
         update { it.copy(painted = it.painted + days, leaves = it.leaves - days.keys + leaves) }
         _paintMonth.value = month
+        if (r.rows.size > 1) rosterRank = i
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
         _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" +
@@ -632,6 +659,10 @@ class SetupViewModel(
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
                     if (again) { store.clear(); _done.value = true }
+                    // [PLAZA-14] 1.27 AH: a cycle from a company search is asked about once, for the calendar it went into.
+                    d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
+                        c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN))
+                    }
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)
                         d.source?.let { append('_').append(it.kind.name) }

@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.core.profile.AskScheduler
 import java.time.LocalDate
@@ -80,10 +81,35 @@ fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifi
 
 /** [COMM-12] One line under the pay: the plaza with the user's company typed in, or the plaza itself. */
 @Composable
+fun PlazaRoomLine(modifier: Modifier = Modifier, onOpen: () -> Unit) {
+    // [PLAZA-32] 1.27 AI: the calendar's line into a joined company's 정보 광장; nothing before joining.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    if (!c.companyApi.enabled || c.companyStore.member.collectAsStateWithLifecycle().value == null) return
+    PlazaEntryLine(c, onOpen, modifier)
+}
+
+/** [COMM-12] One line into the plaza from the pay; hidden without the company server. */
+@Composable
 fun PlazaEntryLine(c: AppContainer, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     if (!c.companyApi.enabled) return
     val draft by c.companyStore.draft.collectAsStateWithLifecycle()
     val applied by c.companyStore.applied.collectAsStateWithLifecycle()
+    // [PLAZA-32] 1.27 AI: a joined company's room is where 광장 opens; the line says so.
+    val member by c.companyStore.member.collectAsStateWithLifecycle()
+    member?.takeIf { it.second.isNotBlank() }?.let { m ->
+        Row(
+            modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onOpen)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Forum, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("‘${m.second}’ 정보 광장 · 자유 토의와 고친 점", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+        }
+        return
+    }
     val company = applied?.company ?: draft?.company?.trim()?.takeIf { it.length >= 2 }
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)

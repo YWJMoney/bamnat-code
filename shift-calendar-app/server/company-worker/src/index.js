@@ -285,7 +285,9 @@ async function route(request, env) {
  */
 const PUBLIC_PER_HOUR = 600;
 const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/history$/,
-  /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/];
+  /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/,
+  // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
+  /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
 const publicReads = new Map();
 
 async function publicAllowed(request, env, path) {
@@ -329,6 +331,9 @@ async function routeOnce(request, env, url) {
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
   if (path === "/api/board" && method === "GET") return json(await board(env, url));
+  // AI 1.27 [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work: the same talk, grp 'room'.
+  m = path.match(ROOM_PATH);
+  if (m && method === "GET") return talk(request, env, m[1], ROOM);
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/posts$/);
   if (m && method === "GET") return talk(request, env, m[1], m[2]);
   if (path === "/api/posts" && method === "POST") return post(request, env);
@@ -576,6 +581,12 @@ const COLUMNS = [
   "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   // X 1.25 끝
+  // AI 1.27 시작
+  // [PLAZA-30] What a 명세서 tick rested on ("2026-09|match" or "2026-09|gap"), and an older app's tick with nothing behind it.
+  "ALTER TABLE reports ADD COLUMN proof TEXT",
+  "ALTER TABLE reports ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE votes ADD COLUMN claim INTEGER NOT NULL DEFAULT 0",
+  // AI 1.27 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -1097,7 +1108,10 @@ export function readReport(body) {
     const why = personal(text);
     if (why) refuse(why, field);
   }
-  return { company, dept, deptNorm: normName(dept), verified: body.verified, note, setup, ask, job, region, topic, amends };
+  // AI 1.27 [PLAZA-30]: 명세서와 맞춰 봤어요 counts only with the month the phone matched and whether it matched.
+  const proof = readProof(body.proof);
+  return { company, dept, deptNorm: normName(dept), verified: body.verified && proofCounts(proof), claim: body.verified && !proof, proof, note, setup, ask,
+    job, region, topic, amends };
 }
 
 // ---- 직군별 광장 [PLZ-12][PLZ-13][PLZ-14] ----
@@ -1363,6 +1377,8 @@ async function search(env, url) {
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
       ...(c.adopted === 0 ? { first: true } : {}) }));
+  // AH 1.27 [PLAZA-14] The first few with their 대표 주기 and users, for the list under the name box.
+  for (const c of companies.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
   return json({ companies });
 }
 
@@ -1417,12 +1433,15 @@ async function searchChoseong(env, q) {
       AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
     LIMIT 200`, like);
   // [PLAZA-10] 초성 are a guess, so companies with a rule in use come first; a first setup still being checked is found too.
-  return rows.filter((c) => c.adopted > 0 || c.pending > 0)
+  const out = rows.filter((c) => c.adopted > 0 || c.pending > 0)
     .sort((a, b) => (b.adopted > 0) - (a.adopted > 0) || b.cho.startsWith(q) - a.cho.startsWith(q) || a.name.length - b.name.length ||
       a.name.localeCompare(b.name, "ko"))
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
       ...(c.adopted === 0 ? { first: true } : {}) }));
+  // AH 1.27 [PLAZA-14]
+  for (const c of out.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
+  return out;
 }
 
 async function company(env, id, request) {
@@ -1465,6 +1484,8 @@ async function company(env, id, request) {
     setups.push({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
       ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) });
   }
+  // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
+  await markLeads(env, c.id, setups, who.dev);
   return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups,
     member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } });
 }
@@ -1672,6 +1693,236 @@ function roomNews(env, dev, since) {
 }
 // AF 1.26 끝
 
+// AI 1.27 시작
+// ---- [PLAZA-30] 명세서와 맞춰 봤어요, with what it rests on ----
+//
+// The app ticks it only when this calendar matched a pay slip (결정 AI-D1~D4): the month and whether the month the app worked
+// out came within the match's tolerance. No amount, no total and no photo comes with it (D68). An older app's tick has
+// nothing behind it, so it counts as a plain report or 맞았어요 and is kept as a claim the developer can see.
+
+const PROOF_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+const PROOF_MONTHS = 13;
+
+/** The proof an app sent, or null; a malformed one is refused, as anything else malformed is. */
+export function readProof(raw, now = Date.now()) {
+  if (!given(raw)) return null;
+  object(raw, "proof");
+  const m = typeof raw.month === "string" ? raw.month.match(PROOF_MONTH) : null;
+  if (!m || typeof raw.match !== "boolean") refuse("proof", "proof");
+  const d = new Date(now + 9 * HOUR);
+  const back = (d.getUTCFullYear() - Number(m[1])) * 12 + (d.getUTCMonth() + 1 - Number(m[2]));
+  if (back < 0 || back > PROOF_MONTHS) refuse("proof", "proof");
+  return { month: raw.month, match: raw.match };
+}
+
+/** Whether [proof] makes a 명세서 tick count: a month that matched. */
+export const proofCounts = (proof) => Boolean(proof?.match);
+
+const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : "gap"}` : null);
+
+// ---- [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work ----
+//
+// The talk of a company's people among themselves, and of the kinds of work with no company (현장, 가게, 알바, 투자), in the
+// posts table that rule talks use (결정 AI-D5): grp 'room', so 신고 3번 가림, the developer's 가리기·지우기·30일 막기,
+// 이 사람 글 안 보기, 내 것 지우기 and 광장 소식 are the same. A company's room is for the phones that joined it (AI-D6),
+// counted like its pay reads; a kind's room for any phone with the app, held to the public reads an hour (AI-D7).
+
+export const ROOM = "room";
+export const STYLE_ROOMS = { "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
+const ROOM_LIMITS = { perDay: 10, perNetworkDay: 30, shown: 100 };
+/** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
+const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
+export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:field|shop|hourly|invest))\/setups\/room\/posts$/;
+
+/** The place of a room: a company (not hidden) or a kind of work's plaza; null when there is none. */
+async function roomPlace(env, id) {
+  if (Object.hasOwn(STYLE_ROOMS, id)) return { id, name: STYLE_ROOMS[id], style: true };
+  const c = await follow(env, id);
+  return !c || c.hidden || c.kind === "topic" ? null : c;
+}
+
+/** Who may read [place]'s room: a company's members (their reads counted as viewer() counts them), anyone with the app for a kind's plaza. */
+async function roomViewer(request, env, place) {
+  if (place.style) {
+    const id = deviceId(request.headers.get("x-device"));
+    return id ? { dev: await deviceHash(id), member: true } : { dev: null, member: false };
+  }
+  return viewer(request, env, place.id);
+}
+
+/** A post in a room: the same words as any post (no amounts, contacts or names), a reply under the same room's post. */
+async function roomPost(request, env, body) {
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (typeof body.company !== "string") refuse("company", "company");
+  const place = await roomPlace(env, body.company);
+  if (!place) return json({ error: "not_found" }, 404);
+  const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
+  if (text.length < 2) refuse("body", "body");
+  const why = personal(text);
+  if (why) refuse(why, "body");
+  if (place.id === "style-invest" && INVEST_ADVICE.test(text)) refuse("invest_advice", "body");
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  if (!place.style && !(await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0", dev, place.id))) {
+    return json({ error: "member" }, 403);
+  }
+  const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
+  if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  const net = await network(request, env, now);
+  if (!(await allow(env, `room|${dev}`, ROOM_LIMITS.perDay, DAY, now)) ||
+      !(await allow(env, `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  let parent = null;
+  if (given(body.parent)) {
+    const top = typeof body.parent === "string" ? await one(env, "SELECT id, parent FROM posts WHERE id = ? AND company_id = ? AND grp = ?",
+      body.parent, place.id, ROOM) : null;
+    if (!top) refuse("parent", "parent");
+    parent = top.parent ?? top.id;
+  }
+  const kind = given(body.kind) ? oneOf(body.kind, ["talk", "question"], "kind") : "talk";
+  const id = `p${randomId(15)}`;
+  await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
+      parent, kind, change, report_id, agree, disagree)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0)`, id, place.id, ROOM, dev, text, now, parent, kind);
+  return json({ id, at: iso(now) }, 201);
+}
+
+/** [PLAZA-35] 광장 소식: new posts in the rooms of the companies this phone joined, not its own, once a day in the digest. */
+function roomPostNews(env, dev, since) {
+  return stmt(env, `SELECT m.company_id, c.name, COUNT(*) AS n, MAX(p.created_at) AS at FROM members m
+      JOIN posts p ON p.company_id = m.company_id AND p.grp = 'room' AND p.status = 'shown' AND p.device != m.device AND p.created_at > ?2
+      JOIN companies c ON c.id = m.company_id
+    WHERE m.device = ?1 AND m.left = 0 GROUP BY m.company_id ORDER BY at DESC LIMIT 10`, dev, since);
+}
+// AI 1.27 끝
+// AH 1.27 시작
+// ---- [PLAZA-14][PLAZA-15] 대표 주기와 맞아요·달라요 (계획 1.27-AH, AH-D4·D7·D8·D9) ----
+//
+// Each department (사업장) of a company has one 대표 주기 to offer first: of its versions that too many people did not
+// call wrong, the adopted one, else the one with the most 지지 (support(), the score the 대표 판 is already decided by).
+// A company's first setup is its 대표 주기 at once (사용자 2026-10-25 "대표주기가 됩니다!"); the reward still comes only
+// with adoption or new information, so a made-up company earns nothing. Too many 달라요 take a version out of the lead,
+// and the next trusted one leads instead.
+
+/** At least [votes] votes (맞아요 and 달라요) and more than [share] percent 달라요: the version leads no longer (AH-D7). */
+export const DOUBT = { votes: 5, share: 40 };
+/** Where a 달라요 says it is wrong (AH-D9): the order, the times, the pay items. Older apps send wrong, old or name. */
+export const WHY_PARTS = ["order", "time", "pay"];
+export const VOTE_WHY = ["wrong", "name", "old", ...WHY_PARTS];
+
+/** [PLAZA-15] Whether a score (persons who stand behind it, [bad] who said 달라요) has too many 달라요 to lead. */
+export const doubted = (s) => s.persons + s.bad >= DOUBT.votes && s.bad * 100 > DOUBT.share * (s.persons + s.bad);
+
+/**
+ * [PLAZA-14] The 대표 주기 of one department among [versions] ({id, adopted, support, doubted}, in the order they came):
+ * not doubted, adopted first, then the most 지지; a tie keeps the earlier. Null when every one is doubted.
+ */
+export function leadOf(versions) {
+  let best = null;
+  for (const v of versions) {
+    if (v.doubted) continue;
+    if (!best || (v.adopted && !best.adopted) || (v.adopted === best.adopted && v.support > best.support)) best = v;
+  }
+  return best?.id ?? null;
+}
+
+/** [PLAZA-15] The 맞아요·달라요 on one version: counts, 달라요 by where, and this phone's own vote when it gave one. */
+async function opinions(env, companyId, grp, dev) {
+  const rows = await all(env, "SELECT device, ok, why FROM votes WHERE company_id = ? AND grp = ?", companyId, grp);
+  const why = { order: 0, time: 0, pay: 0, other: 0 };
+  let ok = 0;
+  let bad = 0;
+  let mine = null;
+  for (const r of rows) {
+    if (r.ok) ok++;
+    else {
+      bad++;
+      why[WHY_PARTS.includes(r.why) ? r.why : "other"]++;
+    }
+    if (dev && r.device === dev) mine = r.ok ? "ok" : (r.why ?? "wrong");
+  }
+  return { ok, bad, why, ...(mine ? { mine } : {}) };
+}
+
+/** [PLAZA-14][PLAZA-15] company()'s setups marked: each with its opinions, doubted ones, and each department's lead. */
+async function markLeads(env, companyId, setups, dev) {
+  const byDept = new Map();
+  for (const s of setups) {
+    s.opinion = await opinions(env, companyId, s.id, dev);
+    if (doubted(s)) {
+      s.doubted = true;
+      // A version people say is wrong has not settled, whatever its age.
+      delete s.stable;
+    }
+    const k = normName(s.dept ?? "");
+    byDept.set(k, [...(byDept.get(k) ?? []), s]);
+  }
+  for (const list of byDept.values()) {
+    const id = leadOf(list.map((s) => ({ id: s.id, adopted: s.status === "adopted", support: s.support, doubted: Boolean(s.doubted) })));
+    for (const s of list) if (s.id === id) s.lead = true;
+  }
+}
+
+/**
+ * [PLAZA-14] A company's 대표 주기 per department, lighter than company(): for the search's one line. Each has the shifts
+ * and their order (never pay values), whether a pay way is there, and who stands behind it.
+ */
+async function leads(env, companyId) {
+  const rows = await all(env, `SELECT grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
+    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id = ?1 AND r.status = 'pending'
+      AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
+      AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
+    GROUP BY r.grp`, companyId);
+  const versions = [];
+  for (const r of rows) {
+    const s = await score(env, companyId, r.grp);
+    const extra = await one(env, `SELECT (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS checked`, companyId, r.grp);
+    versions.push({ id: r.grp, dept: r.dept, deptNorm: r.dept_norm, adopted: r.adopted === 1, setup: JSON.parse(r.setup),
+      persons: s.persons, bad: s.bad, uses: extra.uses, doubted: doubted(s),
+      support: support({ uses: extra.uses, ok: s.persons, bad: s.bad, verified: extra.checked }) });
+  }
+  const out = [];
+  for (const k of new Set(versions.map((v) => v.deptNorm))) {
+    const list = versions.filter((v) => v.deptNorm === k);
+    const id = leadOf(list);
+    const v = list.find((x) => x.id === id) ?? list[0];
+    out.push({ ...v, doubted: id === null });
+  }
+  return out;
+}
+
+/** [PLAZA-14] The search's line for a company: its main 대표 주기 (회사 전체 first) and how many phones use the company. */
+async function searchLead(env, companyId) {
+  const all_ = await leads(env, companyId);
+  const main = all_.find((l) => l.deptNorm === "") ?? [...all_].sort((a, b) => b.persons - a.persons)[0];
+  const users = await one(env, `SELECT COUNT(*) AS n FROM (SELECT device FROM uses WHERE company_id = ?1
+    UNION SELECT device FROM reports WHERE company_id = ?1 AND status IN ('pending', 'adopted'))`, companyId);
+  if (!main) return { users: users.n };
+  const offs = main.setup.shiftTypes.filter((t) => t.off).map((t) => t.name);
+  return {
+    users: users.n,
+    sites: all_.length,
+    lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
+      roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
+      ...(main.doubted ? { doubted: true } : {}) },
+  };
+}
+
+/** [PLAZA-15] Whether the department's rule in use has too many 달라요: then another version may take over by its own right. */
+async function activeDoubted(env, companyId, active) {
+  return Boolean(active) && doubted(await score(env, companyId, active.grp));
+}
+
+/** [PLAZA-15] After a 달라요 on a department's rule, the versions waiting there may now take its place (settle decides). */
+async function settleDept(env, companyId, deptNorm, now) {
+  const waiting = await all(env, "SELECT DISTINCT grp FROM reports WHERE company_id = ? AND dept_norm = ? AND status = 'pending'", companyId, deptNorm);
+  for (const w of waiting) await settle(env, companyId, w.grp, now);
+}
+// AH 1.27 끝
+
 
 async function state(env, companyId, grp, threshold, adopted) {
   const s = await score(env, companyId, grp);
@@ -1766,6 +2017,8 @@ async function report(request, env) {
       // [PLZ-02] Only a change of the rule in use counts as one.
       !adopted && active && r.amends === active.id ? active.id : null),
   ]);
+  // AI 1.27 [PLAZA-30] What the 명세서 tick rested on: the month and whether it matched, or an older app's bare claim.
+  if (r.proof || r.claim) await run(env, "UPDATE reports SET proof = ?, claim = ? WHERE id = ?", proofText(r.proof), r.claim ? 1 : 0, id);
   if (!adopted) await settle(env, c.id, grp, now);
   const reward = await newInfo(env, c, r, id, dev, now);
   const view = await reportView(env, id);
@@ -1898,7 +2151,8 @@ async function settle(env, companyId, grp, now) {
   // by its own right and more people stand behind it than behind the one in use (결정 D74). The one it replaces
   // is kept as an earlier version in the history, never deleted, and its users hear of it in 광장 소식.
   if (!active || s.persons < adoptPersons || await turnedDown(env, companyId, grp)) return;
-  if (await outweighs(env, companyId, grp, active)) await adopt(env, companyId, grp, "rival", now);
+  // AH 1.27 [PLAZA-15] A rule in use with too many 달라요 does not need to be outweighed: the next trusted version takes over.
+  if ((await activeDoubted(env, companyId, active)) || (await outweighs(env, companyId, grp, active))) await adopt(env, companyId, grp, "rival", now);
 }
 
 /** [PLAZA-05] The developer took this setup down or turned it down: it never takes a department over by itself. */
@@ -2096,8 +2350,11 @@ async function vote(request, env) {
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
   if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
   if (typeof body.ok !== "boolean") refuse("ok", "ok");
-  const why = body.ok ? null : ["wrong", "name", "old"].includes(body.why) ? body.why : "wrong";
-  const verified = body.ok && body.verified === true;
+  // AH 1.27 [PLAZA-15] 달라요 says where: the order, the times or the pay items (AH-D9).
+  const why = body.ok ? null : VOTE_WHY.includes(body.why) ? body.why : "wrong";
+  // AI 1.27 [PLAZA-30] A pay-slip 맞았어요 needs the month the phone matched; an older app's bare one counts as a plain 맞았어요.
+  const proof = readProof(body.proof);
+  const verified = body.ok && body.verified === true && proofCounts(proof);
   const now = Date.now();
   const net = await network(request, env, now);
   if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
@@ -2113,7 +2370,10 @@ async function vote(request, env) {
   await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (company_id, grp, device) DO UPDATE SET cluster = excluded.cluster, ok = excluded.ok, verified = excluded.verified,
       why = excluded.why, net = excluded.net, at = excluded.at`, c.id, grp, dev, cluster, body.ok ? 1 : 0, verified ? 1 : 0, why, net.now, now);
+  await run(env, "UPDATE votes SET claim = ? WHERE company_id = ? AND grp = ? AND device = ?", body.ok && body.verified === true && !proof ? 1 : 0, c.id, grp, dev);
   if (body.ok && !rule) await settle(env, c.id, grp, now);
+  // AH 1.27 [PLAZA-15] Too many 달라요 on the rule in use: a version waiting in its department may take its place now.
+  if (!body.ok && rule) await settleDept(env, c.id, (await one(env, "SELECT dept_norm FROM rules WHERE id = ?", rule.id)).dept_norm, now);
   const adopted = rule ?? (await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp));
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
 }
@@ -2126,6 +2386,8 @@ const FLAGS = {
   personal: "개인 정보가 있어요",
   spam: "광고·도배",
   false: "일부러 틀린 정보",
+  // AI 1.27 [PLAZA-33] 투자 이야기: a 종목 추천 or 리딩 (결정 AI-D8).
+  advice: "종목 추천·리딩",
 };
 
 /** Why the developer hid a post, as its writer's app shows it. */
@@ -2134,6 +2396,8 @@ const HIDE_REASONS = {
   personal: "개인 정보가 있어요",
   spam: "광고나 도배예요",
   offtopic: "이 규칙과 상관없는 글이에요",
+  // AI 1.27 [PLAZA-33]
+  advice: "종목 추천이나 리딩 글이에요",
   flags: "신고가 모여 개발자가 확인하고 있어요",
 };
 
@@ -2201,6 +2465,8 @@ async function board(env, url) {
  * older version a newer one replaced, whose talk stays readable as part of the rule's history ([PLZ-04]).
  */
 async function talkable(env, companyId, grp, past = false) {
+  // AI 1.27 [PLAZA-32] A room is there as long as its company (or kind of work) is.
+  if (grp === ROOM) return roomPlace(env, companyId);
   const c = await follow(env, companyId);
   if (!c || c.hidden) return null;
   const live = await one(env, `SELECT
@@ -2220,9 +2486,16 @@ async function talk(request, env, companyId, grp) {
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
   // [PLAZA-08] A proposal's lines about pay are for the company's members (결정 D79, AF-D6); its shift lines are for all.
-  const member = (await viewer(request, env, c.id)).member;
+  // AI 1.27 [PLAZA-32] A company's room is only for its members; a kind's plaza for any phone with the app (AI-D6·D7).
+  const room = grp === ROOM;
+  const who = room ? await roomViewer(request, env, c) : await viewer(request, env, c.id);
+  if (room && !who.member) return json({ error: who.limited ? "rate_limited" : who.dev ? "member" : "device" }, who.limited ? 429 : who.dev ? 403 : 400);
+  const member = who.member;
   const lines = (change) => (member ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
-  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
+  const rows = room
+    ? await all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
+        ORDER BY created_at, r`, c.id, grp)
+    : await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const key = await authorKey(env);
   const hidden = await hiddenAuthors(key, request.headers.get("x-hide"));
@@ -2296,17 +2569,21 @@ async function talk(request, env, companyId, grp) {
   }
   const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
   // [COMM-11] How many more posts today, so the app can say so before a refusal.
-  const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `post|${me}`, Date.now()) : null;
+  const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${room ? "room" : "post"}|${me}`, Date.now()) : null;
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
-  const past = !(await talkable(env, c.id, grp));
-  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, LIMITS.postsPerDay - (used?.count ?? 0)) } } : {}) });
+  const past = !room && !(await talkable(env, c.id, grp));
+  const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
+    ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, perDay - (used?.count ?? 0)) } } : {}) });
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
 async function post(request, env) {
   if (await paused(env, "PLAZA_WRITE")) return json({ error: "paused" }, 503);
   const body = await readJson(request, LIMITS.reportBytes + 4096);
+  // AI 1.27 [PLAZA-32][PLAZA-33] A post in a company's or a kind of work's room.
+  if (body?.setup === ROOM) return roomPost(request, env, body);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
@@ -2444,7 +2721,7 @@ async function postVote(request, env, id) {
         await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (company_id, grp, device) DO UPDATE SET cluster = excluded.cluster, ok = excluded.ok, verified = excluded.verified,
             why = excluded.why, net = excluded.net, at = excluded.at`, r.company_id, r.grp, dev, cluster, body.ok ? 1 : 0,
-        body.ok && body.verified === true ? 1 : 0, body.ok ? null : "wrong", net.now, now);
+        body.ok && body.verified === true && proofCounts(readProof(body.proof)) ? 1 : 0, body.ok ? null : "wrong", net.now, now);
         if (body.ok && r.status === "pending") await settle(env, r.company_id, r.grp, now);
       }
     }
@@ -4862,7 +5139,8 @@ async function overview(env, actor) {
   const keys = Object.keys(counts);
   const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
-  const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
+  // AH 1.27 [PLAZA-15] doubt: when 달라요 take a version out of the lead (AH-D7), shown on the settings page.
+  const out = { me: me(actor), settings: readSettings(got.settings), doubt: DOUBT, reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
   const rows = new Set(["settings", "waiting", "phones", "live", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
   for (const k of keys) {
@@ -5016,7 +5294,8 @@ async function queue(env) {
       blocked: (Boolean(why) || s.networks < 2 || s.persons * 100 < adoptAgree * (s.persons + s.bad)) && s.persons >= 2 && s.points >= adoptPoints,
       turnedDown: why === "withdrawn" || why === "rejected" ? why : null,
       replaces: active ? { id: active.id, version: active.version } : null,
-      reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
+      // AI 1.27 [PLAZA-30] claim: an older app's 명세서 tick with nothing behind it, counted as a plain report.
+      reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, ...(r.claim === 1 ? { claim: true } : {}), note: r.note, at: iso(r.created_at) })),
       lines,
       changes: active ? diffLines(describe(JSON.parse(active.setup)), lines) : null,
     });
@@ -5131,7 +5410,8 @@ async function companyInfo(env, id) {
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
     stmt(env, "SELECT * FROM rules WHERE company_id = ? ORDER BY dept_norm, version DESC", id),
     stmt(env, "SELECT company_id, grp, device, points, cluster FROM reports WHERE company_id = ? AND status IN ('pending', 'adopted')", id),
-    stmt(env, "SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id = ?", id),
+    // AH 1.27 [PLAZA-15] with where each 달라요 says it is wrong.
+    stmt(env, "SELECT company_id, grp, device, ok, verified, cluster, why FROM votes WHERE company_id = ?", id),
     stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
     // [PLAZA-13] Phones that joined it (결정 D79).
     stmt(env, "SELECT COUNT(*) AS n FROM members WHERE company_id = ? AND left = 0", id),
@@ -5145,6 +5425,10 @@ async function companyInfo(env, id) {
     return {
       id: r.id, dept: r.dept, version: r.version, source: r.source, adoptedAt: iso(r.adopted_at), withdrawn: r.withdrawn === 1,
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
+      // AH 1.27 [PLAZA-15] 달라요 by where (순서·시간·급여 항목·그 밖), and whether too many took it out of the lead.
+      why: Object.fromEntries([...WHY_PARTS, "other"].map((k) => [k, votes.filter((v) => v.grp === r.grp && !v.ok &&
+        (k === "other" ? !WHY_PARTS.includes(v.why) : v.why === k)).length])),
+      ...(doubted(s) && !r.withdrawn && !r.superseded ? { doubted: true } : {}),
     };
   });
   // [PLAZA-13] Whether a rule in use settled (결정 D79: three phones on it, nothing new for 30 days).
@@ -5435,21 +5719,23 @@ async function rateTo(env, actor, id, status, now) {
  * six letters of the install's hash, enough to see the same writer again and nothing more.
  */
 async function postList(env, url) {
-  const status = ["flagged", "hidden", "all"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
+  const status = ["flagged", "hidden", "all", "room"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
   const company = url.searchParams.get("company");
   const grp = url.searchParams.get("setup");
-  const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
+  // AI 1.27 [PLAZA-32] One room whole too: a company's (its id) or a kind of work's (style-…), setup "room".
+  const one_talk = company && (/^[A-Za-z0-9]{12}$/.test(company) || Object.hasOwn(STYLE_ROOMS, company)) && grp && (/^[0-9a-f]{16}$/.test(grp) || grp === ROOM);
+  const only = status === "room" ? "AND p.grp = 'room'" : "";
   const pg = page(url.searchParams);
   const like = companyLike(url.searchParams.get("q"));
   const rows = one_talk
-    ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+    ? await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
         WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at, p.rowid LIMIT 500`, company, grp)
     : status === "flagged"
-      ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+      ? await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') AND (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\')
           ORDER BY p.flags DESC, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
-      : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-          WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""}
+      : await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+          WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""} ${only}
           ORDER BY p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after);
   // [ADMIN-16] One talk comes whole; the lists come a page at a time.
   const next = one_talk ? null : sqlPage(rows, pg).next;
@@ -5481,8 +5767,9 @@ async function postList(env, url) {
     const muted = mutedUntil.has(p.device) ? { until: mutedUntil.get(p.device) } : null;
     out.push({
       id: p.id,
-      company: { id: p.company_id, name: p.name },
+      company: { id: p.company_id, name: p.name ?? STYLE_ROOMS[p.company_id] ?? p.company_id },
       setup: p.grp,
+      ...(p.grp === ROOM ? { room: Object.hasOwn(STYLE_ROOMS, p.company_id) ? "style" : "company" } : {}),
       dept: depts.get(key) ?? "",
       body: p.body,
       writer: p.device.slice(0, 6),
@@ -5774,6 +6061,8 @@ const INVITE = {
   usesPerHour: 10,
   usesPerDevice: 5,
   seenPerDay: 30,
+  // AG 1.27: more friends of one code than this from one network in an hour are noted (not refused).
+  burstPerHour: 2,
   package: "com.bamnat.app",
 };
 /** [INVITE-08] What the developer app may set, and the settings rows they are kept in. */
@@ -5821,6 +6110,16 @@ export function storeLink(code) {
   return `https://play.google.com/store/apps/details?id=${INVITE.package}&referrer=${encodeURIComponent(referrer)}`;
 }
 
+/**
+ * AG 1.27 [INVITE-13] The Play app itself by an Android intent link, the referrer kept as on the web link, and the web
+ * link when the Play app is missing (Chrome's intent: links; 확인 필요 for each messenger's own browser).
+ */
+export function playIntent(code, store = storeLink(code)) {
+  const referrer = encodeURIComponent(`utm_source=bamnat_invite&utm_content=${code}`);
+  return `intent://details?id=${INVITE.package}&referrer=${referrer}#Intent;scheme=market;package=com.android.vending;` +
+    `S.browser_fallback_url=${encodeURIComponent(store)};end`;
+}
+
 /** Why a reward was given, as the app names it. */
 const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
 
@@ -5835,17 +6134,22 @@ function invitePage(raw) {
   const code = inviteCodeOf(raw);
   if (!code) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   const store = storeLink(code);
+  // AG 1.27 [INVITE-13] A messenger's own browser (카카오톡, 네이버, 인스타그램, 페이스북, 라인) may open the Play web page,
+  // where an install can lose the referrer: there the Play app is opened straight, with the web page to fall back to.
+  const app = playIntent(code, store);
   const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>밤낮 초대</title>
 <style>body{font-family:system-ui,sans-serif;margin:0;padding:32px 16px;background:#f6f7fb;color:#1b1d24}main{max-width:420px;margin:auto}
 a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
 code{font-size:1.4em;letter-spacing:.08em}@media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head>
-<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. Play 스토어에서 받아 첫 설정을 마치면 친구에게 알릴 수 있어요.</p>
-<p><a class="b" href="${store}">Play 스토어에서 받기</a></p>
+<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. 이 링크로 Play 스토어에서 받으면 앱이 초대를 저절로 알아보고, 첫 설정 마지막에 친구에게 알릴 수 있어요.</p>
+<p><a class="b" id="go" href="${store}">Play 스토어에서 받기</a></p>
 <p>안드로이드 휴대폰에서 열어 주세요. 링크로 받지 못했다면 설치하고 7일 안에 앱의 설정 › 프로 › ‘초대 코드 넣기’에 <code>${shown}</code>를 넣어 주세요.</p>
 <p><small>이 페이지는 아무것도 저장하지 않아요.</small></p></main>
-<script>if(/Android/i.test(navigator.userAgent))location.replace(${JSON.stringify(store)});</script></body></html>`;
+<script>var u=navigator.userAgent,a=/Android/i.test(u),w=/KAKAOTALK|NAVER|Instagram|FBAN|FBAV|FB_IAB|Line\//i.test(u);
+if(a&&w)document.getElementById("go").href=${JSON.stringify(app)};
+if(a)location.replace(w?${JSON.stringify(app)}:${JSON.stringify(store)});</script></body></html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600", "referrer-policy": "no-referrer" } });
 }
 
@@ -5986,6 +6290,10 @@ async function invites(request, env, path, url) {
     await run(env, `INSERT OR IGNORE INTO invite_uses (invitee, phone, code, inviter, source, first_day, status, reason, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, dev, mark, code, owner.device, body.source, kstDay(now), self ? "refused" : "waiting", self ? "self" : "", now);
     if (self) await audit(env, now, "invite_refused", code, "self");
+    // AG 1.27 [INVITE-10] Many friends of one code from one network in an hour (the hour's hashed network, kept the
+    // hour as the other counters) are let in, as coworkers share a hospital's or a factory's Wi-Fi, and noted with
+    // the code only for the developer app's summary (결정 AG-D5).
+    else if (!(await allow(env, `invitenet|${net.now}|${code}`, INVITE.burstPerHour, HOUR, now))) await audit(env, now, "invite_burst", code, "");
     return json({ status: self ? "refused" : "waiting", reason: self ? "self" : null, days: set.days, daysLeft: self ? null : set.days }, 201);
   }
   if (path === "/api/invites/seen" && method === "POST") {
@@ -6033,7 +6341,7 @@ async function inviteSettingsRoute(request, env, method, now) {
  * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
  */
 async function rewardCounts(env, withInvites, now) {
-  const [rewardRows, counts, refused, top, codes, setRows] = (await batch(env, [
+  const [rewardRows, counts, refused, top, codes, setRows, bursts] = (await batch(env, [
     stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
     stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
     stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
@@ -6041,6 +6349,8 @@ async function rewardCounts(env, withInvites, now) {
       FROM invite_uses WHERE status IN ('credited', 'capped', 'qualified', 'waiting') GROUP BY code ORDER BY friends DESC LIMIT 5`),
     stmt(env, "SELECT COUNT(*) AS n FROM invite_codes"),
     stmt(env, INVITE_SETTINGS_SQL),
+    // AG 1.27 [INVITE-10] 몰림: friends of one code from one network in an hour, the last 30 days.
+    stmt(env, "SELECT target AS code, COUNT(*) AS n FROM audit WHERE action = 'invite_burst' AND at > ? GROUP BY target ORDER BY n DESC LIMIT 5", now - 30 * DAY),
   ])).map((r) => r.results ?? []);
   const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
   return [rewardRows, withInvites ? {
@@ -6048,6 +6358,8 @@ async function rewardCounts(env, withInvites, now) {
     expired: n("expired"), rules: readInviteSettings(setRows),
     refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
     top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),
+    bursts: bursts.reduce((a, b) => a + b.n, 0),
+    burstCodes: bursts.map((b) => ({ code: b.code, n: b.n })),
   } : undefined];
 }
 // AE 1.26 끝
@@ -6809,7 +7121,7 @@ const METRIC_MAX_DAYS = 180;
  * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
  * carried ("1.24.0 (35)") are learned on top.
  */
-const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37 };
+const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38 };
 
 function appVersions(rows) {
   const all = rows.reduce((n, x) => n + x.phones, 0);
@@ -6923,8 +7235,10 @@ export async function playVitals(env, now) {
 export const REMOTE = {
   kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles"],
   base: "https://ywjmoney.github.io/-/remote/v1",
-  // The same two keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file).
-  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ="],
+  // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file). [REMOTE-08] The last two are the
+  // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2.
+  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=",
+    "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=", "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E="],
   keepMs: 10 * 60 * 1000,
 };
 const remoteKept = new WeakMap();
@@ -6974,7 +7288,8 @@ async function remoteState(env, now, fresh = false) {
   }
   const phones = week.reduce((n, x) => n + x.phones, 0);
   const files = await Promise.all(REMOTE.kinds.map(async (kind) => {
-    const [bytes, sig] = await Promise.all([get(`${kind}.json`), get(`${kind}.json.sig`)]);
+    // [REMOTE-08] .sig2 (1.27 key) first, the old .sig for apps up to 1.26 second.
+    const [bytes, sig2, sig1] = await Promise.all([get(`${kind}.json`), get(`${kind}.json.sig2`), get(`${kind}.json.sig`)]);
     if (!bytes) return { kind, found: false };
     let f = null;
     try {
@@ -6987,7 +7302,9 @@ async function remoteState(env, now, fresh = false) {
     const unknown = week.filter((x) => codes[x.app] === undefined).reduce((n, x) => n + x.phones, 0);
     return {
       kind, found: true, readable: f.kind === kind && f.format === 1, version: f.version ?? null, issued: f.issued ?? null, minApp,
-      source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig), valid: sig ? await signedBy(bytes, new TextDecoder().decode(sig)) : false,
+      source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig2 || sig1),
+      valid: (sig2 ? await signedBy(bytes, new TextDecoder().decode(sig2)) : false) || (sig1 ? await signedBy(bytes, new TextDecoder().decode(sig1)) : false),
+      oldApps: sig1 ? await signedBy(bytes, new TextDecoder().decode(sig1)) : false,
       reach: phones ? Math.round((1000 * able) / phones) / 10 : null, unknown,
     };
   }));
@@ -7325,7 +7642,7 @@ async function digest(request, env, url) {
 }
 
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms] = (await batch(env, [
+  const [changed, adopted, rates, results, rooms, roomPosts] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -7341,6 +7658,7 @@ async function newsItems(env, dev, since, now) {
     stmt(env, `SELECT x.kind, x.result, x.post_id, x.company_id, c.name, x.at FROM plaza_results x LEFT JOIN companies c ON c.id = x.company_id
       WHERE x.device = ? AND x.at > ? AND x.at <= ? ORDER BY x.at DESC LIMIT 20`, dev, since, now),
     roomNews(env, dev, since),
+    roomPostNews(env, dev, since),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -7351,6 +7669,8 @@ async function newsItems(env, dev, since, now) {
       ...(r.company_id ? { company: { id: r.company_id, name: r.name ?? "" } } : {}), at: iso(r.at) })),
     // [PLAZA-09] Something new in a company this phone joined: n other versions to look at.
     ...rooms.map((r) => ({ kind: "room", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
+    // AI 1.27 [PLAZA-35] New posts in 회사 정보 광장, n of them in one line.
+    ...roomPosts.map((r) => ({ kind: "room_posts", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

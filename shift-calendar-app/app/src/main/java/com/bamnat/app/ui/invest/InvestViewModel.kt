@@ -230,7 +230,43 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
             say(words.joinToString(", ") + ". 맞는지 보고 적기를 눌러 주세요") { repo.restoreAlerts(before) }
         }
 
-    val fillGuideSeen: StateFlow<Boolean> = repo.fillGuideSeen.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    // ---- 1.27 AK 순번 450 (INV-42~45): 캡처로 채우기 — 같으면 건너뛰고, 다르면 묻고, 새 것만 확인, 믿으면 묻지 않기 ----
+
+    /** [INV-44] Put a capture's sure new rows in without asking. */
+    val fillTrust: StateFlow<Boolean> = repo.fillTrust.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun setFillTrust(on: Boolean, quiet: Boolean = false) = viewModelScope.launch {
+        repo.setFillTrust(on)
+        if (!quiet) say(if (on) "다음부터 캡처는 묻지 않고 바로 넣어요. 기록과 다르거나 흐린 값은 계속 물어요" else "캡처로 채우기는 넣기 전에 다시 물어요")
+    }
+
+    private val _capturing = MutableStateFlow(false)
+    /** [INV-45] The capture sheet is open: from the found trades, the ⋮ menu or a shared screenshot. */
+    val capturing: StateFlow<Boolean> = _capturing.asStateFlow()
+    fun openCapture() { _capturing.value = true }
+    fun closeCapture() { _capturing.value = false }
+
+    /**
+     * [INV-43] The rows the user checked (or, with 묻지 않기, the sure new ones) written as trades, the fixes made; one
+     * line says what happened, with 되돌리기 for all of it.
+     */
+    fun applyCapture(lines: List<com.bamnat.core.invest.TradeAlerts.Pending>, fixes: List<Trade>, skipped: Int, asked: Boolean = true) =
+        viewModelScope.launch {
+            if (lines.isEmpty() && fixes.isEmpty()) {
+                if (skipped > 0) say("이미 적은 체결이에요 · 이미 있음 ${skipped}건")
+                return@launch
+            }
+            val done = repo.applyCapture(lines, fixes)
+            changed()
+            val words = listOfNotNull(
+                lines.size.takeIf { it > 0 }?.let { "넣었어요 ${it}건" },
+                fixes.size.takeIf { it > 0 }?.let { "고쳤어요 ${it}건" },
+                skipped.takeIf { it > 0 }?.let { "이미 있음 ${it}건" },
+            )
+            say(words.joinToString(" · ") + if (asked) "" else " (묻지 않고 넣음)") { repo.undoCapture(done) }
+        }
+
+    val fillGuideSeen: StateFlow<Boolean> =repo.fillGuideSeen.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     fun fillGuideShown() = viewModelScope.launch { repo.setFillGuideSeen() }
 
     /** The sheet saved the trade a found one opened; it no longer waits. */

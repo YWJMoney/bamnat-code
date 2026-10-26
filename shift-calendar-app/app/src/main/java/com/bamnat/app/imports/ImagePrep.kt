@@ -10,6 +10,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.media.ExifInterface
 import android.net.Uri
+import com.bamnat.core.imports.PhotoVariants
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
@@ -90,6 +91,79 @@ object ImagePrep {
         val c = 1.6f
         val t = (1 - c) * 128f
         postConcat(ColorMatrix(floatArrayOf(c, 0f, 0f, 0f, t, 0f, c, 0f, 0f, t, 0f, 0f, c, 0f, t, 0f, 0f, 0f, 1f, 0f)))
+    }
+
+    /**
+     * [READ-13] 1.27 순번 446: one way of making [base] over for another reading ([PhotoVariants]): light evened out,
+     * contrast stretched, black and white, a dark screen turned light, or the text's part twice the size. The made-over
+     * picture's pixel (x, y) is [left] + x × [toBase], [top] + y × [toBase] of [base], so every reading's words are put
+     * back on [base] before they are compared. Nothing is saved; each picture is dropped once read.
+     */
+    class Variant(val kind: PhotoVariants.Kind, val bitmap: Bitmap, val toBase: Float, val left: Int = 0, val top: Int = 0) {
+        fun x(v: Int): Int = left + (v * toBase).toInt()
+        fun y(v: Int): Int = top + (v * toBase).toInt()
+    }
+
+    /** Longest side the made-over pictures are worked at: four arrays of a 2400×1800 picture stay within a phone's memory. */
+    const val WORK_SIDE = 2400
+
+    /** Longest side of the twice-the-size picture. */
+    const val UP_SIDE = 3600
+
+    /** How [base] looks (on a small copy) and the ways worth reading it, given its letters' height from a first reading. */
+    fun plan(base: Bitmap, letterHeight: Int?): Pair<PhotoVariants.Stats, List<PhotoVariants.Kind>> {
+        val s = (1200f / max(base.width, base.height)).coerceAtMost(1f)
+        val small = if (s < 1f) Bitmap.createScaledBitmap(base, (base.width * s).toInt().coerceAtLeast(1), (base.height * s).toInt().coerceAtLeast(1), true) else base
+        val px = IntArray(small.width * small.height)
+        small.getPixels(px, 0, small.width, 0, 0, small.width, small.height)
+        val g = PhotoVariants.gray(px, small.width, small.height)
+        if (small !== base) small.recycle()
+        // Letters measured on [base]; the plan's own small copy does not change what they are.
+        return PhotoVariants.stats(g) to PhotoVariants.plan(g, letterHeight)
+    }
+
+    /**
+     * [base] made over as [kind]; null when not worth it (already big enough to double) or the phone ran short of memory
+     * (that way is skipped, the others still read). [text] is where the words of a first reading were, so the
+     * twice-the-size picture holds only the table, not the desk around it.
+     */
+    fun variant(base: Bitmap, kind: PhotoVariants.Kind, text: android.graphics.Rect? = null): Variant? = try {
+        when (kind) {
+            PhotoVariants.Kind.ORIG -> Variant(kind, base, 1f)
+            PhotoVariants.Kind.UP2 -> {
+                val r = text?.let { t ->
+                    val m = max(t.width(), t.height()) / 20
+                    android.graphics.Rect((t.left - m).coerceAtLeast(0), (t.top - m).coerceAtLeast(0),
+                        (t.right + m).coerceAtMost(base.width), (t.bottom + m).coerceAtMost(base.height))
+                }?.takeIf { it.width() > 8 && it.height() > 8 } ?: android.graphics.Rect(0, 0, base.width, base.height)
+                val f = (UP_SIDE.toFloat() / max(r.width(), r.height())).coerceAtMost(2f)
+                if (f < 1.4f) null else {
+                    val crop = Bitmap.createBitmap(base, r.left, r.top, r.width(), r.height())
+                    val big = Bitmap.createScaledBitmap(crop, (r.width() * f).toInt(), (r.height() * f).toInt(), true)
+                    if (crop !== base && crop !== big) crop.recycle()
+                    val out = over(big) { PhotoVariants.flat(it) }
+                    if (big !== out) big.recycle()
+                    Variant(kind, out, 1f / f, r.left, r.top)
+                }
+            }
+            else -> {
+                val s = (WORK_SIDE.toFloat() / max(base.width, base.height)).coerceAtMost(1f)
+                val work = if (s < 1f) Bitmap.createScaledBitmap(base, (base.width * s).toInt().coerceAtLeast(1), (base.height * s).toInt().coerceAtLeast(1), true) else base
+                val out = over(work) { PhotoVariants.make(kind, it) }
+                if (work !== base) work.recycle()
+                Variant(kind, out, 1f / s)
+            }
+        }
+    } catch (e: OutOfMemoryError) {
+        null
+    }
+
+    /** [b]'s pixels grey, through [f], as a new picture. */
+    private fun over(b: Bitmap, f: (PhotoVariants.Gray) -> PhotoVariants.Gray): Bitmap {
+        val px = IntArray(b.width * b.height)
+        b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
+        val g = f(PhotoVariants.gray(px, b.width, b.height))
+        return Bitmap.createBitmap(PhotoVariants.argb(g), g.w, g.h, Bitmap.Config.ARGB_8888)
     }
 
     /** A copy no wider than [maxSide] for showing on screen, and the factor from it back to [bitmap]'s pixels. */

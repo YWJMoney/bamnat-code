@@ -212,4 +212,21 @@ class LegalPagesTest {
         assertTrue(text.contains("설치 뒤 ${AdRules.QUIET_DAYS}일 동안은 광고가 없습니다"))
         assertTrue(TERMS_URL.endsWith("/terms/"))
     }
+
+    /** [PRIV-03] 3.1 for 1.27.0 (결정 D84): the dates the app holds the launch by are the dates the pages say. */
+    @Test fun policy31AndTerms11MoveTheDateWithTheTestersYes() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val c = com.bamnat.core.ops.PolicyConsent
+        assertTrue(c.EFFECTIVE == java.time.LocalDate.of(2026, 11, 10) && c.HELD_UNTIL == java.time.LocalDate.of(2026, 11, 24))
+        assertTrue(text.contains("처리방침 ${c.VERSION} · 앱 버전 1.27.0 기준 · 게시일 2026년 10월 27일 · 시행일 2026년 11월 10일"))
+        assertTrue(text.contains("원래 알린 날(2026년 11월 24일)까지 결제·광고"))
+        assertTrue(text.contains("대표 주기, 맞아요·달라요, 급여 방식 찾기 (선택, 앱 1.27.0부터)"))
+        assertTrue(text.contains("회사 정보 광장과 일 유형별 광장 (선택, 앱 1.27.0부터, 다른 이용자에게 공개)"))
+        assertTrue(text.contains("‘알리지 않고 저장’을 누르면 보내지 않습니다"))
+        val terms = File(site, "terms/index.html").readText()
+        assertTrue(terms.contains("이용약관 1.1 · 앱 버전 1.27.0 기준 · 게시일 2026년 10월 27일 · 시행일 2026년 11월 10일"))
+        assertTrue(terms.contains("이 약관은 2026년 11월 10일부터 시행합니다"))
+    }
 }
