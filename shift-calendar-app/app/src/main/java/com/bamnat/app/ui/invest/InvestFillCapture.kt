@@ -108,8 +108,9 @@ internal fun FillCaptureSheet(
     val zone = Today.zone()
     val today = Today.date()
 
-    fun take(text: String) {
-        val fills = FillSheetReader.read(text)
+    // [READ-13] 1.27 AJ: a capture read several ways comes with its 체결 put together (FillVote); typed text is read here.
+    fun take(text: String, voted: List<FillSheetReader.Fill>? = null) {
+        val fills = voted ?: FillSheetReader.read(text)
         rows.clear()
         rows += fills.map(::FillRow)
         written = vm.state.value.full.trades
@@ -134,7 +135,7 @@ internal fun FillCaptureSheet(
         val uri = shared ?: return@LaunchedEffect
         try {
             // [READ-09] Through U's ImagePrep (upright, sized for reading), on the phone only (결정 D68).
-            take(com.bamnat.app.pay.PayslipScanner.read(context, uri))
+            com.bamnat.app.pay.PayslipScanner.scan(context, uri).let { take(it.text, it.fills) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -188,7 +189,7 @@ internal fun FillCaptureSheet(
                     CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
                     Text("  휴대폰 안에서 캡처를 읽고 있어요", style = MaterialTheme.typography.bodySmall)
                 }
-                ScanButtons(onText = ::take)
+                ScanButtons(onScan = { take(it.text, it.fills) })
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 if (!read || rows.isEmpty()) return@Column
                 if (putQuietly > 0 || quietSame > 0) Text(

@@ -1178,7 +1178,8 @@ abstract class ScreenshotBase {
         companyOn()
         // As the app opens it: with the way to 회사 설정 보내기.
         payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onShareWay = {}) }.invoke(this)
-        tapText("우리 회사 항목 만들기", exact = true)
+        // 1.27 AJ: two cards under the total ('이것만 넣으면', '명세서와 맞춰 보기') put it further down.
+        tapText("우리 회사 항목 만들기", exact = true, scrolls = 14)
         tapText("빠지는 돈 (차감)", exact = true)
         typeInto("이름 (선택)", "기숙사비")
         typeInto("한 달 금액", "50000")

@@ -118,7 +118,12 @@ private fun Fact(label: String, value: String) {
 
 /** 계산 풀이 for one line [PAYX-05]: formula, minutes, hourly rate, multiplier, legal basis, rate version. */
 @Composable
-fun LineDetailDialog(line: PayLine, result: MonthPay, onDismiss: () -> Unit) {
+fun LineDetailDialog(
+    line: PayLine, result: MonthPay,
+    /** [PAYS-20] 1.27: the value behind the line fixed from here (이 값 고치기, 계산 방식 고치기). */
+    onFix: (() -> Unit)? = null, fixLabel: String = "이 값 고치기",
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(line.label) },
@@ -139,6 +144,7 @@ fun LineDetailDialog(line: PayLine, result: MonthPay, onDismiss: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = onFix?.let { f -> { TextButton(onClick = f) { Text(fixLabel) } } },
     )
 }
 

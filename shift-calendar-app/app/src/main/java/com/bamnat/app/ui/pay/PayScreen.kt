@@ -336,6 +336,11 @@ private fun PayResult(
     // [PAYS-11] A 추정 badge tapped: what to put in so it goes away.
     var estimate by remember { mutableStateOf<EstimateHint?>(null) }
     val shiftNames = remember(snapshot) { snapshot.shiftTypes.associate { it.id to it.name } }
+    // [PAYS-17] 1.27: values the rules leave to the user, still empty or guessed; one dialog each, from the card.
+    var hoursAsk by remember { mutableStateOf(false) }
+    var fiveAsk by remember { mutableStateOf(false) }
+    var timesFor by remember { mutableStateOf<com.bamnat.core.model.ShiftType?>(null) }
+    val needs = remember(profile, snapshot, result.month) { payNeeds(profile, snapshot, result.month) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
@@ -362,6 +367,21 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // [PAYS-17] 이것만 넣으면 정확해져요: each value straight from here, without leaving the month.
+        if (closedSnap == null) RuleNeedsCard(needs, withSlip = profile.verified != null) { n ->
+            when (n.kind) {
+                com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE -> editTarget = ValueTarget.Base
+                com.bamnat.core.pay.RuleOnlyNeeds.Kind.MONTHLY_HOURS -> hoursAsk = true
+                com.bamnat.core.pay.RuleOnlyNeeds.Kind.SHIFT_TIMES -> timesFor = snapshot.shiftTypes.firstOrNull { it.id == n.shiftTypeId }
+                com.bamnat.core.pay.RuleOnlyNeeds.Kind.ITEM_AMOUNT -> n.itemId?.let { editTarget = ValueTarget.Item(it) }
+                com.bamnat.core.pay.RuleOnlyNeeds.Kind.FIVE_OR_MORE -> fiveAsk = true
+            }
+        }
+        // [PAYS-19] 1.27 순번 449 (사용자 "맞춰보기가 있는데 어디에 있는지 안보이고"): right under the total, one card, two
+        // ways named apart: 금액 비교하기 (the payslip's amounts against the app's, 프로) and 계산 방식 찾기 (the company's
+        // way from a payslip or its rules page, free).
+        SlipMatchCard(profile, gate, onCompare = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
+            onFind = { slipRules = true })
         // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
         val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
         val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
@@ -585,13 +605,8 @@ private fun PayResult(
             }
             // [EASY-06] What is still a guess, with where each came from.
             com.bamnat.app.ui.guide.EstimatedFacts(vm.calendarId, onFix = onEditSetup, Modifier.padding(top = 8.dp))
+            // [PAYS-19] 1.27: 금액 비교하기·계산 방식 찾기 moved up under the total (SlipMatchCard).
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) }) {
-                    Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
-                    Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAYSLIP_MATCH)) // [TIER-06]
-                }
-                // [PAYS-14] 명세서 + 회사 계산 방법 사진 → 회사 규칙, free like the setup it belongs to.
-                OutlinedButton(onClick = { slipRules = true }) { Text("사진으로 회사 방식 맞추기") }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
             }
         }
@@ -610,7 +625,23 @@ private fun PayResult(
         )
     }
 
-    detail?.let { LineDetailDialog(it, shown) { detail = null } }
+    // [PAYS-20] 1.27 "정보가 뜰 때 바로 고칠수 있게": the line's own value fixed from its explanation.
+    detail?.let { line ->
+        val fix = lineFix(line, profile)
+        LineDetailDialog(line, shown, onFix = when {
+            fix != null -> ({ detail = null; editTarget = fix })
+            line.kind in RATE_LINES -> ({ detail = null; onEditRules() })
+            else -> null
+        }, fixLabel = if (fix != null) "이 값 고치기" else "계산 방식 고치기") { detail = null }
+    }
+    if (hoursAsk) MonthlyHoursDialog(profile.monthlyHours, onDismiss = { hoursAsk = false }) { h ->
+        vm.update { com.bamnat.core.pay.RuleOnlyNeeds.settled(it.copy(monthlyHours = h)) }
+        hoursAsk = false
+    }
+    if (fiveAsk) FiveOrMoreDialog(onDismiss = { fiveAsk = false }) { yes -> vm.update { fiveOrMoreSaid(it, yes) }; fiveAsk = false }
+    timesFor?.let { t ->
+        ShiftTimesDialog(t, onDismiss = { timesFor = null }) { r -> vm.setShiftTimes(t, r.start, r.end, r.breakMinutes); timesFor = null }
+    }
     editTarget?.let { target ->
         EditValueDialog(vm, profile, snapshot, target, month, onDismiss = { editTarget = null }, rangeOpen = bulkOpen)
     }

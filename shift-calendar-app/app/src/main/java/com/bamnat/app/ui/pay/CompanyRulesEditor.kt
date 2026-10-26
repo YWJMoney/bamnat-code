@@ -103,7 +103,9 @@ fun CompanyRulesEditor(
     val rules = draft.rules
     // [PAYS-01] A choice made here settles that question's 확인 필요.
     fun setRules(r: CompanyRules, vararg settled: String) { draft = draft.copy(rules = r, estimatedFields = draft.estimatedFields - settled.toSet()) }
-    fun PayProfile.settled(vararg keys: String) = copy(estimatedFields = estimatedFields - keys.toSet())
+    fun PayProfile.settled(vararg keys: String) = copy(estimatedFields = estimatedFields - keys.toSet() -
+        // [PAYS-17] 시수 said here too.
+        (if (com.bamnat.core.pay.Unknowns.MONTHLY_HOURS in keys) setOf(com.bamnat.core.pay.RuleOnlyNeeds.HOURS_UNSET) else emptySet()))
     // Worked out off the main thread, so a toggle never waits for the month [PAYS-01].
     val before by produceState<Long?>(null, saved, snapshot, month) { value = vm.calculateOff(saved, snapshot, month).total }
     val after by produceState<MonthPay?>(null, draft, snapshot, month) { value = vm.calculateOff(draft, snapshot, month) }

@@ -169,6 +169,15 @@ class DutyRosterViewModel(
         val chosen: Boolean = true,
         /** [READ-04] The photo last read, for 사진 위에서 누르기 and 무엇을 읽었는지 보기; in memory only. */
         val scan: com.bamnat.app.imports.RosterScanner.Scan? = null,
+        /**
+         * [READ-17] 1.27 "사진과 내용이 같은가요?": null while asked, false while the user fixes the cells that differ,
+         * true once they said it is the same.
+         */
+        val same: Boolean? = null,
+        /** [READ-14] The photo read, but poorly: what to do for a better one. */
+        val advice: String? = null,
+        /** [READ-13] Reading n of m ("2/5번째로 읽는 중"); m is 0 until known. */
+        val step: Pair<Int, Int>? = null,
     ) {
         val row: RosterRow? get() = if (chosen) rows?.getOrNull(picked) else null
         private val days: Int get() = month.lengthOfMonth()
@@ -274,7 +283,9 @@ class DutyRosterViewModel(
 
     // ---- reading (photo, file, text) ----
 
-    fun readPhoto(uri: Uri) = read { c -> RosterReader.photo(container.appContext, uri, c, _ui.value.month.atDay(1)) }
+    fun readPhoto(uri: Uri) = read { c ->
+        RosterReader.photo(container.appContext, uri, c, _ui.value.month.atDay(1)) { n, m -> _ui.update { it.copy(step = n to m) } }
+    }
 
     fun readFile(uri: Uri) = read { c -> RosterReader.file(container.appContext, uri, c, _ui.value.month.atDay(1)) }
 
@@ -287,7 +298,7 @@ class DutyRosterViewModel(
     }
 
     private fun read(how: suspend (DutyCodes) -> RosterResult) {
-        _ui.update { it.copy(reading = true, error = null, applied = null) }
+        _ui.update { it.copy(reading = true, error = null, applied = null, step = null) }
         viewModelScope.launch {
             val r = how(codes())
             // [READ-05] The table's own order, top to bottom, to choose from.
@@ -296,10 +307,11 @@ class DutyRosterViewModel(
             val mine = container.dutyCodes.mine(calendarId)?.let { m -> rows.indexOfFirst { it.label == m } }?.takeIf { it >= 0 }
             _ui.update {
                 it.copy(
-                    reading = false, rows = rows.takeIf { rs -> rs.isNotEmpty() } ?: it.rows,
+                    reading = false, step = null, same = if (rows.isEmpty()) it.same else null,
+                    rows = rows.takeIf { rs -> rs.isNotEmpty() } ?: it.rows,
                     picked = if (rows.isEmpty()) it.picked else mine ?: 0,
                     chosen = if (rows.isEmpty()) it.chosen else rows.size == 1 || mine != null,
-                    edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error, from = r.from,
+                    edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error, from = r.from, advice = r.advice,
                     // [ROST-04] The month the roster names wins over the one on screen (중-6).
                     month = r.month ?: it.month, named = r.month, cursor = 1, history = emptyList(),
                     scan = r.scan ?: it.scan.takeIf { r.from == RosterFrom.PHOTO },
@@ -323,13 +335,40 @@ class DutyRosterViewModel(
             types.value.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.isNight) }, container.dutyCodes.of(calendarId)))
 
     fun pick(i: Int) {
-        _ui.update { it.copy(picked = i, chosen = true, edits = emptyMap(), cursor = 1, history = emptyList()) }
+        _ui.update { it.copy(picked = i, chosen = true, edits = emptyMap(), cursor = 1, history = emptyList(), same = null) }
         // [READ-06] Remembered for next month's roster; a line with no name ("3번째 줄") says nothing about next month.
         _ui.value.rows?.getOrNull(i)?.label?.takeIf { it.isNotBlank() }?.let { container.dutyCodes.rememberMine(calendarId, it) }
     }
 
-    /** A cell fixed in place. */
-    fun edit(day: Int, cell: DutyCell?) = _ui.update { u -> change(u, u.edits + (day to cell)) }
+    /**
+     * A cell fixed in place. [READ-19] 1.27: a photo's word the reader was not sure of, fixed to the same meaning twice
+     * ([RosterLearn]), goes in the calendar's code book, so the next roster reads it so.
+     */
+    fun edit(day: Int, cell: DutyCell?) {
+        val u = _ui.value
+        _ui.update { change(it, it.edits + (day to cell)) }
+        val row = u.row ?: return
+        if (u.from != RosterFrom.PHOTO || cell == null) return
+        val word = com.bamnat.core.imports.RosterLearn.word(row, day, cell) ?: return
+        if (com.bamnat.app.data.ReadFixBook.get(container.appContext).dutyFixed(calendarId, word, cell)) {
+            container.dutyCodes.learn(calendarId, codeKey(word), cell)
+        }
+    }
+
+    /**
+     * [READ-17] "사진과 내용이 같은가요?": yes takes the read cells as looked at (the yellow ones too: the user saw the
+     * photo beside them); no lets each one be tapped and fixed.
+     */
+    fun sameAsPhoto(yes: Boolean) = _ui.update { u ->
+        if (!yes) return@update u.copy(same = false)
+        val seen = u.doubtful.mapNotNull { d -> u.cells[d]?.takeIf { it !is DutyCell.Unknown }?.let { d to it } }.toMap()
+        (if (seen.isEmpty()) u else change(u, u.edits + seen)).copy(same = true)
+    }
+
+    fun askSameAgain() = _ui.update { it.copy(same = null) }
+
+    /** [READ-15] The document scanner could not run here. */
+    fun scannerError(message: String) = _ui.update { it.copy(error = message) }
 
     /** [ROST-06] What a code means, here and on the next roster (the calendar's code book). */
     fun answer(raw: String, cell: DutyCell) {
@@ -500,6 +539,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 }
                 TextButton(onClick = { others = !others }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (others) "다른 방법 접기" else "다른 방법", maxLines = 1) }
             }
+            // [READ-15] 1.27: a roster photographed at an angle or in shade, straightened by Google's scanner on the phone.
+            com.bamnat.app.imports.ScannerButton(onImage = vm::readPhoto, onError = vm::scannerError, enabled = !ui.reading)
             if (others) {
                 OutlinedButton(onClick = { pasting = true }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.ContentPaste, null, Modifier.size(18.dp)); Text(" 글자로 붙여 넣기")
@@ -509,8 +550,15 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             }
             // [ROST-10] "복사한 글이 있어요 · 붙여 넣기": the clip's description only, read on the tap (Q ClipboardHint, 1.24 통합).
             if (ui.rows == null && !ui.reading) ClipboardHint("근무표", fits = vm::fitsClip, onPaste = vm::readText)
-            if (ui.reading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            if (ui.reading) Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                // [READ-13] Several readings take a few seconds: say which one is going.
+                Text(ui.step?.let { (n, m) -> if (m > 0) "휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else "휴대폰 안에서 읽는 중" } ?: "휴대폰 안에서 읽는 중",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite })
+            }
             ui.error?.let { e -> Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            ui.advice?.let { a -> Text(a, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
             // [READ-04][READ-05] A photo that read nothing, or not what the user sees: tap it, or see what was read.
             ui.scan?.let { scan ->
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -531,6 +579,13 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            // [READ-17] 사진과 내용이 같은가요? — the photo's dates and line over what was read, each cell fixed on its own.
+            val scanned = ui.scan
+            val mine = ui.row
+            if (scanned != null && mine != null && ui.from == RosterFrom.PHOTO && !ui.reading) SameAsPhotoCard(
+                scanned, mine, ui.picked, ui.cells, ui.doubtful, types, ui.month.lengthOfMonth(), ui.same,
+                onAnswer = vm::sameAsPhoto, onFix = { d -> vm.tap(d); editing = d }, onAgain = vm::askSameAgain,
+            )
             ui.asks.firstOrNull()?.let { ask -> AskCard(ask, types, onAnswer = { vm.answer(ask.raw, it) }, onNewKind = { newKindFor = ask.raw }) }
             Notices(ui, snap)
             val s = snap
@@ -720,7 +775,7 @@ private val LEAVE_KEYS = listOf(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CellDialog(date: LocalDate, types: List<ShiftType>, onDismiss: () -> Unit, onPick: (DutyCell?) -> Unit) {
+internal fun CellDialog(date: LocalDate, types: List<ShiftType>, onDismiss: () -> Unit, onPick: (DutyCell?) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(Fmt.monthDay(date)) },

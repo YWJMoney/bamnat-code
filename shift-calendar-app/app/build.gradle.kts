@@ -206,6 +206,9 @@ dependencies {
     // [PAYS-05][PAYX-04] Payslip, receipt, rule and roster photos read on the phone. [PERF-04] 결정 D52: the Korean
     // model is not bundled (15~25 MB less); Google Play services downloads it to the phone (pay/OcrModel), nothing is sent.
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
+    // [READ-15] 1.27 AJ: Google's document scanner (edges, straightening, shadows) run by Play services on the phone;
+    // about 300 KB here, its models and screens come with Play services. No camera permission, nothing sent (D68).
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     // [DAYW-07] On-device geofencing for 출퇴근 자동 기록 (off by default); no location leaves the phone.
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.

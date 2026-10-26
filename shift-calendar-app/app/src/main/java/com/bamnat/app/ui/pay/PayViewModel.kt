@@ -185,6 +185,12 @@ class PayViewModel(
 
     fun undo() = viewModelScope.launch { payStore.undo() }
 
+    /** [PAYS-17] 1.27: a kind of work's times put in from the pay screen's "이것만 넣으면 정확해져요". */
+    fun setShiftTimes(type: com.bamnat.core.model.ShiftType, start: java.time.LocalTime, end: java.time.LocalTime, breakMinutes: Int) =
+        viewModelScope.launch {
+            container.calendars.repository(calendarId).saveShiftType(type.copy(start = start, end = end, breakMinutes = breakMinutes))
+        }
+
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
         val before = payStore.profile.value
         payStore.update(transform)
@@ -448,7 +454,8 @@ class PayViewModel(
      */
     suspend fun slipRules(profile: PayProfile, snapshot: ScheduleSnapshot, read: com.bamnat.core.pay.PayslipRead,
                           rules: List<com.bamnat.core.pay.RuleChange>): com.bamnat.core.pay.SlipRulesResult? {
-        val month = read.month ?: YearMonth.from(Today.date()).minusMonths(1)
+        // [PAYS-16] A payslip is last month's; the company's rules alone are worked out on the month on screen.
+        val month = read.month ?: if (read.lines.isEmpty()) this.month.value else YearMonth.from(Today.date()).minusMonths(1)
         val result = withContext(Dispatchers.Default) {
             com.bamnat.core.pay.SlipRules.infer(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month,
                 snapshot.resolver::resolve, read, ruleChanges = rules, calculator = calculator)

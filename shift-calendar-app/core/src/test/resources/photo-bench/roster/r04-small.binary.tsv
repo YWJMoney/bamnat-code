@@ -1,0 +1,23 @@
+# r04-small binary {'angle': 0.8, 'blur': 0.5, 'jpeg': 70} {}
+truth	김민지	D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O
+truth	이수진	E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D
+truth	박하늘	N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E
+truth	최유리	O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N
+truth	정다은	D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O
+truth	한지우	E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D
+truth	오세영	N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E
+truth	윤가람	O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N,O,O,D,D,E,E,N,N
+word	682	183	872	212	-0.61	2026년12월근무표	12월
+word	177	328	228	353	0.0	김민지	김민지
+word	346	328	362	347	0.0	D	D
+word	383	330	394	345	0.0	E	E
+word	177	358	228	383	0.0	이수진	이수진
+word	346	359	362	378	0.0	E	E
+word	382	361	395	375	0.0	N	N
+word	175	385	228	415	4.48	박하는	박하늘
+word	348	391	361	405	0.0	N	N
+word	178	419	228	444	0.0	최유리	최유리
+word	179	449	229	475	0.0	정다은	정다은
+word	179	478	230	504	0.0	한지우	한지우
+word	178	508	229	534	0.0	오세형	오세영
+word	179	538	230	564	0.0	윤가람	윤가람

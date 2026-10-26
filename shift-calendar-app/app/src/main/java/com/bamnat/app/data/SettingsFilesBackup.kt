@@ -108,6 +108,8 @@ class SettingsFilesBackup(
             Part("auto_record"),
             Part("share_group"),
             Part("calendar_import", keys = setOf("auto")),
+            // [READ-19] 1.27 AJ: 사진 읽기에서 고친 명세서 줄 이름·듀티표 글자.
+            Part("read_fixes"),
         )
 
         /**

@@ -145,4 +145,49 @@ class FillStressTest {
         assertEquals("깨끗한 캡처가 틀림", 0, cleanBad)
         assertEquals("틀린 숫자가 확인 없이 들어감", 0, silentWrong)
     }
+
+    /**
+     * [READ-16] 1.27 AJ 순번 446: 600 captures read 3 ways each, every way with its own misreads on the clean text — a digit
+     * like another (3↔8, 1↔7, 0↔6, 5↔6), a digit lost, a letter of the name (전→건, 차→자) — put together ([FillVote]). Clean
+     * every way: every fill right and sure. With misreads: a fill left sure is always right (조용히 틀린 값 0).
+     */
+    @Test fun threeReadingsPutTogether() {
+        val swap = mapOf('3' to '8', '8' to '3', '1' to '7', '7' to '1', '0' to '6', '6' to '0', '5' to '6')
+        fun misread(r: Random, text: String): String = text.lines().joinToString("\n") { line ->
+            var t = line
+            if (r.nextInt(100) < 12) {
+                val digits = t.indices.filter { t[it].isDigit() && t[it] in swap }
+                if (digits.isNotEmpty()) { val i = digits[r.nextInt(digits.size)]; t = t.substring(0, i) + swap.getValue(t[i]) + t.substring(i + 1) }
+            }
+            if (r.nextInt(100) < 5) { val digits = t.indices.filter { t[it].isDigit() }; if (digits.isNotEmpty()) { val i = digits[r.nextInt(digits.size)]; t = t.removeRange(i, i + 1) } }
+            if (r.nextInt(100) < 6) t = t.replace("전", "건").replace("차", "자")
+            t
+        }
+        var cleanBad = 0; var cleanCases = 0; var silentWrong = 0; var onceSure = 0; var voteSure = 0
+        val bad = mutableListOf<String>()
+        repeat(600) { n ->
+            val r = Random(9000 + n)
+            val out = StringBuilder("체결내역\n")
+            val truths = mutableListOf<Truth>()
+            when (r.nextInt(4)) {
+                0, 1 -> repeat(1 + r.nextInt(4)) { krRow(r, false, out, truths, r.nextInt(3)) }
+                2 -> header(r, false, out, truths)
+                else -> repeat(1 + r.nextInt(3)) { usRow(r, false, out, truths) }
+            }
+            val noisy = n % 3 != 0
+            val texts = (0 until 3).map { w -> if (noisy) misread(Random(n * 13 + w), out.toString()) else out.toString() }
+            val reads = texts.map { FillSheetReader.read(it) }
+            val voted = com.bamnat.core.invest.FillVote.merge(reads)
+            fun right(f: FillSheetReader.Fill) = truths.any { t -> f.side == t.side && (f.name == t.name || f.symbol == t.code && t.code.isNotEmpty()) &&
+                near(f.quantity, t.q) && near(f.price, t.p) && (f.amount == 0.0 || near(f.amount, t.a)) }
+            onceSure += reads[0].count { it.sure && right(it) }
+            voteSure += voted.count { it.sure && right(it) }
+            voted.filter { it.sure && !right(it) }.forEach { f -> silentWrong++; if (bad.size < 15) bad += "#$n $f\n${texts.joinToString("\n--\n")}" }
+            if (!noisy) { cleanCases++; if (voted.size != truths.size || voted.any { !it.sure || !right(it) }) { cleanBad++; if (bad.size < 15) bad += "#$n CLEAN $voted" } }
+        }
+        println("fill 3-way stress: onceSure=$onceSure voteSure=$voteSure silentWrong=$silentWrong cleanBad=$cleanBad/$cleanCases")
+        bad.forEach(::println)
+        assertEquals("깨끗한 캡처 세 번 읽기가 틀림", 0, cleanBad)
+        assertEquals("틀린 숫자가 확인 없이 들어감", 0, silentWrong)
+    }
 }

@@ -535,7 +535,7 @@ object RuleText {
                 }
             }
             is RuleChange.NightWindow -> p.withRules { it.copy(nightStart = change.start, nightEnd = change.end) }
-            is RuleChange.MonthlyHours -> p.copy(monthlyHours = change.hours, estimatedFields = p.estimatedFields - Unknowns.MONTHLY_HOURS)
+            is RuleChange.MonthlyHours -> p.copy(monthlyHours = change.hours, estimatedFields = p.estimatedFields - Unknowns.MONTHLY_HOURS - RuleOnlyNeeds.HOURS_UNSET)
             is RuleChange.FiveOrMore -> p.copy(fiveOrMoreEmployees = change.value, estimatedFields = p.estimatedFields - Unknowns.FIVE_OR_MORE)
             is RuleChange.Breaks -> p.withRules { it.copy(breakPay = change.mode) }.let { Unknowns.answered(it, Unknowns.BREAK_PAY) }
             // [HOLI-01] Through the one 빨간날 choice, so 특근처럼 also judges a night shift by the day it starts.

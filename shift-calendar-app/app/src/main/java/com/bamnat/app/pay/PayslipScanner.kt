@@ -1,11 +1,20 @@
 package com.bamnat.app.pay
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
+import androidx.annotation.VisibleForTesting
 import com.bamnat.app.imports.ImagePrep
+import com.bamnat.core.imports.PhotoQuality
+import com.bamnat.core.imports.PhotoVariants
+import com.bamnat.core.invest.FillSheetReader
+import com.bamnat.core.invest.FillVote
 import com.bamnat.core.pay.OcrLine
 import com.bamnat.core.pay.OcrRows
+import com.bamnat.core.pay.RuleText
+import com.bamnat.core.pay.SlipVote
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -17,20 +26,78 @@ import java.io.File
  * ([OcrRows]) so a table reads name by amount.
  * [READ-07] 1.25: the photo is made upright and no bigger than reading needs first ([ImagePrep]), and each line keeps
  * its slope, so a payslip photographed 2~4° off is put back row by row (기본급 beside its own amount, not the next row's).
+ * [READ-13] 1.27 순번 446: read as taken and made over several ways ([ImagePrep.variant]), the readings put together
+ * line by line ([SlipVote]: an amount read two ways is asked) and fill by fill for a 체결 캡처 ([FillVote]).
  */
 object PayslipScanner {
+    /**
+     * One photo read: the text to show or read rules from ([text], the best reading), the payslip put together from all
+     * readings ([slip]), the 체결 put together ([fills]), a screen-sized copy of the photo for "사진과 같은가요?" (kept while
+     * the screen is open only), and whether the photo is good enough ([quality]).
+     */
+    class Scan(
+        val text: String, val texts: List<String>, val slip: SlipVote.Result, val fills: List<FillSheetReader.Fill>,
+        val image: Bitmap?, val quality: PhotoQuality.Report?,
+    ) {
+        val ways: Int get() = texts.size
+    }
+
+    /** Readings the tests give instead of ML Kit (one text per made-over picture), which does not run on a computer. */
+    @VisibleForTesting
+    var fake: (suspend (Uri) -> List<String>)? = null
+
+    /** The picture behind [fake]'s texts. */
+    @VisibleForTesting
+    var fakeImage: (() -> Bitmap)? = null
+
     /** Photos taken for reading go here and are deleted once read (FileProvider path "scan"). */
     fun scanFile(context: Context): File = File(context.cacheDir, "scan").apply { mkdirs() }.resolve("payslip.jpg")
 
-    suspend fun read(context: Context, uri: Uri): String = withContext(Dispatchers.Default) {
-        val image = InputImage.fromBitmap(ImagePrep.load(context, uri), 0)
-        val text = OcrModel.read(context, image)
-        val lines = text.textBlocks.flatMap { it.lines }.mapNotNull { l ->
-            val box = l.boundingBox ?: return@mapNotNull null
-            OcrLine(l.text, box.left, box.top, box.right, box.bottom, angle = l.angle)
+    suspend fun read(context: Context, uri: Uri): String = scan(context, uri).text
+
+    /** [progress] hears (reading n, of m) for "n/m번째로 읽는 중"; m is 0 until the photo's look is known. */
+    suspend fun scan(context: Context, uri: Uri, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+        fake?.let { f -> return@withContext put(f(uri), fakeImage?.invoke(), null) }
+        val photo = ImagePrep.load(context, uri)
+        progress(1, 0)
+        val first = OcrModel.read(context, InputImage.fromBitmap(photo, 0))
+        val firstLines = lines(first)
+        val texts = mutableListOf(join(first, firstLines))
+        val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
+        val (stats, kinds) = ImagePrep.plan(photo, letter)
+        val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
+            firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
+        val more = kinds.filter { it != PhotoVariants.Kind.ORIG }
+        more.forEachIndexed { i, kind ->
+            progress(i + 2, more.size + 1)
+            val v = ImagePrep.variant(photo, kind, box) ?: return@forEachIndexed
+            val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0)) }.getOrNull()
+            if (v.bitmap !== photo) v.bitmap.recycle()
+            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it }
         }
-        if (lines.isEmpty()) text.text else OcrRows.join(lines)
+        val quality = PhotoQuality.of(stats, letter, firstLines.sumOf { l -> l.text.split(' ').count { it.isNotBlank() } }, 0.0)
+        put(texts, ImagePrep.forScreen(photo).first, quality)
     }
+
+    /** The readings put together. */
+    @VisibleForTesting
+    internal fun put(texts: List<String>, image: Bitmap?, quality: PhotoQuality.Report?): Scan {
+        val read = texts.filter { it.isNotBlank() }
+        val slip = SlipVote.merge(read)
+        val fills = FillVote.merge(read.map { FillSheetReader.read(it) })
+        // The text shown and read for rules: the payslip's own reading when it has amounts, else the one most rules read
+        // from (a page of 취업규칙), more Korean letters on a tie.
+        val text = if (slip.read.lines.isNotEmpty()) slip.text
+            else read.maxWithOrNull(compareBy<String> { RuleText.read(it).size }.thenBy { t -> t.count { it in '가'..'힣' } }) ?: ""
+        return Scan(text, read, slip, fills, image, quality)
+    }
+
+    private fun lines(text: Text): List<OcrLine> = text.textBlocks.flatMap { it.lines }.mapNotNull { l ->
+        val box = l.boundingBox ?: return@mapNotNull null
+        OcrLine(l.text, box.left, box.top, box.right, box.bottom, angle = l.angle)
+    }
+
+    private fun join(text: Text, lines: List<OcrLine>): String = if (lines.isEmpty()) text.text else OcrRows.join(lines)
 
     /** Deletes a photo taken for reading. */
     fun clear(context: Context) {
