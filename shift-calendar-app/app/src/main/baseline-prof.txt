@@ -1,7 +1,8 @@
 # [PERF-01] Baseline Profile written by hand: the code a cold start runs until the calendar's month is drawn,
 # compiled ahead of time when the app is installed (Play, or profileinstaller for a sideloaded APK).
 # Compose, Room and the other AndroidX libraries ship their own profiles; these rules cover 밤낮's code.
-# A Macrobenchmark on a real phone can replace this file with a generated one (사용자 할 일: 실기기 측정).
+# [PERF-13] 1.28 AO: the profile made by :benchmark (benchmark/README.md) goes beside this file in
+# src/main/generated/baselineProfiles/ and both are used; this one stays as the floor when that one is missing.
 # BaselineProfileRulesTest checks that every class and package named here exists.
 #
 # H = hot, S = run at startup, P = run after startup.
@@ -10,6 +11,10 @@
 HSPLcom/bamnat/app/BamnatApp;->**(**)**
 HSPLcom/bamnat/app/MainActivity;->**(**)**
 HSPLcom/bamnat/app/AppContainer;->**(**)**
+# [PERF-14] 1.28 AO: their lambdas and coroutines (MainActivity waiting for the container, the later groups).
+HSPLcom/bamnat/app/BamnatApp$*->**(**)**
+HSPLcom/bamnat/app/MainActivity$*->**(**)**
+HSPLcom/bamnat/app/AppContainer$*->**(**)**
 HSPLcom/bamnat/app/StartupTrace;->**(**)**
 HSPLcom/bamnat/app/HomeRequests;->**(**)**
 HSPLcom/bamnat/app/AppLock;->**(**)**
@@ -32,6 +37,14 @@ HSPLcom/bamnat/app/data/ScheduleRepository;->**(**)**
 HSPLcom/bamnat/app/data/CalendarBook*->**(**)**
 HSPLcom/bamnat/app/data/MemoRepository;->**(**)**
 HSPLcom/bamnat/app/data/MoneyRepository;->**(**)**
+# [PERF-14] 1.28 AO: the rest of the real start path: the snapshot and its window, the calendar's scope, the
+# settings it reads, and the signed data files opened before the month (checked mark, else a full check).
+HSPLcom/bamnat/app/data/ScheduleSnapshot*->**(**)**
+HSPLcom/bamnat/app/data/ScheduleRepository$*->**(**)**
+HSPLcom/bamnat/app/data/CalendarScope*->**(**)**
+HSPLcom/bamnat/app/data/AppSettings*->**(**)**
+HSPLcom/bamnat/app/data/SettingsRepository$*->**(**)**
+HSPLcom/bamnat/app/remote/RemoteFilesStore*->**(**)**
 HSPLcom/bamnat/app/data/db/**->**(**)**
 HSPLcom/bamnat/app/tier/**->**(**)**
 HSPLcom/bamnat/app/diag/**->**(**)**
@@ -46,3 +59,13 @@ HSPLcom/bamnat/core/schedule/**->**(**)**
 HSPLcom/bamnat/core/hours/**->**(**)**
 HSPLcom/bamnat/core/holiday/**->**(**)**
 HSPLcom/bamnat/core/memo/**->**(**)**
+# [PERF-14] 1.28 AO: what the month and the container use too: today's date, the pay overlay, the calendar focus,
+# the diagnostics events and the signed file check.
+HSPLcom/bamnat/core/time/**->**(**)**
+HSPLcom/bamnat/core/pay/PayCalculator*->**(**)**
+HSPLcom/bamnat/core/pay/PayProfile*->**(**)**
+HSPLcom/bamnat/core/pay/PublicPayTable*->**(**)**
+HSPLcom/bamnat/core/work/CalendarFocus*->**(**)**
+HSPLcom/bamnat/core/work/ShiftMonth*->**(**)**
+HSPLcom/bamnat/core/diag/**->**(**)**
+HSPLcom/bamnat/core/remote/**->**(**)**
