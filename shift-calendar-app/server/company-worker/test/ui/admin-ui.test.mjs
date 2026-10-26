@@ -538,15 +538,15 @@ const SUPPORT = { review: "none", inquiries: "edit", dev: "edit", devStatus: "no
   community: "none", takedown: "none", ops: "none", metrics: "none", shares: "none", audit: "none" };
 
 /** An approved admin with [perms], signed in on a tab of their own. */
-async function asMember(s, perms = SUPPORT, hash = "") {
+async function asMember(s, perms = SUPPORT, hash = "", email = "minji@example.com", ip = 40) {
   const APP = { "x-admin": "1", origin: ORIGIN };
   const owner = await signIn(s.call);
-  const inv = await s.call("POST", "/api/admin/invites", { email: "minji@example.com", perms }, owner);
+  const inv = await s.call("POST", "/api/admin/invites", { email, perms }, owner);
   const token = inv.data.link.split("#")[1];
-  await s.call("POST", "/api/admin/join", { token, name: "민지", password: "minji-answers-2026" }, { ...APP, ...from(40) });
-  const id = (await s.call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === "minji@example.com").id;
+  await s.call("POST", "/api/admin/join", { token, name: "민지", password: "minji-answers-2026" }, { ...APP, ...from(ip) });
+  const id = (await s.call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === email).id;
   await s.call("POST", `/api/admin/admins/${id}`, { status: "active" }, owner);
-  const res = await s.call("POST", "/api/admin/login", { email: "minji@example.com", password: "minji-answers-2026" }, { ...APP, ...from(40) });
+  const res = await s.call("POST", "/api/admin/login", { email, password: "minji-answers-2026" }, { ...APP, ...from(ip) });
   const t = await tab(s.env, { hash, cookie: res.headers.get("set-cookie").split(";")[0] });
   await t.settle(20);
   return t;
@@ -584,7 +584,36 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.equal(u.window.location.hash, "#/home");
   await u.go("#/adopt");
   assert.equal(u.window.location.hash, "#/home");
-  assert.deepEqual([...t.errors, ...u.errors], []);
+  // 준호 looks after 광장 only (검토, 토론, 회사 보기): 문의 is gone and 광장 shows just those tabs.
+  const plaza = { ...SUPPORT, inquiries: "none", dev: "none", review: "edit", community: "edit", companies: "view" };
+  const v = await asMember(s, plaza, "", "junho@example.com", 41);
+  assert.deepEqual(sideHubs(v), ["today", "plaza", "manage"]);
+  await v.go("#/review");
+  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "companies"]);
+  assert.equal(Number(v.text('.tabs [data-badge="hub:plaza"]')), 1, "the one report");
+  await v.go("#/inquiries");
+  assert.equal(v.window.location.hash, "#/home");
+  assert.deepEqual([...t.errors, ...u.errors, ...v.errors], []);
+});
+
+test("[ADMUX-40] 출시 › 기능 관리 keeps the switches until AM's screen comes: 끄기 turns the feature off on the server", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  await t.go("#/flags");
+  assert.match(t.text("#main"), /기능 관리/);
+  const btn = t.$('#main [data-act="switch"][data-off="1"]');
+  const key = btn.dataset.key;
+  await t.click(btn);
+  t.$('dialog form[data-form="confirm"]').requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(s.call);
+  const n = (await s.call("GET", "/api/admin/notices", undefined, owner)).data;
+  assert.equal(n.switches.find((w) => w.key === key).off, true);
+  for (const tabName of ["types", "effects"]) {
+    await t.go(`#/${tabName}`);
+    assert.ok(t.$("#main .soon"), `${tabName} waits for AM's screen`);
+  }
+  assert.deepEqual(t.errors, []);
 });
 
 test("[ADMUX-35] the 1.27 addresses lead to the new tabs and keep their filters; #/settings says where things went", async () => {
