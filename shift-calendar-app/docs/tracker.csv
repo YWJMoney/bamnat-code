@@ -893,26 +893,26 @@ PAYS-17,"순번 448 '이것만 넣으면 정확해져요': 비었거나 추정�
 PAYS-18,"순번 448 골든: 규칙만(명세서 없음) 달력 근무 → 급여 금액, 기존 골든 사례 그대로",2 (1.27.0),완료,,"RulesOnlyPayTest, PayGoldenCasesTest 그대로 통과"
 PAYS-19,"순번 449 '명세서와 맞춰 보기' 카드를 급여 합계 바로 아래로, 두 길 이름 '금액 비교하기(프로)'·'계산 방식 찾기', 설정 찾기·도움말·기능 목록",2 (1.27.0),완료,,"RuleNeedsCard.SlipMatchCard, PayScreen, FeatureRegistry pay.slipAudit·pay.slipRules, HelpFaq pay·payslipPhotos·photoCheck·rulesOnly, SettingsIndex; AJScreenshotTest 1150, VScreenshotTest"
 PAYS-20,"순번 449 뜬 자리에서 바로 고치기: 급여 내역 줄 풀이에 '이 값 고치기'(기본급·수당)·'계산 방식 고치기'(가산 줄), 명세서 읽은 줄 고치기",2 (1.27.0),완료,,"PayDialogs.LineDetailDialog onFix, RuleNeedsCard.lineFix·RATE_LINES, PayScreen"
-FLAG-20,"순번 455 서버 기능 플래그 장부 FLAG_CATALOG(계약 키·stats.more·free.<FEATURE>, 이름·하는 일·꺼 둔 이유·근거·조건·위험·정리 판)",2 (1.28.0),진행 중,,
-FLAG-21,"순번 455 서버 덮어쓰기 저장: 강제 켬/끔·조건·until·다시 볼 날·이유(필수)·누가·언제, 수동 확인, 전·후 전체 기록",2 (1.28.0),진행 중,,
-FLAG-22,"순번 455 /api/config flags·policy·serverTime, 옛 앱용 billingLive·freeFeatures·off를 서버 판단으로 계산",2 (1.28.0),진행 중,,
-FLAG-23,순번 455 옛 billing_live·free_features·switches_off 설정을 덮어쓰기로 한 번 옮기기(두 번 해도 같음),2 (1.28.0),진행 중,,
-FLAG-24,순번 455 서버 paused()·쉬는 기능 자동(autoRest)이 플래그 덮어쓰기를 읽고 씀,2 (1.28.0),진행 중,,
-FLAG-25,"순번 455 launchedAt 자동 기록(결제가 서버 판단으로 처음 켜진 때, 매시 17분·확인·덮어쓰기), POST /launch 은퇴",2 (1.28.0),진행 중,,
-FLAG-26,순번 455 /api/passes admin.owner(최고 관리자가 만든 연결 코드),2 (1.28.0),진행 중,,
-FLAG-27,"순번 455 권한 영역 flags, 예/아니요 flagOff(D97 기본 최고 관리자만), 강제 켬·법적 확인은 최고 관리자만",2 (1.28.0),진행 중,,
-FLAG-28,"순번 455 법적 플래그 안전장치(D99): 켜지기 하루 전·켜진 뒤 관리자 웹 푸시, 24시간 홈 경고 자료",2 (1.28.0),진행 중,,
-FLAG-29,"순번 455 처리방침 고지 기간 검사(불리한 변경 30일·그 밖 7일, 처리방침 9항)와 근거 판 시행일보다 이른 날짜 경고",2 (1.28.0),진행 중,,
-FLAG-30,"순번 455 사용 통계 flagsOn 받기, 날마다 휴대폰 구별 없이 합계(usage_flags)",2 (1.28.0),진행 중,,
-FLAG-31,순번 455 정리 대상: 정리 예정 판(sunset)이 지난 플래그,2 (1.28.0),진행 중,,
-FLAG-32,"순번 455 근무 유형 6개 노출 켜고 끄기(type.*), 마지막 하나는 숨기지 못함",2 (1.28.0),진행 중,,
-FLAG-33,순번 455 처리방침 일정(PolicyCalendar) 서버 덮어쓰기와 /api/config policy,2 (1.28.0),진행 중,,
-ADMUX-21,"순번 455 관리자 앱 기능 관리 목록: 대기·켜짐·강제로 끔·정리 대상 거르기, 찾기, 남은 날·이유 한 줄",2 (1.28.0),진행 중,,
-ADMUX-22,순번 455 기능 상세: 상태 문장·조건 체크리스트·확인했어요·근거·켜진 휴대폰 비율·전후 비교·모든 기록,2 (1.28.0),진행 중,,
-ADMUX-23,순번 455 강제 끔(이유·다시 볼 날)·강제 켬·풀기·조건 편집기(검증),2 (1.28.0),진행 중,,
-ADMUX-24,순번 455 미리 보기: 휴대폰 조건을 넣으면 켜짐·꺼짐과 이유(서버와 같은 판단기),2 (1.28.0),진행 중,,
-ADMUX-25,순번 455 일정표: 날짜 조건 플래그·처리방침 게시·시행일·이달 할 일,2 (1.28.0),진행 중,,
-ADMUX-26,"순번 455 근무 유형 화면: 여섯 유형 보임·숨김, 기존 사용자·최고 관리자 휴대폰 안내",2 (1.28.0),진행 중,,
-ADMUX-27,"순번 455 홈 맨 위 법적 기능 경고 카드(24시간 한 번 눌러 강제 끔), 설정의 정식 출시 카드 은퇴",2 (1.28.0),진행 중,,
-ADMUX-28,순번 455 관리자 권한 창의 기능 관리·기능 강제로 끄기,2 (1.28.0),진행 중,,
-ADMUX-29,순번 455 관리자 README·HANDOFF 6-25·시험,2 (1.28.0),진행 중,,
+FLAG-20,"순번 455 서버 기능 플래그 장부 FLAG_CATALOG(계약 키·stats.more·free.<FEATURE>, 이름·하는 일·꺼 둔 이유·근거·조건·위험·정리 판)",2 (1.28.0),완료,,index.js FLAG_CATALOG·flagDef(조건은 AL-D1 JSON); flags.test.mjs 계약 키
+FLAG-21,"순번 455 서버 덮어쓰기 저장: 강제 켬/끔·조건·until·다시 볼 날·이유(필수)·누가·언제, 수동 확인, 전·후 전체 기록",2 (1.28.0),완료,,"flag_overrides·flag_checks·flag_history, setFlagForce·setFlagConditions·setFlagCheck; flags.test.mjs 검사·기록"
+FLAG-22,"순번 455 /api/config flags·policy·serverTime, 옛 앱용 billingLive·freeFeatures·off를 서버 판단으로 계산",2 (1.28.0),완료,,"config()·configFlags(confirmed)·legacyFlags; flags.test.mjs config, money.test.mjs"
+FLAG-23,순번 455 옛 billing_live·free_features·switches_off 설정을 덮어쓰기로 한 번 옮기기(두 번 해도 같음),2 (1.28.0),완료,,migrateFlags(flags_migrated); flags.test.mjs 옮기기
+FLAG-24,순번 455 서버 paused()·쉬는 기능 자동(autoRest)이 플래그 덮어쓰기를 읽고 씀,2 (1.28.0),완료,,"paused=switchOff, setSwitch·autoRest가 덮어쓰기; operations·digest 시험"
+FLAG-25,"순번 455 launchedAt 자동 기록(결제가 서버 판단으로 처음 켜진 때, 매시 17분·확인·덮어쓰기), POST /launch 은퇴",2 (1.28.0),완료,,"recordLaunch·flagTick(매시 17분), POST /launch 410; flags.test.mjs 하루 전·자정, money.test.mjs"
+FLAG-26,순번 455 /api/passes admin.owner(최고 관리자가 만든 연결 코드),2 (1.28.0),완료,,passes() admin.owner; flags.test.mjs passes
+FLAG-27,"순번 455 권한 영역 flags, 예/아니요 flagOff(D97 기본 최고 관리자만), 강제 켬·법적 확인은 최고 관리자만",2 (1.28.0),완료,,"AREAS flags·TOGGLES flagOff·flagMay·SINCE.flags; flags.test.mjs D97, admin-ui 권한 창"
+FLAG-28,"순번 455 법적 플래그 안전장치(D99): 켜지기 하루 전·켜진 뒤 관리자 웹 푸시, 24시간 홈 경고 자료",2 (1.28.0),완료,,"flagTick 웹 푸시(PUSH_KINDS.flags)·flagOverview flagAlerts; flags.test.mjs 푸시·홈, admin-ui 홈 카드"
+FLAG-29,"순번 455 처리방침 고지 기간 검사(불리한 변경 30일·그 밖 7일, 처리방침 9항)와 근거 판 시행일보다 이른 날짜 경고",2 (1.28.0),완료,,admin-lib noticeWarnings; flags.test.mjs 처리방침 고침 경고
+FLAG-30,"순번 455 사용 통계 flagsOn 받기, 날마다 휴대폰 구별 없이 합계(usage_flags)",2 (1.28.0),완료,,usage() flagsOn·usage_flags·flagShares; flags.test.mjs flagsOn
+FLAG-31,순번 455 정리 대상: 정리 예정 판(sunset)이 지난 플래그,2 (1.28.0),완료,,flagRow sunsetDue(latestRelease); admin-app 정리 대상 칩
+FLAG-32,"순번 455 근무 유형 6개 노출 켜고 끄기(type.*), 마지막 하나는 숨기지 못함",2 (1.28.0),완료,,"TYPE_FLAGS·/types·last_type 409; flags.test.mjs 근무 유형, admin-ui 근무 유형"
+FLAG-33,순번 455 처리방침 일정(PolicyCalendar) 서버 덮어쓰기와 /api/config policy,2 (1.28.0),완료,,POLICY_CALENDAR·mergePolicy·setPolicy·configPolicy; flags.test.mjs 처리방침
+ADMUX-21,"순번 455 관리자 앱 기능 관리 목록: 대기·켜짐·강제로 끔·정리 대상 거르기, 찾기, 남은 날·이유 한 줄",2 (1.28.0),완료,,admin-app flagsView; admin-ui 목록 거르기
+ADMUX-22,순번 455 기능 상세: 상태 문장·조건 체크리스트·확인했어요·근거·켜진 휴대폰 비율·전후 비교·모든 기록,2 (1.28.0),완료,,admin-app flagView·flagDetail; admin-ui 화면 열기
+ADMUX-23,순번 455 강제 끔(이유·다시 볼 날)·강제 켬·풀기·조건 편집기(검증),2 (1.28.0),완료,,openFlagForce·openFlagConditions·flagCondPreview; admin-ui 강제 끔·조건 편집
+ADMUX-24,순번 455 미리 보기: 휴대폰 조건을 넣으면 켜짐·꺼짐과 이유(서버와 같은 판단기),2 (1.28.0),완료,,"flagSimCard·flagSimText(L.evalFlag); admin-ui 미리 보기, flags.test.mjs 판단기"
+ADMUX-25,순번 455 일정표: 날짜 조건 플래그·처리방침 게시·시행일·이달 할 일,2 (1.28.0),완료,,flagTimeline·openFlagPolicy; admin-ui 일정 열기
+ADMUX-26,"순번 455 근무 유형 화면: 여섯 유형 보임·숨김, 기존 사용자·최고 관리자 휴대폰 안내",2 (1.28.0),완료,,typesView; admin-ui 근무 유형
+ADMUX-27,"순번 455 홈 맨 위 법적 기능 경고 카드(24시간 한 번 눌러 강제 끔), 설정의 정식 출시 카드 은퇴",2 (1.28.0),완료,,flagAlertCard·설정 카드 링크; admin-ui 홈 카드·설정
+ADMUX-28,순번 455 관리자 권한 창의 기능 관리·기능 강제로 끄기,2 (1.28.0),완료,,permEditor flagOff(예/아니요)·잠긴 버튼 이유; admin-ui 권한
+ADMUX-29,순번 455 관리자 README·HANDOFF 6-25·시험,2 (1.28.0),완료,,"README 개발자 앱 표·API, HANDOFF 6-25; npm test·test:ui"
