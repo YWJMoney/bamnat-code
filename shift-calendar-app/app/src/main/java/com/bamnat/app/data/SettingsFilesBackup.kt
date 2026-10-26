@@ -170,6 +170,8 @@ class SettingsFilesBackup(
             "app_state" to "앱을 마지막으로 연 때(화면 되살리기)",
             // [INVITE-02] 1.26 AE: tied to this install on the company server; the months move with the recovery code.
             "invite" to "친구 초대: 이 설치에 묶인 초대 코드와 받은 초대(이용권은 복구 코드로 옮겨요)",
+            // AG 1.27 [INVITE-11][INVITE-12]: when this phone was asked to invite or to tell the developer (끄기는 기능 스위치로 백업).
+            "grow" to "친구 초대 카드·‘함께 만들어요’ 카드를 이 휴대폰에서 본 날과 닫은 날, 되돌리기 수",
         )
     }
 }

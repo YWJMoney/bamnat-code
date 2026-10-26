@@ -10,8 +10,16 @@ import java.time.Instant
  * (0: no cap). The app only says them; the server decides (company-worker inviteSettings).
  */
 data class InviteTerms(val need: Int, val days: Int, val months: Int, val capMonths: Int) {
-    /** "친구 5명마다 나에게 프로 1개월(상한 없음)". */
-    fun words(): String = "친구 ${need}명마다 나에게 프로 ${months}개월" + if (capMonths > 0) "(1년에 ${capMonths}개월까지)" else "(상한 없음)"
+    /**
+     * AG 1.27 [INVITE-09] As the user meant it (리뷰 2026-10-25): months for each [need] different friends who each used
+     * the app [days] days, not for one friend's days. "친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또
+     * 1개월(상한 없음)".
+     */
+    fun words(): String = "친구 ${need}명이 각자 ${days}일 이상 쓰면 나에게 프로 ${months}개월, ${need}명 더 채울 때마다 또 ${months}개월" +
+        if (capMonths > 0) "(1년에 ${capMonths}개월까지)" else "(상한 없음)"
+
+    /** AG 1.27 [INVITE-09] The short form for a button or a line: "친구 5명이 7일 쓰면 프로 1개월". */
+    fun short(): String = "친구 ${need}명이 ${days}일 쓰면 프로 ${months}개월"
 
     companion object {
         /** Until the server says otherwise: the developer app's defaults. */
@@ -67,10 +75,13 @@ object InviteRules {
     fun mayReadReferrer(installedAt: Instant?, now: Instant): Boolean =
         installedAt == null || Duration.between(installedAt, now) <= REFERRER_WITHIN
 
-    /** [INVITE-02] What the inviter sends with the share sheet: the link, and the code for a phone the link did not reach. */
+    /**
+     * [INVITE-02] What the inviter sends with the share sheet: the link, and the code for a phone the link did not reach.
+     * AG 1.27 [INVITE-13]: what the app does first, then that the link is all it takes (the app recognises the invite).
+     */
     fun shareText(link: String, code: String): String =
-        "밤낮 근무 달력 같이 써요. 교대 근무표·알람·월급 계산을 한 앱에서 봐요.\n$link\n" +
-            "링크가 안 열리면 앱을 깔고 7일 안에 설정 › 프로 › ‘초대 코드 넣기’에 ${shown(code)}를 넣어 주세요."
+        "밤낮 근무 달력 같이 써요. 근무표·알람·월급 계산을 한 앱에서 보고, 쉬는 날도 한눈에 맞춰 볼 수 있어요.\n$link\n" +
+            "이 링크로 깔면 초대가 저절로 알려져요. 링크가 안 열리면 앱을 깔고 7일 안에 설정 맨 위 ‘친구 초대’ › ‘초대 코드 넣기’에 ${shown(code)}를 넣어 주세요."
 
     /** [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". */
     fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명 · 프로 ${months}개월"
@@ -78,6 +89,9 @@ object InviteRules {
     /** [INVITE-08] Toward the next months: "3/5명 · 2명은 사용 기간 채우는 중". */
     fun progress(progress: Int, need: Int, waiting: Int): String =
         "$progress/${need}명" + if (waiting > 0) " · ${waiting}명은 사용 기간 채우는 중" else ""
+
+    /** AG 1.27 [INVITE-09] The friends still to go for the next months: "다음 프로까지 2명". */
+    fun toNext(progress: Int, need: Int): String = "다음 프로까지 ${(need - progress).coerceAtLeast(1)}명"
 
     /** What a refusal of a friend's report means, in the friend's words. */
     fun refused(reason: String?): String = when (reason) {

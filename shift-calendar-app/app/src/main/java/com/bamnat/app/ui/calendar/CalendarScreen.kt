@@ -371,7 +371,11 @@ fun CalendarScreen(
                 actionLabel = if (msg.undo != null) msg.actionLabel else null,
                 duration = if (msg.long || msg.undo != null && msg.actionLabel != "되돌리기") SnackbarDuration.Long else SnackbarDuration.Short,
             )
-            if (result == SnackbarResult.ActionPerformed) vm.runUndo(msg)
+            if (result == SnackbarResult.ActionPerformed) {
+                vm.runUndo(msg)
+                // AG 1.27 [INVITE-12] The third 되돌리기 of a day, once in two weeks: a line asking what did not go well.
+                if (msg.actionLabel == "되돌리기") com.bamnat.app.ui.grow.GrowAsk.afterUndo(context.appContainer, messageHost)
+            }
         }
     }
 
@@ -991,6 +995,12 @@ fun CalendarScreen(
         )
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
+            // AG 1.27 [INVITE-10]: first, so it is never folded in "알림 n개 더 보기" (리뷰 2026-10-25); it shows only
+            // for a phone that did not answer at the end of the first setup, and after the report the friend's own invite.
+            if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
+            // AG 1.27 [INVITE-12] After the app stopped by itself: one ask to say what happened, once a note.
+            if (paint == null && viewingReceived == null) add(Notice("crashAsk", "불편한 점 알려 주기") { com.bamnat.app.ui.grow.CrashAskNotice() })
             // [GUIDE-02][GUIDE-03][EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
             if (guideHere && askOn) add(Notice("ask", "질문 1개") {
                 com.bamnat.app.ui.guide.AskArea(context.appContainer, activeCalendar.id, settings.workStyle,
@@ -1072,8 +1082,8 @@ fun CalendarScreen(
                     onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) },
                     onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) })
             })
-            // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
-            if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
+            // AG 1.27 [INVITE-11] Inviting friends, three days after the install, two weeks apart (결정 AG-D6).
+            if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구 초대") { com.bamnat.app.ui.pro.InviteNudgeNotice() })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             if (guideHere) add(Notice("guide", "오늘의 팁") {

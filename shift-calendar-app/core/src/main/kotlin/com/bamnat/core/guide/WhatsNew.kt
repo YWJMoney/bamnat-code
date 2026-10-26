@@ -10,6 +10,13 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.27.0 (계획/1.27-리뷰반영-사진인식-통합계획.md; each bundle adds its lines, 통합 folds them).
+        Release(38, "1.27.0", listOf(
+            // AG 1.27 [INVITE-10][INVITE-11] Bundle AG.
+            Line("친구 초대 링크로 깔면 앱이 저절로 알아보고, 첫 설정 마지막 버튼 하나로 초대한 분께 알려요. 친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월", "pro.invite"),
+            // AG 1.27 [MON-12][INVITE-12] Bundle AG.
+            Line("프로 기능을 누르면 ‘광고 보고 오늘 하루 열기’와 ‘친구 초대로 프로 받기’를 함께 보여요. 설정 맨 위에서 친구 초대와 ‘불편한 점 알려 주기’를 바로 해요", "grow.card"),
+        )),
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.
@@ -18,7 +25,7 @@ object WhatsNew {
             Line("회사 이름으로 공개 자료의 근무주기를 찾아 순서와 오늘 날짜만 맞추면 달력에 들어가요", "plaza.cycles"),
             Line("우리 회사가 없으면 처음으로 넣어 광장에 올려요. 급여 정보까지 올리면 보상을 드려요", "plaza.cycles"),
             // [INVITE-02][INVITE-03] Bundle AE.
-            Line("설정 › 프로 › ‘친구 초대’로 링크를 보내요. 깐 친구 5명이 7일 넘게 쓸 때마다 나에게 프로 1개월", "pro.invite"),
+            Line("설정 › 프로 › ‘친구 초대’로 링크를 보내요. 깐 친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월", "pro.invite"),
             // AF (계획/1.26-AF-개발계획.md): 결정 D79.
             Line("다니는 회사 광장에 근무 순서·계산 방식을 한 번 허락하면 저절로 나누고, 참여한 회사에서는 다른 분들이 바꾼 값만 골라 써요", "plaza.room"),
         )),

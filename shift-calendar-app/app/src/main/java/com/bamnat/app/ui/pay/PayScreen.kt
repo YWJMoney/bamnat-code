@@ -578,7 +578,7 @@ private fun PayResult(
             // [EASY-06] What is still a guess, with where each came from.
             com.bamnat.app.ui.guide.EstimatedFacts(vm.calendarId, onFix = onEditSetup, Modifier.padding(top = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() }) {
+                OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) }) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
                     Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAYSLIP_MATCH)) // [TIER-06]
                 }

@@ -297,7 +297,7 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun theServersRulesAreSaid() = shoot("1056_ae_rules_from_server", FOLDED) {
         api.rulesAnswer = InviteTerms(need = 3, days = 10, months = 2, capMonths = 6)
         openPro()
-        reveal("친구 3명마다 나에게 프로 2개월")
+        reveal("친구 3명이 각자 10일 이상 쓰면 나에게 프로 2개월")
         assertTrue(shows("10일이 지나 앱을 다시 열면"))
         assertTrue(shows("1년에 6개월까지"))
         assertTrue("rules" in api.calls)

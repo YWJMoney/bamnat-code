@@ -27,6 +27,26 @@ import java.time.LocalDate
 import com.bamnat.core.time.Today
 
 /**
+ * AG 1.27 [MON-12] The rewarded ad as one of the ways in the 프로 sheet and lock: [DayPassButton] under its own rules, or,
+ * in the alarm check's 등급 미리 보기 (no ad is ever loaded there), the same button that cannot be pressed and says why.
+ */
+@Composable
+fun DayPassOption(gate: Gate, modifier: Modifier = Modifier) {
+    if (gate.preview && gate.tier < Tier.PRO) {
+        Column(modifier) {
+            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("광고 보고 오늘 하루 열기") }
+            Text(
+                "광고 한 편을 끝까지 보면 오늘 밤 12시까지 프로 기능이 열려요. 하루 한 번이에요. 미리 보기에서는 광고가 나오지 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        return
+    }
+    DayPassButton(gate, modifier)
+}
+
+/**
  * [MON-07] The one rewarded ad (결정 1: D), and only when the user taps for it: what it gives is said
  * before it plays (AdMob 보상형 정책). Watched to the end, the pro features open until midnight, once
  * a day. This is the only file that may use a rewarded ad (AdAndLicenseRulesTest).

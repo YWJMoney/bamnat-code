@@ -108,6 +108,6 @@ fun LaunchThanks(c: AppContainer) {
         title = { Text("고마워요") },
         text = { Text(launchThanksText(lastDay(until, zone)), style = MaterialTheme.typography.bodyMedium) },
         confirmButton = { TextButton(onClick = { c.proStore.thanksSeen() }) { Text("확인") } },
-        dismissButton = { TextButton(onClick = { c.proStore.thanksSeen(); openPro() }) { Text("프로 둘러보기") } },
+        dismissButton = { TextButton(onClick = { c.proStore.thanksSeen(); goPro() }) { Text("프로 둘러보기") } },
     )
 }
