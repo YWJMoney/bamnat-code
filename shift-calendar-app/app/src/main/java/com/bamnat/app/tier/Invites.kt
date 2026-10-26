@@ -179,6 +179,13 @@ data class InviteState(
     val answer: InviteAnswer? = null,
     /** The day the once-a-day check last went. */
     val seenDay: LocalDate? = null,
+    /**
+     * AG 1.27 [INVITE-10] The friend tapped '저장하고 초대한 분께 알리기' at the end of the first setup (결정 AG-D2): the
+     * report goes at once, and, when it could not (no internet), from the next [Invites.sync] without asking again.
+     */
+    val agreed: Boolean = false,
+    /** AG 1.27 [INVITE-13] The friend's card after the report ("당신도 친구 5명 …") was closed. */
+    val relayClosed: Boolean = false,
 ) {
     /** Still in the period of use after the report. */
     val waiting: Boolean get() = answer?.status == "waiting"
@@ -218,6 +225,8 @@ class InviteStore(context: Context, suffix: String = "") {
                 JSONObject().put("status", it.status).put("reason", it.reason ?: JSONObject.NULL).put("daysLeft", it.daysLeft ?: JSONObject.NULL)
             } ?: JSONObject.NULL)
             .put("seenDay", s.seenDay?.toString() ?: JSONObject.NULL)
+            .put("agreed", s.agreed)
+            .put("relayClosed", s.relayClosed)
 
         internal fun parse(o: JSONObject): InviteState = InviteState(
             view = o.optJSONObject("view")?.let { InviteClient.readView(it) },
@@ -226,6 +235,8 @@ class InviteStore(context: Context, suffix: String = "") {
             reportedCode = o.text("reportedCode"),
             answer = o.optJSONObject("answer")?.let { InviteClient.readAnswer(it) },
             seenDay = o.text("seenDay")?.let(LocalDate::parse),
+            agreed = o.optBoolean("agreed"),
+            relayClosed = o.optBoolean("relayClosed"),
         )
     }
 }
@@ -258,9 +269,12 @@ class Invites(
         if (!api.enabled) return@withLock
         val s = store.current
         val now = Today.instant()
-        if (!s.referrerRead && s.reportedCode == null && setupDone() && InviteRules.mayReadReferrer(installedAt(), now)) {
-            val code = InviteRules.fromReferrer(runCatching { referrer().read(context) }.getOrNull())
-            store.edit { it.copy(referrerRead = true, found = code) }
+        if (!s.referrerRead && s.reportedCode == null && setupDone() && InviteRules.mayReadReferrer(installedAt(), now)) readReferrer()
+        // AG 1.27 [INVITE-10] Agreed at the end of the first setup, not sent yet (no internet then): sent now, unasked.
+        store.current.let { st ->
+            if (st.agreed && st.reportedCode == null && st.found != null && setupDone()) {
+                runCatching { sendReport(st.found, "referrer") }
+            }
         }
         if (store.current.waiting && store.current.seenDay != Today.date()) {
             try {
@@ -274,6 +288,30 @@ class Invites(
         if (view?.code != null && (force || Duration.between(view.checkedAt, now) >= REFRESH)) {
             runCatching { api.view(device()) }.getOrNull()?.let { v -> store.edit { it.copy(view = v) } }
         }
+    }
+
+    private suspend fun readReferrer() {
+        val code = InviteRules.fromReferrer(runCatching { referrer().read(context) }.getOrNull())
+        store.edit { it.copy(referrerRead = true, found = code) }
+    }
+
+    /**
+     * AG 1.27 [INVITE-10] Play's referrer read on the phone while the first setup is still going (nothing is sent), so
+     * its last screen can say "친구 초대 링크로 오셨어요". Read once, as Play asks; the code the link brought, or null.
+     */
+    suspend fun peek(): String? = lock.withLock {
+        val s = store.current
+        if (api().enabled && !s.referrerRead && s.reportedCode == null && InviteRules.mayReadReferrer(installedAt(), Today.instant())) readReferrer()
+        offer()
+    }
+
+    /**
+     * AG 1.27 [INVITE-10] The friend tapped '저장하고 초대한 분께 알리기' (결정 AG-D2): kept, so a phone without internet
+     * sends it from the next [sync]; then sent now. The answer, or null when it waits.
+     */
+    suspend fun agree(code: String): InviteAnswer? {
+        store.edit { it.copy(agreed = true, found = it.found ?: InviteRules.code(code)) }
+        return runCatching { lock.withLock { sendReport(code, "referrer") } }.getOrNull()
     }
 
     /** [INVITE-02] After the user agreed on the line: this install's code and link (the same one when made before). */
@@ -309,23 +347,38 @@ class Invites(
      * [INVITE-03] After the user agreed on the line: tells the server which code this phone came by. The day it is
      * sent is the first day of the period of use; the once-a-day check goes by itself from [sync].
      */
-    suspend fun report(code: String, source: String): InviteAnswer {
+    suspend fun report(code: String, source: String): InviteAnswer = sendReport(code, source)
+
+    private suspend fun sendReport(code: String, source: String): InviteAnswer {
         val clean = InviteRules.code(code) ?: throw CompanyException("code", "code")
+        if (store.current.reportedCode != null) store.current.answer?.let { return it }
         val mark = phone() ?: PhoneMark.hash("install:${device()}")
         val answer = api().use(device(), clean, source, mark)
-        store.edit { it.copy(reportedCode = clean, answer = answer, offerClosed = true, found = null, seenDay = Today.date()) }
+        store.edit { it.copy(reportedCode = clean, answer = answer, offerClosed = true, found = null, seenDay = Today.date(), agreed = false) }
         return answer
     }
 
     /** The card on the calendar was closed without sending anything. */
     fun decline() = store.edit { it.copy(offerClosed = true) }
 
-    /** [INVITE-03] A code typed by hand is taken within [InviteRules.TYPE_WITHIN] of the install, once, after the first setup. */
-    fun mayType(now: Instant = Today.instant()): Boolean =
-        store.current.reportedCode == null && setupDone() && InviteRules.mayType(installedAt(), now)
+    /** AG 1.27 [INVITE-13] The friend's card after the report was closed. */
+    fun closeRelay() = store.edit { it.copy(relayClosed = true) }
 
-    /** The code the calendar card asks about, if any. */
-    fun offer(): String? = store.current.takeIf { !it.offerClosed && it.reportedCode == null }?.found
+    /**
+     * AG 1.27 [INVITE-13] What the friend's card says after the report, until closed: the report's answer (or that it
+     * waits for the internet) and the friend's own chance to invite. Null when there is nothing to say.
+     */
+    fun relay(): InviteState? = store.current.takeIf { !it.relayClosed && (it.reportedCode != null && it.answer != null || it.agreed && it.found != null) }
+
+    /**
+     * [INVITE-03] A code typed by hand is taken within [InviteRules.TYPE_WITHIN] of the install, once, after the first setup.
+     * AG 1.27 [INVITE-10] (결정 AG-D3): only when Play's referrer brought none, so the friend who sent the link keeps it.
+     */
+    fun mayType(now: Instant = Today.instant()): Boolean =
+        store.current.reportedCode == null && store.current.found == null && setupDone() && InviteRules.mayType(installedAt(), now)
+
+    /** The code the calendar card asks about, if any; none once agreed (it goes by itself). */
+    fun offer(): String? = store.current.takeIf { !it.offerClosed && it.reportedCode == null && !it.agreed }?.found
 
     private companion object {
         val REFRESH: Duration = Duration.ofDays(1)

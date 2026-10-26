@@ -1158,6 +1158,9 @@ private fun HelpHome(
             shape = MaterialTheme.shapes.extraLarge,
         )
         // [INQ-07] 문의하기 on the first tab, not only behind 내 문의 › 새 문의 쓰기 (점검 보고서 하 '문의').
+        // AG 1.27 [INVITE-12] What a 문의 is for, and that it is answered, said above it.
+        if (query.isBlank() && vm.online) Text(com.bamnat.app.ui.grow.FEEDBACK_WORDS, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (query.isBlank()) {
             FilledTonalButton(onClick = { onAsk("", null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(if (vm.online) Icons.AutoMirrored.Outlined.Send else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))

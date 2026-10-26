@@ -57,7 +57,12 @@ class InviteRulesTest {
     @Test fun theRulesAndTheProgressAreSaidPlainly() {
         assertEquals("3/5명 · 2명은 사용 기간 채우는 중", InviteRules.progress(3, 5, 2))
         assertEquals("0/5명", InviteRules.progress(0, 5, 0))
-        assertEquals("친구 5명마다 나에게 프로 1개월(상한 없음)", InviteTerms.DEFAULT.words())
-        assertEquals("친구 3명마다 나에게 프로 2개월(1년에 6개월까지)", InviteTerms(3, 10, 2, 6).words())
+        // AG 1.27 [INVITE-09] 리뷰 2026-10-25: months for each five friends who each used it seven days, not "7일 넘게 쓸 때마다".
+        assertEquals("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)", InviteTerms.DEFAULT.words())
+        assertEquals("친구 3명이 각자 10일 이상 쓰면 나에게 프로 2개월, 3명 더 채울 때마다 또 2개월(1년에 6개월까지)", InviteTerms(3, 10, 2, 6).words())
+        assertTrue(!InviteTerms.DEFAULT.words().contains("넘게 쓸 때마다"))
+        assertEquals("친구 5명이 7일 쓰면 프로 1개월", InviteTerms.DEFAULT.short())
+        assertEquals("다음 프로까지 2명", InviteRules.toNext(3, 5))
+        assertEquals("다음 프로까지 5명", InviteRules.toNext(0, 5))
     }
 }

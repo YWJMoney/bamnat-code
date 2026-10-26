@@ -29,7 +29,10 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.bamnat.app.ads.DayPassButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
+import com.bamnat.app.ads.DayPassOption
+import com.bamnat.app.appContainer
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.settings.SettingsGo
@@ -51,7 +54,7 @@ fun ProLock(feature: Feature, gate: Gate, modifier: Modifier = Modifier, content
         Box(
             Modifier.matchParentSize()
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = if (Build.VERSION.SDK_INT >= 31) 0.35f else 0.9f))
-                .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "프로 알아보기") { openPro() },
+                .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "프로 알아보기") { openPro(feature) },
         )
         LockPanel(feature, gate, Modifier.align(Alignment.Center).padding(12.dp))
     }
@@ -68,8 +71,12 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
             }
             Text("프로에서 쓸 수 있어요. 흐리게 보이는 건 내 기록으로 만든 화면이에요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-            Button(onClick = ::openPro, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-            DayPassButton(gate)
+            Button(onClick = { goPro() }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+            DayPassOption(gate)
+            // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet.
+            if (LocalContext.current.appContainer.inviteApi.enabled) {
+                OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text("친구 초대로 프로 이용권 받기") }
+            }
         }
     }
 }
@@ -81,6 +88,15 @@ internal fun proButtonText(): String {
     return if (plans.any { it.trial }) "1개월 무료로 써 보기" else "프로 알아보기"
 }
 
-fun openPro() = SettingsLinks.go(SettingsGo.PRO)
+/**
+ * A tap on a locked 프로 feature. AG 1.27 [MON-12] (결정 AG-D4): the sheet with 프로, the rewarded ad and 친구 초대
+ * ([ProOffer]), not the 프로 screen at once.
+ */
+fun openPro() = ProOffer.show()
+
+fun openPro(feature: Feature) = ProOffer.show(feature)
+
+/** Straight to the 프로 screen: its own buttons, 프로 둘러보기, the alarm check. */
+fun goPro() = SettingsLinks.go(SettingsGo.PRO)
 
 private val MIN_HEIGHT = 200.dp

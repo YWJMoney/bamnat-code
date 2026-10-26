@@ -444,6 +444,8 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   DB.db.prepare("INSERT INTO settings (key, value) VALUES ('invite_friends', '1')").run();
   DB.db.prepare("UPDATE invite_uses SET first_day = '2000-01-01'").run();
   assert.equal((await call("POST", "/api/invites/seen", {}, { "x-device": device(2) })).data.status, "credited");
+  // AG 1.27 [INVITE-10] Friends of one code crowding from one network are noted for a look, not refused.
+  DB.db.prepare("INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'invite_burst', ?, '', '', '')").run(Date.now(), made.data.code);
   const t = await signedIn(env);
   await t.go("#/rewards");
   await t.click('[data-act="reward-tab"][data-key="paid"]');
@@ -451,8 +453,9 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
   assert.match(main, /보상 받음 1명/);
-  assert.match(main, /친구 1명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
+  assert.match(main, /최근 30일 몰림 1번/);
   assert.deepEqual(t.errors, []);
 });
 
@@ -463,7 +466,7 @@ test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends,
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
-  assert.match(card().textContent, /친구 5명이 7일 넘게 쓸 때마다 프로 1개월 · 상한 없음/);
+  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음/);
   assert.match(card().textContent, /1년 상한\s+−\s+없음/);
   const step = async (key, d) => {
     t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
@@ -473,7 +476,7 @@ test("[INVITE-08] 설정 › 친구 초대: the developer sets how many friends,
   await step("friends", -1);
   await step("days", 1);
   await step("capMonths", 1);
-  assert.match(card().textContent, /친구 3명이 8일 넘게 쓸 때마다 프로 1개월 · 1년에 1개월까지/);
+  assert.match(card().textContent, /친구 3명이 각자 8일 이상 쓰면 프로 1개월, 3명 더 채울 때마다 또 1개월 · 1년에 1개월까지/);
   card().querySelector('[data-act="save-friend"]').click();
   await t.settle(30);
   const rows = Object.fromEntries(DB.db.prepare("SELECT key, value FROM settings WHERE key LIKE 'invite_%'").all().map((r) => [r.key, r.value]));
