@@ -238,16 +238,16 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     // [PERF-01] Installs src/main/baseline-prof.txt on phones that got the APK outside Play, so the start is compiled ahead too.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     // [PERF-13] 1.28 AO: the module that makes the profile (on a Gradle managed emulator or a phone).
     baselineProfile(project(":benchmark"))
-    implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
-    implementation("androidx.navigation:navigation-compose:2.9.1")
+    implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
+    implementation("androidx.navigation:navigation-compose:2.9.5")
 
     // Home screen widgets [FEAT-03, REL-03].
     implementation("androidx.glance:glance-appwidget:1.1.1")
