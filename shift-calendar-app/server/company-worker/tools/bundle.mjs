@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { adminPrebuilt } from "../src/admin-app.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const IMPORT = /^import \{ [\w, ]+ \} from "\.\/([\w-]+\.js)";$/gm;
+const IMPORT = /^import \{ [\w, ]+ \} from "\.\/([\w/-]+\.js)";$/gm;
 
 export function bundle() {
   const index = readFileSync(join(root, "src/index.js"), "utf8");
@@ -16,10 +16,13 @@ export function bundle() {
     throw new Error("src/index.js no longer imports the developer app the expected way");
   }
   const done = new Set();
-  const inline = (code) => code.replace(IMPORT, (_, file) => {
+  // AX 1.30 [ADMX-12] A file may import from a folder below its own (src/admin/style.js, src/admin/views/*.js);
+  // the name is read from that file's folder. Every bundled name still has to be unique across the files.
+  const inline = (code, dir = "") => code.replace(IMPORT, (_, name) => {
+    const file = dir ? `${dir}/${name}` : name;
     if (done.has(file)) return "";
     done.add(file);
-    const body = inline(readFileSync(join(root, "src", file), "utf8")).replace(/^export (async function|function|const) /gm, "$1 ");
+    const body = inline(readFileSync(join(root, "src", file), "utf8"), dirname(file) === "." ? "" : dirname(file)).replace(/^export (async function|function|const) /gm, "$1 ");
     return `// ---- src/${file} ----\n${body}\n// ---- end of src/${file} ----`;
   });
   let out = inline(index);

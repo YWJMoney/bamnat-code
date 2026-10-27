@@ -1293,3 +1293,178 @@ test("[PHOTO-10] 지표: 사진이 달라요 shows the total, each screen with i
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
+
+// ---- AX 1.30 시작: 오늘의 숫자·주의 필요, 검토 줄, 여러 판 표, 회사 표, 전체 검색, n 키, 여러 개 거절 ----
+
+test("[ADMX-01][ADMX-11] 오늘: the four numbers with their week, 주의 필요 or a calm line, activity in words", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const core = u.$$("#main .tiles.core a.tile.kpi").map((a) => a.querySelector(".k").textContent);
+  assert.deepEqual(core, ["답 대기", "검토 대기", "복사 전 문제 신고", "정할 판"]);
+  assert.ok(u.$("#main .tiles.core .spark"), "a week's line under a number");
+  assert.ok(u.$("#main .alerts") || u.$("#main .calm"), "주의 필요 says something either way");
+  // The other numbers fold away; the activity never shows a code.
+  assert.ok(u.$('#main details.more-tiles[data-key="home:tiles"] .tiles a.tile'));
+  assert.ok(!/\b[a-z]+_[a-z_]+\b/.test(u.text("#main .feed")), "no activity codes");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-01][ADMX-10] 주의 필요 lists what is late, links to it, and 오늘 in the menu counts it", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  await call("POST", "/api/reports", report(1, { company: "늦은화학" }), from(1));
+  // A week old: past the week a report may wait.
+  DB.db.prepare("UPDATE reports SET created_at = created_at - ?").run(8 * 864e5);
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const items = u.$$("#main .alerts .alert-list a");
+  assert.ok(items.some((a) => /기한 넘긴 일 1건/.test(a.textContent) && a.getAttribute("href") === "#/home?view=today"), u.text("#main .alerts"));
+  assert.equal(u.$('[data-badge="hub:today"]').textContent, String(items.length));
+  assert.match(u.document.title, /^● /);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-04] 검토: one line per report that opens in place, j and Enter, a and x on the line in focus, 모양이 다른 판 empty", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  await call("POST", "/api/reports", report(2, { company: "라마바전자" }), from(2));
+  const u = await asOwner(env, t);
+  await u.go("#/review");
+  const rows = u.$$('#main [data-review="group"]');
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((d) => !d.open), "lines start shut");
+  await u.key("j");
+  await u.key("j");
+  assert.ok(rows[1].querySelector("summary").classList.contains("selected"));
+  await u.key("Enter");
+  assert.ok(rows[1].open, "Enter opens the line in place");
+  await u.key("x");
+  const form = u.$('dialog form[data-form="reject"]');
+  assert.ok(form);
+  assert.equal(form.dataset.company, rows[1].querySelector('[data-act="reject"]').dataset.company, "x is for the line j chose");
+  u.$("dialog").close();
+  await u.settle();
+  await u.click('#main [data-act="review-filter"][data-key="shape"]');
+  assert.match(u.window.location.hash, /show=shape/);
+  assert.match(u.text("#main .empty"), /모양이 다른 판이 없어요/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-09] 검토: pick two, 거절 once with one reason, then 되돌리기 brings both back", async (t) => {
+  offline(t);
+  const { env, call, DB } = await world();
+  await call("POST", "/api/reports", report(2, { company: "라마바전자" }), from(2));
+  const u = await asOwner(env, t);
+  await u.go("#/review");
+  await u.click('#main [data-act="review-pick-mode"]');
+  await u.click('#main [data-act="review-pick-all"]');
+  assert.match(u.text("#main .bulkbar"), /2개 골랐어요/);
+  await u.click('#main [data-act="review-bulk-reject"]');
+  assert.match(u.text("dialog"), /2개를 거절할까요/);
+  u.$('dialog form[data-form="reject-bulk"]').requestSubmit();
+  await u.settle(40);
+  assert.match(u.text("#toast"), /2개를 거절했어요/);
+  const status = () => DB.db.prepare("SELECT status FROM reports ORDER BY company_id").all().map((r) => r.status);
+  assert.deepEqual(status(), ["rejected", "rejected"]);
+  await u.click("#toast [data-undo]");
+  await u.settle(40);
+  assert.deepEqual(status(), ["pending", "pending"]);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-02][ADMX-03] 여러 판: a table with the candidates as columns, the different cell marked with the words that changed", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env } = s;
+  const owner = await signIn(call);
+  await call("POST", "/api/reports", report(1), from(1));
+  await call("POST", "/api/reports", report(2), from(2));
+  await call("POST", "/api/reports", report(6), from(6));
+  const twelve = setup();
+  twelve.pay.rules.extra[3].percent = 0.12;
+  const v2 = await call("POST", "/api/reports", report(3, { setup: twelve }), from(3));
+  await call("POST", `/api/admin/groups/${v2.data.company.id}/${v2.data.setup}/adopt`, {}, owner);
+  const u = await asOwner(env, t);
+  await u.go("#/versions?show=history");
+  const heads = u.$$("#main table.cmp thead th").map((th) => th.textContent.replace(/\s+/g, " ").trim());
+  assert.match(heads[1], /쓰는 판 v2/);
+  assert.match(heads[2], /이전 판 v1/);
+  const differs = u.$$("#main table.cmp td.differs");
+  assert.equal(differs.length, 1, "only 대근 differs");
+  assert.equal(differs[0].querySelector("ins").textContent, "10%");
+  assert.match(u.text("#main .vsum"), /이전 판 v1와 다른 점: 대근 10%→12%/);
+  // The same rows are hidden until asked for.
+  const before = u.$$("#main table.cmp tbody tr").length;
+  await u.click('#main [data-act="cmp-all"]');
+  assert.ok(u.$$("#main table.cmp tbody tr").length > before);
+  assert.ok(u.$('#main table.cmp [data-act="version-promote"][data-version="1"]'));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-06][ADMX-09] 회사: a table the server sorts by a heading, kept in the address; many hidden at once and back", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  await call("POST", "/api/reports", report(1, { company: "가나물산" }), from(1));
+  for (const n of [2, 3]) await call("POST", "/api/reports", report(n, { company: "라마바전자", dept: `부서${n}` }), from(n));
+  const u = await asOwner(env, t);
+  await u.go("#/companies");
+  assert.equal(u.$$("#main table.list tbody tr").length, 2);
+  await u.click('#main [data-act="company-sort"][data-key="reports"]');
+  await u.idle();
+  assert.match(u.window.location.hash, /sort=reports/);
+  assert.equal(u.$("#main table.list tbody tr td.name a").textContent, "라마바전자");
+  await u.click('#main [data-act="company-pick-mode"]');
+  // Each pick draws the list again, so each box is found anew.
+  for (const id of u.$$('#main [data-act="company-pick"]').map((b) => b.dataset.id)) await u.click(`#main [data-act="company-pick"][data-id="${id}"]`);
+  await u.click('#main [data-act="company-bulk"][data-key="hide"]');
+  await u.settle(30);
+  const hidden = () => DB.db.prepare("SELECT SUM(hidden) AS n FROM companies").get().n;
+  assert.equal(hidden(), 2);
+  await u.click("#toast [data-undo]");
+  await u.settle(30);
+  assert.equal(hidden(), 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-08] 찾기·이동 asks the server too: companies under their heading, opened with Enter", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  await u.key("k", { ctrlKey: true });
+  const box = u.$("#pal");
+  box.value = "가나다";
+  box.dispatchEvent(new u.window.Event("input", { bubbles: true }));
+  await u.settle(80);
+  assert.ok(u.$$("#pal-list li.group-head").some((li) => /^회사 1/.test(li.textContent)), u.text("#pal-list"));
+  const at = u.$$("#pal-list button.row").findIndex((b) => /가나다화학/.test(b.textContent));
+  assert.ok(at >= 0);
+  for (let i = 0; i < at; i++) u.document.dispatchEvent(new u.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  box.dispatchEvent(new u.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await u.settle(20);
+  assert.match(u.window.location.hash, /^#\/companies\/[\w-]+$/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMX-05] n opens the next question waiting for an answer, and the next after it", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/inquiries");
+  const ids = u.$$("#main [data-row]").map((el) => el.dataset.row);
+  assert.ok(ids.length >= 2, "questions wait");
+  await u.key("n");
+  await u.idle();
+  const first = u.window.location.hash;
+  assert.match(first, /^#\/inquiries\/[\w-]+$/);
+  await u.key("n");
+  await u.idle();
+  assert.notEqual(u.window.location.hash, first);
+  assert.deepEqual(u.errors, []);
+});
+// ---- AX 1.30 끝 ----
