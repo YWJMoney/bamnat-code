@@ -120,12 +120,14 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
     /** What [saved] does after the save, in its own time: asks, sends, or does nothing for the same values. */
     internal suspend fun check() = looking.withLock {
         if (!c.companyApi.enabled || publicCardFirst()) return@withLock
-        val (name, _) = company() ?: return@withLock
+        val (name, dept) = company() ?: return@withLock
         val mode = store.autoShare.value
         if (mode == false) return@withLock
         val now = scope.share.exportForServer().toString()
         val change = ChangeAsk.of(store.autoBase, now)
         if (change == ChangeAsk.Result.Same) return@withLock
+        // [PLZD-03] 1.30 BD: the department already has it, or its work has another shape: nothing is asked or sent.
+        if (SendGuard(c, cal).skip(name, dept, now)) { store.autoBase = now; return@withLock }
         val changed = change as? ChangeAsk.Result.Changed
         if (mode == null) {
             val months = if (changed == null) runCatching { c.companyApi.terms().firstMonths }.getOrDefault(0) else 0

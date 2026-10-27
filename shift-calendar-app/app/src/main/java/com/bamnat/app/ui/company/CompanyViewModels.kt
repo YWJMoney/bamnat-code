@@ -1032,7 +1032,20 @@ class CompanyReportViewModel(
         data object Busy : Sending
         data class Sent(val status: ReportStatus) : Sending
         data class Failed(val code: String, val field: String?) : Sending
+        /** [PLZD-01][PLZD-02][PLZD-03][PLZD-05] 1.30 BD: the plaza already has this, another shape, or other values; asked first. */
+        data class Guarded(val verdict: com.bamnat.app.company.SendGuard.Verdict, val form: Form) : Sending
+        /** [PLZD-01] 이 규칙 쓰기: nothing went, the calendar uses the plaza's rule. */
+        data class Used(val company: String, val companyId: String, val dept: String, val withPay: Boolean) : Sending
+        /** [PLZD-03] 달라진 점만 제안으로 보내기 went to the 대표's talk. */
+        data class Proposed(val company: String, val companyId: String, val dept: String) : Sending
     }
+
+    /** What the form said when a send was held for a question ([Sending.Guarded]). */
+    data class Form(val company: String, val dept: String, val verified: Boolean, val note: String, val job: String = "",
+        val region: String = "", val topic: Boolean = false)
+
+    /** [PLZD-01] 1.30 BD: what this calendar's setup meets on the plaza before it goes. */
+    val guard = com.bamnat.app.company.SendGuard(c, calendar)
 
     private val _terms = MutableStateFlow(TermsCache.value)
     val terms: StateFlow<CompanyTerms?> = _terms.asStateFlow()
@@ -1093,7 +1106,9 @@ class CompanyReportViewModel(
     val startNote: String = publicUse?.let { PublicSetup.note(it.cycle, it.codes, it.picked) }.orEmpty()
 
     /** Sends the setup; a text with an amount, phone or mail address is caught here before it goes. */
-    fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false) {
+    fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false,
+        /** [PLZD-01] The user already answered what [guard] asked: it goes as it is. */
+        checked: Boolean = false) {
         if (topic && job.isEmpty()) { _sending.value = Sending.Failed("job", "job"); return }
         // [SRV-04] The developer paused new reports; nothing is sent and the form stays as written.
         if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) { _sending.value = Sending.Failed("paused", "report"); return }
@@ -1106,6 +1121,15 @@ class CompanyReportViewModel(
             _sending.value = try {
                 val store = scope.store
                 val setup = scope.share.exportForServer(_cycleOnly.value)
+                // [PLZD-01][PLZD-02][PLZD-03][PLZD-05] A company the plaza has: the same rule, another shape or other values ask first.
+                if (!topic && !checked) {
+                    val v = guard.check(company, dept, setup.toString(), note)
+                    if (v !is com.bamnat.app.company.SendGuard.Clear || v.resent != null) {
+                        c.telemetry.event("plaza_guard", v.javaClass.simpleName.lowercase() + if (v.resent != null) ",resent" else "")
+                        _sending.value = Sending.Guarded(v, Form(company, dept, verified, note, job, region, topic))
+                        return@launch
+                    }
+                }
                 // [PLZ-12][PLZ-13] Its job plaza and 시·도, or a rule for a whole job rather than one place. [CALI-02] From this calendar.
                 val status = if (scope.isMain && job.isEmpty() && region.isEmpty() && !topic) c.companyApi.report(store.device, company, dept, verified, note, setup)
                     else if (scope.isMain) c.companyApi.report(store.device, company, dept, verified, note, setup, job, region, topic)
@@ -1130,6 +1154,34 @@ class CompanyReportViewModel(
 
     fun resetSending() {
         _sending.value = Sending.Idle
+    }
+
+    /** [PLZD-01] The held send goes as the form said, or under another department's name ([dept], asked again). */
+    fun sendAnyway(f: Form, dept: String = f.dept) =
+        send(f.company, dept, f.verified, f.note, f.job, f.region, f.topic, checked = dept == f.dept)
+
+    /** [PLZD-01] 이 규칙 쓰기: the plaza's same rule is this calendar's now, and counts one more 맞아요. */
+    fun useSame(v: com.bamnat.app.company.SendGuard.Same, verified: Boolean) {
+        _sending.value = Sending.Busy
+        viewModelScope.launch {
+            _sending.value = try {
+                guard.useSame(v, verified)
+                Sending.Used(v.page.name, v.page.id, v.setup.dept, v.withPay)
+            } catch (e: CompanyException) {
+                Sending.Failed(e.code, e.field)
+            } catch (e: BackupException) {
+                Sending.Failed("apply", null)
+            } catch (e: org.json.JSONException) {
+                Sending.Failed("apply", null)
+            }
+        }
+    }
+
+    /** [PLZD-03] The proposal on the 대표 went up; the draft typed for it is done. */
+    fun proposed(v: com.bamnat.app.company.SendGuard.Differ) {
+        scope.store.setDraft(null)
+        c.telemetry.event("plaza_diff", "guard")
+        _sending.value = Sending.Proposed(v.page.name, v.page.id, v.lead.dept)
     }
 
     /** Looks up the newest reports; older ones keep what was last seen. */

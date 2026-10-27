@@ -97,6 +97,8 @@ data class SharedSetup(
     val lead: Boolean = false,
     val doubted: Boolean = false,
     val opinion: Opinion = Opinion(),
+    /** [PLZD-07] 1.30 BD: what it says against its department's 대표, in the server's words (null for the 대표 itself). */
+    val changes: SetupChanges? = null,
 ) {
     val hasPay: Boolean get() = payHidden || runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
 }
@@ -261,6 +263,8 @@ data class RuleVersion(
     val removed: List<String>,
     /** [PLAZA-05] That version's company settings file, to compare with or go back to; null from an older server. */
     val body: String? = null,
+    /** [PLZD-07] 1.30 BD: what changed from the version before, in the server's words. */
+    val changes: SetupChanges? = null,
 )
 
 /** [PLZ-14] A market rate someone sent: per [unit] day, hour or month, with its 맞아요·달라요. */
@@ -374,6 +378,8 @@ data class ReportStatus(
     val newInfo: Boolean = false,
     /** [PLAZA-07] Sending joins the company; what came of it. */
     val member: Membership? = null,
+    /** [PLZD-01] 1.30 BD: the rule in use sent again (another phone's); it counted as one more 맞아요. */
+    val same: Boolean = false,
 )
 
 data class VoteResult(val points: Int, val persons: Int, val bad: Int, val threshold: Int, val adopted: Boolean, val trust: Int = 0, val agree: Int = 0)
@@ -548,6 +554,7 @@ class CompanyClient(
                     lead = s.optBoolean("lead"),
                     doubted = s.optBoolean("doubted"),
                     opinion = opinion(s.optJSONObject("opinion")),
+                    changes = SetupChanges.of(s.optJSONObject("changes")),
                 )
             },
             member = o.optBoolean("member"),
@@ -697,7 +704,7 @@ class CompanyClient(
             val ch = v.optJSONObject("changes")
             RuleVersion(v.getInt("version"), v.optString("setup"), v.optString("source"), Instant.parse(v.getString("adoptedAt")), v.optString("state"),
                 v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines(),
-                v.optJSONObject("body")?.toString())
+                v.optJSONObject("body")?.toString(), SetupChanges.of(ch))
         }
     }
 
@@ -883,6 +890,7 @@ class CompanyClient(
             first = o.optBoolean("first"),
             newInfo = o.optBoolean("newInfo"),
             member = o.optJSONObject("member")?.let { membership(it, c.getString("id")) },
+            same = o.optBoolean("same"),
         )
     }
 
