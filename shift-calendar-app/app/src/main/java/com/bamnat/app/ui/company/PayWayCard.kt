@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.company
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +35,9 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.Opinion
 import com.bamnat.app.company.PayWay
+import com.bamnat.app.company.PendingWay
+import com.bamnat.app.company.cancelPending
+import com.bamnat.app.company.pendingWays
 import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.pay.BaseFields
 import com.bamnat.app.ui.pay.won
@@ -55,6 +59,9 @@ class PayWayViewModel(
     val calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
+    /** [PAYG-01] The calendar's company, for a way that waits for its 기본급 ([com.bamnat.app.company.PendingWays]). */
+    internal val company: com.bamnat.app.company.CompanyScope get() = scope
+    internal val app: AppContainer get() = c
     val way: StateFlow<PayWay?> = scope.payWays.way
     val askBase: StateFlow<Boolean> = scope.payWays.askBase
     private val _opinion = MutableStateFlow<Opinion?>(null)
@@ -140,11 +147,14 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
     val text by vm.text.collectAsStateWithLifecycle()
     val month = remember { Today.month() }
     var baseOpen by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(askBase) { if (askBase) { baseOpen = true; vm.baseAsked() } }
+    // [PAYG-03] 1.30 BA: a way that waits for its 기본급 ('n명이 쓰고 있어요' with the pay, or 다시 넣기) asks it here; askBase is
+    // only the way here (the cycle screen's 'go to the pay'), the question is the pending way's own.
+    LaunchedEffect(askBase) { if (askBase) vm.baseAsked() }
     if (baseOpen && profile != null) BaseAskSheet(profile, month, onDismiss = { baseOpen = false }) { base, hours ->
         update { p -> BaseAsk.apply(p, base, month, hours) }
         baseOpen = false
     }
+    PendingWayAsk(vm, profile)
     var proposing by remember { mutableStateOf(false) }
     var mine by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
@@ -159,11 +169,12 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text("같은 회사 분들이 맞춘 계산 방식이에요. 명세서와 맞는지 알려 주시면 다음 분은 더 정확하게 받아요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // [PAYF-06] Rules without the user's own base come to 0원 or a guess: said here, one tap to put it in.
+            // [PAYF-06] A base only guessed is said here, one tap to put it in. [PAYG-04] 1.30: none at all is the pay's own
+            // "기본급만 넣으면 끝나요" in place of the total (BaseNeededCard), not a second line here.
             val known = BaseAsk.known(profile, month)
-            if (BaseAsk.needed(profile, month)) {
+            if (known != null && BaseAsk.needed(profile, month)) {
                 Row(Modifier.fillMaxWidth()) {
-                    Text(if (known == null) "기본급을 넣어야 예상 급여가 맞아요" else "기본급 ${won(known)}은 대략이에요. 명세서대로 넣어 주세요",
+                    Text("기본급 ${won(known)}은 대략이에요. 명세서대로 넣어 주세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f).padding(top = 12.dp))
                     TextButton(onClick = { baseOpen = true }) { Text("넣기") }
                 }
@@ -233,4 +244,50 @@ fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () 
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("나중에") }
         }
     }
+}
+
+/**
+ * [PAYG-03][PAYG-13][PAYG-08] 1.30 묶음 BA (사용자 2026-10-27 "기본급 없이 닫으면 … 창이 닫히면서 바로 적용이 되므로 동작 안 되고
+ * 있음"): on the pay screen, a company's way that waits for its 기본급 — the cycle put in with "급여 계산 방식도 같이"
+ * ('n명이 쓰고 있어요'), or one the user asked again — is asked in a sheet: '이대로 계산' puts it in at once, '급여 방식은 넣지
+ * 않을게요' or closing leaves the pay as it was (the cycle stays: that was asked for on its own). A way left so is one line with
+ * 다시 넣기; and once a way went in with 통상시급 hours other than the company's, the opinion on them is offered ready to send.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PendingWayAsk(vm: PayWayViewModel, profile: PayProfile?) {
+    val company = vm.company
+    val c = vm.app
+    val ways = company.pendingWays
+    val pending by ways.pending.collectAsStateWithLifecycle()
+    val dropped by ways.dropped.collectAsStateWithLifecycle()
+    val hoursAsk by ways.hoursAsk.collectAsStateWithLifecycle()
+    // A way chosen in 급여 방식 찾기 is asked there; here only the cycle's, and any the user asked again from the line below.
+    var again by remember { mutableStateOf<PendingWay?>(null) }
+    val asking = pending?.takeIf { it.source != PendingWay.Source.FIND || it == again }
+    if (asking != null && profile != null) {
+        ModalBottomSheet(onDismissRequest = { company.cancelPending(c, asking) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PendingDone(c, company, asking, onDone = {}, onSaved = null,
+                    intro = if (asking.source == PendingWay.Source.APPLY) "‘${asking.title}’ 근무주기를 넣었어요" else null,
+                    onSkip = { company.cancelPending(c, asking) })
+            }
+        }
+    }
+    val d = dropped
+    if (d != null && pending == null && profile != null) {
+        SoftCard(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("‘${d.company}’ 급여 방식은 넣지 않았어요. 급여는 그대로예요.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { again = d; ways.again() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 넣기") }
+                androidx.compose.material3.IconButton(onClick = ways::forgetDropped) {
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "닫기")
+                }
+            }
+        }
+    }
+    // [PAYG-08] "고치면 의견으로": the company's way with the user's hours, ready to send to its talk (or let go).
+    hoursAsk?.let { (w, h) -> HoursProposalSheet(CompanyWayText(w.way(), w.text), h) { ways.hoursAsked() } }
 }

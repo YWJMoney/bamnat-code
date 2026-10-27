@@ -542,9 +542,15 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: Strin
     var declined by rememberSaveable(company) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // [PAYG-01] 1.30 BA: the way chosen waits for its 기본급 right here, put in only with it (closing leaves the pay as it was).
+    var ready by remember { mutableStateOf<com.bamnat.app.company.PendingWay?>(null) }
     val h = hit ?: return false
     if (declined) return false
     val scope = rememberCoroutineScope()
+    ready?.let { w ->
+        PendingDone(c, c.companyOf(calendar), w, onDone = onPay, onSaved = null, onSkip = { ready = null; declined = true })
+        return true
+    }
     Text("급여 계산 방식도 같이 넣을까요?", style = MaterialTheme.typography.titleSmall)
     StatusChip("급여 방식 있음 · 맞아요 ${h.lead?.payWay?.takeIf { h.lead.pay.not() }?.ok ?: h.lead?.ok ?: 0}명", Tone.GOOD)
     Text("‘${h.name}’ 분들이 맞춘 계산 방식이에요. 넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요.",
@@ -556,10 +562,9 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: Strin
             try {
                 // [CALI-04] Into the pay of the calendar the cycle went into.
                 val s = c.companyOf(calendar)
-                when (s.find.use(h)) {
+                when (val r = s.find.use(h)) {
                     com.bamnat.app.company.PayFind.Used.Gone -> declined = true
-                    com.bamnat.app.company.PayFind.Used.Applied -> { s.payWays.askBase(true); onPay() }
-                    com.bamnat.app.company.PayFind.Used.Amounts -> onPay()
+                    is com.bamnat.app.company.PayFind.Used.Ready -> ready = r.way
                 }
             } catch (e: com.bamnat.app.company.CompanyException) {
                 error = companyProblem(e.code, e.field)

@@ -954,6 +954,7 @@ private fun AppNavHost(
                 companyPay = remember(id) { container.companyOf(id).store.pendingPay != null },
                 onNow = { nav.navigate(Routes.pay(id)) { popUpTo(Routes.CALENDAR_SETUP) { inclusive = true }; launchSingleTop = true } },
                 onLater = { nav.popFrom(Routes.CALENDAR_SETUP) },
+                calendar = id, // [PAYG-07]
             )
         }
         composable(Routes.CALENDARS) {

@@ -232,14 +232,22 @@ class PlazaAHAppTest {
             assertTrue(hit.lead!!.pay)
             assertTrue(c.companyApi.company(hit.id).setups.single().payHidden)
             val used = PayFind(c).use(hit)
-            assertEquals(PayFind.Used.Amounts, used)
+            // [PAYG-01] 1.30 BA: chosen is only waiting for its 기본급; joined (결정 D79), nothing else written yet.
+            val ready = used as PayFind.Used.Ready
             assertEquals(hit.id, c.companyStore.member.value?.first)
-            val pending = JSONObject(c.companyStore.pendingPay!!)
+            val pending = JSONObject(ready.way.text)
             assertTrue(pending.has("pay"))
             assertFalse(pending.toString().contains("3100000"))
+            assertNull(c.companyStore.pendingPay)
+            assertNull(c.companyStore.draft.value)
+            assertNull(c.payStore.profile.value)
+            val scope = c.companyOf(com.bamnat.app.data.PersonalCalendar.MAIN)
+            assertTrue(scope.commit(c, ready.way, 2_800_000, null, Today.month()))
             assertEquals("급여상사", c.companyStore.draft.value?.company)
+            assertEquals(hit.id, scope.payWays.way.value?.companyId)
 
             // None: the easy setup under the name, and saving it asks the plaza's one question.
+            c.payStore.save(null)
             c.companyStore.pendingPay = null
             c.companyStore.setDraft(null)
             PayFind(c).none("없는급여상사")

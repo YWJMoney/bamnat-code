@@ -411,6 +411,11 @@ interface CompanyApi {
         else report(device, company, dept, verified, note, setup, job, region, topic)
     /** [PLAZA-07] Joins [company] for the calendar [cal]; a refusal (member_wait, member_limit) comes back, not thrown. */
     suspend fun join(device: String, company: String, cal: String): Membership = Membership(true, company)
+    /**
+     * [PAYG-09] 1.30 BA: [join] that brings the company's page as the member now reads it (SP1 `with=page`), so 이 급여 방식 쓰기
+     * goes on without asking for the page again. A null page (an older server, a fake) is read on its own by the caller.
+     */
+    suspend fun joinWithPage(device: String, company: String, cal: String): Pair<Membership, CompanyPage?> = join(device, company, cal) to null
     suspend fun leave(device: String, company: String) = Unit
     /** [PLAZA-09] The room of a company this phone joined; null when it has not joined (or an older server). */
     suspend fun room(device: String, company: String): RoomPage? = null
@@ -513,6 +518,11 @@ class CompanyClient(
         val me = device()
         var o = request("GET", "/api/companies/$id", device = me)
         o.optStringOrNull("mergedInto")?.let { o = request("GET", "/api/companies/$it", device = me) }
+        pageOf(o)
+    }
+
+    /** A company's page as the server answers it (GET /api/companies/{id}, or a join's `page`). */
+    private fun pageOf(o: JSONObject): CompanyPage =
         CompanyPage(
             id = o.getString("id"),
             name = o.getString("name"),
@@ -553,7 +563,6 @@ class CompanyClient(
             member = o.optBoolean("member"),
             limited = o.optBoolean("limited"),
         )
-    }
 
     override suspend fun terms(): CompanyTerms = readCall {
         val o = request("GET", "/api/terms")
@@ -566,6 +575,17 @@ class CompanyClient(
         } catch (e: CompanyException) {
             // A 409 carries the reason as its error word; the details are not needed to say it.
             if (e.code == "member_wait" || e.code == "member_limit") Membership(false, company, e.code) else throw e
+        }
+    }
+
+    // [PAYG-09] 1.30 BA: SP1's join that answers with the page (body "with": "page", the same as ?with=page, so the request
+    // stays one per request id like every join). A server before SP1 sends no page; it is then read on its own, as before.
+    override suspend fun joinWithPage(device: String, company: String, cal: String): Pair<Membership, CompanyPage?> = serverCall {
+        try {
+            val o = request("POST", "/api/members", JSONObject().put("device", device).put("company", company).put("cal", cal).put("with", "page"))
+            membership(o, company) to o.optJSONObject("page")?.takeIf { it.has("id") && !it.has("mergedInto") }?.let { runCatching { pageOf(it) }.getOrNull() }
+        } catch (e: CompanyException) {
+            if (e.code == "member_wait" || e.code == "member_limit") Membership(false, company, e.code) to null else throw e
         }
     }
 
