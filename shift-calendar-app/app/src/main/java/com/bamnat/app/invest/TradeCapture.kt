@@ -18,13 +18,16 @@ import com.bamnat.core.invest.TradeAlerts
 object TradeCapture {
     private const val NOTICE_ID = 7990
     private const val REQUEST_OPEN = 3603
-    private val BROKER_WORDS = Regex("증권|투자증권|업비트|빗썸|코인원|코빗|고팍스|토스증권|카카오페이증권|키움|미래에셋")
+    private val BROKER_WORDS = Regex("증권|투자증권|업비트|빗썸|코인원|코빗|고팍스|토스증권|카카오페이증권|키움|미래에셋|나무|영웅문")
+
+    /** [INVA-04] 1.29: shares bought or sold in words (카카오페이 '10주를 … 샀어요', 토스 '10주 구매 완료'), from an app not listed. */
+    private val SHARES_IN_WORDS = Regex("\\d\\s*주(?:를|을)?\\s.*(?:샀어요|샀습니다|팔았어요|팔았습니다|구매했|판매했|구매\\s*완료|판매\\s*완료)")
 
     /** Worth reading: a trading app's notification, or a chat app's 알림톡 that names a broker. */
     fun worthReading(pkg: String, text: String, fromMessenger: Boolean): Boolean = when {
         pkg in TradeAlertParser.COIN_APPS || pkg in TradeAlertParser.STOCK_APPS -> true
-        fromMessenger -> BROKER_WORDS.containsMatchIn(text) && text.contains("체결")
-        else -> text.contains("체결") && (text.contains("매수") || text.contains("매도"))
+        fromMessenger -> BROKER_WORDS.containsMatchIn(text) && (text.contains("체결") || SHARES_IN_WORDS.containsMatchIn(text))
+        else -> text.contains("체결") && (text.contains("매수") || text.contains("매도")) || SHARES_IN_WORDS.containsMatchIn(text)
     }
 
     /** True when [text] was a trade taken for an investor calendar. */
@@ -38,6 +41,8 @@ object TradeCapture {
         val calendarId = investors.firstOrNull { it.id == chosen }?.id ?: investors.first().id
         val repo = c.invest(calendarId)
         val pending = TradeAlerts.of(alert, app, postedAt)
+        // [INVA-06] Written already (a capture put it in first, or the same notification came again): not twice.
+        if (TradeAlerts.writtenAlready(pending, repo.now().trades)) return true
         if (!repo.addAlert(pending)) return true
         // [INV-40] A price that does not agree with the notification's own amount waits for a look.
         if (repo.alertAutoNow() && pending.price > 0 && pending.checked != false) {

@@ -474,6 +474,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
     val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
+    // [INVA-01] AR 1.29: a photo shared on another kind of calendar while an investor calendar exists, asked where it goes.
+    var shotToPlace by remember { mutableStateOf<Pair<android.net.Uri, com.bamnat.app.data.PersonalCalendar>?>(null) }
+    var shotIsRoster by remember { mutableStateOf(false) }
     LaunchedEffect(sharedRoster) {
         // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
         // 한 달 근무 넣기 (U, ROST-09) is open stays that screen's.
@@ -485,9 +488,32 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.open(NoticeLinks.Target.INVEST, activeCalendarId)
             return@LaunchedEffect
         }
+        val investor = calendarList.firstOrNull { !it.isExample && container.calendars.styleOf(it.id, settingsNow.workStyle) == WorkStyle.INVEST }
+        if (shot != null && investor != null && !rosterOpen && !shotIsRoster) {
+            com.bamnat.app.IncomingRoster.take()
+            shotToPlace = shot.uri to investor
+            return@LaunchedEffect
+        }
+        shotIsRoster = false
         if (sharedRoster != null && !rosterOpen) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
+    }
+    shotToPlace?.let { (uri, investor) ->
+        com.bamnat.app.ui.invest.SharedShotChoice(
+            investName = investor.name,
+            onInvest = {
+                shotToPlace = null
+                com.bamnat.app.invest.IncomingFills.put(uri)
+                NoticeLinks.open(NoticeLinks.Target.INVEST, investor.id)
+            },
+            onRoster = {
+                shotToPlace = null
+                shotIsRoster = true
+                com.bamnat.app.IncomingRoster.put(com.bamnat.app.IncomingRoster.Shared.Photo(uri))
+            },
+            onDismiss = { shotToPlace = null },
+        )
     }
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {

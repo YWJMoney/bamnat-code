@@ -152,10 +152,18 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
 
     /**
      * [INV-44] 1.27 AK: 캡처로 채우기를 묻지 않고 바로 넣기 (this investor calendar's own setting, in its invest_settings,
-     * so a backup carries it with [InvestBackup]). Off until the user turns it on from the capture sheet.
+     * so a backup carries it with [InvestBackup]).
+     * [INVA-02] 1.29 AR (사용자 2026-10-27 "캡쳐로 놓기하면 자동으로 인식해서 적용되게"): on unless the user chose
+     * '넣기 전에 묻기' ("false" stored); before 1.29 it was off until the user turned it on, which is why captures kept asking.
      */
-    val fillTrust: Flow<Boolean> = dao.observeSettings().map { l -> l.any { it.key == FILL_TRUST_KEY && it.value == "true" } }
+    val fillTrust: Flow<Boolean> = dao.observeSettings().map { l -> trusted(l) }
+    suspend fun fillTrustNow(): Boolean = trusted(dao.allSettings())
     suspend fun setFillTrust(on: Boolean) = dao.upsertSetting(InvestSettingEntity(FILL_TRUST_KEY, on.toString()))
+    private fun trusted(rows: List<InvestSettingEntity>) = rows.none { it.key == FILL_TRUST_KEY && it.value == "false" }
+
+    /** [INVA-02] The first capture put in without a question says once where to have it ask instead. */
+    suspend fun fillAutoToldNow(): Boolean = dao.allSettings().any { it.key == FILL_AUTO_TOLD_KEY && it.value == "true" }
+    suspend fun setFillAutoTold() = dao.upsertSetting(InvestSettingEntity(FILL_AUTO_TOLD_KEY, "true"))
 
     /** [INV-43] What a capture put in and changed, to take back with 되돌리기. */
     data class CaptureApplied(val written: List<Trade>, val fixedBefore: List<Trade>, val alertsBefore: List<TradeAlerts.Pending>)
@@ -251,6 +259,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         const val FILL_GUIDE_KEY = "fillGuide"
         /** [INV-44] 1.27 AK: "true" puts a capture's sure new rows in without asking. */
         const val FILL_TRUST_KEY = "fillTrust"
+        /** [INVA-02] 1.29 AR: "true" once the first quiet capture said where to turn asking back on. */
+        const val FILL_AUTO_TOLD_KEY = "fillAutoTold"
         private val opened = WeakHashMap<AppDatabase, InvestRepository>()
 
         /** One repository per open database, so every screen of a calendar reads the same flows. */
