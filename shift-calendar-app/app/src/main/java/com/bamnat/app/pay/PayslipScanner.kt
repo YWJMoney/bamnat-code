@@ -76,7 +76,8 @@ object PayslipScanner {
             val v = ImagePrep.variant(photo, kind, box) ?: return@forEachIndexed
             val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0)) }.getOrNull()
             if (v.bitmap !== photo) v.bitmap.recycle()
-            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += words(t) }
+            // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
+            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }
         }
         val quality = PhotoQuality.of(stats, letter, firstLines.sumOf { l -> l.text.split(' ').count { it.isNotBlank() } }, 0.0)
         put(texts, ImagePrep.forScreen(photo).first, quality, boxes)
@@ -109,6 +110,11 @@ object PayslipScanner {
             OcrLine(e.text, b.left, b.top, b.right, b.bottom, angle = l.angle)
         }
     }
+
+    /** [words] read on made-over picture [v], put back on the photo's pixels. */
+    @VisibleForTesting
+    internal fun onPhoto(words: List<OcrLine>, v: ImagePrep.Variant): List<OcrLine> =
+        words.map { it.copy(left = v.x(it.left), top = v.y(it.top), right = v.x(it.right), bottom = v.y(it.bottom)) }
 
     private fun join(text: Text, lines: List<OcrLine>): String = if (lines.isEmpty()) text.text else OcrRows.join(lines)
 
