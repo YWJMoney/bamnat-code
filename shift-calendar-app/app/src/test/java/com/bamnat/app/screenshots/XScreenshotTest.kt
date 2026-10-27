@@ -137,6 +137,8 @@ class XScreenshotTest : ScreenshotBase() {
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
         assertTrue(shows("대표 판 v2", exact = true))
+        // [PLZD-06] 1.30 BD: the department's other versions fold under the 대표 until asked for.
+        tapText("같은 부서 다른 판 2개 보기", exact = true)
         tapText("대표 판과 비교", exact = true)
         assertTrue(shows("다른 점 1가지: 주간", exact = true))
         assertTrue(shows("이 판: 08:00~19:00", exact = false))

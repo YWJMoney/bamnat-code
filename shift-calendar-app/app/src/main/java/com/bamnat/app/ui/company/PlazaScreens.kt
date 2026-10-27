@@ -275,8 +275,13 @@ private fun VersionRow(v: RuleVersion, onCompare: (() -> Unit)? = null) {
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            v.removed.forEach { Text("− $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            v.added.forEach { Text("+ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+            // [PLZD-07] 1.30 BD: the words that changed, as the server marks them; whole lines from an older server.
+            val ch = v.changes?.takeIf { it.changed.isNotEmpty() }
+            if (ch != null) ChangesView(ch)
+            else {
+                v.removed.forEach { Text("− $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                v.added.forEach { Text("+ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+            }
             if (v.version == 1 && v.added.isEmpty()) Text("처음 채택된 규칙이에요", style = MaterialTheme.typography.bodySmall)
             onCompare?.let { TextButton(onClick = it) { Text("지금 판과 비교 · 되돌리기") } }
         }
