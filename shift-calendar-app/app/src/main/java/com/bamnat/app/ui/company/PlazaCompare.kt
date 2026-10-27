@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Remove
@@ -43,7 +44,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.ChangeLine
+import com.bamnat.core.pay.BonusBasis
+import com.bamnat.core.pay.ItemShare
+import kotlinx.coroutines.launch
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.QuickDecimalChips
 import com.bamnat.app.ui.components.TimeField
@@ -133,6 +138,9 @@ fun CompareSheet(
 /**
  * 다른 점 말하기: [base] (the rule set as the plaza has it) in an editor. [mine] is this phone's own setup, for
  * "내 설정으로 채우기". [onSend] gets the proposal's lines, the edited file and the reason, if any.
+ * [ITEM-08] 1.30 BC: [draft] opens it already changed (a [com.bamnat.core.plaza.ProposalDraft], e.g. the 통상시급 hours the user
+ * changed), with its reason; the user only presses 보내기. [PROP-03] [alsoMine]: the rule set is the one the user's pay uses,
+ * so "내 급여도 이 값으로" is offered (on by default) and what was changed goes onto the user's own pay as it is sent.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -144,11 +152,18 @@ fun DiffEditorSheet(
     error: String?,
     onSend: (lines: List<ChangeLine>, setup: String, why: String) -> Unit,
     onDismiss: () -> Unit,
+    draft: com.bamnat.core.plaza.ProposalDraft? = null,
+    alsoMine: Boolean = false,
 ) {
     val start = remember(base) { SetupEdit.of(base) }
-    var edit by remember(base) { mutableStateOf(start) }
-    var why by rememberSaveable(base) { mutableStateOf("") }
+    var edit by remember(base, draft) { mutableStateOf(draft?.let { SetupEdit.of(it.text) } ?: start) }
+    var why by rememberSaveable(base) { mutableStateOf(draft?.why.orEmpty()) }
     var comparing by remember { mutableStateOf(false) }
+    var takeMine by rememberSaveable(base) { mutableStateOf(true) }
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // [ITEM-03] 결정 D102: the company's one amounts go only while the plaza.fixed_amount row is on.
+    val amounts = remember { runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }.getOrDefault(true) }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val e = edit
         if (start == null || e == null) {
@@ -171,7 +186,7 @@ fun DiffEditorSheet(
                 if (changed.isNotEmpty()) TextButton(onClick = { edit = start }) { Text("처음대로") }
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SetupEditor(e, changedGroups) { edit = it }
+                SetupEditor(e, changedGroups, amounts = amounts, baseHours = start.monthlyHours) { edit = it }
                 if (changed.isNotEmpty()) {
                     TextButton(onClick = { comparing = !comparing }) { Text(if (comparing) "비교 접기" else "바꾼 곳 비교해 보기") }
                     if (comparing) changed.forEach { CompareLine(it, "지금", "바꿀 값") }
@@ -186,8 +201,27 @@ fun DiffEditorSheet(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp)) }
+            // [PROP-03] 1.30 BC: the user's own pay follows what they said, sent or not (a refused post never blocks the pay).
+            if (alsoMine && changed.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Checkbox) { takeMine = !takeMine }.padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(checked = takeMine, onCheckedChange = { takeMine = it })
+                    Text("내 급여도 이 값으로 계산해요", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             Button(
-                onClick = { onSend(proposalChange(rows), e.text, why.trim()) },
+                onClick = {
+                    if (alsoMine && takeMine) {
+                        val text = e.text
+                        scope.launch {
+                            val n = runCatching { c.companyShare.takeEdited(base, text) }.getOrDefault(0)
+                            c.telemetry.event("plaza_diff", if (n > 0) "mine_taken" else "mine_same")
+                        }
+                    }
+                    onSend(proposalChange(rows), e.text, why.trim())
+                },
                 enabled = changed.isNotEmpty() && !busy,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) {
@@ -210,10 +244,13 @@ fun proposalBody(rows: List<CompareRow>, why: String): String = why.ifBlank { Se
 
 private val RATE_KEYS = listOf("ot" to "연장", "night" to "야간", "hw" to "휴일", "ho" to "휴일 8시간 넘게")
 
-/** Each part of the file with its own pickers; a part with a change gets a coloured card. */
+/**
+ * Each part of the file with its own pickers; a part with a change gets a coloured card. [amounts]: the company's one amount
+ * (회사 공통) can be written (결정 D102). [baseHours]: the company's 통상시급 hours, the first chip.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, onChange: (SetupEdit) -> Unit) {
+internal fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, amounts: Boolean = true, baseHours: Int? = null, onChange: (SetupEdit) -> Unit) {
     // The order's days cycle through every shift, 휴무 too, then 쉼.
     val names = e.shifts.map { it.name }
     Part(FactGroup.SHIFT, changed) {
@@ -271,6 +308,16 @@ private fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, onChange: (SetupE
             FilterChip(selected = e.fiveOrMore, onClick = { onChange(e.fiveOrMore(true)) }, label = { Text("5인 이상") })
             FilterChip(selected = !e.fiveOrMore, onClick = { onChange(e.fiveOrMore(false)) }, label = { Text("5인 미만") })
         }
+        // [ITEM-10] 1.30 BC: 통상시급 기준 시간 (LG화학 180시간 같은), the company's first, then the usual ones.
+        Text("통상시급 기준 시간 (한 달)", style = MaterialTheme.typography.titleSmall)
+        QuickDecimalChips(
+            e.monthlyHours?.toDouble(), { h -> onChange(e.monthlyHours(h.toInt())) }, name = "통상시급 기준 시간",
+            quick = (listOfNotNull(baseHours) + com.bamnat.core.pay.Unknowns.MONTHLY_HOURS_CHIPS).distinct().map { it.toDouble() },
+            step = 1.0, range = SetupEdit.HOURS_MIN.toDouble()..SetupEdit.HOURS_MAX.toDouble(), unit = "시간",
+            chipLabel = { h -> if (baseHours != null && h.toInt() == baseHours) "지금 ${h.toInt()}시간" else "${h.toInt()}시간" },
+        )
+        Text("명세서의 ‘통상시급’이 (기본급 + 통상 수당) ÷ 몇 시간인지예요. 모르면 그대로 두세요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Part(FactGroup.RATE, changed) {
         RATE_KEYS.forEach { (key, label) ->
@@ -328,16 +375,88 @@ private fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, onChange: (SetupE
             }
         }
     }
-    if (e.items.isNotEmpty()) Part(FactGroup.ITEM, changed) {
-        e.items.forEach { (name, cadence) ->
-            Text(name, style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("MONTHLY" to "매달", "PER_WORK_DAY" to "근무일마다", "PER_NIGHT_SHIFT" to "야간마다", "BONUS" to "정한 달").forEach { (k, l) ->
-                    FilterChip(selected = cadence == k, onClick = { onChange(e.itemCadence(name, k)) }, label = { Text(l) })
-                }
+    // [ITEM-10] 1.30 BC (사용자 2026-10-27 "수당등등을 추가 삭제할수 있게"): every allowance with its name, way, who sets it, 통상임금
+    // and a delete; new ones from the usual names or typed.
+    Part(FactGroup.ITEM, changed) {
+        e.allowances.forEach { a -> AllowanceEditor(e, a, amounts, onChange) }
+        if (e.allowances.isEmpty()) Text("아직 수당이 없어요. 아래에서 더해 주세요.", style = MaterialTheme.typography.bodyMedium)
+        AddAllowance(e, onChange)
+        Text(if (amounts) "‘회사 공통 금액’ 수당만 금액이 함께 가요. 사람마다 다른 금액은 보내지 않아요." else "금액은 보내지 않아요. 쓰는 분이 각자 적어요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** [ITEM-10] One allowance in the proposal form: its name (고치기), how often, who sets the amount, 통상임금, and 빼기. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AllowanceEditor(e: SetupEdit, a: SetupEdit.Allowance, amounts: Boolean, onChange: (SetupEdit) -> Unit) {
+    var renaming by remember(a.name) { mutableStateOf(false) }
+    var newName by remember(a.name) { mutableStateOf(a.name) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (renaming) {
+                OutlinedTextField(newName, { newName = it.take(SetupEdit.MAX_ITEM_NAME) }, singleLine = true, label = { Text("수당 이름") },
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = { renaming = false; onChange(e.renameItem(a.name, newName)) }, enabled = newName.isNotBlank()) { Text("바꾸기") }
+            } else {
+                Text(a.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = { renaming = true }) { Text("이름 고치기") }
+                IconButton(onClick = { onChange(e.removeItem(a.name)) }) { Icon(Icons.Filled.Delete, "‘${a.name}’ 빼기") }
             }
         }
-        Text("금액은 사람마다 달라서 보내지 않아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (a.share != ItemShare.PERCENT) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("MONTHLY" to "매달", "PER_WORK_DAY" to "근무일마다", "PER_NIGHT_SHIFT" to "야간마다", "BONUS" to "정한 달").forEach { (k, l) ->
+                FilterChip(selected = a.cadence == k, onClick = { onChange(e.itemCadence(a.name, k)) }, label = { Text(l) })
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ItemShare.entries.forEach { s ->
+                FilterChip(selected = a.share == s, onClick = { onChange(e.itemShare(a.name, s)) }, label = { Text(s.label) })
+            }
+        }
+        when (a.share) {
+            ItemShare.PERCENT -> {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BonusBasis.entries.forEach { b ->
+                        FilterChip(selected = a.percentOf == b, onClick = { onChange(e.itemShare(a.name, ItemShare.PERCENT, percentOf = b)) }, label = { Text("${b.label}의") })
+                    }
+                }
+                QuickDecimalChips((a.percent ?: SetupEdit.DEFAULT_PERCENT) * 100, { p -> onChange(e.itemShare(a.name, ItemShare.PERCENT, percent = p / 100)) },
+                    name = "${a.name} 비율", quick = listOf(5.0, 10.0, 15.0, 20.0), step = 0.5, range = 0.5..500.0, unit = "%")
+            }
+            ItemShare.FIXED -> if (amounts) {
+                com.bamnat.app.ui.pay.MoneyField("${a.name} 회사 공통 금액 (선택)", a.fixedAmount, { v ->
+                    onChange(e.itemShare(a.name, ItemShare.FIXED, fixedAmount = v ?: 0))
+                }, placeholder = "모두 같은 금액이면 적어 주세요")
+            }
+            ItemShare.PERSONAL -> Text("금액은 쓰는 분이 각자 적어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("통상임금에 넣어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(checked = a.ordinary, onCheckedChange = { onChange(e.itemOrdinary(a.name, it)) },
+                modifier = Modifier.semantics { contentDescription = "‘${a.name}’ 통상임금에 넣기" })
+        }
+    }
+}
+
+/** [ITEM-10] The usual allowance names, a tap each; anything else is typed. */
+private val USUAL_ITEMS = listOf("식대", "교통비", "근속수당", "자격수당", "직책수당", "위험수당", "교대수당", "기본급2", "위험예지")
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddAllowance(e: SetupEdit, onChange: (SetupEdit) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    val have = e.allowances.map { it.name }.toSet()
+    Text("수당 더하기", style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        USUAL_ITEMS.filter { it !in have }.forEach { n ->
+            androidx.compose.material3.AssistChip(onClick = { onChange(e.addItem(n)) }, label = { Text("+ $n") })
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(name, { name = it.take(SetupEdit.MAX_ITEM_NAME) }, singleLine = true, label = { Text("다른 이름") },
+            placeholder = { Text("예: 기술전수교육수당") }, modifier = Modifier.weight(1f))
+        TextButton(onClick = { onChange(e.addItem(name)); name = "" }, enabled = name.isNotBlank() && name.trim() !in have) { Text("더하기") }
     }
 }
 

@@ -196,8 +196,11 @@ data class Board(val items: List<BoardItem>, val next: Int?)
 /** [PLZ-09] One line of a proposal: what (a [Plaza.CHANGE_FIELDS] key), how it is now, how it should be, why. */
 data class ChangeLine(val field: String, val now: String, val want: String, val why: String)
 
-/** [PLZ-02] Where a proposal's setup stands. */
-data class ProposalState(val setup: String, val adopted: Boolean, val persons: Int, val threshold: Int)
+/**
+ * [PLZ-02] Where a proposal's setup stands. [PROP-01] 1.30 BC: [text] is the proposal's setup itself, for the company's
+ * members (이 제안으로 내 월급 계산해 보기); null for anyone else and from a server before 1.30.
+ */
+data class ProposalState(val setup: String, val adopted: Boolean, val persons: Int, val threshold: Int, val text: String? = null)
 
 /**
  * [COMM-06] A post in the talk on a rule set. [who] is 참여자 N of this talk only; [stance] what they said
@@ -320,7 +323,9 @@ object Plaza {
     )
     val CHANGE_FIELDS = linkedMapOf(
         "shift" to "근무 시간", "order" to "근무 순서", "break" to "휴게", "overtime" to "연장 근무", "night" to "야간", "holiday" to "휴일 근무",
-        "allowance" to "수당", "bonus" to "상여", "leave" to "연차·휴가", "other" to "그 밖의 것",
+        "allowance" to "수당", "bonus" to "상여", "leave" to "연차·휴가",
+        // [ITEM-08] 1.30 BC: the server's CHANGE_FIELDS.hours.
+        "hours" to "통상시급 기준 시간", "other" to "그 밖의 것",
     )
     data class Unit(val name: String, val min: Long, val max: Long)
     val RATE_UNITS = linkedMapOf(
@@ -634,7 +639,8 @@ class CompanyClient(
                     agree = p.optInt("agree"), disagree = p.optInt("disagree"), trust = p.optInt("trust"),
                     myVote = if (p.has("myVote") && !p.isNull("myVote")) p.getBoolean("myVote") else null,
                     proposal = p.optJSONObject("proposal")?.let { r ->
-                        ProposalState(r.optString("setup"), r.optString("status") == "adopted", r.optInt("persons"), r.optInt("threshold", 3))
+                        ProposalState(r.optString("setup"), r.optString("status") == "adopted", r.optInt("persons"), r.optInt("threshold", 3),
+                            text = r.optStringOrNull("text")?.takeIf { com.bamnat.app.data.CompanyShare.isCompanyFile(it) })
                     },
                     author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
                     review = p.optBoolean("review"),
