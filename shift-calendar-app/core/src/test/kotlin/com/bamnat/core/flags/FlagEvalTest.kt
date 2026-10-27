@@ -172,6 +172,12 @@ class FlagEvalTest {
         assertFalse("usage stats off", FlagEval.state(f, after.copy(consents = mapOf("usage" to false, "usage.stats.more" to true))).on)
     }
 
+    /** [PHOTO-09] 1.29 AQ: 처리방침 3.3 is not in the calendar yet, so '사진이 달라요' counts stay on the phone. */
+    @Test fun photoWrongWaitsForPolicy33() {
+        val f = FlagCatalog.PHOTO_WRONG_FLAG
+        assertFalse(FlagEval.state(f, phone(kst(2027, 6, 1)).copy(consents = mapOf("usage" to true))).on)
+    }
+
     // ---- the other kinds of condition ----
 
     @Test fun rolloutIsStableAndSpread() {
@@ -210,7 +216,7 @@ class FlagEvalTest {
         assertEquals(keys.size, keys.toSet().size)
         for (f in FlagCatalog.ALL) {
             assertTrue(f.key, f.name.isNotBlank() && f.what.isNotBlank() && f.whyOff.isNotBlank() && f.basis.words.isNotBlank())
-            assertTrue(f.key, f.owner.isNotBlank() && f.since == (if (f.group == FlagGroup.SERVER) "1.22.0" else "1.28.0"))
+            assertTrue(f.key, f.owner.isNotBlank() && f.since == (if (f.group == FlagGroup.SERVER) "1.22.0" else if (f.key == FlagCatalog.PHOTO_WRONG) "1.29.0" else "1.28.0"))
             if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any { it is Condition.Date && it.policy != null })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }

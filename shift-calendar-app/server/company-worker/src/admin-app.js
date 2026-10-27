@@ -2738,7 +2738,7 @@ function adminApp(L, BUILD) {
     const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
         <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
       : '<p class="meta">공유 서버가 연결되지 않았어요. 관리 › 서버 상태를 봐 주세요.</p>'}</section>`;
-    return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${startupCard(d) /* AO 1.28 */}${funnel}${shares}${events}</div>`;
+    return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${startupCard(d) /* AO 1.28 */}${photoWrongCard(d) /* AQ 1.29 */}${funnel}${shares}${events}</div>`;
   }
 
   /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
@@ -2784,6 +2784,25 @@ function adminApp(L, BUILD) {
       ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 시작 시간이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}</section>`;
   }
   // AO 1.28 끝
+
+  // AQ 1.29 시작 [PHOTO-10] 사진이 달라요: how often people said a photo was read wrong, per day and per screen, with the reasons.
+  function photoWrongCard(d) {
+    const pw = d.photoWrong;
+    if (!pw) return "";
+    const reasons = pw.reasons ?? {};
+    const rows = pw.screens.map((s) => {
+      const why = Object.entries(s.reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${reasons[k] ?? k} ${n}`).join(" · ");
+      return `<li><div class="row"><span class="row-main"><b>${esc(s.label)}</b><small>${esc(why)}</small></span>
+        <span class="row-side"><b>${s.total}번</b></span></div></li>`;
+    }).join("");
+    const chart = pw.days.length > 1
+      ? L.barChart(pw.days.map((x) => x.total), { labels: pw.days.map((x) => x.day.slice(5).replace("-", "/")), name: "날마다 사진이 달라요 횟수" }) : "";
+    return `<section class="card" id="photo-wrong-card"><div class="card-head"><h2>사진이 달라요</h2><span class="pill">${pw.total}번</span></div>
+      <p class="hint">사진을 읽은 결과가 사진과 다르다고 누른 횟수예요. 날짜·화면·고른 이유·앱 버전만 받고 사진과 글은 받지 않아요. 처리방침 3.3이 시행된 뒤부터 와요.</p>
+      ${pw.total ? `${chart}<ul class="rows">${rows}</ul>${pw.apps.length ? `<p class="meta">${pw.apps.map((a) => `${esc(a.app)} ${a.total}번`).join(" · ")}</p>` : ""}`
+        : '<p class="meta">이 기간에 받은 횟수가 없어요.</p>'}</section>`;
+  }
+  // AQ 1.29 끝
 
   function activeCard(d) {
     const a = d.active;

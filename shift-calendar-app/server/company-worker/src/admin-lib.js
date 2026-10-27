@@ -10,6 +10,10 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
+    counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
+    screen: "사진이 달라요 화면 종류를 알 수 없어요",
+    n: "사진이 달라요 횟수가 맞지 않아요",
     action: "이 항목에는 할 수 없는 일이에요",
     // AE 1.26: the app's invite report (never sent by the developer app; ADMIN-18 lists every code).
     source: "초대를 어디서 받았는지 알 수 없어요",
