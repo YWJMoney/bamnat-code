@@ -173,6 +173,8 @@ object PayslipReader {
         "기여금",
         // [PHOTO-12] 노동조합(비)·회비는 공제예요.
         "노동조합", "회비",
+        // [PHOTO-22] 1.30: 사택관리비 (화학 공장 명세서) is taken off, never a 수당.
+        "사택",
     )
 
     /** The role of a pay line by its name, or null when the name says nothing about pay. */

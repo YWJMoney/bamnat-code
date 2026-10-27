@@ -29,6 +29,10 @@ import java.io.File
  * its slope, so a payslip photographed 2~4° off is put back row by row (기본급 beside its own amount, not the next row's).
  * [READ-13] 1.27 순번 446: read as taken and made over several ways ([ImagePrep.variant]), the readings put together
  * line by line ([SlipVote]: an amount read two ways is asked) and fill by fill for a 체결 캡처 ([FillVote]).
+ * 1.30 AV (사용자 2026-10-27 "사진마다 읽는 부분이 다르다"): a photo read on its side is turned and read again ([PHOTO-25]);
+ * a monitor's moiré is smoothed before every made-over reading ([PHOTO-25]); small letters are worked at the photo's own size
+ * and read bigger ([PHOTO-21]); the company's payslip as the user confirmed it before ([SlipTemplate], [ReadFixBook]) fills in
+ * what this photo lost ([PHOTO-24]); a page through the scanner counts as straight ([PHOTO-20]).
  */
 object PayslipScanner {
     /**
@@ -39,8 +43,26 @@ object PayslipScanner {
     class Scan(
         val text: String, val texts: List<String>, val slip: SlipVote.Result, val fills: List<FillSheetReader.Fill>,
         val image: Bitmap?, val quality: PhotoQuality.Report?,
+        /**
+         * [PHOTO-24] 1.30: the words of the photo as taken, with their boxes (the first reading): what the company's payslip
+         * template is learned from once the user confirms the lines ([ReadFixBook.learnTemplate]). In memory only.
+         */
+        val boxes: List<OcrLine> = emptyList(),
+        /** [PHOTO-26] 1.30: the photos put together, one or more ([combine]). */
+        val pages: Int = 1,
     ) {
         val ways: Int get() = texts.size
+    }
+
+    /**
+     * [PHOTO-26] 1.30 AV: two photos of one long payslip put together ([SlipReading.pages]): the lines of both, a line both
+     * show once. The first photo stays the one shown; its words stay what a template is learned from.
+     */
+    fun combine(first: Scan, next: Scan): Scan {
+        val slip = SlipReading.pages(listOf(first.slip, next.slip))
+        val text = listOf(first.text, next.text).filter { it.isNotBlank() }.joinToString("\n")
+        val quality = listOfNotNull(first.quality, next.quality).minByOrNull { it.score }
+        return Scan(text, first.texts + next.texts, slip, first.fills + next.fills, first.image ?: next.image, quality, first.boxes, first.pages + next.pages)
     }
 
     /** Readings the tests give instead of ML Kit (one text per made-over picture), which does not run on a computer. */
@@ -56,46 +78,75 @@ object PayslipScanner {
 
     suspend fun read(context: Context, uri: Uri): String = scan(context, uri).text
 
-    /** [progress] hears (reading n, of m) for "n/m번째로 읽는 중"; m is 0 until the photo's look is known. */
-    suspend fun scan(context: Context, uri: Uri, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
-        fake?.let { f -> return@withContext put(f(uri), fakeImage?.invoke(), null) }
-        val photo = ImagePrep.load(context, uri)
+    /**
+     * [progress] hears (reading n, of m) for "n/m번째로 읽는 중"; m is 0 until the photo's look is known. [scanned]: the page
+     * came through the document scanner, straightened ([PHOTO-20]).
+     */
+    suspend fun scan(context: Context, uri: Uri, scanned: Boolean = false, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+        // [PHOTO-24] The company's payslips the user confirmed before (on the phone only).
+        val templates = runCatching { com.bamnat.app.data.ReadFixBook.get(context).templates() }.getOrDefault(emptyList())
+        fake?.let { f -> return@withContext put(f(uri), fakeImage?.invoke(), null, fakeBoxes?.invoke() ?: emptyList(), templates) }
+        var photo = ImagePrep.load(context, uri)
         progress(1, 0)
-        val first = OcrModel.read(context, InputImage.fromBitmap(photo, 0))
-        val firstLines = lines(first)
+        var first = OcrModel.read(context, InputImage.fromBitmap(photo, 0))
+        var firstLines = lines(first)
+        // [PHOTO-25] 1.30: read on its side (few letters in tall boxes): a quarter turn each way, the one with more words kept.
+        if (OcrRows.sideways(firstLines)) {
+            for (deg in listOf(90f, 270f)) {
+                val turned = runCatching { ImagePrep.turned(photo, deg) }.getOrNull() ?: continue
+                val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(turned, 0)) }.getOrNull()
+                val l = t?.let(::lines).orEmpty()
+                if (t != null && words(l) > words(firstLines) * 2 && !OcrRows.sideways(l)) {
+                    if (photo !== turned) photo.recycle()
+                    photo = turned; first = t; firstLines = l
+                    break
+                }
+                turned.recycle()
+            }
+        }
         val texts = mutableListOf(join(first, firstLines))
         // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
         val boxes = mutableListOf(words(first))
         val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
-        val (stats, kinds) = ImagePrep.plan(photo, letter)
+        val plan = ImagePrep.plan(photo, letter)
         val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
             firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
-        val more = kinds.filter { it != PhotoVariants.Kind.ORIG }
+        val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }
         more.forEachIndexed { i, kind ->
             progress(i + 2, more.size + 1)
-            val v = ImagePrep.variant(photo, kind, box) ?: return@forEachIndexed
+            val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: return@forEachIndexed
             val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0)) }.getOrNull()
             if (v.bitmap !== photo) v.bitmap.recycle()
             // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
             if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }
         }
-        val quality = PhotoQuality.of(stats, letter, firstLines.sumOf { l -> l.text.split(' ').count { it.isNotBlank() } }, 0.0)
-        put(texts, ImagePrep.forScreen(photo).first, quality, boxes)
+        val (tilt, keystone) = OcrRows.lean(firstLines)
+        val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
+        put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates)
     }
+
+    private fun words(lines: List<OcrLine>): Int = lines.sumOf { l -> l.text.split(' ').count { it.isNotBlank() } }
+
+    /** [PHOTO-24] The words with boxes the tests give with [fake]'s texts (one list a reading), or none. */
+    @VisibleForTesting
+    var fakeBoxes: (() -> List<List<OcrLine>>)? = null
 
     /** The readings put together. */
     @VisibleForTesting
-    internal fun put(texts: List<String>, image: Bitmap?, quality: PhotoQuality.Report?, boxes: List<List<OcrLine>> = emptyList()): Scan {
+    internal fun put(
+        texts: List<String>, image: Bitmap?, quality: PhotoQuality.Report?, boxes: List<List<OcrLine>> = emptyList(),
+        templates: List<com.bamnat.core.pay.SlipTemplate> = emptyList(),
+    ): Scan {
         val read = texts.filter { it.isNotBlank() }
         // [PHOTO-01][PHOTO-03] 1.29: with the words' boxes, each reading is read as a table and as text, the better kept, the
         // readings voted and checked against the payslip's own sums; text alone (the tests' fake) is read as 1.28 did.
-        val slip = if (boxes.any { it.isNotEmpty() }) SlipReading.read(boxes) else SlipVote.merge(read)
+        val slip = if (boxes.any { it.isNotEmpty() }) SlipReading.read(boxes, templates) else SlipVote.merge(read)
         val fills = FillVote.merge(read.map { FillSheetReader.read(it) })
         // The text shown and read for rules: the payslip's own reading when it has amounts, else the one most rules read
         // from (a page of 취업규칙), more Korean letters on a tie.
         val text = if (slip.read.lines.isNotEmpty()) slip.text
             else read.maxWithOrNull(compareBy<String> { RuleText.read(it).size }.thenBy { t -> t.count { it in '가'..'힣' } }) ?: ""
-        return Scan(text, read, slip, fills, image, quality)
+        return Scan(text, read, slip, fills, image, quality, boxes.firstOrNull().orEmpty())
     }
 
     private fun lines(text: Text): List<OcrLine> = text.textBlocks.flatMap { it.lines }.mapNotNull { l ->

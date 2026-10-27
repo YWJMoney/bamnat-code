@@ -262,4 +262,54 @@ internal object RosterGeometry {
     }
 
     fun median(values: List<Double>): Double = values.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
+
+    /**
+     * [PHOTO-21] 1.30 AV: the slant of the rows as it changes down the page, `angle = a + b·y` degrees, from the slopes the
+     * text reader gave its long lines (사용자 2026-10-27 "사진마다 읽는 부분이 다르다", R3 A-1 #1). A page taken from one side
+     * (keystone) has its top rows going one way and its bottom rows the other; one tilt for the page levelled the middle and
+     * left the top and bottom rows slanted, so an amount half a row lower at the far end was lost or taken by the next row.
+     * Slopes more than 2° off the middle one are a watermark or a misread line and left out. null when fewer than three
+     * slopes; [Slant.b] 0 when the page leans alike top to bottom (under 0.8° apart), as one tilt did.
+     */
+    fun slant(words: List<RosterWord>): Slant? {
+        val long = words.filter { it.angle != 0f && it.right - it.left > 3 * it.height }
+        if (long.size < 3) return null
+        val mid = median(long.map { it.angle.toDouble() })
+        val near = long.filter { abs(it.angle - mid) <= 2.0 }.map { it.centerY.toDouble() to it.angle.toDouble() }
+        if (near.size < 6) return Slant(mid, 0.0)
+        val my = near.sumOf { it.first } / near.size
+        val ma = near.sumOf { it.second } / near.size
+        val syy = near.sumOf { (it.first - my) * (it.first - my) }
+        if (syy < 1e-6) return Slant(mid, 0.0)
+        val b = near.sumOf { (it.first - my) * (it.second - ma) } / syy
+        val span = near.maxOf { it.first } - near.minOf { it.first }
+        // A page that leans alike top to bottom keeps the one tilt (1.29's reading, unchanged).
+        if (abs(b) * span < 0.8) return Slant(mid, 0.0)
+        return Slant(ma - b * my, b)
+    }
+
+    /** [PHOTO-21] The rows' slant at height y of the photo: [a] + [b]·y degrees. */
+    data class Slant(val a: Double, val b: Double) {
+        fun at(y: Double): Double = a + b * y
+    }
+
+    /**
+     * [PHOTO-21] Words levelled each by the slant of its own row ([slant] at its height), turned about the middle of the page
+     * so the rows keep their order and each row lies level. With [Slant.b] 0 it is [level] by one tilt.
+     */
+    fun level(words: List<RosterWord>, slant: Slant): List<Placed> {
+        if (slant.b == 0.0) return level(words, slant.a)
+        val cx = (words.minOf { it.left } + words.maxOf { it.right }) / 2.0
+        val cy = (words.minOf { it.top } + words.maxOf { it.bottom }) / 2.0
+        return words.map { w ->
+            val x = (w.left + w.right) / 2.0 - cx
+            val y = (w.top + w.bottom) / 2.0 - cy
+            val r = Math.toRadians(slant.at(y + cy))
+            val s = sin(r)
+            val c = cos(r)
+            val width = (w.right - w.left).toDouble().coerceAtLeast(1.0)
+            val h = (w.height - width * abs(s)).coerceAtLeast(w.height * 0.3)
+            Placed(w, cx + x * c + y * s, cy - x * s + y * c, width, h)
+        }
+    }
 }

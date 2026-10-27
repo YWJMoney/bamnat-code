@@ -897,13 +897,15 @@ class PayCalculator(
             WageType.HOURLY -> base.value.toDouble()
             WageType.DAILY -> base.value * 60.0 / dailyMinutes
         }
-        if (rules.wonRounding != WonRounding.HOURLY_FIRST && (exactHourly != hourly.toDouble() || rules.wonRounding == WonRounding.AT_END_UP)) {
+        if (rules.wonRounding != WonRounding.HOURLY_FIRST && (exactHourly != hourly.toDouble() || rules.wonRounding == WonRounding.AT_END_UP ||
+                rules.wonRounding == WonRounding.AT_END_DOWN)) {
             val exactLabel = "%,.2f원".format(exactHourly)
             val up = rules.wonRounding == WonRounding.AT_END_UP
+            val down = rules.wonRounding == WonRounding.AT_END_DOWN
             lines.replaceAll { l ->
                 if (l.hourly != hourly || l.minutes == 0 || l.multiplier == 0.0 || l.amount != (l.minutes / 60.0 * hourly * l.multiplier).roundToLong()) l
-                else l.copy(amount = lineWon(l.minutes, exactHourly, l.multiplier, up),
-                    formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 ${if (up) "올림" else "반올림"})")
+                else l.copy(amount = lineWon(l.minutes, exactHourly, l.multiplier, up, down),
+                    formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 ${if (up) "올림" else if (down) "내림" else "반올림"})")
             }
         }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
@@ -1298,9 +1300,14 @@ class PayCalculator(
          * [PAYX-27][PHOTO-11] One line's 원: [minutes] × [hourly] × [multiplier], rounded half up or (with [up]) any 원 미만 up. A
          * hair of floating error is not a 원 more: 81시간 × 21,618.04 × 1.5 is 2,626,591.86 → 2,626,592.
          */
-        fun lineWon(minutes: Int, hourly: Double, multiplier: Double, up: Boolean): Long {
+        /** [PHOTO-11] One line's won: rounded, rounded [up], or ([HOURLY-03] 1.30) cut [down]. */
+        fun lineWon(minutes: Int, hourly: Double, multiplier: Double, up: Boolean, down: Boolean = false): Long {
             val v = minutes / 60.0 * hourly * multiplier
-            return if (up) kotlin.math.ceil(v - 1e-6).toLong() else v.roundToLong()
+            return when {
+                up -> kotlin.math.ceil(v - 1e-6).toLong()
+                down -> kotlin.math.floor(v + 1e-6).toLong()
+                else -> v.roundToLong()
+            }
         }
 
         fun hours(minutes: Int): String =

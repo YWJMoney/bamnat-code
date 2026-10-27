@@ -37,8 +37,12 @@ sealed interface RuleChange {
     data class NightWindow(val start: LocalTime, val end: LocalTime) : RuleChange {
         override val summary get() = "야간 시간 ${RuleWhen.clock(start)}~${RuleWhen.clock(end)}시"
     }
-    data class MonthlyHours(val hours: Int) : RuleChange {
-        override val summary get() = "월 소정근로시간 ${hours}시간"
+    /**
+     * [HOURLY-01] 1.30 AV: where the hours came from ([source]): a sentence of the company's rules (통상임금 산정 기준시간 180시간),
+     * worked out from a payslip, the 광장, or typed.
+     */
+    data class MonthlyHours(val hours: Int, val source: HourlySource = HourlySource.RULES) : RuleChange {
+        override val summary get() = if (source == HourlySource.SLIP) "명세서로 보면 통상임금 기준 ${hours}시간이에요" else "월 소정근로시간 ${hours}시간"
     }
     data class FiveOrMore(val value: Boolean) : RuleChange {
         override val summary get() = if (value) "직원 5명 이상" else "직원 5명 미만"
@@ -86,8 +90,16 @@ sealed interface RuleChange {
      * [PHOTO-11] 통상시급 worked out from a payslip's own premium lines (휴일근로 81시간 2,626,592원 → 21,618.04원), and whether
      * each line's won are rounded up as that payslip's are.
      */
-    data class OrdinaryHourly(val hourly: Double, val roundUp: Boolean) : RuleChange {
-        override val summary get() = "명세서로 보면 통상시급 ${won(kotlin.math.round(hourly).toLong())}이에요" + if (roundUp) " (원 미만 올림)" else ""
+    data class OrdinaryHourly(
+        val hourly: Double, val roundUp: Boolean,
+        /** [HOURLY-03] 1.30: each line's 원 미만 cut off (내림). */
+        val roundDown: Boolean = false,
+        /** [HOURLY-02] 1.30: worked out from one line only: a guess, looked at before it is used. */
+        val estimated: Boolean = false,
+        val source: HourlySource = HourlySource.SLIP,
+    ) : RuleChange {
+        override val summary get() = (if (estimated) "명세서로 짐작한 통상시급 " else "명세서로 보면 통상시급 ") + "${won(kotlin.math.round(hourly).toLong())}이에요" +
+            when { roundUp -> " (원 미만 올림)"; roundDown -> " (원 미만 내림)"; else -> "" }
     }
 }
 
@@ -547,9 +559,14 @@ object RuleText {
                 "유급" in c || Regex("돈이나|급여가나|임금지급").containsMatchIn(c) -> return one(RuleChange.Breaks(BreakPay.PAID), 0.8)
             }
         }
-        Regex("""(소정근로|근로시수|소정시간|월소정|기준시간|근무시수)[^\d]{0,6}(\d{2,3})\s*시간?""").find(c)?.let {
+        // [HOURLY-01] 1.30: "통상임금 산정 기준시간 180시간", "기준시간 180H", "시수 : 180", "통상임금 ÷ 180" (LG화학, 사용자 2026-10-27).
+        Regex("""(소정근로|근로시수|소정시간|월소정|기준시간|근무시수|산정시간|(?<![가-힣])시수|(?:월|기준|산정|통상임금)시수)[^\d]{0,6}(\d{2,3})(?:\.0+)?(?:시간|시|hr|h|H)?(?![\d.])""").find(c)?.let {
             val h = it.groupValues[2].toInt()
             if (h in 100..320) return one(RuleChange.MonthlyHours(h), 0.85)
+        }
+        Regex("""통상(임금|시급)[^\d]{0,4}[÷/][(（]?(\d{3})(?:시간)?(?!\d)""").find(c)?.let {
+            val h = it.groupValues[2].toInt()
+            if (h in 100..320) return one(RuleChange.MonthlyHours(h), 0.8)
         }
         Regex("""^(월)?(\d{3})시간(이에요|입니다|기준)?$""").find(c)?.let {
             val h = it.groupValues[2].toInt()
@@ -865,7 +882,8 @@ object RuleText {
                 }
             }
             is RuleChange.NightWindow -> p.withRules { it.copy(nightStart = change.start, nightEnd = change.end) }
-            is RuleChange.MonthlyHours -> p.copy(monthlyHours = change.hours, estimatedFields = p.estimatedFields - Unknowns.MONTHLY_HOURS - RuleOnlyNeeds.HOURS_UNSET)
+            is RuleChange.MonthlyHours -> p.copy(monthlyHours = change.hours, hoursSource = change.source,
+                estimatedFields = p.estimatedFields - Unknowns.MONTHLY_HOURS - RuleOnlyNeeds.HOURS_UNSET)
             is RuleChange.FiveOrMore -> p.copy(fiveOrMoreEmployees = change.value, estimatedFields = p.estimatedFields - Unknowns.FIVE_OR_MORE)
             is RuleChange.Breaks -> p.withRules { it.copy(breakPay = change.mode) }.let { Unknowns.answered(it, Unknowns.BREAK_PAY) }
             // [HOLI-01] Through the one 빨간날 choice, so 특근처럼 also judges a night shift by the day it starts.
@@ -884,8 +902,8 @@ object RuleText {
                 p.copy(items = p.items.map { if (it.cadence != Cadence.BONUS && it.name.replace(" ", "") in wanted) it.copy(ordinary = true) else it })
             }
             is RuleChange.TaxFamily -> p.copy(taxFamily = change.family, taxChildren = change.children)
-            is RuleChange.OrdinaryHourly -> p.copy(ordinaryHourly = change.hourly)
-                .withRules { it.copy(wonRounding = if (change.roundUp) WonRounding.AT_END_UP else WonRounding.AT_END) }
+            is RuleChange.OrdinaryHourly -> p.copy(ordinaryHourly = change.hourly, ordinarySource = change.source)
+                .withRules { it.copy(wonRounding = if (change.roundUp) WonRounding.AT_END_UP else if (change.roundDown) WonRounding.AT_END_DOWN else WonRounding.AT_END) }
             is RuleChange.Custom -> p.copy(customRules = (p.customRules.filterNot { it.id == change.rule.id || it.source.isNotEmpty() && it.source == change.rule.source && it.name == change.rule.name } +
                 change.rule).takeLast(CustomRule.MAX))
         }

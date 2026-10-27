@@ -1,15 +1,9 @@
 package com.bamnat.app.ui.pay
 
-import android.content.ActivityNotFoundException
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -20,12 +14,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,14 +31,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.bamnat.app.pay.PayslipScanner
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ShiftType
@@ -60,108 +49,8 @@ import com.bamnat.core.pay.RuleFinding
 import com.bamnat.core.pay.RuleText
 import com.bamnat.core.pay.SlipNames
 import com.bamnat.core.pay.SlipRole
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 
-/**
- * [PAYS-05] Two buttons that read the text of a photo on the phone: one picks a photo or screenshot, one takes a
- * picture. The text goes to [onText]; a photo taken here is deleted once read.
- * [READ-13][READ-14] 1.27: the photo is read several ways and put together ([PayslipScanner.scan]), "n/m번째 방법으로 읽는
- * 중" shows while it does, and a photo too dark, blurred or small says how to take a better one. [onScan], when given,
- * gets the whole reading (the put-together payslip, its lines to look at, the photo for "사진과 같은가요?") instead of
- * the text alone.
- */
-@Composable
-internal fun ScanButtons(
-    onText: (String) -> Unit = {}, modifier: Modifier = Modifier,
-    onScan: ((PayslipScanner.Scan) -> Unit)? = null,
-    /** [PHOTO-01] 1.29: no words found or the photo failed to read: the screen to fill by hand ('직접 넣기' under the message). */
-    onEmpty: (() -> Unit)? = null,
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var reading by remember { mutableStateOf(false) }
-    var step by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var advice by remember { mutableStateOf<String?>(null) }
-
-    fun read(uri: Uri, taken: Boolean) {
-        reading = true
-        error = null
-        advice = null
-        step = null
-        scope.launch {
-            try {
-                val scan = PayslipScanner.scan(context, uri) { n, m -> step = n to m }
-                val retake = scan.quality?.takeIf { it.retake }?.line
-                if (scan.text.isBlank()) error = "글자를 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
-                else {
-                    advice = retake
-                    if (onScan != null) onScan(scan) else onText(scan.text)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
-                error = e.message
-            } catch (e: Exception) {
-                error = "사진을 읽지 못했어요. 다른 사진으로 해 보거나 글로 붙여 넣어 주세요."
-            } finally {
-                if (taken) PayslipScanner.clear(context)
-                reading = false
-            }
-        }
-    }
-
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) read(uri, taken = false) }
-    var shot by remember { mutableStateOf<Uri?>(null) }
-    val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        val uri = shot
-        if (ok && uri != null) read(uri, taken = true) else PayslipScanner.clear(context)
-    }
-
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                enabled = !reading,
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-            ) {
-                Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("사진 고르기")
-            }
-            OutlinedButton(
-                onClick = {
-                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.share", PayslipScanner.scanFile(context))
-                    shot = uri
-                    try {
-                        take.launch(uri)
-                    } catch (e: ActivityNotFoundException) {
-                        error = "카메라 앱을 찾지 못했어요. 사진을 찍어 둔 뒤 ‘사진 고르기’로 골라 주세요."
-                    }
-                },
-                enabled = !reading,
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-            ) {
-                Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("사진 찍기")
-            }
-        }
-        // [READ-15] Edges found, straightened and shadows taken out by Google's scanner on the phone.
-        com.bamnat.app.imports.ScannerButton(onImage = { read(it, taken = false) }, onError = { error = it }, enabled = !reading)
-        if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text(step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
-                style = MaterialTheme.typography.bodySmall)
-        }
-        error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            if (onEmpty != null) TextButton(onClick = { error = null; onEmpty() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("직접 넣기") }
-        }
-        advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
-    }
-}
+// [PHOTO-20] 1.30 AV: ScanButtons moved to ScanButtons.kt.
 
 internal fun SlipRole.short(): String = when (this) {
     SlipRole.GROSS, SlipRole.TOTAL -> "지급 총액"
@@ -276,7 +165,8 @@ fun PayslipFillDialog(
         if (rules != null) {
             ticks += photos.rules.map { it to (it.confidence >= 0.6) }
             // [PHOTO-11] 1.29: the 통상시급 the payslip's own 가산 lines were worked out on ("명세서로 보면 통상시급 21,618원이에요").
-            com.bamnat.core.pay.SlipHourly.finding(taught, com.bamnat.core.pay.SlipHourly.multipliers(photos.rules))?.let { ticks += it to true }
+            // [HOURLY-01..03] 1.30 AV: also the 기준 시간 and a 배율 other than the law's; a guess from one line starts unticked.
+            ticks += com.bamnat.core.pay.SlipHourly.findings(taught, photos.rules).map { it to (it.confidence >= 0.6) }
             unreadRows += photos.unread
         }
     }
@@ -336,6 +226,8 @@ fun PayslipFillDialog(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     r.month?.let { Text("${it.year}년 ${it.monthValue}월 명세서", style = MaterialTheme.typography.titleSmall) }
                     if (photo != null) PhotoThumb(photo)
+                    // [PHOTO-26] 1.30 AV: a payslip too long for one photo: '+ 한 장 더', read and put together with this one.
+                    scan?.takeIf { it.text == text && photo != null }?.let { s -> MorePageButton(s) { both -> scan = both; text = both.text; analyse() } }
                     if (r.lines.isNotEmpty() || !rulesOnly) {
                         SlipCheck(r, unsure, same, fromPhoto = photo != null && r.lines.isNotEmpty(),
                             onAnswer = { same = it },
@@ -374,10 +266,12 @@ fun PayslipFillDialog(
             when {
                 r == null -> if (typing || (rules != null && canRead)) Button(onClick = ::analyse, enabled = canRead) { Text("읽기") }
                 r.lines.isEmpty() && ticks.isEmpty() -> Button(onClick = {}, enabled = false) { Text("칸을 넣어 주세요") }
-                waiting -> Button(onClick = {}, enabled = false) { Text("사진과 같은지 먼저 봐 주세요") }
+                waiting -> Button(onClick = {}, enabled = false) { Text(if (unsure.isNotEmpty()) "노란 ${unsure.size}줄을 먼저 봐 주세요" else "사진과 같은지 먼저 봐 주세요") }
                 else -> Button(onClick = {
                     val chosen = ticks.filter { it.second }.map { it.first.change }
                     asRead?.let { before -> fixes.learnSlip(SlipNames.learned(before, r)) }
+                    // [PHOTO-24] 1.30 AV: the payslip as confirmed, kept as the company's template for next month's photo.
+                    scan?.takeIf { it.text == text && r.lines.isNotEmpty() && it.boxes.isNotEmpty() }?.let { s -> fixes.learnTemplate(r, s.boxes) }
                     if (rules != null && chosen.isNotEmpty()) rules.onRules(chosen, r.month)
                     when {
                         r.lines.isNotEmpty() -> onRead(r)

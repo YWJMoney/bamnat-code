@@ -211,6 +211,9 @@ object PayCodec {
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
         // [PHOTO-11] 1.29: 명세서로 맞춘 통상시급 (원 아래 두 자리), left out when not set.
         .apply { p.ordinaryHourly?.let { put("ordinaryHourly", it) } }
+        // [HOURLY-01] 1.30: where 통상시급 and 기준 시간 came from, left out when not known.
+        .putOpt("ordinarySource", p.ordinarySource?.name)
+        .putOpt("hoursSource", p.hoursSource?.name)
         .apply { if (p.legalBreaks) put("legalBreaks", true) }
         .putOpt("probationEnd", p.probationEnd?.toString())
         .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
@@ -252,6 +255,8 @@ object PayCodec {
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
         taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
         ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },
+        ordinarySource = o.optString("ordinarySource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
+        hoursSource = o.optString("hoursSource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
         legalBreaks = o.optBoolean("legalBreaks", false),
         probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),

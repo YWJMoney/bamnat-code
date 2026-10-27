@@ -110,24 +110,54 @@ object ImagePrep {
     /** Longest side of the twice-the-size picture. */
     const val UP_SIDE = 3600
 
+    /** [PHOTO-21] 1.30: longest side of the made-bigger picture when the letters' height is known (up to three times). */
+    const val BIG_SIDE = 4000
+
+    /**
+     * How a photo looks, the ways worth reading it, and ([PHOTO-25] 1.30) whether it is a photo of a screen (a moiré to
+     * smooth before every made-over reading).
+     */
+    data class Plan(val stats: PhotoVariants.Stats, val kinds: List<PhotoVariants.Kind>, val moire: Boolean = false)
+
     /** How [base] looks (on a small copy) and the ways worth reading it, given its letters' height from a first reading. */
-    fun plan(base: Bitmap, letterHeight: Int?): Pair<PhotoVariants.Stats, List<PhotoVariants.Kind>> {
+    fun plan(base: Bitmap, letterHeight: Int?): Plan {
         val s = (1200f / max(base.width, base.height)).coerceAtMost(1f)
         val small = if (s < 1f) Bitmap.createScaledBitmap(base, (base.width * s).toInt().coerceAtLeast(1), (base.height * s).toInt().coerceAtLeast(1), true) else base
         val px = IntArray(small.width * small.height)
         small.getPixels(px, 0, small.width, 0, 0, small.width, small.height)
         val g = PhotoVariants.gray(px, small.width, small.height)
         if (small !== base) small.recycle()
+        // [PHOTO-25] A moiré's dots are a few pixels apart on the photo itself: measured on its middle at full size (a
+        // shrunk copy blurs them away).
+        val moire = runCatching {
+            val side = minOf(MOIRE_CROP, base.width, base.height)
+            val crop = IntArray(side * side)
+            base.getPixels(crop, 0, side, (base.width - side) / 2, (base.height - side) / 2, side, side)
+            PhotoVariants.periodic(PhotoVariants.gray(crop, side, side)) >= PhotoVariants.MOIRE
+        }.getOrDefault(false)
         // Letters measured on [base]; the plan's own small copy does not change what they are.
-        return PhotoVariants.stats(g) to PhotoVariants.plan(g, letterHeight)
+        return Plan(PhotoVariants.stats(g), PhotoVariants.plan(g, letterHeight), moire)
     }
+
+    /** [PHOTO-25] The square in the photo's middle looked at for a moiré. */
+    private const val MOIRE_CROP = 480
+
+    /** [PHOTO-25] 1.30 AV: [bitmap] turned a quarter ([deg] 90 or 270) for a photo read on its side. */
+    fun turned(bitmap: Bitmap, deg: Float): Bitmap =
+        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(deg) }, true)
 
     /**
      * [base] made over as [kind]; null when not worth it (already big enough to double) or the phone ran short of memory
      * (that way is skipped, the others still read). [text] is where the words of a first reading were, so the
      * twice-the-size picture holds only the table, not the desk around it.
      */
-    fun variant(base: Bitmap, kind: PhotoVariants.Kind, text: android.graphics.Rect? = null): Variant? = try {
+    fun variant(
+        base: Bitmap, kind: PhotoVariants.Kind, text: android.graphics.Rect? = null,
+        /** [PHOTO-21] The letters' height read first (pixels of [base]): small letters are worked bigger and at [base]'s size. */
+        letterHeight: Int? = null,
+        /** [PHOTO-25] A photo of a screen: its moiré smoothed first. */
+        moire: Boolean = false,
+    ): Variant? = try {
         when (kind) {
             PhotoVariants.Kind.ORIG -> Variant(kind, base, 1f)
             PhotoVariants.Kind.UP2 -> {
@@ -136,20 +166,23 @@ object ImagePrep {
                     android.graphics.Rect((t.left - m).coerceAtLeast(0), (t.top - m).coerceAtLeast(0),
                         (t.right + m).coerceAtMost(base.width), (t.bottom + m).coerceAtMost(base.height))
                 }?.takeIf { it.width() > 8 && it.height() > 8 } ?: android.graphics.Rect(0, 0, base.width, base.height)
-                val f = (UP_SIDE.toFloat() / max(r.width(), r.height())).coerceAtMost(2f)
+                // [PHOTO-21] 1.30: as big as the letters need (28 px, up to three times), not twice always.
+                val f = PhotoVariants.upFactor(letterHeight, max(r.width(), r.height()), if (letterHeight != null) BIG_SIDE else UP_SIDE)?.toFloat() ?: 0f
                 if (f < 1.4f) null else {
                     val crop = Bitmap.createBitmap(base, r.left, r.top, r.width(), r.height())
                     val big = Bitmap.createScaledBitmap(crop, (r.width() * f).toInt(), (r.height() * f).toInt(), true)
                     if (crop !== base && crop !== big) crop.recycle()
-                    val out = over(big) { PhotoVariants.flat(it) }
+                    val out = over(big) { PhotoVariants.flat(if (moire) PhotoVariants.soft(it) else it) }
                     if (big !== out) big.recycle()
                     Variant(kind, out, 1f / f, r.left, r.top)
                 }
             }
             else -> {
-                val s = (WORK_SIDE.toFloat() / max(base.width, base.height)).coerceAtMost(1f)
+                // [PHOTO-21] 1.30: small letters are worked at the photo's own size, as the first reading read them.
+                val side = PhotoVariants.workSide(max(base.width, base.height), letterHeight, WORK_SIDE)
+                val s = (side.toFloat() / max(base.width, base.height)).coerceAtMost(1f)
                 val work = if (s < 1f) Bitmap.createScaledBitmap(base, (base.width * s).toInt().coerceAtLeast(1), (base.height * s).toInt().coerceAtLeast(1), true) else base
-                val out = over(work) { PhotoVariants.make(kind, it) }
+                val out = over(work) { PhotoVariants.make(kind, it, moire) }
                 if (work !== base) work.recycle()
                 Variant(kind, out, 1f / s)
             }
