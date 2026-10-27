@@ -190,7 +190,8 @@ class PlazaCompareTest {
     }
 
     @Test fun `every proposal field is one the server knows`() {
-        val known = setOf("shift", "order", "break", "overtime", "night", "holiday", "allowance", "bonus", "leave", "other")
+        // [ITEM-08] 1.30 BC: hours (통상시급 기준 시간), the server's CHANGE_FIELDS.hours.
+        val known = setOf("shift", "order", "break", "overtime", "night", "holiday", "allowance", "bonus", "leave", "other", "hours")
         val withAll = SetupEdit.of(company)!!.nightWindow("22:00", "06:00").weekly(List(7) { "주간" })
         assertTrue(withAll.facts.all { it.field in known })
         assertNotNull(withAll.facts.firstOrNull { it.key == "rule:weeklyDay" })

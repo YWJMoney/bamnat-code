@@ -1027,16 +1027,16 @@ PHOTO-09,"1.29 AQ '사진이 달라요' 버튼: 사진 읽기 결과가 보이�
 PHOTO-10,"1.29 AQ 회사 서버 /api/photo-wrong(합계만, 횟수 제한·검증)과 관리자 앱 분석 허브 '사진이 달라요' 날짜·화면별 카운트",2 (1.29.0),완료,,"server company-worker // AQ 1.29 POST /api/photo-wrong(코드·숫자만, 하루 30번, 400일 보관), 관리자 앱 사진이 달라요 카드; npm test 283·test:ui 36"
 PHOTO-11,1.29 AQ 사진 → 규칙 → 계산 경로 오류 고침(목록은 1.29-AQ 개발계획),2 (1.29.0),완료,,"core·app 고친 오류 목록은 docs/plans/1.29-AQ-개발계획.md(교대근무수당→대근, 야간근무수당, 배우자→자녀, 점 무늬 흑백 등)"
 PHOTO-12,1.29 AQ 화면 사진 1250~1269(명세서 결과·칸 더하기·규칙 직접 넣기·사진이 달라요),2 (1.29.0),완료,,app screenshots/AQScreenshotTest 1250~1257
-ITEM-01,1.30 BC 수당 종류: PayItem share(회사 공통·사람마다·다른 금액의 %)·percent·percentOf·fixedAmount·mine과 계산(통상임금·상여 기준에도 반영),2 (1.30.0),진행 중,,"core PayProfile ItemShare·ItemShares.resolve, PayCalculator·ordinaryWage가 먼저 풀어 계산; PayItemShareTest"
-ITEM-02,"1.30 BC PayCodec 호환: 새 칸은 사람마다가 아닐 때만 쓰고, 옛 파일·모르는 값은 사람마다",2 (1.30.0),진행 중,,app PayStore PayCodec item 읽기·쓰기; PayCodecShareTest
-ITEM-03,"1.30 BC 회사 파일 v4 내보내기(새 수당 칸이 있을 때만 v4, 아니면 v3·v2), 회사 공통 정액만 광장에(결정 D102, plaza.fixed_amount 기본 켬), 나만 받는 수당은 안 보냄",2 (1.30.0),진행 중,,"app CompanyShare export shareOf·usesNewItems, FlagCatalog plaza.fixed_amount; CompanyShareItemsTest"
-ITEM-04,1.30 BC 서버 item()·canonical()·cleanSetup() v4: share·percent·percentOf·fixedAmount 검증과 itemText 말,2 (1.30.0),진행 중,,"server company-worker src/plaza-items.js, index.js // BC 1.30; test/plaza-items-v4.test.mjs"
-ITEM-05,1.30 BC 수당 만들기 3칸(회사 공통 금액·사람마다·다른 금액의 %)과 이름으로 추천(ShareGuess),2 (1.30.0),진행 중,,"core OrdinaryGuess ShareGuess, app CustomItemDialog ShareSegment; PayItemShareTest, 스크린샷 1340"
-ITEM-06,"1.30 BC 회사 규칙을 쓰는 사람은 사람마다 수당만 넣고, 회사 공통·% 수당은 읽기 줄·금액 모름에서 빠짐",2 (1.30.0),진행 중,,"core Unknowns, app CompanyShare amountNeeds·commonItems, ItemShareUi CommonItemLines; PayItemShareTest, CompanyShareItemsTest"
-ITEM-07,1.30 BC 회사 규칙의 통상시급 기준 시간(예 LG화학 180시간) 먼저 보이기,2 (1.30.0),진행 중,,"app CompanyShare.hoursOf/hoursIn, HoursProposal CompanyHoursLine, CompanyRulesEditor; 스크린샷 1344"
-ITEM-08,1.30 BC 시간을 바꾸면 그대로 제안 초안(보내기만 누르면 됨),2 (1.30.0),진행 중,,"core ProposalDraft.hours, app HoursProposalSheet·DiffEditorSheet draft; SetupEditItemsTest"
-ITEM-09,1.30 BC 제안 양식 SetupEdit: 수당 더하기·빼기·이름·종류·%·통상임금·통상시급 기준 시간,2 (1.30.0),진행 중,,"core SetupEdit addItem·removeItem·renameItem·itemShare·monthlyHours, SetupFacts hours, SetupCompare 금액 지우기; SetupEditItemsTest, SetupCompareItemsTest"
-ITEM-10,"1.30 BC 제안 화면 SetupEditor 수당·일터 칸(수당 고치기·더하기·빼기, 시간 칩)",2 (1.30.0),진행 중,,app PlazaCompare AllowanceEditor·AddAllowance·시간 칩; 스크린샷 1341~1342
-PROP-01,1.30 BC 서버 talk()가 회원에게 제안 글의 규칙 파일(proposal.text) 같이 주기,2 (1.30.0),진행 중,,"server src/plaza-items.js withProposalTexts, index.js talk() 1줄; test/talk-proposal-text.test.mjs"
-PROP-02,"1.30 BC 제안 글 '이 제안으로 내 월급 계산해 보기'(휴대폰 안 계산, 명세서와 차이), 맞아요·달라요 = 제안 공감",2 (1.30.0),진행 중,,"app ProposalTrial, PlazaScreens TrialSheet proposal, CompanyBoard PostRow, CompanyClient ProposalState.text; CompanyShareItemsTest trial, 스크린샷 1343"
-PROP-03,1.30 BC 제안을 보낼 때 '내 급여도 이 값으로 계산해요',2 (1.30.0),진행 중,,"app PlazaCompare DiffEditorSheet alsoMine, CompanyShare.takeEdited; CompanyShareItemsTest"
+ITEM-01,1.30 BC 수당 종류: PayItem share(회사 공통·사람마다·다른 금액의 %)·percent·percentOf·fixedAmount·mine과 계산(통상임금·상여 기준에도 반영),2 (1.30.0),완료,,"core PayProfile ItemShare·ItemShares.resolve, PayCalculator·ordinaryWage가 먼저 풀어 계산; PayItemShareTest"
+ITEM-02,"1.30 BC PayCodec 호환: 새 칸은 사람마다가 아닐 때만 쓰고, 옛 파일·모르는 값은 사람마다",2 (1.30.0),완료,,app PayStore PayCodec item 읽기·쓰기; CompanyShareItemsTest
+ITEM-03,"1.30 BC 회사 파일 v4 내보내기(새 수당 칸이 있을 때만 v4, 아니면 v3·v2), 회사 공통 정액만 광장에(결정 D102, plaza.fixed_amount 기본 켬), 나만 받는 수당은 안 보냄",2 (1.30.0),완료,,"app CompanyShare export shareOf·usesNewItems, FlagCatalog plaza.fixed_amount; CompanyShareItemsTest"
+ITEM-04,1.30 BC 서버 item()·canonical()·cleanSetup() v4: share·percent·percentOf·fixedAmount 검증과 itemText 말,2 (1.30.0),완료,,"server company-worker src/plaza-items.js, index.js // BC 1.30; test/plaza-items-v4.test.mjs"
+ITEM-05,1.30 BC 수당 만들기 3칸(회사 공통 금액·사람마다·다른 금액의 %)과 이름으로 추천(ShareGuess),2 (1.30.0),완료,,"core OrdinaryGuess ShareGuess, app CustomItemDialog ShareSegment; PayItemShareTest, 스크린샷 1340~1342"
+ITEM-06,"1.30 BC 회사 규칙을 쓰는 사람은 사람마다 수당만 넣고, 회사 공통·% 수당은 읽기 줄·금액 모름에서 빠짐",2 (1.30.0),완료,,"core Unknowns, app CompanyShare amountNeeds·commonItems, ItemShareUi CommonItemLines; PayItemShareTest, CompanyShareItemsTest, 스크린샷 1348"
+ITEM-07,1.30 BC 회사 규칙의 통상시급 기준 시간(예 LG화학 180시간) 먼저 보이기,2 (1.30.0),완료,,"app CompanyShare.hoursOf/hoursIn, HoursProposal CompanyHoursLine, CompanyRulesEditor; CompanyShareItemsTest, 스크린샷 1348~1349"
+ITEM-08,1.30 BC 시간을 바꾸면 그대로 제안 초안(보내기만 누르면 됨),2 (1.30.0),완료,,"core ProposalDraft.hours, app HoursProposalSheet·DiffEditorSheet draft; SetupEditItemsTest, 스크린샷 1350~1351"
+ITEM-09,1.30 BC 제안 양식 SetupEdit: 수당 더하기·빼기·이름·종류·%·통상임금·통상시급 기준 시간,2 (1.30.0),완료,,"core SetupEdit addItem·removeItem·renameItem·itemShare·monthlyHours, SetupFacts hours, SetupCompare 금액 지우기; SetupEditItemsTest, SetupCompareItemsTest"
+ITEM-10,"1.30 BC 제안 화면 SetupEditor 수당·일터 칸(수당 고치기·더하기·빼기, 시간 칩)",2 (1.30.0),완료,,app PlazaCompare AllowanceEditor·AddAllowance·시간 칩; 스크린샷 1343~1347
+PROP-01,1.30 BC 서버 talk()가 회원에게 제안 글의 규칙 파일(proposal.text) 같이 주기,2 (1.30.0),완료,,"server src/plaza-items.js withProposalTexts, index.js talk() 1줄; test/talk-proposal-text.test.mjs"
+PROP-02,"1.30 BC 제안 글 '이 제안으로 내 월급 계산해 보기'(휴대폰 안 계산, 명세서와 차이), 맞아요·달라요 = 제안 공감",2 (1.30.0),완료,,"app ProposalTrial, PlazaScreens TrialSheet proposal, CompanyBoard PostRow, CompanyClient ProposalState.text; CompanyShareItemsTest, 스크린샷 1352~1354"
+PROP-03,1.30 BC 제안을 보낼 때 '내 급여도 이 값으로 계산해요',2 (1.30.0),완료,,"app PlazaCompare DiffEditorSheet alsoMine, CompanyShare.takeEdited; CompanyShareItemsTest, 스크린샷 1351"
