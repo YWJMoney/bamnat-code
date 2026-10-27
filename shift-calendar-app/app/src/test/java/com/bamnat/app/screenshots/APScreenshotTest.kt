@@ -271,4 +271,57 @@ class APScreenshotTest : ScreenshotBase() {
         assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
         assertNotNull(c.payStore.profile.value)
     }
+
+    // ---- [PAYF-01] 설정 고치기가 어느 쪽으로 열리든 검색 칸이 먼저 ----
+    private fun withPay() = payScreen(Tier.PRO, withProfile = true) { vm -> PayScreen(vm, onBack = {}, companyFind = true) }
+
+    @Test fun editingTheSetupStartsWithTheSearchBox() = shoot("1242_ap_edit_setup_search", PHONE_393) {
+        leads()
+        withPay()()
+        tapText("처음부터 설정", scrolls = 40)
+        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(shows("회사 이름", exact = true))
+        assertTrue(shows("직접 만들게요", exact = true))
+    }
+
+    private fun Screen.wizard(onDone: (PayProfile) -> Unit = {}) {
+        val p = runBlocking { com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile() }
+        runBlocking { c.payStore.save(p, keepUndo = false) }
+        content { com.bamnat.app.ui.pay.PayWizard(initial = p, onCancel = {}, onDone = onDone, companyFind = true) }
+        settle()
+    }
+
+    @Test fun theQuestionSetupHasTheSameBox() = shoot("1243_ap_wizard_search", PHONE_393) {
+        leads()
+        wizard()
+        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(shows("없으면 직접 만들어요", exact = true))
+        typeInto("회사 이름", "예시정밀")
+        waitFor(400)
+        assertTrue(shows("급여 방식 있음 · 맞아요 4명", exact = true))
+    }
+
+    @Test fun theQuestionSetupUsesTheWayAndAsksTheBase() = shoot("1244_ap_wizard_use", PHONE_393_NIGHT) {
+        leads()
+        var done: PayProfile? = null
+        wizard { done = it }
+        typeInto("회사 이름", "예시정밀")
+        waitFor(400)
+        tapText("(주)예시정밀", exact = true)
+        assertTrue(shows("‘(주)예시정밀’ 급여 방식을 쓸까요?", exact = true))
+        // The wizard's own 다음 waits while the box's steps are on; 이전 goes back to the box.
+        assertFalse(shows("다음", exact = true))
+        tapText("이 급여 방식 쓰기", exact = true)
+        assertTrue(shows("급여 방식을 넣었어요", exact = true))
+        typeInto("월 기본급", "2700000")
+        tapText("이대로 계산", exact = true)
+        assertEquals(2_700_000L, BaseAsk.known(done, Today.month()))
+        assertEquals("s1", c.payWays.way.value?.setup)
+    }
+
+    @Test fun theQuestionSetupBoxLarge() = shoot("1245_ap_wizard_search_large", SMALL_PHONE, 2f) {
+        leads()
+        wizard()
+        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
+    }
 }
