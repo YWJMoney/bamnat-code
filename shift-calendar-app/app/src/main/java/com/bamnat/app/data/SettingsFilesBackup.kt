@@ -38,11 +38,27 @@ class SettingsFilesBackup(
             if (o.length() > 0) prefs.put(part.name, o)
         }
         val marks = JSONObject()
-        for (id in listOf(PersonalCalendar.MAIN) + calendarIds().filter { it != PersonalCalendar.MAIN && it != PersonalCalendar.EXAMPLE }) {
+        val added = calendarIds().filter { it != PersonalCalendar.MAIN && it != PersonalCalendar.EXAMPLE }
+        for (id in listOf(PersonalCalendar.MAIN) + added) {
             val f = marksFile(id)
             if (f.exists()) runCatching { marks.put(id, JSONObject(f.readText())) }
         }
-        return JSONObject().put("prefs", prefs).put("recurringMarks", marks)
+        // [CALI-07] 1.30 BB: each added calendar's company connection, the same keys as the main calendar's parts.
+        val companies = JSONObject()
+        for (id in added) {
+            val o = JSONObject()
+            for (part in CALENDAR_PARTS) {
+                val file = java.io.File(CalendarStorage.filesOf(context, id), part.value)
+                if (!file.exists()) continue
+                val p = com.bamnat.app.company.CompanyScopeStorage.prefs(context, id, part.value)
+                val keys = PARTS.first { it.name == part.key }.keys
+                val values = JSONObject()
+                for ((k, v) in p.all) if (keys == null || k in keys) encode(v)?.let { values.put(k, it) }
+                if (values.length() > 0) o.put(part.key, values)
+            }
+            if (o.length() > 0) companies.put(id, o)
+        }
+        return JSONObject().put("prefs", prefs).put("recurringMarks", marks).apply { if (companies.length() > 0) put("calendarCompany", companies) }
     }
 
     /** Puts back what [export] wrote; a part the file does not have keeps what this phone has. */
@@ -57,6 +73,24 @@ class SettingsFilesBackup(
                     decode(edit, k, saved.optJSONObject(k) ?: continue)
                 }
                 edit.commit()
+            }
+        }
+        // [CALI-07] Once the calendars are back: each one's company connection into its own folder. A part the file does not
+        // have keeps what this phone has, as for the main calendar.
+        o.optJSONObject("calendarCompany")?.let { companies ->
+            for (id in companies.keys()) {
+                if (id == PersonalCalendar.MAIN || id == PersonalCalendar.EXAMPLE || id !in calendarIds()) continue
+                val parts = companies.optJSONObject(id) ?: continue
+                for (part in CALENDAR_PARTS) {
+                    val saved = parts.optJSONObject(part.key) ?: continue
+                    val keys = PARTS.first { it.name == part.key }.keys
+                    val edit = com.bamnat.app.company.CompanyScopeStorage.prefs(context, id, part.value).edit()
+                    for (k in saved.keys()) {
+                        if (keys != null && k !in keys) continue
+                        decode(edit, k, saved.optJSONObject(k) ?: continue)
+                    }
+                    edit.commit()
+                }
             }
         }
         o.optJSONObject("recurringMarks")?.let { marks ->
@@ -98,6 +132,15 @@ class SettingsFilesBackup(
 
     companion object {
         private const val MARKS = "recurring_marks.json"
+
+        /**
+         * [CALI-07] An added calendar's company connection: the main calendar's part it follows ([PARTS], same keys, same
+         * [DEVICE_ONLY]) and the file in the calendar's folder ([com.bamnat.app.company.CompanyScopeStorage]).
+         */
+        internal val CALENDAR_PARTS = mapOf(
+            "company" to com.bamnat.app.company.CompanyScopeStorage.COMPANY,
+            "pay_way" to com.bamnat.app.company.CompanyScopeStorage.PAY_WAY,
+        )
 
         /** What travels, file by file. Keys left out of a listed file stay on the phone. */
         internal val PARTS = listOf(

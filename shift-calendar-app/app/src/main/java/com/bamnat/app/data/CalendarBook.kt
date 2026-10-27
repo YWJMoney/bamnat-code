@@ -107,7 +107,8 @@ interface CalendarStorage {
             // [MCAL-06] Its pay setup and closed months go with it.
             val dir = filesOf(context, id)
             if (!keepTools) dir.deleteRecursively()
-            else dir.listFiles()?.filter { it.name !in TOOL_FILES }?.forEach { it.deleteRecursively() }
+            // [CALI-07] Its company connection stays too, as the main calendar's does; the backup's part is put over it.
+            else dir.listFiles()?.filter { it.name !in TOOL_FILES && it.name !in com.bamnat.app.company.CompanyScopeStorage.KEPT }?.forEach { it.deleteRecursively() }
         }
     }
 
@@ -152,6 +153,11 @@ class CalendarBook(
     private val payOf: (String) -> com.bamnat.app.pay.PayStore = { error("No pay here") },
     /** [LEAVE-01] The main calendar's 연차 원장; an added calendar's is made over its own database. */
     private val mainLeave: () -> com.bamnat.app.leave.LeaveRepository = { error("No leave here") },
+    /**
+     * [CALI-07] Told right before an added calendar's files go: [kept] true when a restore brings it straight back (its
+     * company connection stays), false when it is gone for good (the company it joined is let go).
+     */
+    private val onDelete: (id: String, kept: Boolean) -> Unit = { _, _ -> },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
 
@@ -376,6 +382,7 @@ class CalendarBook(
     private fun delete(id: String, keepTools: Boolean) {
         if (id == PersonalCalendar.MAIN || get(id) == null) return
         val db = synchronized(this) { pays.remove(id); open.remove(id)?.db }
+        runCatching { onDelete(id, keepTools) }
         val s = state.value
         write(s.copy(
             calendars = s.calendars.filter { it.id != id },
