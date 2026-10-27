@@ -19,6 +19,13 @@ object SlipVote {
         val sure: Boolean get() = unsure.isEmpty() && adds(read) && stated(read)
     }
 
+    /** [PHOTO-23] 지급, 공제 or a total: a line's side of the payslip. */
+    private fun side(l: SlipLine): Int = when {
+        l.role in TOTALS && l.role != SlipRole.DEDUCTION -> 2
+        l.role == SlipRole.DEDUCTION -> 1
+        else -> 0
+    }
+
     private fun key(l: SlipLine): String =
         l.role.name + ":" + PayslipReader.ocrFix(l.name.filter { it.isLetter() }).take(3)
 
@@ -34,17 +41,26 @@ object SlipVote {
         val reads = results.filter { it.read.lines.isNotEmpty() || it.text.isNotBlank() }
         if (reads.isEmpty()) return Result(PayslipRead(emptyList()), emptySet(), "")
         if (reads.size == 1) return Result(reads[0].read, checked(reads[0].read, reads[0].unsure), reads[0].text)
+        // [PHOTO-23] 1.30: on a tie the photo as taken (the first reading) is the anchor, and it stays so unless another reads two
+        // more amounts: a watermark number read once more no longer moved the anchor, and with it the lines' order and names
+        // (사용자 2026-10-27 "사진마다 읽는 부분이 다르다", R3 A-1 #4).
+        val first = reads.first()
         val anchorResult = reads.maxWith(compareBy<Result> { adds(it.read) }.thenBy { it.read.consistent }
-            .thenBy { r -> r.read.lines.count { it.amount != null } })
+            .thenBy { r -> r.read.lines.count { it.amount != null } + if (r === first) 1 else 0 })
         val anchor = anchorResult.read
         val anchorText = anchorResult.text
         val others = reads.filter { it !== anchorResult }.map { it.read }
         val unsure = HashSet<Int>(anchorResult.unsure)
         val lines = anchor.lines.toMutableList()
+        val anchorKeys = anchor.lines.map(::key).toSet()
+        val renamed = HashMap<Int, SlipLine>()
         anchor.lines.forEachIndexed { i, line ->
             if (line.amount == null) return@forEachIndexed
             val k = key(line)
+            // [PHOTO-23] A line another reading named otherwise (its name's letters read another way, so the keys differ) but
+            // read with the same amount on the same side is the same line: it backs the amount up.
             val theirs = others.mapNotNull { r -> r.lines.firstOrNull { key(it) == k && it.amount != null }?.amount }
+                .ifEmpty { others.mapNotNull { r -> r.lines.firstOrNull { it.amount == line.amount && side(it) == side(line) && key(it) !in anchorKeys }?.amount } }
             // [PHOTO-12] Hours too: one reading that lost a line's hours (a box read short) takes what the others read.
             val hours = (others.mapNotNull { r -> r.lines.firstOrNull { key(it) == k && it.amount != null }?.minutes } + listOfNotNull(line.minutes))
                 .groupingBy { it }.eachCount()
@@ -53,12 +69,32 @@ object SlipVote {
                 val m = line.minutes?.takeIf { hours[it] == topH } ?: hours.filterValues { it == topH }.keys.first()
                 if (m != line.minutes) lines[i] = lines[i].copy(minutes = m)
             }
+            // [PHOTO-27] The name as another reading read it whole: one reading kept a piece of a word the reader cut ("분(지급)"
+            // for 소급분(지급), "리비" for 남부_사택관리비); the same amount on the same side read with a longer name ending or
+            // starting the same is the line's name.
+            val mine = line.name.filter { it.isLetter() }
+            if (mine.isNotEmpty()) {
+                val fuller = others.mapNotNull { r ->
+                    r.lines.firstOrNull { o ->
+                        val theirs = o.name.filter { it.isLetter() }
+                        o.amount == line.amount && side(o) == side(line) && theirs.length > mine.length && (theirs.endsWith(mine) || theirs.startsWith(mine))
+                    }
+                }.distinctBy { it.name.filter(Char::isLetter) }
+                // Two other names it could be the piece of (볼링회(남부공장)·한맥산악회(남부공장) for "(남부공장"): looked at.
+                if (fuller.size > 1) unsure += i
+                if (fuller.size == 1) renamed[i] = fuller.single()
+                else if (line.name.trim().contains(' ')) others.firstNotNullOfOrNull { r ->
+                    r.lines.firstOrNull { o -> o.amount == line.amount && !o.name.trim().contains(' ') && o.name.filter(Char::isLetter) == mine }
+                }?.let { renamed[i] = it }
+                // The kind as the whole name says (야간수 read as a 수당, 야간수당 is 야간).
+                renamed[i]?.let { lines[i] = lines[i].copy(name = it.name, role = it.role) }
+            }
             // Read by one way only: nothing backs it up but the payslip's own sums (checked below).
             if (theirs.isEmpty()) { unsure += i; return@forEachIndexed }
             val counts = (theirs + line.amount).groupingBy { it }.eachCount()
             val top = counts.values.max()
             val pick = line.amount.takeIf { counts[it] == top } ?: counts.filterValues { it == top }.keys.first()
-            if (pick != line.amount) lines[i] = line.copy(amount = pick)
+            if (pick != line.amount) lines[i] = lines[i].copy(amount = pick)
             // [READ-16] Any reading saying otherwise is looked at, unless the sums vouch for the line (checked below): 3 to 1
             // can be the same misread three times (a last digit lost the same way).
             if (counts.size > 1) unsure += i
@@ -81,7 +117,10 @@ object SlipVote {
         }
         val read = anchor.copy(lines = lines)
         // A put-together that no longer adds up is worse than the anchor as read.
-        if (adds(anchor) && !adds(read)) return Result(anchor, checked(anchor, disagreed), anchorText)
+        if (adds(anchor) && !adds(read)) {
+            val named = anchor.copy(lines = anchor.lines.mapIndexed { i, l -> renamed[i]?.let { l.copy(name = it.name, role = it.role) } ?: l })
+            return Result(named, checked(named, disagreed), anchorText)
+        }
         return Result(read, checked(read, unsure), anchorText)
     }
 

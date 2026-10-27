@@ -175,18 +175,93 @@ object PhotoVariants {
     /** The variants worth reading for [g]: the photo, and the made-over ones its look calls for (an inverted one only for a dark screen). */
     fun plan(g: Gray, letterHeight: Int?): List<Kind> = buildList {
         add(Kind.ORIG); add(Kind.FLAT); add(Kind.CONTRAST); add(Kind.BINARY)
-        // Small print: letters under 20 pixels high read better twice the size (ML Kit's guidance: at least 16 pixels a letter).
-        if (letterHeight != null && letterHeight in 1..19) add(Kind.UP2)
+        // Small print: letters under [SMALL] pixels high read better made bigger (ML Kit's guidance: at least 16 pixels a letter).
+        if (letterHeight != null && letterHeight in 1 until SMALL) add(Kind.UP2)
         if (stats(g).mean < 110) add(Kind.INVERT)
     }
 
-    fun make(kind: Kind, g: Gray): Gray = when (kind) {
-        Kind.ORIG -> g
-        Kind.CONTRAST -> contrast(g)
-        Kind.FLAT -> flat(g)
-        Kind.BINARY -> binary(soft(flat(g)))
-        Kind.UP2 -> up2(flat(g))
-        Kind.INVERT -> invert(g)
+    /**
+     * [PHOTO-21] 1.30 AV: letters lower than this (pixels of the photo) get a bigger reading. 1.29 made one under 20 only;
+     * a payslip photographed from farther (14 px) lost the last digits in the made-over readings, worked at a smaller size.
+     */
+    const val SMALL = 24
+
+    /** [PHOTO-21] The letters' height the bigger reading aims for. */
+    const val AIM = 28
+
+    /**
+     * [PHOTO-21] How much bigger the part with text is read: to [AIM] pixels a letter (at most three times, at least 1.4, or
+     * not worth it), and its longest side no more than [maxSide]. null: not worth it.
+     */
+    fun upFactor(letterHeight: Int?, region: Int, maxSide: Int): Double? {
+        val want = if (letterHeight != null && letterHeight > 0) (AIM.toDouble() / letterHeight).coerceIn(1.4, 3.0) else 2.0
+        val f = minOf(want, maxSide.toDouble() / region.coerceAtLeast(1))
+        return f.takeIf { it >= 1.4 }
+    }
+
+    /**
+     * [PHOTO-21] 1.30 AV: the side the made-over readings are worked at. 1.29 worked them all at [work] (2,400) while the photo
+     * itself was read at up to 3,200: the same letters 25% smaller, so a photo from far off read its amounts in the first
+     * reading and lost their last digits in the others ("사진마다 다르다", R3 A-1 #3). Letters that would fall under 20 pixels at
+     * [work] are worked at the photo's own size.
+     */
+    fun workSide(photoSide: Int, letterHeight: Int?, work: Int = 2400): Int {
+        if (photoSide <= work) return photoSide
+        val shrunk = (letterHeight ?: return work) * work.toDouble() / photoSide
+        return if (shrunk < 20) photoSide else work
+    }
+
+    /**
+     * [PHOTO-25] 1.30 AV: how strongly the picture repeats itself every 2~6 pixels along its rows, 0~1: a photo of a monitor
+     * has a moiré of fine dots (사용자 2026-10-27 화학 공장 명세서), print and paper do not. Each row's brightness steps are
+     * compared with themselves a few pixels on (autocorrelation), on the paper between the letters; the best lag's share.
+     */
+    fun periodic(g: Gray): Double {
+        if (g.w < 32 || g.h < 8) return 0.0
+        // Only the paper between the letters: the strokes' own edges repeat too (letters are about as wide as each other) and
+        // would drown a faint moire. The paper is the brightest quarter of the picture, the letters well under it.
+        val hist = IntArray(256)
+        for (v in g.px) hist[v.coerceIn(0, 255)]++
+        var seen = 0
+        var paper = 255
+        for (v in 255 downTo 0) { seen += hist[v]; if (seen >= g.px.size / 4) { paper = v; break } }
+        val floor = paper - 45
+        val num = DoubleArray(7)
+        var den = 0.0
+        var count = 0
+        val step = max(1, g.h / 60)
+        var y = 0
+        while (y < g.h) {
+            val d = DoubleArray(g.w - 2) { i ->
+                val a = g[i, y]; val b = g[i + 1, y]; val c = g[i + 2, y]
+                if (a < floor || b < floor || c < floor) Double.NaN else b - (a + c) / 2.0
+            }
+            for (i in d.indices) if (!d[i].isNaN()) {
+                den += d[i] * d[i]; count++
+                for (lag in 2..6) if (i + lag < d.size && !d[i + lag].isNaN()) num[lag] += d[i] * d[i + lag]
+            }
+            y += step
+        }
+        // Paper as flat as this has nothing repeating on it (a camera's noise is a level or so and does not repeat).
+        if (count == 0 || den / count < 1.0) return 0.0
+        return (2..6).maxOf { num[it] / den }.coerceIn(0.0, 1.0)
+    }
+
+    /** [PHOTO-25] A picture whose rows repeat this strongly ([periodic]) is a photo of a screen: smoothed before anything else. */
+    const val MOIRE = 0.25
+
+    fun make(kind: Kind, g: Gray, moire: Boolean = false): Gray {
+        // [PHOTO-25] 1.30: a screen's moiré smoothed first for every made-over reading (1.29 did it for black and white only:
+        // contrast and light evened out made the dots into commas and points between the digits).
+        val s = if (moire && kind != Kind.ORIG && kind != Kind.INVERT) soft(g) else g
+        return when (kind) {
+            Kind.ORIG -> g
+            Kind.CONTRAST -> contrast(s)
+            Kind.FLAT -> flat(s)
+            Kind.BINARY -> binary(soft(flat(g)))
+            Kind.UP2 -> up2(flat(s))
+            Kind.INVERT -> invert(g)
+        }
     }
 
     /** From a variant's pixels back to the photo's (the double-size one is halved). */
