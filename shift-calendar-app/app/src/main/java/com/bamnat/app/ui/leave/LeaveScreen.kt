@@ -111,6 +111,11 @@ class LeaveViewModel(private val container: AppContainer, val calendarId: String
     val style: StateFlow<WorkStyle?> = scope.settings.map { it.workStyle }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.currentSettings().workStyle)
     val gate: StateFlow<Gate> = container.featureGate.state
+    /** [NXT-02] 1.29 AU: 시간 단위 연차 as the `leave.hourly` row says (open on 2027-06-10, the month before says it is coming). */
+    val hourlyNote: StateFlow<String?> = container.flags.states
+        .map { com.bamnat.core.leave.HourlyLeave.note(com.bamnat.core.leave.HourlyLeave.open(container.flags::on), Today.date()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            com.bamnat.core.leave.HourlyLeave.note(com.bamnat.core.leave.HourlyLeave.open(container.flags::on), Today.date()))
 
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
@@ -161,6 +166,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
     val style by vm.style.collectAsStateWithLifecycle()
     val gate by vm.gate.collectAsStateWithLifecycle()
     val promotion by vm.promotion.collectAsStateWithLifecycle()
+    val hourlyNote by vm.hourlyNote.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val ui = rememberCoroutineScope()
@@ -204,6 +210,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             item {
                 SectionCard(title = "직접 넣기") {
                     Hint("연차·반차는 달력에서 날을 길게 눌러 넣어요. 여기에는 달력에 없는 것만 넣어요.")
+                    // [NXT-02] 1.29 AU: 시간 단위 연차, only from the month before 2027-06-10 (flag leave.hourly).
+                    hourlyNote?.let { Hint(it) }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(EntryKind.GRANT, EntryKind.CARRY, EntryKind.ADJUST).forEach { k ->
                             AddButton(k.label, onClick = { adding = k })
