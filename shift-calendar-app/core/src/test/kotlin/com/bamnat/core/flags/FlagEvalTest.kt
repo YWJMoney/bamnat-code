@@ -173,9 +173,11 @@ class FlagEvalTest {
     }
 
     /** [PHOTO-09] 1.29 AQ: 처리방침 3.3 is not in the calendar yet, so '사진이 달라요' counts stay on the phone. */
+    /** [PHOTO-09] 1.29 통합: 3.3 is in the calendar (게시 10-28, 시행 11-27, the same day as 3.2): off the day before, on that day. */
     @Test fun photoWrongWaitsForPolicy33() {
         val f = FlagCatalog.PHOTO_WRONG_FLAG
-        assertFalse(FlagEval.state(f, phone(kst(2027, 6, 1)).copy(consents = mapOf("usage" to true))).on)
+        assertFalse(FlagEval.state(f, phone(kst(2026, 11, 26))).on)
+        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 27))).on)
     }
 
     // ---- the other kinds of condition ----
