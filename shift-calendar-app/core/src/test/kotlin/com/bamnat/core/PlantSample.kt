@@ -120,7 +120,7 @@ object PlantSample {
     private val WATERMARK = "XX Chem abcde 2026-10-25 16:25 10.11.222.33"
     private val MARKS = listOf(30.0 to 525.0, 945.0 to 550.0, 160.0 to 930.0, 940.0 to 1030.0, 260.0 to 460.0, 1080.0 to 920.0)
 
-    data class Noise(val digit: Double = 0.0, val comma: Double = 0.0, val roman: Double = 0.0, val mark: Double = 0.0, val jitter: Int = 0, val lose: Double = 0.0) {
+    data class Noise(val digit: Double = 0.0, val comma: Double = 0.0, val roman: Double = 0.0, val mark: Double = 0.0, val jitter: Int = 0, val lose: Double = 0.0, val angles: Boolean = true) {
         companion object { val CLEAN = Noise() }
     }
 
@@ -138,7 +138,7 @@ object PlantSample {
         val out = mutableListOf<OcrLine>()
         val k = 2.5
         // The page leans: about 0.7° (the right side lower); each line's angle says so, as ML Kit's does.
-        val lean = 0.7f
+        val lean = if (n.angles) 0.7f else 0f
         for (c in cells) {
             val text = garble(c.text, n, r)
             if (text.isBlank()) continue

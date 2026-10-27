@@ -464,7 +464,10 @@ object SlipTable {
         if (pieces.isEmpty()) return emptyList()
         val geo = RosterGeometry
         val slopes = words.filter { it.angle != 0f && it.right - it.left > 3 * it.height }.map { it.angle.toDouble() }
-        val tilt = if (slopes.size >= 3) geo.median(slopes) else geo.tilt(pieces)
+        // [PHOTO-12] With no slopes given, the tilt is found from the names: an amount column sitting half a row lower to the
+        // right stacks with the names as well at a slant as level, and the slant was taken (a level screenshot read 2° off).
+        val tilt = if (slopes.size >= 3) geo.median(slopes)
+            else geo.tilt(pieces.filter { SlipNumber.parse(it.text) == null }.takeIf { it.size >= 6 } ?: pieces)
         val placed = geo.level(pieces, tilt)
         val cells = IdentityHashMap<RosterWord, Cell>()
         placed.forEach { p -> cells[p.word] = Cell(p.text, p.x, p.y, p.w, p.h) }

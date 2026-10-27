@@ -26,6 +26,15 @@ object SlipHourly {
 
     data class Multipliers(val overtime: Double = 1.5, val night: Double = 0.5, val holiday: Double = 1.5, val holidayOver8h: Double = 2.0)
 
+    /** The 배율 the company's rules read with the payslip say (휴일 ×1.5, 휴일연장 ×2, 야간 ×0.5), the law's otherwise. */
+    fun multipliers(rules: List<RuleFinding>): Multipliers = rules.map { it.change }.filterIsInstance<RuleChange.Premium>().fold(Multipliers()) { m, p ->
+        when (p.target) {
+            PremiumTarget.OVERTIME -> m.copy(overtime = 1 + p.premium)
+            PremiumTarget.NIGHT -> m.copy(night = p.premium)
+            PremiumTarget.HOLIDAY -> if (p.over8h) m.copy(holidayOver8h = 1 + p.premium) else m.copy(holiday = 1 + p.premium)
+        }
+    }
+
     /** How many times the 시급 a line pays per hour, by its name; null for a line that is not a premium. */
     fun multiplier(line: SlipLine, m: Multipliers = Multipliers()): Double? {
         val n = PayslipReader.ocrFix(line.name.filter { it.isLetter() })

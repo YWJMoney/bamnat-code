@@ -75,6 +75,8 @@ class PlantSampleTest {
             val r = Random(if (lines) 2 else 1)
             score(clean, SlipReading.read(listOf(PlantSample.payslip(PlantSample.Noise.CLEAN, r, lines))), "clean lines=$lines")
             score(clean, SlipReading.read(listOf(PlantSample.payslip(PlantSample.Noise.CLEAN.copy(mark = 1.0), r, lines))), "mark lines=$lines")
+            // A reader that gives no slope (0): the tilt is found from the words themselves.
+            score(clean, SlipReading.read(listOf(PlantSample.payslip(PlantSample.Noise.CLEAN.copy(angles = false), r, lines))), "no angle lines=$lines")
         }
         for (seed in 0 until 40) {
             val lines = seed % 2 == 1
@@ -158,7 +160,10 @@ class PlantSampleTest {
         assertEquals(21_618, fit.won)
         assertEquals(3, fit.lines.size)
         val f = SlipHourly.finding(read)!!
-        assertEquals("명세서로 보면 통상시급 21,618원 (원 미만 올림)", f.change.summary)
+        assertEquals("명세서로 보면 통상시급 21,618원이에요 (원 미만 올림)", f.change.summary)
+        // With the 계산 방법 page's own 배율 read alongside, the same.
+        val rules = RuleText.read(OcrRows.join(PlantSample.rules(PlantSample.Noise.CLEAN, Random(1))))
+        assertEquals(fit, SlipHourly.of(read, SlipHourly.multipliers(rules)))
         // Next month worked out on it: the three lines to the won.
         assertEquals(2_626_592, PayCalculator.lineWon(81 * 60, fit.hourly, 1.5, up = true))
         assertEquals(1_383_555, PayCalculator.lineWon(32 * 60, fit.hourly, 2.0, up = true))

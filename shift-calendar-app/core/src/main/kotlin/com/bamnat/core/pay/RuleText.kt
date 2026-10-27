@@ -87,7 +87,7 @@ sealed interface RuleChange {
      * each line's won are rounded up as that payslip's are.
      */
     data class OrdinaryHourly(val hourly: Double, val roundUp: Boolean) : RuleChange {
-        override val summary get() = "명세서로 보면 통상시급 ${won(kotlin.math.round(hourly).toLong())}" + if (roundUp) " (원 미만 올림)" else ""
+        override val summary get() = "명세서로 보면 통상시급 ${won(kotlin.math.round(hourly).toLong())}이에요" + if (roundUp) " (원 미만 올림)" else ""
     }
 }
 
