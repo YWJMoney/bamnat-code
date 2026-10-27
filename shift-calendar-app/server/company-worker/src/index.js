@@ -53,6 +53,10 @@
 import { adminFile, adminBuild } from "./admin-app.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
+// AX 1.30 [ADMX-02] 판 차이 (src/plaza-diff.js) and [ADMX-01][ADMX-06][ADMX-07][ADMX-08][ADMX-10] the developer app's
+// trends, alerts, company table, search and alert pushes (src/admin-insight.js).
+import { lineChanges, factsOf } from "./plaza-diff.js";
+import { trendQueries, trendFrom, alertsFrom, adminSearch, metricExtras } from "./admin-insight.js";
 // 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
 import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 
@@ -194,7 +198,7 @@ export default {
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
       .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
       // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
-      .then(() => flagTick(env, Date.now())).finally(badgesChanged));
+      .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
 
@@ -1413,11 +1417,10 @@ function itemText(i) {
   return `${i.name}(${parts.filter(Boolean).join(" ")})`;
 }
 
+// AX 1.30 [ADMX-02] The whole lines as before (added, removed) and, from src/plaza-diff.js, the one-line summary and the
+// field-by-field facts with their word tokens: every caller (검토, 여러 판, 광장 others·history) gets them.
 function diffLines(before, after) {
-  const key = ([label, text]) => `${label}\u0001${text}`;
-  const was = new Set(before.map(key));
-  const now = new Set(after.map(key));
-  return { added: after.filter((l) => !was.has(key(l))), removed: before.filter((l) => !now.has(key(l))) };
+  return lineChanges(before, after);
 }
 
 // ---- what everyone can read and send ----
@@ -4727,6 +4730,8 @@ function areaFor(path) {
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
   // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
   if (path === "/badges" || path === "/today" || path === "/basics") return null;
+  // AX 1.30 [ADMX-08] One search: each part reads only what the admin may see (adminSearch).
+  if (path === "/search") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -4818,6 +4823,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
   if (path === "/today" && method === "GET") return json(await today(env, actor, now));
   if (path === "/basics" && method === "GET") return json(await basics(env));
+  // AX 1.30 [ADMX-08] 찾기·이동: companies, questions, 개발사항 and admins in one ask.
+  if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") return json(serverState(env));
@@ -4892,6 +4899,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
     const m = await metrics(env, url, now);
     m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
     m.photoWrong = await photoWrongMetrics(env, m.from, m.to); // AQ 1.29 [PHOTO-10]
+    Object.assign(m, await metricExtras(env, m.from, m.to)); // AX 1.30 [ADMX-07] releases, compare
     return json(m);
   }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
@@ -5009,10 +5017,40 @@ const PUSH_KINDS = {
   join: { label: "승인을 기다리는 관리자", area: "owner" },
   // AM 1.28 [FLAG-28] 결정 D99: a legal flag the day before it turns on by itself, and once it did.
   flags: { label: "기능 관리(결제·광고 같은 법적 기능이 켜지기 하루 전·켜짐)", area: "flags" },
+  // AX 1.30 [ADMX-10] 오늘's 주의 필요, each at most once a day (alertTick); an area list is any one of them.
+  late: { label: "기한 넘긴 일", area: ["inquiries", "review", "community", "dev"] },
+  versions: { label: "정할 판·모양이 다른 판", area: ["companies", "review"] },
+  doubt: { label: "달라요 급증·달라요 많은 규칙", area: "review" },
+  spike: { label: "문제 신고·서버 오류 급증", area: ["inquiries", "metrics"] },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
-const mayGet = (actor, kind) => (PUSH_KINDS[kind].area === "owner" ? actor.owner : can(actor, PUSH_KINDS[kind].area));
+const mayGet = (actor, kind) => {
+  const area = PUSH_KINDS[kind].area;
+  return area === "owner" ? actor.owner : [area].flat().some((a) => can(actor, a));
+};
+
+/**
+ * AX 1.30 [ADMX-10] Hourly: what 오늘's 주의 필요 shows (as the owner sees it) goes out as web push to the admins who asked
+ * for its kind, each alert once a KST day. Without push keys nothing is read.
+ */
+export async function alertTick(env, now) {
+  if (!pushReady(env)) return;
+  const t = await today(env, OWNER, now);
+  const day = kstDay(now);
+  let sent = {};
+  try {
+    const v = JSON.parse((await one(env, "SELECT value FROM settings WHERE key = 'ax_alerts'"))?.value ?? "{}");
+    if (v.day === day) sent = v.sent ?? {};
+  } catch {
+    sent = {};
+  }
+  const fresh = (t.alerts ?? []).filter((a) => !sent[a.key]);
+  if (!fresh.length) return;
+  for (const a of fresh) await notifyAdmins(env, a.kind, { title: "주의 필요", body: a.title, url: `/admin/${a.to}` }, now);
+  await run(env, "INSERT INTO settings (key, value) VALUES ('ax_alerts', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    JSON.stringify({ day, sent: { ...sent, ...Object.fromEntries(fresh.map((a) => [a.key, 1])) } }));
+}
 
 /** A KST hour of [now] inside quiet hours [from]..[to] (to may be past midnight: 22..7). */
 function quietNow(from, to, now) {
@@ -5510,7 +5548,10 @@ const AUDIT_SELECT = `SELECT a.id, a.at, a.action, a.target, a.detail, a.actor, 
     (SELECT c.name FROM companies c WHERE c.id = substr(CASE WHEN a.action = 'post_autohide' THEN a.detail ELSE a.target END, 1, 12)) AS company_name,
     (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = CASE WHEN a.action IN ('dev_link', 'dev_unlink') THEN a.detail
       WHEN substr(a.action, 1, 8) = 'inquiry_' THEN a.target END ORDER BY m.id LIMIT 1) AS inquiry_first,
-    (SELECT 1 FROM dev_items d WHERE d.id = a.detail) AS dev_kept
+    (SELECT 1 FROM dev_items d WHERE d.id = a.detail) AS dev_kept,
+    -- AX 1.30 [ADMX-01] a reward's company (reward_auto and the others name the reward's id)
+    (SELECT c.name FROM rewards w JOIN reports p ON p.id = w.report_id JOIN companies c ON c.id = p.company_id
+      WHERE substr(a.action, 1, 7) = 'reward_' AND w.id = a.target) AS reward_company
   FROM audit a`;
 
 /** [ADMIN-17] What an entry was about, in words, and where it opens (or null). */
@@ -5520,6 +5561,8 @@ function auditAbout(r) {
     return r.inquiry_first !== null ? { label: `문의 "${words(r.inquiry_first)}"`, link: `#/inquiries/${r.target}` } : { label: "지워진 문의", link: null };
   }
   if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
+  // AX 1.30 [ADMX-01] A reward by the company it was for; its id (a hash) is never the words.
+  if (r.action.startsWith("reward_")) return { label: r.reward_company ? `${r.reward_company} 보상` : "보상", link: "#/rewards" };
   if (r.company_name !== null && r.company_name !== undefined) {
     const review = ["adopt", "reject", "reject_undo", "answer"].includes(r.action);
     const post = r.action.startsWith("post_");
@@ -5619,7 +5662,11 @@ async function today(env, actor, now) {
   if (can(actor, "companies")) {
     q.companies = ["SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"];
     q.rules = ["SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"];
+    q.versionConflicts = [BADGE_SQL.versionConflicts[1]]; // AX 1.30 [ADMX-01] 정할 판 for 주의 필요
   }
+  // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
+  Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
+    metrics: can(actor, "metrics") }, start));
   const keys = Object.keys(q);
   const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
   const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
@@ -5636,6 +5683,10 @@ async function today(env, actor, now) {
     out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
       detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
   }
+  // AX 1.30 [ADMX-01][ADMX-07] trend: 7 days per count (today last); alerts: what needs a look now (주의 필요).
+  out.trend = trendFrom(got, start);
+  out.alerts = alertsFrom({ trend: out.trend, todo: out.todo.items, now, versions: got.versionConflicts?.[0]?.n ?? 0, shape: got.ax_shape?.[0]?.n ?? 0 });
+  if (got.versionConflicts) out.versionConflicts = got.versionConflicts[0].n;
   return out;
 }
 
@@ -5759,6 +5810,8 @@ async function queue(env) {
       reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, ...(r.claim === 1 ? { claim: true } : {}), note: r.note, at: iso(r.created_at) })),
       lines,
       changes: active ? diffLines(describe(JSON.parse(active.setup)), lines) : null,
+      // AX 1.30 [ADMX-04] BD 1.30 [PLZD-04] keeps a setup shaped unlike its department's rule as pending with reason 'shape'.
+      ...(mine.some((r) => r.status === "pending" && r.reason === "shape") ? { shape: true } : {}),
     });
   }
   out.sort((a, b) => b.blocked - a.blocked || b.points - a.points || cmp(a.reports[0].at, b.reports[0].at));
@@ -5839,8 +5892,16 @@ function companyLike(q) {
   return n ? `%${n.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : "";
 }
 
+/** AX 1.30 [ADMX-06] The company table's sorts: a column, biggest first (이름 in order), newest company last to break ties. */
+const COMPANY_SORTS = {
+  new: "c.created_at DESC", name: "c.name, c.created_at DESC", rules: "rules DESC, c.created_at DESC", pending: "pending DESC, c.created_at DESC",
+  reports: "reports DESC, c.created_at DESC", members: "members DESC, c.created_at DESC", uses: "uses30 DESC, c.created_at DESC",
+  bad: "(bad * 1.0 / (ok + bad + 1)) DESC, bad DESC, c.created_at DESC",
+};
+
 async function companies(env, query, params = new URLSearchParams()) {
   const pg = page(params);
+  const sort = Object.hasOwn(COMPANY_SORTS, params.get("sort") ?? "") ? params.get("sort") : "new";
   const q = normName(query).slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await all(env, `
@@ -5849,17 +5910,24 @@ async function companies(env, query, params = new URLSearchParams()) {
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS rules,
       (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending,
       (SELECT COUNT(*) FROM reports p WHERE p.company_id = c.id) AS reports,
-      (SELECT COUNT(*) FROM members m WHERE m.company_id = c.id AND m.left = 0) AS members
+      (SELECT COUNT(*) FROM members m WHERE m.company_id = c.id AND m.left = 0) AS members,
+      -- AX 1.30 [ADMX-06] the table's other numbers: earlier versions, phones that applied a rule in 30 days, 맞았어요·달라요.
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 1) AS previous,
+      (SELECT COUNT(*) FROM uses u WHERE u.company_id = c.id AND u.at >= ?5) AS uses30,
+      (SELECT COUNT(*) FROM votes v WHERE v.company_id = c.id AND v.ok = 1) AS ok,
+      (SELECT COUNT(*) FROM votes v WHERE v.company_id = c.id AND v.ok = 0) AS bad
     FROM companies c
     WHERE ?1 = '' OR c.norm LIKE ?2 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?2 ESCAPE '\\')
-    ORDER BY c.merged_into IS NOT NULL, c.created_at DESC LIMIT ?3 OFFSET ?4`, q, like, pg.limit + 1, pg.after);
+    ORDER BY c.merged_into IS NOT NULL, ${COMPANY_SORTS[sort]} LIMIT ?3 OFFSET ?4`, q, like, pg.limit + 1, pg.after, Date.now() - 30 * DAY);
   const { items, next } = sqlPage(rows, pg);
   return {
     next,
     companies: items.map((c) => ({
       id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: c.merged_into, aliases: c.aliases, rules: c.rules,
       pending: c.pending, reports: c.reports, createdAt: iso(c.created_at), members: c.members,
+      previous: c.previous, uses30: c.uses30, ok: c.ok, bad: c.bad,
     })),
+    sort,
   };
 }
 
@@ -5881,9 +5949,13 @@ async function companyInfo(env, id) {
   const into = intoRows[0] ?? null;
   const aliases = aliasRows.map((a) => a.name);
   const scores = tallies(reports, votes);
-  const rules = ruleRows.map((r) => {
+  // AX 1.30 [ADMX-02] Each version against the department's version before it (rows are by department, newest first).
+  const earlier = (r, i) => ruleRows.slice(i + 1).find((x) => x.dept_norm === r.dept_norm) ?? null;
+  const rules = ruleRows.map((r, i) => {
     const s = scores.get(`${id}/${r.grp}`) ?? NO_SCORE;
+    const before = earlier(r, i);
     return {
+      ...(before ? { changesFromPrevious: { version: before.version, ...diffLines(describe(JSON.parse(before.setup)), describe(JSON.parse(r.setup))) } } : {}),
       id: r.id, dept: r.dept, version: r.version, source: r.source, adoptedAt: iso(r.adopted_at), withdrawn: r.withdrawn === 1,
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
       // AH 1.27 [PLAZA-15] 달라요 by where (순서·시간·급여 항목·그 밖), and whether too many took it out of the lead.
@@ -8046,6 +8118,10 @@ async function versions(env, show) {
     if (d.list.length < 2 || (!conflict && show !== "history")) continue;
     const active = d.list.find((c) => c.state === "active");
     const base = active ? describe(JSON.parse(active.raw)) : null;
+    // AX 1.30 [ADMX-02][ADMX-03] The rule in use is compared with the version before it (1.29 showed nothing on it and the
+    // difference backwards on that earlier one); a waiting setup with the rule in use; an earlier version says what
+    // 다시 대표로 would change. Each card has its facts for the 비교 표.
+    const prior = d.list.filter((c) => c.state === "previous").sort((a, b) => b.version - a.version)[0] ?? null;
     // The one most people took and trust: phones that use it, people who sent or backed it, over the Wilson share.
     const score = support;
     const best = live.length ? live.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
@@ -8055,7 +8131,10 @@ async function versions(env, show) {
       candidates: d.list.sort((a, b) => order[a.state] - order[b.state] || (b.version ?? 0) - (a.version ?? 0) || b.at.localeCompare(a.at)).map((c) => {
         const lines = describe(JSON.parse(c.raw));
         const { raw, ...rest } = c;
-        return { ...rest, lines, changes: base && c !== active ? diffLines(base, lines) : null, recommended: Boolean(conflict && c === best) };
+        const from = c === active ? prior : active;
+        const changes = !from ? null : c === active ? diffLines(describe(JSON.parse(prior.raw)), lines) : diffLines(base, lines);
+        return { ...rest, lines, facts: factsOf(lines), changes, ...(from ? { against: { state: from.state, version: from.version ?? null } } : {}),
+          recommended: Boolean(conflict && c === best) };
       }),
     });
   }
