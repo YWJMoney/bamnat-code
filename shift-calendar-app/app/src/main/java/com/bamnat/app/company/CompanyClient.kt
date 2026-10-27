@@ -44,7 +44,12 @@ data class LeadLine(
     val bad: Int,
     val doubted: Boolean = false,
     val roster: Boolean = false,
+    /** [PAYF-08] 1.29 AP: another 사업장's pay way when this 대표 주기 has none (which setup, its department, 맞아요 n명). */
+    val payWay: PayLead? = null,
 )
+
+/** [PAYF-08] 1.29 AP: a pay way the search names apart from the 대표 주기 (결정 D79: never its values). */
+data class PayLead(val setup: String, val dept: String, val ok: Int)
 
 /** [PLAZA-15] 1.27 AH: 맞아요·달라요 on one setup, 달라요 by where (order·time·pay·other), and this phone's own ("ok" or a why). */
 data class Opinion(val ok: Int = 0, val bad: Int = 0, val why: Map<String, Int> = emptyMap(), val mine: String? = null)
@@ -480,7 +485,8 @@ class CompanyClient(
         fun names(key: String) = l.optJSONArray(key)?.let { a -> (0 until a.length()).map { if (a.isNull(it)) null else a.getString(it) } }
         return LeadLine(l.optString("setup"), l.optString("dept"), l.optBoolean("adopted"), names("steps"), names("weekly"),
             l.optJSONArray("offs").strings().toSet(), l.optBoolean("pay"), l.optInt("ok"), l.optInt("bad"), l.optBoolean("doubted"),
-            l.optBoolean("roster"))
+            l.optBoolean("roster"),
+            l.optJSONObject("payWay")?.let { w -> PayLead(w.optString("setup"), w.optString("dept"), w.optInt("ok")) }?.takeIf { it.setup.isNotEmpty() })
     }
 
     /** [PLAZA-15] 맞아요·달라요 of one setup as the server counts them. */
