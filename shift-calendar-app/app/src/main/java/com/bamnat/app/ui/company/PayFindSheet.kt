@@ -97,7 +97,12 @@ internal object PayFindSearch {
     suspend fun server(c: AppContainer, q: String): List<CompanyHit>? {
         cached(q)?.let { return it }
         if (!c.companyApi.enabled || !PayFindRows.ready(q)) return null
-        val hits = inlineSearch(c, q) ?: return null
+        // [SRCH-07] Through the one company search (shared answers, one request at a time), waiting for the server's own
+        // answer: inlineSearch's early 'what the phone knows' would be kept here for five minutes as if the server said it.
+        val s = c.companySearch
+        val known = s.peek(q)
+        val hits = if (known.exact && known.age < com.bamnat.app.company.CompanySearch.FRESH_MS) known.hits
+        else try { s.ask(q).await() } catch (e: com.bamnat.app.company.CompanyException) { return null }
         synchronized(kept) { kept[key(q)] = SystemClock.elapsedRealtime() to hits }
         return hits
     }

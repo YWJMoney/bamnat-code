@@ -178,6 +178,13 @@ fun CompanyFindScreen(
                     keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
+                // AS 1.29 [SRCH-10] Companies already on screen while the server is still asked: say where it stands.
+                val stage by vm.stage.collectAsStateWithLifecycle()
+                stage?.let { SearchStageLine(it, nothingYet = false) }
+                // [SRCH-12] once per name, not on every frame.
+                val publicFound = remember((result as? CompanyFindViewModel.Result.Found)?.query) {
+                    (result as? CompanyFindViewModel.Result.Found)?.let { PublicCycles.search(it.query).isNotEmpty() } ?: false
+                }
                 AnimatedContent(
                     targetState = result,
                     contentKey = { it::class },
@@ -189,9 +196,11 @@ fun CompanyFindScreen(
                         CompanyFindViewModel.Result.Searching -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             LinearProgressIndicator(Modifier.fillMaxWidth())
                             Text("찾고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // [SRCH-10] Where the companies will be, so the list does not jump when they come.
+                            repeat(2) { SkeletonRow() }
                         }
                         is CompanyFindViewModel.Result.Found -> if (r.hits.isEmpty()) {
-                            if (PublicCycles.search(r.query).isEmpty()) {
+                            if (!publicFound) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     FirstProviderCard(r.query.trim(), rewardShort(terms), onStart = { form ->
                                         keyboard?.hide()
@@ -219,7 +228,7 @@ fun CompanyFindScreen(
                 PublicCycleSection(query, onPick = onPublic, onPay = onPay, onShare = onShare,
                     browse = result is CompanyFindViewModel.Result.Idle)
                 // [SPAT-07] 1.27 AH (사용자 2026-10-25): the coworkers' companies, then the public rows, then '여기 없어요' last.
-                (result as? CompanyFindViewModel.Result.Found)?.takeIf { it.hits.isNotEmpty() || PublicCycles.search(it.query).isNotEmpty() }?.let { r ->
+                (result as? CompanyFindViewModel.Result.Found)?.takeIf { it.hits.isNotEmpty() || publicFound }?.let { r ->
                     TextButton(onClick = { byHand(r.query) }) {
                         Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
                     }
@@ -271,13 +280,20 @@ private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(hit.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // AS 1.29 [SRCH-01] (사용자 2026-10-27 "광장에 대표판이 있는데 회사 검색 시 뜨지 않는다"): 회사 찾기 showed only how
+                // many setups a company had, never its 대표 주기 or who stands behind it, which the line under the name box did
+                // (1.27 AH-I4). Now both lists say the same.
+                leadText(hit.lead)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium) }
                 Text(
                     listOfNotNull(
                         hit.alias?.let { "다른 이름 $it" },
-                        if (hit.adopted > 0) "쓰는 설정 ${hit.adopted}개" else null,
-                        if (hit.pending > 0) "확인 중 ${hit.pending}개" else null,
-                    ).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (hit.lead == null && hit.users == 0) listOfNotNull(
+                            if (hit.adopted > 0) "쓰는 설정 ${hit.adopted}개" else null,
+                            if (hit.pending > 0) "확인 중 ${hit.pending}개" else null,
+                        ).joinToString(" · ") else trustText(hit),
+                    ).filter { it.isNotEmpty() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (hit.lead?.doubted == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)

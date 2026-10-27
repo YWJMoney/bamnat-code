@@ -58,14 +58,29 @@ object CompanyMatch {
      * How well [name] fits [q]: 0 starts with it, 1 has it, 2 has it with one 자모 wrong (names of 3 syllables or more only),
      * null not at all. Either spelling of each counts.
      */
-    fun fit(name: String, q: String): Int? {
-        val names = listOf(PublicCycles.norm(name), spoken(name)).distinct()
-        val qs = variants(q)
+    fun fit(name: String, q: String): Int? = fit(Name(name), Query(q))
+
+    /** [SRCH-12] 1.29 AS: a name with its spellings (and their 자모) worked out once, for many [fit]s. */
+    class Name(name: String) {
+        val names: List<String> = listOf(PublicCycles.norm(name), spoken(name)).distinct()
+        val jamos: List<String> by lazy { names.map(::jamo) }
+    }
+
+    /** [SRCH-12] 1.29 AS: what is typed, worked out once for every name it is fitted to. */
+    class Query(q: String) {
+        val qs: List<String> = variants(q)
+        val near: List<String> by lazy { qs.filter { it.count(::isSyllable) >= 3 }.map(::jamo) }
+    }
+
+    /** As [fit], for a [Name] and a [Query] worked out once (the public rows' search does it per row, per letter). */
+    fun fit(name: Name, q: Query): Int? {
+        val names = name.names
+        val qs = q.qs
         if (qs.isEmpty()) return null
         if (names.any { n -> qs.any { n.startsWith(it) } }) return 0
         if (names.any { n -> qs.any { it in n } }) return 1
-        val near = qs.filter { it.count(::isSyllable) >= 3 }
-        if (near.any { v -> names.any { n -> nearIn(jamo(n), jamo(v)) } }) return 2
+        if (q.near.isEmpty()) return null
+        if (q.near.any { v -> name.jamos.any { n -> nearIn(n, v) } }) return 2
         return null
     }
 

@@ -117,7 +117,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
     val state: StateFlow<State?> = combine(
         container.sleepRepository.recent(days = SleepInsights.WINDOW_DAYS + SleepDebt.WINDOW_DAYS),
         container.healthSleep.sleeps,
-        container.scheduleRepository.snapshot,
+        // [SRCH-13] 1.29 AS: the shared reading (live), not a whole-history read of its own.
+        container.scheduleRepository.live,
         settings,
     ) { manual, measured, snapshot, s ->
         val log = SleepMerge.merge(manual, measured)
