@@ -207,7 +207,8 @@ class WScreenshotTest : ScreenshotBase() {
 
     private fun captureRead(then: Screen.(com.bamnat.app.ui.invest.InvestViewModel) -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
         val repo = InvestRepository.of(c.database)
-        runBlocking { repo.ensureAccount(); waiting().forEach { repo.addAlert(it) }; repo.setFillGuideSeen() }
+        // [INVA-02] 1.29: 바로 넣기 is on unless asked for; these shots are the asking sheet.
+        runBlocking { repo.ensureAccount(); waiting().forEach { repo.addAlert(it) }; repo.setFillGuideSeen(); repo.setFillTrust(false) }
         settle()
         val vm = com.bamnat.app.ui.invest.InvestViewModel(c, PersonalCalendar.MAIN)
         val alerts = runBlocking { repo.pendingAlerts.first() }
