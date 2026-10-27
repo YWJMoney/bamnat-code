@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
+import com.bamnat.app.company.warmCompanies
 import com.bamnat.app.appContainer
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyHit
@@ -100,8 +101,10 @@ internal object PayFindSearch {
         // [SRCH-07] Through the one company search (shared answers, one request at a time), waiting for the server's own
         // answer: inlineSearch's early 'what the phone knows' would be kept here for five minutes as if the server said it.
         val s = c.companySearch
+        // [SPD-11][SPD-12] 1.30 AP1: the whole list of companies read now if not yet, and a fresh one found it without asking.
+        c.warmCompanies()
         val known = s.peek(q)
-        val hits = if (known.exact && known.age < com.bamnat.app.company.CompanySearch.FRESH_MS) known.hits
+        val hits = if ((known.exact && known.age < com.bamnat.app.company.CompanySearch.FRESH_MS) || known.enough) known.hits
         else try { s.ask(q).await() } catch (e: com.bamnat.app.company.CompanyException) { return null }
         synchronized(kept) { kept[key(q)] = SystemClock.elapsedRealtime() to hits }
         return hits

@@ -50,6 +50,8 @@ import com.bamnat.app.company.CompanyHit
 import com.bamnat.app.company.CompanyText
 import com.bamnat.app.company.LeadLine
 import com.bamnat.app.company.CompanySearch
+import com.bamnat.app.company.prefetchCompanies
+import com.bamnat.app.company.warmCompanies
 import com.bamnat.core.plaza.PublicCycle
 import com.bamnat.core.plaza.PublicCycles
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +74,8 @@ internal const val INLINE_WAIT_MS = 2_500L
 internal suspend fun inlineSearch(c: AppContainer, q: String): List<CompanyHit>? = try {
     val s = c.companySearch
     val known = s.peek(q)
-    if (known.exact && known.age < com.bamnat.app.company.CompanySearch.FRESH_MS) known.hits
+    // [SPD-11] 1.30 AP1: or the whole list of companies, read lately, found it: nothing asked.
+    if ((known.exact && known.age < com.bamnat.app.company.CompanySearch.FRESH_MS) || known.enough) known.hits
     else {
         val job = s.ask(q)
         withTimeoutOrNull(INLINE_WAIT_MS - INLINE_KNOWN_EARLY_MS) { job.await() }
@@ -115,6 +118,8 @@ fun CompanyInlineResults(
         if (ready && value.isEmpty()) value = withContext(Dispatchers.Default) { PublicCycles.search(q) }
     }
     val serverOn = onServer != null && c.companyApi.enabled
+    // [SPD-12] 1.30 AP1: the whole list of companies read now if the start of the app did not yet (the first setup comes first).
+    androidx.compose.runtime.LaunchedEffect(serverOn) { if (serverOn) c.warmCompanies() }
     // AS 1.29 [SRCH-06][SRCH-07][SRCH-10] What the phone has at once, the server's answer added whenever it comes (a late one
     // is no longer thrown away, 사용자 2026-10-27 "늦게 떠서 안 뜨는 것처럼 보인다").
     val server by produceState(
@@ -123,6 +128,12 @@ fun CompanyInlineResults(
     ) {
         if (!ready || !serverOn) { value = CompanySearch.State(q, emptyList(), CompanySearch.Stage.IDLE); return@produceState }
         c.companySearch.states(q, INLINE_PAUSE_MS).collect { value = it }
+    }
+    // [SPD-15] 1.30 AP1: the first companies found are read ahead after a moment, so picking one opens its page at once.
+    androidx.compose.runtime.LaunchedEffect(server.hits.map { it.id }) {
+        if (server.hits.isEmpty()) return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        c.prefetchCompanies(server.hits.map { it.id })
     }
     var open by remember { mutableStateOf<PublicCycle?>(null) }
     var providing by remember { mutableStateOf(false) }

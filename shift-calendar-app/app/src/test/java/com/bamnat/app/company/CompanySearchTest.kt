@@ -150,6 +150,53 @@ class CompanySearchTest {
         }
     }
 
+    /**
+     * [SPD-11] 1.30 AP1: the server's whole list read once (SP1 `/api/companies/all`) finds a company as it is typed the way
+     * the server's search would (name, other spelling, 초성) and asks nothing; kept for the next run with its ETag, asked again
+     * after ten minutes and answered 304.
+     */
+    @Test fun theWholeListFindsAsTheServerDoesWithoutAskingAndIsKeptWithItsETag() = runBlocking {
+        TinyCompanyServer(names).use { server ->
+            val dir = Files.createTempDirectory("company-all").toFile()
+            val file = File(dir, "company_search.json")
+            val s = CompanySearch({ CompanyClient(server.base) }, file)
+            s.warm(saver = false)
+            assertEquals(1, server.seen.count { it.path == "/api/companies/all" })
+            assertEquals("the most used list is not needed beside it", 0, server.seen.count { it.path.startsWith("/api/companies/top") })
+            val asked = server.requests.get()
+            assertEquals("가상화학2", s.peek("가상화학2").hits.first().name)
+            assertTrue(s.peek("가상화학2").enough)
+            assertEquals("GS가상칼텍스", s.peek("지에스가상").hits.single().name)
+            assertEquals("(주)예시정밀", s.peek("ㅇㅅㅈㅁ").hits.single().name)
+            assertEquals("현대가상", s.search("현대").single().name)
+            assertEquals(listOf(CompanySearch.Stage.DONE), s.states("가상화학", pauseMs = 0).toList().map { it.stage })
+            assertEquals("found as typed, nothing asked", asked, server.requests.get())
+
+            withTimeoutOrNull(5_000) { while (!File(dir, "company_all.json").exists()) delay(20) }
+            assertFalse(File(dir, "company_all.json").readText().contains("device"))
+            val next = CompanySearch({ CompanyClient(server.base) }, file, now = { System.currentTimeMillis() + CompanySearch.ALL_FRESH_MS + 1 })
+            next.load()
+            assertEquals("가상화학2", next.peek("가상화학2").hits.first().name)
+            assertFalse("ten minutes old: asked again", next.peek("가상화학2").enough)
+            next.warm(saver = false)
+            val again = server.seen.last { it.path == "/api/companies/all" }
+            assertEquals(server.etag, again.headers["if-none-match"])
+            assertTrue(next.peek("가상화학2").enough)
+            dir.deleteRecursively()
+        }
+        Unit
+    }
+
+    @Test fun aServerBefore130HasNoListAndTheMostUsedAreReadAsBefore() = runBlocking {
+        TinyCompanyServer(names, old = true).use { server ->
+            val s = CompanySearch({ CompanyClient(server.base) }, null)
+            s.warm(saver = false)
+            assertEquals(1, server.seen.count { it.path.startsWith("/api/companies/top") })
+            assertEquals("현대가상", s.peek("현대").hits.single().name)
+            assertFalse(s.peek("현대").enough)
+        }
+    }
+
     /** Everything a search does not need, refused. */
     private class FakeBase : CompanyApi {
         override val enabled = true
