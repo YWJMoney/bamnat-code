@@ -195,6 +195,7 @@ class AppContainer(context: Context) {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
                 com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
                 companyStore.reload()
+                payWays.reload()
                 rateHints.reload()
                 autoRecordPrefs.reload()
                 shareGroup.reload()
@@ -225,6 +226,8 @@ class AppContainer(context: Context) {
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
         com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [PAYF-04] 1.29 AP: the company pay way the main pay uses, for 맞아요·달라요 on the pay screen. */
+    val payWays by lazy { com.bamnat.app.company.PayWayStore(appContext) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
     /** [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle is picked from a company search. */

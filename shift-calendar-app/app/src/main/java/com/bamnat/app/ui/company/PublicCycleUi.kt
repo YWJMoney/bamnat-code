@@ -501,6 +501,8 @@ private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onSh
         Spacer(Modifier.width(8.dp))
         Text("달력에 넣었어요" + if (codes.isNotEmpty()) " · ${codes.length}일 순서" else "", style = MaterialTheme.typography.titleMedium)
     }
+    // [PAYF-03] 1.29 AP: the same company may have a pay way coworkers set up: offered here, once, before the usual allowances.
+    if (CompanyPayOffer(cycle.company, onPay)) return
     if (!hasPay) {
         val items = remember(cycle) { PublicPay.usualItems(cycle) }
         Text("다음은 급여예요. ${PublicPay.form(cycle, codes).label} 근무로 골라 두고" +
@@ -519,3 +521,53 @@ private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onSh
 
 /** Today, for the tests that fix the clock. */
 internal fun todayMillis(): Long = Today.millis()
+
+/**
+ * [PAYF-03] 1.29 묶음 AP (사용자 2026-10-27): a cycle just put in for [company], whose 광장 has a pay way: "급여 계산 방식도 같이
+ * 넣을까요?" (결정 D79: only that there is one and how many said 맞아요). Yes uses it ([PayFind]) and goes on to the 기본급
+ * ([onPay]). True while it shows, so the panel leaves out its own next step.
+ */
+@Composable
+internal fun CompanyPayOffer(company: String, onPay: () -> Unit): Boolean {
+    val c = LocalContext.current.appContainer
+    if (!c.companyApi.enabled) return false
+    val hit by androidx.compose.runtime.produceState<com.bamnat.app.company.CompanyHit?>(null, company) {
+        value = PayFindSearch.server(c, company).orEmpty().firstOrNull { h ->
+            (h.lead?.pay == true && h.lead.doubted.not() || h.lead?.payWay != null) &&
+                (com.bamnat.core.plaza.PublicCycles.norm(h.name) == com.bamnat.core.plaza.PublicCycles.norm(company) ||
+                    h.alias?.let { com.bamnat.core.plaza.PublicCycles.norm(it) == com.bamnat.core.plaza.PublicCycles.norm(company) } == true)
+        }
+    }
+    var declined by rememberSaveable(company) { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val h = hit ?: return false
+    if (declined) return false
+    val scope = rememberCoroutineScope()
+    Text("급여 계산 방식도 같이 넣을까요?", style = MaterialTheme.typography.titleSmall)
+    StatusChip("급여 방식 있음 · 맞아요 ${h.lead?.payWay?.takeIf { h.lead.pay.not() }?.ok ?: h.lead?.ok ?: 0}명", Tone.GOOD)
+    Text("‘${h.name}’ 분들이 맞춘 계산 방식이에요. 넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요.",
+        style = MaterialTheme.typography.bodyMedium)
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+    Button(onClick = {
+        busy = true
+        scope.launch {
+            try {
+                when (com.bamnat.app.company.PayFind(c).use(h)) {
+                    com.bamnat.app.company.PayFind.Used.Gone -> declined = true
+                    com.bamnat.app.company.PayFind.Used.Applied -> { c.payWays.askBase(true); onPay() }
+                    com.bamnat.app.company.PayFind.Used.Amounts -> onPay()
+                }
+            } catch (e: com.bamnat.app.company.CompanyException) {
+                error = companyProblem(e.code, e.field)
+            } catch (e: com.bamnat.app.data.BackupException) {
+                error = e.message ?: "급여 방식을 넣지 못했어요"
+            }
+            busy = false
+        }
+    }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("네, 급여 방식도 넣을게요")
+    }
+    TextButton(onClick = { declined = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("아니요, 근무주기만") }
+    return true
+}

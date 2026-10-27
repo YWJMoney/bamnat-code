@@ -1966,9 +1966,18 @@ async function searchLead(env, companyId) {
     sites: all_.length,
     lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
       roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
-      ...(main.doubted ? { doubted: true } : {}) },
+      ...(main.doubted ? { doubted: true } : {}), ...payWayOf(all_, main) },
   };
 }
+
+// AP 1.29 — [PAYF-08] 급여 방식 찾기: the company's pay way even when its main 대표 주기 has none (the pay came with another
+// 사업장's). Only which setup, its department and how many said 맞아요 (결정 D79: never its values). Older apps read lead.pay only.
+export function payWayOf(all_, main) {
+  if (!main || main.setup.pay !== undefined) return {};
+  const other = all_.filter((l) => l !== main && l.setup.pay !== undefined && !l.doubted).sort((a, b) => b.persons - a.persons)[0];
+  return other ? { payWay: { setup: other.id, dept: other.dept, ok: other.persons } } : {};
+}
+// AP 1.29 끝
 
 /** [PLAZA-15] Whether the department's rule in use has too many 달라요: then another version may take over by its own right. */
 async function activeDoubted(env, companyId, active) {

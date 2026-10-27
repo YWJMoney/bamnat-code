@@ -153,7 +153,11 @@ class PayViewModel(
             .forEach { (key, _) -> container.profiles.mark(calendarId, key, com.bamnat.core.profile.Source.TYPED, why = "급여 설정") }
     }
 
-    fun reset() = viewModelScope.launch { payStore.save(null) }
+    fun reset() = viewModelScope.launch {
+        payStore.save(null)
+        // [PAYF-04] No pay, no company pay way in use.
+        if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) container.payWays.use(null)
+    }
 
     private val _shareMoment = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.ShareMoment?>(null)
     /** [PLAZA-04] The pay was just set up by hand (or from a payslip): the plaza invitation shows once on the pay screen. */

@@ -72,6 +72,8 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
     var rough by rememberSaveable { mutableStateOf(false) }
     var dailyHours by rememberSaveable { mutableStateOf(8) }
+    // [PAYF-06] 통상시급 기준 시간, only when the user knows it.
+    var hours by rememberSaveable { mutableStateOf<Int?>(null) }
     // A year back, so the months already worked come to an amount too [PAYS-01]; a known 입사일 in that year starts there [COMM-13].
     var since by remember { mutableStateOf(com.bamnat.core.pay.PaySince.start(Today.month(), vm.hireDate)) }
     val amounts = remember { mutableStateMapOf<String, Long>() }
@@ -79,7 +81,8 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
     var error by remember { mutableStateOf<String?>(null) }
     val summary = vm.summary
     // [PLAZA-03] U26: first, whether the company's pay rules are ours at all. Without rules there is nothing to ask.
-    var choice by rememberSaveable { mutableStateOf(if (vm.hasRules) "ask" else "use") }
+    // [PAYF-01] 1.29: not asked again right after "이 급여 방식 쓰기" or "급여 계산 방식도 같이 넣을게요" (1.27 asked twice in a row).
+    var choice by rememberSaveable { mutableStateOf(if (vm.hasRules && !vm.decided) "ask" else "use") }
     var proposing by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var sendNote by remember { mutableStateOf<String?>(null) }
@@ -132,13 +135,10 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                             shape = SegmentedButtonDefaults.itemShape(index = i, count = wages.size)) { Text(label) }
                     }
                 }
-                MoneyField(
-                    label = "내 ${wageType.baseName()}",
-                    value = base,
-                    onChange = { base = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = "명세서나 계약서의 ${wageType.baseName()}",
-                )
+                // [PAYF-06] The one field that cannot be left out (회사 방식은 기본급으로 계산), and folded the 통상시급's hours.
+                com.bamnat.app.ui.pay.BaseFields(wageType, base, { base = it }, hours, { hours = it },
+                    profile = remember(wageType) { com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, com.bamnat.core.pay.ValueTimeline()) },
+                    month = Today.month())
                 FilterChip(selected = rough, onClick = { rough = !rough }, label = { Text("대략이에요") })
                 if (wageType == WageType.DAILY) {
                     // [PAYS-03] 일당 ÷ 하루 소정근로시간 is the hourly rate premiums are paid on.
@@ -190,7 +190,7 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                         val b = base ?: return@Button
                         saving = true
                         error = null
-                        vm.save(wageType, b, rough, dailyHours * 60, since, amounts.toMap(),
+                        vm.save(wageType, b, rough, dailyHours * 60, since, amounts.toMap(), hours,
                             done = { saving = false }, failed = { saving = false; error = it })
                     },
                     enabled = !saving && (base ?: 0) > 0,

@@ -424,6 +424,8 @@ fun PayWizard(
     suggestedOccupation: Occupation? = null,
     /** Screenshots only: the step to open by its key ("items", a question's key, "summary"), when it is asked. */
     startAt: String? = null,
+    /** [PAYF-01] 1.29 AP: 우리 회사 급여 방식 찾기 on the first question here too (자세히 고치기), as a button to its sheet. */
+    companyFind: Boolean = false,
 ) {
     val today = remember { Today.date() }
     val s = remember {
@@ -537,7 +539,10 @@ fun PayWizard(
             ) { key ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when {
-                        key == WAGE -> WageStep(s, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
+                        key == WAGE -> {
+                            if (companyFind) com.bamnat.app.ui.company.PayFindEntry()
+                            WageStep(s, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
+                        }
                         key == AMOUNT -> AmountStep(s, today, slipNote)
                         key == ITEMS -> ItemsStep(s)
                         key == SUMMARY -> SummaryStep(s, draft, questions, range, snapshot) { go(it) }

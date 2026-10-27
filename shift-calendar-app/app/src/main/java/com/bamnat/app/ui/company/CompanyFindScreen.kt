@@ -348,16 +348,28 @@ fun CompanyDetailScreen(
     var comparing by remember { mutableStateOf<Compare?>(null) }
     var keepOld by rememberSaveable { mutableStateOf(false) }
 
+    // [PAYF-03] 1.29 AP: whether the pay way goes in with the cycle, asked once before the order (null: not asked, or no pay way).
+    var withPay by remember { mutableStateOf(true) }
+    var askingPay by remember { mutableStateOf<SharedSetup?>(null) }
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; choosing = null; error = it })
+        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; onApplied(r, p.name) },
+            failed = { applying = false; choosing = null; error = it })
     }
-    fun start(p: CompanyPage, s: SharedSetup) {
-        if (onPick != null) return onPick(p, s)
+    fun order(p: CompanyPage, s: SharedSetup) {
         scope.launch {
             val phases = vm.phases(s)
             if (phases != null && phases.options.size > 1) choosing = s to phases else use(p, s, if (phases != null) 0 else null)
         }
+    }
+    fun start(p: CompanyPage, s: SharedSetup) {
+        if (onPick != null) return onPick(p, s)
+        // [PAYF-03] 사용자 2026-10-27: 'n명이 쓰고 있어요'를 눌러 적용할 때 급여까지 같이 넣을지 한 번 묻기.
+        if (s.hasPay) askingPay = s else { withPay = false; order(p, s) }
+    }
+    askingPay?.let { s ->
+        val p = page
+        if (p != null) WithPayDialog(p.name, s, onAnswer = { yes -> askingPay = null; withPay = yes; order(p, s) }, onDismiss = { askingPay = null })
     }
     if (openPhasesFor != null && page != null) {
         LaunchedEffect(page) { page.setups.firstOrNull { it.id == openPhasesFor }?.let { start(page, it) } }
@@ -750,3 +762,25 @@ private data class Compare(
     val setup: SharedSetup,
     val back: Boolean = false,
 )
+
+/**
+ * [PAYF-03] 1.29 묶음 AP (사용자 2026-10-27 "회사검색시 n명이 쓰고있어요 클릭해서 적용시 급여부분까지 같이 적용을 할것인지 묻게"):
+ * a company setup with a pay way, before its order is picked: the pay way too, or the cycle alone. Yes leads to the 기본급 next.
+ */
+@Composable
+internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("급여 계산 방식도 같이 넣을까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("‘$company’ 분들이 맞춘 급여 계산 방식이 있어요" + (setup.opinion.ok.takeIf { it > 0 }?.let { " · 맞아요 ${it}명" } ?: "") + ".",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요. 금액은 가져오지 않아요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { Button(onClick = { onAnswer(true) }) { Text("네, 같이 넣을게요") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("근무주기만 넣을게요") } },
+    )
+}

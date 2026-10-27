@@ -260,7 +260,8 @@ fun SetupPaySheet(companyPay: Boolean, onNow: () -> Unit, onLater: () -> Unit) {
             Text("달력을 채웠어요. 예상 급여도 볼까요?", style = MaterialTheme.typography.headlineSmall)
             Text(
                 if (companyPay) "회사 급여 방식은 함께 받아 왔어요. 내 기본급이나 시급만 넣으면 이번 달 예상 급여를 보여 드려요."
-                else "기본급이나 시급만 알면 이번 달 예상 급여를 보여 드려요. 나머지는 나중에 채워도 돼요.",
+                // [PAYF-05] 1.29 AP: the pay starts from the company (근무주기처럼): its way when coworkers made one, else made by hand.
+                else "먼저 우리 회사 급여 방식이 있는지 찾아봐요. 있으면 그대로 쓰고 기본급만 넣으면 돼요. 없으면 몇 가지만 골라 직접 만들어요.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
