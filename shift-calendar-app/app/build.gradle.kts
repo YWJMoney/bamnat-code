@@ -222,9 +222,9 @@ dependencies {
     // [NXT-01] 1.29 AU (AO D8): WorkManager came only through the ads SDK (2.7.1, started by androidx.startup at every
     // app start). Named here so BamnatApp can be its Configuration.Provider and WorkManager starts on first use; 2.10
     // also has the Android 14 fixes 2.7 lacks. The app's own jobs stay on JobScheduler (OutboxJob, PlazaNewsJob, AutoBackupJob).
-    implementation("androidx.work:work-runtime:2.10.5")
+    implementation("androidx.work:work-runtime:2.12.0")
 
-    val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     testImplementation(composeBom)
     testImplementation("androidx.window:window-testing:1.3.0")
@@ -238,8 +238,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.core:core-splashscreen:1.2.0")
     // [PERF-01] Installs src/main/baseline-prof.txt on phones that got the APK outside Play, so the start is compiled ahead too.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     // [PERF-13] 1.28 AO: the module that makes the profile (on a Gradle managed emulator or a phone).
@@ -247,7 +247,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
-    implementation("androidx.navigation:navigation-compose:2.9.5")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
 
     // Home screen widgets [FEAT-03, REL-03].
     implementation("androidx.glance:glance-appwidget:1.1.1")
