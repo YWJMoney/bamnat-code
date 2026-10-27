@@ -53,7 +53,7 @@ import { adminFile, adminBuild } from "./admin-app.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
-import { CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
+import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -8216,11 +8216,14 @@ export const FLAG_CATALOG = CORE_FLAGS;
 /** The keys of the contract (통합계획 2-1) and the integrator's stats.more; free.<FEATURE> are made on demand. */
 export const FLAG_KEYS = FLAG_CATALOG.map((f) => f.key);
 
-/** [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>. */
-const FREE_FEATURES = { NO_ADS: "광고 없음", PAYSLIP_MATCH: "명세서 대조", PAY_RULE_IMPORT: "임금 규칙 자동 인식", PAY_BULK_EDIT: "값 일괄 적용",
-  MONEY_STATS: "돈 통계", MORE_CALENDARS: "달력 여러 개", PAY_REPORT: "급여 리포트 PDF·CSV", WORK_COMPARE: "근무·급여 비교",
-  DEVICE_CALENDAR: "휴대폰 캘린더에 근무 쓰기", ICS_FEED: "캘린더 구독 주소", AUTO_BACKUP: "매일 자동 백업", MORE_LINKS: "공유 링크 여러 개, 1년까지",
-  ROSTER_PDF: "근무표 PDF", SURE_ALARM: "끄기 미션·일어났는지 확인", LEAVE_PAYOUT: "미사용 연차수당 계산", TAX_FORECAST: "세금 예측·실수령" };
+// AU 1.29
+/**
+ * [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>.
+ * [NXT-03] The names are core's ProFeatures (CORE_FEATURES, made by FlagCatalogExportTest), so the developer app and
+ * the phone's 진단 name a free.<FEATURE> row the same way.
+ */
+const FREE_FEATURES = CORE_FEATURES;
+// AU 1.29 끝
 /** [FLAG-34] free.<FEATURE>, the same pattern as core FlagCatalog.free. */
 const FREE_KEY = new RegExp(CORE_FREE.pattern);
 

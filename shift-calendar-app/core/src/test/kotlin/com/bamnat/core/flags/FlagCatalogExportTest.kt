@@ -27,7 +27,7 @@ class FlagCatalogExportTest {
     @Test fun theRenderedBookIsWhatTheServerReads() {
         val js = FlagCatalogExport.render()
         for (f in FlagCatalog.ALL) assertTrue(f.key, js.contains("\"key\":\"${f.key}\""))
-        for (name in listOf("CORE_FLAGS", "CORE_FREE", "CORE_POLICY", "CORE_NAMES")) assertTrue(name, js.contains("export const $name = "))
+        for (name in listOf("CORE_FLAGS", "CORE_FREE", "CORE_FEATURES", "CORE_POLICY", "CORE_NAMES")) assertTrue(name, js.contains("export const $name = "))
         // The bundler (tools/bundle.mjs) turns `export const` into `const`; nothing else may be exported or imported.
         assertTrue(js.lines().none { it.startsWith("import ") || (it.startsWith("export ") && !it.startsWith("export const ")) })
     }
@@ -63,6 +63,10 @@ object FlagCatalogExport {
             "slot" to FlagCatalog.FREE_SLOT,
             "name" to FlagCatalog.FREE_NAME, "what" to FlagCatalog.FREE_WHAT, "whyOff" to FlagCatalog.FREE_WHY,
         ) + (flag(sample) - listOf("key", "name", "what", "whyOff")))};")
+        appendLine()
+        // [NXT-03] 1.29 AU: the feature names a free.<FEATURE> row puts in {feature}, the same table the phone uses.
+        appendLine("/** 프로 features a free.<FEATURE> row can open, code → 한국어 이름 (core ProFeatures). */")
+        appendLine("export const CORE_FEATURES = ${json(ProFeatures.NAMES)};")
         appendLine()
         appendLine("/** 처리방침 dates the app ships with (PolicyCalendar.SEED); the server's calendar must agree on these versions. */")
         appendLine("export const CORE_POLICY = [")

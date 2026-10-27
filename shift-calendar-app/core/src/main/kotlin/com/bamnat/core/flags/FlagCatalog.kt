@@ -153,11 +153,13 @@ object FlagCatalog {
     /**
      * [FLAG-05] AL-D4 `free.<FEATURE>`: off by default with no condition; the server's force on opens that 프로 feature to
      * everyone. The app reads it only for a 프로 feature, so it can never lock a free one.
+     * [NXT-03] 1.29 AU: the feature is named from [ProFeatures] ("무료로 연 프로 기능: 돈 통계"), as the server names it.
      */
     fun free(key: String): Flag? {
         if (!key.startsWith(FREE_PREFIX)) return null
-        val feature = key.removePrefix(FREE_PREFIX)
-        if (!Regex(FREE_FEATURE).matches(feature)) return null
+        val code = key.removePrefix(FREE_PREFIX)
+        if (!Regex(FREE_FEATURE).matches(code)) return null
+        val feature = ProFeatures.name(code)
         return Flag(key, FREE_NAME.replace(FREE_SLOT, feature), what = FREE_WHAT.replace(FREE_SLOT, feature),
             whyOff = FREE_WHY, basis = Basis(requirement = "MON-02"),
             conditions = emptyList(), default = false, since = "1.19.0", group = FlagGroup.FREE)
