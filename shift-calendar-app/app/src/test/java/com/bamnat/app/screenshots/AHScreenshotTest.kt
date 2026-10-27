@@ -272,7 +272,7 @@ class AHScreenshotTest : ScreenshotBase() {
         waitFor(400)
         tapText("예시정밀 2공장", exact = true)
         assertTrue(shows("아직 ‘예시정밀 2공장’ 급여 방식이 없어요", exact = true))
-        tapText("간편 설정으로 만들기", exact = true)
+        tapText("직접 만들게요", exact = true)
         assertEquals("예시정밀 2공장", c.companyStore.draft.value?.company)
     }
 
