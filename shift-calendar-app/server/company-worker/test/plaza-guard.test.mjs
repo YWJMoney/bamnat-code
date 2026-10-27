@@ -126,6 +126,10 @@ test("[PLZD-05] a phone's second version of a company within a day takes the pla
   const again = (await send(call, 1, { dept: "C팀", setup: cycle() })).data;
   assert.equal(again.again, true);
   assert.equal(again.id, third.id);
+  // Work of another shape under another name is another 사업장's (1.27 AH): it stands beside, nothing is replaced.
+  const site = (await send(call, 1, { dept: "온산공장", setup: three() })).data;
+  assert.equal(site.replaced, undefined);
+  assert.equal((await call("GET", `/api/reports/${third.id}`)).data.status, "pending");
 });
 
 test("[PLZD-01] the rule in use sent again by another phone counts as one more 맞아요 and says so", async () => {

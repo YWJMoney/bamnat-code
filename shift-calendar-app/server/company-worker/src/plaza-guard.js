@@ -7,8 +7,9 @@
 //  - A setup whose work has another shape than its department's (how many kinds of work, how long the order, 요일별 or 근무표;
 //    core SameSetup.Shape is the same rule) waits as pending with reports.reason = 'shape': kept for the developer's 검토
 //    ('모양이 다른 판', AX 1.30), never shown on the company page, the search, the 대표 or the board, never adopted by itself.
-//  - The same phone sending another version to the same company within a day replaces what it sent before (any department):
-//    one phone, one version a day, so one person's many versions no longer stand side by side.
+//  - The same phone sending another version of the same shape to the same company within a day replaces what it sent before
+//    (any department name): one phone, one version a day, so one person's many versions no longer stand side by side. Work of
+//    another shape under another name is another 사업장's (1.27 AH's 사업장 대표 주기) and stays.
 //  - The company page says what each folded version changed against its department's 대표, in AX's words (plaza-diff.js).
 // index.js report()·readReport()·leads()·company()·search() call these; this file does not import index.js (tools/bundle.mjs
 // puts it in one file). Database reads come in as [db] { one, all }, as plaza-items.js takes its [all].
@@ -68,7 +69,8 @@ export function pgShapeWords(s) {
  * [PLZD-04][PLZD-05] What report() needs to know before it stores [r] (readReport's) as [grp] from [dev]:
  *  - [held]: its work has another shape than the department's rule in use, or (none in use) than the first version others
  *    sent for it, unless too many said 달라요 to that one ([db].doubted(grp)); then [lead] and [mine] say both shapes in words.
- *  - [replaced]: this phone's other versions of the company still waiting from the last day ({id, dept}), which it replaces.
+ *  - [replaced]: this phone's other versions of the company of the same shape still waiting from the last day ({id, dept}),
+ *    which it replaces.
  */
 export async function pgGuard(db, env, companyId, r, dev, grp, now) {
   const [active, first, recent] = await Promise.all([
@@ -76,7 +78,7 @@ export async function pgGuard(db, env, companyId, r, dev, grp, now) {
       ORDER BY version DESC LIMIT 1`, companyId, r.deptNorm),
     db.one(env, `SELECT grp, setup FROM reports WHERE company_id = ? AND dept_norm = ? AND device != ? AND status = 'pending' AND ${pgShown()}
       ORDER BY created_at LIMIT 1`, companyId, r.deptNorm, dev),
-    db.all(env, `SELECT id, dept FROM reports WHERE company_id = ? AND device = ? AND status = 'pending' AND grp != ? AND created_at > ?
+    db.all(env, `SELECT id, dept, setup FROM reports WHERE company_id = ? AND device = ? AND status = 'pending' AND grp != ? AND created_at > ?
       ORDER BY created_at`, companyId, dev, grp, now - PG_REPLACE_MS),
   ]);
   const base = active ?? first;
@@ -84,7 +86,9 @@ export async function pgGuard(db, env, companyId, r, dev, grp, now) {
   const mine = pgShape(r.setup);
   // A department's version people say is wrong (달라요 많음) may be followed by one of another shape: that is how it gets fixed.
   const held = Boolean(lead) && !pgSameShape(lead, mine) && !(db.doubted && (await db.doubted(base.grp)));
-  return { held, ...(held ? { lead: pgShapeWords(lead), mine: pgShapeWords(mine) } : {}), replaced: recent.map((x) => ({ id: x.id, dept: x.dept })) };
+  // The same work again under another name is the same version said twice; work of another shape is another 사업장's and stays.
+  const replaced = recent.filter((x) => pgSameShape(pgShape(JSON.parse(x.setup)), mine)).map((x) => ({ id: x.id, dept: x.dept }));
+  return { held, ...(held ? { lead: pgShapeWords(lead), mine: pgShapeWords(mine) } : {}), replaced };
 }
 
 /**

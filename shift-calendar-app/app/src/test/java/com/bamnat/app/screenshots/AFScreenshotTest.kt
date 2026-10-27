@@ -228,6 +228,8 @@ class AFScreenshotTest : ScreenshotBase() {
     /** The ask on screen, raised the way a save raises it. */
     private fun Screen.ask(open: (String) -> Unit = {}) {
         c.companyStore.setApplied(AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))
+        // [PLZD-06] 1.30 BD: the plaza's version differs from this calendar's own; one that is already the same asks nothing.
+        company.file = SetupEdit.of(company.file)!!.shiftTime("주간", "06:30", "18:30", 60).text
         content { AutoShareHost(c, open) }
         assertTrue(c.autoShare.saved())
         repeat(100) { if (c.autoShare.ask.value == null) { Thread.sleep(20); settle() } }
