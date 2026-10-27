@@ -102,7 +102,7 @@ class ShareServerTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("1-2. 회사 찾기"))
-        assertTrue(text.contains("기본급, 연봉, 수당 금액, 1회 정액, 명세서 금액, 입사일, 연차, 알람, 날짜별 근무표, 이름, 연락처는 보내지 않습니다"))
+        assertTrue(text.contains("기본급, 연봉, 사람마다 다른 수당의 금액, 1회 정액, 명세서 금액, 입사일, 연차, 알람, 날짜별 근무표, 이름, 연락처는 보내지 않습니다"))
         assertTrue(text.contains("감시·단속 근로 승인 여부"))
         assertTrue(text.contains("IP 주소를 저장하지 않으며"))
         assertTrue(text.contains("이 휴대폰이 보낸 정보 모두 지우기"))
