@@ -75,6 +75,8 @@ import kotlinx.coroutines.launch
 internal fun ScanButtons(
     onText: (String) -> Unit = {}, modifier: Modifier = Modifier,
     onScan: ((PayslipScanner.Scan) -> Unit)? = null,
+    /** [PHOTO-01] 1.29: no words found or the photo failed to read: the screen to fill by hand ('직접 넣기' under the message). */
+    onEmpty: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -153,7 +155,10 @@ internal fun ScanButtons(
             Text(step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
                 style = MaterialTheme.typography.bodySmall)
         }
-        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (onEmpty != null) TextButton(onClick = { error = null; onEmpty() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("직접 넣기") }
+        }
         advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     }
 }
@@ -210,6 +215,13 @@ class RuleTarget(
     val kinds: List<ExtraKind>,
     val shiftTypes: List<ShiftType>,
     val fiveOrMore: Boolean,
+    /**
+     * [PHOTO-06] 1.29: the pay setup and calendar a rule cell made here is worked out on ("10월엔 +80,000원"); null shows the
+     * cell without the month's amount. Before [onRules], so callers that pass it as a trailing lambda keep working.
+     */
+    val profile: com.bamnat.core.pay.PayProfile? = null,
+    val snapshot: com.bamnat.app.data.ScheduleSnapshot? = null,
+    val effectOf: (suspend (com.bamnat.core.pay.PayProfile, com.bamnat.app.data.ScheduleSnapshot, java.time.YearMonth, MadeItem) -> ItemEffect?)? = null,
     val onRules: (List<RuleChange>, java.time.YearMonth?) -> Unit,
 )
 
@@ -245,6 +257,8 @@ fun PayslipFillDialog(
     var unsure by remember { mutableStateOf(emptySet<Int>()) }
     var same by remember { mutableStateOf<Boolean?>(null) }
     val ticks = remember { mutableStateListOf<Pair<RuleFinding, Boolean>>() }
+    // [PHOTO-04] Rule sentences the reader could not turn into a rule: '직접 넣기' rows instead of dropped.
+    val unreadRows = remember { mutableStateListOf<String>() }
     fun analyse() {
         val texts = listOf(text, second)
         val photos = PayPhotos.read(texts.filter { it.isNotBlank() }, rules?.kinds.orEmpty(), rules?.shiftTypes.orEmpty(), rules?.fiveOrMore ?: true)
@@ -258,7 +272,23 @@ fun PayslipFillDialog(
         unsure = voted?.unsure.orEmpty()
         same = null
         ticks.clear()
-        if (rules != null) ticks += photos.rules.map { it to (it.confidence >= 0.6) }
+        unreadRows.clear()
+        if (rules != null) {
+            ticks += photos.rules.map { it to (it.confidence >= 0.6) }
+            // [PHOTO-11] 1.29: the 통상시급 the payslip's own 가산 lines were worked out on ("명세서로 보면 통상시급 21,618원이에요").
+            com.bamnat.core.pay.SlipHourly.finding(taught, com.bamnat.core.pay.SlipHourly.multipliers(photos.rules))?.let { ticks += it to true }
+            unreadRows += photos.unread
+        }
+    }
+    // [PHOTO-01] A photo with no words found, or one that failed to read, opens the lines to fill by hand, never a dead end.
+    fun byHand() {
+        val empty = PayslipRead(emptyList(), null)
+        read = empty
+        asRead = empty
+        unsure = emptySet()
+        same = false
+        ticks.clear()
+        unreadRows.clear()
     }
     androidx.compose.runtime.LaunchedEffect(initialScan) { if (initialScan != null) analyse() }
     val photo = scan?.takeIf { it.text == text }?.image ?: scanSecond?.takeIf { it.text == second }?.image
@@ -279,14 +309,14 @@ fun PayslipFillDialog(
                         rulesOnly -> "1. 명세서 (없으면 건너뛰어도 돼요)"
                         else -> "1. 명세서"
                     }, style = MaterialTheme.typography.titleSmall)
-                    ScanButtons(onScan = { s -> scan = s; text = s.text; if (rules == null) analyse() })
+                    ScanButtons(onScan = { s -> scan = s; text = s.text; if (rules == null) analyse() }, onEmpty = ::byHand)
                     if (rules != null) {
                         Text(when {
                             second.isNotBlank() -> "2. 회사 계산 방법 ✓ 읽었어요"
                             rulesOnly -> "2. 회사 계산 방법 (명세서가 없으면 이것만으로도 계산해요)"
                             else -> "2. 회사 계산 방법 (없으면 건너뛰어도 돼요)"
                         }, style = MaterialTheme.typography.titleSmall)
-                        ScanButtons(onScan = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text })
+                        ScanButtons(onScan = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text }, onEmpty = ::byHand)
                     }
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap. Typing it is folded away.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() },
@@ -298,14 +328,16 @@ fun PayslipFillDialog(
                         placeholder = { Text("기본급 2,508,000\n연장근로수당 288,000\n식대 200,000\n지급합계 2,996,000") },
                         minLines = 4, modifier = Modifier.fillMaxWidth(),
                     )
-                } else if (r.lines.isEmpty() && ticks.isEmpty()) {
-                    Text(if (rulesOnly) "금액도 규칙도 찾지 못했어요. 명세서는 ‘기본급 2,508,000’처럼 이름과 금액이, 회사 계산 방법은 ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 찍어 주세요."
-                        else "금액을 찾지 못했어요. ‘기본급 2,508,000’처럼 이름과 금액이 함께 보이게 찍거나 붙여 넣어 주세요.")
                 } else {
+                    // [PHOTO-01] Nothing read: the lines and rules to fill by hand, with how to take a better photo.
+                    if (r.lines.isEmpty() && ticks.isEmpty() && unreadRows.isEmpty()) Text(
+                        if (rulesOnly) "금액도 규칙도 찾지 못했어요. 아래에서 칸을 직접 넣거나, 명세서는 ‘기본급 2,508,000’처럼 이름과 금액이, 회사 계산 방법은 ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍어 주세요."
+                        else "금액을 찾지 못했어요. 아래 ‘칸 더하기’로 명세서 줄을 직접 넣거나, 이름과 금액이 함께 보이게 다시 찍어 주세요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     r.month?.let { Text("${it.year}년 ${it.monthValue}월 명세서", style = MaterialTheme.typography.titleSmall) }
                     if (photo != null) PhotoThumb(photo)
-                    if (r.lines.isNotEmpty()) {
-                        SlipCheck(r, unsure, same, fromPhoto = photo != null,
+                    if (r.lines.isNotEmpty() || !rulesOnly) {
+                        SlipCheck(r, unsure, same, fromPhoto = photo != null && r.lines.isNotEmpty(),
                             onAnswer = { same = it },
                             onChange = { next, fixed ->
                                 read = next
@@ -319,19 +351,16 @@ fun PayslipFillDialog(
                     if (r.deducted != null || net != null) Text(
                         listOfNotNull(r.deducted?.let { "공제 ${won(it)}" }, net?.let { "실수령 ${won(it)}" }).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (ticks.isNotEmpty()) {
-                        Text("회사 계산 방법에서 읽은 규칙 ${ticks.size}개", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-                        ticks.forEachIndexed { i, (f, on) ->
-                            Row(Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { ticks[i] = f to !on }, verticalAlignment = Alignment.Top) {
-                                Checkbox(checked = on, onCheckedChange = null, modifier = Modifier.padding(8.dp))
-                                Column(Modifier.weight(1f).padding(top = 6.dp)) {
-                                    Text(f.change.summary, style = MaterialTheme.typography.bodyMedium)
-                                    Text("“${f.sourceLine}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    } else if (second.isNotBlank()) Text("회사 계산 방법 사진에서 규칙을 찾지 못했어요. 규칙은 급여 설정의 ‘회사 규칙’에서 글로 적어도 돼요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // [PHOTO-06] The rules as cells to tick, change or take out, '직접 넣기' rows and '칸 더하기'.
+                    if (rules != null) {
+                        if (ticks.isEmpty() && unreadRows.isEmpty() && second.isNotBlank()) Text("회사 계산 방법 사진에서 규칙을 찾지 못했어요. 아래 ‘칸 더하기’로 직접 넣어도 돼요.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        RuleCells(ticks, unreadRows, rules, r.month ?: com.bamnat.core.time.Today.month())
+                    }
+                    // [PHOTO-09] Read from a photo: '사진이 달라요'.
+                    if (scan != null || scanSecond != null) com.bamnat.app.ui.components.PhotoWrongButton(
+                        if (r.lines.isNotEmpty() || scanSecond == null) com.bamnat.core.stats.PhotoScreen.PAYSLIP else com.bamnat.core.stats.PhotoScreen.RULES,
+                        onAsk = onDismiss)
                 }
             }
         },
@@ -344,7 +373,7 @@ fun PayslipFillDialog(
             val canRead = text.isNotBlank() || rulesOnly && second.isNotBlank()
             when {
                 r == null -> if (typing || (rules != null && canRead)) Button(onClick = ::analyse, enabled = canRead) { Text("읽기") }
-                r.lines.isEmpty() && ticks.isEmpty() -> Button(onClick = { read = null }) { Text("다시 하기") }
+                r.lines.isEmpty() && ticks.isEmpty() -> Button(onClick = {}, enabled = false) { Text("칸을 넣어 주세요") }
                 waiting -> Button(onClick = {}, enabled = false) { Text("사진과 같은지 먼저 봐 주세요") }
                 else -> Button(onClick = {
                     val chosen = ticks.filter { it.second }.map { it.first.change }
@@ -389,6 +418,9 @@ internal fun RuleSentenceBox(
     var words by remember { mutableStateOf(false) }
     var building by remember { mutableStateOf(false) }
     val found = remember { mutableStateListOf<Pair<RuleFinding, Boolean>>() }
+    // [PHOTO-04][PHOTO-06] 1.29: sentences not read, as '직접 넣기' rows; whether the words came from a photo ('사진이 달라요').
+    val unread = remember { mutableStateListOf<String>() }
+    var fromPhoto by remember { mutableStateOf(false) }
     var read by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!read) {
@@ -403,7 +435,7 @@ internal fun RuleSentenceBox(
                     placeholder = { Text("예)\n토요일 근무는 50% 더\n상여금 연 800% 짝수달") },
                     minLines = 3, modifier = Modifier.fillMaxWidth(),
                 )
-                ScanButtons(onText = { t -> text = if (text.isBlank()) t else text + "\n" + t })
+                ScanButtons(onText = { t -> text = if (text.isBlank()) t else text + "\n" + t; fromPhoto = true })
                 Hint("한 줄에 규칙 하나씩 적으면 가장 잘 읽어요. 명세서 금액(연장근로수당 523,000원 같은 줄)은 ‘명세서로 맞춰 보기’에 넣어 주세요.")
             }
             val all = com.bamnat.app.ui.components.ruleWords(built, text)
@@ -411,33 +443,24 @@ internal fun RuleSentenceBox(
                 onClick = {
                     found.clear()
                     found += RuleText.read(all, kinds, shiftTypes, fiveOrMore).map { it to (it.confidence >= 0.6) }
+                    unread.clear()
+                    unread += RuleText.unread(all, kinds, shiftTypes, fiveOrMore)
                     read = true
                 },
                 enabled = all.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) { Text("읽기") }
         } else {
-            if (found.isEmpty()) Text("읽을 수 있는 규칙을 못 찾았어요. ‘야간 50% 가산’, ‘토요일 근무 1회 2만원’처럼 무엇에 얼마인지 함께 적어 주세요.",
+            if (found.isEmpty() && unread.isEmpty()) Text("읽을 수 있는 규칙을 못 찾았어요. ‘야간 50% 가산’, ‘토요일 근무 1회 2만원’처럼 무엇에 얼마인지 함께 적거나 아래 ‘칸 더하기’로 넣어 주세요.",
                 style = MaterialTheme.typography.bodyMedium)
-            found.forEachIndexed { i, (f, on) ->
-                Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { found[i] = f to !on }.padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Checkbox(checked = on, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-                    Column(Modifier.weight(1f).padding(top = 8.dp)) {
-                        Text(f.change.summary, style = MaterialTheme.typography.bodyLarge)
-                        Text("“${f.sourceLine}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (f.confidence < 0.6) Text("확실하지 않아요. 맞는지 봐 주세요.", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiary)
-                    }
-                }
-            }
+            // [PHOTO-06] One flow with the photo's result: cells to tick, change or take out, '직접 넣기' rows, '칸 더하기'.
+            RuleCells(found, unread, RuleTarget(kinds, shiftTypes, fiveOrMore, onRules = { _, _ -> }), com.bamnat.core.time.Today.month())
+            if (fromPhoto) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.RULES)
             val chosen = found.filter { it.second }.map { it.first.change }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { read = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 쓰기") }
                 Button(
-                    onClick = { onApply(chosen); text = ""; built = emptyList(); building = false; found.clear(); read = false },
+                    onClick = { onApply(chosen); text = ""; built = emptyList(); building = false; found.clear(); unread.clear(); fromPhoto = false; read = false },
                     enabled = chosen.isNotEmpty(),
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                 ) { Text("${chosen.size}개 넣기") }

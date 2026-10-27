@@ -9,6 +9,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
+import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /** What a line is, so screens can group and colour it. */
@@ -238,13 +239,18 @@ class PayCalculator(
         val bonusMonthly = ordinary.bonuses
         // [PAYS-03] The minutes of 소정근로 one 일당 pays for.
         val dailyMinutes = profile.dailyHours.coerceIn(1, 8 * 60)
-        val hourly = when (profile.wageType) {
+        // [PHOTO-11] 1.29 AQ: 통상시급 taken from the payslip, when the user set it.
+        val setHourly = profile.ordinaryHourly?.takeIf { it > 0 && profile.wageType == WageType.MONTHLY }
+        val hourly = when {
+            setHourly != null -> setHourly.roundToLong()
+            else -> when (profile.wageType) {
             WageType.MONTHLY -> (ordinary.total.toDouble() / profile.monthlyHours.coerceAtLeast(1)).roundToLong()
             WageType.HOURLY -> base.value
             // [PAYS-03] 일급 금액 ÷ 1일 소정근로시간 (시행령 제6조 제2항 제2호).
             WageType.DAILY -> (base.value * 60.0 / dailyMinutes).roundToLong()
+            }
         }
-        val hourlyFormula = when (profile.wageType) {
+        val hourlyFormula = if (setHourly != null) "명세서로 맞춘 통상시급 ${"%,.2f".format(setHourly)}원" else when (profile.wageType) {
             WageType.MONTHLY -> "(기본급 ${won(base.value)}" +
                 (if (ordinaryMonthly > 0) " + 통상 수당 ${won(ordinaryMonthly)}" else "") +
                 (if (bonusMonthly > 0) " + 상여금 월할 ${won(bonusMonthly)}" else "") +
@@ -509,6 +515,9 @@ class PayCalculator(
             for (rule in profile.customRules) {
                 // [PAYS-07] A monthly rule is one line for the month, below; a deduction takes its amount off.
                 if (!rule.on || rule.pay.monthly) continue
+                // [PHOTO-05] Outside its months, before its 근속, or past its times a month: not this day.
+                if (!rule.inPeriod(month) || rule.tenureOk(month, profile.hireDate) != true) continue
+                if (rule.maxTimes > 0 && (customTotals[rule.id]?.times ?: 0) >= rule.maxTimes) continue
                 val r = customRule(rule, day, m, holiday(day.date) || officeWeekend(day.date), hourly, monthlyBase, baseLabel, rates) ?: continue
                 val signed = if (rule.deduct) -r.amount else r.amount
                 customTotals.getOrPut(rule.id) { CustomTotal(rule) }.apply { amount += signed; this.minutes += r.credited; times++ }
@@ -684,10 +693,14 @@ class PayCalculator(
                 )
                 continue
             }
+            // [PHOTO-05] 월 한도: the month's amount no more than the cap, said in the formula.
+            val capped = rule.capPerMonth > 0 && abs(t.amount) > rule.capPerMonth
+            val amount = if (capped) (if (t.amount < 0) -rule.capPerMonth else rule.capPerMonth) else t.amount
             lines += PayLine(
-                LineKind.ALLOWANCE, rule.lineLabel, t.amount,
+                LineKind.ALLOWANCE, rule.lineLabel, amount,
                 formula = "${rule.describe(shiftNames, extraKindNames)}: ${t.times}일" +
-                    (if (pay !is RulePay.PerTime && t.minutes > 0) ", ${hours(t.minutes)}" else ""),
+                    (if (pay !is RulePay.PerTime && t.minutes > 0) ", ${hours(t.minutes)}" else "") +
+                    (if (capped) " → 월 한도 ${won(rule.capPerMonth)}" else ""),
                 minutes = t.minutes,
                 hourly = if (pay is RulePay.OfHourly) hourly else 0,
                 multiplier = if (pay is RulePay.OfHourly) (if (rule.deduct) -pay.rate else pay.rate) else 0.0,
@@ -698,19 +711,28 @@ class PayCalculator(
         // [PAYS-07] Rules paid once a month: a fixed amount or a share of 기본급, added or taken off.
         for (rule in profile.customRules) {
             if (!rule.on || !rule.pay.monthly) continue
-            val (amount, formula) = when (val pay = rule.pay) {
+            if (!rule.inPeriod(month) || rule.tenureOk(month, profile.hireDate) != true) continue
+            val (whole, formula) = when (val pay = rule.pay) {
                 is RulePay.Monthly -> pay.amount to "매달 ${won(pay.amount)}"
                 is RulePay.OfBaseMonthly -> (monthlyBase * pay.share).roundToLong() to
                     "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)}"
+                // [PHOTO-05] 통상임금 월액: 기본급 and the monthly allowances that count (bonuses left out, they follow it).
+                is RulePay.OfOrdinaryMonthly -> ((ordinary.base + ordinaryMonthly) * pay.share).roundToLong() to
+                    "통상임금 ${won(ordinary.base + ordinaryMonthly)} × ${ExtraRule.percent(pay.share)}"
                 else -> continue
             }
+            val amount = if (rule.capPerMonth > 0) minOf(whole, rule.capPerMonth) else whole
             if (amount == 0L) continue
             lines += PayLine(
                 LineKind.ALLOWANCE, rule.lineLabel, if (rule.deduct) -amount else amount,
-                formula = formula + if (rule.deduct) " 차감" else "",
+                formula = formula + (if (amount < whole) " → 월 한도 ${won(rule.capPerMonth)}" else "") + if (rule.deduct) " 차감" else "",
                 basis = customBasis(rule),
                 estimated = baseEstimated && rule.pay.followsWage,
             )
+        }
+        // [PHOTO-05] A rule with a 근속 condition and no hire date is not paid: the month says what to put in.
+        profile.customRules.filter { it.on && it.needsTenure && it.inPeriod(month) && profile.hireDate == null }.forEach {
+            warnings += "입사일을 넣으면 ‘${it.name}’(근속 ${it.limits().removePrefix("근속 ").substringBefore(" · ")})도 계산해요"
         }
 
         // [SHFT-01] One line per kind of day with a premium of its own.
@@ -862,16 +884,18 @@ class PayCalculator(
                 basis = "근로기준법 제57조 (근로자대표와 서면 합의가 있을 때)")
         }
         // [PAYX-27] 줄마다 마지막에: the lines worked out as minutes × 시급 × 배율 are worked again with the exact 시급.
-        val exactHourly = when (profile.wageType) {
+        val exactHourly = setHourly ?: when (profile.wageType) {
             WageType.MONTHLY -> ordinary.total.toDouble() / profile.monthlyHours.coerceAtLeast(1)
             WageType.HOURLY -> base.value.toDouble()
             WageType.DAILY -> base.value * 60.0 / dailyMinutes
         }
-        if (rules.wonRounding == WonRounding.AT_END && exactHourly != hourly.toDouble()) {
+        if (rules.wonRounding != WonRounding.HOURLY_FIRST && (exactHourly != hourly.toDouble() || rules.wonRounding == WonRounding.AT_END_UP)) {
             val exactLabel = "%,.2f원".format(exactHourly)
+            val up = rules.wonRounding == WonRounding.AT_END_UP
             lines.replaceAll { l ->
                 if (l.hourly != hourly || l.minutes == 0 || l.multiplier == 0.0 || l.amount != (l.minutes / 60.0 * hourly * l.multiplier).roundToLong()) l
-                else l.copy(amount = (l.minutes / 60.0 * exactHourly * l.multiplier).roundToLong(), formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 반올림)")
+                else l.copy(amount = lineWon(l.minutes, exactHourly, l.multiplier, up),
+                    formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 ${if (up) "올림" else "반올림"})")
             }
         }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
@@ -1100,7 +1124,7 @@ class PayCalculator(
                 "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)} × ${hours(minutes)} ÷ ${hours(pay.perMinutes)}"
             is RulePay.PerTime -> pay.amount to "1회 ${won(pay.amount)}"
             // [PAYS-07] Paid once for the month, not day by day.
-            is RulePay.Monthly, is RulePay.OfBaseMonthly -> return null
+            is RulePay.Monthly, is RulePay.OfBaseMonthly, is RulePay.OfOrdinaryMonthly -> return null
         }
         return RuleResult(amount, formula, if (rule.pay is RulePay.PerTime) 0 else minutes, 0)
     }
@@ -1258,6 +1282,15 @@ class PayCalculator(
             val bonuses = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
             else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }.sumOf { it.bonusMonthlyShare(profile.bonusBase(it, month), month) }
             return OrdinaryWage(base, allowances, bonuses)
+        }
+
+        /**
+         * [PAYX-27][PHOTO-11] One line's 원: [minutes] × [hourly] × [multiplier], rounded half up or (with [up]) any 원 미만 up. A
+         * hair of floating error is not a 원 more: 81시간 × 21,618.04 × 1.5 is 2,626,591.86 → 2,626,592.
+         */
+        fun lineWon(minutes: Int, hourly: Double, multiplier: Double, up: Boolean): Long {
+            val v = minutes / 60.0 * hourly * multiplier
+            return if (up) kotlin.math.ceil(v - 1e-6).toLong() else v.roundToLong()
         }
 
         fun hours(minutes: Int): String =

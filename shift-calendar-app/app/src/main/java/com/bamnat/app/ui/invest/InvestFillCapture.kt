@@ -187,6 +187,7 @@ internal fun FillCaptureSheet(
                 }
                 if (yellowLeft) Text("노란 칸은 확인해야 넣을 수 있어요.", style = MaterialTheme.typography.bodySmall, color = warning())
                 if (new.isEmpty() && different.isEmpty()) Text("새로 넣을 체결이 없어요.", style = MaterialTheme.typography.bodyMedium)
+                com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.INVEST) // [PHOTO-09] 1.29 AQ
                 HorizontalDivider()
                 // [INV-44][INVA-02] 바로 넣기 (the default since 1.29), and where it is changed.
                 if (!trust) {

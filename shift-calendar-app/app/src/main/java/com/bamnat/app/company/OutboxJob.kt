@@ -76,7 +76,8 @@ class OutboxJob : JobService() {
         fun waiting(c: AppContainer): Int =
             (if (c.proStore.current.pendingConsent != null) 1 else 0) + c.inquiryStore.outbox.value.size +
                 c.calendars.calendars.value.filterNot { it.isExample }.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.count { c.shareLinksOf(it).unsent.value } +
-                (if (c.autoShare.waiting) 1 else 0)
+                (if (c.autoShare.waiting) 1 else 0) +
+                (if (c.flags.on(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG)) c.photoWrong.waiting else 0)
 
         /** Sends everything waiting; true when nothing is left. */
         suspend fun send(c: AppContainer): Boolean {
@@ -84,7 +85,9 @@ class OutboxJob : JobService() {
             val questions = InquiryOutbox.flush(c)
             val links = if (c.shareApi.enabled) c.shareSync.sendUnsent() else true
             val share = c.autoShare.flush()
-            return consent && questions && links && share
+            // [PHOTO-09] 1.29 AQ: '사진이 달라요' counts, only with the photo.wrong row on (처리방침 3.3).
+            val photos = c.photoWrong.flush(c.flags.on(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG))
+            return consent && questions && links && share && photos
         }
     }
 }

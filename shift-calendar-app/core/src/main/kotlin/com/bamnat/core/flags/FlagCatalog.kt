@@ -19,6 +19,8 @@ object FlagCatalog {
     const val LEAVE_HOURLY = "leave.hourly"
     /** [FLAG-16] 순번 459: the extra usage-stats items (켜진 기능 목록, 앱 시작 시간) that 처리방침 3.2 adds. */
     const val STATS_MORE = "stats.more"
+    /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts (날짜·화면·이유·횟수) sent to the server, once 처리방침 3.3 names them. */
+    const val PHOTO_WRONG = "photo.wrong"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -132,6 +134,19 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, group = FlagGroup.STATS,
     )
 
+    /**
+     * [PHOTO-09] 1.29 AQ: the presses of '사진이 달라요' wait on the phone and go only once 처리방침 3.3 (not yet in [PolicyCalendar])
+     * lists them: a press is the user's own act each time, so no other yes is asked. Never the photo or its text.
+     */
+    val PHOTO_WRONG_FLAG = Flag(
+        PHOTO_WRONG, "사진이 달라요 횟수 보내기",
+        what = "사진을 읽은 결과 화면에서 ‘사진이 달라요’를 누르면 날짜·화면 종류·고른 이유·앱 버전의 횟수만 서버로 보내요(휴대폰 구별 없음). 사진과 글은 보내지 않아요.",
+        whyOff = "처리방침에 아직 없는 정보가 서버로 가는 일이라 3.3 시행 뒤에만 보내요. 그 전에는 휴대폰에 횟수만 모아 두고(60일), ‘직접 문의하기’는 지금도 돼요.",
+        basis = Basis(policy = "3.3 1-3항(개정 예정)", decision = "D68", requirement = "PHOTO-09", note = "1.29 AQ 사진이 달라요"),
+        conditions = listOf(Condition.Date(policy = "3.3")),
+        default = false, risk = Risk.LEGAL, since = "1.29.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -143,7 +158,7 @@ object FlagCatalog {
         )
     }
 
-    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG) + SWITCHES
+    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG) + SWITCHES
 
     private val byKey = ALL.associateBy { it.key }
 

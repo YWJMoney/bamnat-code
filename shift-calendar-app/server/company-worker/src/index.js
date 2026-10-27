@@ -32,6 +32,7 @@
 // POST   /api/purchases           a Play purchase token, checked with Play when PLAY_SERVICE_ACCOUNT is set [MON-03]
 // POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
 // POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
+// POST   /api/photo-wrong         AQ 1.29 [PHOTO-10] '사진이 달라요' counts: day, screen, reason, app version. No photo, no text, no install id
 // GET    /api/plaza/news?since=   [COMM-10] header X-Device: my rule changed, my rule or proposal adopted
 // *      /api/members             [PLAZA-07] header X-Device (GET) or body device: the companies this phone joined; POST joins, DELETE leaves
 // GET    /api/companies/:id/room  [PLAZA-09] header X-Device, members only: my version, the department's others, 안정
@@ -240,6 +241,7 @@ export async function prune(env, now) {
     // AM 1.28 [FLAG-30]
     stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
+    stmt(env, "DELETE FROM photo_wrong WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AQ 1.29 [PHOTO-10]
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
   ]);
@@ -381,6 +383,7 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path === "/api/events" && method === "POST") return usage(request, env);
+  if (path === "/api/photo-wrong" && method === "POST") return photoWrong(request, env); // AQ 1.29 [PHOTO-10]
   if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
   if (path === "/api/digest" && method === "GET") return digest(request, env, url);
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
@@ -665,6 +668,10 @@ const LATE_INDEXES = [
   // AT 1.29 시작 [ADMCP-04] 복사 전 문제 제보 for the badges and the list's strip: only the rows nobody copied yet.
   "CREATE INDEX IF NOT EXISTS inquiries_uncopied ON inquiries (kind, status) WHERE copied_at IS NULL",
   // AT 1.29 끝
+  // AQ 1.29 시작 [PHOTO-10] '사진이 달라요' presses: per day, app version, screen and reason, how many. No phone, no photo, no text.
+  `CREATE TABLE IF NOT EXISTS photo_wrong (day TEXT NOT NULL, app TEXT NOT NULL, screen TEXT NOT NULL, reason TEXT NOT NULL,
+    total INTEGER NOT NULL, PRIMARY KEY (day, app, screen, reason))`,
+  // AQ 1.29 끝
 ];
 
 const schemas = new WeakMap();
@@ -2150,7 +2157,7 @@ function leadLine(all_, users) {
     sites: all_.length,
     lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
       roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
-      ...(main.doubted ? { doubted: true } : {}) },
+      ...(main.doubted ? { doubted: true } : {}), ...payWayOf(all_, main) },
   };
 }
 
@@ -4884,6 +4891,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/metrics" && method === "GET") {
     const m = await metrics(env, url, now);
     m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
+    m.photoWrong = await photoWrongMetrics(env, m.from, m.to); // AQ 1.29 [PHOTO-10]
     return json(m);
   }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
@@ -7522,6 +7530,88 @@ async function startupMetrics(env, from, to) {
   return { versions, few: 30 };
 }
 // AO 1.28 끝 --------------------------------------------------------------------------------------------------
+
+// AQ 1.29 시작 ------------------------------------------------------------------------------------------------
+/**
+ * [PHOTO-09][PHOTO-10] The screens with a '사진이 달라요' button and the reasons it offers, the same codes as the app's
+ * core/stats/PhotoWrong.kt (PhotoScreen, PhotoWrongReason). Anything else is refused.
+ */
+export const PHOTO_SCREENS = {
+  roster: "근무표 사진", payslip: "명세서 사진", rules: "회사 규칙 사진", pay_table: "호봉표 사진",
+  invest: "투자 캡처", tax: "세금 서류 사진", receipt: "영수증 사진",
+};
+export const PHOTO_REASONS = {
+  numbers: "숫자가 틀려요", missing: "빠진 칸이 있어요", extra: "없는 칸이 생겼어요", names: "이름이나 종류가 틀려요",
+  nothing: "거의 읽지 못했어요", other: "다른 점이 있어요",
+};
+/** Rows a bundle may carry, days a phone keeps them (the app's PhotoWrongBook), presses a row, bundles a network a day. */
+const PHOTO_WRONG = { rows: 60, keepDays: 60, count: 99, perNetworkDay: 30, bytes: 8 * 1024 };
+
+/**
+ * [PHOTO-10] `{v:1, app:"1.29.0", counts:[{day, screen, reason, n}]}`, sent by the app once 처리방침 3.3 lets it (flag
+ * photo.wrong). Added to the day's totals; the same bundle sent again the same day (after a timeout) counts once.
+ */
+async function photoWrong(request, env) {
+  const body = await readJson(request, PHOTO_WRONG.bytes);
+  if (body.v !== 1) refuse("version", "v");
+  if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
+  if (!Array.isArray(body.counts) || body.counts.length < 1 || body.counts.length > PHOTO_WRONG.rows) refuse("counts", "counts");
+  const now = Date.now();
+  const latest = kstDay(now + DAY);
+  const oldest = kstDay(now - (PHOTO_WRONG.keepDays + 1) * DAY);
+  const rows = new Map();
+  for (const c of body.counts) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) refuse("count", "counts");
+    if (typeof c.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(c.day) || c.day > latest || c.day < oldest) refuse("day", "day");
+    if (typeof c.screen !== "string" || !Object.hasOwn(PHOTO_SCREENS, c.screen)) refuse("screen", "screen");
+    if (typeof c.reason !== "string" || !Object.hasOwn(PHOTO_REASONS, c.reason)) refuse("reason", "reason");
+    if (!Number.isInteger(c.n) || c.n < 1 || c.n > PHOTO_WRONG.count) refuse("n", "n");
+    const key = `${c.day}|${c.screen}|${c.reason}`;
+    rows.set(key, Math.min(PHOTO_WRONG.count, (rows.get(key) ?? 0) + c.n));
+  }
+  const net = await network(request, env, now);
+  if (!(await allow(env, `photo-wrong|${net.day}`, PHOTO_WRONG.perNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const bundle = (await sha256(`photo-wrong|${kstDay(now)}|${JSON.stringify(body)}`)).slice(0, 32);
+  if (!(await allow(env, `bundle|${bundle}`, 1, DAY, now))) return json({ ok: true, again: true });
+  const list = [...rows].map(([k, n]) => [...k.split("|"), n]);
+  const stmts = [];
+  // D1 binds at most 100 values a query: 20 rows of five.
+  for (let i = 0; i < list.length; i += 20) {
+    const part = list.slice(i, i + 20);
+    stmts.push(stmt(env, `INSERT INTO photo_wrong (day, app, screen, reason, total) VALUES ${part.map(() => "(?, ?, ?, ?, ?)").join(", ")}
+      ON CONFLICT (day, app, screen, reason) DO UPDATE SET total = total + excluded.total`,
+    ...part.flatMap(([day, screen, reason, n]) => [day, body.app, screen, reason, n])));
+  }
+  await batch(env, stmts);
+  return new Response(null, { status: 204 });
+}
+
+/** [PHOTO-10] 지표 › 사진이 달라요: totals per day, per screen (with its reasons) and per app version, from..to. */
+async function photoWrongMetrics(env, from, to) {
+  const rows = await all(env, `SELECT day, app, screen, reason, SUM(total) AS total FROM photo_wrong
+    WHERE day BETWEEN ? AND ? GROUP BY day, app, screen, reason`, from, to);
+  const days = new Map();
+  const screens = new Map();
+  const apps = new Map();
+  let total = 0;
+  for (const r of rows) {
+    total += r.total;
+    days.set(r.day, (days.get(r.day) ?? 0) + r.total);
+    apps.set(r.app, (apps.get(r.app) ?? 0) + r.total);
+    if (!screens.has(r.screen)) screens.set(r.screen, { screen: r.screen, label: PHOTO_SCREENS[r.screen] ?? r.screen, total: 0, reasons: {} });
+    const s = screens.get(r.screen);
+    s.total += r.total;
+    s.reasons[r.reason] = (s.reasons[r.reason] ?? 0) + r.total;
+  }
+  return {
+    total,
+    days: [...days].sort((a, b) => a[0].localeCompare(b[0])).map(([day, n]) => ({ day, total: n })),
+    screens: [...screens.values()].sort((a, b) => b.total - a.total),
+    apps: [...apps].sort((a, b) => appOrder(a[0], b[0])).map(([app, n]) => ({ app, total: n })),
+    reasons: PHOTO_REASONS,
+  };
+}
+// AQ 1.29 끝 --------------------------------------------------------------------------------------------------
 
 /**
  * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share

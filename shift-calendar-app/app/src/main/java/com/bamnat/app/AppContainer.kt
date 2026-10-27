@@ -245,6 +245,8 @@ class AppContainer(context: Context) {
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
     var pendingPayCheck: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
+    /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts waiting to go (only once 처리방침 3.3 lets them). Made on first press. */
+    val photoWrong by lazy { com.bamnat.app.diag.PhotoWrongStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
     /** [PLAZA-06] 처음 설정 다시 받기: its own draft, so the calendar in use is untouched until it is saved. */

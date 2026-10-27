@@ -12,9 +12,9 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse("2026-10-26T01:00:00Z");
 const L = adminLib();
 
-/** 통합계획 2-1: the keys the app's core FlagCatalog has too, and stats.more the integrator added. */
+/** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
-  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more"];
+  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };

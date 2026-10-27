@@ -92,6 +92,12 @@ sealed interface RulePay {
     /** [PAYS-07] 기본급 × [share] once a month, e.g. 근속수당 기본급의 5%. The rule's [RuleWhen] is not looked at. */
     data class OfBaseMonthly(val share: Double) : RulePay
 
+    /**
+     * [PHOTO-05] 1.29: 통상임금 (기본급 and the monthly allowances that count) × [share] once a month, e.g. 근속수당 통상임금의 5%.
+     * The rule's [RuleWhen] is not looked at.
+     */
+    data class OfOrdinaryMonthly(val share: Double) : RulePay
+
     fun describe(): String = when (this) {
         is PerHour -> "시간당 ${won(amount)}"
         is OfHourly -> "통상시급의 ${ExtraRule.percent(rate)}"
@@ -99,13 +105,14 @@ sealed interface RulePay {
         is PerTime -> "1회 ${won(amount)}"
         is Monthly -> "매달 ${won(amount)}"
         is OfBaseMonthly -> "매달 기본급의 ${ExtraRule.percent(share)}"
+        is OfOrdinaryMonthly -> "매달 통상임금의 ${ExtraRule.percent(share)}"
     }
 
     /** True when the amount follows 통상시급 or 기본급, so it is only as sure as they are. */
-    val followsWage: Boolean get() = this is OfHourly || this is OfBase || this is OfBaseMonthly
+    val followsWage: Boolean get() = this is OfHourly || this is OfBase || this is OfBaseMonthly || this is OfOrdinaryMonthly
 
     /** [PAYS-07] Paid once a month rather than on the work the rule matches. */
-    val monthly: Boolean get() = this is Monthly || this is OfBaseMonthly
+    val monthly: Boolean get() = this is Monthly || this is OfBaseMonthly || this is OfOrdinaryMonthly
 }
 
 /**
@@ -127,11 +134,50 @@ data class CustomRule(
      * month's total is what is paid before tax, so this is for money the payslip takes off its 지급 side.
      */
     val deduct: Boolean = false,
+    /**
+     * [PHOTO-05] 1.29 근속 조건: paid only once the worker has been employed this many whole months by the month's end (근속 3년
+     * 이상 → 36), from [PayProfile.hireDate]; 0 is always. Without a hire date such a rule is not paid and the month says why.
+     */
+    val minTenureMonths: Int = 0,
+    /** [PHOTO-05] Paid only while employed fewer than this many months (근속 1년 이상 3년 미만 → 36); 0 is no end. */
+    val maxTenureMonths: Int = 0,
+    /** [PHOTO-05] At most this much in a month (월 100,000원 한도); 0 is no cap. */
+    val capPerMonth: Long = 0,
+    /** [PHOTO-05] At most this many days a month (월 10회까지); 0 is no limit. */
+    val maxTimes: Int = 0,
+    /** [PHOTO-05] The months it applies in (2026년 7월부터, 12월까지); null is open on that side. */
+    val from: java.time.YearMonth? = null,
+    val until: java.time.YearMonth? = null,
 ) {
+    /** [PHOTO-05] Needs the hire date to know whether it is paid. */
+    val needsTenure: Boolean get() = minTenureMonths > 0 || maxTenureMonths > 0
+
+    /** [PHOTO-05] Applies in [month] by its months; the 근속 condition is [tenureOk]. */
+    fun inPeriod(month: java.time.YearMonth): Boolean = (from == null || month >= from) && (until == null || month <= until)
+
+    /** [PHOTO-05] Whether the 근속 condition holds in [month], or null without a [hire] date to tell. */
+    fun tenureOk(month: java.time.YearMonth, hire: java.time.LocalDate?): Boolean? {
+        if (!needsTenure) return true
+        hire ?: return null
+        val months = java.time.temporal.ChronoUnit.MONTHS.between(hire, month.atEndOfMonth()).toInt()
+        return months >= minTenureMonths && (maxTenureMonths <= 0 || months < maxTenureMonths)
+    }
+
+    /** [PHOTO-05] The conditions beyond when it pays, in words: "근속 3년 이상 · 월 100,000원까지 · 2026년 7월부터". */
+    fun limits(): String = buildList {
+        if (minTenureMonths > 0 || maxTenureMonths > 0) add("근속 " + listOfNotNull(
+            years(minTenureMonths).takeIf { minTenureMonths > 0 }?.let { "$it 이상" },
+            years(maxTenureMonths).takeIf { maxTenureMonths > 0 }?.let { "$it 미만" }).joinToString(" "))
+        if (capPerMonth > 0) add("월 ${won(capPerMonth)}까지")
+        if (maxTimes > 0) add("월 ${maxTimes}회까지")
+        from?.let { add("${it.year}년 ${it.monthValue}월부터") }
+        until?.let { add("${it.year}년 ${it.monthValue}월까지") }
+    }.joinToString(" · ")
+
     /** "토요일 근무일: 통상시급의 50%", "매달 50,000원 차감". */
     fun describe(shiftNames: Map<Long, String> = emptyMap(), extraNames: Map<Long, String> = emptyMap()): String =
         (if (pay.monthly) "" else whenever.describe(shiftNames, extraNames).let { w -> if (w.isEmpty()) "모든 근무: " else "$w: " }) +
-            pay.describe() + if (deduct) " 차감" else ""
+            pay.describe() + (if (deduct) " 차감" else "") + limits().let { if (it.isEmpty()) "" else " ($it)" }
 
     /**
      * [PAYS-09] The rule in words with no amount in won, for telling the developer the company's way: "토요일: 1회
@@ -154,5 +200,9 @@ data class CustomRule(
     companion object {
         const val MAX = 20
         const val MAX_NAME = 16
+
+        /** 36 → "3년", 18 → "1년 6개월". */
+        fun years(months: Int): String = listOfNotNull((months / 12).takeIf { it > 0 }?.let { "${it}년" }, (months % 12).takeIf { it > 0 }?.let { "${it}개월" })
+            .joinToString(" ").ifEmpty { "0개월" }
     }
 }

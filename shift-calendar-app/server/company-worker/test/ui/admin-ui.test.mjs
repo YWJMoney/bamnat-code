@@ -1265,3 +1265,31 @@ test("[ADMCP-07] 아주 크게 and 크게: the inquiries list, the bulk bar and 
   // (Screen-width media queries aside; a photo thumbnail of 120px wraps with the others.)
   assert.ok(!/[{;](min-)?width:\s*([2-9]\d\d|\d{4,})px/.test(css), "no wide fixed widths in px");
 });
+// ---- AQ 1.29 [PHOTO-10] 지표 › 사진이 달라요 ----
+
+test("[PHOTO-10] 지표: 사진이 달라요 shows the total, each screen with its reasons, and the versions", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u0 = await asOwner(env, t);
+  await u0.go("#/metrics");
+  assert.match(u0.text("#photo-wrong-card"), /이 기간에 받은 횟수가 없어요/);
+  const day = new Date(Date.now() + 9 * 3600e3 - 86400e3).toISOString().slice(0, 10);
+  const before = new Date(Date.now() + 9 * 3600e3 - 2 * 86400e3).toISOString().slice(0, 10);
+  const ins = DB.db.prepare("INSERT INTO photo_wrong VALUES (?, ?, ?, ?, ?)");
+  ins.run(day, "1.29.0", "payslip", "numbers", 5);
+  ins.run(day, "1.29.0", "payslip", "missing", 2);
+  ins.run(before, "1.29.0", "roster", "nothing", 1);
+  ins.run(day, "1.28.0", "rules", "names", 1);
+  const u = await asOwner(env, t);
+  await u.go("#/metrics");
+  await u.settle(30);
+  const card = u.text("#photo-wrong-card").replace(/\s+/g, " ");
+  assert.match(card, /^사진이 달라요 ?9번/);
+  const rows = u.$$("#photo-wrong-card li").map((li) => li.textContent.replace(/\s+/g, " ").trim());
+  assert.equal(rows.length, 3);
+  assert.match(rows[0], /^명세서 사진 ?숫자가 틀려요 5 · 빠진 칸이 있어요 2 ?7번$/);
+  assert.match(card, /1\.29\.0 8번 · 1\.28\.0 1번/);
+  assert.match(card, /사진과 글은 받지 않아요/);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});

@@ -107,7 +107,8 @@ internal fun SlipCheck(
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
-        if (fixing) TextButton(onClick = { editing = -1 }) { Text("빠진 줄 더하기") }
+        // [PHOTO-06] 1.29: a line can be added any time, not only after '다른 곳이 있어요'.
+        com.bamnat.app.ui.components.AddButton("칸 더하기 (빠진 줄)", onClick = { editing = -1 })
         when {
             same == true -> Text("사진과 같다고 확인했어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             fromPhoto && same == null -> Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
@@ -148,6 +149,9 @@ internal fun SlipCheck(
 
 private val TOTALS = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
 
+/** [PHOTO-06] Lines that can carry hours. */
+private val TIMED = setOf(SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.EXTRA_WORK)
+
 /** The kinds a line can be told to be, in a payslip's order. */
 private val ROLES = listOf(
     SlipRole.BASE, SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.EXTRA_WORK,
@@ -164,9 +168,11 @@ internal fun SlipLineDialog(line: SlipLine?, onDismiss: () -> Unit, onDelete: ((
     var role by remember { mutableStateOf(line?.role ?: SlipRole.ALLOWANCE) }
     var name by remember { mutableStateOf(line?.name.orEmpty()) }
     var amount by remember { mutableStateOf(line?.amount) }
+    // [PHOTO-06] The hours a premium line shows (연장 12시간), in hours as payslips print them.
+    var hours by remember { mutableStateOf(line?.minutes?.let { com.bamnat.app.ui.components.decimalText(it / 60.0) }.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (line == null) "빠진 줄 더하기" else "이 줄 고치기") },
+        title = { Text(if (line == null) "칸 더하기" else "이 줄 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("어떤 줄인가요?", style = MaterialTheme.typography.labelLarge)
@@ -175,12 +181,19 @@ internal fun SlipLineDialog(line: SlipLine?, onDismiss: () -> Unit, onDelete: ((
                 }
                 OutlinedTextField(name, { name = it.take(30) }, label = { Text("명세서에 적힌 이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 MoneyField("금액", amount, { amount = it })
+                if (role in TIMED) OutlinedTextField(hours, { v -> hours = v.filter { it.isDigit() || it == '.' }.take(6) }, label = { Text("시간 (선택)") },
+                    suffix = { Text("시간") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth())
                 if (line != null && line.role != role) Text("다음 명세서부터 ‘${name.ifBlank { line.name }}’ 줄은 ${role.label}(으)로 읽어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(SlipLine(name.trim().ifBlank { role.label }, role, amount, line?.minutes?.takeIf { role == line.role }, line?.source.orEmpty())) },
+            Button(onClick = {
+                val minutes = if (role in TIMED) hours.toDoubleOrNull()?.takeIf { it > 0 && it < 500 }?.let { Math.round(it * 60).toInt() } else null
+                onSave(SlipLine(name.trim().ifBlank { role.label }, role, amount, minutes, line?.source.orEmpty()))
+            },
                 enabled = amount != null) { Text("고치기") }
         },
         dismissButton = {

@@ -22,19 +22,37 @@ object SlipVote {
     private fun key(l: SlipLine): String =
         l.role.name + ":" + PayslipReader.ocrFix(l.name.filter { it.isLetter() }).take(3)
 
-    fun merge(texts: List<String>): Result {
-        val reads = texts.filter { it.isNotBlank() }.map { it to PayslipReader.read(it) }
+    fun merge(texts: List<String>): Result =
+        mergeResults(texts.filter { it.isNotBlank() }.map { Result(PayslipReader.read(it), emptySet(), it) })
+
+    /**
+     * [PHOTO-03] 1.29: the readings as each was read (by [SlipTable] or [PayslipReader]) with the lines each was unsure of
+     * itself (a name matched to the nearest printed one, a letter read as a digit). Such a line stays to look at unless the
+     * payslip's sums vouch for it.
+     */
+    fun mergeResults(results: List<Result>): Result {
+        val reads = results.filter { it.read.lines.isNotEmpty() || it.text.isNotBlank() }
         if (reads.isEmpty()) return Result(PayslipRead(emptyList()), emptySet(), "")
-        if (reads.size == 1) return Result(reads[0].second, emptySet(), reads[0].first)
-        val (anchorText, anchor) = reads.maxWith(compareBy<Pair<String, PayslipRead>> { adds(it.second) }.thenBy { it.second.consistent }
-            .thenBy { r -> r.second.lines.count { it.amount != null } })
-        val others = reads.map { it.second }.filter { it !== anchor }
-        val unsure = HashSet<Int>()
+        if (reads.size == 1) return Result(reads[0].read, checked(reads[0].read, reads[0].unsure), reads[0].text)
+        val anchorResult = reads.maxWith(compareBy<Result> { adds(it.read) }.thenBy { it.read.consistent }
+            .thenBy { r -> r.read.lines.count { it.amount != null } })
+        val anchor = anchorResult.read
+        val anchorText = anchorResult.text
+        val others = reads.filter { it !== anchorResult }.map { it.read }
+        val unsure = HashSet<Int>(anchorResult.unsure)
         val lines = anchor.lines.toMutableList()
         anchor.lines.forEachIndexed { i, line ->
             if (line.amount == null) return@forEachIndexed
             val k = key(line)
             val theirs = others.mapNotNull { r -> r.lines.firstOrNull { key(it) == k && it.amount != null }?.amount }
+            // [PHOTO-12] Hours too: one reading that lost a line's hours (a box read short) takes what the others read.
+            val hours = (others.mapNotNull { r -> r.lines.firstOrNull { key(it) == k && it.amount != null }?.minutes } + listOfNotNull(line.minutes))
+                .groupingBy { it }.eachCount()
+            if (hours.isNotEmpty()) {
+                val topH = hours.values.max()
+                val m = line.minutes?.takeIf { hours[it] == topH } ?: hours.filterValues { it == topH }.keys.first()
+                if (m != line.minutes) lines[i] = lines[i].copy(minutes = m)
+            }
             // Read by one way only: nothing backs it up but the payslip's own sums (checked below).
             if (theirs.isEmpty()) { unsure += i; return@forEachIndexed }
             val counts = (theirs + line.amount).groupingBy { it }.eachCount()
@@ -68,28 +86,16 @@ object SlipVote {
     }
 
     /**
-     * [unsure] less the lines the payslip's own sums vouch for: the 지급 lines when they add up to the 지급 총액 it states,
-     * the 공제 lines when they add up to its 공제 합계, and 실수령액 when it is 지급 − 공제. Two readings may put a row's
-     * amount beside another name (a side-by-side payslip read black and white); the sums settle which one is right.
+     * [unsure] less the lines the payslip's own sums vouch for ([SlipSums.vouched]): the 지급 lines when they add up to the
+     * 지급 총액 it states, the 공제 lines when they add up to its 공제 합계, and 실수령액 when it is 지급 − 공제.
      */
-    private fun checked(read: PayslipRead, unsure: Set<Int>): Set<Int> {
-        val ok = HashSet<Int>()
-        val lines = read.lines
-        if (stated(read) && adds(read)) lines.forEachIndexed { i, l -> if (l.isEarning || l.role == SlipRole.GROSS || l.role == SlipRole.TOTAL) ok += i }
-        val dedTotal = lines.firstOrNull { it.role == SlipRole.DEDUCTION_TOTAL && it.amount != null }?.amount
-        val dedSum = lines.filter { it.role == SlipRole.DEDUCTION && it.amount != null }.sumOf { it.amount!! }
-        val dedOk = dedTotal != null && dedTotal == dedSum
-        if (dedOk) lines.forEachIndexed { i, l -> if (l.role == SlipRole.DEDUCTION || l.role == SlipRole.DEDUCTION_TOTAL) ok += i }
-        val g = read.gross
-        if (dedOk && g != null && stated(read) && adds(read)) lines.forEachIndexed { i, l -> if (l.role == SlipRole.NET && l.amount == g - dedTotal!!) ok += i }
-        return unsure - ok
-    }
+    private fun checked(read: PayslipRead, unsure: Set<Int>): Set<Int> = unsure - SlipSums.vouched(read)
 
     /**
      * The 지급 lines add up to the 지급 총액 to the won. [PayslipRead.consistent] allows a little (rounding, for matching the
      * app's own sums), which would let a last 0 read as 6 vouch for itself (1.27 stress #35: 472,006 for 472,000).
      */
-    fun adds(read: PayslipRead): Boolean = read.earnings.isNotEmpty() && read.gross == read.earningsSum
+    fun adds(read: PayslipRead): Boolean = read.earnings.isNotEmpty() && read.statedGross == read.earningsSum
 
     /** The payslip states its 지급 총액 (or a 합계), so the lines can be checked against it. */
     fun stated(read: PayslipRead): Boolean = read.lines.any { (it.role == SlipRole.GROSS || it.role == SlipRole.TOTAL) && it.amount != null }
