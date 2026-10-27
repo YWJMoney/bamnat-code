@@ -35,7 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,10 +66,16 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyHit
 import com.bamnat.app.company.PayFind
+import com.bamnat.app.company.PendingWay
+import com.bamnat.app.company.cancelPending
+import com.bamnat.app.company.commit
+import com.bamnat.app.company.pendingWays
 import com.bamnat.app.ui.pay.BaseFields
+import com.bamnat.app.ui.pay.MoneyField
 import com.bamnat.core.pay.BaseAsk
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.plaza.PayFindRows
+import com.bamnat.core.plaza.PublicCycles
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -144,7 +152,11 @@ internal const val PAY_GIVE_UP_MS = 15_000L
 @androidx.annotation.VisibleForTesting
 internal var payGiveUpMs = PAY_GIVE_UP_MS
 
-enum class PayFindStep { NAME, CONFIRM, NONE, DONE }
+enum class PayFindStep {
+    NAME, CONFIRM, NONE, DONE,
+    /** [PAYG-06] The pay uses this company's way already: said so, with 자세히 고치기 and 다른 회사 찾기. */
+    USING,
+}
 
 /**
  * [PAYF-01] One question at a time, wherever 급여 방식 찾기 is: the name box with the rows under it, the pay way of the company
@@ -157,17 +169,53 @@ class PayFindState(name: String) {
     var step by mutableStateOf(PayFindStep.NAME)
     var picked by mutableStateOf<PayFindRows.Row?>(null)
     var used by mutableStateOf<PayFind.Used?>(null)
+    /** [PAYG-06] The question opened by itself on the company the user works for (its way, or 직접 만들기 when it has none). */
+    var auto by mutableStateOf(false)
+    /** [PAYG-06] The company the user works for, on the 광장 without a pay way (or not there at all): 직접 만들기 is the main button. */
+    var byHand by mutableStateOf<PayFindRows.Row?>(null)
 }
 
+/**
+ * [PAYF-01] The state of 급여 방식 찾기. [PAYG-06] 1.30 BA (사용자 "급여 적용 부분에서는 근무주기 적용한 회사가 있으면 뜨고, 없으면
+ * 검색, 검색에도 없으면 직접 설정하는 흐름"): it opens on the company the user already works for — its way at once ("‘현대제철’
+ * 급여 방식을 쓸까요?") when coworkers made one and the server answers in time, 직접 만들기 first when it has none; the box as
+ * before when nothing is known. [usingStep] lets it open on "쓰고 있어요" when the pay uses a way already (the easy setup).
+ * Without [autoStart] it is the box alone (자세히 고치기 opens on the questions, not on a company's way).
+ */
 @Composable
-fun rememberPayFindState(): PayFindState {
+fun rememberPayFindState(usingStep: Boolean = false, autoStart: Boolean = true): PayFindState {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
     // [CALI-04] 1.30 BB: the calendar on screen's company and pay ([LocalCompanyCalendar]).
-    val find = companyScope(c).find
+    val company = companyScope(c)
+    val find = company.find
     val state = remember(find) { PayFindState(find.known()) }
     // [PAYF-02] 화면 열 때 미리: the company already named is asked for before the user reads the question.
     LaunchedEffect(c) { PayFindSearch.prefetch(c, scope, state.name) }
+    LaunchedEffect(find) {
+        val using = company.payWays.way.value != null && company.pay.profile.value != null
+        val known = state.name
+        if (state.step != PayFindStep.NAME || !autoStart) return@LaunchedEffect
+        if (using && usingStep) {
+            state.step = PayFindStep.USING
+            return@LaunchedEffect
+        }
+        if (!PayFindRows.ready(known)) return@LaunchedEffect
+        val hits = if (c.companyApi.enabled) withTimeoutOrNull(PAY_SLOW_MS) { PayFindSearch.server(c, known) } else emptyList()
+        val rows = PayFindRows.merge(PayFindRows.local(known, find.knownAll()), hits?.let(PayFindSearch::rows))
+        val row = PayFindRows.knownRow(known, rows)
+        // Only while the user has not moved on: a late answer never takes the screen from under their fingers.
+        if (state.step != PayFindStep.NAME || state.name != known) return@LaunchedEffect
+        when (PayFindRows.startStep(row, using = using && usingStep, answered = hits != null)) {
+            PayFindRows.Start.CONFIRM -> {
+                state.picked = row
+                state.auto = true
+                state.step = PayFindStep.CONFIRM
+            }
+            PayFindRows.Start.BY_HAND -> state.byHand = row
+            else -> Unit
+        }
+    }
     return state
 }
 
@@ -177,7 +225,8 @@ fun rememberPayFindState(): PayFindState {
  * laid over them as they come ([PayFindRows]), then the company's pay way → 이 급여 방식 쓰기 → the 기본급 in the same place.
  *
  * [onByHand] is 직접 만들게요 with the company typed (and its public row, for the usual allowances); [onDone] ends the flow
- * (a sheet closes); [onSaved] keeps the pay with its 기본급 after the way went onto a pay that had one.
+ * (a sheet closes); [onSaved] gets the pay as it became once the way went in with its 기본급 ([PAYG-01]: the way is already
+ * kept by then, the caller only moves on). [onDetailed] is 자세히 고치기 for a pay that uses a way already ([PAYG-05]).
  */
 @Composable
 fun PayFindFlow(
@@ -188,9 +237,11 @@ fun PayFindFlow(
     onSaved: ((PayProfile) -> Unit)? = null,
     /** Inline the 직접 만들게요 below the rows is the screen's own button; a sheet shows it here. */
     byHandHere: Boolean = true,
+    onDetailed: (() -> Unit)? = null,
 ) {
     val c = LocalContext.current.appContainer
-    val find = companyScope(c).find
+    val company = companyScope(c)
+    val find = company.find
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -198,14 +249,18 @@ fun PayFindFlow(
         when (state.step) {
             PayFindStep.NAME -> NameStep(state, find, byHandHere, onByHand) { row ->
                 state.picked = row
+                state.auto = false
                 error = null
                 state.step = if (row.pay) PayFindStep.CONFIRM else PayFindStep.NONE
             }
+            PayFindStep.USING -> UsingStep(company, onDetailed) { state.step = PayFindStep.NAME }
             PayFindStep.CONFIRM -> {
                 val row = state.picked ?: return@Column
                 Text("‘${row.name}’ 급여 방식을 쓸까요?", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                 // 결정 D79: before using it, only that there is one and how many said 맞아요 — never its values.
                 StatusChip(PayFindRows.payLine(row), if (row.doubted) Tone.WAIT else Tone.GOOD)
+                // [PAYG-06] Opened by itself: why this company.
+                if (state.auto) Text("근무주기에 넣은 회사라 먼저 찾아 두었어요.", style = MaterialTheme.typography.bodyMedium)
                 if (row.dept.isNotEmpty()) Text("${row.dept}의 대표 주기에 딸린 방식이에요.", style = MaterialTheme.typography.bodyMedium)
                 Text("쓰면 이 회사 광장에 참여되고, 수당과 계산 방식만 들어와요. 근무 순서는 그대로예요. 기본급은 바로 다음에 내 것만 넣어요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -217,34 +272,53 @@ fun PayFindFlow(
                         try {
                             val used = find.use(id, row.setup)
                             state.used = used
-                            state.step = if (used == PayFind.Used.Gone) PayFindStep.NONE else PayFindStep.DONE
+                            state.step = if (used is PayFind.Used.Ready) PayFindStep.DONE else PayFindStep.NONE
                         } catch (e: CompanyException) {
                             error = companyProblem(e.code, e.field)
-                        } catch (e: com.bamnat.app.data.BackupException) {
-                            error = e.message ?: "급여 방식을 넣지 못했어요"
                         }
                         busy = false
                     }
                 }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이 급여 방식 쓰기")
                 }
-                TextButton(onClick = { state.step = PayFindStep.NAME }, enabled = !busy) { Text("다른 회사 찾기") }
+                TextButton(onClick = { state.auto = false; state.step = PayFindStep.NAME }, enabled = !busy) { Text("다른 회사 찾기") }
             }
             PayFindStep.NONE -> {
                 val row = state.picked
-                val company = row?.name ?: state.name.trim()
-                Text(if (state.used == PayFind.Used.Gone) "‘$company’ 급여 방식을 지금은 받을 수 없어요" else "아직 ‘$company’ 급여 방식이 없어요",
+                val name = row?.name ?: state.name.trim()
+                Text(if (state.used == PayFind.Used.Gone) "‘$name’ 급여 방식을 지금은 받을 수 없어요" else "아직 ‘$name’ 급여 방식이 없어요",
                     style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                Text("근무주기처럼 직접 만들어 주세요. 몇 가지만 고르면 돼요. 다 만들면 같은 회사 분들도 쓰게 ‘$company’ 이름으로 광장에 나눌지 한 번 여쭤봐요(금액·이름은 빼고).",
+                Text("근무주기처럼 직접 만들어 주세요. 몇 가지만 고르면 돼요. 다 만들면 같은 회사 분들도 쓰게 ‘$name’ 이름으로 광장에 나눌지 한 번 여쭤봐요(금액·이름은 빼고).",
                     style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = { find.none(company); onByHand(company, row?.publicId) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Button(onClick = { find.none(name); onByHand(name, row?.publicId) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text("직접 만들게요")
                 }
                 TextButton(onClick = { state.step = PayFindStep.NAME }) { Text("다른 회사 찾기") }
             }
-            PayFindStep.DONE -> DoneStep(c, state, onDone, onSaved)
+            PayFindStep.DONE -> {
+                val way = (state.used as? PayFind.Used.Ready)?.way
+                if (way == null) LaunchedEffect(Unit) { state.step = PayFindStep.NAME }
+                else PendingDone(c, company, way, onDone, onSaved)
+            }
         }
     }
+}
+
+/** [PAYG-06] The pay already uses a company's way: what it is, and the ways to change it. */
+@Composable
+private fun UsingStep(company: com.bamnat.app.company.CompanyScope, onDetailed: (() -> Unit)?, onOther: () -> Unit) {
+    val way by company.payWays.way.collectAsStateWithLifecycle()
+    val w = way
+    if (w == null) {
+        LaunchedEffect(Unit) { onOther() }
+        return
+    }
+    Text("‘${w.company}${w.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}’ 급여 방식을 쓰고 있어요",
+        style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+    Text("같은 회사 분들이 맞춘 계산 방식에 내 기본급으로 계산하고 있어요. 수당이나 계산 방식 하나만 고치려면 자세히 고치기가 빨라요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (onDetailed != null) Button(onClick = onDetailed, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("자세히 고치기") }
+    OutlinedButton(onClick = onOther, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("다른 회사 급여 방식 찾기") }
 }
 
 /** The box and its rows: the phone's at once, the server's laid over them, and never "없어요" for an answer still coming. */
@@ -254,6 +328,24 @@ private fun NameStep(state: PayFindState, find: PayFind, byHandHere: Boolean, on
     Text("우리 회사 급여 방식 찾기", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
     Text("회사 이름을 치면 같은 회사 분들이 확인한 계산 방식이 있는지 바로 보여요. 있으면 그대로 쓰고 기본급만 넣어요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // [PAYG-13] A way chosen and left before its 기본급: said plainly that nothing went in.
+    val pending = companyScope(c).pendingWays
+    val dropped by pending.dropped.collectAsStateWithLifecycle()
+    dropped?.let { d -> Text("‘${d.company}’ 급여 방식은 넣지 않았어요. 다시 고르면 기본급만 넣고 바로 쓸 수 있어요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+    // [PAYG-06] The company the user works for, with no pay way yet: making it is the one thing left.
+    state.byHand?.takeIf { PublicCycles.norm(it.name) == PublicCycles.norm(state.name.trim()) }?.let { row ->
+        SoftCard(highlighted = true) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("‘${row.name}’ 급여 방식은 아직 없어요", style = MaterialTheme.typography.titleMedium)
+                Text("근무주기에 넣은 회사예요. 몇 가지만 골라 직접 만들면 같은 회사 분들의 첫 급여 방식이 돼요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { find.none(row.name); onByHand(row.name, row.publicId) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Text("‘${row.name}’ 직접 만들기", maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
     OutlinedTextField(
         state.name, { state.name = it.take(40) },
         label = { Text("회사 이름") },
@@ -313,33 +405,94 @@ private fun NameStep(state: PayFindState, find: PayFind, byHandHere: Boolean, on
     }
 }
 
-/** [PAYF-06] The way is in: with a pay that had amounts, the 기본급 is checked right here; without one, the amounts screen asks it. */
+/**
+ * [PAYG-01][PAYG-02] 1.30 묶음 BA (사용자 2026-10-27 "기본급 칸(비우면 다음으로 못 감) — 입력을 안 해도 잘 넘어가고 있음. 나중에
+ * 클릭하면 적용이 된 상태로 페이지를 빠져나간다"): the way is read, nothing is in yet. The 기본급 starts empty (the setup's own is
+ * a chip), the company's 통상시급 hours first, the allowances the company sets for everyone said, and those that differ by person
+ * asked (never required). '이대로 계산' puts it all in at once ([commit]); leaving this step any way (이전, 다른 회사, the sheet
+ * pulled down, back) puts nothing in ([cancelPending]).
+ */
 @Composable
-private fun DoneStep(c: AppContainer, state: PayFindState, onDone: () -> Unit, onSaved: ((PayProfile) -> Unit)?) {
-    val used = state.used
-    val company = state.picked?.name.orEmpty()
-    if (used != PayFind.Used.Applied) {
-        Text("이제 내 금액만 넣으면 돼요", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-        Text("‘$company’ 방식으로 계산해요. 기본급과 내 수당 금액만 물어볼게요.", style = MaterialTheme.typography.bodyMedium)
-        Button(onClick = onDone, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("내 금액 넣기") }
-        return
-    }
+internal fun PendingDone(
+    c: AppContainer,
+    company: com.bamnat.app.company.CompanyScope,
+    way: PendingWay,
+    onDone: () -> Unit,
+    onSaved: ((PayProfile) -> Unit)?,
+    /** What came before, said first ("근무주기를 넣었어요"); null for the way alone. */
+    intro: String? = null,
+    /** [PAYG-03] "급여 방식은 넣지 않을게요": nothing goes in, said as a choice rather than by closing. */
+    onSkip: (() -> Unit)? = null,
+) {
     val scope = rememberCoroutineScope()
     val month = remember { Today.month() }
-    val pay = companyScope(c).pay
-    val profile by pay.profile.collectAsStateWithLifecycle()
-    var base by rememberSaveable { mutableStateOf(BaseAsk.known(profile, month)) }
+    val profile by company.pay.profile.collectAsStateWithLifecycle()
+    var base by rememberSaveable { mutableStateOf<Long?>(null) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
-    Text("급여 방식을 넣었어요", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-    Text("‘$company’ 수당과 계산 방식이 들어왔어요. 근무 순서는 그대로예요. 기본급만 확인해 주세요.", style = MaterialTheme.typography.bodyMedium)
-    BaseFields(profile?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY, base, { base = it }, hours, { hours = it }, profile, month)
+    val amounts = remember { mutableStateMapOf<String, Long>() }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // Closed before 이대로 계산: the way waits no more, and nothing went in.
+    DisposableEffect(way) { onDispose { company.cancelPending(c, way) } }
+    val had = profile
+    // [ITEM-06] Only what differs by person, and only allowances the pay does not have yet (its own amounts stay).
+    val needs = remember(way.text, had) {
+        val mine = had?.items?.map { it.name }?.toSet().orEmpty()
+        runCatching { company.share.amountNeeds(way.text) }.getOrDefault(emptyList())
+            .filter { it.key.startsWith("item:") && it.key.removePrefix("item:") !in mine }
+    }
+    intro?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+    Text("기본급만 넣으면 끝나요", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+    Text("‘${way.title}’ 수당과 계산 방식이 준비됐어요. ‘이대로 계산’을 누르면 한 번에 들어가요. 그 전에 닫으면 급여는 그대로예요.",
+        style = MaterialTheme.typography.bodyMedium)
+    CommonItemLines(way.text)
+    val wage = had?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY
+    BaseFields(wage, base, { base = it }, hours, { hours = it }, had, month,
+        companyHours = way.hours, companyName = way.title, keepBase = BaseAsk.keepChip(had, month))
+    if (needs.isNotEmpty()) {
+        Text("내 수당 금액 (사람마다 다른 것만, 몰라도 돼요)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+        needs.forEach { need ->
+            MoneyField(
+                label = "${need.label} · ${need.hint}",
+                value = amounts[need.label],
+                onChange = { v -> if (v == null) amounts.remove(need.label) else amounts[need.label] = v },
+                placeholder = "모르면 비워 두세요",
+            )
+        }
+    }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     Button(onClick = {
-        val b = base ?: return@Button
-        val p = pay.profile.value ?: return@Button onDone()
-        val next = BaseAsk.apply(p, b, month, hours)
-        if (onSaved != null) onSaved(next) else scope.launch { pay.save(next) }
-        onDone()
-    }, enabled = (base ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("이대로 계산") }
+        val b = base?.takeIf(BaseAsk::ready) ?: return@Button
+        busy = true
+        error = null
+        // Not cancelled when the sheet leaves the screen half way (a first pay made hides the setup's sheet at once): the way
+        // goes in whole, and the screen after it opens.
+        scope.launch(kotlinx.coroutines.NonCancellable) {
+            // A new pay counts from a year back, so the months already worked come to an amount too (as the amounts screen).
+            val from = if (company.pay.profile.value == null) com.bamnat.core.pay.PaySince.start(month, null) else month
+            val ok = try {
+                company.commit(c, way, b, hours, from, amounts.toMap())
+            } catch (e: com.bamnat.app.data.BackupException) {
+                error = e.message ?: "급여 방식을 넣지 못했어요"
+                false
+            } catch (e: org.json.JSONException) {
+                error = "이 급여 방식을 읽지 못했어요. 앱을 업데이트한 뒤 다시 해 주세요"
+                false
+            }
+            busy = false
+            if (!ok) {
+                if (error == null) error = "급여 방식을 넣지 못했어요"
+                return@launch
+            }
+            company.pay.profile.value?.let { onSaved?.invoke(it) }
+            onDone()
+        }
+    }, enabled = !busy && BaseAsk.ready(base), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이대로 계산")
+    }
+    if (onSkip != null) TextButton(onClick = onSkip, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text("급여 방식은 넣지 않을게요")
+    }
 }
 
 /** One company under the box: its name and the only thing said of its pay way before it is used (결정 D79). */
@@ -375,7 +528,10 @@ fun PayFindEntry(modifier: Modifier = Modifier, open: Boolean = false) {
     if (showing) PayFindSheet(onDismiss = { showing = false })
 }
 
-/** [PAYF-01] The flow in a sheet, for places that are not a question of their own (자세히 고치기, the pay screen's line). */
+/**
+ * [PAYF-01] The flow in a sheet, for places that are not a question of their own (자세히 고치기, the pay screen's line).
+ * [PAYG-01] Pulled down (or back) before '이대로 계산': nothing went in. [onSaved] hears of the pay once the way is in (kept already).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PayFindSheet(onDismiss: () -> Unit, onSaved: ((PayProfile) -> Unit)? = null) {
@@ -392,22 +548,26 @@ fun PayFindSheet(onDismiss: () -> Unit, onSaved: ((PayProfile) -> Unit)? = null)
  * away, until a company pay way is in use. × hides it on this phone; the easy setup's first question still has it, as it says.
  */
 @Composable
-fun PayFindLine(onSaved: ((PayProfile) -> Unit)? = null, modifier: Modifier = Modifier) {
+fun PayFindLine(@Suppress("UNUSED_PARAMETER") onSaved: ((PayProfile) -> Unit)? = null, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val c = context.appContainer
     val hints = remember { com.bamnat.app.ui.calendar.HintStore(context) }
-    var closed by rememberSaveable { mutableStateOf(hints.done(LINE_CLOSED)) }
+    // [PAYG-10] Closed for this calendar only: another calendar's pay still offers its own company's way.
+    val calendar = LocalCompanyCalendar.current
+    val key = if (calendar == com.bamnat.app.data.PersonalCalendar.MAIN) LINE_CLOSED else "$LINE_CLOSED:$calendar"
+    var closed by rememberSaveable(key) { mutableStateOf(hints.done(key)) }
     var open by rememberSaveable { mutableStateOf(false) }
     val company = companyScope(c)
     val way by company.payWays.way.collectAsStateWithLifecycle()
     val applied by company.store.applied.collectAsStateWithLifecycle()
-    if (open) PayFindSheet(onDismiss = { open = false }, onSaved = onSaved)
+    // [PAYG-01] The way is kept by the time it is saved; the pay screen follows the store, so nothing is saved twice.
+    if (open) PayFindSheet(onDismiss = { open = false }, onSaved = null)
     if (closed || way != null || applied != null) return
     SoftCard(modifier) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("우리 회사 급여 방식이 있나요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                IconButton(onClick = { hints.markDone(LINE_CLOSED); closed = true }) { Icon(Icons.Filled.Close, "닫기") }
+                IconButton(onClick = { hints.markDone(key); closed = true }) { Icon(Icons.Filled.Close, "닫기") }
             }
             Surface(
                 onClick = { open = true },

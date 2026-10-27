@@ -33,6 +33,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import com.bamnat.app.company.pendingWays
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -118,14 +119,15 @@ class BBScreenshotTest : ScreenshotBase() {
         waitFor(300)
         assertTrue(done)
         assertEquals("s1", c.companyOf(b).store.applied.value?.setup)
-        assertEquals("s1", c.companyOf(b).payWays.way.value?.setup)
+        // [PAYG-01] 1.30 BA: the second calendar's pay way waits for its 기본급; 내 달력's has nothing waiting.
+        assertEquals("s1", c.companyOf(b).pendingWays.pending.value?.setup)
+        assertNull(c.companyOf(com.bamnat.app.data.PersonalCalendar.MAIN).pendingWays.pending.value)
         assertEquals("공장A", c.companyStore.applied.value?.company)
         assertNull(c.payWays.way.value)
-        // The second calendar's pay asks its 기본급 next; 내 달력's asks nothing.
         assertTrue(c.companyOf(b).payWays.askBase.value)
         assertFalse(c.payWays.askBase.value)
         on(b) { PayWayCard(c.calendars.pay(b).profile.value, update = {}) }
-        assertTrue(shows("기본급을 확인해 주세요", exact = true))
+        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
     }
 
     // ---- [CALI-08] 광장 위 달력 칩: 달력마다 그 회사 ----

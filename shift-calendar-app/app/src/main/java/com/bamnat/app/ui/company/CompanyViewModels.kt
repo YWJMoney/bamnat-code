@@ -404,13 +404,19 @@ class CompanyDetailViewModel(
                     _state.value = State.Loaded(again)
                     again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
                 }
-                if (!withPay) text = org.json.JSONObject(text).apply { remove("pay") }.toString()
-                val result = scope.share.apply(text, rotation = true, todayStep = todayStep)
-                if (withPay && (result.rules || result.pendingPay)) {
-                    scope.payWays.use(com.bamnat.app.company.PayWay(page.id, page.name, setup.dept, setup.id))
+                // [PAYG-03] 1.30 BA: on a pay that has its amounts, the cycle goes in now and the pay waits for its 기본급 on the
+                // pay screen (PendingWay), put in all at once there or not at all; a first pay is made on the amounts screen.
+                val payWaits = withPay && scope.pay.profile.value != null && runCatching { org.json.JSONObject(text).has("pay") }.getOrDefault(false)
+                val full = text
+                if (!withPay || payWaits) text = org.json.JSONObject(text).apply { remove("pay") }.toString()
+                val result = scope.share.apply(text, rotation = true, todayStep = todayStep).let { r -> if (payWaits) r.copy(rules = true) else r }
+                if (payWaits) {
+                    com.bamnat.app.company.PendingWays.of(scope).offer(com.bamnat.app.company.PendingWay(page.id, page.name, setup.dept, setup.id, full,
+                        com.bamnat.app.company.PendingWay.Source.APPLY))
+                    scope.payWays.askBase(true)
+                } else if (withPay && result.pendingPay) {
+                    // The amounts screen does not ask "쓸까요?" again; the way is kept when its amounts are saved.
                     scope.payWays.decided = true
-                    // A pay with amounts got the company's rules: its 기본급 is checked on the pay screen next.
-                    if (result.rules) scope.payWays.askBase(true)
                 }
                 // [PLZ-08] 쓰는 사람: this calendar now uses this rule set, and no longer the one before (by the company's id; 1.29 sent its name).
                 val before = store.applied.value
@@ -424,7 +430,7 @@ class CompanyDetailViewModel(
                 store.setMember(page.id, page.name)
                 // [PLAZA-34] What was just put in is what the plaza has: saving it again asks nothing.
                 scope.autoShare.rebase()
-                store.pendingPay = if (result.pendingPay) text else null
+                store.pendingPay = if (result.pendingPay && !payWaits) text else null
                 c.telemetry.event("company_apply", if (setup.adopted) "adopted" else "pending")
                 // [SPD-16] The next screen opens now; the room (for 고친 점) is read after it, not before.
                 done(result)
@@ -1132,7 +1138,8 @@ class CompanyPayViewModel(
     /** [PLAZA-03] Whether the company's setup has pay rules to ask "이 회사 급여 설정을 쓸까요?" about. */
     val hasRules: Boolean get() = summary?.hasRules == true
     /** [PAYF-01] 1.29 AP: the user just chose this pay way on the screen before; the question is not asked twice. */
-    val decided: Boolean = scope.payWays.decided.also { scope.payWays.decided = false }
+    val decided: Boolean = scope.payWays.decided.also { scope.payWays.decided = false } ||
+        com.bamnat.app.company.PendingWays.of(scope).pending.value != null
     /** [PLAZA-03] The talk the 다른 점 proposal goes to. */
     val talk = TalkHolder(c, viewModelScope, calendar)
 
@@ -1182,6 +1189,8 @@ class CompanyPayViewModel(
                     scope.pay.save(com.bamnat.core.pay.RuleOnlyNeeds.settled(made.copy(monthlyHours = h)), keepUndo = false)
                 }
                 scope.store.pendingPay = null
+                // [PAYG-01] 1.30 BA: the company's way is in use from now, its amounts given (not from the moment it was chosen).
+                com.bamnat.app.company.PendingWays.keptWith(c, scope, applied, t, hours)
                 c.telemetry.event("pay_setup_done", "COMPANY")
                 done()
             } catch (e: BackupException) {
