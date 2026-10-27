@@ -202,10 +202,13 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** The user opened [i]: its answers are read. */
     fun opened(i: Inquiry) = c.inquiryStore.read(i, _list.value.orEmpty())
 
-    /** The alarm check as the 알람 점검 screen copies it, cut to what the server takes. */
+    /**
+     * The alarm check as the 알람 점검 screen copies it, cut to what the server takes. [NXT-12] 1.29: without the
+     * '기능 상태' rows, which 처리방침 3.2 §1-3 does not list for an inquiry (the screen and its own copy keep them).
+     */
     suspend fun alarmCheck(context: Context): String = withContext(Dispatchers.IO) {
         val diag = DiagnosticsViewModel(c)
-        diag.report(context, diag.events()).asText().take(InquiryClient.DIAG_MAX)
+        diag.report(context, diag.events()).withoutFlags().asText().take(InquiryClient.DIAG_MAX)
     }
 
     /** Why [text] cannot go yet, in words; null when it can. */

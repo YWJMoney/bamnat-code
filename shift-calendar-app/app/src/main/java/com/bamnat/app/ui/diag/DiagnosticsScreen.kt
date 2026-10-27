@@ -102,6 +102,9 @@ data class AlarmCheck(val title: String, val ok: Boolean?, val why: String, val 
 /** A plain-text report of everything on the diagnostics screen, for pasting into a bug report. */
 data class DiagReport(val sections: List<Pair<String, List<String>>>) {
     fun asText(): String = sections.joinToString("\n\n") { (title, lines) -> "[$title]\n" + lines.joinToString("\n") }
+
+    /** [NXT-12] The same report without the dark-merge rows, for what leaves the phone with an inquiry. */
+    fun withoutFlags(): DiagReport = copy(sections = sections.filter { it.first != FLAG_SECTION })
 }
 
 class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {

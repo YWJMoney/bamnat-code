@@ -986,3 +986,4 @@ NXT-08,"1.29 AU: 의존성 판 올림(Dependabot #95~#105·#128 대신) — 작�
 NXT-09,"1.29 AU 순번 460: 손으로 쓴 Baseline Profile을 1.29 새 화면 경로(급여 설정·회사 검색)까지 넓힘, 실제 생성은 사용자 워크플로",2 (1.29.0),완료,,"app/src/main/baseline-prof.txt NXT-09 덩어리. 시험: BaselineProfileRulesTest.thePaySetupAndCompanySearchAreCovered"
 NXT-10,"1.29 AU: Phase 0~2 남은 줄(체크리스트 [ ] 65줄) 다시 보기 — 날짜 지난 줄 끝남 목록, 2027 장기요양·Play 수수료 조사, U 줄마다 따라 할 안내",2 (1.29.0),완료,,"docs/plans/1.29-AU-남은줄-정리.md(65줄+460, 닫을 줄 13·20, 42·45·71 조사 링크, 부록 A 수면 검토 묶음, 부록 B 급여 근거)"
 NXT-11,"1.29 AU: WorkManager가 앱의 JobScheduler 번호(4401~4404)와 겹치지 않게 번호 범위를 정함(Configuration)",2 (1.29.0),완료,,"BamnatApp.WORK_JOB_IDS 100000..199999. 시험: NxtStartupProvidersTest(WorkManager 번호 범위)"
+NXT-12,"1.29 통합: 문의에 붙는 알람 점검에서 기능 상태 줄 빼기(처리방침 3.2 1-3항에 없는 항목, AU가 찾음)",2 (1.29.0),완료,,"InquiryViewModel.alarmCheck → DiagReport.withoutFlags(). 알람 점검 화면과 화면의 복사는 그대로. 시험: InquiryDiagTest"
