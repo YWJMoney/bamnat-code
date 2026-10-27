@@ -51,6 +51,25 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
    없으면 서버는 구매를 `verified:false`로 답하고(앱은 휴대폰의 Play 상태를 써요), 체험 전환 동의가 없을 때 다음 결제를 멈추지 못해요.
    패키지 이름이 `com.bamnat.app`이 아니면 일반 변수 `PLAY_PACKAGE`도 넣어요.
 
+5-3. **(1.30) 조회 속도 설정 네 가지** [SPD-02][SPD-03]
+   서버 코드만으로도 한 화면의 데이터베이스 왕복이 2~3번으로 줄었어요. 아래 넷은 그 왕복 하나하나를 짧게 해요. 한 번만 하면 돼요.
+   1. **D1 위치 보기**: 왼쪽 메뉴 저장소 및 데이터베이스(Storage & databases) → D1 SQL 데이터베이스 → `bamnat-company` → 지표(Metrics)에서
+      쿼리가 어느 지역(Region)에서 처리됐는지 봐요. 아시아·태평양(APAC)이 아니면 휴대폰에서 먼 거예요. 위치는 만든 뒤에 바꿀 수 없어서,
+      2번(Smart Placement)과 3번(읽기 복제)이 그 거리를 메워요. 앱을 연 뒤 아래 확인에서 `x-d1-region` 값으로도 볼 수 있어요.
+   2. **Smart Placement 켜기**: 컴퓨팅(Workers) → Workers 및 Pages → `bamnat-company` → 설정(Settings) → 일반(General) →
+      배치(Placement)에서 스마트(Smart)를 고르고 저장해요. 서버가 데이터베이스 가까이에서 돌게 되어 한 답 안의 여러 읽기가 바다를 건너지 않아요.
+      켜고 15분쯤 지나야 자리를 잡아요.
+   3. **D1 읽기 복제 켜기**: 저장소 및 데이터베이스 → D1 SQL 데이터베이스 → `bamnat-company` → 설정(Settings) →
+      읽기 복제 켜기(Enable Read Replication)를 눌러요. 요금은 그대로예요(읽은 행·쓴 행만 셈). 서버는 1.30부터 D1 세션으로 읽고,
+      쓰기 뒤에는 앱이 받은 북마크(`x-d1-bookmark`)로 방금 쓴 것까지 보이게 읽어요. 1.29 이하 앱의 읽기(X-Device가 있는 것)는 원본에서 읽어요.
+   4. **RATE_SALT 확인**: Worker → 설정(Settings) → 변수 및 비밀(Variables and Secrets)에 `RATE_SALT`(Secret)가 있는지 봐요.
+      없으면 5번처럼 넣고 배포해요. 없어도 서버가 스스로 만든 값을 Worker마다 한 번만 읽지만, 비밀값이 있는 게 원래 설계예요.
+   확인: 휴대폰 크롬이나 컴퓨터에서 `https://bamnat-company.<계정 이름>.workers.dev/api/board?tab=voting`을 열고
+   (컴퓨터라면 `curl -sI <주소>`), 응답 머리글의 `x-d1-region`(답한 D1 지역, 원본이면 `;primary`), `cf-placement`(`remote-…`면
+   Smart Placement가 옮긴 것, `local-…`면 그대로)를 봐요. 시간은 `curl -s -o /dev/null -w '%{time_starttransfer}\n' <주소>`를 열 번 돌려 봐요.
+   엣지 캐시(`cf-cache-status`)는 workers.dev 주소에서는 쓰이지 않고 직접 연결한 도메인에서만 쓰여요. 그래서 서버가 같은 목록을
+   메모리에 15초~5분 따로 들고 있어요.
+
 코드를 고친 뒤에는 3번만 다시 하면 돼요. 데이터베이스와 비밀값, 크론 트리거는 그대로 남아요.
 
 ## 개발자 앱 (/admin)
@@ -152,15 +171,17 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | --- | --- |
 | `GET /api/companies?q=` | 회사 찾기. 띄어쓰기, (주), 주식회사, Co., Ltd.는 빼고 찾아요. 아직 확인 중인 회사(첫 제보만 있는 회사)도 이름 일부로 나와요(`first: true`, 1.26 결정 D79). 초성만 두 글자 넘게(`ㅅㅅㅈㅈ`) 적으면 초성으로 찾아요(쓰는 규칙이 있는 회사 먼저, `companies.cho`·`aliases.cho`, 처음 찾을 때 500개씩 채움) [PLAZA-03][PLAZA-10] |
 | `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정, 각 설정을 풀어 쓴 줄(`lines`), 지지(`support`) [PLAZA-05]. 설정에는 순서(`rotation`) 대신 요일별 근무 `weekly`(월~일 7칸, 근무 이름이나 null)나 매달 근무표 `roster: true`가 있을 수 있어요 [PLAZA-01]. **1.26**: 헤더 `X-Device`가 그 회사에 참여한 휴대폰일 때만 설정에 급여 방식(`pay`)과 급여 줄이 와요. 다른 휴대폰·옛 앱에는 근무 시각·순서와 `pay: true`, `payHidden: true`만(`member: false`). 참여한 휴대폰도 하루 120번 넘게 읽으면 그날은 근무만(`limited: true`). 안정이면 `stable: true` [PLAZA-08] |
+| `GET /api/companies/:id?with=room,talk` | **1.30** 회사 화면 한 번에: 위 답 그대로에 참여한 휴대폰이면 `room`(아래 `/room`의 답)과 `talk`(회사 정보 광장 `/setups/room/posts`의 답)을 더해요. 참여하지 않았으면 페이지만. `with=room`·`with=talk` 하나만도 돼요 [SPD-05] |
+| `GET /api/companies/all` | **1.30** 찾을 수 있는 모든 회사 한 목록(숨김·합침·직군 공통 제외): `{id, name, aliases, said, cho, adopted, pending, first?, users, sites, lead}`(검색 답의 대표 주기 줄과 같음), `n`, `at`. 서버 메모 5분·엣지 300초, `ETag`, `If-None-Match`가 같으면 304(본문 없음). 회사 하나 약 300~500바이트, 휴대폰·값 없음 [SPD-06] |
 | `GET /api/companies/:id/room` | **1.26** 회사 방(헤더 `X-Device`, 참여한 휴대폰만, 아니면 403 `member`): 내가 쓰는 판(`base`, 첫 판이면 `first`), 같은 부서 다른 판(`others`: 사람 수·지지·설정·`changes`), `stable`(같은 판을 쓰는 휴대폰 3대 이상 + 30일 동안 다른 판·채택 없음) [PLAZA-09] |
-| `GET /api/members` · `POST /api/members` · `DELETE /api/members` | **1.26** 회사 참여: 목록(헤더 `X-Device`), 참여 `{device, company, cal}`(달력 하나에 회사 하나, 바꾸면 30일 뒤 `member_wait`, 휴대폰당 2곳 `member_limit`, 409), 떠나기 `{device, company}`(30일은 남아요). 적용(`POST /api/uses`)과 제보도 참여로 세요 [PLAZA-07] |
+| `GET /api/members` · `POST /api/members` · `DELETE /api/members` | **1.26** 회사 참여: 목록(헤더 `X-Device`), 참여 `{device, company, cal}`(달력 하나에 회사 하나, 바꾸면 30일 뒤 `member_wait`, 휴대폰당 2곳 `member_limit`, 409), 떠나기 `{device, company}`(30일은 남아요). 적용(`POST /api/uses`)과 제보도 참여로 세요 [PLAZA-07]. **1.30** `POST /api/members?with=page`(또는 본문 `"with": "page"`)면 참여한 답에 `page`(참여자로 읽은 `GET /api/companies/:id`의 답)를 더해 다음 요청이 필요 없어요 [SPD-08] |
 | `GET /api/terms` | 채택 점수와 채택 보상 기간, **1.26** 새 정보 보상 `firstMonths` (보내기 전에 앱이 보여 줘요) |
 | `POST /api/reports` | 제보 보내기 `{v: 1, device, company, dept, verified, note, setup}`. 앱에 없는 방식이면 `ask: true`와 설명(1500자까지)을 `note`에. 선택: `job`(직군 광장), `region`(시·도 코드), `topic: true`(회사 없이 직군 공통 규칙, `job` 필요), `amends`(고치려는 쓰는 규칙 id) [PLZ-02][PLZ-12], **1.26** `cal`(앱 안 달력 id, 참여에 씀), `auto`(승인 뒤 저절로 보낸 것). 답에 `first`(그 회사·부서 첫 판), `newInfo`(급여 방식까지 담긴 첫 판, 그때만 `reward`: 하루 1번·1년 3번, 넘으면 `owed`), `member`(보낸 휴대폰의 참여 결과) [PLAZA-10] |
 | `GET /api/reports/:id` | 제보가 어디까지 왔는지: 점수, 채택, 거절 이유, 보상 |
 | `DELETE /api/reports/:id` | 제보 되돌리기 (헤더 `X-Device`) |
 | `DELETE /api/mine` | 이 설치가 보낸 것 전부 지우기 (헤더 `X-Device`) |
 | `POST /api/votes` | 맞았어요·달라요 `{device, company, setup, ok, verified?, why?}` |
-| `GET /api/board?tab=voting\|adopted&from=&q=&job=&region=&sort=` | 회사 규칙 광장: 모든 회사의 투표 중인 규칙(최근 활동 순)이나 채택된 규칙, 20개씩. `q`는 회사 이름이나 다른 이름(회사 찾기처럼 띄어쓰기·(주) 무시, 두 글자부터) [COMM-07]. `job`은 직군 광장, `region`은 시·도 코드, `sort`는 `recent`·`trust`·`used` [PLZ-05][PLZ-12] |
+| `GET /api/board?tab=voting\|adopted&from=&q=&job=&region=&sort=` | 회사 규칙 광장: 모든 회사의 투표 중인 규칙(최근 활동 순)이나 채택된 규칙, 20개씩. `q`는 회사 이름이나 다른 이름(회사 찾기처럼 띄어쓰기·(주) 무시, 두 글자부터) [COMM-07]. `job`은 직군 광장, `region`은 시·도 코드, `sort`는 `recent`·`trust`·`used` [PLZ-05][PLZ-12]. **1.30** 모두에게 같은 답이라 `Cache-Control: public, max-age=20`(엣지)·서버 메모 15초, `GET /api/plazas`는 300초, `GET /api/terms`는 600초(엣지만). 앱이 자기 쓰기 뒤 `Cache-Control: no-cache`로 읽으면 보관본을 건너뛰어요 [SPD-04] |
 | `GET /api/plazas` | 직군 광장 목록(채택·투표 중·시세 수), 시·도, 제안 항목, 시세 단위 [PLZ-12] |
 | `GET /api/companies/:id/history?setup=` | 한 부서 규칙이 거쳐 온 버전: 채택 방식(`auto`·`amend`·`rival`·`promote`·`developer`), 날짜, 앞 버전과 달라진 줄, 제안한 글, 그 버전의 설정 `body`(비교·되돌리기) [PLZ-04][PLAZA-05]. **1.26** 급여 방식과 급여 줄은 참여한 휴대폰(헤더 `X-Device`)에만, 토론의 제안 줄도 급여 항목은 참여한 휴대폰에만 [PLAZA-08] |
 | `GET /api/companies/:id/setups/:setup/posts` | 한 규칙의 토론. 헤더 `X-Device`가 있으면 내 글 표시와 가려진 내 글의 이유 [COMM-06] |
@@ -187,6 +208,8 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | `POST /api/admin-link` | 관리자 앱의 6자리 코드로 이 휴대폰을 그 관리자에 잇기 `{code}` (헤더 `X-Device`, 10분, 한 번, 관리자당 2대). 최고 관리자가 승인하면 프로. `DELETE`는 연결 끊기 |
 | `POST /api/purchases` | Play 구매 토큰 확인 `{product, token}` (헤더 `X-Device`) → `subscriptionsv2.get`으로 상태·만료·체험·자동 갱신. 키가 없으면 `verified:false` [MON-03] |
 | `POST /api/consents` | 무료 체험이 유료로 바뀌기 전 답 `{answer: keep\|cancel, product, price, trialEnd, shown}` (헤더 `X-Device`, 전자상거래법 제13조 제6항) [MON-06] |
+
+**1.30 D1 세션(읽기 복제)** [SPD-02]: 광장 읽기(`/api/companies…`, `/api/board`, `/api/plazas`, `/api/terms`, `GET /api/members`)와 광장 쓰기(`/api/reports`, `/api/votes`, `/api/posts…`, `/api/uses`, `/api/members`, `/api/nick`)의 답에 머리글 `x-d1-bookmark`(D1이 만든 북마크, 기기 정보 아님)와 `x-d1-region`이 붙어요. 앱이 받은 마지막 북마크를 다음 GET의 `x-d1-bookmark`로 보내면 그만큼 새로운 사본에서 읽어요. 북마크가 없으면 쓰기·`X-Device`가 있는 읽기·`Cache-Control: no-cache`는 원본에서, 그 밖은 가장 가까운 사본에서 읽어요. 이상한 북마크는 없는 것으로 봐요.
 
 ## 프로·결제·보상 이용권 [MON-02]~[MON-11]
 

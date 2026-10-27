@@ -5,6 +5,11 @@ main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
 
+# SP1 1.30 [SPD-02] Smart Placement: the Worker runs near the D1 database when that answers faster, so one answer does not cross
+# the sea for each of its reads. A dashboard deploy sets it in Settings > General > Placement (README 5-3).
+[placement]
+mode = "smart"
+
 # Clears network hashes, spent limits and old questions on time even when nobody sends anything.
 [triggers]
 crons = ["17 * * * *"]
