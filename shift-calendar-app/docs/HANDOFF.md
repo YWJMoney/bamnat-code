@@ -18,7 +18,8 @@
 - **관리자 앱(AX, ADMX)**: `src/plaza-diff.js`(diffFacts, 판 차이의 정본), `src/admin-insight.js`, `src/admin/style.js`·`admin/views/*`(번들러가 하위 폴더를 따라감).
 - **메모(AY)**: `ui/components/SelectionEdgeScroll.kt`(`LongTextField`·`rememberEdgeScroll`). 긴 글 칸은 이걸로. `diag/TestLab.kt`: Test Lab 기기는 서버에 쓰지 않음.
 - **처리방침 3.4**(게시 10-28, 시행 11-27, 3.2·3.3과 같은 날): 1-2항 회사 공통 수당 금액, 1-13항 이유 두 개. 늦게 합치면 관리자 앱 일정에서 날짜를 옮겨요.
-- **빌드**: release `ndk.debugSymbolLevel=FULL`(NDK 27.0.12077973 필요, AAB 예산 안). Gradle 데몬이 메모리 부족이면 `-Dorg.gradle.jvmargs=-Xmx3g`. 서버는 **앱보다 먼저** 배포(옛 서버는 v4 설정을 거절).
+- **빌드**: release `ndk.debugSymbolLevel=FULL`(NDK 27.0.12077973 필요). 크기 예산은 AAB를 `BUNDLE-METADATA/` 없이 재요(1.30.0 서명본 APK 9.22MB/9.5, AAB 23.70MB 중 휴대폰 몫 9.31MB/11). Gradle 데몬이 메모리 부족이면 `-Dorg.gradle.jvmargs=-Xmx3g`. 서버는 **앱보다 먼저** 배포(옛 서버는 v4 설정을 거절).
+- **마지막 시험(통합 브랜치 끝)**: core 1213, unit 693(1 건너뜀), shots-a 263, shots-b 868, api, wear 6, lint, 서버 npm 377, 관리자 UI 51, 실패 0. 추적표 1153줄.
 - 사용자 몫: 회사 서버 배포 + Cloudflare 대시보드(D1 지역 확인·Smart Placement·읽기 복제·RATE_SALT 확인), PR 합치기 = 3.4 게시, 휴대폰 확인, Play 업로드. `release/1.30.0/사용자가-해야-할-일.md`.
 
 ## 0-a2. 앞 판: 1.29.0 급여 흐름·사진 정확도·투자 캡처·검색 속도·관리자 복사 (2026-10-27)
@@ -277,7 +278,7 @@ python3 tools/check_tracker.py                             # 추적표 검사
   - 시작 작업: `AppContainer.start()`의 이름 붙은 작업은 **21개까지(새 작업 0)**, 달력이 첫 달을 그리기 전에는 **7개 이하**예요. 나머지는 `afterFirstFrame()`에서 돌아요(`perf/StartupBudgetTest`).
   - 화면 사진 시험: 묶음마다 `screenshots/<묶음>ScreenshotTest.kt`에 `class XScreenshotTest : ScreenshotBase()`를 만들고, `@RunWith(AndroidJUnit4::class) @GraphicsMode(NATIVE) @Config(sdk = [35])`를 붙여요. 번호대는 묶음끼리 겹치지 않게 정해요. 기다림은 `settle()`(조건 대기, 1초 상한)과 `reach()`(글자를 찾을 때까지 5초)에 맡기고 `Thread.sleep`을 새로 쓰지 않아요.
   - 나눠 돌리기: `-Pbamnat.testSet=unit|shots-a|shots-b|api`(CI 네 조각). 안드로이드 8·11·13·15에서 도는 `rules/ApiLevelSmokeTest`·`AlarmMatrixTest`는 `api`에서만 돌아요(여러 판 샌드박스가 한 JVM에 섞이면 다른 시험의 SQLite가 죽어요). 아무 값 없이 돌리면 빠져요, `-Pbamnat.testForks=N`(기본은 코어 절반, 1~3). 느린 시험 표는 `python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest`로 봐요.
-  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 23.5MB이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
+  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 11MB(1.30.0부터 Play만 보관하는 `BUNDLE-METADATA/` 이름 지도는 빼고 셈, 그 지도만 14MB)이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
   - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
   - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
 - **품질 규칙 (1.24 통합 직접 테스트)**
