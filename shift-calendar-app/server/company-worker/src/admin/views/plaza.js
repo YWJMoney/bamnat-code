@@ -189,7 +189,7 @@ export function plazaViews(A) {
         ${v.conflict ? '<span class="pill warn">정할 것</span>' : ""}</div>
       ${summaries.length ? `<ul class="vsum">${summaries.join("")}</ul>` : ""}
       <div class="table-wrap"><table class="cmp"><thead><tr><th scope="col" class="lab">항목</th>${list.map((c, i) => `<th scope="col" class="${best(i).trim()}">
-        <span class="pill ${VERSION_STATE[c.state]?.[0] ?? ""}">${esc(stateName(c))}</span>${c.recommended ? ' <span class="pill gold">추천</span>' : ""}
+        <span class="pill ${VERSION_STATE[c.state]?.[0] ?? ""}">${esc(stateName(c))}</span>${c.recommended ? ' <span class="pill gold">추천</span>' : ""}${c.shape ? ' <span class="pill warn">모양이 다른 판</span>' : ""}
         <span class="meta">${esc(day(c.at))}${c.source === "promote" ? " · 되돌림" : ""}</span></th>`).join("")}</tr></thead>
       <tbody>${numbers.map(([label, f]) => `<tr class="num"><th scope="row">${label}</th>${list.map((c, i) => `<td class="${best(i).trim()}">${f(c)}</td>`).join("")}</tr>`).join("")}
         ${rows.filter((r) => showAll || !r.same).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${list.map((c, i) => cell(c, i, r)).join("")}</tr>`).join("")}

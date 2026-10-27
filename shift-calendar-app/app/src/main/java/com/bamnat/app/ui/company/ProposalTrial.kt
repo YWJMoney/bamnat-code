@@ -33,17 +33,19 @@ import java.time.YearMonth
  * proposal changes); [proposal] the proposal's setup. [onVote] is the post's 공감·비공감 (TalkHolder.vote), which adopts it.
  */
 @Composable
-internal fun ProposalTrialButton(company: String, setup: String, proposal: String, onVote: (Boolean) -> Unit) {
+internal fun ProposalTrialButton(companyId: String, setup: String, proposal: String, onVote: (Boolean) -> Unit) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
+    // [FIN130-03] The calendar whose plaza this is: its own pay, shifts and payslip month, never 내 달력's.
+    val company = companyScope(c)
     var trial by remember { mutableStateOf<Trial?>(null) }
-    val slip = remember { c.payStore.profile.value?.verified }
+    val slip = remember(company) { company.pay.profile.value?.verified }
     OutlinedButton(
         onClick = {
             val month = slip?.month ?: Today.month()
             trial = Trial(proposal, month, loading = true)
             c.telemetry.event("plaza_diff", "proposal_trial")
-            scope.launch { trial = proposalTrial(c, company, setup, proposal, month) }
+            scope.launch { trial = proposalTrial(c, company, companyId, setup, proposal, month) }
         },
         modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp),
     ) { Text("이 제안으로 내 월급 계산해 보기") }
@@ -52,14 +54,17 @@ internal fun ProposalTrialButton(company: String, setup: String, proposal: Strin
 
 /**
  * [PROP-02] [month] worked out with the user's own setup and with [proposal]'s, its allowances as the proposal has them against
- * the version [setup] of [company] it changes (read once; without it, only what the proposal adds or changes counts).
+ * the version [setup] of [companyId] it changes (read once; without it, only what the proposal adds or changes counts).
+ * [FIN130-03] On [company]'s calendar: its pay and shifts, so a plaza opened from an added calendar compares that calendar's
+ * month. The version is the page kept on the phone when there ([FIN130-05]), read and kept otherwise.
  */
-internal suspend fun proposalTrial(c: AppContainer, company: String, setup: String, proposal: String, month: YearMonth): Trial {
-    val mine = c.payStore.profile.value ?: return Trial(proposal, month, note = "내 급여 설정이 없어 비교할 수 없어요. 급여 설정을 먼저 해 주세요")
-    val base = runCatching { c.companyApi.company(company).setups.firstOrNull { it.id == setup }?.text }.getOrNull()
-    val tried = runCatching { c.companyShare.trial(proposal, base) }.getOrNull()
+internal suspend fun proposalTrial(c: AppContainer, company: com.bamnat.app.company.CompanyScope, companyId: String, setup: String, proposal: String,
+    month: YearMonth): Trial {
+    val mine = company.pay.profile.value ?: return Trial(proposal, month, note = "내 급여 설정이 없어 비교할 수 없어요. 급여 설정을 먼저 해 주세요")
+    val base = keptSetupText(c, companyId, setup)
+    val tried = runCatching { company.share.trial(proposal, base) }.getOrNull()
         ?: return Trial(proposal, month, note = "이 제안에는 급여 계산 방식이 없어 근무표만 비교할 수 있어요")
-    val snapshot = c.scheduleRepository.snapshot.first()
+    val snapshot = company.schedule.snapshot.first()
     val settings = c.settingsRepository.current
     val calc = com.bamnat.core.pay.PayCalculator()
     return runCatching {

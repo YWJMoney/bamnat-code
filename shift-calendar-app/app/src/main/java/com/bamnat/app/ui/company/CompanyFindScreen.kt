@@ -88,6 +88,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyHit
 import com.bamnat.app.company.CompanyPage
@@ -551,9 +552,12 @@ fun CompanyDetailScreen(
             }
         })
     proposing?.let { su ->
+        // [FIN130-02] The calendar's pay uses this very version: what is changed may go onto it too (PROP-03).
+        val payWay by companyScope(androidx.compose.ui.platform.LocalContext.current.appContainer).payWays.way.collectAsStateWithLifecycle()
         DiffEditorSheet(
             title = "${page?.name.orEmpty()} · ${su.dept.ifEmpty { "회사 전체" }}",
             base = su.text, mine = mine, busy = sending, error = sendError,
+            alsoMine = payWay?.setup == su.id,
             onSend = { lines, text, why ->
                 val p = page ?: return@DiffEditorSheet
                 sending = true

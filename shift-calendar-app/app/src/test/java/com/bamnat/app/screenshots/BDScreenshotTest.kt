@@ -138,7 +138,8 @@ class BDScreenshotTest : ScreenshotBase() {
         report()
         send()
         assertTrue(shows("이미 같은 규칙이 있어요", exact = true))
-        assertTrue(shows("이 규칙의 급여 계산 방식도 같이 넣어요. 내 금액은 그대로예요.", exact = true))
+        // [FIN130-01] The pay way goes in with the 기본급 on the pay screen, never before it.
+        assertTrue(shows("이 규칙의 급여 계산 방식은 급여 화면에서 기본급을 넣으면 같이 들어가요. 그 전에는 내 급여가 그대로예요.", exact = true))
         assertTrue(shows("이 규칙 쓰기", exact = true))
         assertTrue(company.reports.isEmpty())
     }
@@ -150,7 +151,8 @@ class BDScreenshotTest : ScreenshotBase() {
         send()
         tapText("이 규칙 쓰기", exact = true)
         reveal("이 규칙을 쓰고 있어요", exact = true)
-        assertTrue(shows("급여 계산 방식도 같이 넣었어요", exact = false))
+        // [FIN130-01] No pay yet: the pay screen makes it from the way (its amounts), the way in use once that is saved.
+        assertTrue(shows("급여 계산 방식은 급여 화면에서 기본급을 넣으면 들어가요", exact = false))
         // Nothing new went up: the calendar uses the plaza's rule and it counted one more 맞아요.
         assertTrue(company.reports.isEmpty())
         assertEquals("s1", c.companyStore.applied.value?.setup)
@@ -159,7 +161,9 @@ class BDScreenshotTest : ScreenshotBase() {
         assertEquals(listOf("s1" to true), plaza.voted)
         assertEquals("c1", c.companyStore.member.value?.first)
         assertNull(c.companyStore.draft.value)
-        assertEquals("s1", c.payWays.way.value?.setup)
+        assertNull(c.payWays.way.value)
+        assertNotNull(c.companyStore.pendingPay)
+        assertTrue(c.payWays.decided)
     }
 
     @Test fun theSameRuleAskHugeText() = shoot("1362_bd_same_huge_text", SMALL_PHONE, fontScale = 2f) {

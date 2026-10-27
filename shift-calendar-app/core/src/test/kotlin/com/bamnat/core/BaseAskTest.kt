@@ -77,4 +77,19 @@ class BaseAskTest {
         assertTrue(BaseAsk.needed(monthly(0), month))
         assertTrue(BaseAsk.showsEstimate(monthly(1), month))
     }
+
+    /** [FIN130-04] The 통상시급 card says truly whether the hours are the 광장's or the user's own. */
+    @Test fun hoursSayWhereTheyCameFrom() {
+        val company = monthly(0, hours = 180).copy(hoursSource = com.bamnat.core.pay.HourlySource.PLAZA)
+        // The company's own hours picked: still the 광장's.
+        assertEquals(com.bamnat.core.pay.HourlySource.PLAZA, BaseAsk.apply(company, 2_800_000, month, 180).hoursSource)
+        assertEquals(com.bamnat.core.pay.HourlySource.PLAZA, BaseAsk.apply(company, 2_800_000, month, null).hoursSource)
+        // Other hours: the user's.
+        val typed = BaseAsk.apply(company, 2_800_000, month, 209)
+        assertEquals(209, typed.monthlyHours)
+        assertEquals(com.bamnat.core.pay.HourlySource.TYPED, typed.hoursSource)
+        // A source said before stays when the same hours are picked again.
+        val slip = monthly(2_000_000).copy(hoursSource = com.bamnat.core.pay.HourlySource.SLIP)
+        assertEquals(com.bamnat.core.pay.HourlySource.SLIP, BaseAsk.apply(slip, 2_800_000, month, 209).hoursSource)
+    }
 }

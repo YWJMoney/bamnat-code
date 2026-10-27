@@ -697,6 +697,8 @@ class TalkHolder(
                 if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
+                // [FIN130-06] A proposal is a version of the company's page: the page kept on the phone is read again next time.
+                if (kind == "proposal") c.companySearch.forgetPage(o.company)
                 sentHere = com.bamnat.core.plaza.RepeatGuard.record(sentHere, talkKey, text, now)
                 changed = true
                 null
@@ -726,8 +728,12 @@ class TalkHolder(
                     }))
                 }
                 changed = true
-                // A proposal people agree with can be adopted by this vote; its state comes back with the talk.
-                if (post.proposal != null) reload()
+                // A proposal people agree with can be adopted by this vote; its state comes back with the talk. [FIN130-06] And
+                // the company's page (its 대표) may have changed with it: the page kept on the phone is read again next time.
+                if (post.proposal != null) {
+                    c.companySearch.forgetPage(o.company)
+                    reload()
+                }
                 null
             } catch (e: CompanyException) {
                 talkProblem(e.code)
@@ -1186,7 +1192,9 @@ class CompanyPayViewModel(
                 val made = scope.share.createPay(t, wageType, base, rough, dailyHours, since, amounts)
                 // [PAYF-06] The 통상시급's hours the user knew, over the company's (theirs are only the sender's usual).
                 hours?.takeIf { wageType == WageType.MONTHLY && it in com.bamnat.core.pay.BaseAsk.HOURS_RANGE }?.let { h ->
-                    scope.pay.save(com.bamnat.core.pay.RuleOnlyNeeds.settled(made.copy(monthlyHours = h)), keepUndo = false)
+                    // [FIN130-04] The company's own hours stay the 광장's; other ones are the user's (TYPED).
+                    val source = if (h == made.monthlyHours) made.hoursSource else com.bamnat.core.pay.HourlySource.TYPED
+                    scope.pay.save(com.bamnat.core.pay.RuleOnlyNeeds.settled(made.copy(monthlyHours = h, hoursSource = source)), keepUndo = false)
                 }
                 scope.store.pendingPay = null
                 // [PAYG-01] 1.30 BA: the company's way is in use from now, its amounts given (not from the moment it was chosen).
@@ -1215,8 +1223,11 @@ class CompanyReportViewModel(
         data class Failed(val code: String, val field: String?) : Sending
         /** [PLZD-01][PLZD-02][PLZD-03][PLZD-05] 1.30 BD: the plaza already has this, another shape, or other values; asked first. */
         data class Guarded(val verdict: com.bamnat.app.company.SendGuard.Verdict, val form: Form) : Sending
-        /** [PLZD-01] 이 규칙 쓰기: nothing went, the calendar uses the plaza's rule. */
-        data class Used(val company: String, val companyId: String, val dept: String, val withPay: Boolean) : Sending
+        /**
+         * [PLZD-01] 이 규칙 쓰기: nothing went, the calendar uses the plaza's rule. [FIN130-01] [toPay]: its pay way waits on the
+         * pay screen (the 기본급, or the amounts of a first pay) and goes in there.
+         */
+        data class Used(val company: String, val companyId: String, val dept: String, val withPay: Boolean, val toPay: Boolean = false) : Sending
         /** [PLZD-03] 달라진 점만 제안으로 보내기 went to the 대표's talk. */
         data class Proposed(val company: String, val companyId: String, val dept: String) : Sending
     }
@@ -1316,6 +1327,8 @@ class CompanyReportViewModel(
                     else if (scope.isMain) c.companyApi.report(store.device, company, dept, verified, note, setup, job, region, topic)
                     else c.companyApi.report(store.device, company, dept, verified, note, setup, job, region, topic, scope.serverCal)
                 store.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
+                // [FIN130-06] The company's page this phone kept has not this version yet: read again next time (SendGuard too).
+                if (status.companyId.isNotEmpty()) c.companySearch.forgetPage(status.companyId)
                 // [PLAZA-07] Sending a company's setup joins it (결정 D79).
                 status.member?.takeIf { it.joined }?.let { store.setMember(status.companyId, status.company) }
                 // [PLAZA-34] 1.27 AI: what went is what the plaza has of this calendar; the same values saved again ask nothing.
@@ -1346,8 +1359,8 @@ class CompanyReportViewModel(
         _sending.value = Sending.Busy
         viewModelScope.launch {
             _sending.value = try {
-                guard.useSame(v, verified)
-                Sending.Used(v.page.name, v.page.id, v.setup.dept, v.withPay)
+                val r = guard.useSame(v, verified)
+                Sending.Used(v.page.name, v.page.id, v.setup.dept, v.withPay, toPay = r != null && (r.rules || r.pendingPay))
             } catch (e: CompanyException) {
                 Sending.Failed(e.code, e.field)
             } catch (e: BackupException) {

@@ -28,9 +28,12 @@ function pdParts(text) {
   return out.map((p) => p.trim()).filter(Boolean);
 }
 
-/** "식대(매달 200,000원)" as ["식대", "매달 200,000원"]; a part with no brackets is all name. */
+/**
+ * "식대(매달 200,000원)" as ["식대", "매달 200,000원"]; a part with no brackets is all name. [FIN130-16] The last brackets are the
+ * details: "식대(중식)(매달)" is 식대(중식)'s, not 식대's "중식)(매달".
+ */
 function pdNamed(part) {
-  const m = part.match(/^([^(]+?)\s*\((.*)\)$/);
+  const m = part.match(/^(.*)\((.*)\)$/);
   return m ? [m[1].trim(), m[2].trim()] : [part, ""];
 }
 
@@ -161,6 +164,23 @@ function pdChangeWords(label, before, after, tokens) {
   return runs.length > 2 ? `${runs.slice(0, 2).join(", ")} 외 ${runs.length - 2}곳` : runs.join(", ");
 }
 
+/** [FIN130-16] An allowance's words that say who sets its amount (plaza-items itemShareText): 회사 공통 or a percent of something. */
+const PD_SHARE = /회사 공통|의 \d/;
+
+/**
+ * [FIN130-16] An allowance whose amount went from the company's to each person's (or back) says so: describe() writes nothing
+ * for 사람마다, so "회사 공통 100,000원" would read as taken away. The side without says "사람마다" where the share stands
+ * (before "통상임금").
+ */
+function pdPersonal(label, before, after) {
+  if (!label.startsWith("수당·")) return [before, after];
+  const a = PD_SHARE.test(before);
+  const b = PD_SHARE.test(after);
+  if (a === b) return [before, after];
+  const say = (t) => (/(^|\s)통상임금$/.test(t) ? t.replace(/(^|\s)통상임금$/, "$1사람마다 · 통상임금") : `${t ? `${t} ` : ""}사람마다`);
+  return a ? [before, say(after)] : [say(before), after];
+}
+
 /** "수당·식대" → "수당"; a fact with no group is its own. */
 const pdGroupOf = (label) => (label.includes("·") ? label.slice(0, label.indexOf("·")) : label);
 
@@ -176,8 +196,9 @@ export function diffFacts(before, after, { max = 4 } = {}) {
   const added = (after ?? []).filter(([l]) => !was.has(l));
   const removed = (before ?? []).filter(([l]) => !now.has(l));
   const changed = (after ?? []).filter(([l, t]) => was.has(l) && was.get(l) !== t).map(([label, text]) => {
-    const tokens = label === "순서" ? pdOrderTokens(was.get(label), text) : tokenDiff(was.get(label), text);
-    return { label, before: was.get(label), after: text, tokens };
+    const [from, to] = pdPersonal(label, was.get(label), text);
+    const tokens = label === "순서" ? pdOrderTokens(from, to) : tokenDiff(from, to);
+    return { label, before: from, after: to, tokens };
   });
   const pieces = changed.map((c) => `${c.label} ${pdChangeWords(c.label, c.before, c.after, c.tokens)}`.trim());
   const count = (list, verb) => {

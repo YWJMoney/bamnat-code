@@ -209,6 +209,8 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
         LaunchedEffect(Unit) { mine = vm.mine() }
         DiffEditorSheet(
             title = w.company, base = base, mine = mine, busy = sending, error = sendError,
+            // [FIN130-02] This pay uses the way: what is changed may go onto it too (PROP-03).
+            alsoMine = true,
             onSend = { lines, setup, why ->
                 sending = true
                 sendError = null

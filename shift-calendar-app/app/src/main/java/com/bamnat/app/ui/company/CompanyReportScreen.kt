@@ -89,6 +89,8 @@ fun CompanyReportScreen(
     onOpenCompany: (String) -> Unit = {},
     /** [PLAZA-30] 1.27 AI: the main pay screen with 명세서로 맞춰 보기 open; null leaves the shortcut out. */
     onMatch: (() -> Unit)? = null,
+    /** [FIN130-01] The calendar's pay screen, where a pay way taken with 이 규칙 쓰기 asks its 기본급. */
+    onOpenPay: (() -> Unit)? = null,
 ) {
     val sending by vm.sending.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
@@ -131,7 +133,7 @@ fun CompanyReportScreen(
                         onOpenCompany = if (!topic && s.status.companyId.isNotEmpty()) ({ onOpenCompany(s.status.companyId) }) else null)
                 } else if (sent) {
                     // [PLZD-01][PLZD-03] 1.30 BD: the plaza's same rule is in use, or the difference went as a proposal.
-                    GuardDonePanel(s, onDone = onDone, onOpenCompany = onOpenCompany)
+                    GuardDonePanel(s, onDone = onDone, onOpenCompany = onOpenCompany, onOpenPay = onOpenPay)
                 } else {
                     Column(
                         Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

@@ -14,8 +14,11 @@ async function talkOn(call) {
 }
 
 test("[PROP-01] a member reads a proposal's setup with the post; anyone else gets no pay", async () => {
-  const { call } = server({ plaza: true });
+  const { call, DB } = server({ plaza: true });
   const t = await talkOn(call);
+  // [FIN130-15] A company's one amount comes only once 처리방침 3.4 is in force: here it is (the owner moved its day back).
+  await DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .bind(JSON.stringify({ "3.4": { posted: "2026-10-01", effective: "2026-10-02", heldUntil: null, unfavourable: false } })).run();
   const better = setup();
   better.v = 4;
   better.pay.monthlyHours = 209;

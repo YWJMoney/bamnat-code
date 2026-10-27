@@ -211,17 +211,12 @@ fun CompanyRulesEditor(
                 }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
-                    // [ITEM-07] 1.30 BC: the company's hours first, and a different value can go back as a proposal.
+                    // [ITEM-07] 1.30 BC: the company's hours first, and a different value can go back as a proposal. [FIN130-09] One set
+                    // of chips (묶음 BA's), 180시간 too: the payslip match already tries it ([PAYX-34], PayslipMatcher.SNAP_HOURS).
                     val companyWay = com.bamnat.app.ui.company.rememberCompanyWayText()
-                    com.bamnat.app.ui.company.CompanyHoursLine(companyWay, draft.monthlyHours) { h ->
-                        draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.PLAZA).settled(Unknowns.MONTHLY_HOURS)
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        // [PAYX-34] 180시간 too: the payslip match already tries it (PayslipMatcher.SNAP_HOURS).
-                        Unknowns.MONTHLY_HOURS_CHIPS.forEach { h ->
-                            FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) },
-                                label = { Text("${h}시간") })
-                        }
+                    com.bamnat.app.ui.company.CompanyHoursLine(companyWay, draft.monthlyHours, Unknowns.MONTHLY_HOURS_CHIPS) { h ->
+                        val source = if (h == companyWay?.hours) com.bamnat.core.pay.HourlySource.PLAZA else com.bamnat.core.pay.HourlySource.TYPED
+                        draft = draft.copy(monthlyHours = h, hoursSource = source).settled(Unknowns.MONTHLY_HOURS)
                     }
                     // [PAYX-23][INPUT-02] The company's own number, e.g. 182 (주 35시간), stepped.
                     MonthlyHoursStepper(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) })
