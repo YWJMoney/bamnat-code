@@ -251,6 +251,10 @@ data class PayProfile(
      * the user took it from a payslip: premiums are worked out on it instead of (기본급 + 통상 수당) ÷ 시간. null works it out.
      */
     val ordinaryHourly: Double? = null,
+    /** [HOURLY-04] 1.30 AV: where [ordinaryHourly] came from (명세서·회사 규칙·광장·직접); null when not known (set before 1.30). */
+    val ordinarySource: HourlySource? = null,
+    /** [HOURLY-01] 1.30 AV: where [monthlyHours] came from; null when not known (the default 209, or set before 1.30). */
+    val hoursSource: HourlySource? = null,
     /**
      * [HRLY-05] 법정 휴게 자동 빼기: a day with no break set gets the break 근로기준법 제54조 asks for, 30 minutes
      * from 4 hours and an hour from 8 (see [com.bamnat.core.schedule.LegalBreak]).
@@ -302,4 +306,16 @@ data class PayProfile(
 
     /** [HRLY-06] True when [date] is paid at the 수습 rate. */
     fun onProbation(date: LocalDate): Boolean = probationEnd?.let { date.isBefore(it) } == true && probationPercent in 1..99
+}
+
+/**
+ * [HOURLY-01] 1.30 AV: where a value of the pay setup came from (사용자 2026-10-27 "통상임금과 근로시수는 광장에 제공된 정보가 있으면
+ * 해당 정보를 따르게 하고 다르다면 적용하는 사람이 수정할 수 있게"): the company's payslip, its rules (photo or sentence), the 광장,
+ * or the user typing it. Shown beside the value, and what tells a 광장 value the user changed (a 의견 to offer).
+ */
+enum class HourlySource(val label: String) {
+    SLIP("명세서"),
+    RULES("회사 규칙"),
+    PLAZA("광장"),
+    TYPED("직접"),
 }
