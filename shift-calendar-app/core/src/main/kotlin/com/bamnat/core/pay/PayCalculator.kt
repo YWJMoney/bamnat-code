@@ -148,7 +148,11 @@ class PayCalculator(
         // they are ordinary days unless the company grants them [PAYS-03] or the caller says otherwise.
         // [PAYX-07] 노동절 is a paid holiday at every workplace and cannot be swapped, so it skips both checks.
         // [PAYS-03] An approved 감시·단속 worker has no paid 공휴일 (제55조 is in chapter 4).
-        // verify: 노동절 for an approved 감시·단속 worker; kept as a paid day under its own law, with no premium.
+        // [NXT-04] 1.29 AU: 노동절 stays a paid day for an approved 감시·단속 worker, with no premium when worked.
+        // 근로자의 날 제정에 관한 법률 makes it a paid holiday under the 근로기준법 by its own law, outside chapter 4, so
+        // 제63조 does not take it away; the 휴일근로 premium (제56조) is in what 제63조 takes away. 고용노동부 회신
+        // (moel.go.kr 빠른인터넷상담 2023-01-18, 제63조 적용제외 근로자의 근로자의 날): "최저임금, 근로자의 날, 야간근로 가산임금,
+        // 연차유급휴가는 적용이 제외되지 아니합니다 … 유급주휴일, 연장근로한도 및 연장·휴일근로 가산임금은 적용받지 않게 되나".
         val basePublic = isHoliday ?: { d: LocalDate ->
             KoreanHolidays.isLaborDay(d) ||
                 !supervisory && (if (premiums) rules.publicHolidaysPaid else rules.holidaysUnderFive) && KoreanHolidays.isHoliday(d)
@@ -583,9 +587,13 @@ class PayCalculator(
         }
         if (paidBreak > 0) lines += line(
             LineKind.BASE, "유급 휴게", paidBreak, hourly, 1.0,
-            "회사가 임금을 주는 휴게시간 (연장·주휴 시간에는 넣지 않아요)",
-            // verify: whether a paid break inside 22~06 also earns the night premium; taken as no, since it is not work.
-            "취업규칙·근로계약 (휴게시간은 근로시간이 아님, 근로기준법 제54조)", baseEstimated,
+            "회사가 임금을 주는 휴게시간 (연장·야간 가산·주휴 시간에는 넣지 않아요)",
+            // [NXT-05] 1.29 AU: a paid break inside 22~06 earns no night premium. 제56조 제3항 adds 50% for 근로 between
+            // 22시 and 06시, and a break is not 근로 (제54조: time the worker may use freely) whatever it is paid;
+            // being paid is the company's rule. A "break" spent waiting at one's post is 근로시간 (제50조 제3항 대기시간):
+            // that is BreakPay.AS_WORK, which the company rules offer, and then 연장·야간 count it (M11 T23, NxtPayLawTest).
+            "취업규칙·근로계약 (휴게시간은 근로시간이 아님, 근로기준법 제54조·제56조 제3항. 자리를 지키며 대기했다면 " +
+                "회사 규칙의 휴게를 ‘일한 시간으로’로 바꾸면 연장·야간에 들어가요, 제50조 제3항)", baseEstimated,
         )
         val companyNote = { custom: Boolean -> if (custom) " (회사 규칙)" else "" }
         // [EXTRA-02] Without a 주휴일 every day off is a 휴무일; say so where its hours are paid.

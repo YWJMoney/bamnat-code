@@ -222,6 +222,10 @@ class FlagEvalTest {
         assertNull(FlagCatalog.of("free.lower_case"))
         val free = FlagCatalog.of("free.MONEY_STATS")!!
         assertFalse(free.default)
+        // [NXT-03] 1.29 AU: named like the developer app names it, from the one table; an unknown code keeps its code.
+        assertEquals("무료로 연 프로 기능: 돈 통계", free.name)
+        assertTrue(free.what.contains("‘돈 통계’"))
+        assertEquals("무료로 연 프로 기능: NEW_THING", FlagCatalog.of("free.NEW_THING")!!.name)
         val states = FlagEval.all(phone(kst(2026, 11, 1)), mapOf("free.MONEY_STATS" to FlagOverride(force = Force.ON), "some.newer.flag" to FlagOverride(force = Force.OFF)))
         assertTrue(states.single { it.key == "free.MONEY_STATS" }.on)
         assertTrue(states.none { it.key == "some.newer.flag" })

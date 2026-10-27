@@ -59,6 +59,19 @@ class BaselineProfileRulesTest {
             .all { c -> patterns.any { it.matches(c) } })
     }
 
+    @Test fun thePaySetupAndCompanySearchAreCovered() {
+        // [NXT-09] 1.29 AU (순번 460): 급여 설정 and 회사 검색, every class of their packages, the ones 1.29 adds included.
+        val patterns = rules.map { descriptorPattern(DESCRIPTOR.find(it)!!.groupValues[1]) }
+        for (pkg in listOf("Lcom/bamnat/app/ui/pay/", "Lcom/bamnat/app/ui/company/", "Lcom/bamnat/app/company/", "Lcom/bamnat/core/pay/")) {
+            val inPkg = classes.filter { it.startsWith(pkg) }
+            assertTrue("$pkg has classes", inPkg.isNotEmpty())
+            assertTrue("$pkg is in the profile", inPkg.all { c -> patterns.any { it.matches(c) } })
+        }
+        for (c in listOf("Lcom/bamnat/app/ui/pay/PayWizardKt;", "Lcom/bamnat/app/ui/company/CompanyFindScreenKt;")) {
+            assertTrue("$c is in the profile", patterns.any { it.matches(c) })
+        }
+    }
+
     private companion object {
         /** Flags H, S, P, then a class descriptor, then for a method rule its name and signature. */
         val RULE = Regex("""^[HSP]*L[\w/$*]+;?(->[\w<>$*]+\([^)\s]*\)\S+)?$""")

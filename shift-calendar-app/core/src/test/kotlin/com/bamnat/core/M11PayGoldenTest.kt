@@ -120,7 +120,7 @@ class M11PayGoldenTest {
 
     @Test
     fun `T20 Labour Day stays a paid holiday for an approved guard, without the premium`() {
-        // 2026-05-01 (금) 근무, 시급 10,320원: 유급휴일 8시간 + 근무 16시간 모두 100% + 야간 가산 4시간 (확인 필요).
+        // 2026-05-01 (금) 근무, 시급 10,320원: 유급휴일 8시간 + 근무 16시간 모두 100% + 야간 가산 4시간 (근거: NxtPayLawTest NXT-04).
         val mayDay = LocalDate.of(2026, 5, 1)
         val result = pay(profile(WageType.HOURLY, 10_320).copy(rules = approved), oneDay(guard, mayDay), YearMonth.of(2026, 5))
         assertEquals(82_560, result.lines.single { it.label == "유급휴일수당 (공휴일)" }.amount)

@@ -53,7 +53,7 @@ import { adminFile, adminBuild } from "./admin-app.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
-import { CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
+import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -8232,11 +8232,14 @@ export const FLAG_CATALOG = CORE_FLAGS;
 /** The keys of the contract (통합계획 2-1) and the integrator's stats.more; free.<FEATURE> are made on demand. */
 export const FLAG_KEYS = FLAG_CATALOG.map((f) => f.key);
 
-/** [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>. */
-const FREE_FEATURES = { NO_ADS: "광고 없음", PAYSLIP_MATCH: "명세서 대조", PAY_RULE_IMPORT: "임금 규칙 자동 인식", PAY_BULK_EDIT: "값 일괄 적용",
-  MONEY_STATS: "돈 통계", MORE_CALENDARS: "달력 여러 개", PAY_REPORT: "급여 리포트 PDF·CSV", WORK_COMPARE: "근무·급여 비교",
-  DEVICE_CALENDAR: "휴대폰 캘린더에 근무 쓰기", ICS_FEED: "캘린더 구독 주소", AUTO_BACKUP: "매일 자동 백업", MORE_LINKS: "공유 링크 여러 개, 1년까지",
-  ROSTER_PDF: "근무표 PDF", SURE_ALARM: "끄기 미션·일어났는지 확인", LEAVE_PAYOUT: "미사용 연차수당 계산", TAX_FORECAST: "세금 예측·실수령" };
+// AU 1.29
+/**
+ * [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>.
+ * [NXT-03] The names are core's ProFeatures (CORE_FEATURES, made by FlagCatalogExportTest), so the developer app and
+ * the phone's 진단 name a free.<FEATURE> row the same way.
+ */
+const FREE_FEATURES = CORE_FEATURES;
+// AU 1.29 끝
 /** [FLAG-34] free.<FEATURE>, the same pattern as core FlagCatalog.free. */
 const FREE_KEY = new RegExp(CORE_FREE.pattern);
 
@@ -8806,10 +8809,12 @@ async function flagEffects(env, actor, now) {
   const pivots = measured.map((r) => store.state.get(r.key).since);
   const lo = pivots.length ? Math.min(...pivots) - 7 * DAY : now;
   const hi = pivots.length ? Math.max(...pivots) + 7 * DAY : now;
-  const [bugs, errors] = pivots.length ? (await batch(env, [
-    stmt(env, "SELECT created_at FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", lo, hi),
+  const [bugs, errors, flips] = pivots.length ? (await batch(env, [
+    stmt(env, "SELECT created_at, info FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", lo, hi),
     stmt(env, "SELECT key, count FROM counters WHERE key >= ? AND key <= ?", `errors|${kstDay(lo)}`, `errors|${kstDay(hi)}`),
-  ])).map((r) => r.results) : [[], []];
+    // AU 1.29 [NXT-07]: whether `since` is a turn the server saw (flagTick's audit line) or only when it first looked.
+    stmt(env, "SELECT target, at FROM audit WHERE action IN ('flag_auto_on', 'flag_auto_off') AND at >= ?", lo + 7 * DAY),
+  ])).map((r) => r.results) : [[], [], []];
   const around = (pivot) => {
     const b = bugs.filter((x) => x.created_at >= pivot - 7 * DAY && x.created_at < pivot + 7 * DAY);
     const e = errors.filter((x) => x.key.slice(7) >= kstDay(pivot - 7 * DAY) && x.key.slice(7) <= kstDay(pivot + 7 * DAY));
@@ -8820,10 +8825,60 @@ async function flagEffects(env, actor, now) {
   return {
     serverTime: iso(now), statsPhones: shares.base, flagsReach: can(actor, "flags"),
     flags: rows.map((r) => ({ key: r.key, name: r.name, group: r.group, risk: r.risk, state: r.state, on: r.on, onShare: r.onShare,
-      compare: store.state.get(r.key)?.since ? around(store.state.get(r.key).since) : null })),
+      compare: store.state.get(r.key)?.since ? { ...around(store.state.get(r.key).since), split: bugSplit(store, r, bugs, flips) } : null })),
   };
 }
 // AM 1.28 끝
+
+// AU 1.29
+/**
+ * [NXT-07] AM 4-3: the problem reports of the same 7 days before and after, split by whether the flag was on for the
+ * phone that sent them, as far as the server can tell from what it already keeps (처리방침 3.2 1-3항: the time the
+ * report came and the app version that goes with every question), nothing new asked of the phone:
+ * - off: sent before the server saw the flag turn on (after it saw it turn off), or from an app version outside the
+ *   flag's range (the override's minApp/maxApp, an `app` condition);
+ * - on: sent while it was on, from a version inside the range, and nothing about the phone decides it;
+ * - maybe: as on, but a condition the server cannot see (동의·프로필·근무 유형·나눠 켜기) decides it per phone;
+ * - unknown: no app version on the question (an old app, or a question typed by mail);
+ * - unseen: sent before the server first looked at the flag (its first look is not a turn, so the state before is unknown).
+ * The 기능 상태 lines a user may attach in the 점검 기록 are not read for this: 1-3항 keeps them for answering that question.
+ */
+function bugSplit(store, row, bugs, flips = []) {
+  const st = store.state.get(row.key);
+  const since = st?.since;
+  const nowOn = st?.on_now === 1;
+  const turned = flips.some((f) => f.target === row.key && f.at === since);
+  const def = flagDef(row.key);
+  const o = store.overrides.get(row.key) ?? null;
+  const conds = o?.conditions ?? def?.conditions ?? [];
+  const lo = o?.minApp ?? def?.minApp ?? null;
+  const hi = o?.maxApp ?? def?.maxApp ?? null;
+  const appConds = conds.filter((c) => c.type === "app");
+  const inRange = (app) => (lo == null || app >= lo) && (hi == null || app <= hi)
+    && appConds.every((c) => (c.min == null || app >= c.min) && (c.max == null || app <= c.max));
+  const varies = row.checklist.some((x) => x.met === "phone");
+  const out = { on: 0, maybe: 0, off: 0, unknown: 0, unseen: 0 };
+  for (const b of bugs) {
+    if (since == null || b.created_at < since - 7 * DAY || b.created_at >= since + 7 * DAY) continue;
+    if (b.created_at < since && !turned) { out.unseen++; continue; }
+    const app = appCode(b.info);
+    if (app == null) { out.unknown++; continue; }
+    const onThen = b.created_at >= since ? nowOn : !nowOn;
+    if (!onThen || !inRange(app)) out.off++;
+    else if (varies) out.maybe++;
+    else out.on++;
+  }
+  return out;
+}
+
+/** [NXT-07] The versionCode in a question's app line ("1.28.0 (39)" → 39), or null. */
+function appCode(info) {
+  let app;
+  try { app = JSON.parse(info ?? "{}").app; } catch { return null; }
+  const m = /\((\d+)\)\s*$/.exec(typeof app === "string" ? app : "");
+  return m ? Number(m[1]) : null;
+}
+// AU 1.29 끝
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {

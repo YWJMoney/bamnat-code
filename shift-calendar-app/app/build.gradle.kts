@@ -219,6 +219,10 @@ dependencies {
     // [INVITE-03] 친구 초대: the code an invite link put in Play's install referrer, read once after the first setup.
     // 8 KB, no dependencies; adds one normal permission (BIND_GET_INSTALL_REFERRER_SERVICE, 처리방침 4항).
     implementation("com.android.installreferrer:installreferrer:2.2")
+    // [NXT-01] 1.29 AU (AO D8): WorkManager came only through the ads SDK (2.7.1, started by androidx.startup at every
+    // app start). Named here so BamnatApp can be its Configuration.Provider and WorkManager starts on first use; 2.10
+    // also has the Android 14 fixes 2.7 lacks. The app's own jobs stay on JobScheduler (OutboxJob, PlazaNewsJob, AutoBackupJob).
+    implementation("androidx.work:work-runtime:2.10.5")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)
@@ -234,16 +238,16 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     // [PERF-01] Installs src/main/baseline-prof.txt on phones that got the APK outside Play, so the start is compiled ahead too.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     // [PERF-13] 1.28 AO: the module that makes the profile (on a Gradle managed emulator or a phone).
     baselineProfile(project(":benchmark"))
-    implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
-    implementation("androidx.navigation:navigation-compose:2.9.1")
+    implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
+    implementation("androidx.navigation:navigation-compose:2.9.5")
 
     // Home screen widgets [FEAT-03, REL-03].
     implementation("androidx.glance:glance-appwidget:1.1.1")

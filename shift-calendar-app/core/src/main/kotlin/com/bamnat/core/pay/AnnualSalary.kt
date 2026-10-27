@@ -47,9 +47,13 @@ data class AnnualPay(
             if (left < 0) warnings += "고정 수당이 월 몫보다 커요. 연봉과 수당 금액을 확인해 주세요"
         }
         if (divisor == 13) {
-            // verify: 퇴직금 split into monthly pay is generally held invalid; no ruling is cited until checked.
-            warnings += "연봉을 13으로 나눴어요. 13번째 몫이 퇴직금이라면, 퇴직금을 월급에 나눠 넣어 주는 약정은 " +
-                "일반적으로 효력이 없어서 퇴직할 때 퇴직금을 따로 받을 수 있어요. 노무사나 고용노동부(1350)에 확인해 보세요"
+            // [NXT-06] 1.29 AU: ÷ 13 stays the 기본급 either way, since the 13th share is 퇴직금, not 임금 (so 최저임금 and
+            // 통상임금 are checked on 연봉 ÷ 13). Kept at leaving it is a 연봉 that includes 퇴직금, which is fine when it is
+            // at least the legal 퇴직금; folded into each month's pay it is a 퇴직금 분할 약정, which is void unless it is a
+            // lawful 중간정산 (대법원 2010. 5. 20. 선고 2007다90760 전원합의체 판결), so the 퇴직금 is still owed at leaving.
+            warnings += "연봉을 13으로 나눴어요. 13번째 몫을 퇴직할 때 퇴직금으로 받는다면 맞는 계산이에요. " +
+                "그 몫을 매달 월급에 나눠 받는다면 ‘퇴직금 분할 약정’이라 효력이 없어서(대법원 2007다90760 전원합의체 판결) " +
+                "퇴직할 때 퇴직금을 따로 받을 수 있어요. 노무사나 고용노동부(1350)에 확인해 보세요"
         }
         val base = (share - fixed.sumOf { it.second }).coerceAtLeast(0)
         return AnnualBreakdown(base, share, lines, warnings)

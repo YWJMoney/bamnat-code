@@ -70,6 +70,28 @@ data class HourlyLeave(val date: LocalDate, val minutes: Int) {
         val FROM: LocalDate = LocalDate.of(2027, 6, 10)
         /** Until the 시행령 says, the smallest piece the app will offer. */
         const val UNIT_MINUTES = 60
+
+        /**
+         * [NXT-02] 1.29 AU (AL 6-6): whether 시간 단위 연차 is open now, as the flag book's `leave.hourly` row says (date
+         * [FROM], works offline at midnight, the server may force it on or off). [on] is the app's Flags.on; every place
+         * that offers leave in hours asks this, never the date alone.
+         */
+        fun open(on: (String) -> Boolean): Boolean = on(com.bamnat.core.flags.FlagCatalog.LEAVE_HOURLY)
+
+        /** How long before [FROM] the 연차 screen says it is coming. */
+        const val NOTICE_DAYS = 30L
+
+        /**
+         * [NXT-02] What the 연차 screen says about 시간 단위 연차 on [today]: open, the month before it opens, or nothing.
+         * Until the 시행령 sets the unit the calendar stores leave in quarters of a day, so it points at those.
+         */
+        fun note(open: Boolean, today: LocalDate): String? = when {
+            open -> "시간 단위 연차를 쓸 수 있어요(근로기준법 개정, 2027년 6월 10일 시행). 몇 시간 단위인지는 시행령이 정해요. " +
+                "그때까지는 달력에서 날을 길게 눌러 반반차(하루의 4분의 1)·반차로 넣어요."
+            !today.isBefore(FROM.minusDays(NOTICE_DAYS)) && today.isBefore(FROM) ->
+                "2027년 6월 10일부터 연차를 시간 단위로 쓸 수 있어요(근로기준법 개정). 그날 앱이 저절로 알려 드려요."
+            else -> null
+        }
     }
 }
 

@@ -53,6 +53,16 @@ HSPLcom/bamnat/app/diag/**->**(**)**
 PLcom/bamnat/app/alarm/**->**(**)**
 PLcom/bamnat/app/widget/**->**(**)**
 
+# [NXT-09] 1.29 AU (순번 460): the screens 1.29 makes the main way in after the calendar, compiled ahead so their first
+# open is not interpreted: 급여 설정 (the pay tab, the question-by-question setup and the company rules) and 회사 검색
+# (finding the company, its 급여 방식 and the plaza's 대표판). Whole packages, so the screens 1.29 adds there are covered too.
+HPLcom/bamnat/app/ui/pay/**->**(**)**
+HPLcom/bamnat/app/ui/company/**->**(**)**
+HPLcom/bamnat/app/company/**->**(**)**
+HPLcom/bamnat/core/pay/**->**(**)**
+HPLcom/bamnat/core/plaza/**->**(**)**
+HPLcom/bamnat/core/setup/**->**(**)**
+
 # The pure Kotlin core the calendar works out each month with.
 HSPLcom/bamnat/core/model/**->**(**)**
 HSPLcom/bamnat/core/schedule/**->**(**)**

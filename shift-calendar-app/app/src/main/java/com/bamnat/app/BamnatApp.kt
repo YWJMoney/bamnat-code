@@ -6,7 +6,12 @@ import com.bamnat.app.alarm.BootAlarms
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.diag.CrashLog
 
-class BamnatApp : Application() {
+/**
+ * [NXT-01] 1.29 AU (AO D8): also WorkManager's [androidx.work.Configuration.Provider]. Its androidx.startup initializer
+ * is taken out of the manifest, so WorkManager (used by the ads SDK only) starts the first time someone asks for it,
+ * never on a cold start that does not need it.
+ */
+class BamnatApp : Application(), androidx.work.Configuration.Provider {
     /** Built on first use: after a reboot the app may start before the phone is unlocked [REL-10]. */
     val container: AppContainer by lazy {
         AppContainer(this).also {
@@ -29,6 +34,16 @@ class BamnatApp : Application() {
     suspend fun awaitContainer(): AppContainer =
         readyContainer() ?: if (building != null) built.await()
         else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { container }
+
+    /**
+     * [NXT-01] Built when WorkManager first starts. [NXT-11] Its JobScheduler ids are kept to a range of their own, away
+     * from the app's own jobs (AutoBackupJob 4401, PlazaNewsJob 4402, OutboxJob 4403·4404), so neither replaces the other.
+     */
+    override val workManagerConfiguration: androidx.work.Configuration
+        get() = androidx.work.Configuration.Builder()
+            .setJobSchedulerJobIdRange(WORK_JOB_IDS.first, WORK_JOB_IDS.last)
+            .setMinimumLoggingLevel(if (BuildConfig.DEBUG) android.util.Log.INFO else android.util.Log.ERROR)
+            .build()
 
     override fun onCreate() {
         StartupTrace.begin()
@@ -90,6 +105,8 @@ class BamnatApp : Application() {
 
 private const val APP_STATE = "app_state"
 private const val K_CHANNELS_FOR = "channels_for"
+/** [NXT-11] WorkManager's JobScheduler ids; the app's own JobService ids are 4401~4404. */
+internal val WORK_JOB_IDS = 100_000..199_999
 private val isRobolectric = android.os.Build.FINGERPRINT == "robolectric"
 
 val Context.appContainer: AppContainer

@@ -64,6 +64,8 @@ fun ScannerButton(onImage: (Uri) -> Unit, onError: (String) -> Unit, enabled: Bo
             val activity = DocScanner.activity(context)
             if (activity == null) onError(DocScanner.UNAVAILABLE)
             else runCatching {
+                // [NXT-01] 1.29 AU: ML Kit starts on the first scan, not at every app start.
+                com.bamnat.app.MlKitStart.ensure(context)
                 GmsDocumentScanning.getClient(DocScanner.options).getStartScanIntent(activity)
                     .addOnSuccessListener { sender -> launcher.launch(IntentSenderRequest.Builder(sender).build()) }
                     .addOnFailureListener { onError(DocScanner.UNAVAILABLE) }
