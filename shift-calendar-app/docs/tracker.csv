@@ -1027,3 +1027,11 @@ PHOTO-09,"1.29 AQ '사진이 달라요' 버튼: 사진 읽기 결과가 보이�
 PHOTO-10,"1.29 AQ 회사 서버 /api/photo-wrong(합계만, 횟수 제한·검증)과 관리자 앱 분석 허브 '사진이 달라요' 날짜·화면별 카운트",2 (1.29.0),완료,,"server company-worker // AQ 1.29 POST /api/photo-wrong(코드·숫자만, 하루 30번, 400일 보관), 관리자 앱 사진이 달라요 카드; npm test 283·test:ui 36"
 PHOTO-11,1.29 AQ 사진 → 규칙 → 계산 경로 오류 고침(목록은 1.29-AQ 개발계획),2 (1.29.0),완료,,"core·app 고친 오류 목록은 docs/plans/1.29-AQ-개발계획.md(교대근무수당→대근, 야간근무수당, 배우자→자녀, 점 무늬 흑백 등)"
 PHOTO-12,1.29 AQ 화면 사진 1250~1269(명세서 결과·칸 더하기·규칙 직접 넣기·사진이 달라요),2 (1.29.0),완료,,app screenshots/AQScreenshotTest 1250~1257
+CALI-01,"1.30 BB 달력마다 회사 묶음 CompanyScope(AppContainer.companyOf): 본 달력은 지금 설정 파일 그대로(옮기지 않음), 보조 달력은 그 달력 폴더의 company.json·pay_way.json",2 (1.30.0),완료,,"app company/CompanyScope.kt·CompanyScopeStorage.kt, AppContainer.companyOf; CompanyScopeTest(같은 객체·1.29 파일 그대로·두 달력 따로)"
+CALI-02,"1.30 BB 회사 서버의 cal = 달력 id(참여·쓰기·보내기·저절로 나누기), 휴대폰 공통 설치 번호는 하나",2 (1.30.0),완료,,"AutoShare·LeadShare·PayFind·CompanyDetailViewModel이 serverCal(main/달력 id)로 보냄; CompanyScopeTest(use cal), 내 활동 달력별 1323"
+CALI-03,"1.30 BB 회사 찾기·회사 화면·광장·내 설정 나누기·보낸 정보 라우트에 달력 인자, 그 달력의 근무·급여에 적용",2 (1.30.0),완료,,"AppRoot 라우트 calendar 인자(company_find·company·company_board·company_report·company_sent); BBScreenshotTest 1321"
+CALI-04,"1.30 BB 급여 화면이 달력별: 회사 급여 방식 카드·급여 방식 찾기·회사 급여 금액 화면(pendingPay)·광장 입구가 보조 달력에도",2 (1.30.0),완료,,"급여 화면 LocalCompanyCalendar(PayWayCard·PayFindSheet·CompanyPayScreen·PlazaEntry·PublicWayNotice); BBScreenshotTest 1320·1324"
+CALI-05,"1.30 BB 첫 설정·달력 추가 설정의 회사 선택이 그 달력에 저장, 회사 급여 방식이 있으면 payWays.use·decided로 '쓸까요?'를 두 번 묻지 않음",2 (1.30.0),완료,,"FirstSetup.keepCompany(첫 설정·SetupViewModel.saveCalendar), payWays.use·decided; CompanyScopeTest.aCompanyPickedInAnAddedCalendarsSetupIsThatCalendars"
+CALI-06,1.30 BB 보조 달력에 공개 근무주기를 넣을 때 본 달력 급여에 규칙이 들어가던 버그,2 (1.30.0),완료,,"PublicCycleApply가 그 달력의 share·store로; docs/plans/1.30-BB-개발계획.md"
+CALI-07,"1.30 BB 보조 달력의 회사 연결 백업·복원, 달력 지우면 회사 참여 정리(다른 달력이 같은 회사면 남김)와 파일 삭제",2 (1.30.0),완료,,"SettingsFilesBackup calendarCompany, CalendarBook onDelete→companyGone; CompanyScopeTest(지우기·백업), ZFullBackupTest.anAddedCalendarsCompanyTravelsWithTheSameKeys, 사진 1325"
+CALI-08,"1.30 BB 광장 위 달력 고르기 칩(달력 2개 이상), '내 활동·내가 보낸 정보'가 그 달력에서 보낸 것만, 다른 달력 것은 이름으로",2 (1.30.0),완료,,"PlazaCalendarChips, ActivityHolder 달력별 보낸 규칙; BBScreenshotTest 1322·1323·1326"
