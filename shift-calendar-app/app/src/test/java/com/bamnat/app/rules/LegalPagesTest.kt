@@ -252,4 +252,25 @@ class LegalPagesTest {
         assertTrue(text.contains("앱 1.28.0부터: 기능 켜짐 확인"))
         assertTrue(text.contains("최고 관리자의 휴대폰에서는 숨긴 근무 유형도 ‘${com.bamnat.core.flags.TypeExposure.HIDDEN_MARK}’로 보입니다"))
     }
+
+    /**
+     * [PHOTO-09] 3.3 for 1.29.0: the `photo.wrong` flag waits for 3.3's date, which is the page's date and the same day as 3.2,
+     * and the page lists the screens and reasons in the app's own words and says what never goes.
+     */
+    @Test fun policy33NamesPhotoWrongCountsAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.3")!!
+        val v32 = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 28) && v.effective == v32.effective && v.heldUntil == null)
+        assertTrue(text.contains("처리방침 3.3 · 앱 버전 1.29.0 기준 · 게시일 2026년 10월 28일 · 시행일 2026년 11월 27일"))
+        assertTrue("3.3 is the newest version line", text.indexOf("처리방침 3.3 ·") < text.indexOf("처리방침 3.2 ·"))
+        assertTrue(text.contains("1-13. 사진이 달라요 (선택, 앱 1.29.0부터, 처리방침 3.3 시행 뒤)"))
+        com.bamnat.core.stats.PhotoScreen.entries.forEach { assertTrue(it.label, text.contains(it.label.removeSuffix(" 사진"))) }
+        com.bamnat.core.stats.PhotoWrongReason.entries.forEach { assertTrue(it.label, text.contains(it.label)) }
+        assertTrue(text.contains("사진, 읽은 글자와 숫자, 이용자가 적은 글, 설치 번호, 휴대폰 모델과 정확한 시각은 보내지 않습니다"))
+        val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG)!!
+        assertTrue(flag.basis.policy.startsWith("3.3 1-13항"))
+    }
 }

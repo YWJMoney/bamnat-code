@@ -51,6 +51,8 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
         val SEED = PolicyCalendar(listOf(
             PolicyVersion(PolicyConsent.VERSION, PolicyConsent.POSTED, PolicyConsent.EFFECTIVE, PolicyConsent.HELD_UNTIL),
             PolicyVersion("3.2", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 27)),
+            // [PHOTO-09] 1.29: 사진이 달라요 횟수 (1-13항); the same day as 3.2 so both change at once.
+            PolicyVersion("3.3", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 27)),
         ))
 
         /** "3.10" after "3.9": compared part by part as numbers. */

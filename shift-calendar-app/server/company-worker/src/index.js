@@ -8590,7 +8590,7 @@ function flagDef(key) {
  * [FLAG-34] The versions the app ships with (core PolicyCalendar.SEED: 3.1, 3.2) take their dates from it; 3.2's are a
  * placeholder until 순번 459 fixes them (관리자 앱에서 고쳐요).
  */
-const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true };
+const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true, "3.3": false };
 const POLICY_CALENDAR = [
   { version: "2.5", posted: "2026-10-22", effective: "2026-11-21", heldUntil: null },
   { version: "3.0", posted: "2026-10-25", effective: "2026-11-24", heldUntil: null },
