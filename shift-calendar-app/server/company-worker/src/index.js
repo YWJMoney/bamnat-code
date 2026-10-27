@@ -623,6 +623,11 @@ const COLUMNS = [
   // 1.28 통합 [FLAG-36] AL-D3: an override's app versionCode range (판단 2단계 '앱 판 밖').
   "ALTER TABLE flag_overrides ADD COLUMN min_app INTEGER",
   "ALTER TABLE flag_overrides ADD COLUMN max_app INTEGER",
+  // AT 1.29 시작
+  // [ADMCP-03] 복사함: when a question was last copied for development and by whom (the activity log keeps each copy).
+  "ALTER TABLE inquiries ADD COLUMN copied_at INTEGER",
+  "ALTER TABLE inquiries ADD COLUMN copied_by TEXT",
+  // AT 1.29 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -645,6 +650,9 @@ const LATE_INDEXES = [
   `CREATE TABLE IF NOT EXISTS usage_startup (day TEXT NOT NULL, app TEXT NOT NULL, kind TEXT NOT NULL, step TEXT NOT NULL,
     bucket INTEGER NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app, kind, step, bucket))`,
   // AO 1.28 끝
+  // AT 1.29 시작 [ADMCP-04] 복사 전 문제 제보 for the badges and the list's strip: only the rows nobody copied yet.
+  "CREATE INDEX IF NOT EXISTS inquiries_uncopied ON inquiries (kind, status) WHERE copied_at IS NULL",
+  // AT 1.29 끝
 ];
 
 const schemas = new WeakMap();
@@ -3598,6 +3606,9 @@ async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
   if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams, env.actor?.id ?? ""));
   if (path === "/inquiries/bulk" && method === "POST") return inquiryBulk(request, env, now);
+  // AT 1.29 [ADMCP-01][ADMCP-03] 문의 복사: read whole (seeing is enough), then 복사함 (changing questions).
+  if (path === "/inquiries/export" && method === "GET") return json(await inquiryExport(env, url.searchParams));
+  if (path === "/inquiries/copied" && method === "POST") return inquiryCopied(request, env, now);
   // [SRV-06] A photo sent with a question, for an admin who may read questions.
   const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
   if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
@@ -3767,6 +3778,9 @@ async function adminInquiryView(env, row) {
     ...view,
     events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
+    // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
+    ...copyFields(row),
+    sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
   };
   if (view.waitingHours !== null) {
     const last = view.messages[view.messages.length - 1];
@@ -3831,8 +3845,12 @@ async function inquiryList(env, params, actorId = "") {
   const who = ["mine", "free"].includes(params.get("who")) ? params.get("who") : "";
   const sort = INQUIRY_SORTS.includes(params.get("sort")) ? params.get("sort") : "default";
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  // AT 1.29 [ADMCP-02] One kind (문제 신고만), copied or not yet (복사함), and one sending phone (같은 기기).
+  const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
+  const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
+  const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
   const now = Date.now();
-  const [rows, statusRows, slaRows, typing] = (await batch(env, [stmt(env, `SELECT i.*,
+  const [rows, statusRows, slaRows, typing, fresh] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -3840,13 +3858,19 @@ async function inquiryList(env, params, actorId = "") {
       (SELECT COUNT(*) FROM inquiry_notes n WHERE n.inquiry_id = i.id) AS notes
     FROM inquiries i
     WHERE (?1 IS NULL OR i.status = ?1)
-      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
+      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\')
+        OR i.info LIKE ?3 ESCAPE '\\' OR i.id = ?2)
       AND (?4 = '' OR (?4 = 'mine' AND i.assignee = ?5) OR (?4 = 'free' AND i.assignee IS NULL))
       AND (?6 = 0 OR (i.status = 'open' AND i.updated_at < ?6))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late),
+      AND (?7 IS NULL OR i.kind = ?7)
+      AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
+      AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
   slaQuery(env),
-  stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now)])).map((r) => r.results);
+  stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now),
+  // AT 1.29 [ADMCP-04] 복사 전 문제 제보, whatever the filter: how many, and how many came today.
+  stmt(env, FRESH_BUGS_SQL, todayStart(now))])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
   for (const r of statusRows) {
     if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
@@ -3881,6 +3905,8 @@ async function inquiryList(env, params, actorId = "") {
       rating: r.rating ?? 0,
       // [ADMIN-16] Another admin writing an answer to it right now.
       typing: writing[r.id] ?? [],
+      // AT 1.29 [ADMCP-03] 복사함 (when, by whom) and [ADMCP-06] a short mark of the phone that sent it.
+      ...copyFields(r),
     };
   });
   // How many of this view are in each topic, so the filter shows where the questions pile up.
@@ -3902,8 +3928,121 @@ async function inquiryList(env, params, actorId = "") {
   const { items, next } = paged(shown, page(params));
   return { counts, topics, topicNames: TOPIC_NAMES, inquiries: items, total: shown.length, next, sort, sla: targets,
     // [ADMUX-02] What the server took the filter to be, so the app shows the status 놓친 것 fixed.
-    status: status ?? "", late: Boolean(late) };
+    status: status ?? "", late: Boolean(late),
+    // AT 1.29 [ADMCP-02][ADMCP-04] The new filters as taken, and 복사 전 문제 제보 for the strip above the list.
+    kind: kind ?? "", copied, sender, fresh: { bugs: fresh[0]?.n ?? 0, today: fresh[0]?.today ?? 0 } };
 }
+
+// AT 1.29 시작
+// [ADMCP-01]~[ADMCP-06] 문의 복사: a question (or many) read whole to copy into a development task, 복사함 marked
+// on the ones copied (with, if asked, a 개발사항 made from them and their status changed in the same step), and
+// the open problem reports nobody copied yet counted for the badges and the list.
+
+/** Open or answered 문제 신고 nobody copied yet, and how many of them came since ?1 (today's start). */
+const FRESH_BUGS_SQL = `SELECT COUNT(*) AS n, COALESCE(SUM(created_at >= ?1), 0) AS today FROM inquiries
+  WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'`;
+
+const todayStart = (now) => Date.parse(`${kstDay(now)}T00:00:00+09:00`);
+
+/**
+ * [ADMCP-03] 복사함 as the lists and a question show it, and [ADMCP-06] the sending phone as six letters of the
+ * hash the server already keeps: enough to see that two questions came from one phone, nothing that names it.
+ */
+const copyFields = (row) => ({
+  copied: row.copied_at ? { at: iso(row.copied_at), by: row.copied_by ?? "" } : null,
+  sender: String(row.device ?? "").slice(0, 6),
+});
+
+/** At most this many questions in one copy, like the other bulk steps (DEV.bulk). */
+const COPY_MOST = 100;
+
+/** The ids in [v] (an array, or "a,b,c" from an address): 1 to 100 question ids, each once, or a refusal. */
+function copyIds(v) {
+  const list = Array.isArray(v) ? v : String(v ?? "").split(",").filter(Boolean);
+  const ids = [...new Set(list)];
+  if (!ids.length || ids.length > COPY_MOST || ids.some((id) => typeof id !== "string" || !/^[A-Za-z0-9]{22}$/.test(id))) refuse("ids", "ids");
+  return ids;
+}
+
+/**
+ * [ADMCP-01][ADMCP-02] GET /inquiries/export?ids=: the questions whole (thread, what came with it, notes, the
+ * timeline), in the order asked, for the app to write as one text. Reading only: 복사함 is marked by /copied
+ * once the text is really on the clipboard. Anyone who may see questions may copy them.
+ */
+async function inquiryExport(env, params) {
+  const ids = copyIds(params.get("ids"));
+  const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const out = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) continue;
+    const { templates, typing, ...view } = await adminInquiryView(env, row);
+    out.push(view);
+  }
+  return { inquiries: out, missing: ids.length - out.length };
+}
+
+/**
+ * [ADMCP-03] POST /inquiries/copied {ids, dev?: {title, body}, item?, status?, assign?}: 복사함 on each (now, by
+ * me), and in the same step, when asked, a new 개발사항 made from them or an existing one they join (both need
+ * 개발사항 고치기), closed or opened again, and taken by me where nobody holds them. One activity line for the lot.
+ */
+async function inquiryCopied(request, env, now) {
+  const body = await readJson(request, 32 * 1024);
+  const ids = copyIds(body.ids);
+  if (body.status !== undefined && body.status !== null && !["open", "closed"].includes(body.status)) refuse("status", "status");
+  const wantsDev = (body.dev !== undefined && body.dev !== null) || (body.item !== undefined && body.item !== null);
+  if (wantsDev && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
+  const rows = await all(env, `SELECT id, assignee FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  if (!rows.length) return json({ error: "not_found" }, 404);
+  const name = actorName(env);
+  const a = env.actor;
+  let item = null;
+  if (body.item !== undefined && body.item !== null) {
+    item = typeof body.item === "string" ? await one(env, "SELECT id, title FROM dev_items WHERE id = ? AND deleted_at IS NULL", body.item) : null;
+    if (!item) return json({ error: "not_found" }, 404);
+  } else if (body.dev !== undefined && body.dev !== null) {
+    if (typeof body.dev !== "object" || Array.isArray(body.dev)) refuse("title", "title");
+    const title = plainText(body.dev.title, DEV.title, "title", true);
+    const text = plainText(body.dev.body, DEV.body, "body");
+    item = { id: `d${randomId(15)}`, title };
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, item.id, title, text, a.id, name, now, now),
+      devEvent(env, item.id, now, "create", { title, body: cut(text) }),
+    ]);
+    await audit(env, now, "dev_create", title, item.id);
+  }
+  const found = rows.map((r) => r.id);
+  const marks = found.map(() => "?").join(", ");
+  const stmts = [stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...found)];
+  if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...found));
+  // Only the ones nobody holds: copying is no reason to take a question from another admin.
+  const free = body.assign === true ? rows.filter((r) => !r.assignee).map((r) => r.id) : [];
+  if (free.length) {
+    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${free.map(() => "?").join(", ")})`, a.id, name, ...free));
+  }
+  await batch(env, stmts);
+  let linked = 0;
+  if (item) {
+    for (const id of found) {
+      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", item.id, id, name, now);
+      if (r.meta.changes) {
+        linked++;
+        await devEvent(env, item.id, now, "link", { inquiry: id }).run();
+      }
+    }
+    await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
+  }
+  const status = body.status === "open" || body.status === "closed" ? body.status : null;
+  const steps = [`${found.length}건`, item ? `개발사항 ${linked}건 연결` : "", status ? (status === "closed" ? "닫음" : "다시 엶") : "",
+    free.length ? `${free.length}건 맡음` : ""].filter(Boolean).join(" · ");
+  await audit(env, now, "inquiry_copy", item ? item.title : "", steps);
+  return json({ marked: found.length, skipped: ids.length - found.length, copied: { at: iso(now), by: name },
+    item: item ? { id: item.id, title: item.title } : null, linked, status, assigned: free.length });
+}
+// AT 1.29 끝
 
 const SLA_SQL = `SELECT key, value FROM settings WHERE key IN (${Object.keys(SLA.keys).map((k) => `'${slaSetting(k)}'`).join(", ")})`;
 const slaQuery = (env) => env.DB.prepare(SLA_SQL);
@@ -4424,14 +4563,16 @@ async function signedRoute(request, env, url, path, method, now, session) {
     await audit(env, now, "logout_all", actor.id);
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
-  if (path === "/overview" && method === "GET") return json(await overview(env, actor));
-  // AN 1.28 [ADMUX-37] /overview in three: numbers for the menu, the 오늘 screen, and what rarely changes.
+  // AT 1.29 [ADMCP-07] AN-D6: the 1.27 app's /overview and /inbox are gone; the app reads /badges, /today and /basics
+  // since 1.28. A tab still open from back then gets 410 with where things went and this build; reloading it gets the new app.
+  if ((path === "/overview" || path === "/inbox") && method === "GET") {
+    return json({ error: "moved", to: path === "/overview" ? "/api/admin/badges" : "/api/admin/today", build: adminBuild() }, 410);
+  }
+  // AN 1.28 [ADMUX-37] What 1.27's /overview was, in three: numbers for the menu, the 오늘 screen, and what rarely changes.
   if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
   if (path === "/today" && method === "GET") return json(await today(env, actor, now));
   if (path === "/basics" && method === "GET") return json(await basics(env));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
-  // [ADMUX-17] 할 일 받은함: everything this admin may act on, nearest deadline first.
-  if (path === "/inbox" && method === "GET") return json(await inbox(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") return json(serverState(env));
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
@@ -5142,7 +5283,7 @@ function auditAbout(r) {
 
 /**
  * AN 1.28 [ADMUX-37] The counts behind the developer app's menu numbers, each with the area an admin needs to see
- * it. /badges reads only these; /overview reads them among its other numbers.
+ * it. /badges reads them in one trip (AT 1.29: /overview, which read them too, is gone).
  */
 const BADGE_SQL = {
   pending: ["review", "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')"],
@@ -5160,127 +5301,9 @@ const BADGE_SQL = {
   waiting: ["owner", "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'"],
   // [MON-09] Admins' phones waiting for the owner's 승인.
   phones: ["owner", "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'"],
+  // AT 1.29 [ADMCP-04] 문제 신고 not closed that nobody copied for development yet (오늘's tile and 문의's strip).
+  bugsUncopied: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'"],
 };
-
-/** The home screen's numbers, only for the areas this admin can see. */
-async function overview(env, actor) {
-  // One trip to the database for every number: the home screen waits on this call.
-  const now = Date.now();
-  const today = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
-  const counts = { settings: `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`,
-    // [ADMUX-06] 오늘 내가 처리한 것 (sign-ins left out), and the answer targets.
-    doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, today],
-    sla: SLA_SQL };
-  // [ADMIN-17] The home screen's 최근 활동, so it does not read 50 lines of /audit for ten.
-  if (can(actor, "audit")) counts.recent = `${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`;
-  if (can(actor, "review")) {
-    for (const k of ["pending", "asks", "flagged"]) counts[k] = BADGE_SQL[k][1];
-    counts.reports = "SELECT COUNT(*) AS n FROM reports";
-    counts.queueGroups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
-      FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 5`;
-  }
-  if (can(actor, "inquiries")) {
-    counts.inquiries = BADGE_SQL.inquiries[1];
-    // [ADMIN-12] 오늘 할 일: the waiting questions I took, and the ones nobody took yet.
-    counts.inquiriesMine = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee = ?", actor.id];
-    counts.inquiriesFree = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NULL";
-    // [INQ-04] 놓친 문의 on the home screen, so nothing waits past a day unseen.
-    counts.inquiriesLate = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND updated_at < ?", Date.now() - INQUIRY.lateMs];
-    counts.inquiriesBad = "SELECT COUNT(*) AS n FROM inquiries WHERE rating = -1 AND status != 'closed'";
-    // [ADMUX-06] New questions today and yesterday, the waiting ones for the 할 일 queue, and who holds how many.
-    counts.inquiriesToday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ?", today];
-    counts.inquiriesYesterday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ? AND created_at < ?", today - DAY, today];
-    counts.queueInquiries = `SELECT i.id, i.kind, i.updated_at, i.assignee, i.assignee_name, i.same,
-        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
-        (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
-      FROM inquiries i WHERE i.status = 'open' ORDER BY i.updated_at LIMIT 300`;
-    counts.assigned = "SELECT assignee AS id, assignee_name AS name, COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NOT NULL GROUP BY assignee ORDER BY n DESC";
-  }
-  if (can(actor, "dev")) {
-    // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
-    counts.devTodo = BADGE_SQL.devTodo[1];
-    counts.devDoing = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'doing'";
-    counts.devMine = ["SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status IN ('todo', 'doing') AND assignee = ?", actor.id];
-  }
-  if (can(actor, "rewards")) counts.owed = BADGE_SQL.owed[1];
-  if (can(actor, "community")) {
-    // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
-    counts.flaggedPosts = BADGE_SQL.flaggedPosts[1];
-    counts.flaggedPostsLate = ["SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND status = 'hidden' AND hide_reason = 'flags' AND hidden_at < ?",
-      Date.now() - (LIMITS.hiddenReviewDays - 7) * DAY];
-    counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
-    counts.queuePosts = `SELECT p.id, p.body, p.flags, p.status, p.created_at, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-      WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at LIMIT 5`;
-  }
-  if (can(actor, "companies")) {
-    counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
-    counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
-    counts.versionConflicts = BADGE_SQL.versionConflicts[1];
-  }
-  // [ADMIN-14] 이달 할 일 still open on the home screen.
-  if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
-  if (actor.owner) {
-    counts.waiting = BADGE_SQL.waiting[1];
-    counts.phones = BADGE_SQL.phones[1];
-  }
-  // AM 1.28 [FLAG-22][ADMUX-27] the flags ride in the same trip too (billingLive, 홈 경고, 메뉴 숫자).
-  Object.assign(counts, FLAG_STORE_SQL);
-  // [ADMUX-17] 받은함's statements ride in the same trip, for the menu badge (what is past its deadline).
-  for (const [k, v] of Object.entries(inboxQueries(actor, now))) counts[`inbox_${k}`] = v;
-  const keys = Object.keys(counts);
-  const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
-  const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
-  // AH 1.27 [PLAZA-15] doubt: when 달라요 take a version out of the lead (AH-D7), shown on the settings page.
-  const out = { me: me(actor), settings: readSettings(got.settings), doubt: DOUBT, reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
-    flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
-  const rows = new Set([...Object.keys(FLAG_STORE_SQL), "settings", "waiting", "phones", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
-  for (const k of keys) {
-    if (rows.has(k) || k.startsWith("inbox_")) continue;
-    out[k] = got[k][0].n;
-  }
-  // [ADMUX-08] The developer app's build, so an open app can say a new one is out.
-  out.build = adminBuild();
-  // [ADMUX-17] What in 받은함 is past its deadline, for the menu badge.
-  out.inboxLate = inboxItems(Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]])), actor, now).counts.late;
-  out.sla = readSla(got.sla);
-  if (got.recent) {
-    out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
-      detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
-  }
-  // [ADMUX-06] 할 일: the waiting questions closest to their target, the oldest setups to review and the
-  // most flagged posts, each with what the home screen needs to act on it there.
-  const queue = [];
-  let lateToday = 0;
-  if (got.queueInquiries) {
-    const end = today + DAY;
-    for (const r of got.queueInquiries) {
-      if (r.last !== "user") continue;
-      const left = slaLeft(r.kind, r.updated_at, out.sla, now);
-      if (r.updated_at + out.sla[slaKey(r.kind)] * HOUR < end) lateToday++;
-      queue.push({ type: "inquiry", id: r.id, kind: r.kind, text: [...(r.first ?? "")].slice(0, 80).join(""), slaLeft: left, same: r.same ?? 0,
-        assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null, at: iso(r.updated_at) });
-    }
-    queue.sort((a, b) => a.slaLeft - b.slaLeft);
-    queue.splice(8);
-    out.assigned = got.assigned.map((a) => ({ id: a.id, name: a.name ?? "", n: a.n }));
-    out.slaLateToday = lateToday;
-  }
-  for (const g of got.queueGroups ?? []) {
-    queue.push({ type: "group", id: `${g.company_id}/${g.grp}`, company: g.name, dept: g.dept, n: g.n, at: iso(g.since) });
-  }
-  for (const p of got.queuePosts ?? []) {
-    queue.push({ type: "post", id: p.id, company: p.name, text: [...p.body].slice(0, 80).join(""), flags: p.flags, hidden: p.status === "hidden", at: iso(p.created_at) });
-  }
-  out.queue = queue;
-  if (actor.owner) out.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
-  // [MON-10] Every screen shows whether 정식 출시 is on: AM 1.28 [FLAG-22] the billing flag by the server's view.
-  // [ADMUX-27][FLAG-28] flagAlerts (legal flags on for under 24 hours) and flagsDue for the home screen and the menu.
-  const flagStoreNow = storeFrom(got.flagOverrides, got.flagChecks, got.flagPolicy, got.flagState);
-  out.billingLive = serverEval(flagStoreNow, "billing", now).on;
-  Object.assign(out, await flagOverview(env, actor, now, flagStoreNow));
-  if (got.opsDone) out.opsLeft = opsItems(kstDay(Date.now()).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
-  return out;
-}
 
 // AN 1.28 시작
 
@@ -5319,7 +5342,7 @@ async function badges(env, actor, now) {
   for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
   if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
-  // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as /overview's flagsDue) and the
+  // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as 1.27 /overview's flagsDue) and the
   // legal flags on for under 24 hours (오늘's top card), for admins who may see 기능 관리.
   Object.assign(data, await flagOverview(env, actor, now, store));
   if (kept.size >= BADGES.maxKept) kept.clear();
@@ -7771,14 +7794,7 @@ function inboxQueries(actor, now) {
   return q;
 }
 
-async function inbox(env, actor, now) {
-  const q = inboxQueries(actor, now);
-  const keys = Object.keys(q);
-  const res = await batch(env, keys.map((k) => (Array.isArray(q[k]) ? stmt(env, ...q[k]) : env.DB.prepare(q[k]))));
-  return inboxItems(Object.fromEntries(keys.map((k, i) => [k, res[i].results])), actor, now);
-}
-
-/** [ADMUX-17] The list from what [inboxQueries] read (also read inside the overview's one trip). */
+/** [ADMUX-17] The list from what [inboxQueries] read (inside /today's one trip). */
 function inboxItems(got, actor, now) {
   const items = [];
   const add = (item) => items.push({ due: null, ...item, at: iso(item.at), ...(item.due ? { due: iso(item.due) } : {}) });

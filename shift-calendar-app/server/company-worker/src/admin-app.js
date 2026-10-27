@@ -55,7 +55,7 @@ export function adminPrebuilt() {
   return { files: adminFiles(), version: adminBuild() };
 }
 
-/** [ADMUX-08] A name for this build of the app's files; /api/admin/overview sends it as build. */
+/** [ADMUX-08] A name for this build of the app's files; /api/admin/badges sends it as build (AT 1.29: so does the 410 of the old /overview). */
 export function adminBuild() {
   builtVersion ??= hashText(String(adminApp) + String(adminLib) + String(adminWorker) + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
   return builtVersion;
@@ -547,7 +547,9 @@ dialog p{margin:0 0 .75rem;color:var(--muted);font-size:.88rem}
 dialog .actions:last-child{position:sticky;bottom:0;margin:1rem -1.25rem -1.1rem;padding:.75rem 1.25rem calc(.9rem + env(safe-area-inset-bottom));
 background:var(--raised);border-top:1px solid var(--line)}
 @media (max-width:599.98px){dialog{margin:auto 0 0;width:100vw;max-width:100vw;border-radius:var(--r-lg) var(--r-lg) 0 0;padding-bottom:env(safe-area-inset-bottom)}
-@keyframes pop{from{transform:translateY(100%)}to{transform:none}}}
+@keyframes pop{from{transform:translateY(100%)}to{transform:none}}
+/* AT 1.29: a wide box (복사, 개발사항에 추가) is a whole-width sheet on a phone too; dialog.wide's 94vw left a gap at the side. */
+dialog.wide{width:100vw}}
 .radios{display:grid;gap:.5rem;margin:.4rem 0}
 .radio{display:flex;align-items:center;gap:.6rem;margin:0;padding:.75rem;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-weight:600;cursor:pointer;font-size:.92rem}
 .radio input{flex:none;width:1.25rem;height:1.25rem;accent-color:var(--accent)}
@@ -568,6 +570,21 @@ margin:.75rem 0 0;padding:.6rem .75rem;background:var(--raised);border:1px solid
 .rows.inbox .row-main a{color:inherit;text-decoration:none}
 .rows.inbox .row-main a:hover{text-decoration:underline}
 @media (min-width:600px){.bulkbar{bottom:1rem}.rows.inbox .row-side{flex-direction:row;align-items:center}}
+/* ---- AT 1.29 문의 복사 [ADMCP-01]~[ADMCP-05]: a copy button beside a row's link, the strip of new reports, the copy box ---- */
+.rows>li.has-tool{display:flex;align-items:center}
+.rows>li.has-tool>.row{flex:1;min-width:0}
+.row-tool{flex:none;display:inline-grid;place-items:center;width:2.75rem;height:2.75rem;margin:0 .4rem 0 -.4rem;border:0;border-radius:var(--r-sm);background:none;color:var(--muted);cursor:pointer}
+.row-tool:hover,.row-tool:focus-visible{background:var(--hover);color:var(--fg)}
+.row-tool svg{width:1.15rem;height:1.15rem}
+.fresh{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 .75rem;padding:.6rem .8rem;border-radius:var(--r-sm);background:var(--info-bg);font-size:.9rem}
+.fresh span{flex:1 1 12rem;min-width:0}
+.copy-text{display:block;width:100%;min-height:14rem;max-height:45vh;margin:.5rem 0;font:inherit;font-size:.82rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;resize:vertical}
+.copybox .after{margin:.75rem 0 0;padding:.6rem .75rem;border:1px solid var(--line);border-radius:var(--r-sm)}
+.copybox .after legend{padding:0 .3rem;font-size:.85rem;font-weight:800}
+/* On a phone the bar keeps to 복사 and 다른 일, so it does not cover the list it picks from; wider, everything shows. */
+.bulkbar .more-acts{display:contents}
+@media (max-width:599.98px){.bulkbar:not(.open) .more-acts{display:none}}
+@media (min-width:600px){.bulkbar .more-toggle{display:none}}
 .dev-body{margin:.6rem 0 0;white-space:pre-wrap;font-size:.94rem}
 .history{list-style:none;margin:0;padding:0}
 .history li{padding:.6rem 0;border-top:1px solid var(--line);font-size:.88rem}
@@ -791,6 +808,7 @@ function adminApp(L, BUILD) {
     ops_done: "이달 할 일 마침", ops_undo: "이달 할 일 되돌림", share_remove: "공유 링크 내림",
     // [ADMIN-16][ADMIN-17][ADMUX-06]
     inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
+    inquiry_copy: "문의 개발로 복사함", // AT 1.29 [ADMCP-03]
     rate_set: "임금표 처리",
     // AM 1.28 [FLAG-21][FLAG-25][FLAG-32]
     flag_force_off: "기능 강제로 끔", flag_force_on: "기능 강제로 켬", flag_clear: "기능 강제 풀기", flag_conditions: "기능 조건 바꿈", flag_range: "기능 앱 판 범위 바꿈",
@@ -847,7 +865,8 @@ function adminApp(L, BUILD) {
     const root = document.documentElement;
     if (S.prefs.theme === "light" || S.prefs.theme === "dark") root.dataset.theme = S.prefs.theme;
     else delete root.dataset.theme;
-    if (S.prefs.size === "small" || S.prefs.size === "large") root.dataset.size = S.prefs.size;
+    // AT 1.29 [ADMCP-07] 아주 크게 (125%): the style had it, the setting did not offer it.
+    if (["small", "large", "xlarge"].includes(S.prefs.size)) root.dataset.size = S.prefs.size;
     else delete root.dataset.size;
   }
 
@@ -907,6 +926,8 @@ function adminApp(L, BUILD) {
     queue: null, cursor: -1,
     // AM 1.28 [ADMUX-21][ADMUX-24][ADMUX-25] 기능 관리: 상태 거르기, 찾기, 목록·일정, 미리 보기의 휴대폰.
     flagShow: "all", flagQuery: "", flagView: "", flagSim: null,
+    // AT 1.29 [ADMCP-02][ADMCP-06] 문의 종류·복사 전만·같은 기기 거르기, the copy box open now, the row a Shift range starts at.
+    inquiryKind: "", inquiryCopied: "", inquirySender: "", copy: null, pickAnchor: null, bulkMore: false,
   };
 
   const esc = L.esc;
@@ -939,7 +960,8 @@ function adminApp(L, BUILD) {
 
   /** Which state each screen's address filters stand for. */
   const BIND = {
-    inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort" },
+    inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
+      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */ },
     dev: { status: "devStatus", who: "devWho", q: "devQuery" },
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
@@ -1212,7 +1234,9 @@ function adminApp(L, BUILD) {
       const who = S.inquiryWho === "late" ? "&late=1" : S.inquiryWho ? `&who=${S.inquiryWho}` : "";
       const q = S.inquiryQuery ? `&q=${encodeURIComponent(S.inquiryQuery)}` : "";
       const after = more && S.data.inquiries?.next ? `&after=${S.data.inquiries.next}` : "";
-      const d = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}${q}&sort=${S.inquirySort}${after}`);
+      // AT 1.29 [ADMCP-02][ADMCP-06] 문제 신고만, 복사 전만, one phone's questions.
+      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}`;
+      const d = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}${q}${more2}&sort=${S.inquirySort}${after}`);
       if (n !== undefined && !seq.current("load", n)) return;
       S.data.inquiries = more ? { ...d, inquiries: [...S.data.inquiries.inquiries, ...d.inquiries] } : d;
       S.data.inquiriesMissing = false;
@@ -1582,6 +1606,8 @@ function adminApp(L, BUILD) {
       tile("답 대기", o.inquiries, "답을 기다리는 문의", inq({ status: "open", sort: "sla" }), true);
       tile("오늘 목표 넘김", o.slaLateToday, "오늘 안에 답 목표를 넘겨요", inq({ status: "open", sort: "sla" }), true);
       tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), true);
+      // AT 1.29 [ADMCP-04] New problem reports nobody copied for development yet, one tap from the list that copies them.
+      tile("복사 전 문제 신고", o.bugsUncopied, "개발에 넘기기 전이에요", inq({ status: "all", kind: "bug", copied: "no" }), true);
     }
     if (can("review")) {
       // [ADMUX-10] The menu badge's number, with what it is made of.
@@ -1884,6 +1910,16 @@ function adminApp(L, BUILD) {
 
   const SORTS = [["default", "기본(급한 것 먼저)"], ["sla", "답 목표가 가까운 순"], ["oldest", "오래 기다린 순"], ["newest", "최근 순"], ["same", "나도 그래요 많은 순"]];
 
+  /**
+   * AT 1.29 [ADMCP-03][ADMCP-04] 복사함 (who, when) on a copied question; 새 on a problem report from the last day that
+   * nobody copied yet, so a new one stands out in the list.
+   */
+  function copyPill(q) {
+    if (q.copied) return `<span class="pill ok" title="${esc(moment(q.copied.at))}">복사함${q.copied.by ? ` · ${esc(q.copied.by)}` : ""}</span>`;
+    const fresh = q.kind === "bug" && Date.now() - Date.parse(q.createdAt) < 24 * 3600e3;
+    return fresh ? '<span class="pill info">새</span>' : "";
+  }
+
   /** One question in a list; [compact] for the list beside an open question. */
   function inquiryRow(q, { compact = false, picking = false } = {}) {
     const current = S.route.id === q.id;
@@ -1893,13 +1929,15 @@ function adminApp(L, BUILD) {
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${slaPill(q.slaLeft)}
         ${compact ? "" : `${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}
         ${q.rating ? `<span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "도움 됐어요" : "아쉬워요"}</span>` : ""}
-        ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}`}
+        ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}${copyPill(q) /* AT 1.29 */}`}
         ${q.assignee ? `<span class="pill${q.assignee.id === S.me.id ? " info" : ""}">${q.assignee.id === S.me.id ? "내가 맡음" : esc(q.assignee.name)}</span>` : ""}</span>`;
     if (picking) {
       const on = S.inquiryPick.has(q.id);
-      return `<li><label class="row${on ? " picked" : ""}"><input class="check" type="checkbox" data-pick-inquiry="${q.id}"${on ? " checked" : ""} aria-label="고르기">${inner}</label></li>`;
+      return `<li><label class="row${on ? " picked" : ""}" data-pick-row="${q.id}"><input class="check" type="checkbox" data-pick-inquiry="${q.id}"${on ? " checked" : ""} aria-label="고르기">${inner}</label></li>`;
     }
-    return `<li><a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}"${current ? ' aria-current="true"' : ""} data-row="${q.id}">${inner}${icon(P.chevron)}</a></li>`;
+    const link = `<a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}"${current ? ' aria-current="true"' : ""} data-row="${q.id}">${inner}${icon(P.chevron)}</a>`;
+    // AT 1.29 [ADMCP-01] 복사 on the row itself, beside (not inside) its link; the narrow list beside a question has none.
+    return compact ? `<li>${link}</li>` : `<li class="has-tool">${link}<button type="button" class="row-tool" data-act="inquiry-copy" data-id="${q.id}" aria-label="이 문의 복사" title="복사 (c)">${icon(P.copy)}</button></li>`;
   }
 
   function inquiriesView() {
@@ -1909,34 +1947,64 @@ function adminApp(L, BUILD) {
     const d = S.data.inquiries;
     const counts = d?.counts ?? {};
     const edit = can("inquiries", "edit");
-    const picking = Boolean(S.inquiryPick) && edit;
+    // AT 1.29 [ADMCP-02] Picking is for copying too, which seeing questions is enough for; the other steps need 고치기.
+    const picking = Boolean(S.inquiryPick);
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
       ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="문의와 답에서 찾기" value="${esc(S.inquiryQuery)}" autocomplete="off" enterkeyhint="search" aria-label="문의 찾기">
         <label class="sr" for="inq-sort">정렬</label><select id="inq-sort" data-change="inquiry-sort">${SORTS.map(([k, label]) => `<option value="${k}"${S.inquirySort === k ? " selected" : ""}>${label}</option>`).join("")}</select>
-        ${edit ? `<button class="btn" data-act="inquiry-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>` : ""}
+        <button class="btn" data-act="inquiry-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>
         ${picking ? "" : csvButton("inquiries", S.data.inquiries?.inquiries)}
         ${edit && S.inquiryStatus === "open" ? '<button class="btn primary" data-act="queue-start">큐 모드</button>' : ""}</div>
       <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
-        `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${topicChips(d)}`;
+        `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}`;
     if (!d) return head + skeleton();
+    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender;
     if (!d.inquiries.length) {
-      return head + empty(S.inquiryQuery ? "찾는 문의가 없어요" : S.inquiryWho === "late" ? "하루 넘게 기다리는 문의가 없어요. 잘하고 있어요" : S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
-        S.inquiryQuery ? "다른 말로 찾아보세요. 보낸 분과 관리자가 쓴 글을 모두 찾아요." : S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.",
-        S.inquiryQuery || S.inquiryWho || S.inquiryTopic ? '<button class="btn" data-act="inquiry-clear">조건 지우기</button>'
+      return head + freshStrip(d) + empty(S.inquiryQuery ? "찾는 문의가 없어요" : S.inquiryCopied === "no" ? "복사 전인 문의가 없어요. 모두 개발에 넘겼어요" : S.inquiryWho === "late" ? "하루 넘게 기다리는 문의가 없어요. 잘하고 있어요" : S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
+        S.inquiryQuery ? "다른 말로 찾아보세요. 보낸 분과 관리자가 쓴 글, 앱 판·기기 이름, 문의 번호를 모두 찾아요." : S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.",
+        filtered ? '<button class="btn" data-act="inquiry-clear">조건 지우기</button>'
           : can("inquiries", "edit") && S.inquiryStatus === "open" ? '<button class="btn" data-act="templates">한가할 때 자주 쓰는 답 정리하기</button>' : "");
     }
     const n = picking ? S.inquiryPick.size : 0;
-    const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 문의"><b>${n}개 골랐어요</b>
+    // AT 1.29 [ADMCP-02] The bar stays at the bottom of the screen; 선택 n개 복사 is its first button.
+    const found = d.total ?? d.inquiries.length;
+    const bar = picking ? `<div class="bulkbar${S.bulkMore ? " open" : ""}" role="toolbar" aria-label="고른 문의"><b>${n}개 골랐어요</b>
         <button class="btn small ghost" data-act="inquiry-pick-all">${n === d.inquiries.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
-        ${[["assign", "내가 맡기"], ["unassign", "맡기 취소"], ["reply", "같은 답 보내기"], ["close", "닫기"], ["open", "다시 열기"]].map(([k, label]) =>
-          `<button class="btn small${k === "reply" ? " primary" : ""}" data-act="inquiry-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}
-        ${can("dev", "edit") ? `<button class="btn small" data-act="inquiry-bulk" data-key="link"${n ? "" : " disabled"}>개발사항에 연결</button>` : ""}</div>` : "";
-    return head + `<p class="meta">${d.total ?? d.inquiries.length}건${d.sla ? ` · 답 목표: 문제 ${d.sla.slaBug}시간, 질문 ${d.sla.slaQuestion}시간, 제안 ${d.sla.slaIdea}시간` : ""}</p>
+        ${found > d.inquiries.length && n < Math.min(found, 100) ? `<button class="btn small ghost" data-act="inquiry-pick-found">찾은 ${Math.min(found, 100)}건 모두 고르기</button>` : ""}
+        <button class="btn small primary" data-act="inquiry-copy-picked"${n ? "" : " disabled"}>${icon(P.copy)}선택 ${n}개 복사</button>
+        ${edit ? `<button class="btn small ghost more-toggle" data-act="bulk-more" aria-expanded="${Boolean(S.bulkMore)}">${S.bulkMore ? "접기" : "다른 일"}</button>
+        <span class="more-acts">${[["assign", "내가 맡기"], ["unassign", "맡기 취소"], ["reply", "같은 답 보내기"], ["close", "닫기"], ["open", "다시 열기"]].map(([k, label]) =>
+          `<button class="btn small" data-act="inquiry-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}
+        ${can("dev", "edit") ? `<button class="btn small" data-act="inquiry-bulk" data-key="link"${n ? "" : " disabled"}>개발사항에 연결</button>` : ""}</span>` : ""}</div>` : "";
+    return head + freshStrip(d) + `<p class="meta">${found}건${d.sla ? ` · 답 목표: 문제 ${d.sla.slaBug}시간, 질문 ${d.sla.slaQuestion}시간, 제안 ${d.sla.slaIdea}시간` : ""}${picking ? "" : " · 길게 누르거나 Space로 고르고, Shift로 이어서 골라요"}</p>
       <ul class="rows">${d.inquiries.map((q) => inquiryRow(q, { picking })).join("")}</ul>
       ${moreButton(d.next, "inquiries-more", d.total, d.inquiries.length)}${bar}`;
   }
+
+  // AT 1.29 시작
+  /** [ADMCP-02] 문제 신고만 and the other kinds, 복사 전만, and the one phone being looked at (같은 기기). */
+  function kindChips() {
+    const kinds = [["", "모든 종류"], ["bug", "문제 신고"], ["question", "질문"], ["idea", "건의·제안"]];
+    return `<div class="chips" role="group" aria-label="종류와 복사">${kinds.map(([key, label]) =>
+      `<button type="button" class="chip pick" data-act="inquiry-kind" data-key="${key}" aria-pressed="${S.inquiryKind === key}">${label}</button>`).join("")}
+      <button type="button" class="chip pick" data-act="inquiry-copied" data-key="no" aria-pressed="${S.inquiryCopied === "no"}">복사 전만</button>
+      ${S.inquirySender ? `<button type="button" class="chip pick" data-act="inquiry-sender" data-key="" aria-pressed="true">같은 기기 #${esc(S.inquirySender)} ✕</button>` : ""}
+      ${S.inquiryKind || S.inquiryCopied || S.inquirySender ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
+  }
+
+  /**
+   * [ADMCP-04] New problem reports stand out: how many wait to be copied (today's among them), with one tap to see
+   * just those and one to copy them all. Hidden while the list already shows exactly that.
+   */
+  function freshStrip(d) {
+    const f = d?.fresh;
+    if (!f?.bugs || (S.inquiryKind === "bug" && S.inquiryCopied === "no")) return "";
+    return `<div class="fresh" role="status"><span>복사 전 문제 신고 <b>${f.bugs}</b>건${f.today ? ` · 오늘 <b>${f.today}</b>건` : ""}</span>
+      <button class="btn small" data-act="fresh-bugs">모아 보기</button><button class="btn small primary" data-act="fresh-copy">${icon(P.copy)}모두 복사</button></div>`;
+  }
+  // AT 1.29 끝
 
   /** [ADMIN-16] Where this question is in the list the admin came from: the ones before and after it. */
   function neighbours() {
@@ -1994,7 +2062,8 @@ function adminApp(L, BUILD) {
       <span>Ctrl+Enter 보내고 다음 · s 건너뛰기 · e 닫고 다음</span><button class="btn small" data-act="queue-skip">건너뛰기</button><button class="btn small ghost" data-act="queue-stop">끝내기</button></div>` : "";
     return `${queueBar}${step}<div class="cols">
       <section>
-        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
+        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
+          <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}로 보여요. ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
@@ -2019,6 +2088,7 @@ function adminApp(L, BUILD) {
             : `<button class="btn" data-act="inquiry-assign" data-to="me">${q.assignee ? "내가 넘겨받기" : "내가 맡기"}</button>`}
             ${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
+        ${copiedCard(q) /* AT 1.29 */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
           ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
@@ -2035,6 +2105,17 @@ function adminApp(L, BUILD) {
             <div class="actions"><button class="btn small" type="submit">메모 남기기</button></div></form>` : ""}</section>
         <details class="card"><summary>기록</summary>${timeline(q)}</details>
       </aside></div>`;
+  }
+
+  /**
+   * AT 1.29 [ADMCP-03][ADMCP-06] On a question: whether it was copied for development (who, when), and the other
+   * questions the same phone sent, one tap away.
+   */
+  function copiedCard(q) {
+    const same = q.sameSender ? `<p class="meta">이 기기(#${esc(q.sender)})에서 온 다른 문의 ${q.sameSender}건
+      <button class="btn small ghost" data-act="inquiry-sender" data-key="${esc(q.sender)}">모아 보기</button></p>` : "";
+    return `<section class="card"><h2>개발로 복사</h2>
+      <p class="meta">${q.copied ? `${esc(q.copied.by || "관리자")}님이 ${esc(moment(q.copied.at))}에 복사했어요.` : "아직 아무도 복사하지 않았어요."}</p>${same}</section>`;
   }
 
   /**
@@ -3025,8 +3106,9 @@ function adminApp(L, BUILD) {
         ${edit ? `<button class="btn primary" data-act="templates">${icon(P.plus)}새 답</button>` : ""}</div>
       ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}</b>
         <small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
-        ${edit ? `<div class="actions"><button type="button" class="btn small" data-act="template-edit" data-id="${x.id}">고치기</button>
-        <button type="button" class="btn small danger" data-act="template-remove" data-id="${x.id}">지우기</button></div>` : ""}</li>`).join("")}</ul>`
+        <div class="actions"><button type="button" class="btn small" data-act="template-copy" data-id="${x.id}">${icon(P.copy)}복사</button>
+        ${edit ? `<button type="button" class="btn small" data-act="template-edit" data-id="${x.id}">고치기</button>
+        <button type="button" class="btn small danger" data-act="template-remove" data-id="${x.id}">지우기</button>` : ""}</div></li>`).join("")}</ul>`
         : empty("자주 쓰는 답이 없어요", "새 답을 넣으면 모든 관리자의 답 칸 아래에 보여요.")}`;
   }
 
@@ -3098,7 +3180,7 @@ function adminApp(L, BUILD) {
     const opt = (v, label, cur) => `<option value="${v}"${cur === v ? " selected" : ""}>${label}</option>`;
     return `<section class="card prefs"><h2>이 기기</h2><p class="hint">이 기기와 브라우저에만 남아요. 다른 관리자에게는 보이지 않아요.</p>
       <div class="fieldset"><label for="pref-theme">화면 색</label><div class="field"><select id="pref-theme" data-change="pref-theme">${opt("system", "기기 설정을 따라요", p.theme)}${opt("light", "밝게", p.theme)}${opt("dark", "어둡게", p.theme)}</select></div></div>
-      <div class="fieldset"><label for="pref-size">글자 크기</label><div class="field"><select id="pref-size" data-change="pref-size">${opt("small", "작게", p.size)}${opt("normal", "보통", p.size)}${opt("large", "크게", p.size)}</select></div></div>
+      <div class="fieldset"><label for="pref-size">글자 크기</label><div class="field"><select id="pref-size" data-change="pref-size">${opt("small", "작게", p.size)}${opt("normal", "보통", p.size)}${opt("large", "크게", p.size)}${opt("xlarge", "아주 크게", p.size) /* AT 1.29 */}</select></div></div>
       ${bottom.more ? `<p class="label">휴대폰 아래 탭(오늘 말고 3개까지, 나머지는 더 보기)</p>
       <div class="chips" role="group" aria-label="아래 탭">${items.map((h) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${h.key}"${bottom.tabs.includes(h.key) ? " checked" : ""}> ${esc(h.label)}</label>`).join("")}</div>` : ""}
       <label class="switch"><input type="checkbox" data-change="pref-sound"${p.sound ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>새 문의가 오면 작은 소리</span></label>
@@ -3548,6 +3630,148 @@ function adminApp(L, BUILD) {
       toast("링크를 길게 눌러 복사해 주세요");
     }
   }
+
+  // ---- AT 1.29 시작: 문의 복사 [ADMCP-01]~[ADMCP-05] ----
+  // One question or the ones picked, as Markdown to paste into development: a box shows the text (짧게·자세히,
+  // 같은 제보 묶기, 분류별로), 복사 puts it on the clipboard (a box to select by hand where the browser will not),
+  // and then 복사함 is marked with, if chosen, a 개발사항 made from them, 내가 맡기 and 닫기 in the same step.
+
+  /** Text on the clipboard: the browser's clipboard, else the old copy command on the box; false when neither works. */
+  async function toClipboard(text, box) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        box?.select();
+        return Boolean(document.execCommand?.("copy"));
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  const copyText = () => L.inquiryCopyText(S.copy?.list ?? [], { style: S.copy?.style, group: S.copy?.group, byKind: S.copy?.byKind, base: location.origin });
+
+  /** The copy box for [ids] (in the list's order); a question open on the screen is used as it is, the rest are read whole. */
+  async function openCopy(ids) {
+    if (!ids.length) return;
+    const p = S.prefs.copy ?? {};
+    S.copy = { ids, list: null, style: p.style === "short" ? "short" : "full", group: p.group !== false, byKind: p.byKind !== false, failed: false };
+    paintCopy();
+    const open = S.data.inquiry;
+    if (ids.length === 1 && open?.id === ids[0] && open.messages) {
+      S.copy.list = [open];
+    } else {
+      const r = await act(() => api(`/inquiries/export?ids=${ids.join(",")}`));
+      if (!r || !S.copy) return dialog.close();
+      S.copy.list = r.inquiries;
+    }
+    paintCopy();
+  }
+
+  function paintCopy() {
+    const c = S.copy;
+    if (!c) return;
+    // A title being typed survives a repaint of the box (a box ticked or the style changed).
+    const typed = document.getElementById("copy-dev-title")?.value;
+    if (typed !== undefined) c.devTitle = typed;
+    const n = c.ids.length;
+    const edit = can("inquiries", "edit");
+    const dev = edit && can("dev", "edit");
+    const item = c.list && c.dev ? L.copyDevItem(c.list, location.origin) : null;
+    const html = `<div class="box copybox"><h2>문의 ${n}건 복사</h2>
+      <p class="hint">개발할 때 그대로 붙여 넣는 마크다운이에요. 사진은 들어가지 않고 개수와 관리자 앱 링크만 들어가요. 밖에 붙여 넣는다면 개인을 알 수 있는 내용이 없는지 한 번 봐 주세요.</p>
+      <div class="segmented" role="group" aria-label="복사 꼴">${seg("copy-style", "short", c.style, "짧게")}${seg("copy-style", "full", c.style, "자세히")}</div>
+      ${n > 1 ? `<label class="check-row"><input type="checkbox" data-copy-opt="group"${c.group ? " checked" : ""}> 같은 제보 묶기</label>
+        <label class="check-row"><input type="checkbox" data-copy-opt="byKind"${c.byKind ? " checked" : ""}> 분류별로 정렬(문제 신고 먼저)</label>` : ""}
+      <label class="sr" for="copy-text">복사할 글</label>
+      ${c.list ? `<textarea id="copy-text" class="copy-text" readonly spellcheck="false">${esc(copyText())}</textarea>` : '<div class="card skeleton"></div>'}
+      ${c.failed ? '<p class="note" id="copy-fallback" role="alert">이 브라우저는 바로 복사를 막았어요. 위 글 상자를 길게 눌러(컴퓨터는 Ctrl+A, Ctrl+C) 복사한 뒤 <b>복사했어요</b>를 눌러 주세요.</p>' : ""}
+      ${edit ? `<fieldset class="after"><legend>복사하면 함께</legend>
+        <p class="meta">복사함 표시(누가·언제)는 늘 남아요.</p>
+        ${dev ? `<label class="check-row"><input type="checkbox" data-copy-after="dev"${c.dev ? " checked" : ""}> 개발사항으로 만들기${n > 1 ? "(모두 한 항목에)" : ""}</label>
+          ${item ? `<div class="fieldset"><label for="copy-dev-title">개발사항 제목</label><input id="copy-dev-title" maxlength="100" value="${esc(c.devTitle ?? item.title)}"></div>` : ""}` : ""}
+        <label class="check-row"><input type="checkbox" data-copy-after="assign"${c.assign ? " checked" : ""}> 아무도 안 맡은 것은 내가 맡기</label>
+        <label class="check-row"><input type="checkbox" data-copy-after="close"${c.close ? " checked" : ""}> 닫기</label></fieldset>`
+        : '<p class="meta">복사함 표시는 문의 고치기 권한이 있어야 남아요.</p>'}
+      <div class="actions"><button class="btn" type="button" data-act="close">닫기</button>
+        ${c.failed ? '<button class="btn primary" type="button" data-act="copy-done">복사했어요</button>'
+          : `<button class="btn primary" type="button" data-act="copy-do"${c.list ? "" : " disabled"}>${icon(P.copy)}복사</button>`}</div></div>`;
+    openDialog(html, "wide");
+  }
+
+  /** The copy box's choice remembered on this device, so the next copy starts the same. */
+  function keepCopyPrefs() {
+    S.prefs.copy = { style: S.copy.style, group: S.copy.group, byKind: S.copy.byKind };
+    savePrefs();
+  }
+
+  /** After the text is on the clipboard: 복사함 and the chosen steps on the server, then the list shows them. */
+  async function copied() {
+    const c = S.copy;
+    if (!c?.list) return;
+    keepCopyPrefs();
+    const ids = c.list.map((q) => q.id);
+    const n = ids.length;
+    if (!can("inquiries", "edit")) {
+      dialog.close();
+      toast(`${n}건을 복사했어요. 개발할 때 붙여 넣으세요`);
+      return;
+    }
+    const devTitle = document.getElementById("copy-dev-title")?.value.trim();
+    const item = c.dev ? L.copyDevItem(c.list, location.origin) : null;
+    const body = { ids, ...(item ? { dev: { title: devTitle || item.title, body: item.body } } : {}), ...(c.assign ? { assign: true } : {}), ...(c.close ? { status: "closed" } : {}) };
+    const r = await act(() => api("/inquiries/copied", "POST", body),
+      (x) => `${n}건을 복사했어요${x?.item ? ` · 개발사항 "${x.item.title}"을 만들었어요` : ""}${x?.status === "closed" ? " · 닫았어요" : ""}. 개발할 때 붙여 넣으세요`);
+    dialog.close();
+    if (!r) return;
+    const mark = (q) => (ids.includes(q.id) ? { ...q, copied: r.copied, ...(r.status ? { status: r.status } : {}) } : q);
+    if (S.data.inquiries?.inquiries) S.data.inquiries = { ...S.data.inquiries, inquiries: S.data.inquiries.inquiries.map(mark) };
+    if (S.data.inquiry && ids.includes(S.data.inquiry.id)) S.data.inquiry = mark(S.data.inquiry);
+    if (S.inquiryPick) S.inquiryPick = new Set();
+    render({ keepScroll: true });
+    refreshBadges(true);
+    if (r.item || r.status || r.assigned) load({ quiet: true });
+  }
+
+  /** The picked questions in the order the list shows them. */
+  const pickedIds = () => (S.data.inquiries?.inquiries ?? []).map((q) => q.id).filter((id) => S.inquiryPick?.has(id))
+    .concat([...(S.inquiryPick ?? [])].filter((id) => !(S.data.inquiries?.inquiries ?? []).some((q) => q.id === id)));
+
+  /** [ADMCP-02] 찾은 n건 모두 고르기: the rest of the filtered list's pages, up to the 100 one copy takes. */
+  async function pickFound() {
+    while (S.data.inquiries?.next && S.data.inquiries.inquiries.length < 100) {
+      const before = S.data.inquiries.inquiries.length;
+      await loadInquiries(undefined, true);
+      if (S.data.inquiries.inquiries.length === before) break;
+    }
+    S.inquiryPick = new Set(S.data.inquiries.inquiries.slice(0, 100).map((q) => q.id));
+    render({ keepScroll: true });
+  }
+
+  /** [ADMCP-02] Shift on a row picks every row between it and the one picked last, as a list on a computer does. */
+  function pickRange(to) {
+    const ids = (S.data.inquiries?.inquiries ?? []).map((q) => q.id);
+    const a = ids.indexOf(S.pickAnchor);
+    const b = ids.indexOf(to);
+    if (a < 0 || b < 0) return false;
+    for (const id of ids.slice(Math.min(a, b), Math.max(a, b) + 1)) S.inquiryPick.add(id);
+    S.pickAnchor = to;
+    render({ keepScroll: true });
+    return true;
+  }
+
+  /** [ADMCP-02] Picking from a key or a long press: the pick mode opens with [id] picked, or [id] flips. */
+  function togglePick(id) {
+    if (!id) return;
+    if (!S.inquiryPick) S.inquiryPick = new Set();
+    if (S.inquiryPick.has(id)) S.inquiryPick.delete(id);
+    else S.inquiryPick.add(id);
+    S.pickAnchor = id;
+    render({ keepScroll: true });
+  }
+  // ---- AT 1.29 끝 ----
 
   // ---- AM 1.28 기능 관리 ----
   // [ADMUX-21]~[ADMUX-29] 기능 관리(다크머지): the list with its filters, one flag in full, the calendar of dates (timeline),
@@ -4137,6 +4361,64 @@ function adminApp(L, BUILD) {
       S.inquiryPick = S.inquiryPick ? null : new Set();
       render({ keepScroll: true });
     },
+    // AT 1.29 시작 [ADMCP-01]~[ADMCP-06]
+    "inquiry-copy": ({ id }) => openCopy([id || S.route.id].filter(Boolean)),
+    "inquiry-copy-picked": () => openCopy(pickedIds()),
+    "bulk-more": () => {
+      S.bulkMore = !S.bulkMore;
+      render({ keepScroll: true });
+    },
+    "inquiry-pick-found": () => act(pickFound),
+    "copy-style": ({ key }) => {
+      if (!S.copy) return;
+      S.copy.style = key === "short" ? "short" : "full";
+      paintCopy();
+    },
+    "copy-do": async () => {
+      const box = document.getElementById("copy-text");
+      if (!box || !S.copy?.list) return;
+      if (await toClipboard(box.value, box)) return copied();
+      // [ADMCP-01] The browser keeps the clipboard shut (an old phone browser, no permission): the text to select by hand.
+      S.copy.failed = true;
+      paintCopy();
+      const again = document.getElementById("copy-text");
+      again?.focus();
+      again?.select();
+    },
+    "copy-done": () => copied(),
+    "inquiry-kind": ({ key }) => {
+      S.inquiryKind = key;
+      S.inquiryPick = null;
+      refilter("inquiries");
+    },
+    "inquiry-copied": ({ key }) => {
+      S.inquiryCopied = S.inquiryCopied === key ? "" : key;
+      refilter("inquiries");
+    },
+    "inquiry-sender": ({ key }) => {
+      S.inquirySender = key;
+      if (key) {
+        // Every question that phone sent, whatever its state.
+        S.inquiryStatus = "all";
+        S.inquiryWho = "";
+        return go("inquiries");
+      }
+      refilter("inquiries");
+    },
+    "fresh-bugs": () => {
+      Object.assign(S, { inquiryKind: "bug", inquiryCopied: "no", inquiryStatus: "all", inquiryWho: "", inquiryTopic: "", inquiryQuery: "", inquirySender: "" });
+      refilter("inquiries");
+    },
+    "fresh-copy": async () => {
+      const r = await act(() => api("/inquiries?status=all&kind=bug&copied=no&sort=newest&limit=100"));
+      const ids = (r?.inquiries ?? []).filter((q) => q.status !== "closed").map((q) => q.id);
+      if (ids.length) openCopy(ids);
+    },
+    "template-copy": ({ id }) => {
+      const t = (S.templates ?? []).find((x) => String(x.id) === String(id));
+      if (t) copy(t.text, `"${t.label}"을 복사했어요`);
+    },
+    // AT 1.29 끝
     "inquiry-pick-all": () => {
       const items = S.data.inquiries?.inquiries ?? [];
       S.inquiryPick = S.inquiryPick.size === items.length ? new Set() : new Set(items.map((x) => x.id));
@@ -4354,6 +4636,10 @@ function adminApp(L, BUILD) {
       S.inquiryQuery = "";
       S.inquiryWho = "";
       S.inquiryTopic = "";
+      // AT 1.29 [ADMCP-02]
+      S.inquiryKind = "";
+      S.inquiryCopied = "";
+      S.inquirySender = "";
       refilter("inquiries");
     },
     "inquiry-who": ({ key }) => {
@@ -5069,6 +5355,40 @@ function adminApp(L, BUILD) {
     }
   }
 
+  // AT 1.29 시작 [ADMCP-02] Shift on a picked list picks a range; a long press on a question's row (a phone) opens picking
+  // with it, and the tap that ends the press does not open the question.
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest?.("label[data-pick-row]");
+    if (row && e.shiftKey && S.inquiryPick && S.pickAnchor && pickRange(row.dataset.pickRow)) e.preventDefault();
+    if (longPressed && e.target.closest?.("[data-row]")) {
+      longPressed = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+  let pressTimer = 0;
+  let longPressed = false;
+  document.addEventListener("pointerdown", (e) => {
+    const row = e.target.closest?.("[data-row]");
+    longPressed = false;
+    clearTimeout(pressTimer);
+    if (!row || S.route.name !== "inquiries" || S.route.id || e.pointerType === "mouse") return;
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      navigator.vibrate?.(15);
+      togglePick(row.dataset.row);
+    }, 500);
+  });
+  for (const type of ["pointerup", "pointercancel", "pointermove"]) {
+    document.addEventListener(type, (e) => {
+      if (type !== "pointermove" || Math.abs(e.movementX ?? 0) + Math.abs(e.movementY ?? 0) > 6) clearTimeout(pressTimer);
+    });
+  }
+  document.addEventListener("contextmenu", (e) => {
+    if (longPressed && e.target.closest?.("[data-row]")) e.preventDefault();
+  });
+  // AT 1.29 끝
+
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-undo]")) {
       const undo = S.undo;
@@ -5202,8 +5522,18 @@ function adminApp(L, BUILD) {
     if (t.dataset?.pickInquiry && S.inquiryPick) {
       if (t.checked) S.inquiryPick.add(t.dataset.pickInquiry);
       else S.inquiryPick.delete(t.dataset.pickInquiry);
+      S.pickAnchor = t.dataset.pickInquiry; // AT 1.29 [ADMCP-02] where a Shift range starts
       render({ keepScroll: true });
       return;
+    }
+    // AT 1.29 [ADMCP-01][ADMCP-03] The copy box's choices: the text changes at once, the steps after are remembered.
+    if (t.dataset?.copyOpt && S.copy) {
+      S.copy[t.dataset.copyOpt] = t.checked;
+      return paintCopy();
+    }
+    if (t.dataset?.copyAfter && S.copy) {
+      S.copy[t.dataset.copyAfter] = t.checked;
+      return paintCopy();
     }
     const run = CHANGES[t.dataset?.change];
     if (run) Promise.resolve(run(t)).catch(fail);
@@ -5394,6 +5724,26 @@ function adminApp(L, BUILD) {
       case "keys":
         stop();
         return openShortcuts();
+      // AT 1.29 [ADMCP-01][ADMCP-02] c: copy the open question, the picked ones, or the row in focus; Space picks that row.
+      case "copy": {
+        if (S.route.name !== "inquiries") return;
+        const row = rowsOnScreen()[S.cursor]?.querySelector?.("[data-row],[data-pick-row]") ?? rowsOnScreen()[S.cursor];
+        const at = row?.dataset?.row ?? row?.dataset?.pickRow;
+        const ids = detail ? [S.route.id] : S.inquiryPick?.size ? pickedIds() : at ? [at] : [];
+        if (!ids.length) return;
+        stop();
+        return openCopy(ids);
+      }
+      case "pick": {
+        if (S.route.name !== "inquiries" || detail || S.cursor < 0) return;
+        const row = rowsOnScreen()[S.cursor];
+        const el = row?.matches?.("[data-row],[data-pick-row]") ? row : row?.querySelector?.("[data-row],[data-pick-row]");
+        const id = el?.dataset?.row ?? el?.dataset?.pickRow;
+        if (!id) return;
+        stop();
+        if (e.shiftKey && S.inquiryPick && S.pickAnchor) return pickRange(id);
+        return togglePick(id);
+      }
       case "assign":
         if (S.route.name === "review") return reviewKey("adopt");
         if (detail && editInq && S.data.inquiry && !S.data.inquiry.assignee) return ACTIONS["inquiry-assign"]({ to: "me" });

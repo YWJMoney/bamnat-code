@@ -105,6 +105,8 @@ export function adminLib() {
     member_wait: "이 달력은 회사를 바꾼 지 30일이 지나야 다른 회사로 바꿀 수 있어요",
     member_limit: "한 휴대폰은 회사 두 곳까지 참여할 수 있어요",
     member: "이 회사에 참여한 휴대폰만 볼 수 있어요",
+    // AT 1.29 [ADMCP-07] 1.27's /overview and /inbox are gone: only a tab left open from then can get this.
+    moved: "관리자 앱이 새로 나왔어요. 새로 고쳐 주세요",
     firstMonths: "새 정보 보상은 0~12개월 사이로 정해 주세요",
     firstCapYear: "새 정보 보상 한 해 상한은 0~12번 사이로 정해 주세요",
     reason: "이유를 적어 주세요",
@@ -197,7 +199,7 @@ export function adminLib() {
 
   /** The filters each screen keeps in the address, with what they are when left out. */
   const FILTERS = {
-    inquiries: { status: "open", who: "", topic: "", q: "", sort: "default" },
+    inquiries: { status: "open", who: "", topic: "", q: "", sort: "default", kind: "", copied: "", sender: "" /* AT 1.29 [ADMCP-02] */ },
     dev: { status: "open", who: "", q: "" },
     review: { show: "all" },
     community: { show: "flagged", q: "" },
@@ -578,6 +580,8 @@ export function adminLib() {
       g: { act: "pending", key: "g" }, j: { act: "move", by: 1 }, k: { act: "move", by: -1 }, Enter: { act: "open" },
       Backspace: { act: "back" }, "[": { act: "step", by: -1 }, "]": { act: "step", by: 1 }, "/": { act: "search" }, "?": { act: "keys" },
       a: { act: "assign" }, r: { act: "reply" }, e: { act: "close" }, x: { act: "reject" }, s: { act: "skip" }, q: { act: "queue" },
+      // AT 1.29 [ADMCP-01][ADMCP-02] c copies (the open question, the picked ones or the row in focus); Space picks a row.
+      c: { act: "copy" }, " ": { act: "pick" },
     };
     if (/^[1-9]$/.test(key)) return { act: "template", n: Number(key) };
     return plain[key] ?? null;
@@ -591,7 +595,8 @@ export function adminLib() {
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
     ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g i · g d", "문의·개발사항으로"],
     ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
-    ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"], ["?", "이 목록"],
+    ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"],
+    ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -975,6 +980,165 @@ export function adminLib() {
   }
   // ---- AM 1.28 끝 ----
 
+  // ---- AT 1.29 시작: 문의 복사 [ADMCP-01][ADMCP-02][ADMCP-05] ----
+  // A question, or the ones picked, as Markdown to paste into a development task as it is: what it is about, the
+  // app and phone it came from, what the asker wrote, a few lines of each check that came with it, the answers and
+  // the admins' notes. Photos stay on the server: the text says how many and links to the question in the app.
+
+  const COPY_KINDS = { bug: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", other: "기타" };
+  const COPY_ORDER = ["bug", "question", "idea", "company", "other"];
+  const COPY_STATUS = { open: "답 대기", answered: "답함", closed: "닫힘" };
+  /** The checks an app sends with a question (the server's labels), summed up in a few lines each. */
+  const COPY_CHECKS = ["알람 점검", "급여 계산", "회사 설정"];
+  /** Labels of what came with it that are one short value, shown on the question's first lines. */
+  const COPY_WORK = ["근무 유형", "일하는 방식"];
+
+  /** "2026-10-27 13:05" in Korea's time whatever the computer's zone, so the same question always copies the same. */
+  function kstTime(iso) {
+    const ms = Date.parse(iso ?? "");
+    return Number.isFinite(ms) ? new Date(ms + 9 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : "";
+  }
+
+  /** [text] on one line, [max] letters at most. */
+  function oneLine(text, max) {
+    const s = String(text ?? "").replace(/\s+/g, " ").trim();
+    return [...s].length > max ? `${[...s].slice(0, max).join("")}…` : s;
+  }
+
+  const askText = (q) => q.messages?.find((m) => m.from === "user")?.text ?? q.preview ?? "";
+
+  /** A question's title: the first line the asker wrote, 60 letters at most. */
+  function copyTitle(q) {
+    return oneLine(askText(q).split("\n").find((l) => l.trim()) ?? "", 60) || "(내용 없음)";
+  }
+
+  /** The address of a question in the developer app (never a photo's own address), or its id without [base]. */
+  const copyLink = (q, base) => (base ? `${base}/admin/#/inquiries/${q.id}` : `문의 ${q.id}`);
+
+  /** 앱 판 · Android 판 · 기기 · 근무 유형, from what came with it (the list has only the app version). */
+  function copyDevice(q) {
+    const c = q.context ?? {};
+    const work = COPY_WORK.map((k) => c[k]).find(Boolean);
+    return [c["앱"] ?? q.appVersion ? `앱 ${c["앱"] ?? q.appVersion}` : "", c.Android ? `Android ${c.Android}` : "", c["기기"] ? `기기 ${c["기기"]}` : "",
+      work ? `근무 유형 ${work}` : ""].filter(Boolean).join(" · ");
+  }
+
+  /** A long check in a few lines: its first [lines] lines that say something, and how many there were. */
+  function digest(text, lines = 4, max = 160) {
+    const all = String(text ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+    const shown = all.slice(0, lines).map((l) => oneLine(l, max));
+    return { lines: shown, more: all.length - shown.length, total: all.length };
+  }
+
+  /**
+   * [ADMCP-02] 중복 제보 묶기: questions of one kind that say nearly the same (the same words, or half of them shared)
+   * go together, in the order the first of each came; a question alike to none is a group of one.
+   */
+  function sameGroups(list) {
+    const groups = [];
+    for (const q of list) {
+      const w = words(askText(q));
+      const flat = askText(q).replace(/\s+/g, "");
+      const hit = groups.find((g) => g.kind === q.kind && (g.flat === flat ||
+        (w.size && g.words.size && [...w].filter((x) => g.words.has(x)).length * 2 >= Math.min(w.size, g.words.size) &&
+          [...w].filter((x) => g.words.has(x)).length >= 2)));
+      if (hit) hit.items.push(q);
+      else groups.push({ kind: q.kind, words: w, flat, items: [q] });
+    }
+    return groups.map((g) => g.items);
+  }
+
+  /** The lines of one question: [short] is two lines (heading, then the words on one line), else the whole story. */
+  function copyEntry(q, { style, base, head }) {
+    const kind = COPY_KINDS[q.kind] ?? "문의";
+    const tag = [kind, q.topicName].filter(Boolean).join(" · ");
+    const device = copyDevice(q);
+    const photos = q.photos ? `사진 ${q.photos}장` : "";
+    if (style === "short") {
+      const meta = [device, kstTime(q.createdAt).slice(5), photos, copyLink(q, base)].filter(Boolean).join(" · ");
+      return [`${head}[${tag}] ${copyTitle(q)}${meta ? ` (${meta})` : ""}`, `   ${oneLine(askText(q), 200)}`];
+    }
+    const out = [`${head}[${tag}] ${copyTitle(q)}`];
+    out.push(`- 상태: ${[COPY_STATUS[q.status] ?? q.status, q.urgency === "urgent" ? "급함" : "", `받은 때 ${kstTime(q.createdAt)} (한국 시간)`].filter(Boolean).join(" · ")}`);
+    if (device || q.sender) out.push(`- ${[device, q.sender ? `보낸 기기 #${q.sender}` : ""].filter(Boolean).join(" · ")}`);
+    if (photos) out.push(`- ${photos}: 관리자 앱에서 보기 ${copyLink(q, base)}`);
+    else out.push(`- 관리자 앱: ${copyLink(q, base)}`);
+    if (q.dev?.length) out.push(`- 개발사항: ${q.dev.map((d) => `${d.title} (${DEV_NAMES[d.status] ?? d.status})`).join(", ")}`);
+    if (q.copied) out.push(`- 전에 복사함: ${q.copied.by} · ${kstTime(q.copied.at)}`);
+    out.push("", "**내용**", ...askText(q).split("\n").map((l) => `> ${l}`.trimEnd()));
+    const checks = COPY_CHECKS.filter((k) => q.context?.[k]);
+    if (checks.length) {
+      out.push("", "**진단 요약**");
+      for (const k of checks) {
+        const d = digest(q.context[k]);
+        out.push(`- ${k} (${d.total}줄${d.more ? `, 앞 ${d.lines.length}줄만` : ""})`, ...d.lines.map((l) => `  - ${l}`));
+      }
+    }
+    const rest = (q.messages ?? []).slice((q.messages ?? []).findIndex((m) => m.from === "user") + 1);
+    if (rest.length) {
+      out.push("", "**대화**");
+      for (const m of rest) out.push(`- ${m.from === "user" ? "보낸 분" : m.by && m.by !== "admin" ? m.by : "개발자"} · ${kstTime(m.at).slice(5)}: ${oneLine(m.text, 400)}`);
+    }
+    if (q.notes?.length) {
+      out.push("", "**관리자 메모**");
+      for (const n of q.notes) out.push(`- ${n.by} · ${kstTime(n.at).slice(5)}: ${oneLine(n.text, 400)}`);
+    }
+    return out;
+  }
+
+  /**
+   * [ADMCP-01][ADMCP-02] Questions as one Markdown text. [style] short (two lines each) or full; [group] puts questions
+   * that say the same together (중복 제보 묶기); [byKind] sorts them by kind under a heading each (문제 신고 first);
+   * [base] is the developer app's address for links; [today] the date in the title of a text of more than one.
+   */
+  function inquiryCopyText(list, { style = "full", group = false, byKind = false, base = "", today = kstTime(new Date().toISOString()).slice(0, 10) } = {}) {
+    const items = list.filter(Boolean);
+    if (!items.length) return "";
+    const sorted = byKind ? COPY_ORDER.flatMap((k) => items.filter((q) => q.kind === k)).concat(items.filter((q) => !COPY_ORDER.includes(q.kind))) : items;
+    const groups = group ? sameGroups(sorted) : sorted.map((q) => [q]);
+    const single = items.length === 1;
+    const out = [];
+    if (!single) {
+      const tally = COPY_ORDER.map((k) => [k, items.filter((q) => q.kind === k).length]).filter(([, n]) => n).map(([k, n]) => `${COPY_KINDS[k]} ${n}`);
+      out.push(`# 문의 ${items.length}건 (${today})`, "", tally.join(" · ") + (group && groups.length < items.length ? ` · 같은 내용 묶어 ${groups.length}가지` : ""), "");
+    }
+    let kindNow = null;
+    groups.forEach((g, i) => {
+      const n = i + 1;
+      if (byKind && !single && g[0].kind !== kindNow) {
+        kindNow = g[0].kind;
+        const inKind = groups.filter((x) => x[0].kind === kindNow).reduce((s, x) => s + x.length, 0);
+        out.push(`## ${COPY_KINDS[kindNow] ?? "문의"} (${inKind})`, "");
+      }
+      const level = single ? "## " : style === "short" ? `${n}. ` : byKind ? `### ${n}. ` : `## ${n}. `;
+      if (g.length === 1) {
+        out.push(...copyEntry(g[0], { style, base, head: level }), "");
+        return;
+      }
+      // 같은 제보: the first one whole, the others by where they came from (and their words when they differ).
+      const first = g[0];
+      out.push(...copyEntry(first, { style, base, head: level }).map((l, j) => (j === 0 ? `${l} · 같은 제보 ${g.length}건` : l)));
+      if (style !== "short") out.push("", "**같은 제보**");
+      for (const q of g.slice(1)) {
+        const meta = [copyDevice(q), kstTime(q.createdAt).slice(5), q.photos ? `사진 ${q.photos}장` : "", copyLink(q, base)].filter(Boolean).join(" · ");
+        const same = askText(q).replace(/\s+/g, "") === askText(first).replace(/\s+/g, "");
+        out.push(`${style === "short" ? "   " : ""}- ${meta}${same ? "" : `: ${oneLine(askText(q), 200)}`}`);
+      }
+      out.push("");
+    });
+    return out.join("\n").trimEnd();
+  }
+
+  /** [ADMCP-03] A 개발사항 made from copied questions: a title and the short text (the item outlives the questions). */
+  function copyDevItem(list, base = "") {
+    const items = list.filter(Boolean);
+    const lead = items[0] ? copyTitle(items[0]) : "";
+    const title = items.length > 1 ? `${oneLine(lead, 70)} 외 ${items.length - 1}건` : oneLine(lead, 100);
+    const body = inquiryCopyText(items, { style: "short", group: true, byKind: true, base });
+    return { title: [...title].slice(0, 100).join(""), body: [...body].length > 4000 ? `${[...body].slice(0, 3990).join("")}…` : body };
+  }
+  // ---- AT 1.29 끝 ----
+
   return {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
@@ -983,5 +1147,7 @@ export function adminLib() {
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
     evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
+    // AT 1.29 [ADMCP-01][ADMCP-02][ADMCP-03]
+    inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,
   };
 }

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { generateKeyPairSync } from "node:crypto";
 import worker, { REMOTE, metricRange, inquiryStats, wilson } from "../src/index.js";
-import { server, report, setup, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, report, setup, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 
 const NOW = Date.parse("2026-10-25T03:00:00Z");
 const DAY = 864e5;
@@ -215,7 +215,7 @@ test("[ADMUX-17] 받은함: everything waiting in this admin's areas, nearest de
   const idea = await call("POST", "/api/inquiries", { v: 1, device: device(8), kind: "idea", text: "주 시작을 일요일로", info: { app: "1.24.0 (35)" } }, from(8));
   const post = await call("POST", "/api/posts", { device: device(3), company: a.data.company.id, setup: a.data.setup, body: "이상한 글" }, from(3));
   for (const n of [4, 5, 6]) await call("POST", `/api/posts/${post.data.id}/flag`, { device: device(n), reason: "abuse" }, from(n));
-  const box = (await call("GET", "/api/admin/inbox", undefined, owner)).data;
+  const box = (await call("GET", "/api/admin/today", undefined, owner)).data.todo;
   const types = box.items.map((x) => x.type);
   // 문제 8시간, 제보 7일, 제안 72시간, 가려진 글 30일; the month's chores at its end.
   assert.deepEqual(types.filter((x) => x !== "ops"), ["inquiry", "inquiry", "group", "hidden_post"]);
@@ -225,15 +225,15 @@ test("[ADMUX-17] 받은함: everything waiting in this admin's areas, nearest de
   assert.deepEqual([box.counts.today, box.counts.late], [1, 0]);
   // 맡기 from the list: the question is mine, and 받은함 says so.
   assert.equal((await call("POST", `/api/admin/inquiries/${bug.data.id}/assign`, { to: "me" }, owner)).status, 200);
-  const mine = (await call("GET", "/api/admin/inbox", undefined, owner)).data;
+  const mine = (await call("GET", "/api/admin/today", undefined, owner)).data.todo;
   assert.equal(mine.items.find((x) => x.id === bug.data.id).mine, true);
   assert.equal(mine.counts.mine, 1);
   // Eight hours on, the bug is late: the menu badge (overview) counts it.
   t.mock.timers.tick(9 * 3600e3);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, owner)).data.inboxLate, 1);
+  assert.equal((await adminHome(call, owner)).data.inboxLate, 1);
   // An admin with only 문의 sees only questions.
   const helper = await member(call, DB, owner, "help@example.com", { ...NONE, inquiries: "edit" });
-  const theirs = (await call("GET", "/api/admin/inbox", undefined, helper)).data;
+  const theirs = (await call("GET", "/api/admin/today", undefined, helper)).data.todo;
   assert.deepEqual([...new Set(theirs.items.map((x) => x.type))], ["inquiry"]);
 });
 
@@ -264,7 +264,7 @@ test("[ADMUX-18] 여러 판: the rule in use, a version waiting and an earlier o
   assert.ok(d.items[0].candidates[1].changes.added.some(([label, text]) => label === "대근" && /15%/.test(text)));
   assert.equal(d.items[0].candidates.filter((c) => c.recommended).length, 1);
   // The overview counts the department for the menu badge.
-  assert.equal((await call("GET", "/api/admin/overview", undefined, owner)).data.versionConflicts, 1);
+  assert.equal((await adminHome(call, owner)).data.versionConflicts, 1);
   // v1 back: a new v3 with v1's setup; v2 is an earlier one now; nothing is deleted.
   const c = await call("POST", `/api/admin/rules/${prev.rule}/promote`, {}, owner);
   assert.equal(c.status, 200);

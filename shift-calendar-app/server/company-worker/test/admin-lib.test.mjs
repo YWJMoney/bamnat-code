@@ -243,3 +243,83 @@ test("[ADMUX-09][ADMUX-10] same department side by side, why points-full waits, 
   assert.equal(L.reviewCount({ pending: 2, asks: 1, flagged: 3 }), 6);
   assert.equal(L.reviewCount(null), 0);
 });
+
+// ---- AT 1.29 문의 복사 [ADMCP-01][ADMCP-02][ADMCP-03] ----
+
+/** A question as /inquiries/:id and /inquiries/export give it. */
+const asked = (id, kind, text, extra = {}) => ({
+  id: id.padEnd(22, "0"), kind, status: "open", topicName: "알람", createdAt: "2026-10-27T04:05:00Z", appVersion: "1.28.0 (39)", photos: 0, sender: "a1b2c3",
+  messages: [{ from: "user", text, at: "2026-10-27T04:05:00Z" }], context: { "앱": "1.28.0 (39)", "기기": "SM-S918N", Android: "14" }, ...extra,
+});
+const BASE = "https://company.example";
+
+test("[ADMCP-01] one question copies as Markdown: kind, app, Android, phone, Korean time, words, photos as a count and a link, checks in short, answers, notes", () => {
+  const q = asked("a", "bug", "알람 소리가 안 나요\n아침 6시 알람이 조용해요", {
+    urgency: "urgent", photos: 2, copied: { at: "2026-10-26T01:00:00Z", by: "민지" }, dev: [{ id: "d1", title: "알람 소리", status: "doing" }],
+    context: { "앱": "1.28.0 (39)", "기기": "SM-S918N", Android: "14", "근무 유형": "교대", "알람 점검": "1줄\n2줄\n\n3줄\n4줄\n5줄\n6줄" },
+    messages: [{ from: "user", text: "알람 소리가 안 나요\n아침 6시 알람이 조용해요", at: "2026-10-27T04:05:00Z" },
+      { from: "admin", by: "민지", text: "확인하고 있어요", at: "2026-10-27T05:00:00Z" }, { from: "user", text: "고마워요", at: "2026-10-27T05:30:00Z" }],
+    notes: [{ by: "민지", text: "재현돼요", at: "2026-10-27T05:10:00Z" }],
+  });
+  const full = L.inquiryCopyText([q], { base: BASE });
+  const lines = full.split("\n");
+  assert.equal(lines[0], "## [문제 신고 · 알람] 알람 소리가 안 나요", "one question: no list title, its own heading");
+  assert.match(full, /- 상태: 답 대기 · 급함 · 받은 때 2026-10-27 13:05 \(한국 시간\)/);
+  assert.match(full, /- 앱 1\.28\.0 \(39\) · Android 14 · 기기 SM-S918N · 근무 유형 교대 · 보낸 기기 #a1b2c3/);
+  assert.match(full, new RegExp(`- 사진 2장: 관리자 앱에서 보기 ${BASE}/admin/#/inquiries/a0{21}`));
+  assert.ok(!full.includes("/photos/"), "never a photo's own address");
+  assert.match(full, /- 개발사항: 알람 소리 \(개발중\)/);
+  assert.match(full, /- 전에 복사함: 민지 · 2026-10-26 10:00/);
+  assert.match(full, /\*\*내용\*\*\n> 알람 소리가 안 나요\n> 아침 6시 알람이 조용해요/);
+  assert.match(full, /- 알람 점검 \(6줄, 앞 4줄만\)\n {2}- 1줄\n {2}- 2줄\n {2}- 3줄\n {2}- 4줄\n/);
+  assert.match(full, /\*\*대화\*\*\n- 민지 · 10-27 14:00: 확인하고 있어요\n- 보낸 분 · 10-27 14:30: 고마워요/);
+  assert.match(full, /\*\*관리자 메모\*\*\n- 민지 · 10-27 14:10: 재현돼요/);
+  const short = L.inquiryCopyText([q], { style: "short", base: BASE });
+  assert.equal(short.split("\n").length, 2, "짧게: two lines");
+  assert.match(short, /^## \[문제 신고 · 알람\] 알람 소리가 안 나요 \(앱 1\.28\.0 \(39\) · Android 14 · 기기 SM-S918N · 근무 유형 교대 · 10-27 13:05 · 사진 2장 · https:/);
+  assert.match(short.split("\n")[1], /^ {3}알람 소리가 안 나요 아침 6시 알람이 조용해요$/);
+  // A list row (no thread yet) still copies from what the list has.
+  assert.match(L.inquiryCopyText([{ id: "b".repeat(22), kind: "idea", preview: "다크 모드", createdAt: "2026-10-27T00:00:00Z", status: "answered" }]), /\[건의·제안\] 다크 모드/);
+  assert.equal(L.inquiryCopyText([]), "");
+});
+
+test("[ADMCP-02] many questions copy as one text: numbered, 같은 제보 together, by kind with problem reports first", () => {
+  const list = [asked("i", "idea", "달력이 일요일부터면 좋겠어요"), asked("a", "bug", "알람 소리가 안 나요 아침에"), asked("q", "question", "급여는 어디서 봐요"),
+    asked("b", "bug", "아침에 알람 소리가 안 나요", { context: { "앱": "1.27.0 (38)" } })];
+  const plain = L.inquiryCopyText(list, { base: BASE, today: "2026-10-27" });
+  assert.match(plain, /^# 문의 4건 \(2026-10-27\)\n\n문제 신고 2 · 질문 1 · 건의·제안 1\n/);
+  assert.deepEqual(plain.match(/^## \d+\./gm), ["## 1.", "## 2.", "## 3.", "## 4."], "the order picked, numbered");
+  const grouped = L.inquiryCopyText(list, { base: BASE, today: "2026-10-27", group: true, byKind: true });
+  assert.match(grouped, /같은 내용 묶어 3가지/);
+  assert.deepEqual(grouped.match(/^## [^\d].*$/gm), ["## 문제 신고 (2)", "## 질문 (1)", "## 건의·제안 (1)"]);
+  assert.match(grouped, /### 1\. \[문제 신고 · 알람\] 알람 소리가 안 나요 아침에 · 같은 제보 2건/);
+  assert.match(grouped, /\*\*같은 제보\*\*\n- 앱 1\.27\.0 \(38\) · 10-27 13:05 · https:\/\/company\.example\/admin\/#\/inquiries\/b0{21}: 아침에 알람 소리가 안 나요/);
+  assert.match(grouped, /### 2\. \[질문 · 알람\] 급여는 어디서 봐요/);
+  assert.match(grouped, /### 3\. \[건의·제안 · 알람\] 달력이/);
+  // Different words of the same kind stay apart; the same words of different kinds too.
+  assert.equal(L.sameGroups([asked("a", "bug", "알람이 안 울려요"), asked("b", "bug", "위젯이 하얗게 나와요"), asked("c", "idea", "알람이 안 울려요")]).length, 3);
+  assert.equal(L.sameGroups([asked("a", "bug", "알람이 안 울려요"), asked("b", "bug", "알람이  안 울려요")]).length, 1);
+  const short = L.inquiryCopyText(list, { style: "short", group: true, today: "2026-10-27" });
+  assert.match(short, /^2\. \[문제 신고 · 알람\] 알람 소리가 안 나요 아침에 \(.*문의 a0{21}\) · 같은 제보 2건$/m, "without the app's address: the question's id");
+  assert.match(short, /^ {3}- 앱 1\.27\.0 \(38\) · 10-27 13:05 · 문의 b0{21}: 아침에 알람 소리가 안 나요$/m);
+});
+
+test("[ADMCP-03] a 개발사항 from copied questions: a title within 100 letters and the short text within 4000", () => {
+  const one = L.copyDevItem([asked("a", "bug", "알람 소리가 안 나요")], BASE);
+  assert.equal(one.title, "알람 소리가 안 나요");
+  assert.match(one.body, /^## \[문제 신고 · 알람\] 알람 소리가 안 나요 \(/);
+  const many = Array.from({ length: 60 }, (_, i) => asked(`m${i}`, "bug", `${"아주 긴 문제 설명 ".repeat(20)}${i}번째`));
+  const item = L.copyDevItem(many, BASE);
+  assert.match(item.title, / 외 59건$/);
+  assert.ok([...item.title].length <= 100);
+  assert.ok([...item.body].length <= 4000);
+  assert.equal(L.kstTime("2026-10-27T15:30:00Z"), "2026-10-28 00:30");
+});
+
+test("[ADMCP-01][ADMCP-02] c copies and Space picks, and the ? list says so", () => {
+  assert.deepEqual(L.keyAction("c"), { act: "copy" });
+  assert.deepEqual(L.keyAction(" "), { act: "pick" });
+  assert.equal(L.keyAction("c", {}, true), null, "not while typing");
+  assert.deepEqual(L.keyAction("c", {}, false, "g"), { act: "go", to: L.GO.c }, "g c still goes to 회사");
+  assert.ok(L.KEYS.some(([k]) => k === "c") && L.KEYS.some(([k]) => k.startsWith("Space")));
+});

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import worker from "../src/index.js";
-import { server, device, from, signIn, report, ORIGIN } from "./helpers.mjs";
+import { server, device, from, signIn, report, ORIGIN, adminHome } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -70,7 +70,7 @@ test("the developer answers in the developer app and the phone sees the answer",
   await call("POST", "/api/inquiries", question(2, { kind: "idea", text: "주간 시작을 일요일로 바꾸고 싶어요" }), from(2));
   const admin = await signIn(call);
   assert.equal((await call("GET", "/api/admin/inquiries")).status, 401);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, admin)).data.inquiries, 2);
+  assert.equal((await adminHome(call, admin)).data.inquiries, 2);
 
   const list = (await call("GET", "/api/admin/inquiries", undefined, admin)).data;
   assert.deepEqual(list.counts, { open: 2, answered: 0, closed: 0 });
@@ -128,8 +128,8 @@ test("the answer names the admin who wrote it, and only admins given inquiries s
   const junho = await account("junho@example.com", "준호", "edit");
   const seojin = await account("seojin@example.com", "서진", "none");
   assert.equal((await call("GET", "/api/admin/inquiries", undefined, seojin)).status, 403);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, seojin)).data.inquiries, undefined);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, junho)).data.inquiries, 1);
+  assert.equal((await adminHome(call, seojin)).data.inquiries, undefined);
+  assert.equal((await adminHome(call, junho)).data.inquiries, 1);
   const res = await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "확인했어요" }, junho);
   assert.equal(res.data.messages[1].by, "준호");
 });

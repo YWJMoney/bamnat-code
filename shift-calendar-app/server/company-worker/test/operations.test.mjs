@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import worker, { cleanJpeg, EVENTS, INQUIRY_TOPICS } from "../src/index.js";
-import { server, report, setup, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, report, setup, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 
 const plaza = () => server({ plaza: true });
 const NOW = Date.parse("2026-10-22T03:00:00Z");
@@ -294,10 +294,10 @@ test("[ADMIN-14] 이달 할 일 follows docs/ops-calendar.md month by month, and
   assert.deepEqual(server, docKeys);
   let october = (await call("GET", "/api/admin/ops", undefined, admin)).data;
   assert.equal(october.month, "2026-10");
-  assert.equal((await call("GET", "/api/admin/overview", undefined, admin)).data.opsLeft, october.items.length);
+  assert.equal((await adminHome(call, admin)).data.opsLeft, october.items.length);
   october = (await call("POST", "/api/admin/ops", { month: "2026-10", key: october.items[0].key, done: true }, admin)).data;
   assert.equal(october.items[0].done, true);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, admin)).data.opsLeft, october.items.length - 1);
+  assert.equal((await adminHome(call, admin)).data.opsLeft, october.items.length - 1);
   assert.equal((await call("POST", "/api/admin/ops", { month: "2026-10", key: "pension-apply", done: true }, admin)).data.field, "key");
 });
 
