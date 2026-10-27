@@ -219,6 +219,10 @@ dependencies {
     // [INVITE-03] 친구 초대: the code an invite link put in Play's install referrer, read once after the first setup.
     // 8 KB, no dependencies; adds one normal permission (BIND_GET_INSTALL_REFERRER_SERVICE, 처리방침 4항).
     implementation("com.android.installreferrer:installreferrer:2.2")
+    // [NXT-01] 1.29 AU (AO D8): WorkManager came only through the ads SDK (2.7.1, started by androidx.startup at every
+    // app start). Named here so BamnatApp can be its Configuration.Provider and WorkManager starts on first use; 2.10
+    // also has the Android 14 fixes 2.7 lacks. The app's own jobs stay on JobScheduler (OutboxJob, PlazaNewsJob, AutoBackupJob).
+    implementation("androidx.work:work-runtime:2.10.5")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)

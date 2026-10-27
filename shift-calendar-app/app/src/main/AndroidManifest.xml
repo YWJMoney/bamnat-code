@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- [MKT-09] Only for read-only schedule links the user makes; nothing else goes online. -->
@@ -62,6 +63,25 @@
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="ocr_korean" />
+
+        <!-- [NXT-01] 1.29 AU (AO D8): two start-up providers the libraries bring are taken out, so a cold start does not
+             run them. ML Kit's (MlKitInitProvider) is started by MlKitStart.ensure where a photo is read (pay/OcrModel,
+             imports/DocScanner); WorkManager's (the ads SDK's, through androidx.startup) starts on its first use from
+             BamnatApp's Configuration.Provider. NxtStartupProvidersTest checks both and every place that reads a photo. -->
+        <provider
+            android:name="com.google.mlkit.common.internal.MlKitInitProvider"
+            android:authorities="${applicationId}.mlkitinitprovider"
+            tools:node="remove" />
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->

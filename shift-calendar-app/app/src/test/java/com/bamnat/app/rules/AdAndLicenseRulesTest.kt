@@ -90,6 +90,7 @@ class AdAndLicenseRulesTest {
             "androidx.compose" to "Jetpack Compose",
             "androidx.core" to "AndroidX Core", "androidx.activity" to "AndroidX Core", "androidx.lifecycle" to "AndroidX Core",
             "androidx.navigation" to "AndroidX Core", "androidx.profileinstaller" to "AndroidX Core", "androidx.window" to "AndroidX Core",
+            "androidx.work" to "AndroidX Core", // [NXT-01] 1.29 AU: WorkManager named directly (before, only through the ads SDK)
             "androidx.glance" to "Jetpack Glance", "androidx.room" to "AndroidX Room",
             "androidx.health.connect" to "Health Connect", "org.jetbrains.kotlinx" to "Kotlin",
             "com.google.mlkit" to "ML Kit", "com.google.android.play" to "Google Play",
