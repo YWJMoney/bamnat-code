@@ -91,6 +91,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
+import com.bamnat.app.ui.components.LocalEdgeScroll
+import com.bamnat.app.ui.components.edgeScrollViewport
+import com.bamnat.app.ui.components.rememberSelectionDrag
+import androidx.compose.runtime.CompositionLocalProvider
 import com.bamnat.app.ui.components.memoBackground
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.core.memo.Memo
@@ -132,6 +136,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     // [UX-11] 1.25 Z (U10): the line being typed is kept in view by moving this scroll only, never the window.
     val bodyScroll = rememberScrollState()
     val follow = remember { CaretFollow() }
+    // [MEMO-SEL-01] 1.30 AY: a selection handle dragged to the top or bottom scrolls this too, and the selection grows.
+    val edge = com.bamnat.app.ui.components.rememberEdgeScroll(bodyScroll)
     val editorScope = rememberCoroutineScope()
     val caretRoom = with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() }
     val onCaret: (androidx.compose.ui.layout.LayoutCoordinates, androidx.compose.ui.geometry.Rect, Boolean) -> Unit = { field, caret, animate ->
@@ -296,6 +302,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                             androidx.compose.ui.semantics.CustomAccessibilityAction("맨 위로") { editorScope.launch { bodyScroll.animateScrollTo(0) }; true },
                         )
                     }
+                    .edgeScrollViewport(edge)
                     .verticalScroll(bodyScroll)
                     .onGloballyPositioned { follow.content = it }
                     .padding(horizontal = 20.dp, vertical = 8.dp),
@@ -311,7 +318,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.size(8.dp))
                 if (memo.isChecklist) {
                     ChecklistEditor(memo = memo, vm = vm)
-                } else {
+                } else CompositionLocalProvider(LocalEdgeScroll provides edge) {
                     MemoBodyField(
                         value = memo.body,
                         onValueChange = vm::setBody,
@@ -506,6 +513,8 @@ private fun MemoBodyField(
     var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     var focused by remember { mutableStateOf(false) }
     var coords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    // [MEMO-SEL-01] 1.30 AY: a handle pulled to the memo's edge scrolls it; from there only the selection changes.
+    val drag = rememberSelectionDrag(value = { field }, select = { field = it })
     // [UX-11] 1.25 Z (U10): the caret is followed when the text or the caret moves, not when the text is laid out
     // again or the focus changes (the moments the keyboard and the opening screen were still moving).
     fun caretNow(): Pair<androidx.compose.ui.layout.LayoutCoordinates, androidx.compose.ui.geometry.Rect>? {
@@ -514,7 +523,9 @@ private fun MemoBodyField(
         return c to l.getCursorRect(field.selection.end.coerceIn(0, l.layoutInput.text.length))
     }
     LaunchedEffect(field.selection, field.text) {
-        if (!focused) return@LaunchedEffect
+        // [MEMO-SEL-01] A selection being dragged is the edge scroll's to follow: an animated jump here slid the text
+        // from under the finger. Typing, a tap and a keyboard's shift + arrows still bring the caret into view.
+        if (!focused || (!field.selection.collapsed && drag.touch)) return@LaunchedEffect
         // One frame, so the new line is laid out before it is looked for.
         androidx.compose.runtime.withFrameNanos { }
         caretNow()?.let { (c, r) -> onCaret?.invoke(c, r, true) }
@@ -542,10 +553,16 @@ private fun MemoBodyField(
         LaunchedEffect(focused) { tools.editing = focused }
     }
     val color = MaterialTheme.colorScheme.onSurface
-    BasicTextField(
+    drag.Toolbar { BasicTextField(
         value = field,
-        onValueChange = { next ->
+        onValueChange = { typed ->
             val before = field
+            // [MEMO-SEL-01] A finger on a handle: its end where the finger really is (the memo may have scrolled under it).
+            val next = drag.filter(before, typed)
+            if (next != typed) {
+                field = next
+                return@BasicTextField
+            }
             val was = com.bamnat.core.memo.ListContinuation.Edit(before.text, before.selection.end)
             // [NOTE-07] A tap (the caret moved, nothing typed) on a check box ticks it.
             if (next.text == before.text && next.composition == null && next.selection.collapsed && next.selection != before.selection) {
@@ -566,12 +583,16 @@ private fun MemoBodyField(
             } else next
             if (field.text != value) onValueChange(field.text)
         },
-        onTextLayout = { layout = it },
+        onTextLayout = { layout = it; drag.layout = it },
         modifier = modifier
             .fillMaxWidth()
             .focusRequester(focus)
-            .onFocusChanged { focused = it.isFocused }
-            .onGloballyPositioned { coords = it },
+            .onFocusChanged {
+                focused = it.isFocused
+                drag.focused = it.isFocused
+                if (!it.isFocused) drag.reset()
+            }
+            .onGloballyPositioned { coords = it; drag.text = it },
         textStyle = textStyle.copy(color = color),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -583,7 +604,7 @@ private fun MemoBodyField(
                 inner()
             }
         },
-    )
+    ) }
 }
 
 /**

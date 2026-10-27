@@ -971,6 +971,8 @@ internal fun CompanyHit.toJson(): JSONObject = JSONObject().put("id", id).put("n
 internal fun serverRequest(
     baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null, headers: Map<String, String> = emptyMap(),
 ): JSONObject {
+    // [QA130-01] 1.30 AY: a Play pre-launch robot (Firebase Test Lab) reads but never writes; to it, as if offline.
+    if (!com.bamnat.app.diag.TestLab.allows(method)) throw CompanyException("offline")
     val conn = try {
         URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
     } catch (e: IOException) {

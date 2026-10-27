@@ -553,6 +553,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
     private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
+        // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
+        if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
         val conn = URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method

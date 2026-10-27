@@ -15,6 +15,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.LongTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -359,9 +360,9 @@ internal fun JournalSheet(vm: InvestViewModel, state: InvestState, date: LocalDa
                 }
             }
         }
-        OutlinedTextField(market, { market = it.take(1000) }, label = { Text("시장 메모") }, placeholder = { Text("코스피 −1.2%, 금리 발표, 환율 1,400원") },
+        LongTextField(market, { market = it.take(1000) }, label = { Text("시장 메모") }, placeholder = { Text("코스피 −1.2%, 금리 발표, 환율 1,400원") },
             modifier = Modifier.fillMaxWidth(), minLines = 2)
-        OutlinedTextField(review, { review = it.take(2000) }, label = { Text("복기") }, placeholder = { Text("잘한 점, 아쉬운 점, 내일 할 일") },
+        LongTextField(review, { review = it.take(2000) }, label = { Text("복기") }, placeholder = { Text("잘한 점, 아쉬운 점, 내일 할 일") },
             modifier = Modifier.fillMaxWidth(), minLines = 3)
     }
 }
