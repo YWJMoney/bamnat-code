@@ -49,6 +49,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         StartupTrace.begin()
         super.onCreate()
         CrashLog.install(this)
+        // [QA130-01] Only the context; whether this is a Play pre-launch robot is read at the first server request.
+        com.bamnat.app.diag.TestLab.attach(this)
         watchMainThread()
         channelsOnce()
         // While locked the database and settings cannot be opened; alarms ring from BootAlarms then,
