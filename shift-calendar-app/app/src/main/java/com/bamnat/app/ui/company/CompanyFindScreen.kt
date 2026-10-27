@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.company
 
 import kotlinx.coroutines.Dispatchers
+import com.bamnat.core.plaza.DeptGroups
 import com.bamnat.core.plaza.PublicCycle
 import com.bamnat.core.plaza.PublicCycles
 import androidx.compose.animation.AnimatedContent
@@ -459,7 +460,17 @@ fun CompanyDetailScreen(
                     }
                     // [COMM-14] What only this set has, beside another of the same department.
                     val diffs = remember(p) { com.bamnat.core.plaza.SetupDiff.diff(p.setups.map { it.diffItem() }) }
-                    p.setups.forEach { su ->
+                    // [PLZD-06][PLZD-08] 1.30 BD: by department, one 대표 판 each; the version in use said first.
+                    val sections = remember(p) { deptSections(p) }
+                    var opened by rememberSaveable { mutableStateOf(listOf<String>()) }
+                    applied?.takeIf { onPick == null && it.companyId == p.id }?.let { a -> p.setups.firstOrNull { it.id == a.setup } }?.let { u ->
+                        val lead = sections.firstOrNull { sec -> sec.lead.id == u.id || sec.others.any { it.id == u.id } }?.lead
+                        MyVersionBand(u, lead, onCompareLead = lead?.takeIf { it.id != u.id }?.let { l ->
+                            { comparing = Compare("대표 판과 비교", l.text, u.text, "대표 판", "내가 쓰는 판", l) }
+                        })
+                    }
+                    @Composable
+                    fun card(su: SharedSetup, lead: SharedSetup) {
                         val using = applied?.takeIf { it.companyId == p.id && it.setup == su.id }
                         SetupCard(su, diffs[su.id], using, onUse = { start(p, su) },
                             // [PLAZA-09] A member reads the others' pay as 고친 점 cards above, the own one in full.
@@ -472,10 +483,27 @@ fun CompanyDetailScreen(
                             onTry = if (su.hasPay) ({ vm.tryPay(su) }) else null,
                             onHistory = if (su.adopted && (su.version ?: 1) > 1) ({ vm.showHistory(p, su) }) else null,
                             onDiff = if (onPick == null) ({ sendError = null; proposing = su; scope.launch { mine = vm.mine() } }) else null,
-                            onCompare = p.setups.firstOrNull { it.adopted && it.dept == su.dept && it.id != su.id }?.takeIf { !su.adopted }?.let { lead ->
-                                { comparing = Compare("대표 판과 비교", lead.text, su.text, "대표 판", "이 판", su) }
+                            onCompare = lead.takeIf { it.id != su.id }?.let { l ->
+                                { comparing = Compare("대표 판과 비교", l.text, su.text, "대표 판", "이 판", su) }
                             },
                         )
+                    }
+                    sections.forEach { sec ->
+                        card(sec.lead, sec.lead)
+                        // The version this calendar uses stays open even when it is not the 대표.
+                        val inUse = sec.others.firstOrNull { o -> applied?.let { it.companyId == p.id && it.setup == o.id } == true }
+                        inUse?.let { card(it, sec.lead) }
+                        val folded = sec.others.filter { it !== inUse }
+                        if (folded.isNotEmpty()) {
+                            val key = DeptGroups.key(sec.dept)
+                            val open = key in opened
+                            OthersFold(folded.size, open) { opened = if (open) opened - key else opened + key }
+                            if (open) folded.forEach { o ->
+                                OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) },
+                                    onCompare = { comparing = Compare("대표 판과 비교", sec.lead.text, o.text, "대표 판", "이 판", o) },
+                                    onTalk = { vm.talk.show(p.id, o.id, "${p.name} · ${o.dept.ifEmpty { "회사 전체" }}") })
+                            }
+                        }
                     }
                     SoftCard {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -585,6 +613,8 @@ private fun SetupCard(
                 if (s.stable) { Spacer(Modifier.width(6.dp)); StatusChip("안정", Tone.GOOD) }
             }
             // [PLAZA-14][PLAZA-15] 1.27 AH: the one shown first for its department, or why it no longer is.
+            // [PLZD-06] 1.30 BD: what kind of work it is, in one line, before any detail.
+            remember(s.text) { DeptGroups.summary(s.text) }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium) }
             if (s.doubted) StatusChip("달라요가 많아요 · 다시 확인 중", Tone.WAIT)
             else if (s.lead) StatusChip("대표 주기 · 찾는 분께 먼저 보여요", Tone.GOOD)
             diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
