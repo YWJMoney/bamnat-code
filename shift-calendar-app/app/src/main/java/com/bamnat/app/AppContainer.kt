@@ -225,6 +225,11 @@ class AppContainer(context: Context) {
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
         com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /**
+     * [SRCH-07] 1.29 AS: every company search through one place: what the phone already has at once (the last answers, the
+     * most used companies), the server's answer added when it comes. Kept in the cache folder (public names only).
+     */
+    val companySearch by lazy { com.bamnat.app.company.CompanySearch({ companyApi }, java.io.File(appContext.cacheDir, "company_search.json")) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
     /** [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle is picked from a company search. */
@@ -756,6 +761,13 @@ class AppContainer(context: Context) {
                         if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                         else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                     }
+            }
+            // [SRCH-09] 1.29 AS: once, not kept (no job of its own, so the startup budget is the same): the most used companies
+            // and this phone's company page read ahead, unless the phone saves data, so the first search shows at once.
+            appScope.launch {
+                // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
+                runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
+                runCatching { companySearch.warm(com.bamnat.app.company.CompanySearch.saveData(appContext), companyStore.applied.value?.companyId) }
             }
             // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
             keep("share") { if (shareApi.enabled) shareSync.follow() }

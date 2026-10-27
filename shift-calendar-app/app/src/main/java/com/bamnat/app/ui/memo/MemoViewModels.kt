@@ -130,7 +130,8 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
         // [MEMO-01] Every calendar's schedule: a date's shift is read from the calendar its memos belong to.
         where.flatMapLatest { w ->
             val ids = (listOf(w.active) + w.calendars.map { it.id }).distinct()
-            combine(ids.map { id -> container.calendars.repository(id).snapshot.map { id to it } }) { w to it.toMap() }
+            // [SRCH-13] 1.29 AS: the reading the calendar already holds (live), not a whole-history read of its own each time.
+            combine(ids.map { id -> container.calendars.repository(id).live.map { id to it } }) { w to it.toMap() }
         },
         q,
         selection,
@@ -469,7 +470,7 @@ class MemoEditorViewModel(
         date to shiftCalendar(listOf(m), active)?.takeIf { container.calendars.get(it) != null }
     }.distinctUntilChanged().flatMapLatest { (date, cal) ->
         if (date == null || cal == null) kotlinx.coroutines.flow.flowOf(null)
-        else container.calendars.repository(cal).snapshot.map { it.resolver.resolve(date) }
+        else container.calendars.repository(cal).live.map { it.resolver.resolve(date) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -484,7 +485,7 @@ class MemoEditorViewModel(
     /** [MEMO-05] The next 60 days of that calendar, for '다음 야간 때' and the dialog's '근무에 맞춰' chips. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val shiftDays: StateFlow<List<com.bamnat.core.memo.ShiftMemoTime.Day>> = shiftCal.flatMapLatest { cal ->
-        container.calendars.repository(cal).snapshot.map { snap ->
+        container.calendars.repository(cal).live.map { snap ->
             val from = Today.date()
             (0L..60L).mapNotNull { i ->
                 val d = snap.resolver.resolve(from.plusDays(i))

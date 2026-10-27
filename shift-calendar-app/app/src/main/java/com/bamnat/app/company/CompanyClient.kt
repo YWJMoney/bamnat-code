@@ -3,6 +3,8 @@ package com.bamnat.app.company
 import com.bamnat.app.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
@@ -381,6 +383,8 @@ interface CompanyApi {
     /** False in a build without a server address: no 회사 찾기 and no sending, files still go by hand. */
     val enabled: Boolean
     suspend fun search(query: String): List<CompanyHit>
+    /** [SRCH-04] 1.29 AS: the companies most phones use, with their 대표 주기 line, for the phone to keep ([CompanySearch]). */
+    suspend fun popular(): List<CompanyHit> = emptyList()
     suspend fun company(id: String): CompanyPage
     suspend fun terms(): CompanyTerms
     suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean = false): ReportStatus
@@ -466,21 +470,20 @@ class CompanyClient(
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
-    override suspend fun search(query: String): List<CompanyHit> = serverCall {
-        if (CompanyText.norm(query).length < 2) return@serverCall emptyList()
+    // AS 1.29 [SRCH-06] A read the screen may stop waiting for (a new letter typed, a time limit) returns at once.
+    override suspend fun search(query: String): List<CompanyHit> = readCall {
+        if (CompanyText.norm(query).length < 2) return@readCall emptyList()
         val o = request("GET", "/api/companies?q=" + URLEncoder.encode(query.trim().take(40), "UTF-8"))
-        o.optJSONArray("companies").objects().map { c ->
-            CompanyHit(c.getString("id"), c.getString("name"), c.optStringOrNull("alias"), c.optInt("adopted"), c.optInt("pending"),
-                users = c.optInt("users"), lead = c.optJSONObject("lead")?.let(::leadLine), sites = c.optInt("sites"))
-        }
+        o.optJSONArray("companies").objects().map(::companyHit)
     }
 
-    /** [PLAZA-14] The search's 대표 주기 line of a company. */
-    private fun leadLine(l: JSONObject): LeadLine {
-        fun names(key: String) = l.optJSONArray(key)?.let { a -> (0 until a.length()).map { if (a.isNull(it)) null else a.getString(it) } }
-        return LeadLine(l.optString("setup"), l.optString("dept"), l.optBoolean("adopted"), names("steps"), names("weekly"),
-            l.optJSONArray("offs").strings().toSet(), l.optBoolean("pay"), l.optInt("ok"), l.optInt("bad"), l.optBoolean("doubted"),
-            l.optBoolean("roster"))
+    /** [SRCH-04] 1.29 AS: the companies most phones use, with their 대표 주기; empty from a server before 1.29. */
+    override suspend fun popular(): List<CompanyHit> = readCall {
+        try {
+            request("GET", "/api/companies/top").optJSONArray("companies").objects().map(::companyHit)
+        } catch (e: CompanyException) {
+            if (e.code == "not_found" || e.code == "http_404") emptyList() else throw e
+        }
     }
 
     /** [PLAZA-15] 맞아요·달라요 of one setup as the server counts them. */
@@ -491,7 +494,7 @@ class CompanyClient(
     )
 
     /** A company and its setups; one merged into another opens as that one. */
-    override suspend fun company(id: String): CompanyPage = serverCall {
+    override suspend fun company(id: String): CompanyPage = readCall {
         val me = device()
         var o = request("GET", "/api/companies/$id", device = me)
         o.optStringOrNull("mergedInto")?.let { o = request("GET", "/api/companies/$it", device = me) }
@@ -537,7 +540,7 @@ class CompanyClient(
         )
     }
 
-    override suspend fun terms(): CompanyTerms = serverCall {
+    override suspend fun terms(): CompanyTerms = readCall {
         val o = request("GET", "/api/terms")
         CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75), o.optInt("firstMonths", 0))
     }
@@ -590,7 +593,7 @@ class CompanyClient(
         until = o.optStringOrNull("until")?.let(Instant::parse), changeAfter = o.optStringOrNull("changeAfter")?.let(Instant::parse),
     )
 
-    override suspend fun board(adopted: Boolean, from: Int, q: String, job: String, region: String, sort: String): Board = serverCall {
+    override suspend fun board(adopted: Boolean, from: Int, q: String, job: String, region: String, sort: String): Board = readCall {
         val name = q.trim().take(40).takeIf { it.isNotEmpty() }?.let { "&q=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
         val plaza = (if (job.isNotEmpty()) "&job=$job" else "") + (if (region.isNotEmpty()) "&region=$region" else "") + (if (sort != "recent") "&sort=$sort" else "")
         val o = request("GET", "/api/board?tab=${if (adopted) "adopted" else "voting"}&from=$from$name$plaza")
@@ -916,6 +919,42 @@ internal suspend fun <T> serverCall(block: suspend CoroutineScope.() -> T): T = 
         throw CompanyException("bad_response")
     }
 }
+
+/** [SRCH-06] Where reads run, apart from the screen that asked: see [readCall]. */
+private val readScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+/**
+ * [SRCH-06] 1.29 AS: a read (GET) the caller can stop waiting for. A connection blocks its thread and does not hear a
+ * coroutine being cancelled, so before 1.29 a time limit around a search (치는 대로 찾기's 2.5 s) or a new letter typed
+ * waited for the old request to end anyway, and 회사 찾기 started the next search only after the last one came back. The
+ * read now runs on its own and the caller only awaits it: cancelling returns at once, and the read ends by itself (its
+ * answer still fills [CompanySearch]'s memory when it went through it). Never for a write, which must finish before the
+ * screen says it went.
+ */
+internal suspend fun <T> readCall(block: suspend CoroutineScope.() -> T): T = readScope.async { serverCall(block) }.await()
+
+/** [PLAZA-14] A company as the search sends it, and [SRCH-07] as the phone keeps it ([toJson] writes the same). */
+internal fun companyHit(c: JSONObject): CompanyHit =
+    CompanyHit(c.getString("id"), c.getString("name"), c.optStringOrNull("alias"), c.optInt("adopted"), c.optInt("pending"),
+        users = c.optInt("users"), lead = c.optJSONObject("lead")?.let(::leadLine), sites = c.optInt("sites"))
+
+/** [PLAZA-14] The search's 대표 주기 line of a company. */
+internal fun leadLine(l: JSONObject): LeadLine {
+    fun names(key: String) = l.optJSONArray(key)?.let { a -> (0 until a.length()).map { if (a.isNull(it)) null else a.getString(it) } }
+    return LeadLine(l.optString("setup"), l.optString("dept"), l.optBoolean("adopted"), names("steps"), names("weekly"),
+        l.optJSONArray("offs").strings().toSet(), l.optBoolean("pay"), l.optInt("ok"), l.optInt("bad"), l.optBoolean("doubted"),
+        l.optBoolean("roster"))
+}
+
+/** [SRCH-07] A company of the search as JSON, the same fields [companyHit] reads. */
+internal fun CompanyHit.toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("alias", alias ?: JSONObject.NULL)
+    .put("adopted", adopted).put("pending", pending).put("users", users).put("sites", sites).apply {
+        val l = lead ?: return@apply
+        fun names(list: List<String?>?) = list?.let { JSONArray(it.map { n -> n ?: JSONObject.NULL }) } ?: JSONObject.NULL
+        put("lead", JSONObject().put("setup", l.setup).put("dept", l.dept).put("adopted", l.adopted).put("steps", names(l.steps))
+            .put("weekly", names(l.weekly)).put("offs", JSONArray(l.offs.toList())).put("pay", l.pay).put("ok", l.ok).put("bad", l.bad)
+            .put("doubted", l.doubted).put("roster", l.roster))
+    }
 
 /**
  * One call to the company server; [device] goes in the X-Device header. A refusal comes back as

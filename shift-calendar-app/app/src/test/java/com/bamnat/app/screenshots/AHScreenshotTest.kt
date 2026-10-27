@@ -131,7 +131,8 @@ class AHScreenshotTest : ScreenshotBase() {
         assertTrue(shows("공개 자료", exact = false))
         compose.mainClock.advanceTimeBy(3_000)
         waitFor(100)
-        assertTrue(shows("같은 회사 분들 자료는 지금 못 불러왔어요", exact = false))
+        // AS 1.29 [SRCH-06][SRCH-10]: a slow answer is waited for, not thrown away at 2.5 s; the line says so.
+        assertTrue(shows("연결이 느려 조금 오래 걸려요", exact = false))
         assertTrue(shows("여기 없어요, 직접 추가", exact = true))
     }
 
