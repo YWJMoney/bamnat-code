@@ -43,18 +43,21 @@ import com.bamnat.core.plaza.PublicSetup
 @Composable
 fun PublicWayNotice(modifier: Modifier = Modifier, onPay: () -> Unit, onShare: () -> Unit) {
     val c = LocalContext.current.appContainer
-    val use by c.companyStore.publicUse.collectAsStateWithLifecycle()
-    val profile by c.payStore.profile.collectAsStateWithLifecycle()
+    // [CALI-04] 1.30 BB: the public cycle of the calendar on screen ([LocalCompanyCalendar]), with that calendar's pay.
+    val scope = companyScope(c)
+    val store = scope.store
+    val use by store.publicUse.collectAsStateWithLifecycle()
+    val profile by scope.pay.profile.collectAsStateWithLifecycle()
     val u = use ?: return
     if (u.sentId != null) return
     val cycle = u.cycle ?: return
     Box(modifier) {
         when (publicStep(c, u, profile != null)) {
-            PublicStep.PAY -> PublicPayCard(cycle, u.codes, onPay = onPay, onLater = { c.companyStore.updatePublicUse { it.copy(payClosed = true) } })
+            PublicStep.PAY -> PublicPayCard(cycle, u.codes, onPay = onPay, onLater = { store.updatePublicUse { it.copy(payClosed = true) } })
             PublicStep.SHARE -> PublicShareCard(
                 u, cycle, hasPay = profile != null, reward = rewardShort(cachedTerms()), onShare = onShare,
-                onLater = { c.companyStore.updatePublicUse { it.later() } },
-                onNever = { c.companyStore.updatePublicUse { it.copy(inviteNever = true) } },
+                onLater = { store.updatePublicUse { it.later() } },
+                onNever = { store.updatePublicUse { it.copy(inviteNever = true) } },
             )
             null -> Unit
         }

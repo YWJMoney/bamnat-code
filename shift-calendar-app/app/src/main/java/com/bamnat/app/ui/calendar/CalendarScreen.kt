@@ -1095,15 +1095,21 @@ fun CalendarScreen(
                 com.bamnat.app.ui.company.ShareInviteNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
             })
             // [SPAT-04][SPAT-05] After a public cycle went in: the pay, then the plaza (14·30·90일 간격, 그만 볼게요).
-            if (paint == null && viewingReceived == null && activeCalendar.id == com.bamnat.app.data.PersonalCalendar.MAIN) add(Notice("publicCycle", "근무주기 다음 단계") {
-                com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) },
-                    onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) })
+            // [CALI-04] 1.30 BB: the calendar on screen's own (1.29: 내 달력's only); never the example's.
+            val companyCalendar = activeCalendar.id
+            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("publicCycle", "근무주기 다음 단계") {
+                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides companyCalendar) {
+                    com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        onPay = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY) },
+                        onShare = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT) })
+                }
             })
             // [PLAZA-32] 1.27 AI (443): a joined company's 정보 광장, one line from the calendar.
-            if (paint == null && viewingReceived == null && activeCalendar.id == com.bamnat.app.data.PersonalCalendar.MAIN) add(Notice("plazaRoom", "회사 정보 광장") {
-                com.bamnat.app.ui.company.PlazaRoomLine(Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                    onOpen = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PLAZA) })
+            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("plazaRoom", "회사 정보 광장") {
+                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides companyCalendar) {
+                    com.bamnat.app.ui.company.PlazaRoomLine(Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        onOpen = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PLAZA) })
+                }
             })
             // AG 1.27 [INVITE-11] Inviting friends, three days after the install, two weeks apart (결정 AG-D6).
             if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구 초대") { com.bamnat.app.ui.pro.InviteNudgeNotice() })

@@ -63,12 +63,17 @@ import kotlinx.coroutines.withContext
  * (자유 토의 under 참여자 번호, the company's 근무·급여 정보 and 고친 점); a kind of work with no company its own plaza
  * ([StylePlaza.plan]); 교대·일근 with no company keep the rule plaza ([CompanyBoardScreen]), which every plaza links to.
  */
-class PlazaHomeViewModel(private val c: AppContainer) : ViewModel() {
+class PlazaHomeViewModel(
+    private val c: AppContainer,
+    /** [CALI-08] 1.30 BB: the calendar whose company and kind of work the plaza is about. */
+    val calendar: String = PersonalCalendar.MAIN,
+) : ViewModel() {
+    private val scope = c.companyOf(calendar)
     val enabled: Boolean = c.companyApi.enabled
-    private val style = c.calendars.styleOf(PersonalCalendar.MAIN, c.settingsRepository.current.workStyle)
-    /** The company this phone joined, as the server last said; else none. */
-    private val company = c.companyStore.member.value?.takeIf { it.first.isNotBlank() }
-        ?.let { it.first to it.second.ifBlank { c.companyStore.applied.value?.company ?: "우리 회사" } }
+    private val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /** The company this calendar joined, as the server last said; else none. */
+    private val company = scope.store.member.value?.takeIf { it.first.isNotBlank() }
+        ?.let { it.first to it.second.ifBlank { scope.store.applied.value?.company ?: "우리 회사" } }
 
     private val _plan = MutableStateFlow(StylePlaza.plan(style, company))
     val plan: StateFlow<StylePlaza.Plan> = _plan.asStateFlow()
@@ -84,7 +89,7 @@ class PlazaHomeViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    val talk = TalkHolder(c, viewModelScope)
+    val talk = TalkHolder(c, viewModelScope, calendar)
 
     init { load() }
 
@@ -112,7 +117,7 @@ class PlazaHomeViewModel(private val c: AppContainer) : ViewModel() {
             if (roomAsk != null) {
                 val r = roomAsk.await()
                 if (r != null) next = withContext(Dispatchers.Default) {
-                    val mine = runCatching { c.companyShare.exportForServer().toString() }.getOrNull()
+                    val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull()
                     val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
                         .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
                     val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, versions, max = 3) }.getOrNull() }.orEmpty()
@@ -144,6 +149,8 @@ fun PlazaHomeScreen(
     onCompany: (String) -> Unit,
     onRates: () -> Unit,
     onShare: () -> Unit,
+    /** [CALI-08] Above everything: which calendar's 광장 this is (the calendar chips), when the phone has two or more. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     val plan by vm.plan.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -164,6 +171,7 @@ fun PlazaHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                header?.invoke()
                 vm.note?.let { n ->
                     SoftCard(highlighted = true) {
                         Text(n, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))

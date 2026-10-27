@@ -49,15 +49,20 @@ import kotlinx.coroutines.launch
  * [PAYF-04] 1.29 묶음 AP: the company pay way in use as the pay screen shows it — its opinion as the plaza has it (맞아요·달라요,
  * 달라요 by where), the setup it came from for 고쳐서 제안하기, and the talk on it. Read once when the screen opens.
  */
-class PayWayViewModel(private val c: AppContainer) : ViewModel() {
-    val way: StateFlow<PayWay?> = c.payWays.way
-    val askBase: StateFlow<Boolean> = c.payWays.askBase
+class PayWayViewModel(
+    private val c: AppContainer,
+    /** [CALI-04] 1.30 BB: the calendar whose pay this is; its own company pay way. */
+    val calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) : ViewModel() {
+    private val scope = c.companyOf(calendar)
+    val way: StateFlow<PayWay?> = scope.payWays.way
+    val askBase: StateFlow<Boolean> = scope.payWays.askBase
     private val _opinion = MutableStateFlow<Opinion?>(null)
     val opinion: StateFlow<Opinion?> = _opinion.asStateFlow()
     /** The company's setup the way came from (as the plaza has it now), to propose changes on. */
     private val _text = MutableStateFlow<String?>(null)
     val text: StateFlow<String?> = _text.asStateFlow()
-    val talk = TalkHolder(c, viewModelScope)
+    val talk = TalkHolder(c, viewModelScope, calendar)
     /** Without the company server only the 기본급 line is left (a build with no server address). */
     val server: Boolean = c.companyApi.enabled
 
@@ -79,10 +84,10 @@ class PayWayViewModel(private val c: AppContainer) : ViewModel() {
         val w = way.value ?: return done(null)
         viewModelScope.launch {
             val error = try {
-                val verified = ok && c.slipProof()?.counts == true
-                c.companyApi.vote(c.companyStore.device, w.companyId, w.setup, ok, verified, why)
-                c.payWays.voted(ok, why)
-                if (c.companyStore.applied.value?.setup == w.setup) c.companyStore.voted(ok)
+                val verified = ok && scope.slipProof()?.counts == true
+                c.companyApi.vote(scope.store.device, w.companyId, w.setup, ok, verified, why)
+                scope.payWays.voted(ok, why)
+                if (scope.store.applied.value?.setup == w.setup) scope.store.voted(ok)
                 c.telemetry.event("pay_way_vote", if (ok) "ok" else why ?: "bad")
                 load()
                 null
@@ -94,7 +99,7 @@ class PayWayViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** This phone's own setup (amounts left out), for 내 설정으로 채우기 in the proposal. */
-    suspend fun mine(): String? = runCatching { c.companyShare.exportForServer().toString() }.getOrNull()
+    suspend fun mine(): String? = runCatching { scope.share.exportForServer().toString() }.getOrNull()
 
     /** 달라요 → 고쳐서 제안하기: the company's setup as the user says it is, to its talk as a proposal (D79 rules, no amount). */
     fun propose(lines: List<com.bamnat.app.company.ChangeLine>, setup: String, why: String, done: (String?) -> Unit) {
@@ -112,7 +117,7 @@ class PayWayViewModel(private val c: AppContainer) : ViewModel() {
         talk.show(w.companyId, w.setup, "${w.company} · ${w.dept.ifEmpty { "회사 전체" }}")
     }
 
-    fun baseAsked() = c.payWays.askBase(false)
+    fun baseAsked() = scope.payWays.askBase(false)
 }
 
 /**
@@ -126,7 +131,9 @@ class PayWayViewModel(private val c: AppContainer) : ViewModel() {
  */
 @Composable
 fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Unit, modifier: Modifier = Modifier) {
-    val vm = appViewModel { PayWayViewModel(it) }
+    // [CALI-04] The pay screen's calendar ([LocalCompanyCalendar]).
+    val calendar = LocalCompanyCalendar.current
+    val vm = appViewModel(key = "pay-way-$calendar") { PayWayViewModel(it, calendar) }
     val way by vm.way.collectAsStateWithLifecycle()
     val askBase by vm.askBase.collectAsStateWithLifecycle()
     val opinion by vm.opinion.collectAsStateWithLifecycle()

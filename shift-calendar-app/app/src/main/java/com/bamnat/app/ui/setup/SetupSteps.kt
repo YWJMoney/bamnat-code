@@ -271,11 +271,16 @@ private fun SourceCard(source: SetupSource, d: SetupDraft, onChange: () -> Unit)
 @Composable
 internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDismiss: () -> Unit, initialOpen: String? = null) {
     var openId by remember { mutableStateOf(initialOpen) }
+    // [CALI-05] 1.30 BB: an added calendar's setup looks for that calendar's company (what it already has, its plaza).
+    val calendar = vm.calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             val id = openId
             if (id == null) {
-                val find = appViewModel { CompanyFindViewModel(it) }
+                val find = appViewModel(key = if (calendar == com.bamnat.app.data.PersonalCalendar.MAIN) null else "setup-find-$calendar") {
+                    CompanyFindViewModel(it, calendar)
+                }
                 // The name typed so far, once each time the search opens; never over what the user typed.
                 LaunchedEffect(find) { if (find.query.value.isBlank()) find.query.value = initialQuery.trim() }
                 CompanyFindScreen(
@@ -293,7 +298,7 @@ internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDis
                     },
                 )
             } else {
-                val detail = appViewModel(key = "setup-company-$id") { CompanyDetailViewModel(it, id) }
+                val detail = appViewModel(key = "setup-company-$id-$calendar") { CompanyDetailViewModel(it, id, calendar) }
                 CompanyDetailScreen(
                     vm = detail,
                     setup = true,
@@ -309,6 +314,7 @@ internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDis
                     },
                 )
             }
+        }
         }
     }
 }

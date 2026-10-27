@@ -190,7 +190,9 @@ internal fun InviteCard(
 /** [PLAZA-04] The invitation on the calendar, right after a setup made by hand; draws nothing when it is not due. */
 @Composable
 fun ShareInviteNotice(modifier: Modifier = Modifier) {
-    val vm = com.bamnat.app.ui.appViewModel { CompanyNudgeViewModel(it) }
+    // [CALI-04] The calendar on screen's own invitation.
+    val calendar = LocalCompanyCalendar.current
+    val vm = com.bamnat.app.ui.appViewModel(key = "company-nudges-$calendar") { CompanyNudgeViewModel(it, calendar) }
     if (!vm.enabled) return
     val draft = vm.invite.collectAsStateWithLifecycle().value ?: return
     val terms by vm.terms.collectAsStateWithLifecycle()

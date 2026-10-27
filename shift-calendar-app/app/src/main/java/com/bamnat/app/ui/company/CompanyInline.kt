@@ -104,7 +104,7 @@ fun CompanyInlineResults(
     onPick: ((PublicCycle, String) -> Unit)? = null,
     onPay: () -> Unit = {},
     onShare: () -> Unit = {},
-    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    calendar: String = LocalCompanyCalendar.current,
     limit: Int = 5,
 ) {
     val c = LocalContext.current.appContainer
