@@ -138,7 +138,7 @@ fun PayQuickSetup(
         fromSlip?.let { return it }
         val chosen = f ?: return initial
         val p = WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
-            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it)) } ?: p }
+            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
     val draft = draftOf(form, amount, holiday)

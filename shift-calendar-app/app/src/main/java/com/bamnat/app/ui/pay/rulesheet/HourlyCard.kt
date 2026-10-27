@@ -34,7 +34,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.bamnat.app.ui.company.CompanyHoursLine
 import com.bamnat.app.ui.company.CompanyWayText
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.pay.Hint
@@ -63,7 +62,7 @@ import kotlin.math.roundToLong
  * - What it is, in a line: 시간당 기본 단가, what 연장·야간·휴일 are counted on.
  * - Its value now and where it came from (명세서·회사 규칙·광장·직접, [PayProfile.ordinarySource]·[PayProfile.hoursSource]).
  * - What a photo or payslip showed, one tap to use ("명세서로 보면 통상임금 기준 180시간이에요 [이 값 쓰기]").
- * - The 기준 시간 chips, the company's first when the 광장 has it ([CompanyHoursLine], 묶음 BC: a different value is sent as 의견).
+ * - The 기준 시간 chips, the company's first when the 광장 has it (1.30 BA [com.bamnat.app.ui.pay.MonthlyHoursChips]; a different value is sent as 의견, 묶음 BC).
  * - Not known: "통상임금이 기본급의 몇 %인가요?" (기본급만 100%), or the 통상시급 typed. Anything the user picks is [HourlySource.TYPED].
  *
  * [profile] is the setup the sheet goes onto (its 기본급 and 통상 수당); [slipBase] the 기본급 a payslip read showed, used when the setup
@@ -114,9 +113,20 @@ internal fun HourlyCard(
                 HorizontalDivider()
                 val hours = terms.hours ?: shown?.monthlyHours ?: BaseAsk.HOURS_CHOICES.first()
                 Label("기준 시간 (한 달을 몇 시간으로 치나요?)")
-                val read = terms.offers.mapNotNull { (it.change as? RuleChange.MonthlyHours)?.let { h -> h.hours to h.source } }.distinctBy { it.first }
-                HoursChips(hours, read, onPick = { h, src -> onTerms(terms.withHours(h, src)) })
-                if (plaza?.hours != null) CompanyHoursLine(plaza, hours) { onTerms(terms.withHours(it, HourlySource.PLAZA)) }
+                // [HOURLY-04] 1.30 BA's chips (회사 규칙 n시간 first), as on the pay screen; a value of its own on the stepper.
+                val company = plaza?.hours
+                com.bamnat.app.ui.pay.MonthlyHoursChips(hours, onHours = { h ->
+                    onTerms(if (h == null) terms.copy(hours = null, hoursSource = null, hoursWhy = "")
+                        else terms.withHours(h, if (h == company) HourlySource.PLAZA else HourlySource.TYPED))
+                }, companyHours = company, companyName = plaza?.way?.company)
+                MonthlyHoursStepper(hours, onChange = { onTerms(terms.withHours(it, HourlySource.TYPED)) })
+                // Hours other than the company's: one tap sends them to the 광장 as an opinion (묶음 BC).
+                if (plaza != null && company != null && hours != company) {
+                    var proposing by rememberSaveable { mutableStateOf(false) }
+                    TextButton(onClick = { proposing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${hours}시간으로 같은 회사에 의견 보내기") }
+                    if (proposing) com.bamnat.app.ui.company.HoursProposalSheet(plaza, hours,
+                        from = terms.hoursSource?.takeIf { it != HourlySource.TYPED }?.label ?: "직접") { proposing = false }
+                }
                 Hint("명세서·계약서의 ‘통상시급 = 기본급 ÷ ○○시간’의 ○○이에요. 모르면 그대로 두세요.")
                 PercentAsk(view, shown, month, terms, onTerms)
             }
@@ -158,24 +168,6 @@ private fun Offer(f: RuleFinding, taken: Boolean, onUse: () -> Unit, onDrop: () 
             }
         }
     }
-}
-
-/**
- * [HOURLY-04] The 기준 시간 chips: the ones a photo read ("180시간 · 명세서"), then 209·226·243, and a stepper for any other. 1.30 BA makes
- * [com.bamnat.app.ui.pay.BaseFields]'s chips a part of their own (companyHours); the two are one in the integration.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun HoursChips(hours: Int, read: List<Pair<Int, HourlySource>>, onPick: (Int, HourlySource) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        read.forEach { (h, src) ->
-            FilterChip(selected = hours == h, onClick = { onPick(h, src) }, label = { Text("${h}시간 · ${src.label}") }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-        BaseAsk.HOURS_CHOICES.filter { h -> read.none { it.first == h } }.forEach { h ->
-            FilterChip(selected = hours == h, onClick = { onPick(h, HourlySource.TYPED) }, label = { Text("${h}시간") }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-    }
-    MonthlyHoursStepper(hours, onChange = { onPick(it, HourlySource.TYPED) })
 }
 
 /**

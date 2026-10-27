@@ -122,6 +122,9 @@ class AWScreenshotTest : ScreenshotBase() {
         then()
     }
 
+    /** '+ 칸 더하기' brought up from under the fixed bar first, then pressed. */
+    private fun Screen.addCell() { reveal("칸 더하기", exact = false); tapText("칸 더하기", exact = false) }
+
     private fun Screen.rulesTab() { tapText("회사 규칙", prefix = true); settle() }
 
     @Test fun resultSlipTab() = shoot("1410_aw_result_slip_tab", FOLDED, result {
@@ -172,12 +175,12 @@ class AWScreenshotTest : ScreenshotBase() {
 
     @Test fun editorEmpty() = shoot("1417_aw_editor_empty", FOLDED, editor { reveal("칸 더하기", exact = false) })
     @Test fun addStepOne() = shoot("1418_aw_add_step_what", FOLDED, editor {
-        tapText("칸 더하기", exact = false)
+        addCell()
         reveal("무엇을 더할까요?", exact = true)
         reveal("자격수당", exact = true)
     })
     @Test fun addStepTwo() = shoot("1419_aw_add_step_how_much", FOLDED, editor {
-        tapText("칸 더하기", exact = false)
+        addCell()
         tapText("자격수당", exact = true)
         reveal("얼마·언제 주나요?", exact = true)
         typeInto("한 달 금액", "57500")
@@ -185,7 +188,7 @@ class AWScreenshotTest : ScreenshotBase() {
         assertTrue("더하기 전에 이번 달에 더해지는 금액이 보여야 해요", shows("57,500", exact = false))
     })
     @Test fun addedShowsTheMonth() = shoot("1420_aw_added_preview", FOLDED, editor {
-        tapText("칸 더하기", exact = false)
+        addCell()
         tapText("자격수당", exact = true)
         typeInto("한 달 금액", "57500")
         tapText("더하기", exact = true)
@@ -195,11 +198,11 @@ class AWScreenshotTest : ScreenshotBase() {
         assertTrue(shows("2,557,500", exact = false))
     })
     @Test fun addStepsBigText() = shoot("1421_aw_add_steps_200", FOLDED, 2f, editor {
-        tapText("칸 더하기", exact = false)
+        addCell()
         tapText("자격수당", exact = true)
     })
     @Test fun addSearchNew() = shoot("1422_aw_add_new_name", FOLDED, editor {
-        tapText("칸 더하기", exact = false)
+        addCell()
         typeInto("이름으로 찾거나 새로 적기", "현장수당")
         reveal("‘현장수당’ 새로 만들기", exact = false)
     })
@@ -214,7 +217,7 @@ class AWScreenshotTest : ScreenshotBase() {
         settle()
         tapText("사진 없이 칸으로 적기", exact = true)
         reveal("회사 규칙 칸으로 적기", exact = true)
-        tapText("칸 더하기", exact = false)
+        addCell()
         tapText("자격수당", exact = true)
         typeInto("한 달 금액", "57500")
         tapText("더하기", exact = true)
@@ -239,7 +242,7 @@ class AWScreenshotTest : ScreenshotBase() {
 
     @Test fun cardFromPayslip() = shoot("1424_aw_hourly_from_slip", FOLDED, card(CommonTerms(offers = listOf(READ_HOURS)).take(READ_HOURS)) {
         reveal("명세서에서", exact = false)
-        assertTrue(shows("180시간 · 명세서", exact = false))
+        assertTrue(shows("이 값으로 계산해요", exact = false))
     })
     @Test fun cardFromRules() = shoot("1425_aw_hourly_from_rules", FOLDED, card(CommonTerms().withHours(226, HourlySource.RULES)) {
         reveal("회사 규칙에서", exact = false)

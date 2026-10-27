@@ -214,17 +214,17 @@ fun CompanyRulesEditor(
                     // [ITEM-07] 1.30 BC: the company's hours first, and a different value can go back as a proposal.
                     val companyWay = com.bamnat.app.ui.company.rememberCompanyWayText()
                     com.bamnat.app.ui.company.CompanyHoursLine(companyWay, draft.monthlyHours) { h ->
-                        draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS)
+                        draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.PLAZA).settled(Unknowns.MONTHLY_HOURS)
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         // [PAYX-34] 180시간 too: the payslip match already tries it (PayslipMatcher.SNAP_HOURS).
                         Unknowns.MONTHLY_HOURS_CHIPS.forEach { h ->
-                            FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) },
+                            FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) },
                                 label = { Text("${h}시간") })
                         }
                     }
                     // [PAYX-23][INPUT-02] The company's own number, e.g. 182 (주 35시간), stepped.
-                    MonthlyHoursStepper(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) })
+                    MonthlyHoursStepper(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) })
                     Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요. 명세서나 계약서에 다른 숫자가 있으면 그대로 넣어요.")
                     // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
                     val weekly = remember(snapshot, month) { StandardHours.averageWeekly(month.atDay(1), resolve = snapshot.resolver::resolve) }
@@ -236,7 +236,7 @@ fun CompanyRulesEditor(
                                 Text("1년 평균 주 ${HoursFormat.korean(weekly)} 소정근로 + 주휴. 계약서에 적힌 시간이 있으면 그것을 쓰세요.",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster).settled(Unknowns.MONTHLY_HOURS) }) { Text("적용") }
+                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) }) { Text("적용") }
                         }
                     }
                 }
@@ -503,7 +503,7 @@ fun CompanyRulesEditor(
                 draft.ordinaryHourly?.let { h ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("명세서로 맞춘 통상시급 ${"%,.2f".format(h)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { draft = draft.copy(ordinaryHourly = null) }) { Text("지우기") }
+                        TextButton(onClick = { draft = draft.copy(ordinaryHourly = null, ordinarySource = null) }) { Text("지우기") }
                     }
                     Hint("가산수당을 이 시급으로 계산해요. 지우면 기본급과 통상임금 수당으로 다시 계산해요.")
                 }
