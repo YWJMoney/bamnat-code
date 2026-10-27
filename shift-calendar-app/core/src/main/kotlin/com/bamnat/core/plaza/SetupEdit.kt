@@ -1,7 +1,13 @@
 package com.bamnat.core.plaza
 
 import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.pay.BonusBasis
+import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.HolidayWork
+import com.bamnat.core.pay.ItemShare
+import com.bamnat.core.pay.ItemShares
+import com.bamnat.core.pay.OrdinaryGuess
+import com.bamnat.core.pay.ShareGuess
 import com.bamnat.core.remote.Json
 
 /**
@@ -56,6 +62,99 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
     val items: List<Pair<String, String>>
         get() = (pay()?.get("items") as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
             .map { (it["name"] as String) to (it["cadence"] as? String ?: "MONTHLY") }
+
+    /**
+     * [ITEM-09] 1.30 BC: one allowance with everything the proposal form changes: how often, who sets the amount ([share]:
+     * 회사 공통·사람마다·%), the percent and of what, the company's one amount, and whether it is in 통상임금.
+     */
+    data class Allowance(
+        val name: String,
+        val cadence: String,
+        val share: ItemShare,
+        val percent: Double?,
+        val percentOf: BonusBasis,
+        val fixedAmount: Long?,
+        val ordinary: Boolean,
+    )
+
+    val allowances: List<Allowance>
+        get() = (pay()?.get("items") as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { m ->
+            val name = m["name"] as? String ?: return@mapNotNull null
+            Allowance(
+                name = name,
+                cadence = m["cadence"] as? String ?: "MONTHLY",
+                share = ItemShare.entries.firstOrNull { it.name == m["share"] } ?: ItemShare.PERSONAL,
+                percent = (m["percent"] as? Number)?.toDouble(),
+                percentOf = BonusBasis.entries.firstOrNull { it.name == m["percentOf"] } ?: BonusBasis.BASE,
+                fixedAmount = (m["fixedAmount"] as? Number)?.toLong(),
+                ordinary = m["ordinary"] == true,
+            )
+        }
+
+    /** [ITEM-09] The 통상시급's hours a month (월 소정근로시간), as the file has them. */
+    val monthlyHours: Int? get() = (pay()?.get("monthlyHours") as? Number)?.toInt()
+
+    /** [ITEM-09] The hours a month, kept within what a workplace counts (100~320). */
+    fun monthlyHours(hours: Int): SetupEdit = withPay { it["monthlyHours"] = hours.coerceIn(HOURS_MIN, HOURS_MAX) }
+
+    /**
+     * [ITEM-09] A new allowance at the end, with no amount of anyone's (the file never has one): [share] says who sets it.
+     * The same name twice, or a blank one, changes nothing. 통상임금 starts where [com.bamnat.core.pay.OrdinaryGuess] puts it.
+     */
+    fun addItem(
+        name: String,
+        cadence: String = "MONTHLY",
+        share: ItemShare = ShareGuess.of(name) ?: ItemShare.PERSONAL,
+        percent: Double? = null,
+        percentOf: BonusBasis = ShareGuess.basisOf(name),
+        ordinary: Boolean? = null,
+        fixedAmount: Long? = null,
+    ): SetupEdit {
+        val n = name.trim().take(MAX_ITEM_NAME)
+        if (n.isEmpty() || allowances.any { it.name == n } || allowances.size >= MAX_ITEMS) return this
+        require(cadence in CADENCES)
+        val c = Cadence.entries.firstOrNull { it.name == cadence } ?: Cadence.MONTHLY
+        val item = linkedMapOf<String, Any?>(
+            "id" to "n" + Integer.toUnsignedString(n.hashCode(), 36).take(12), "name" to n,
+            "amount" to linkedMapOf("entries" to ArrayList<Any?>(), "raise" to null), "cadence" to cadence, "types" to ArrayList<Any?>(),
+            "ordinary" to (ordinary ?: OrdinaryGuess.of(n, c) ?: false), "taxable" to true, "months" to ArrayList<Any?>(), "fixedOvertime" to 0,
+            "festivals" to ArrayList<Any?>(), "festivalBefore" to false,
+        )
+        return withPay { p -> p["items"] = (p["items"] as? List<*>).orEmpty() + listOf(item) }.itemShare(n, share, percent, percentOf, fixedAmount)
+    }
+
+    /** [ITEM-09] The allowance taken out of the company's way. */
+    fun removeItem(name: String): SetupEdit = withPay { p ->
+        p["items"] = (p["items"] as? List<*>).orEmpty().filter { (it as? Map<*, *>)?.get("name") != name }
+    }
+
+    /** [ITEM-09] The allowance under another name; a blank name or one already taken changes nothing. */
+    fun renameItem(name: String, to: String): SetupEdit {
+        val n = to.trim().take(MAX_ITEM_NAME)
+        if (n.isEmpty() || n == name || allowances.any { it.name == n }) return this
+        return withItem(name) { it["name"] = n }
+    }
+
+    /**
+     * [ITEM-09] Who sets the allowance's amount. A percent is paid every month (매달) as [percent] of [percentOf]; the company's
+     * one [fixedAmount] goes only with [ItemShare.FIXED] (결정 D102), and nothing else carries an amount.
+     */
+    fun itemShare(name: String, share: ItemShare, percent: Double? = null, percentOf: BonusBasis? = null, fixedAmount: Long? = null): SetupEdit =
+        withItem(name) { m ->
+            if (share == ItemShare.PERSONAL) m.remove("share") else m["share"] = share.name
+            if (share == ItemShare.PERCENT) {
+                m["cadence"] = "MONTHLY"
+                m["percent"] = (percent ?: (m["percent"] as? Number)?.toDouble() ?: DEFAULT_PERCENT).coerceIn(MIN_PERCENT, ItemShares.MAX_PERCENT)
+                m["percentOf"] = (percentOf ?: BonusBasis.entries.firstOrNull { it.name == m["percentOf"] } ?: BonusBasis.BASE).name
+            } else {
+                m.remove("percent"); m.remove("percentOf")
+            }
+            val amount = fixedAmount ?: (m["fixedAmount"] as? Number)?.toLong()
+            if (share == ItemShare.FIXED && amount != null && amount > 0) m["fixedAmount"] = amount.coerceAtMost(MAX_FIXED) else m.remove("fixedAmount")
+        }
+
+    /** [ITEM-09] Whether the allowance is in 통상임금. */
+    fun itemOrdinary(name: String, on: Boolean): SetupEdit = withItem(name) { it["ordinary"] = on }
 
     fun shiftTime(name: String, start: String, end: String, breakMinutes: Int): SetupEdit = with { r ->
         r["shiftTypes"] = list("shiftTypes").map { t ->
@@ -136,6 +235,13 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
         }
     }
 
+    private fun withItem(name: String, change: (MutableMap<String, Any?>) -> Unit): SetupEdit = withPay { p ->
+        p["items"] = (p["items"] as? List<*>).orEmpty().map { i ->
+            val m = i as? Map<*, *> ?: return@map i
+            if (m["name"] == name) copyMap(m).also(change) else i
+        }
+    }
+
     private fun list(key: String): List<Any?> = (root[key] as? List<*>).orEmpty()
     private fun pay(): Map<*, *>? = root["pay"] as? Map<*, *>
     private fun rules(): Map<*, *>? = pay()?.get("rules") as? Map<*, *>
@@ -156,6 +262,15 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
 
     companion object {
         val RATES = listOf("ot", "night", "hw", "ho")
+        /** [ITEM-09] The ways an allowance is paid that the form offers, and the server's limits on it. */
+        val CADENCES = listOf("MONTHLY", "PER_WORK_DAY", "PER_NIGHT_SHIFT", "PER_SHIFT_TYPE", "BONUS")
+        const val MAX_ITEM_NAME = 20
+        const val MAX_ITEMS = 30
+        const val MAX_FIXED = 10_000_000L
+        const val MIN_PERCENT = 0.001
+        const val DEFAULT_PERCENT = 0.1
+        const val HOURS_MIN = 100
+        const val HOURS_MAX = 320
         private val DEFAULT_RULE = mapOf("basis" to "LEGAL", "multiplier" to 1.5, "amount" to 0, "min" to 0, "night" to true,
             "percent" to 0.1, "cover" to -1, "premiums" to false, "bonus" to 0, "unit" to "ORDINARY", "unitMin" to 480, "adds" to emptyList<Any?>())
 

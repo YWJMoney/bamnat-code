@@ -9,6 +9,7 @@ import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.HolidayPayMode
+import com.bamnat.core.pay.ItemShare
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.Unknowns
@@ -51,6 +52,11 @@ class CompanyShare(
     private val today: () -> LocalDate = Today::date,
     /** [EASY-06] The facts a coworker's setup gave, for the profile to mark as 공유 (main calendar). */
     private val shared: suspend (Set<com.bamnat.core.profile.FactKey>) -> Unit = {},
+    /**
+     * [ITEM-03] 1.30 BC (결정 D102): whether a company's one amount ([ItemShare.FIXED]) goes in the file, the 광장's included.
+     * The app passes the `plaza.fixed_amount` flag, so the server can stop it without an update. A person's own amount never goes.
+     */
+    private val fixedAmounts: () -> Boolean = { true },
 ) {
     suspend fun export(company: String, withAmounts: Boolean, team: String = ""): String {
         val snapshot = schedule.snapshot.first()
@@ -101,14 +107,33 @@ class CompanyShare(
                 .put("period", PayCodec.period(p.period))
                 .put("rules", rulesJson)
                 .put("withAmounts", withAmounts)
-                .put("items", JSONArray(p.items.map { item ->
-                    val shared = if (withAmounts) item else item.copy(amount = ValueTimeline())
-                    PayCodec.itemJson(shared).put("types", JSONArray(item.shiftTypeIds.mapNotNull(names::get)))
+                .put("items", JSONArray(p.items.filter { !it.mine }.map { item ->
+                    PayCodec.itemJson(shareOf(item, withAmounts)).put("types", JSONArray(item.shiftTypeIds.mapNotNull(names::get)))
                 })))
             // [PAYS-03] 1.11 would read these rules without them and come to another month, so it is asked to update.
-            if (usesNewRules(rules, p.items)) root.put("v", VERSION)
+            // [ITEM-03] 1.30 BC: an allowance with its kind (회사 공통·%) is 4, so 1.29 asks to update instead of reading it as 사람마다.
+            when {
+                usesNewItems(p.items) -> root.put("v", VERSION)
+                usesNewRules(rules, p.items) -> root.put("v", RULES_VERSION)
+            }
         }
         return root.toString(1)
+    }
+
+    /**
+     * [ITEM-03] One allowance as the file carries it: the user's own [amount][PayItem.amount] only [withAmounts]; a company
+     * amount as [PayItem.fixedAmount] (결정 D102: 회사 공통 정액만), the one typed for it this month when the user typed one, and
+     * only while [fixedAmounts] lets it. 사람마다 and the user's own allowances never carry one.
+     */
+    private fun shareOf(item: PayItem, withAmounts: Boolean): PayItem {
+        // A percent with no percent, or on another cadence than 매달, cannot be paid as one: it goes as 사람마다.
+        if (item.share == ItemShare.PERCENT && !item.isPercent) return shareOf(item.copy(share = ItemShare.PERSONAL, percent = null), withAmounts)
+        if (withAmounts) return item
+        val bare = item.copy(amount = ValueTimeline())
+        if (item.share != ItemShare.FIXED) return bare.copy(fixedAmount = null)
+        if (!fixedAmounts()) return bare.copy(fixedAmount = null)
+        val typed = item.amount.on(java.time.YearMonth.from(today())).value.takeIf { it > 0 }
+        return bare.copy(fixedAmount = (typed ?: item.fixedAmount)?.takeIf { it in 1..MAX_FIXED })
     }
 
     /**
@@ -235,6 +260,47 @@ class CompanyShare(
         return applyRules(root, ids).second
     }
 
+    /**
+     * [ITEM-07] 1.30 BC (계약, R1 1-1·1-5): a company's pay way and the user's own [base] (and, when said, the 통상시급's [hours])
+     * put on the pay setup in one save, so nothing is half applied: a way chosen and then left without its 기본급 changes
+     * nothing (묶음 BA's PendingWay commits through this). With no pay setup yet, one is made from the way (월급, 기본급 from
+     * [month]); allowances the way leaves to each person stay 금액 모름 until typed. [hours] null keeps the company's hours.
+     * True when the pay rules were applied; false when [text] has no pay part or [base] is not above 0 (nothing changed).
+     */
+    suspend fun applyRulesWith(text: String, base: Long, hours: Int?, month: java.time.YearMonth): Boolean {
+        if (base <= 0) return false
+        val root = parse(text)
+        check(root)
+        val pay = root.optJSONObject("pay") ?: return false
+        val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+        // Kinds of extra work first, as applyRules does: the pay rules name them by this phone's ids.
+        var kindIds: Map<Long, Long> = emptyMap()
+        root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
+            val (merged, map) = mergeKinds(settings.current.extraKinds, ExtraKinds.decode(encoded), root.optJSONObject("extraKindShifts"),
+                root.optJSONObject("extraKindShiftSets"), ids)
+            kindIds = map
+            settings.update { it.copy(extraKinds = merged) }
+            shared(setOf(com.bamnat.core.profile.FactKey.EXTRA_KINDS))
+        }
+        val had = payStore.profile.value
+        val start = had ?: PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, com.bamnat.core.pay.WageType.MONTHLY,
+            ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(month.atDay(1), base))))
+        val merged = merge(start, JSONObject(pay.toString()), ids, kindIds)
+        // A new pay setup: what the way leaves to each person is 금액 모름 until typed (never a guessed 0원).
+        val marked = if (had != null) merged else merged.copy(estimatedFields = merged.estimatedFields +
+            merged.items.filter { it.amount.entries.isEmpty() && !it.isPercent && !it.isCompanyFixed &&
+                !(it.cadence == com.bamnat.core.pay.Cadence.BONUS && it.percentOfBase != null) }.map { Unknowns.item(it.id) })
+        payStore.save(com.bamnat.core.pay.BaseAsk.apply(marked, base, month, hours))
+        shared(setOf(com.bamnat.core.profile.FactKey.NIGHT_OT, com.bamnat.core.profile.FactKey.PUBLIC_HOLIDAYS, com.bamnat.core.profile.FactKey.FIVE_OR_MORE))
+        return true
+    }
+
+    /**
+     * [ITEM-07] 1.30 BC (계약): the 통상시급's hours a month (월 소정근로시간) the company's way says, e.g. LG화학 180, for the 기본급
+     * screen to show as "회사 규칙 180시간". Null when [text] has none, is not a company file, or says hours no workplace counts.
+     */
+    fun hoursOf(text: String): Int? = hoursIn(text)
+
     /** Kinds of extra work, then pay rules; returns (rules applied, pay waiting for amounts). */
     private suspend fun applyRules(root: JSONObject, ids: Map<String, Long>): Pair<Boolean, Boolean> {
         // [EXTRA-01] Kinds merge like shift types: 잔업·특근·대근 by id, the company's own by name.
@@ -346,11 +412,18 @@ class CompanyShare(
      * are matched by name to the user's own; kinds of extra work the user does not have keep their ids.
      * Null when the file has no pay rules or the user has no pay setup to try them on.
      */
-    suspend fun trial(text: String): PayProfile? {
+    suspend fun trial(text: String): PayProfile? = trial(text, null)
+
+    /**
+     * [PROP-02] 1.30 BC: 이 제안으로 내 월급 계산해 보기. As [trial], and with [base] (the version the proposal changes) the
+     * proposal's allowances also stand: one it takes out goes from the user's own, one whose kind it changes (회사 공통·%) takes
+     * that kind with the user's own amount for a 사람마다 one. Nothing is saved.
+     */
+    suspend fun trial(text: String, base: String?): PayProfile? {
         val root = parse(text)
         check(root)
         val pay = root.optJSONObject("pay") ?: return null
-        val profile = payStore.profile.value ?: return null
+        val profile = (payStore.profile.value ?: return null).let { p -> if (base == null) p else proposed(p, base, pay) }
         val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
         val mine = settings.current.extraKinds
         val kindIds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
@@ -361,6 +434,53 @@ class CompanyShare(
         }.orEmpty()
         return merge(profile, JSONObject(pay.toString()), ids, kindIds)
     }
+
+    /** [PROP-02] [p]'s allowances as the proposal [pay] has them, against the version [base] it changes. */
+    private fun proposed(p: PayProfile, base: String, pay: JSONObject): PayProfile {
+        val was = runCatching { JSONObject(base).optJSONObject("pay")?.optJSONArray("items").objects().map { it.optString("name") }.toSet() }
+            .getOrNull().orEmpty()
+        val now = pay.optJSONArray("items").objects().associateBy { it.optString("name") }
+        val items = p.items.mapNotNull { mine ->
+            val o = now[mine.name]
+            when {
+                mine.mine -> mine
+                o == null -> mine.takeUnless { it.name in was }
+                else -> {
+                    val theirs = runCatching { PayCodec.itemFrom(JSONObject(o.toString()).put("types", JSONArray())) }.getOrNull() ?: return@mapNotNull mine
+                    mine.copy(cadence = theirs.cadence, ordinary = theirs.ordinary, share = theirs.share, percent = theirs.percent,
+                        percentOf = theirs.percentOf, fixedAmount = theirs.fixedAmount ?: mine.fixedAmount, percentOfBase = theirs.percentOfBase,
+                        months = theirs.months, bonusBasis = theirs.bonusBasis,
+                        // A company amount the proposal sets replaces the one this phone had from the company.
+                        amount = if (theirs.share == ItemShare.FIXED && theirs.fixedAmount != null && mine.share == ItemShare.FIXED) ValueTimeline() else mine.amount)
+                }
+            }
+        }
+        return p.copy(items = items)
+    }
+
+    /**
+     * [PROP-03] 1.30 BC: 내 급여도 이 값으로. Every item [edited] changes from [base] (the version the user corrected) put on the
+     * user's own pay setup one by one as 이 값 쓰기 does ([takeOne]), the user's amounts kept. Returns how many were taken.
+     */
+    suspend fun takeEdited(base: String, edited: String): Int {
+        var n = 0
+        for (row in com.bamnat.core.plaza.SetupCompare.changes(base, edited)) {
+            if (!com.bamnat.core.plaza.SetupPatch.canTake(row.key)) continue
+            if (runCatching { takeOne(edited, row.key) }.getOrDefault(false)) n++
+        }
+        return n
+    }
+
+    /** [ITEM-06] An allowance the company's way sets for everyone, shown to the user as "들어 있어요" rather than asked. */
+    data class CommonItem(val name: String, val text: String)
+
+    /** [ITEM-06] The allowances of [text] whose amount is the company's (회사 공통) or a percent: nothing to type for them. */
+    fun commonItems(text: String): List<CommonItem> = runCatching {
+        parse(text).optJSONObject("pay")?.optJSONArray("items").objects().mapNotNull { o ->
+            val item = runCatching { PayCodec.itemFrom(JSONObject(o.toString()).put("types", JSONArray())) }.getOrNull() ?: return@mapNotNull null
+            if (item.isPercent || item.isCompanyFixed) CommonItem(item.name, com.bamnat.core.pay.ItemShares.describe(item)) else null
+        }
+    }.getOrNull().orEmpty()
 
     /** [COMM-01] One amount a shared setup leaves to each person: an allowance or a fixed extra-work rule. */
     data class AmountNeed(val key: String, val label: String, val hint: String)
@@ -375,6 +495,8 @@ class CompanyShare(
             val item = runCatching { PayCodec.itemFrom(JSONObject(o.toString()).put("types", JSONArray())) }.getOrNull() ?: return@mapNotNull null
             // A bonus paid as a share of 기본급 needs no amount of its own.
             if (item.cadence == com.bamnat.core.pay.Cadence.BONUS && item.percentOfBase != null) null
+            // [ITEM-06] 1.30 BC: nor one the company sets for everyone or a percent: only 사람마다 is asked.
+            else if (item.isPercent || item.isCompanyFixed) null
             else AmountNeed("item:${item.name}", item.name, item.cadence.label)
         }
         val rules = pay.optJSONObject("rules")?.optJSONObject("extra")?.let { x ->
@@ -425,6 +547,8 @@ class CompanyShare(
             when {
                 amount != null -> item.copy(amount = ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(from, amount))))
                 item.cadence == com.bamnat.core.pay.Cadence.BONUS && item.percentOfBase != null -> item
+                // [ITEM-06] The company's amount or a percent is known, not a guess.
+                item.isPercent || item.isCompanyFixed -> item
                 item.amount.entries.isNotEmpty() -> item.also { guessed += it.id }
                 else -> item.also { guessed += Unknowns.item(it.id) }
             }
@@ -561,14 +685,26 @@ class CompanyShare(
          * 3: [PAYS-03] 감시·단속 승인, 5인 미만 회사의 공휴일, 휴게 처리 or an allowance in place of a premium. Only a
          * file that uses one is written as 3, so 1.11 still reads every other file.
          */
-        const val VERSION = 3
-        /** What a file without the [VERSION] 3 rules is written as. */
+        const val VERSION = 4
+        /** [PAYS-03] What a file with the 3 rules but no 1.30 allowance kinds is written as, so 1.11~1.29 read it. */
+        const val RULES_VERSION = 3
+        /** What a file without the [RULES_VERSION] 3 rules is written as. */
         const val BASE_VERSION = 2
+        /** [ITEM-04] Most a company's one amount may be (the server's limit). */
+        const val MAX_FIXED = 10_000_000L
+
+        /** [ITEM-07] [hoursOf] without an instance, for screens that only hold the company's text. */
+        fun hoursIn(text: String): Int? = runCatching {
+            JSONObject(text).optJSONObject("pay")?.takeIf { it.has("monthlyHours") }?.optInt("monthlyHours")
+        }.getOrNull()?.takeIf { it in com.bamnat.core.pay.BaseAsk.HOURS_RANGE }
 
         /** [PAYS-03] Whether [rules] or [items] use something 1.11 cannot read. */
         fun usesNewRules(rules: com.bamnat.core.pay.CompanyRules, items: List<com.bamnat.core.pay.PayItem>): Boolean =
             rules.supervisoryApproved || rules.holidaysUnderFive || rules.breakPay != com.bamnat.core.pay.BreakPay.UNPAID ||
                 items.any { it.coveredKinds != it.defaultCovers }
+
+        /** [ITEM-03] Whether [items] say who sets an amount (회사 공통·%), which 1.29 and before cannot read. */
+        fun usesNewItems(items: List<com.bamnat.core.pay.PayItem>): Boolean = items.any { !it.mine && it.share != ItemShare.PERSONAL }
         const val MIME_TYPE = "application/json"
         private const val MAX_NAME = 40
         const val MAX_TEAM = 12

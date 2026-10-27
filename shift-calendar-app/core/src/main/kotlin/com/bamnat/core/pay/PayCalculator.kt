@@ -120,7 +120,7 @@ class PayCalculator(
     private class Premiums(val overtime: Double, val night: Double, val holidayWithin8h: Double, val holidayOver8h: Double, val holidayBase: Double)
 
     fun calculate(
-        profile: PayProfile,
+        given: PayProfile,
         month: YearMonth,
         resolve: (LocalDate) -> ResolvedDay,
         /**
@@ -133,6 +133,8 @@ class PayCalculator(
         /** Paid holidays besides the 주휴일; null uses the built-in 공휴일 when the company counts them. */
         isHoliday: ((LocalDate) -> Boolean)? = null,
     ): MonthPay {
+        // [ITEM-01] 1.30 BC: the company's one amounts and the percent allowances as what they pay this month.
+        val profile = ItemShares.resolve(given, month)
         val rules = profile.rules
         // [PAYS-03] 감시·단속 승인 (제63조 제3호): the rules on hours, breaks and holidays (chapter 4) do not apply.
         val supervisory = rules.supervisoryApproved
@@ -799,9 +801,15 @@ class PayCalculator(
             val cut = item.cadence == Cadence.MONTHLY && proration != null
             val paid = if (cut) prorated(amount.value) else amount.value * count
             allowancePaid[item.id] = paid
+            // [ITEM-01] A percent allowance says what it is a percent of; a company amount says so.
+            val how = when {
+                item.isPercent -> "${item.percentOf.label} ${won(ItemShares.basisOf(given, item, month))} × ${ItemShares.pct(item.percent ?: 0.0)}"
+                given.items.firstOrNull { it.id == item.id }?.isCompanyFixed == true -> "${item.cadence.label} 회사 공통 ${won(amount.value)}"
+                else -> null
+            }
             lines += PayLine(
                 LineKind.ALLOWANCE, item.name, paid,
-                formula = (if (count == 1) "${item.cadence.label} ${won(amount.value)}" else "${won(amount.value)} × ${count}회") +
+                formula = (how ?: if (count == 1) "${item.cadence.label} ${won(amount.value)}" else "${won(amount.value)} × ${count}회") +
                     if (cut) prorationNote else "",
                 // Only a monthly allowance goes into 통상임금 (ordinaryWage); a per-shift one never says it does.
                 basis = listOfNotNull("통상임금에 포함".takeIf { item.ordinary && item.cadence == Cadence.MONTHLY }, prorationBasis.takeIf { cut })
@@ -1275,7 +1283,9 @@ class PayCalculator(
          * the monthly share of regular bonuses. Bonuses count at a year's payments ÷ 12 (시행령 제6조 제2항 제5호)
          * from 2024-12-19 on: the 전원합의체 ruling of that day applies to later pay only.
          */
-        fun ordinaryWage(profile: PayProfile, month: YearMonth): OrdinaryWage {
+        fun ordinaryWage(given: PayProfile, month: YearMonth): OrdinaryWage {
+            // [ITEM-01] A company amount or a percent allowance in 통상임금 counts at what it pays this month.
+            val profile = ItemShares.resolve(given, month)
             val base = profile.base.on(month).value
             val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() }
                 .sumOf { it.amount.on(month).value }
