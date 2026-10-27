@@ -71,7 +71,7 @@ fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Un
             // At 200% text the words scroll inside the dialog rather than push its buttons away.
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (ask.first) {
-                    Text("같은 회사 사람들이 쓰게 근무 순서·계산 방식(금액·이름 빼고)을 나눌까요?", style = MaterialTheme.typography.bodyLarge)
+                    Text("같은 회사 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", style = MaterialTheme.typography.bodyLarge)
                     Text("${ask.company} 광장에 나눠요.", style = MaterialTheme.typography.bodyMedium)
                 } else {
                     Text("${ask.company} 광장에 이렇게 고쳐 올려요.", style = MaterialTheme.typography.bodyMedium)

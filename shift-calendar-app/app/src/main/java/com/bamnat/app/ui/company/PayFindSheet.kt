@@ -306,7 +306,7 @@ fun PayFindFlow(
                 val name = row?.name ?: state.name.trim()
                 Text(if (state.used == PayFind.Used.Gone) "‘$name’ 급여 방식을 지금은 받을 수 없어요" else "아직 ‘$name’ 급여 방식이 없어요",
                     style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                Text("근무주기처럼 직접 만들어 주세요. 몇 가지만 고르면 돼요. 다 만들면 같은 회사 분들도 쓰게 ‘$name’ 이름으로 광장에 나눌지 한 번 여쭤봐요(금액·이름은 빼고).",
+                Text("근무주기처럼 직접 만들어 주세요. 몇 가지만 고르면 돼요. 다 만들면 같은 회사 분들도 쓰게 ‘$name’ 이름으로 광장에 나눌지 한 번 여쭤봐요(내 급여 금액·이름은 빼고).",
                     style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { find.none(name); onByHand(name, row?.publicId) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text("직접 만들게요")

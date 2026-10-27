@@ -150,15 +150,17 @@ object FlagCatalog {
     )
 
     /**
-     * [ITEM-03] 1.30 BC: 결정 D102 (사용자 2026-10-27 "회사 공통 정액만 광장에 공유"). On by default; off sends 회사 공통 수당 without
+     * [ITEM-03] 1.30 BC: 결정 D102 (사용자 2026-10-27 "회사 공통 정액만 광장에 공유"). On from 처리방침 3.4's date; off sends 회사 공통 수당 without
      * its amount, so everyone types it as before. A person's own amount (사람마다) never goes, on or off.
      */
     val PLAZA_FIXED_AMOUNT_FLAG = Flag(
         PLAZA_FIXED_AMOUNT, "회사 공통 수당 금액 나누기",
         what = "회사 설정을 광장에 올리거나 고치자고 제안할 때, 작성자가 ‘회사 공통 금액’으로 정한 수당(식대·교통비 정액 같은)의 금액을 함께 올려요. 쓰는 분은 그 금액을 다시 적지 않아요. 사람마다 다른 수당의 금액은 보내지 않아요.",
-        whyOff = "끄면 회사 공통 수당도 금액 없이 올라가고, 쓰는 분이 각자 적어요(1.29와 같음). 이미 올라간 금액은 그대로예요.",
-        basis = Basis(decision = "D102", requirement = "ITEM-03", note = "1.30 BC 수당 종류(회사 공통·사람마다·%)"),
-        conditions = emptyList(), default = true, since = "1.30.0", group = FlagGroup.SERVER,
+        whyOff = "처리방침 3.4(1-2항)가 시행된 뒤에만 금액을 함께 올려요. 그 전이나 끄면 회사 공통 수당도 금액 없이 올라가고, 쓰는 분이 각자 적어요(1.29와 같음). 이미 올라간 금액은 그대로예요.",
+        basis = Basis(policy = "3.4 1-2항", decision = "D102", requirement = "ITEM-03", note = "1.30 BC 수당 종류(회사 공통·사람마다·%)"),
+        // 1.30 통합: 1-2항 said "수당 금액은 보내지 않습니다" until 3.4, so the amount waits for 3.4's date like photo.wrong does for 3.3.
+        conditions = listOf(Condition.Date(policy = "3.4")),
+        default = false, risk = Risk.LEGAL, since = "1.30.0", group = FlagGroup.LAW,
     )
 
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */

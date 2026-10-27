@@ -144,7 +144,7 @@ fun CompanyReportScreen(
                         if (public != null) PublicReportHead(public, cycleOnly, vm.hasPay, rewardShort(terms), onCycleOnly = vm::setCycleOnly)
                         Text(
                             if (fix) "고친 설정을 보내 주시면, 같은 회사 분들이 확인한 뒤 회사 찾기의 설정이 바로잡혀요."
-                            else "내 근무표와 급여 계산 방식을 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",
+                            else "내 근무표와 급여 계산 방식을 내 급여 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         // [PLZ-12][PLZ-13] Which plaza it goes to, and where; a hospital is a place like a company.
