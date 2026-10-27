@@ -51,6 +51,8 @@ class CompanyShare(
     private val today: () -> LocalDate = Today::date,
     /** [EASY-06] The facts a coworker's setup gave, for the profile to mark as 공유 (main calendar). */
     private val shared: suspend (Set<com.bamnat.core.profile.FactKey>) -> Unit = {},
+    /** [CALI-01] Whether the calendar's roster comes every month: the app's setting for the main one, never for an added one. */
+    private val rosterMonthly: () -> Boolean = { settings.current.rosterMonthly },
 ) {
     suspend fun export(company: String, withAmounts: Boolean, team: String = ""): String {
         val snapshot = schedule.snapshot.first()
@@ -83,7 +85,7 @@ class CompanyShare(
             else -> Unit
         }
         // [PLAZA-01] A roster that comes every month (간호): said so, since such a file has no order to give.
-        if (settings.current.rosterMonthly && !root.has("rotation")) root.put("roster", true)
+        if (rosterMonthly() && !root.has("rotation")) root.put("roster", true)
         payStore.profile.value?.let { p ->
             // [LEAVE-02] The company's leave year goes along; whether the app counts and the 80% years are the user's own.
             val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap(),

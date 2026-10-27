@@ -100,6 +100,8 @@ fun CompanyBoardScreen(
     onRates: (() -> Unit)? = null,
     /** [PLAZA-32] 1.27 AI: 회사 찾기, for a phone in no company yet: choosing one opens its 정보 광장. */
     onFind: (() -> Unit)? = null,
+    /** [CALI-08] 1.30 BB: which calendar's 광장 this is (the calendar chips), when the phone has two or more. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     val adopted by vm.adopted.collectAsStateWithLifecycle()
     val voting by vm.voting.collectAsStateWithLifecycle()
@@ -146,6 +148,7 @@ fun CompanyBoardScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (header != null) item(key = "calendars") { header() }
                 // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
                 if (onFind != null) item {
                     SoftCard(highlighted = true) {

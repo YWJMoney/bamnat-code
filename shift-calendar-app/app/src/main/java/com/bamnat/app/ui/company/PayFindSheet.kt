@@ -160,7 +160,9 @@ class PayFindState(name: String) {
 fun rememberPayFindState(): PayFindState {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
-    val state = remember(c) { PayFindState(PayFind(c).known()) }
+    // [CALI-04] 1.30 BB: the calendar on screen's company and pay ([LocalCompanyCalendar]).
+    val find = companyScope(c).find
+    val state = remember(find) { PayFindState(find.known()) }
     // [PAYF-02] 화면 열 때 미리: the company already named is asked for before the user reads the question.
     LaunchedEffect(c) { PayFindSearch.prefetch(c, scope, state.name) }
     return state
@@ -185,7 +187,7 @@ fun PayFindFlow(
     byHandHere: Boolean = true,
 ) {
     val c = LocalContext.current.appContainer
-    val find = remember(c) { PayFind(c) }
+    val find = companyScope(c).find
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -321,7 +323,8 @@ private fun DoneStep(c: AppContainer, state: PayFindState, onDone: () -> Unit, o
     }
     val scope = rememberCoroutineScope()
     val month = remember { Today.month() }
-    val profile by c.payStore.profile.collectAsStateWithLifecycle()
+    val pay = companyScope(c).pay
+    val profile by pay.profile.collectAsStateWithLifecycle()
     var base by rememberSaveable { mutableStateOf(BaseAsk.known(profile, month)) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
     Text("급여 방식을 넣었어요", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -329,9 +332,9 @@ private fun DoneStep(c: AppContainer, state: PayFindState, onDone: () -> Unit, o
     BaseFields(profile?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY, base, { base = it }, hours, { hours = it }, profile, month)
     Button(onClick = {
         val b = base ?: return@Button
-        val p = c.payStore.profile.value ?: return@Button onDone()
+        val p = pay.profile.value ?: return@Button onDone()
         val next = BaseAsk.apply(p, b, month, hours)
-        if (onSaved != null) onSaved(next) else scope.launch { c.payStore.save(next) }
+        if (onSaved != null) onSaved(next) else scope.launch { pay.save(next) }
         onDone()
     }, enabled = (base ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("이대로 계산") }
 }
@@ -392,8 +395,9 @@ fun PayFindLine(onSaved: ((PayProfile) -> Unit)? = null, modifier: Modifier = Mo
     val hints = remember { com.bamnat.app.ui.calendar.HintStore(context) }
     var closed by rememberSaveable { mutableStateOf(hints.done(LINE_CLOSED)) }
     var open by rememberSaveable { mutableStateOf(false) }
-    val way by c.payWays.way.collectAsStateWithLifecycle()
-    val applied by c.companyStore.applied.collectAsStateWithLifecycle()
+    val company = companyScope(c)
+    val way by company.payWays.way.collectAsStateWithLifecycle()
+    val applied by company.store.applied.collectAsStateWithLifecycle()
     if (open) PayFindSheet(onDismiss = { open = false }, onSaved = onSaved)
     if (closed || way != null || applied != null) return
     SoftCard(modifier) {

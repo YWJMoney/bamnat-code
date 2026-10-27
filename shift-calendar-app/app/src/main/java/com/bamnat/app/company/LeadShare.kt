@@ -42,6 +42,9 @@ class LeadShare(private val c: AppContainer) {
     private val _step = MutableStateFlow<Step?>(null)
     val step: StateFlow<Step?> = _step.asStateFlow()
 
+    /** [CALI-02] The company things of the calendar [pick] went into. */
+    private fun scopeOf(pick: Pick): CompanyScope = c.companyOf(pick.cal)
+
     /** A cycle was picked for [Pick.company]: asked, or shared at once when the user already said yes to the plaza. */
     fun offer(pick: Pick) {
         if (!c.companyApi.enabled || CompanyText.norm(pick.company).length < 2) return
@@ -61,7 +64,8 @@ class LeadShare(private val c: AppContainer) {
     fun no() {
         if (c.companyStore.autoShare.value == null) c.companyStore.setAutoShare(false)
         // The same question is not asked again by the public cycle's share card (one consent, AH-D6); its pay card stays.
-        if (_step.value?.pick?.cal == PersonalCalendar.MAIN) c.companyStore.updatePublicUse { it.copy(inviteNever = true) }
+        // [CALI-02] The card of the calendar it went into.
+        _step.value?.pick?.let { p -> scopeOf(p).store.updatePublicUse { it.copy(inviteNever = true) } }
         c.telemetry.event("lead_share", "no")
         _step.value = null
     }
@@ -78,12 +82,13 @@ class LeadShare(private val c: AppContainer) {
      * [SPAT-07] 1.27 AH-D3 (사용자 2026-10-25): the cycle of [cal] was deleted, so that calendar is as the first time — the
      * company setup it used, the public row it came from, the company typed for it and the plaza it joined are let go
      * (on the server too: no longer counted as using it, no longer a member). What was shared stays shared; 설정 ›
-     * 개인정보 takes that back. Added calendars keep nothing of the company on the phone.
+     * 개인정보 takes that back. [CALI-02] 1.30 BB: each calendar its own; the company stays joined while another calendar of
+     * this phone is in it (the server counts a phone once).
      */
     fun forget(cal: String) {
         if (_step.value?.pick?.cal == cal) _step.value = null
-        if (cal != PersonalCalendar.MAIN) return
-        val store = c.companyStore
+        val scope = c.companyOf(cal).takeIf { it.calendarId == cal } ?: return
+        val store = scope.store
         val used = store.applied.value
         val joined = store.member.value
         store.setApplied(null)
@@ -94,8 +99,9 @@ class LeadShare(private val c: AppContainer) {
         c.telemetry.event("lead_share", "forget")
         if (!c.companyApi.enabled) return
         c.appScope.launch {
-            used?.let { runCatching { c.companyApi.use(store.device, it.companyId, it.setup, false, cal) } }
-            joined?.let { runCatching { c.companyApi.leave(store.device, it.first) } }
+            val others = c.companyScopes().filter { it.calendarId != cal }
+            used?.let { runCatching { c.companyApi.use(store.device, it.companyId, it.setup, false, scope.serverCal) } }
+            joined?.takeIf { j -> others.none { it.store.member.value?.first == j.first } }?.let { runCatching { c.companyApi.leave(store.device, it.first) } }
         }
     }
 
@@ -138,11 +144,11 @@ class LeadShare(private val c: AppContainer) {
         val same = leads.filter { site == null || CompanyText.norm(it.dept) == CompanyText.norm(dept) }
             .firstOrNull { l -> want.isNotEmpty() && order(JSONObject(l.text))?.let { CycleMatch.same(it, want) } == true }
         if (same != null) {
-            api.vote(c.companyStore.device, page.id, same.id, ok = true)
-            runCatching { api.use(c.companyStore.device, page.id, same.id, true, pick.cal) }
-            if (pick.cal == PersonalCalendar.MAIN) {
-                c.companyStore.setApplied(AppliedSetup(page.id, page.name, same.dept, same.id, same.version, same.adopted, Today.instant(), vote = true))
-            }
+            val scope = scopeOf(pick)
+            api.vote(scope.store.device, page.id, same.id, ok = true)
+            runCatching { api.use(scope.store.device, page.id, same.id, true, scope.serverCal) }
+            // [CALI-02] The calendar it went into uses it (before 1.30 only the main one remembered it).
+            scope.store.setApplied(AppliedSetup(page.id, page.name, same.dept, same.id, same.version, same.adopted, Today.instant(), vote = true))
             return Step.Agreed(pick, if (same.dept.isEmpty()) page.name else "${page.name} · ${same.dept}", page.id)
         }
         val here = leads.filter { CompanyText.norm(it.dept) == CompanyText.norm(dept) }
@@ -156,14 +162,15 @@ class LeadShare(private val c: AppContainer) {
 
     private suspend fun send(pick: Pick, dept: String, setup: JSONObject): ReportStatus {
         if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) throw CompanyException("paused")
-        val status = c.companyApi.report(c.companyStore.device, pick.company.trim().take(40), dept, setup, pick.cal, auto = false)
-        if (!status.again) c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
-        status.member?.takeIf { it.joined && pick.cal == PersonalCalendar.MAIN }?.let { c.companyStore.setMember(status.companyId, status.company) }
-        if (pick.cal == PersonalCalendar.MAIN) {
-            // The main calendar uses what it shared: later changes go to the same company (AF) and the plaza invite stops.
-            c.companyStore.setApplied(AppliedSetup(status.companyId, status.company, status.dept, status.setup, null, false, Today.instant()))
-            c.companyStore.updatePublicUse { it.copy(sentId = status.id, companyId = status.companyId) }
-        }
+        val scope = scopeOf(pick)
+        val store = scope.store
+        val status = c.companyApi.report(store.device, pick.company.trim().take(40), dept, setup, scope.serverCal, auto = false)
+        // [CALI-08] Kept with the calendar it went from, so that calendar's 광장 shows it.
+        if (!status.again) store.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
+        status.member?.takeIf { it.joined }?.let { store.setMember(status.companyId, status.company) }
+        // The calendar uses what it shared: later changes go to the same company (AF) and the plaza invite stops.
+        store.setApplied(AppliedSetup(status.companyId, status.company, status.dept, status.setup, null, false, Today.instant()))
+        store.updatePublicUse { it.copy(sentId = status.id, companyId = status.companyId) }
         c.telemetry.event("lead_share", if (dept.isEmpty()) "sent" else "site")
         return status
     }

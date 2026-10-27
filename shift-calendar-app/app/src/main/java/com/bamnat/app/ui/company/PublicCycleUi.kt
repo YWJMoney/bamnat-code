@@ -247,8 +247,8 @@ fun PublicApplySheet(
     onShare: () -> Unit,
     /** 첫 설정: the order is handed on instead of written; the setup asks today itself. */
     pick: ((String) -> Unit)? = null,
-    /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). */
-    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). [CALI-03] Else the screen's calendar. */
+    calendar: String = LocalCompanyCalendar.current,
 ) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
@@ -272,7 +272,7 @@ fun PublicApplySheet(
             if (cycle.site.isNotEmpty()) Text(cycle.site, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (cycle.id.isNotEmpty()) PublicSourceLine(cycle) else StatusChip("처음 제공 · ${cycle.formName}", Tone.WAIT)
             if (done) {
-                DonePanel(cycle, codes, onPay = onPay, onShare = onShare, onClose = onDismiss)
+                DonePanel(cycle, codes, onPay = onPay, onShare = onShare, onClose = onDismiss, calendar = calendar)
                 return@Column
             }
             Text("${cycle.formName} · ${shiftsLine(cycle, codes)}", style = MaterialTheme.typography.bodyMedium)
@@ -493,16 +493,17 @@ private fun TodayFinder(codes: String, types: Map<Char, ShiftType>, onPick: (Int
 
 /** After the cycle is in: what comes next, the pay with its usual allowances, or the plaza when the pay is set. */
 @Composable
-private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onShare: () -> Unit, onClose: () -> Unit) {
+private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onShare: () -> Unit, onClose: () -> Unit, calendar: String) {
     val c = LocalContext.current.appContainer
-    val hasPay = c.payStore.profile.collectAsState().value != null
+    // [CALI-06] The pay of the calendar the cycle went into.
+    val hasPay = remember(calendar) { c.companyOf(calendar).pay }.profile.collectAsState().value != null
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
         Text("달력에 넣었어요" + if (codes.isNotEmpty()) " · ${codes.length}일 순서" else "", style = MaterialTheme.typography.titleMedium)
     }
     // [PAYF-03] 1.29 AP: the same company may have a pay way coworkers set up: offered here, once, before the usual allowances.
-    if (CompanyPayOffer(cycle.company, onPay)) return
+    if (CompanyPayOffer(cycle.company, onPay, calendar)) return
     if (!hasPay) {
         val items = remember(cycle) { PublicPay.usualItems(cycle) }
         Text("다음은 급여예요. ${PublicPay.form(cycle, codes).label} 근무로 골라 두고" +
@@ -528,7 +529,7 @@ internal fun todayMillis(): Long = Today.millis()
  * ([onPay]). True while it shows, so the panel leaves out its own next step.
  */
 @Composable
-internal fun CompanyPayOffer(company: String, onPay: () -> Unit): Boolean {
+internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: String = LocalCompanyCalendar.current): Boolean {
     val c = LocalContext.current.appContainer
     if (!c.companyApi.enabled) return false
     val hit by androidx.compose.runtime.produceState<com.bamnat.app.company.CompanyHit?>(null, company) {
@@ -553,9 +554,11 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit): Boolean {
         busy = true
         scope.launch {
             try {
-                when (com.bamnat.app.company.PayFind(c).use(h)) {
+                // [CALI-04] Into the pay of the calendar the cycle went into.
+                val s = c.companyOf(calendar)
+                when (s.find.use(h)) {
                     com.bamnat.app.company.PayFind.Used.Gone -> declined = true
-                    com.bamnat.app.company.PayFind.Used.Applied -> { c.payWays.askBase(true); onPay() }
+                    com.bamnat.app.company.PayFind.Used.Applied -> { s.payWays.askBase(true); onPay() }
                     com.bamnat.app.company.PayFind.Used.Amounts -> onPay()
                 }
             } catch (e: com.bamnat.app.company.CompanyException) {

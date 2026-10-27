@@ -164,7 +164,7 @@ fun ShareWayCard(
     }
 
     if (asking) {
-        val store = container.companyStore
+        val store = companyScope(container).store
         val company = store.applied.value?.company ?: store.draft.value?.company ?: ""
         AskDeveloperDialog(company, onDismiss = { asking = false }, onSent = { asking = false; close(memory::later) }, prefill = ways)
     }

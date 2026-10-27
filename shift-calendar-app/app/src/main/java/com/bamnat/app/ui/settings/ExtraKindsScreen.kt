@@ -273,7 +273,7 @@ class ExtraKindsViewModel(
 
     /** The company the user set up under, to start the report with. */
     val companyName: String
-        get() = container.companyStore.applied.value?.company ?: container.companyStore.draft.value?.company.orEmpty()
+        get() = container.companyOf(calendarId).store.let { s -> s.applied.value?.company ?: s.draft.value?.company.orEmpty() }
 
     private suspend fun savePay(transform: (CompanyRules) -> CompanyRules) {
         val p = payStore.profile.value ?: return

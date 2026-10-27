@@ -94,12 +94,12 @@ object PublicCycleFiles {
      */
     suspend fun apply(c: AppContainer, cycle: PublicCycle, codes: String, todayStep: Int?,
         calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN): CompanyShare.Applied {
-        // [SPAT-07] 1.27 AH-D2: an added calendar takes the cycle into its own schedule; only the main one is remembered
-        // for the pay and plaza steps (they are the main calendar's).
-        val main = calendar == com.bamnat.app.data.PersonalCalendar.MAIN
-        val share = if (main) c.companyShare else CompanyShare(c.calendars.repository(calendar), c.payStore, c.settingsRepository)
-        val r = share.apply(text(cycle, codes), rotation = true, todayStep = todayStep)
-        if (main) remember(c, cycle, codes)
+        // [SPAT-07] 1.27 AH-D2: an added calendar takes the cycle into its own schedule. [CALI-06] 1.30 BB: and into its own
+        // pay (1.29 gave an added calendar the main calendar's pay, so its rules could land there), and it is remembered for
+        // that calendar's pay and plaza steps as the main one's are.
+        val scope = c.companyOf(calendar)
+        val r = scope.share.apply(text(cycle, codes), rotation = true, todayStep = todayStep)
+        remember(scope.store, cycle, codes)
         c.telemetry.event("public_cycle_apply", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
         return r
     }
@@ -125,10 +125,13 @@ object PublicCycleFiles {
         }
     }
 
-    fun remember(c: AppContainer, cycle: PublicCycle, codes: String) {
+    fun remember(c: AppContainer, cycle: PublicCycle, codes: String) = remember(c.companyStore, cycle, codes)
+
+    /** [CALI-06] Into the company things of the calendar the cycle went into. */
+    fun remember(store: CompanyStore, cycle: PublicCycle, codes: String) {
         // One invitation: this row's way on, not the hand-made one's as well.
-        c.companyStore.setDraft(null)
-        c.companyStore.setHandMade(false)
-        c.companyStore.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, picked(cycle, codes), Today.millis()))
+        store.setDraft(null)
+        store.setHandMade(false)
+        store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, picked(cycle, codes), Today.millis()))
     }
 }
