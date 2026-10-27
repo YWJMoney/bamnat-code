@@ -2,7 +2,7 @@
 // checked with Play and the consent asked before a free trial turns paid: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, report, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, report, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 import worker, { addMonths, stack, readSub, stopUnconsentedTrials, recheckLapsed } from "../src/index.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -74,7 +74,7 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   assert.equal(on.data.on, true);
   assert.equal(on.data.launchedAt, Date.parse("2026-11-20T01:00:00Z"));
   await call("POST", "/api/admin/flags/free.MONEY_STATS/force", { force: "on", why: "돈 통계 모두에게" }, owner);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, owner)).data.billingLive, true);
+  assert.equal((await adminHome(call, owner)).data.billingLive, true);
   assert.equal((await call("GET", "/api/admin/launch", undefined, owner)).data.billingLive, true);
 
   // Off and on again later: the launch day stays the first one.
@@ -160,7 +160,7 @@ test("an admin's phone: a ten-minute code, the owner's approval, two phones each
   // Once only.
   assert.equal((await call("POST", "/api/admin-link", { code }, { ...phone(3), ...from(3) })).status, 404);
   assert.equal((await call("GET", "/api/passes", undefined, phone(2))).data.admin.status, "pending");
-  assert.equal((await call("GET", "/api/admin/overview", undefined, owner)).data.admins.phones, 1);
+  assert.equal((await adminHome(call, owner)).data.admins.phones, 1);
   // Only the owner sees and approves phones.
   assert.equal((await call("GET", "/api/admin/devices", undefined, m)).status, 403);
   const list = (await call("GET", "/api/admin/devices", undefined, owner)).data.devices;

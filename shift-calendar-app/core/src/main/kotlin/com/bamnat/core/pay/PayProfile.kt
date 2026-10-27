@@ -247,6 +247,11 @@ data class PayProfile(
     /** [PAYR-04] Of [taxFamily], 8세 이상 20세 이하 자녀 (간이세액표 제3호). */
     val taxChildren: Int = 0,
     /**
+     * [PHOTO-11] 1.29 AQ: 통상시급 as the company's payslip shows it (휴일근로 2,626,592원 ÷ 81시간 ÷ 1.5 = 21,618.04원), when
+     * the user took it from a payslip: premiums are worked out on it instead of (기본급 + 통상 수당) ÷ 시간. null works it out.
+     */
+    val ordinaryHourly: Double? = null,
+    /**
      * [HRLY-05] 법정 휴게 자동 빼기: a day with no break set gets the break 근로기준법 제54조 asks for, 30 minutes
      * from 4 hours and an hour from 8 (see [com.bamnat.core.schedule.LegalBreak]).
      */

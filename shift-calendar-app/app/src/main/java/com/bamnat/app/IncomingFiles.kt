@@ -67,6 +67,9 @@ object IncomingRoster {
     /** The waiting roster, once. */
     fun take(): Shared? = _shared.value.also { _shared.value = null }
 
+    /** [INVA-01] A photo the user said is a roster after being asked (투자 체결 내역 or 근무표), back for 한 달 근무 넣기. */
+    fun put(s: Shared) { _shared.value = s }
+
     internal fun sharedOf(intent: Intent?): Shared? {
         intent ?: return null
         if (intent.action != Intent.ACTION_SEND || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null

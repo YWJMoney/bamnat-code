@@ -32,17 +32,42 @@ object FillVote {
         return alike.getOrNull(k) ?: alike.firstOrNull()
     }
 
+    /** The value more than half of [values] give, else null. */
+    private fun majority(values: List<Double>): Double? {
+        if (values.isEmpty()) return null
+        val top = values.groupBy { v -> values.first { same(it, v) } }.maxByOrNull { it.value.size } ?: return null
+        return if (top.value.size * 2 > values.size) top.key else null
+    }
+
     fun merge(reads: List<List<FillSheetReader.Fill>>): List<FillSheetReader.Fill> {
         val usable = reads.filter { it.isNotEmpty() }
         if (usable.size <= 1) return usable.firstOrNull().orEmpty()
         val anchor = usable.maxWith(compareBy<List<FillSheetReader.Fill>> { r -> r.count { it.sure } }.thenBy { it.size })
         val others = usable.filter { it !== anchor }
-        val out = anchor.mapIndexed { i, f ->
+        val out = anchor.mapIndexed { i, f0 ->
             val theirs = others.mapNotNull { r -> counterpart(anchor, i, r) }
+            var f = f0
             val ask = f.unsure.toMutableSet()
-            if (theirs.any { !same(it.quantity, f.quantity) }) ask += FillSheetReader.Field.QUANTITY
-            if (theirs.any { !same(it.price, f.price) }) ask += FillSheetReader.Field.PRICE
-            if (theirs.any { it.amount > 0 && f.amount > 0 && !same(it.amount, f.amount) }) ask += FillSheetReader.Field.AMOUNT
+            val split = HashSet<FillSheetReader.Field>()
+            if (theirs.any { !same(it.quantity, f.quantity) }) split += FillSheetReader.Field.QUANTITY
+            if (theirs.any { !same(it.price, f.price) }) split += FillSheetReader.Field.PRICE
+            if (theirs.any { it.amount > 0 && f.amount > 0 && !same(it.amount, f.amount) }) split += FillSheetReader.Field.AMOUNT
+            if (split.isNotEmpty()) {
+                // [INVA-02] 1.29 AR: readings that differ are put to a vote. The 수량 and 단가 more than half of them give stand
+                // only when they and an amount read then agree to the last won (FillMath.exact) and no other reading's numbers also do;
+                // anything else is asked, as before.
+                val all = theirs + f0
+                val q = majority(all.map { it.quantity })
+                val p = majority(all.map { it.price })
+                // The amount is a check only (a trade keeps 수량 and 단가): the reading of it nearest 수량 × 단가.
+                val a = if (q != null && p != null) all.filter { it.amount > 0 }.minByOrNull { abs(it.amount - q * p) }?.amount else null
+                val settles = q != null && p != null && a != null && FillMath.exact(q, p, a, f0.market) &&
+                    all.none { o -> (!same(o.quantity, q) || !same(o.price, p)) && FillMath.agrees(o.quantity, o.price, if (o.amount > 0) o.amount else a) }
+                // An amount read several ways is not kept as any one of them: 수량 × 단가 to the won (cent) stands for it.
+                val unit = if (f0.market.foreign) 100.0 else 1.0
+                val amount = if (FillSheetReader.Field.AMOUNT in split && q != null && p != null) Math.round(q * p * unit) / unit else a
+                if (settles) f = f0.copy(quantity = q!!, price = p!!, amount = amount!!) else ask += split
+            }
             // The name most readings give; asked unless clearly so.
             val names = (theirs + f).filter { it.name.isNotBlank() }.groupingBy { it.name }.eachCount()
             val name = names.maxByOrNull { it.value }?.let { top -> if (names[f.name] == top.value) f.name else top.key } ?: f.name

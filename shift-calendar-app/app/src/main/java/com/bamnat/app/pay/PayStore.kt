@@ -209,6 +209,8 @@ object PayCodec {
         // [PAYR-04] 간이세액표 가족·자녀 수, left out at 1·0.
         .apply { if (p.taxFamily != 1) put("taxFamily", p.taxFamily) }
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
+        // [PHOTO-11] 1.29: 명세서로 맞춘 통상시급 (원 아래 두 자리), left out when not set.
+        .apply { p.ordinaryHourly?.let { put("ordinaryHourly", it) } }
         .apply { if (p.legalBreaks) put("legalBreaks", true) }
         .putOpt("probationEnd", p.probationEnd?.toString())
         .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
@@ -249,6 +251,7 @@ object PayCodec {
         taxMode = com.bamnat.core.pay.TaxMode.entries.firstOrNull { it.name == o.optString("taxMode") } ?: com.bamnat.core.pay.TaxMode.NONE,
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
         taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
+        ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },
         legalBreaks = o.optBoolean("legalBreaks", false),
         probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),
@@ -281,9 +284,16 @@ object PayCodec {
             // [PAYS-07] Kinds 1.14 cannot read, so it drops them instead of paying them some other way.
             is RulePay.Monthly -> JSONObject().put("type", "monthly").put("amount", p.amount)
             is RulePay.OfBaseMonthly -> JSONObject().put("type", "ofBaseMonthly").put("share", p.share)
+            // [PHOTO-05] 1.29.
+            is RulePay.OfOrdinaryMonthly -> JSONObject().put("type", "ofOrdinaryMonthly").put("share", p.share)
         }
         // [PAYS-07] A deduction wraps its way of counting, so a version without deductions drops it rather than adding it.
-        val pay = if (r.deduct) JSONObject().put("type", "minus").put("of", way) else way
+        val signed = if (r.deduct) JSONObject().put("type", "minus").put("of", way) else way
+        // [PHOTO-05] So does a rule with limits (근속, 한도, 횟수, 기간): a version before 1.29 would pay it with no limit.
+        val limited = r.needsTenure || r.capPerMonth > 0 || r.maxTimes > 0 || r.from != null || r.until != null
+        val pay = if (!limited) signed else JSONObject().put("type", "limited").put("of", signed)
+            .put("minTenure", r.minTenureMonths).put("maxTenure", r.maxTenureMonths).put("cap", r.capPerMonth).put("times", r.maxTimes)
+            .put("since", r.from?.toString() ?: JSONObject.NULL).put("until", r.until?.toString() ?: JSONObject.NULL)
         return JSONObject()
             .put("id", r.id).put("name", r.name).put("on", r.on).put("source", r.source)
             .put("dayKind", w.dayKind.name)
@@ -298,7 +308,10 @@ object PayCodec {
 
     /** A rule this version cannot read (a newer kind of pay) is dropped rather than failing the file. */
     private fun customRuleFrom(o: JSONObject): CustomRule? = runCatching {
-        val outer = o.getJSONObject("pay")
+        val wrapped = o.getJSONObject("pay")
+        val limits = wrapped.takeIf { it.getString("type") == "limited" }
+        val outer = limits?.getJSONObject("of") ?: wrapped
+        fun month(key: String) = limits?.takeIf { it.has(key) && !it.isNull(key) }?.let { runCatching { java.time.YearMonth.parse(it.getString(key)) }.getOrNull() }
         val deduct = outer.getString("type") == "minus"
         val p = if (deduct) outer.getJSONObject("of") else outer
         val pay: RulePay = when (p.getString("type")) {
@@ -308,6 +321,7 @@ object PayCodec {
             "perTime" -> RulePay.PerTime(p.getLong("amount"))
             "monthly" -> RulePay.Monthly(p.getLong("amount"))
             "ofBaseMonthly" -> RulePay.OfBaseMonthly(p.getDouble("share").coerceIn(0.0, 10.0))
+            "ofOrdinaryMonthly" -> RulePay.OfOrdinaryMonthly(p.getDouble("share").coerceIn(0.0, 10.0))
             else -> return null
         }
         fun longs(key: String) = o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getLong(it) }.toSet() } ?: emptySet()
@@ -329,6 +343,11 @@ object PayCodec {
             on = o.optBoolean("on", true),
             source = o.optString("source"),
             deduct = deduct,
+            minTenureMonths = limits?.optInt("minTenure", 0)?.coerceIn(0, 600) ?: 0,
+            maxTenureMonths = limits?.optInt("maxTenure", 0)?.coerceIn(0, 600) ?: 0,
+            capPerMonth = limits?.optLong("cap", 0)?.coerceAtLeast(0) ?: 0,
+            maxTimes = limits?.optInt("times", 0)?.coerceIn(0, 31) ?: 0,
+            from = month("since"), until = month("until"),
         )
     }.getOrNull()
 

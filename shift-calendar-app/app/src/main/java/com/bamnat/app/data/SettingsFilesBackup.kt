@@ -110,6 +110,8 @@ class SettingsFilesBackup(
             Part("calendar_import", keys = setOf("auto")),
             // [READ-19] 1.27 AJ: 사진 읽기에서 고친 명세서 줄 이름·듀티표 글자.
             Part("read_fixes"),
+            // [PAYF-04] 1.29 AP: 쓰는 회사 급여 방식, like the company setup in use ("company:applied").
+            Part("pay_way"),
         )
 
         /**
@@ -180,6 +182,8 @@ class SettingsFilesBackup(
             "flag_preview" to "관리자 휴대폰의 기능 미리 보기 스위치, 이 휴대폰에서만",
             // [PERF-15][PERF-16] 1.28 AO: how long this phone took to open; 보내기 대기는 사용 통계와 같이 이 휴대폰의 것.
             "startup_stats" to "앱을 여는 데 걸린 시간, 이 휴대폰에서 잰 것",
+            // AQ 1.29 [PHOTO-09]: '사진이 달라요' counts waiting to be sent (60 days), this phone's only.
+            "photo_wrong" to "‘사진이 달라요’를 누른 횟수 중 아직 보내지 않은 것(60일), 이 휴대폰에서만",
         )
     }
 }

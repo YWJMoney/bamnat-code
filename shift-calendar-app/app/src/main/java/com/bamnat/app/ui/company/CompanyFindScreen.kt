@@ -178,6 +178,13 @@ fun CompanyFindScreen(
                     keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
+                // AS 1.29 [SRCH-10] Companies already on screen while the server is still asked: say where it stands.
+                val stage by vm.stage.collectAsStateWithLifecycle()
+                stage?.let { SearchStageLine(it, nothingYet = false) }
+                // [SRCH-12] once per name, not on every frame.
+                val publicFound = remember((result as? CompanyFindViewModel.Result.Found)?.query) {
+                    (result as? CompanyFindViewModel.Result.Found)?.let { PublicCycles.search(it.query).isNotEmpty() } ?: false
+                }
                 AnimatedContent(
                     targetState = result,
                     contentKey = { it::class },
@@ -189,9 +196,11 @@ fun CompanyFindScreen(
                         CompanyFindViewModel.Result.Searching -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             LinearProgressIndicator(Modifier.fillMaxWidth())
                             Text("찾고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // [SRCH-10] Where the companies will be, so the list does not jump when they come.
+                            repeat(2) { SkeletonRow() }
                         }
                         is CompanyFindViewModel.Result.Found -> if (r.hits.isEmpty()) {
-                            if (PublicCycles.search(r.query).isEmpty()) {
+                            if (!publicFound) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     FirstProviderCard(r.query.trim(), rewardShort(terms), onStart = { form ->
                                         keyboard?.hide()
@@ -219,7 +228,7 @@ fun CompanyFindScreen(
                 PublicCycleSection(query, onPick = onPublic, onPay = onPay, onShare = onShare,
                     browse = result is CompanyFindViewModel.Result.Idle)
                 // [SPAT-07] 1.27 AH (사용자 2026-10-25): the coworkers' companies, then the public rows, then '여기 없어요' last.
-                (result as? CompanyFindViewModel.Result.Found)?.takeIf { it.hits.isNotEmpty() || PublicCycles.search(it.query).isNotEmpty() }?.let { r ->
+                (result as? CompanyFindViewModel.Result.Found)?.takeIf { it.hits.isNotEmpty() || publicFound }?.let { r ->
                     TextButton(onClick = { byHand(r.query) }) {
                         Text(if (ready) "여기 없어요. ‘${r.query.trim()}’로 내 설정을 나눌게요" else "여기 없어요. ‘${r.query.trim()}’ 직접 설정할게요")
                     }
@@ -271,13 +280,20 @@ private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(hit.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // AS 1.29 [SRCH-01] (사용자 2026-10-27 "광장에 대표판이 있는데 회사 검색 시 뜨지 않는다"): 회사 찾기 showed only how
+                // many setups a company had, never its 대표 주기 or who stands behind it, which the line under the name box did
+                // (1.27 AH-I4). Now both lists say the same.
+                leadText(hit.lead)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium) }
                 Text(
                     listOfNotNull(
                         hit.alias?.let { "다른 이름 $it" },
-                        if (hit.adopted > 0) "쓰는 설정 ${hit.adopted}개" else null,
-                        if (hit.pending > 0) "확인 중 ${hit.pending}개" else null,
-                    ).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (hit.lead == null && hit.users == 0) listOfNotNull(
+                            if (hit.adopted > 0) "쓰는 설정 ${hit.adopted}개" else null,
+                            if (hit.pending > 0) "확인 중 ${hit.pending}개" else null,
+                        ).joinToString(" · ") else trustText(hit),
+                    ).filter { it.isNotEmpty() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (hit.lead?.doubted == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -348,16 +364,28 @@ fun CompanyDetailScreen(
     var comparing by remember { mutableStateOf<Compare?>(null) }
     var keepOld by rememberSaveable { mutableStateOf(false) }
 
+    // [PAYF-03] 1.29 AP: whether the pay way goes in with the cycle, asked once before the order (null: not asked, or no pay way).
+    var withPay by remember { mutableStateOf(true) }
+    var askingPay by remember { mutableStateOf<SharedSetup?>(null) }
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; choosing = null; error = it })
+        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; onApplied(r, p.name) },
+            failed = { applying = false; choosing = null; error = it })
     }
-    fun start(p: CompanyPage, s: SharedSetup) {
-        if (onPick != null) return onPick(p, s)
+    fun order(p: CompanyPage, s: SharedSetup) {
         scope.launch {
             val phases = vm.phases(s)
             if (phases != null && phases.options.size > 1) choosing = s to phases else use(p, s, if (phases != null) 0 else null)
         }
+    }
+    fun start(p: CompanyPage, s: SharedSetup) {
+        if (onPick != null) return onPick(p, s)
+        // [PAYF-03] 사용자 2026-10-27: 'n명이 쓰고 있어요'를 눌러 적용할 때 급여까지 같이 넣을지 한 번 묻기.
+        if (s.hasPay) askingPay = s else { withPay = false; order(p, s) }
+    }
+    askingPay?.let { s ->
+        val p = page
+        if (p != null) WithPayDialog(p.name, s, onAnswer = { yes -> askingPay = null; withPay = yes; order(p, s) }, onDismiss = { askingPay = null })
     }
     if (openPhasesFor != null && page != null) {
         LaunchedEffect(page) { page.setups.firstOrNull { it.id == openPhasesFor }?.let { start(page, it) } }
@@ -750,3 +778,25 @@ private data class Compare(
     val setup: SharedSetup,
     val back: Boolean = false,
 )
+
+/**
+ * [PAYF-03] 1.29 묶음 AP (사용자 2026-10-27 "회사검색시 n명이 쓰고있어요 클릭해서 적용시 급여부분까지 같이 적용을 할것인지 묻게"):
+ * a company setup with a pay way, before its order is picked: the pay way too, or the cycle alone. Yes leads to the 기본급 next.
+ */
+@Composable
+internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("급여 계산 방식도 같이 넣을까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("‘$company’ 분들이 맞춘 급여 계산 방식이 있어요" + (setup.opinion.ok.takeIf { it > 0 }?.let { " · 맞아요 ${it}명" } ?: "") + ".",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요. 금액은 가져오지 않아요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { Button(onClick = { onAnswer(true) }) { Text("네, 같이 넣을게요") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("근무주기만 넣을게요") } },
+    )
+}

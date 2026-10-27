@@ -146,6 +146,8 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var reading by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // [PHOTO-09] 1.29: once a photo was read, '사진이 달라요' sits by the chip.
+    var readOnce by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             reading = true
@@ -158,6 +160,7 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
                 val notReady = result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady
                 val draft = com.bamnat.core.money.ReceiptReader.read(text, Today.date())
                 onRead(draft, name)
+                readOnce = text.isNotBlank()
                 onMessage(when {
                     // [PERF-04] The model is still on its way: the photo is attached, the reading can come later.
                     notReady != null -> "사진만 붙였어요. ${notReady.message}"
@@ -176,4 +179,5 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
         label = { Text(if (reading) "읽는 중…" else "영수증 사진으로 채우기") },
         leadingIcon = { Icon(Icons.Outlined.AddAPhoto, null, Modifier.size(18.dp)) },
     )
+    if (readOnce) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.RECEIPT)
 }

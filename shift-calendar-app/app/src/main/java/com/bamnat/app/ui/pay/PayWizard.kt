@@ -424,12 +424,18 @@ fun PayWizard(
     suggestedOccupation: Occupation? = null,
     /** Screenshots only: the step to open by its key ("items", a question's key, "summary"), when it is asked. */
     startAt: String? = null,
+    /**
+     * [PAYF-01] 1.29 AP: 우리 회사 급여 방식 찾기 on the first question here too (자세히 고치기): the same box as the easy
+     * setup's, typed into at once, the ways of being paid under it for a pay made by hand.
+     */
+    companyFind: Boolean = false,
 ) {
     val today = remember { Today.date() }
     val s = remember {
         PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
     }
     val scope = rememberCoroutineScope()
+    val payFind = if (companyFind) com.bamnat.app.ui.company.rememberPayFindState() else null
     val rosterHours = remember(snapshot) {
         snapshot?.let { snap ->
             StandardHours.averageWeekly(today.withDayOfMonth(1), resolve = snap.resolver::resolve).takeIf { it > 0 }?.let(StandardHours::monthly)
@@ -537,7 +543,21 @@ fun PayWizard(
             ) { key ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when {
-                        key == WAGE -> WageStep(s, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
+                        key == WAGE -> {
+                            // [PAYF-01] The box first, as on every way into the pay setup; its own steps take the screen.
+                            if (payFind != null) com.bamnat.app.ui.company.PayFindFlow(
+                                payFind,
+                                onByHand = { _, _ -> payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME },
+                                onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME },
+                                onSaved = { p -> onDone(p) },
+                                byHandHere = false,
+                            )
+                            if (payFind == null || payFind.step == com.bamnat.app.ui.company.PayFindStep.NAME) {
+                                if (payFind != null) Text("없으면 직접 만들어요", style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(top = 12.dp))
+                                WageStep(s, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
+                            }
+                        }
                         key == AMOUNT -> AmountStep(s, today, slipNote)
                         key == ITEMS -> ItemsStep(s)
                         key == SUMMARY -> SummaryStep(s, draft, questions, range, snapshot) { go(it) }
@@ -554,11 +574,15 @@ fun PayWizard(
         }
         Surface(tonalElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                // [PAYF-01] Inside 급여 방식 찾기 (쓸까요?·없어요·기본급) back goes to the box, and 다음 waits for it.
+                val finding = step == WAGE && payFind != null && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
                 when {
+                    finding -> OutlinedButton(onClick = { payFind?.step = com.bamnat.app.ui.company.PayFindStep.NAME }) { Text("이전") }
                     index > 0 -> OutlinedButton(onClick = { go(steps[index - 1]) }) { Text("이전") }
                     onCancel != null -> TextButton(onClick = onCancel) { Text("취소") }
                 }
                 Spacer(Modifier.weight(1f))
+                if (finding) return@Row
                 val last = step == SUMMARY
                 val ready = when {
                     step == WAGE -> s.wageChosen

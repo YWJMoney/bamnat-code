@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { server, device, from, signIn, ORIGIN } from "./helpers.mjs";
 import worker, { FLAG_CATALOG, notifyAdmins } from "../src/index.js";
-import { CORE_FLAGS, CORE_FREE, CORE_POLICY, CORE_NAMES } from "../src/flag-catalog.js";
+import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY, CORE_NAMES } from "../src/flag-catalog.js";
 import { adminLib } from "../src/admin-lib.js";
 import { bundle } from "../tools/bundle.mjs";
 
@@ -57,6 +57,8 @@ test("[FLAG-34] the server's flag book is core's: same rows, words, conditions, 
   assert.deepEqual(L.MANUAL_NAMES, CORE_NAMES.manual);
   assert.deepEqual(L.WORK_NAMES, CORE_NAMES.work);
   assert.ok(new RegExp(CORE_FREE.pattern).test("free.MONEY_STATS"));
+  // [NXT-03] 1.29 AU: every feature in core's name table is a code the free.<FEATURE> pattern takes.
+  for (const code of Object.keys(CORE_FEATURES)) assert.ok(new RegExp(CORE_FREE.pattern).test(`free.${code}`), code);
   // The bundle carries the book once, without an import or export left.
   const out = bundle();
   assert.equal(out.split("const CORE_FLAGS = [").length, 2);
@@ -71,6 +73,8 @@ test("[FLAG-34] /api/config's calendar keeps core's dates for the versions the a
   const owner = await signIn(call);
   const detail = (await call("GET", "/api/admin/flags/free.MONEY_STATS", undefined, owner)).data;
   assert.equal(detail.name, CORE_FREE.name.replace(CORE_FREE.slot, "돈 통계"));
+  // [NXT-03] 1.29 AU: and the name comes from core's table, the one the phone's 진단 uses.
+  assert.equal(detail.name, CORE_FREE.name.replace(CORE_FREE.slot, CORE_FEATURES.MONEY_STATS));
 });
 
 test("[FLAG-35] /api/config and /api/passes as the phone reads them, state by state (fixtures for the app's ServerContractTest)", async (t) => {

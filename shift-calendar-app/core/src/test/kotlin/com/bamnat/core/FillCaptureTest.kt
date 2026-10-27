@@ -169,4 +169,59 @@ class FillCaptureTest {
         assertEquals(true, filled.checked)
         assertNotNull(filled)
     }
+
+    // ---- [INVA-03] 1.29 AR: 날짜·시각, 꼴 넓히기 ----
+
+    @Test fun aDaySaidAboveTheListIsEachFillsAndTimesAreReadInTwentyFourHours() {
+        val text = """
+            주문내역
+            10월 24일
+            카카오  5,299,800원
+            44주 판매 · 오후 2:42
+            1주당 120,450원
+            NAVER  1,665,500원
+            10주 구매 · 오전 9:05
+            1주당 166,550원
+        """.trimIndent()
+        val f = FillSheetReader.read(text, captured = java.time.LocalDate.of(2026, 10, 27))
+        assertEquals(2, f.size)
+        assertTrue(f.all { it.date == java.time.LocalDate.of(2026, 10, 24) })
+        assertEquals(java.time.LocalTime.of(14, 42), f[0].time)
+        assertEquals(java.time.LocalTime.of(9, 5), f[1].time)
+        assertEquals(listOf(44.0 to 120_450.0, 10.0 to 166_550.0), f.map { it.quantity to it.price })
+        assertTrue(f.all { it.sure })
+    }
+
+    @Test fun aDayWithoutAYearIsTheLatestNotAfterTheCapture() {
+        val text = "12.30 14:05\n삼성전자 매수\n체결수량 2주\n체결단가 70,000원\n체결금액 140,000원"
+        assertEquals(java.time.LocalDate.of(2025, 12, 30), FillSheetReader.read(text, captured = java.time.LocalDate.of(2026, 1, 2)).single().date)
+        assertEquals(java.time.LocalDate.of(2026, 12, 30), FillSheetReader.read(text, captured = java.time.LocalDate.of(2026, 12, 31)).single().date)
+    }
+
+    @Test fun aCoinQuantityIsNeverADayAndTheSettledAmountIsNotTheFillsAmount() {
+        val text = """
+            2026.10.27 09:12
+            리플 XRP/KRW  매수
+            거래수량  1.5 XRP
+            거래단가  3,100 KRW
+            거래금액  4,650 KRW
+            수수료  2.33 KRW
+            정산금액  4,652 KRW
+        """.trimIndent()
+        val f = FillSheetReader.read(text).single()
+        assertEquals(1.5, f.quantity, 0.0)
+        assertEquals(3_100.0, f.price, 0.0)
+        assertEquals(4_650.0, f.amount, 0.0)
+        assertEquals("XRP", f.symbol)
+        assertEquals(java.time.LocalDate.of(2026, 10, 27), f.date)
+        assertEquals(Market.CRYPTO, f.market)
+        assertTrue(f.sure)
+    }
+
+    @Test fun theFilledQuantityIsReadNotTheOrdered() {
+        val f = FillSheetReader.read("매수체결 삼성전자\n주문 20주 · 체결 10주\n평균체결가 71,500원\n체결금액 715,000원\n10.27 09:12:33").single()
+        assertEquals(10.0, f.quantity, 0.0)
+        assertEquals(71_500.0, f.price, 0.0)
+        assertTrue(f.sure)
+    }
 }

@@ -20,6 +20,17 @@ object FillMath {
 
     fun agrees(quantity: Double, price: Double, amount: Double): Boolean =
         quantity > 0 && price > 0 && amount > 0 && abs(quantity * price - amount) <= tolerance(amount, quantity)
+
+    /**
+     * [INVA-02] 1.29 AR: agreeing to the last won (or cent): only the rounding of an average price, half a won (half a cent)
+     * a share, at least one won (cent). A digit misread anywhere in 수량 or 단가 moves 수량 × 단가 further than this, while
+     * [agrees]' 0.2% lets a price's last digits slip. What goes in without a question is checked with this.
+     */
+    fun exact(quantity: Double, price: Double, amount: Double, market: Market): Boolean {
+        if (quantity <= 0 || price <= 0 || amount <= 0) return false
+        val unit = if (market.foreign) 0.01 else 1.0
+        return abs(quantity * price - amount) <= maxOf(unit, quantity * unit / 2) + 1e-9
+    }
 }
 
 /**
@@ -55,27 +66,58 @@ object FillSheetReader {
     }
 
     private const val NUM = "(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
-    private val SIDE = Regex("매수|매도|구매|판매|\\bbuy\\b|\\bsell\\b", RegexOption.IGNORE_CASE)
+    // [INVA-03] 1.29: 카카오페이 '샀어요·팔았어요'.
+    private val SIDE = Regex("매수|매도|구매|판매|샀|팔았|\\bbuy\\b|\\bsell\\b", RegexOption.IGNORE_CASE)
     private val SKIP = Regex("미체결|취소|거부|정정|접수|예약")
+    /** [INVA-03] What was ordered, the order's number, the account: never the fill's quantity, never a loose number. */
+    private val ORDERED = listOf(
+        Regex("주문\\s*번호\\s*[:：]?\\s*[\\d\\-]+"),
+        Regex("계좌(?:번호)?\\s*[:：]?\\s*[\\d*\\-]+"),
+        Regex("주문\\s*(?:수량)?\\s*[:：]?\\s*$NUM\\s*(?:주|개)?"),
+        Regex("$NUM\\s*%"),
+    )
+    /** [INVA-03] A number with 원·KRW·$ after it is money, never a quantity (a label beside the next row's value). */
+    private const val NOT_MONEY = "(?![\\d.,])(?!\\s*(?:원|KRW|USD|달러))"
+    // [INVA-03] 체결수량·체결량·거래수량 before a bare 수량, and never 주문수량.
     private val QTY = listOf(
-        Regex("(?:체결\\s*)?수량\\s*[:：]?\\s*$NUM"),
+        Regex("체결\\s*(?:수량|량)\\s*[:：]?\\s*$NUM$NOT_MONEY"),
+        Regex("거래\\s*(?:수량|량)\\s*[:：]?\\s*$NUM$NOT_MONEY"),
+        Regex("(?<!주문)(?<!주문\\s)수량\\s*[:：]?\\s*$NUM$NOT_MONEY"),
+        Regex("체결\\s+$NUM\\s*(?:주|개)(?![가-힣])"),
         Regex("$NUM\\s*(?:주|株)(?![가-힣])"),
         Regex("$NUM\\s*개(?![가-힣])"),
     )
+    /** [INVA-03] A coin's quantity with its code after it: "0.00123 BTC". */
+    private val QTY_COIN = Regex("(?<![\\d.,])$NUM\\s*([A-Z]{2,6})(?![A-Za-z/\\-])")
+    private val NOT_COINS = setOf("KRW", "USD", "USDT", "ETF", "LTE", "BUY", "SELL", "NYSE", "AMEX")
+    /** [INVA-03] The price of one share said with the share: "1주당 71,500원", "1주 71,500원". */
+    private val PER_SHARE = Regex("(?<![\\d,.])1\\s*주\\s*(?:당)?\\s*[:：]?\\s*\\$?\\s*$NUM")
     private val PRICE = listOf(
         Regex("(?:체결\\s*)?(?:단가|가격|평균가|평단가?|체결가|주당)\\s*[:：]?\\s*\\$?\\s*$NUM", RegexOption.IGNORE_CASE),
         Regex("[@＠]\\s*\\$?\\s*$NUM"),
     )
-    private val AMOUNT = Regex("(?:(?:체결|약정|거래|정산|결제|매수|매도|구매|판매)\\s*(?:금액|대금)|총\\s*(?:체결\\s*)?(?:금액|액)|총액|합계|금액|총)\\s*[:：]?\\s*\\$?\\s*$NUM")
+    /** [INVA-03] 정산금액 has the fee in it: taken out, never read as the fill's amount. */
+    private val SETTLED = Regex("정산\\s*(?:금액|대금)\\s*[:：]?\\s*\\$?\\s*$NUM")
+    private val AMOUNT = Regex("(?:(?:체결|약정|거래|결제|매수|매도|구매|판매)\\s*(?:금액|대금)|총\\s*(?:체결\\s*)?(?:금액|액)|총액|합계|금액|총)\\s*[:：]?\\s*\\$?\\s*$NUM")
     private val FEE = Regex("(?:수수료|제세금|세금|거래세|농특세|정산\\s*수수료)\\s*[:：]?\\s*\\$?\\s*$NUM")
-    private val TIME = Regex("(?<![\\d:])([01]?\\d|2[0-3]):([0-5]\\d)(?::([0-5]\\d))?(?![\\d:])")
-    private val DATE = Regex("(?<!\\d)(20\\d{2})[./\\-년]\\s*(\\d{1,2})[./\\-월]\\s*(\\d{1,2})일?|(?<![\\d.,$])(0?[1-9]|1[0-2])[./](0?[1-9]|[12]\\d|3[01])(?![\\d.,])")
+    private val TIME = Regex("(?<![\\d:.])([01]?\\d|2[0-3]):([0-5]\\d)(?::([0-5]\\d))?(?![\\d:])")
+    /** [INVA-03] 2026.10.27, 2026-10-27, 2026년 10월 27일. */
+    private val DATE_LONG = Regex("(?<!\\d)(20\\d{2})\\s*[./\\-년]\\s*(\\d{1,2})\\s*[./\\-월]\\s*(\\d{1,2})(?!\\d)\\s*일?")
+    /** [INVA-03] 10월 27일. */
+    private val DATE_KO = Regex("(?<!\\d)(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일")
+    /**
+     * [INVA-03] 10.27 or 10/27, only with a time or a weekday after it, or alone at the line's end: "1.5 XRP" and a
+     * price of 3.14 are never a day.
+     */
+    private val DATE_SHORT = Regex("(?<![\\d.,$])(0?[1-9]|1[0-2])[./](0?[1-9]|[12]\\d|3[01])(?![\\d.,])(?=\\s*(?:\\([월화수목금토일]\\))?\\s*(?:\\d{1,2}:\\d{2}|$))", RegexOption.MULTILINE)
+    private val MONEY_ONLY = Regex("\\$?\\s*$NUM\\s*(?:원|KRW|USD)?")
+    private val WEEKDAY = Regex("[(（][월화수목금토일][)）]")
     private val CODE_KR = Regex("(?<![\\d,.])(\\d{6})(?![\\d,.])")
     private val CODE_COIN = Regex("([A-Z0-9]{2,10})[-/](?:KRW|USDT)|(?:KRW|USDT)[-/]([A-Z0-9]{2,10})")
     private val TICKER = Regex("(?<![A-Za-z])([A-Z]{1,5})(?![A-Za-z])")
-    private val LETTERS = Regex("[가-힣A-Za-z][가-힣A-Za-z0-9&.]*(?:\\s?[가-힣A-Za-z0-9&.]+)?")
     private val NUMBER = Regex("(?<![\\d.,:])\\$?$NUM(?![\\d:])")
-    private val HEADER_WORDS = listOf("종목", "구분", "수량", "단가", "가격", "금액", "체결가", "체결시간", "시간")
+    private val HEADER_WORDS = listOf("종목", "구분", "수량", "단가", "가격", "금액", "체결가", "체결시간", "시간", "시각", "일자", "상태")
+    private val LABELS = Regex("수량|단가|가격|금액|수수료|체결가|체결량|평균가|정산")
 
     private val NOT_NAMES = setOf(
         "매수", "매도", "구매", "판매", "체결", "체결완료", "완료", "수량", "체결수량", "단가", "체결단가", "체결가", "체결가격", "가격", "금액",
@@ -83,6 +125,9 @@ object FillSheetReader {
         "보통", "현금", "신용", "국내", "해외", "주식", "원", "KRW", "USD", "USDT", "BTC", "달러", "수수료", "세금", "제세금", "거래세", "평균가",
         "평단", "주당", "체결내역", "거래내역", "주문내역", "내역", "전체", "오늘", "체결시간", "시간", "일자", "날짜", "주", "개", "BUY", "SELL",
         "Buy", "Sell", "ETF", "체결일", "체결일자", "정산", "결제", "매매", "내", "계좌", "투자내역", "체결통보",
+        // [INVA-03] 1.29: screen words seen around 체결 lists.
+        "상태", "시각", "체결시각", "종목코드", "주문수량", "체결량", "거래수량", "거래단가", "미체결", "주문체결", "일별", "해외주식", "평균체결가",
+        "LTE", "체결/미체결", "샀어요", "팔았어요", "어제", "오전", "오후",
     )
 
     /** OCR slips inside numbers: O for 0, l·I for 1, "71, 500" and "71.500" for 71,500. */
@@ -94,45 +139,134 @@ object FillSheetReader {
         t = Regex("(?<=\\d)[Oo](?![A-Za-z가-힣])").replace(t, "0")
         t = Regex("(?<=,\\d{1,2})[lI|](?![A-Za-z가-힣])").replace(t, "1")
         t = Regex("(?<=\\d),\\s+(?=\\d{3}(?!\\d))").replace(t, ",")
+        // [INVA-03] 오전 9:12 · 오후 2:03 are 09:12 · 14:03.
+        t = Regex("(오전|오후)\\s*(\\d{1,2}):(\\d{2})").replace(t) { m ->
+            val h = m.groupValues[2].toInt() % 12 + if (m.groupValues[1] == "오후") 12 else 0
+            "%02d:%s".format(h, m.groupValues[3])
+        }
         // On a line in 원 (no $, no coin), "185.750" is 185,750: a Korean share's price and amount have no decimals.
         // A wrong guess here still has to agree with 수량 × 단가 = 금액, or the fill is asked about.
         t = t.lines().joinToString("\n") { line ->
-            if (Regex("[$]|USD|달러|USDT|BTC|ETH|XRP|SOL|DOGE|개|[A-Z]{2,10}[-/]KRW|KRW[-/][A-Z]").containsMatchIn(line)) line
-            else Regex("(?<![\\d.,$])([1-9]\\d{0,2}(?:\\.\\d{3})+)(?![\\d.])(?!\\s*(?:%|배))").replace(line) { it.value.replace(".", ",") }
+            if (Regex("[$]|USD|달러|USDT|BTC|ETH|XRP|SOL|DOGE|개|[A-Z]{2,10}[-/]KRW|KRW[-/][A-Z]|\\d\\s+[A-Z]{2,6}(?![A-Za-z])").containsMatchIn(line)) line
+            // A day (2026.10.27, 10.27 09:12) is not a number in 원.
+            else Regex("(?<![\\d.,$])([1-9]\\d{0,2}(?:\\.\\d{3})+)(?![\\d.])(?!\\s*(?:%|배))").replace(line) { m ->
+                if (Regex("^20\\d{2}\\.").containsMatchIn(m.value)) m.value else m.value.replace(".", ",")
+            }
         }
         // A period between groups of three, with no other decimal after it, is a thousands mark in 원.
         t = Regex("(?<![\\d.])(\\d{1,3}(?:\\.\\d{3}){1,3})(?=\\s*(?:원|KRW))").replace(t) { it.value.replace(".", ",") }
         return t
     }
 
-    fun read(text: String): List<Fill> {
+    private enum class Lead { WHEN, NAME, NAMED, AMOUNT }
+
+    /** [INVA-03] A day and time alone on its line ("2026.10.27 09:12", "10월 27일", "10.27(월)"). */
+    private fun whenOnly(line: String): Boolean {
+        var rest = line
+        var found = false
+        for (re in listOf(DATE_LONG, DATE_KO, DATE_SHORT, TIME)) re.findAll(rest).toList().forEach { found = true; rest = rest.replace(it.value, " ") }
+        rest = rest.replace(WEEKDAY, " ").replace(Regex("오늘|어제|체결완료|체결|[·|,\\-]"), " ")
+        return found && rest.isBlank()
+    }
+
+    private fun headerLike(line: String) = HEADER_WORDS.count { it in line } >= 3 && !SIDE.containsMatchIn(line)
+
+    /**
+     * [INVA-03] What a line just above a side line is, when it starts the fill below: its day and time, its name alone, or
+     * its name with the amount on the right (토스, 해외 주식).
+     */
+    private fun leadOf(line: String): Lead? {
+        if (SIDE.containsMatchIn(line) || headerLike(line)) return null
+        if (whenOnly(line)) return Lead.WHEN
+        if (looksLikeName(line)) return Lead.NAME
+        if (MONEY_ONLY.matches(line)) return Lead.AMOUNT
+        val name = nameOf(line)
+        if (name.isEmpty() || !line.startsWith(name) || LABELS.containsMatchIn(line)) return null
+        // The name with its amount, or with the day (a photo of the screen puts the day beside it).
+        var rest = line.removePrefix(name)
+        for (re in listOf(DATE_LONG, DATE_KO, DATE_SHORT, TIME)) rest = re.replace(rest, " ")
+        return if (NUMBER.findAll(rest).count() <= 1) Lead.NAMED else null
+    }
+
+    /**
+     * [INVA-03] 1.29: [captured] is the day of the capture (its file's day, else today): a day without a year (10.27, 10월
+     * 27일) is the latest one not after it. A day said once above the list (a section's head) is each fill's below it.
+     */
+    fun read(text: String, captured: LocalDate? = null): List<Fill> {
+        val ref = captured ?: com.bamnat.core.time.Today.date()
         val lines = clean(text).lines().map { it.trim() }.filter { it.isNotEmpty() }
         if (lines.isEmpty()) return emptyList()
-        val header = lines.indexOfFirst { l -> HEADER_WORDS.count { it in l } >= 3 }.takeIf { it >= 0 }
-        val columns = header?.let { columnsOf(lines[it]) }
-        val sides = lines.indices.filter { i -> i != header && SIDE.containsMatchIn(lines[i]) }
+        val headers = lines.indices.filter { headerLike(lines[it]) }
+        val columns = headers.firstOrNull()?.let { columnsOf(lines[it]) }
+        val sides = lines.indices.filter { i -> i !in headers && SIDE.containsMatchIn(lines[i]) }
         if (sides.isEmpty()) return emptyList()
+        // Where each fill starts: its side line, and up to two lines above it that lead into it (its day, its name).
+        val starts = IntArray(sides.size)
+        // [INVA-03] A day and time on its own line goes above each fill (업비트) or under it (KB). The first fill and the
+        // last tell which; when neither does, a line between two fills is nobody's (its time is asked, never guessed).
+        fun timed(i: Int) = i in lines.indices && i !in headers && whenOnly(lines[i]) && TIME.containsMatchIn(lines[i])
+        val above = timed(sides[0] - 1) || timed(sides[0] - 2) && leadOf(lines[sides[0] - 1]).let { it == Lead.NAME || it == Lead.NAMED }
+        val under = !above && timed(lines.lastIndex) && lines.lastIndex > sides.last()
+        val nobody = HashSet<Int>()
+        for ((k, s) in sides.withIndex()) {
+            val floor = if (k == 0) (headers.lastOrNull { it < s }?.plus(1) ?: 0) else sides[k - 1] + 1
+            val own = lines[s]
+            var st = s
+            var at = s
+            var leads = 0
+            while (at - 1 >= floor && leads < 3) {
+                val line = lines[at - 1]
+                val lead = leadOf(line) ?: break
+                val before = if (k == 0) emptyList() else lines.subList(starts[k - 1], at - 1)
+                val go = when (lead) {
+                    // A day alone (a section's head) leads in; a day and time closing the fill above stays with it,
+                    // unless that one has its own time already.
+                    Lead.WHEN -> when {
+                        !TIME.containsMatchIn(line) || k == 0 -> !TIME.containsMatchIn(line) || !TIME.containsMatchIn(own)
+                        TIME.containsMatchIn(own) -> false
+                        above -> true
+                        under -> false
+                        before.any { TIME.containsMatchIn(it) } -> true
+                        else -> { nobody += at - 1; false }
+                    }
+                    Lead.NAME, Lead.NAMED -> nameOf(own).isEmpty() && (k == 0 || before.any { nameOf(it).isNotEmpty() })
+                    // An amount alone on its line leads in only between the name above and the side line.
+                    Lead.AMOUNT -> true
+                }
+                if (!go) break
+                at--; leads++
+                if (lead != Lead.AMOUNT) st = at
+            }
+            starts[k] = st
+        }
         val fills = ArrayList<Fill>()
-        val taken = BooleanArray(lines.size)
-        header?.let { taken[it] = true }
-        for ((k, i) in sides.withIndex()) {
-            val end = (sides.getOrNull(k + 1) ?: lines.size) - 1
-            // A name on its own line just above the side ("삼성전자" over "매수 체결") belongs to this fill.
-            val start = if (i > 0 && !taken[i - 1] && looksLikeName(lines[i - 1]) && !looksLikeName(lines[i]) &&
-                (sides.getOrNull(k + 1)?.let { it - 1 } ?: -1) != i - 1) i - 1 else i
-            var stop = end
-            // The next fill's name line stays with it.
-            sides.getOrNull(k + 1)?.let { n -> if (n - 1 > i && looksLikeName(lines[n - 1]) && !looksLikeName(lines[n])) stop = n - 2 }
-            val record = lines.subList(start, stop + 1)
-            for (j in start..stop) taken[j] = true
+        for (k in sides.indices) {
+            val stop = (starts.getOrNull(k + 1) ?: lines.size) - 1
+            val record = lines.subList(starts[k], stop + 1).filterIndexed { i, _ -> starts[k] + i !in headers && starts[k] + i !in nobody }
             if (SKIP.containsMatchIn(record.joinToString(" "))) continue
-            fill(record, columns)?.let(fills::add)
+            // The nearest day said above the fill: a section's head, or the list's title line.
+            val section = (starts[k] - 1 downTo 0).firstNotNullOfOrNull { i ->
+                val l = lines[i]
+                if (DATE_LONG.containsMatchIn(l) || DATE_KO.containsMatchIn(l) || whenOnly(l)) dayIn(l, ref) else null
+            }
+            fill(record, columns, section, ref)?.let(fills::add)
         }
         return fills
     }
 
+    /** The first day [line] says. */
+    private fun dayIn(line: String, ref: LocalDate): LocalDate? =
+        DATE_LONG.find(line)?.let { m -> runCatching { LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }.getOrNull() }
+            ?: DATE_KO.find(line)?.let { m -> noYear(m.groupValues[1].toInt(), m.groupValues[2].toInt(), ref) }
+            ?: DATE_SHORT.find(line)?.let { m -> noYear(m.groupValues[1].toInt(), m.groupValues[2].toInt(), ref) }
+
+    /** A month and day without a year: this year's, or last year's when this year's would be after [ref] (a January capture of December). */
+    private fun noYear(month: Int, day: Int, ref: LocalDate): LocalDate? = runCatching {
+        LocalDate.of(ref.year, month, day).let { if (it.isAfter(ref.plusDays(1))) it.minusYears(1) else it }
+    }.getOrNull()
+
     private fun looksLikeName(line: String): Boolean {
-        if (SIDE.containsMatchIn(line) || line.any { it.isDigit() } && !CODE_KR.containsMatchIn(line) && !CODE_COIN.containsMatchIn(line)) return false
+        if (SIDE.containsMatchIn(line) || headerLike(line) || line.any { it.isDigit() } && !CODE_KR.containsMatchIn(line) && !CODE_COIN.containsMatchIn(line)) return false
         return nameOf(line).isNotEmpty()
     }
 
@@ -140,46 +274,57 @@ object FillSheetReader {
 
     private fun columnsOf(header: String): List<Col> {
         val found = listOfNotNull(
-            Regex("수량").find(header)?.let { it.range.first to Col.QTY },
+            Regex("(?<!주문)수량").find(header)?.let { it.range.first to Col.QTY },
             Regex("단가|체결가|가격|평균가").find(header)?.let { it.range.first to Col.PRICE },
             Regex("금액").find(header)?.let { it.range.first to Col.AMOUNT },
         )
         return found.sortedBy { it.first }.map { it.second }
     }
 
-    private fun fill(record: List<String>, columns: List<Col>?): Fill? {
-        val all = record.joinToString(" ")
+    private fun fill(record: List<String>, columns: List<Col>?, section: LocalDate?, ref: LocalDate): Fill? {
+        val all = record.joinToString("\n")
         val sideWord = SIDE.find(all)?.value?.lowercase() ?: return null
-        val side = if (sideWord in setOf("매수", "구매", "buy")) Side.BUY else Side.SELL
+        val side = if (sideWord in setOf("매수", "구매", "샀", "buy")) Side.BUY else Side.SELL
         var rest = all
         fun cut(r: IntRange) { rest = rest.replaceRange(r, " ".repeat(r.last - r.first + 1)) }
         // Dates, times, fees and codes are taken out first, so no number is read twice.
         var date: LocalDate? = null
-        DATE.findAll(rest).toList().forEach { m ->
-            if (date == null) date = runCatching {
-                if (m.groupValues[1].isNotEmpty()) LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt())
-                else LocalDate.of(com.bamnat.core.time.Today.date().year, m.groupValues[4].toInt(), m.groupValues[5].toInt())
-            }.getOrNull()
-            if (m.groupValues[1].isNotEmpty()) cut(m.range)
+        for (re in listOf(DATE_LONG, DATE_KO, DATE_SHORT)) re.findAll(rest).toList().forEach { m ->
+            val d = if (re === DATE_LONG) runCatching { LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }.getOrNull()
+                else noYear(m.groupValues[1].toInt(), m.groupValues[2].toInt(), ref)
+            if (d != null) { if (date == null) date = d; cut(m.range) }
         }
         val timeMatch = TIME.find(rest)
         val time = timeMatch?.let { LocalTime.of(it.groupValues[1].toInt(), it.groupValues[2].toInt(), it.groupValues[3].toIntOrNull() ?: 0) }
         timeMatch?.let { cut(it.range) }
-        if (date == null) DATE.find(rest)?.let { m -> if (m.groupValues[4].isNotEmpty()) cut(m.range) }
+        // Every other time on the card (주문 시각) is no number either.
+        TIME.findAll(rest).toList().forEach { cut(it.range) }
         FEE.findAll(rest).toList().forEach { cut(it.range) }
-        val coinCode = CODE_COIN.find(rest)?.let { m -> m.groupValues[1].ifEmpty { m.groupValues[2] } }
+        SETTLED.findAll(rest).toList().forEach { cut(it.range) }
+        for (re in ORDERED) re.findAll(rest).toList().forEach { cut(it.range) }
+        var coinCode = CODE_COIN.find(rest)?.let { m -> m.groupValues[1].ifEmpty { m.groupValues[2] } }
         CODE_COIN.find(rest)?.let { cut(it.range) }
         val krCode = CODE_KR.find(rest)?.groupValues?.get(1)
         CODE_KR.find(rest)?.let { cut(it.range) }
         val dollars = all.contains('$') || Regex("USD|달러").containsMatchIn(all)
-        val name = record.asSequence().map(::nameOf).firstOrNull { it.isNotEmpty() }.orEmpty()
+        val nameAt = record.indexOfFirst { !headerLike(it) && nameOf(it).isNotEmpty() }
+        val name = record.getOrNull(nameAt)?.let(::nameOf).orEmpty()
         if (name.isNotEmpty()) rest.indexOf(name).takeIf { it >= 0 }?.let { cut(it until it + name.length) }
 
         fun labeled(res: List<Regex>): Pair<Double, IntRange>? = res.firstNotNullOfOrNull { re ->
             re.find(rest)?.let { m -> num(m.groupValues[1])?.takeIf { it > 0 }?.let { it to m.range } }
         }
-        val qtyL = labeled(QTY)?.also { cut(it.second) }?.first
-        val priceL = labeled(PRICE)?.also { cut(it.second) }?.first
+        val perShare = labeled(listOf(PER_SHARE))?.also { cut(it.second) }?.first
+        var qtyL = labeled(QTY)?.also { cut(it.second) }?.first
+        if (qtyL == null) QTY_COIN.findAll(rest).firstOrNull { it.groupValues[2] !in NOT_COINS }?.let { m ->
+            qtyL = num(m.groupValues[1])?.takeIf { it > 0 }
+            if (qtyL != null) { coinCode = coinCode ?: m.groupValues[2]; cut(m.range) }
+        }
+        // A coin's unit after a labelled quantity names the coin too ("체결수량 0.00123 BTC").
+        if (coinCode == null && krCode == null) QTY_COIN.findAll(all).firstOrNull { it.groupValues[2] !in NOT_COINS && it.groupValues[2] !in setOf("PM", "AM") }
+            ?.let { m -> if (Regex("[가-힣]").containsMatchIn(name) || name.isEmpty() || name == m.groupValues[2]) coinCode = m.groupValues[2] }
+        coinCode?.let { c -> Regex("(?<![A-Za-z])${Regex.escape(c)}(?![A-Za-z])").findAll(rest).toList().forEach { cut(it.range) } }
+        val priceL = perShare ?: labeled(PRICE)?.also { cut(it.second) }?.first
         val amountL = labeled(listOf(AMOUNT))?.also { cut(it.second) }?.first
         // What is left: numbers without a word, in the order they sit.
         val loose = NUMBER.findAll(rest).mapNotNull { num(it.groupValues[1]) }.filter { it > 0 }.toList()
@@ -188,13 +333,18 @@ object FillSheetReader {
         var p = priceL
         var a = amountL
         val guessed = HashSet<Field>()
+        val pool = loose.toMutableList()
+        fun take(v: Double) { pool.remove(v) }
         if (columns != null && loose.isNotEmpty()) {
             // A table under a header: the loose numbers fill the header's columns in order.
             val free = columns.filter { c -> when (c) { Col.QTY -> q == null; Col.PRICE -> p == null; Col.AMOUNT -> a == null } }
-            free.zip(loose).forEach { (c, v) -> when (c) { Col.QTY -> q = v; Col.PRICE -> p = v; Col.AMOUNT -> a = v } }
+            free.zip(loose).forEach { (c, v) -> take(v); when (c) { Col.QTY -> q = v; Col.PRICE -> p = v; Col.AMOUNT -> a = v } }
+            // [INVA-03] A header over two screen rows (키움): the amount is further on; one that agrees is found.
+            if (q != null && p != null && a == null) pool.firstOrNull { FillMath.agrees(q!!, p!!, it) }?.let { a = it; take(it) }
+            // Columns that do not add up, while three loose numbers do: the numbers are not in the header's order.
+            if (q != null && p != null && a != null && !FillMath.agrees(q!!, p!!, a!!) && qtyL == null && priceL == null && amountL == null)
+                tripleAny(loose)?.let { t -> q = t.first; p = t.second; a = t.third }
         } else if (loose.isNotEmpty()) {
-            val pool = loose.toMutableList()
-            fun take(v: Double) { pool.remove(v) }
             when {
                 q != null && p != null && a == null -> pool.firstOrNull { FillMath.agrees(q!!, p!!, it) }?.let { a = it; take(it) }
                 q != null && p == null && a != null -> pool.firstOrNull { FillMath.agrees(q!!, it, a!!) }?.let { p = it; take(it) }
@@ -218,7 +368,7 @@ object FillSheetReader {
         val amount = a ?: 0.0
 
         val ticker = if (krCode == null && coinCode == null)
-            TICKER.findAll(all).map { it.groupValues[1] }.firstOrNull { it !in NOT_NAMES && it !in setOf("KRW", "USD", "ETF", "NYSE", "NASDAQ", "AMEX") }
+            TICKER.findAll(all).map { it.groupValues[1] }.firstOrNull { it !in NOT_NAMES && it !in setOf("KRW", "USD", "ETF", "NYSE", "NASDAQ", "AMEX", "LTE") }
         else null
         val market = when {
             coinCode != null || Regex("\\d\\s*(?:개|BTC|ETH|XRP|SOL|DOGE)\\b").containsMatchIn(all) -> Market.CRYPTO
@@ -227,11 +377,15 @@ object FillSheetReader {
         }
         val unsure = HashSet<Field>(guessed)
         if (name.isEmpty() && krCode == null && coinCode == null && ticker == null) unsure += Field.NAME
+        // [INVA-03] A name only on the card's last line, under its numbers, may be the next card's (a tilted photo of the
+        // screen moves lines): asked.
+        if (nameAt > 0 && nameAt == record.lastIndex && record.size > 2 && looksLikeName(record[nameAt]) &&
+            record.indexOfFirst { SIDE.containsMatchIn(it) } < nameAt) unsure += Field.NAME
         if (price <= 0) unsure += Field.PRICE
         if (amount > 0 && price > 0 && !FillMath.agrees(quantity, price, amount)) unsure += setOf(Field.PRICE, Field.AMOUNT)
         // A share is never a fraction on a Korean screen: a decimal there is a misread.
         if (market == Market.KR_STOCK && quantity != Math.floor(quantity)) unsure += Field.QUANTITY
-        return Fill(side, name, krCode ?: coinCode ?: ticker.orEmpty(), quantity, price, amount, market, date, time, unsure, fromAmount)
+        return Fill(side, name, krCode ?: coinCode ?: ticker.orEmpty(), quantity, price, amount, market, date ?: section, time, unsure, fromAmount)
     }
 
     /** A price and an amount among the loose numbers that agree with quantity [q]. */
@@ -258,15 +412,17 @@ object FillSheetReader {
 
     /** The holding's name in [line]: its first word that is not a label, with the words that go on with it. */
     private fun nameOf(line: String): String {
-        val tokens = line.replace(Regex("[()\\[\\]【】（）|·:：]"), " ").split(Regex("\\s+")).filter { it.isNotEmpty() }
-        val i = tokens.indexOfFirst { w -> isWord(w) && (w.any { it in '가'..'힣' } || w.length >= 3 && !w.matches(Regex("[A-Z]{1,5}")) || w in ETF_BRANDS || w.all { it.isUpperCase() || it.isDigit() } && w.length >= 4) }
+        val tokens = line.replace(Regex("[()\\[\\]【】（）|·:：/]"), " ").split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val i = tokens.indexOfFirst { w -> isWord(w) && w.first().isLetter() && (w.any { it in '가'..'힣' } || w.length >= 3 && !w.matches(Regex("[A-Z]{1,5}")) || w in ETF_BRANDS || w.all { it.isUpperCase() || it.isDigit() } && w.length >= 4) }
         if (i < 0) return ""
         val words = mutableListOf(tokens[i])
         var j = i + 1
         while (j < tokens.size && words.size < 4) {
             val w = tokens[j]
-            val goesOn = (tokens[i] in ETF_BRANDS && (w.all(Char::isDigit) && w.length <= 3 || isWord(w) && !SIDE.matches(w))) ||
-                (words.last() in ETF_BRANDS && isWord(w) && !SIDE.matches(w))
+            // [INVA-03] An amount beside the name ("KODEX 200  15,716,250원") or a quantity never goes on with it.
+            val word = isWord(w) && !SIDE.containsMatchIn(w) && !w.contains(',') && (w.first().isLetter() || Regex("\\d{1,3}[가-힣A-Za-z&]+").matches(w)) &&
+                !Regex("[\\d.]+(?:주|개|원)").matches(w)
+            val goesOn = (tokens[i] in ETF_BRANDS && (w.all(Char::isDigit) && w.length <= 3 || word)) || (words.last() in ETF_BRANDS && word)
             if (!goesOn) break
             words += w; j++
         }

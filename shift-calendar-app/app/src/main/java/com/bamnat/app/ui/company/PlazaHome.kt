@@ -54,6 +54,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * [PLAZA-32][PLAZA-33] 1.27 묶음 AI: what 광장 opens to. A phone whose main calendar joined a company sees ‘<회사> 정보 광장’
@@ -97,15 +100,18 @@ class PlazaHomeViewModel(private val c: AppContainer) : ViewModel() {
         val p = _plan.value
         val room = p.room ?: return
         viewModelScope.launch {
+            // AS 1.29 [SRCH-13] The talk and the company's room are asked together (one after the other before 1.29), and the
+            // cards worked out off the screen's thread.
+            val roomAsk = if (p.top == StylePlaza.Top.COMPANY_ROOM) async { runCatching { c.companyApi.room(c.companyStore.device, room) }.getOrNull() } else null
             val talk = try {
                 c.companyApi.talk(c.companyStore.device, room, StylePlaza.ROOM) to null
             } catch (e: CompanyException) {
                 null to companyProblem(e.code, e.field)
             }
             var next = State(talk = talk.first, error = talk.second)
-            if (p.top == StylePlaza.Top.COMPANY_ROOM) {
-                val r = runCatching { c.companyApi.room(c.companyStore.device, room) }.getOrNull()
-                if (r != null) {
+            if (roomAsk != null) {
+                val r = roomAsk.await()
+                if (r != null) next = withContext(Dispatchers.Default) {
                     val mine = runCatching { c.companyShare.exportForServer().toString() }.getOrNull()
                     val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
                         .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
@@ -114,7 +120,7 @@ class PlazaHomeViewModel(private val c: AppContainer) : ViewModel() {
                     val facts = base?.let { t -> runCatching { SetupFacts.read(t) }.getOrNull() }.orEmpty()
                         .filter { it.key.startsWith("cycle:") || it.key.startsWith("shift:") || it.key.startsWith("rate:") }
                         .take(5).map { it.label to it.value }
-                    next = next.copy(room = r, cards = cards, facts = facts)
+                    next.copy(room = r, cards = cards, facts = facts)
                 }
             }
             if (_plan.value == p) _state.value = next

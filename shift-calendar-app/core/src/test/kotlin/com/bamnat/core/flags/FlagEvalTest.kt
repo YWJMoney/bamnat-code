@@ -172,6 +172,14 @@ class FlagEvalTest {
         assertFalse("usage stats off", FlagEval.state(f, after.copy(consents = mapOf("usage" to false, "usage.stats.more" to true))).on)
     }
 
+    /** [PHOTO-09] 1.29 AQ: 처리방침 3.3 is not in the calendar yet, so '사진이 달라요' counts stay on the phone. */
+    /** [PHOTO-09] 1.29 통합: 3.3 is in the calendar (게시 10-28, 시행 11-27, the same day as 3.2): off the day before, on that day. */
+    @Test fun photoWrongWaitsForPolicy33() {
+        val f = FlagCatalog.PHOTO_WRONG_FLAG
+        assertFalse(FlagEval.state(f, phone(kst(2026, 11, 26))).on)
+        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 27))).on)
+    }
+
     // ---- the other kinds of condition ----
 
     @Test fun rolloutIsStableAndSpread() {
@@ -210,7 +218,7 @@ class FlagEvalTest {
         assertEquals(keys.size, keys.toSet().size)
         for (f in FlagCatalog.ALL) {
             assertTrue(f.key, f.name.isNotBlank() && f.what.isNotBlank() && f.whyOff.isNotBlank() && f.basis.words.isNotBlank())
-            assertTrue(f.key, f.owner.isNotBlank() && f.since == (if (f.group == FlagGroup.SERVER) "1.22.0" else "1.28.0"))
+            assertTrue(f.key, f.owner.isNotBlank() && f.since == (if (f.group == FlagGroup.SERVER) "1.22.0" else if (f.key == FlagCatalog.PHOTO_WRONG) "1.29.0" else "1.28.0"))
             if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any { it is Condition.Date && it.policy != null })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }
@@ -222,6 +230,10 @@ class FlagEvalTest {
         assertNull(FlagCatalog.of("free.lower_case"))
         val free = FlagCatalog.of("free.MONEY_STATS")!!
         assertFalse(free.default)
+        // [NXT-03] 1.29 AU: named like the developer app names it, from the one table; an unknown code keeps its code.
+        assertEquals("무료로 연 프로 기능: 돈 통계", free.name)
+        assertTrue(free.what.contains("‘돈 통계’"))
+        assertEquals("무료로 연 프로 기능: NEW_THING", FlagCatalog.of("free.NEW_THING")!!.name)
         val states = FlagEval.all(phone(kst(2026, 11, 1)), mapOf("free.MONEY_STATS" to FlagOverride(force = Force.ON), "some.newer.flag" to FlagOverride(force = Force.OFF)))
         assertTrue(states.single { it.key == "free.MONEY_STATS" }.on)
         assertTrue(states.none { it.key == "some.newer.flag" })

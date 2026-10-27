@@ -148,8 +148,11 @@ fun PayScreen(
     fromCycle: Pair<com.bamnat.core.plaza.PublicCycle, String>? = null,
     /** [PLAZA-30] 1.27 AI: opened from the plaza form's 명세서로 맞춰 보기, so the match opens at once. */
     startMatching: Boolean = false,
-    /** [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기 in the easy setup; null leaves it out. */
-    companyFind: (@Composable () -> Unit)? = null,
+    /**
+     * [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기 in the easy setup. [PAYF-01] 1.29 AP: true makes it the setup's first question
+     * (the main calendar of work paid by the pay engine; never a 투자·가게·현장 calendar).
+     */
+    companyFind: Boolean = false,
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -250,13 +253,14 @@ fun PayScreen(
                         preview = { draft -> vm.preview(draft, snap, month) },
                         suggestedWage = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) WageType.HOURLY else null,
                         suggestedOccupation = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) Occupation.PART_TIME else null,
+                        companyFind = companyFind,
                     )
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
-                else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top,
+                else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, startMatching = startMatching)
             }
         }

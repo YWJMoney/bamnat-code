@@ -2,7 +2,7 @@
 // admins' work quicker (내가 맡기, notes, shared answers): `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 
@@ -50,7 +50,7 @@ test("an admin adds a 개발사항 from a question in one step, and both show th
   assert.equal(again.history.filter((x) => x.action === "link").length, 2);
   const list = (await call("GET", "/api/admin/dev", undefined, junho)).data;
   assert.deepEqual([list.counts.todo, list.counts.all, list.items[0].links, list.items[0].waiting], [1, 1, 2, 2]);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, junho)).data.devTodo, 1);
+  assert.equal((await adminHome(call, junho)).data.devTodo, 1);
   // The app's view of the question has none of it.
   const app = (await call("GET", `/api/inquiries/${q.id}`, undefined, { "x-device": device(1) })).data;
   assert.equal(app.dev, undefined);
@@ -78,7 +78,8 @@ test("every change is in the item's history with who made it and what it was; de
   assert.equal(it.assignee.name, "준호");
   it = (await call("POST", `/api/admin/dev/${item.id}/notes`, { text: "다음 버전에 넣으면 좋겠어요" }, junho)).data;
   assert.deepEqual(it.history[0].detail, { text: "다음 버전에 넣으면 좋겠어요" });
-  assert.equal((await call("GET", "/api/admin/overview", undefined, junho)).data.devMine, 1);
+  // AT 1.29: 1.27's /overview devMine is the 개발사항 list's 내 것.
+  assert.equal((await call("GET", "/api/admin/dev?who=mine", undefined, junho)).data.items.length, 1);
 
   const gone = (await call("POST", `/api/admin/dev/${item.id}/delete`, {}, junho)).data;
   assert.ok(gone.deletedAt);
@@ -121,7 +122,7 @@ test("개발중·완료·반려 need 처리: the owner has it and gives it per a
   // Without "dev" at all, nothing of it.
   const { h: seojin } = await account(call, owner, "seojin@example.com", "서진", { ...SUPPORT, inquiries: "none", dev: "none" }, 42);
   assert.equal((await call("GET", "/api/admin/dev", undefined, seojin)).status, 403);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, seojin)).data.devTodo, undefined);
+  assert.equal((await adminHome(call, seojin)).data.devTodo, undefined);
   // A look only: reads, changes nothing.
   const { h: viewer } = await account(call, owner, "viewer@example.com", "보기", { ...SUPPORT, dev: "view" }, 43);
   assert.equal((await call("GET", `/api/admin/dev/${item.id}`, undefined, viewer)).status, 200);
@@ -183,14 +184,16 @@ test("내가 맡기, notes between admins and shared answers", async () => {
   const { h: junho } = await account(call, owner, "junho@example.com", "준호", SUPPORT, 41);
   const q = (await call("POST", "/api/inquiries", question(1), from(1))).data;
   await call("POST", "/api/inquiries", question(2, "알람이 안 울려요"), from(2));
-  let o = (await call("GET", "/api/admin/overview", undefined, junho)).data;
-  assert.deepEqual([o.inquiries, o.inquiriesFree, o.inquiriesMine], [2, 2, 0]);
+  // AT 1.29: 1.27's /overview inquiriesFree and inquiriesMine are the list's 아무도 안 맡은 것 and 내가 맡은 것.
+  const held = async (h) => [(await call("GET", "/api/admin/inquiries?status=open&who=free", undefined, h)).data.total,
+    (await call("GET", "/api/admin/inquiries?status=open&who=mine", undefined, h)).data.total];
+  let o = (await adminHome(call, junho)).data;
+  assert.deepEqual([o.inquiries, ...(await held(junho))], [2, 2, 0]);
 
   const took = (await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: "me" }, junho)).data;
   assert.equal(took.assignee.name, "준호");
   assert.equal((await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: "someone" }, junho)).status, 400);
-  o = (await call("GET", "/api/admin/overview", undefined, junho)).data;
-  assert.deepEqual([o.inquiriesFree, o.inquiriesMine], [1, 1]);
+  assert.deepEqual(await held(junho), [1, 1]);
   assert.deepEqual((await call("GET", "/api/admin/inquiries?who=mine", undefined, junho)).data.inquiries.map((i) => i.id), [q.id]);
   assert.equal((await call("GET", "/api/admin/inquiries?who=free", undefined, junho)).data.inquiries.length, 1);
   // The owner's "mine" is their own; answering a question nobody took takes it.

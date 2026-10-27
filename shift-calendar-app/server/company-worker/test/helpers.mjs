@@ -135,3 +135,16 @@ export function slipProof(match = true, back = 1) {
   const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, 1));
   return { month: `${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, "0")}`, match };
 }
+
+/**
+ * AT 1.29 [ADMCP-07] AN-D6: 1.27's /api/admin/overview is gone. What it answered is read from the three calls the app
+ * has used since 1.28 (/badges, /today, /basics), so tests written against it read the same numbers from where they
+ * live now; [status] and [headers] are /badges' (sign-in, renewal).
+ */
+export async function adminHome(call, headers) {
+  const b = await call("GET", "/api/admin/badges", undefined, headers);
+  if (b.status !== 200) return b;
+  const t = (await call("GET", "/api/admin/today", undefined, headers)).data;
+  const s = (await call("GET", "/api/admin/basics", undefined, headers)).data;
+  return { ...b, data: { ...s, ...t, ...b.data, inboxLate: t.todo.counts.late } };
+}

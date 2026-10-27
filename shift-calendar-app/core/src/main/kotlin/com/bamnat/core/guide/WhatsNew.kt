@@ -10,6 +10,19 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.29.0 (docs/plans/1.29-통합계획.md; 통합 folded AP·AQ·AR·AS·AU into five lines, AT is the developer's app).
+        Release(40, "1.29.0", listOf(
+            // [PAYF-01][PAYF-04][PAYF-06] Bundle AP.
+            Line("급여 설정 첫 화면에서 바로 회사 이름을 쳐서 우리 회사 급여 방식을 찾아요. 쓰면 기본급만 넣으면 되고, 맞아요·달라요도 급여 화면에서 바로 눌러요"),
+            // [PHOTO-01][PHOTO-04][PHOTO-11] Bundle AQ.
+            Line("급여명세서와 회사 급여 규칙 사진을 훨씬 정확하게 읽어요. 틀린 칸은 바로 고치거나 칸을 더할 수 있고, 명세서로 통상시급도 알려 드려요"),
+            // [INVA-02] Bundle AR.
+            Line("투자 체결 캡처를 보내면 시간과 수량을 맞춰 보고 확실한 것은 바로 넣어요. 되돌리기도 할 수 있어요"),
+            // [SRCH-01][SRCH-07] Bundle AS.
+            Line("회사 찾기가 첫 글자부터 바로 보이고, 회사마다 대표 주기도 함께 보여요"),
+            // [NXT-01] Bundle AU.
+            Line("앱이 조금 더 빨리 열려요"),
+        )),
         // 1.28.0 (계획/1.28-다크머지-관리자앱-로딩-통합계획.md; 통합 folded AL·AO into four lines, AM·AN are the developer's app).
         Release(39, "1.28.0", listOf(
             // [PERF-07][PERF-08][PERF-09][PERF-10] Bundle AO.

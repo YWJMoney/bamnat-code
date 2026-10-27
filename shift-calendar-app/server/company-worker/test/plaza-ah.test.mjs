@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { leadOf, doubted, DOUBT } from "../src/index.js";
-import { server, report, setup, device, from, signIn } from "./helpers.mjs";
+import { server, report, setup, device, from, signIn, adminHome } from "./helpers.mjs";
 
 const as = (n) => ({ ...from(n), "x-device": device(n) });
 
@@ -152,5 +152,5 @@ test("[PLAZA-15] too many 달라요 take the 대표 out; more 맞아요 bring it
   const old = info.rules.find((r) => r.version === 1);
   assert.deepEqual(old.why, { order: 5, time: 1, pay: 0, other: 0 });
   assert.equal(old.doubted, undefined, "an earlier version is not marked");
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).data.doubt.share, 40);
+  assert.equal((await adminHome(call, h)).data.doubt.share, 40);
 });

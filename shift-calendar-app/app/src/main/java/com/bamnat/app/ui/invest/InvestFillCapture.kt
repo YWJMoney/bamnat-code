@@ -24,13 +24,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -40,12 +38,10 @@ import com.bamnat.app.ui.components.FormSheet
 import com.bamnat.app.ui.pay.ScanButtons
 import com.bamnat.core.invest.FillMath
 import com.bamnat.core.invest.FillReconcile
-import com.bamnat.core.invest.Trade
 import com.bamnat.core.invest.FillSheetReader
 import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.TradeAlerts
 import com.bamnat.core.time.Today
-import kotlinx.coroutines.CancellationException
 
 /** [INV-40] One read row as the user sees and corrects it before anything is put in. */
 private class FillRow(val read: FillSheetReader.Fill) {
@@ -57,8 +53,6 @@ private class FillRow(val read: FillSheetReader.Fill) {
     /** [INV-42] A new row goes in (checked); a different one is fixed to the capture. */
     var add by mutableStateOf(true)
     var fix by mutableStateOf(false)
-    /** [INV-44] Put in already without asking, or written already: no longer shown. */
-    var done by mutableStateOf(false)
 
     val fill: FillSheetReader.Fill
         get() = read.copy(quantity = qty.toDoubleOrNull() ?: 0.0, price = price.toDoubleOrNull() ?: 0.0, amount = amount.toDoubleOrNull() ?: 0.0,
@@ -81,8 +75,10 @@ private class FillRow(val read: FillSheetReader.Fill) {
  *  ① a trade written already is skipped ('이미 적은 체결 n건', one line);
  *  ② one that differs from what is written is asked as a fix, both side by side;
  *  ③ only the rows not written yet are checked, yellow where the numbers do not add up.
- * 넣기 writes them as trades at once (결정 AK-D3, 되돌리기). With '다음부터 묻지 않고 바로 넣기' the sure new rows go in
- * without this sheet; differences and yellow rows are still asked (결정 AK-D4).
+ * 넣기 writes them as trades at once (결정 AK-D3, 되돌리기).
+ * [INVA-01][INVA-02] 1.29 AR: reading, comparing and putting in the sure rows happen in [InvestViewModel.takeCapture], and
+ * 바로 넣기 is on from the start: a row whose name, side, quantity, price and time were all read and add up to its amount
+ * goes in without this sheet; only differences and rows not sure enough are left here.
  */
 @Composable
 internal fun FillCaptureSheet(
@@ -92,63 +88,23 @@ internal fun FillCaptureSheet(
 ) {
     val guideSeen by vm.fillGuideSeen.collectAsStateWithLifecycle()
     val trust by vm.fillTrust.collectAsStateWithLifecycle()
-    var guide by remember { mutableStateOf(!guideSeen && shared == null && initialText == null) }
-    val rows = remember { mutableStateListOf<FillRow>() }
-    var read by remember { mutableStateOf(false) }
-    var reading by remember { mutableStateOf(shared != null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // What was written when the capture was read: what is put in now does not turn into a difference with itself.
-    var written by remember { mutableStateOf<List<Trade>>(emptyList()) }
-    var waiting by remember { mutableStateOf(alerts) }
-    /** [INV-44] How many went in without asking. */
-    var putQuietly by remember { mutableStateOf(0) }
-    var quietSame by remember { mutableStateOf(0) }
+    val read by vm.captureRead.collectAsStateWithLifecycle()
+    val reading by vm.captureReading.collectAsStateWithLifecycle()
+    var guide by remember { mutableStateOf(!guideSeen && shared == null && initialText == null && read == null && reading == null) }
     var showSame by remember { mutableStateOf(false) }
-    val context = LocalContext.current
     val zone = Today.zone()
-    val today = Today.date()
+    LaunchedEffect(initialText) { initialText?.let { vm.takeCapture(it) } }
+    LaunchedEffect(shared) { shared?.let(vm::readCapture) }
 
-    // [READ-13] 1.27 AJ: a capture read several ways comes with its 체결 put together (FillVote); typed text is read here.
-    fun take(text: String, voted: List<FillSheetReader.Fill>? = null) {
-        val fills = voted ?: FillSheetReader.read(text)
-        rows.clear()
-        rows += fills.map(::FillRow)
-        written = vm.state.value.full.trades
-        waiting = alerts
-        read = true
-        putQuietly = 0
-        quietSame = 0
-        error = if (fills.isEmpty()) "체결을 찾지 못했어요. 종목·매수/매도·수량·단가가 한 화면에 보이게 다시 캡처해 주세요." else null
-        val r = FillReconcile.reconcile(rows.map { it.read }, written, waiting, today, zone)
-        if (fills.isNotEmpty() && vm.fillTrust.value) {
-            // [INV-44] 묻지 않기: the sure new rows go in now; only differences and yellow rows stay to be asked.
-            val sure = r.sureNew
-            vm.applyCapture(sure.map { FillReconcile.pending(it, zone, today) }, emptyList(), skipped = r.same.size, asked = false)
-            (sure + r.same).forEach { item -> item.fills.forEach { f -> rows.firstOrNull { it.read === f }?.done = true } }
-            putQuietly = sure.size
-            quietSame = r.same.size
-            if (r.toAsk.isEmpty()) onDismiss()
-        }
-    }
-    LaunchedEffect(initialText) { initialText?.let(::take) }
-    LaunchedEffect(shared) {
-        val uri = shared ?: return@LaunchedEffect
-        try {
-            // [READ-09] Through U's ImagePrep (upright, sized for reading), on the phone only (결정 D68).
-            com.bamnat.app.pay.PayslipScanner.scan(context, uri).let { take(it.text, it.fills) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            error = "캡처를 읽지 못했어요. 다른 캡처로 해 보세요."
-        } finally {
-            reading = false
-        }
-    }
-
-    val live = rows.filter { !it.done }
-    val fills = live.map { it.fill }
+    // One read capture's rows, as the user corrects them; the ones put in or written already are not shown.
+    val got = read
+    val rows = remember(got?.id) { got?.fills.orEmpty().mapIndexedNotNull { i, f -> if (got != null && i in got.done) null else FillRow(f) } }
+    val today = got?.day ?: Today.date()
+    val written = got?.written.orEmpty()
+    val waiting = got?.waiting ?: alerts
+    val fills = rows.map { it.fill }
     val result = FillReconcile.reconcile(fills, written, waiting, today, zone)
-    val itemRow: (FillReconcile.Item) -> FillRow? = { item -> fills.indexOfFirst { it === item.fill }.takeIf { it >= 0 }?.let { live[it] } }
+    val itemRow: (FillReconcile.Item) -> FillRow? = { item -> fills.indexOfFirst { it === item.fill }.takeIf { it >= 0 }?.let { rows[it] } }
     val same = result.same
     val different = result.different
     val new = result.new
@@ -159,7 +115,7 @@ internal fun FillCaptureSheet(
     val yellowLeft = (new + different).any { item -> itemRow(item)?.asks == true }
 
     fun put(trustAfter: Boolean) {
-        vm.applyCapture(putLines, fixes, skipped = same.size)
+        vm.applyCapture(putLines, fixes, skipped = same.size + (got?.same ?: 0))
         if (trustAfter) vm.setFillTrust(true, quiet = true)
         onDismiss()
     }
@@ -169,7 +125,7 @@ internal fun FillCaptureSheet(
         title = { Text(if (guide) "체결 내역 캡처로 채우기" else "캡처에서 읽은 체결") },
         confirmButton = {
             if (guide) TextButton(onClick = { guide = false; vm.fillGuideShown() }) { Text("알겠어요, 캡처 고르기") }
-            else TextButton(enabled = read && count > 0, onClick = { put(false) }) { Text(if (count > 0) "넣기 ${count}건" else "넣기") }
+            else TextButton(enabled = got != null && count > 0, onClick = { put(false) }) { Text(if (count > 0) "넣기 ${count}건" else "넣기") }
         },
         dismissButton = {
             if (guide) TextButton(onClick = onDismiss) { Text("닫기") }
@@ -181,20 +137,24 @@ internal fun FillCaptureSheet(
                     FillGuide()
                     return@Column
                 }
-                if (!read) {
+                if (got == null && reading == null) {
                     Text("증권사·거래소 앱의 ‘체결 내역’ 화면 캡처를 골라 주세요. 글자는 휴대폰 안에서만 읽고, 어디에도 보내지 않아요.",
                         style = MaterialTheme.typography.bodyMedium)
+                    Text(if (trust) "시각·수량·단가가 모두 읽히고 금액과 맞는 체결은 묻지 않고 바로 넣어요." else "넣기 전에 하나씩 물어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
-                    Text("  휴대폰 안에서 캡처를 읽고 있어요", style = MaterialTheme.typography.bodySmall)
+                reading?.let { line ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
+                        Text("  $line", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
-                ScanButtons(onScan = { take(it.text, it.fills) })
-                error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                if (!read || rows.isEmpty()) return@Column
-                if (putQuietly > 0 || quietSame > 0) Text(
-                    listOfNotNull(putQuietly.takeIf { it > 0 }?.let { "확실한 ${it}건은 묻지 않고 바로 넣었어요" },
-                        quietSame.takeIf { it > 0 }?.let { "이미 있음 ${it}건" }).joinToString(" · ") + ". 아래만 확인해 주세요.",
+                ScanButtons(onScan = { vm.takeCapture(it.text, it.fills) })
+                got?.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                if (got == null || got.fills.isEmpty()) return@Column
+                if (got.putQuietly > 0 || got.same > 0) Text(
+                    listOfNotNull(got.putQuietly.takeIf { it > 0 }?.let { "확실한 ${it}건은 묻지 않고 바로 넣었어요" },
+                        got.same.takeIf { it > 0 }?.let { "이미 있음 ${it}건" }).joinToString(" · ") + ". 아래만 확인해 주세요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 // ① One line for what is written already.
                 if (same.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -217,7 +177,8 @@ internal fun FillCaptureSheet(
                 if (new.isNotEmpty()) {
                     HorizontalDivider()
                     Text("아직 안 적은 체결 ${new.size}건", style = MaterialTheme.typography.titleSmall)
-                    Text("넣을 것만 체크해 주세요. 노란 칸은 숫자가 서로 안 맞거나 흐린 곳이에요. 캡처와 같은지 보고 고치거나 ‘맞아요’를 눌러 주세요.",
+                    Text(if (trust) "시각·수량·단가 중 못 읽은 칸이 있거나 금액과 안 맞아서 물어요. 넣을 것만 체크해 주세요. 노란 칸은 캡처와 같은지 보고 고치거나 ‘맞아요’를 눌러 주세요."
+                        else "넣을 것만 체크해 주세요. 노란 칸은 숫자가 서로 안 맞거나 흐린 곳이에요. 캡처와 같은지 보고 고치거나 ‘맞아요’를 눌러 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     new.forEachIndexed { i, item ->
                         if (i > 0) HorizontalDivider()
@@ -227,17 +188,19 @@ internal fun FillCaptureSheet(
                 if (yellowLeft) Text("노란 칸은 확인해야 넣을 수 있어요.", style = MaterialTheme.typography.bodySmall, color = warning())
                 if (new.isEmpty() && different.isEmpty()) Text("새로 넣을 체결이 없어요.", style = MaterialTheme.typography.bodyMedium)
                 HorizontalDivider()
-                // [INV-44] Once the user trusts it: the next captures go in without this sheet.
+                // [INV-44][INVA-02] 바로 넣기 (the default since 1.29), and where it is changed.
                 if (!trust) {
                     OutlinedButton(enabled = count > 0, onClick = { put(true) }, modifier = Modifier.fillMaxWidth()) {
                         Text("넣고, 다음부터 묻지 않고 바로 넣기")
                     }
-                    Text("믿음이 생기면 눌러 주세요. 그 뒤에도 기록과 다르거나 흐린 값은 늘 물어요. 투자 탭 ⋮에서 다시 묻게 할 수 있어요.",
+                    Text("바로 넣기를 켜도 기록과 다르거나 흐린 값은 늘 물어요. 투자 탭 ⋮에서도 바꿀 수 있어요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("묻지 않고 바로 넣기가 켜져 있어요", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { vm.setFillTrust(false) }) { Text("다시 묻기") }
+                    Text("확실한 체결은 묻지 않고 바로 넣어요 · 투자 탭 ⋮에서도 바꿔요", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.setFillTrust(false) }) { Text("넣기 전에 묻기") }
                 }
+                // [PHOTO-09] 1.29 AQ; 통합: below 바로 넣기 so the choice stays in view on a small screen.
+                com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.INVEST)
             }
         },
     )

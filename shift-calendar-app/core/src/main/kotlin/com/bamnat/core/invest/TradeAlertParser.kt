@@ -26,6 +26,9 @@ object TradeAlertParser {
         val title: String get() = name.ifBlank { symbol }
     }
 
+    /** [INVA-04] Coins whose code alone after a quantity says the trade is a coin, from any app (알림톡). */
+    val KNOWN_COINS = setOf("BTC", "ETH", "XRP", "SOL", "DOGE", "ADA", "TRX", "AVAX", "LINK", "DOT", "SHIB", "ETC", "BCH", "XLM", "SUI", "USDC")
+
     /** Exchanges whose every trade is a coin. */
     val COIN_APPS = setOf(
         "com.dunamu.exchange.upbit", "com.btckorea.bithumb", "coinone.co.kr.official", "com.korbit.exchange", "kr.co.gopax",
@@ -39,14 +42,15 @@ object TradeAlertParser {
         "com.ebestsec.mts", "com.meritzsec.mts",
     )
 
-    private val FILLED = Regex("체결|매매\\s*완료|거래\\s*완료|주문\\s*완료|구매\\s*완료|판매\\s*완료|filled", RegexOption.IGNORE_CASE)
+    // [INVA-04] 1.29: '구매했어요·판매했어요'(토스), '샀어요·팔았어요'(카카오페이) are fills too.
+    private val FILLED = Regex("체결|매매\\s*완료|거래\\s*완료|주문\\s*완료|구매\\s*완료|판매\\s*완료|구매했|판매했|샀어요|샀습니다|팔았어요|팔았습니다|filled", RegexOption.IGNORE_CASE)
     private val NOT_A_FILL = Regex("미체결|체결\\s*(실패|취소)|주문\\s*(취소|거부|접수)|정정|예약|알림\\s*설정|가격\\s*도달|도달했|목표가")
     private val BUY = Regex("매수|구매|샀|buy", RegexOption.IGNORE_CASE)
     private val SELL = Regex("매도|판매|팔았|sell", RegexOption.IGNORE_CASE)
     private const val NUM = "(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
     private val QTY = listOf(
         Regex("(?:체결\\s*)?수량\\s*[:：]?\\s*$NUM"),
-        Regex("$NUM\\s*(주|개|株)(?![가-힣])"),
+        Regex("$NUM\\s*(주|개|株)(?:을|를|씩)?(?![가-힣])"),
         Regex("$NUM\\s*([A-Z]{2,10})(?![A-Za-z])"),
     )
     private val PRICE = listOf(
@@ -56,13 +60,17 @@ object TradeAlertParser {
         Regex("$NUM\\s*(원|달러|USD)"),
     )
     /** [INV-40] 체결·약정·거래 금액, 총액: the whole fill, never a price. */
-    private val AMOUNT = Regex("(?:(?:체결|약정|거래|정산|결제|매수|매도|구매|판매)\\s*(?:금액|대금)|총\\s*(?:체결\\s*)?(?:금액|액)|총액|합계)\\s*[:：]?\\s*\\$?\\s*$NUM\\s*(?:(원|KRW|USD|달러|\\$)(?![가-힣]))?", RegexOption.IGNORE_CASE)
+    private val AMOUNT = Regex("(?:(?:체결|약정|거래|정산|결제|매수|매도|구매|판매)\\s*(?:금액|대금)|총\\s*(?:체결\\s*)?(?:금액|액)|총액|합계|총(?=\\s*\\$?\\s*\\d))\\s*[:：]?\\s*\\$?\\s*$NUM\\s*(?:(원|KRW|USD|달러|\\$)(?![가-힣]))?", RegexOption.IGNORE_CASE)
     private val CODE_KR = Regex("(?<![\\d])(\\d{6})(?![\\d])")
     private val CODE_COIN = Regex("([A-Z0-9]{2,10})[-/](?:KRW|USDT)|(?:KRW|USDT)[-/]([A-Z0-9]{2,10})")
     private val BRACKET = Regex("[\\[【(（]([^\\]】)）]{1,30})[\\]】)）]")
-    private val NAMED = Regex("(?:종목(?:명)?|코인)\\s*[:：]?\\s*([가-힣A-Za-z0-9&.\\- ]{1,30}?)(?=\\s*(?:\\(|\\[|,|/|\\n|수량|\\d|매수|매도|$))")
+    private val NAMED = Regex("(?<![가-힣])(?:종목(?:명)?|코인)\\s*[:：]?\\s*([가-힣A-Za-z0-9&.\\- ]{1,30}?)(?=\\s*(?:\\(|\\[|,|/|\\n|수량|\\d|매수|매도|$))")
     private val BEFORE_CODE = Regex("([가-힣A-Za-z&.]{2,20})\\s*[(（]\\s*(?:\\d{6}|[A-Z]{1,10})\\s*[)）]")
-    private val BEFORE_SIDE = Regex("([가-힣A-Za-z0-9&.]{2,20})\\s*(?:\\(\\w+\\))?\\s*(?:을|를)?\\s*(?:매수|매도|구매|판매)")
+    private val BEFORE_SIDE = Regex("(?<![가-힣A-Za-z0-9&.,])([가-힣A-Za-z][가-힣A-Za-z0-9&.]{1,19})\\s*(?:\\(\\w+\\))?\\s*(?:을|를)?\\s*(?:현금|신용|융자)?(?:매수|매도|구매|판매)")
+    /** [INVA-04] The name before its quantity: "삼성전자 10주 구매 완료", "삼성전자 10주를 71,500원에 샀어요". */
+    private val BEFORE_QTY = Regex("(?<![가-힣A-Za-z0-9&.,])([가-힣A-Za-z][가-힣A-Za-z0-9&.]{1,19})\\s*(?:\\(\\w+\\))?\\s+$NUM\\s*(?:주|개)")
+    /** [INVA-04] A broker's, an exchange's or the notice's own name in brackets ("[키움]", "[NH투자증권]") is no holding. */
+    private val NOT_HOLDING = Regex("증권|투자|은행|키움|업비트|빗썸|코인원|코빗|고팍스|토스|카카오페이|체결|알림|안내|통보|예시|주문|해외주식")
     private val TAGS = setOf("매수", "매도", "구매", "판매", "체결", "알림", "주문", "체결통보", "국내", "해외", "주식", "토스증권", "업비트", "빗썸", "알림톡")
 
     private fun num(s: String) = s.replace(",", "").toDoubleOrNull()
@@ -100,6 +108,9 @@ object TradeAlertParser {
         } ?: 0.0
         val coinCode = CODE_COIN.find(t)?.let { m -> m.groupValues[1].ifEmpty { m.groupValues[2] } }
             ?: unitWord?.takeIf { it.length >= 2 && it.all { c -> c.isUpperCase() || c.isDigit() } && it != "KRW" && it != "USD" }
+            // [INVA-04] "수량 0.71372 BTC": the unit after a labelled quantity names the coin.
+            ?: Regex("\\d\\s*([A-Z]{2,6})(?![A-Za-z])").findAll(t).map { it.groupValues[1] }.firstOrNull { it !in setOf("KRW", "USD", "USDT") }
+                ?.takeIf { coinApp || it in KNOWN_COINS }
         val usd = (priceUnit ?: amountUnit.takeIf { price == 0.0 })?.let { it.equals("USD", true) || it == "달러" || it == "$" } == true
         val market = when {
             coinApp || coinCode != null || unitWord == "개" -> Market.CRYPTO
@@ -113,8 +124,9 @@ object TradeAlertParser {
         }
         val name = (NAMED.find(t)?.groupValues?.get(1)
             ?: BEFORE_CODE.findAll(t).map { it.groupValues[1] }.firstOrNull { it !in TAGS }
-            ?: BRACKET.findAll(t).map { it.groupValues[1].trim() }.firstOrNull { it !in TAGS && !it.any(Char::isDigit) && !TAGS.any { tag -> it.startsWith(tag) } }
-            ?: BEFORE_SIDE.find(t)?.groupValues?.get(1)?.takeIf { it !in TAGS })
+            ?: BRACKET.findAll(t).map { it.groupValues[1].trim() }.firstOrNull { it !in TAGS && !it.any(Char::isDigit) && !TAGS.any { tag -> it.startsWith(tag) } && !NOT_HOLDING.containsMatchIn(it) }
+            ?: BEFORE_SIDE.findAll(t).map { it.groupValues[1] }.firstOrNull { it !in TAGS && !NOT_HOLDING.containsMatchIn(it) }
+            ?: BEFORE_QTY.findAll(t).map { it.groupValues[1] }.firstOrNull { it !in TAGS && !NOT_HOLDING.containsMatchIn(it) })
             ?.trim()?.removeSuffix("이")?.takeIf { it.isNotBlank() && it != code }.orEmpty()
         if (code.isEmpty() && name.isEmpty()) return null
         // [INV-40] 409 A: a notification with the amount but no price gives 금액 ÷ 수량; a dollar amount beside a won

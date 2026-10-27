@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
-import { server, report, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, report, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 const REVIEWER = { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", ops: "none", metrics: "none", shares: "none", audit: "none", flags: "none", flagOff: "none" };
@@ -65,7 +65,7 @@ test("only an invited email can make an account, and it waits for the owner", as
   const [a] = list.admins;
   assert.equal(a.status, "pending");
   assert.equal(list.invites[0].state, "joined");
-  assert.equal((await call("GET", "/api/admin/overview", undefined, owner)).data.admins.waiting, 1);
+  assert.equal((await adminHome(call, owner)).data.admins.waiting, 1);
 
   await call("POST", `/api/admin/admins/${a.id}`, { status: "active" }, owner);
   const h = await login(call, "MINJI@example.com", PASSWORD);
@@ -97,7 +97,7 @@ test("an account sees and changes only what it was given", async () => {
   assert.equal((await call("GET", "/api/admin/notices", undefined, h)).status, 403);
 
   // The home numbers leave out what the account cannot open.
-  const o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  const o = (await adminHome(call, h)).data;
   assert.equal(typeof o.pending, "number");
   assert.equal(o.owed, undefined);
   assert.equal(o.admins, undefined);
@@ -117,15 +117,15 @@ test("changes to an account apply at once; pausing or deleting signs it out", as
   assert.equal((await call("POST", `/api/admin/admins/${id}`, { perms: { review: "all" } }, owner)).status, 400);
 
   await call("POST", `/api/admin/admins/${id}`, { status: "suspended" }, owner);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 401);
+  assert.equal((await adminHome(call, h)).status, 401);
   assert.deepEqual((await call("POST", "/api/admin/login", { email: "minji@example.com", password: PASSWORD }, { ...APP, ...from(40) })).data,
     { error: "suspended" });
   await call("POST", `/api/admin/admins/${id}`, { status: "active" }, owner);
   const again = await login(call, "minji@example.com", PASSWORD);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, again)).status, 200);
+  assert.equal((await adminHome(call, again)).status, 200);
 
   await call("POST", `/api/admin/admins/${id}/remove`, {}, owner);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, again)).status, 401);
+  assert.equal((await adminHome(call, again)).status, 401);
   const list = (await call("GET", "/api/admin/admins", undefined, owner)).data;
   assert.equal(list.admins.length, 0);
   assert.equal(list.invites.length, 0, "the email can be invited again");
@@ -171,11 +171,11 @@ test("an account changes its password and can sign out everywhere", async () => 
   assert.equal((await call("POST", "/api/admin/me/password", { current: "wrong-one-xx", next: "new-password-123" }, h)).data.error, "wrong");
   assert.equal((await call("POST", "/api/admin/me/password", { current: PASSWORD, next: "new-password-123" }, h)).status, 200);
   // This device stays signed in; the other one is signed out.
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 200);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, other)).status, 401);
+  assert.equal((await adminHome(call, h)).status, 200);
+  assert.equal((await adminHome(call, other)).status, 401);
   const fresh = await login(call, "minji@example.com", "new-password-123", 42);
   await call("POST", "/api/admin/me/logout-all", {}, fresh);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 401);
+  assert.equal((await adminHome(call, h)).status, 401);
   // The owner's password lives in Cloudflare.
   assert.equal((await call("POST", "/api/admin/me/password", { current: "x", next: "y" }, owner)).data.error, "owner_password");
 });

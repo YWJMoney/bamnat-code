@@ -195,6 +195,7 @@ class AppContainer(context: Context) {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
                 com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
                 companyStore.reload()
+                payWays.reload()
                 rateHints.reload()
                 autoRecordPrefs.reload()
                 shareGroup.reload()
@@ -225,6 +226,13 @@ class AppContainer(context: Context) {
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
         com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [PAYF-04] 1.29 AP: the company pay way the main pay uses, for 맞아요·달라요 on the pay screen. */
+    val payWays by lazy { com.bamnat.app.company.PayWayStore(appContext) }
+    /**
+     * [SRCH-07] 1.29 AS: every company search through one place: what the phone already has at once (the last answers, the
+     * most used companies), the server's answer added when it comes. Kept in the cache folder (public names only).
+     */
+    val companySearch by lazy { com.bamnat.app.company.CompanySearch({ companyApi }, java.io.File(appContext.cacheDir, "company_search.json")) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
     /** [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle is picked from a company search. */
@@ -237,6 +245,8 @@ class AppContainer(context: Context) {
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
     var pendingPayCheck: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
+    /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts waiting to go (only once 처리방침 3.3 lets them). Made on first press. */
+    val photoWrong by lazy { com.bamnat.app.diag.PhotoWrongStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
     /** [PLAZA-06] 처음 설정 다시 받기: its own draft, so the calendar in use is untouched until it is saved. */
@@ -756,6 +766,13 @@ class AppContainer(context: Context) {
                         if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                         else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                     }
+            }
+            // [SRCH-09] 1.29 AS: once, not kept (no job of its own, so the startup budget is the same): the most used companies
+            // and this phone's company page read ahead, unless the phone saves data, so the first search shows at once.
+            appScope.launch {
+                // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
+                runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
+                runCatching { companySearch.warm(com.bamnat.app.company.CompanySearch.saveData(appContext), companyStore.applied.value?.companyId) }
             }
             // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
             keep("share") { if (shareApi.enabled) shareSync.follow() }

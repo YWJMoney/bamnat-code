@@ -153,6 +153,8 @@ class AFScreenshotTest : ScreenshotBase() {
         detail(m)
         reveal("이 설정 쓰기", exact = true)
         tapText("이 설정 쓰기", exact = true)
+        // [PAYF-03] 1.29 AP: a setup with a pay way asks once whether the pay comes too.
+        if (shows("급여 계산 방식도 같이 넣을까요?", exact = true)) tapText("네, 같이 넣을게요", exact = true)
         if (shows("이 순서로 쓸게요", exact = true)) tapText("이 순서로 쓸게요", exact = true)
         settle()
         assertEquals(1, m.joins)
@@ -167,6 +169,8 @@ class AFScreenshotTest : ScreenshotBase() {
         detail(m)
         reveal("이 설정 쓰기", exact = true)
         tapText("이 설정 쓰기", exact = true)
+        // [PAYF-03] 1.29 AP: a setup with a pay way asks once whether the pay comes too.
+        if (shows("급여 계산 방식도 같이 넣을까요?", exact = true)) tapText("네, 같이 넣을게요", exact = true)
         if (shows("이 순서로 쓸게요", exact = true)) tapText("이 순서로 쓸게요", exact = true)
         settle()
         assertTrue(shows("회사를 바꾼 지 30일이 지나면", exact = false))

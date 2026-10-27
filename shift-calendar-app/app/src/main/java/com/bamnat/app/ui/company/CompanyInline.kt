@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -48,20 +49,12 @@ import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyHit
 import com.bamnat.app.company.CompanyText
 import com.bamnat.app.company.LeadLine
-import com.bamnat.core.plaza.CompanyMatch
+import com.bamnat.app.company.CompanySearch
 import com.bamnat.core.plaza.PublicCycle
 import com.bamnat.core.plaza.PublicCycles
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-
-/** [SPAT-07] What the company server said for the name under the box: still asking, the companies, or too slow / no answer. */
-sealed interface InlineServer {
-    data object Idle : InlineServer
-    data object Asking : InlineServer
-    data class Found(val hits: List<CompanyHit>) : InlineServer
-    /** No answer in time, or none at all (offline): the public rows and 직접 추가 stand alone. */
-    data object Slow : InlineServer
-}
 
 /** [SPAT-07] AH-D1: a pause in typing before asking, and no more than this for the company server's answer. */
 internal const val INLINE_PAUSE_MS = 300L
@@ -70,14 +63,28 @@ internal const val INLINE_WAIT_MS = 2_500L
 /**
  * [SPAT-07][PLAZA-17] The company server's companies for [q]; nothing found, then once more by the other spelling of the name
  * (GS ↔ 지에스, AH-I1). Null when it did not answer.
+ *
+ * AS 1.29 [SRCH-07]: through [com.bamnat.app.company.CompanySearch]: a fresh answer for the same name comes at once, one
+ * request for the name however many screens ask, and the answer is kept for the next letters. When the server is still
+ * not back just before [INLINE_WAIT_MS] and the phone already knows companies that fit (the most used ones, an answer
+ * for fewer letters), those come back instead of nothing, so a caller with that time limit (급여 방식 찾기) shows them.
  */
 internal suspend fun inlineSearch(c: AppContainer, q: String): List<CompanyHit>? = try {
-    val first = c.companyApi.search(q)
-    if (first.isNotEmpty()) first
-    else CompanyMatch.variants(q).drop(1).firstOrNull()?.let { other -> c.companyApi.search(other) } ?: first
+    val s = c.companySearch
+    val known = s.peek(q)
+    if (known.exact && known.age < com.bamnat.app.company.CompanySearch.FRESH_MS) known.hits
+    else {
+        val job = s.ask(q)
+        withTimeoutOrNull(INLINE_WAIT_MS - INLINE_KNOWN_EARLY_MS) { job.await() }
+            ?: s.peek(q).hits.takeIf { it.isNotEmpty() }
+            ?: job.await()
+    }
 } catch (e: CompanyException) {
     null
 }
+
+/** [SRCH-07] How long before [INLINE_WAIT_MS] [inlineSearch] gives what the phone knows instead of waiting on. */
+internal const val INLINE_KNOWN_EARLY_MS = 300L
 
 /**
  * [SPAT-07] 1.27 AH 순번 436 (사용자 2026-10-25): what is already there for the company typed, right under the name box,
@@ -103,25 +110,26 @@ fun CompanyInlineResults(
     val c = LocalContext.current.appContainer
     val q = query.trim()
     val ready = CompanyText.norm(q).length >= 2
-    val publicRows = remember(q) { if (ready) PublicCycles.search(q) else emptyList() }
+    // AS 1.29 [SRCH-12] The public rows from their index, off the frame's own work when the index is not made yet.
+    val publicRows by produceState(remember(q) { if (ready) PublicCycles.searchIfReady(q) else emptyList() }, q) {
+        if (ready && value.isEmpty()) value = withContext(Dispatchers.Default) { PublicCycles.search(q) }
+    }
     val serverOn = onServer != null && c.companyApi.enabled
-    val server by produceState<InlineServer>(InlineServer.Idle, q, serverOn) {
-        if (!ready || !serverOn) { value = InlineServer.Idle; return@produceState }
-        value = InlineServer.Asking
-        delay(INLINE_PAUSE_MS)
-        value = withTimeoutOrNull(INLINE_WAIT_MS) { inlineSearch(c, q) }?.let { InlineServer.Found(it) } ?: InlineServer.Slow
+    // AS 1.29 [SRCH-06][SRCH-07][SRCH-10] What the phone has at once, the server's answer added whenever it comes (a late one
+    // is no longer thrown away, 사용자 2026-10-27 "늦게 떠서 안 뜨는 것처럼 보인다").
+    val server by produceState(
+        if (ready && serverOn) CompanySearch.State(q, c.companySearch.peek(q).hits, CompanySearch.Stage.ASKING) else CompanySearch.State(q, emptyList(), CompanySearch.Stage.IDLE),
+        q, serverOn,
+    ) {
+        if (!ready || !serverOn) { value = CompanySearch.State(q, emptyList(), CompanySearch.Stage.IDLE); return@produceState }
+        c.companySearch.states(q, INLINE_PAUSE_MS).collect { value = it }
     }
     var open by remember { mutableStateOf<PublicCycle?>(null) }
     var providing by remember { mutableStateOf(false) }
     if (!ready) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        val hits = (server as? InlineServer.Found)?.hits.orEmpty()
-        when (server) {
-            InlineServer.Asking -> if (publicRows.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
-            InlineServer.Slow -> Text("같은 회사 분들 자료는 지금 못 불러왔어요. 공개 자료부터 보여 드려요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else -> Unit
-        }
+        val hits = server.hits
+        SearchStageLine(server, nothingYet = hits.isEmpty() && publicRows.isEmpty())
         if (hits.isNotEmpty() || publicRows.isNotEmpty()) {
             Text("찾은 곳 · $q", style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.semantics { heading() })
@@ -154,6 +162,39 @@ fun CompanyInlineResults(
             }
         }
     }
+}
+
+/**
+ * [SRCH-10] 1.29 AS: where the coworkers' answer stands, in one small line under the name box: asking (with two placeholder
+ * rows when nothing is on screen yet), taking long but still coming, or not reachable. Nothing when it came.
+ */
+@Composable
+internal fun SearchStageLine(state: CompanySearch.State, nothingYet: Boolean) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    when (state.stage) {
+        CompanySearch.Stage.ASKING -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(if (nothingYet) "같은 회사 분들 자료를 찾고 있어요" else "같은 회사 분들 자료를 더 찾고 있어요", style = MaterialTheme.typography.bodySmall, color = muted)
+            if (nothingYet) repeat(2) { SkeletonRow() }
+        }
+        CompanySearch.Stage.SLOW -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text("연결이 느려 조금 오래 걸려요. 찾으면 바로 여기에 보여 드려요.", style = MaterialTheme.typography.bodySmall, color = muted)
+        }
+        CompanySearch.Stage.FAILED -> Text(
+            if (state.code == "offline") "같은 회사 분들 자료는 지금 못 불러왔어요. 인터넷 연결을 확인해 주세요. 공개 자료부터 보여 드려요."
+            else "같은 회사 분들 자료는 지금 못 불러왔어요. 공개 자료부터 보여 드려요.",
+            style = MaterialTheme.typography.bodySmall, color = muted,
+        )
+        else -> Unit
+    }
+}
+
+/** [SRCH-10] A row's place while its company is on the way: the same height as a company row, no words. */
+@Composable
+internal fun SkeletonRow() {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 62.dp).clearAndSetSemantics { }) {}
 }
 
 /** [SPAT-07][PLAZA-14] One company of the server: its name, its 대표 주기 and who stands behind it (AH-I4). */

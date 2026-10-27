@@ -474,6 +474,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
     val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
+    // [INVA-01] AR 1.29: a photo shared on another kind of calendar while an investor calendar exists, asked where it goes.
+    var shotToPlace by remember { mutableStateOf<Pair<android.net.Uri, com.bamnat.app.data.PersonalCalendar>?>(null) }
+    var shotIsRoster by remember { mutableStateOf(false) }
     LaunchedEffect(sharedRoster) {
         // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
         // 한 달 근무 넣기 (U, ROST-09) is open stays that screen's.
@@ -485,9 +488,32 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.open(NoticeLinks.Target.INVEST, activeCalendarId)
             return@LaunchedEffect
         }
+        val investor = calendarList.firstOrNull { !it.isExample && container.calendars.styleOf(it.id, settingsNow.workStyle) == WorkStyle.INVEST }
+        if (shot != null && investor != null && !rosterOpen && !shotIsRoster) {
+            com.bamnat.app.IncomingRoster.take()
+            shotToPlace = shot.uri to investor
+            return@LaunchedEffect
+        }
+        shotIsRoster = false
         if (sharedRoster != null && !rosterOpen) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
+    }
+    shotToPlace?.let { (uri, investor) ->
+        com.bamnat.app.ui.invest.SharedShotChoice(
+            investName = investor.name,
+            onInvest = {
+                shotToPlace = null
+                com.bamnat.app.invest.IncomingFills.put(uri)
+                NoticeLinks.open(NoticeLinks.Target.INVEST, investor.id)
+            },
+            onRoster = {
+                shotToPlace = null
+                shotIsRoster = true
+                com.bamnat.app.IncomingRoster.put(com.bamnat.app.IncomingRoster.Shared.Photo(uri))
+            },
+            onDismiss = { shotToPlace = null },
+        )
     }
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
@@ -788,9 +814,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val saved = justSaved
     if (saved != null) {
         val payProfile by container.payStore.profile.collectAsStateWithLifecycle()
+        // [PAYF-05] 1.29 AP: 근무주기 → 정보 제공 → 급여, one after the other: the one question about sharing the cycle first
+        // (LeadShare), the pay after it is answered, never two sheets over each other.
+        val leadAsking by container.leadShare.step.collectAsStateWithLifecycle()
         if (saved.style?.usesPayEngine != true || payProfile != null) {
             LaunchedEffect(saved) { container.firstSetup.consumeSaved() }
-        } else {
+        } else if (leadAsking == null) {
+            // [PAYF-02][PAYF-05] 1.29 AP: the company named in the setup is asked for while the user reads this, so the pay's
+            // first question lists its pay way at once.
+            val prefetch = rememberCoroutineScope()
+            LaunchedEffect(saved) {
+                com.bamnat.app.ui.company.PayFindSearch.prefetch(container, prefetch, com.bamnat.app.company.PayFind(container).known())
+            }
             SetupPaySheet(
                 companyPay = container.companyStore.pendingPay != null,
                 onNow = {
@@ -1116,6 +1151,11 @@ private fun AppNavHost(
             }
             val nudges = appViewModel { CompanyNudgeViewModel(it) }
             val publicUse by container.companyStore.publicUse.collectAsStateWithLifecycle()
+            // [PAYF-01][PAYF-07] 1.29 AP: a company's pay way is for the main job's wages only, never a 투자·가게·현장 calendar.
+            val payEngine = remember(calendar) {
+                container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle)?.usesPayEngine != false
+            }
+            val companyPay = calendar == PersonalCalendar.MAIN && payEngine
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
@@ -1136,6 +1176,13 @@ private fun AppNavHost(
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
+                    if (companyPay) {
+                        // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
+                        com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        // [PAYF-01] A pay set up by hand: the search box one tap away until a company's way is in use.
+                        if (profile != null) com.bamnat.app.ui.company.PayFindLine(onSaved = { p -> vm.update { p } },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    }
                     // [SPAT-05] A public cycle in use and its pay just set: the plaza, the reward said first.
                     if (calendar == PersonalCalendar.MAIN && profile != null) com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         onPay = {}, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
@@ -1162,8 +1209,8 @@ private fun AppNavHost(
                 fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } },
                 // [PLAZA-30] 1.27 AI: the plaza form's 명세서로 맞춰 보기, once.
                 startMatching = remember { container.pendingMatch.also { container.pendingMatch = false } },
-                // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay.
-                companyFind = if (calendar == PersonalCalendar.MAIN) ({ com.bamnat.app.ui.company.PayFindEntry() }) else null)
+                // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay. [PAYF-01] 1.29: the setup's first question.
+                companyFind = companyPay)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
@@ -1223,6 +1270,11 @@ private fun AppNavHost(
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                             }
                             applied.pendingPay || (setup && !pay) -> nav.navigate(Routes.pay()) {
+                                popUpTo(Routes.COMPANY_FIND) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                            // [PAYF-03][PAYF-06] 1.29 AP: the pay way went onto a pay with amounts: its 기본급 is checked there next.
+                            applied.rules && container.payWays.askBase.value -> nav.navigate(Routes.pay()) {
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                                 launchSingleTop = true
                             }

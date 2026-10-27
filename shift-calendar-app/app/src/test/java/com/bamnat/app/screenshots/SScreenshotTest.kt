@@ -162,6 +162,9 @@ class SScreenshotTest : ScreenshotBase() {
         // calendar matches is picked already; "내 근무와 같은 줄을 먼저 골라 주세요" shows only with none picked.)
         val vm = CompanyDetailViewModel(companyOn(), "c1")
         content { CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, openPhasesFor = "s1") }
+        settle()
+        // [PAYF-03] 1.29: a setup with a pay way asks first whether the pay goes in too.
+        if (shows("근무주기만 넣을게요", exact = true)) tapText("근무주기만 넣을게요", exact = true)
         reveal("1번째 줄: 오늘 주간")
         assertFalse(shows("내 근무와 같은 줄을 먼저 골라 주세요"))
     }

@@ -430,6 +430,10 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
             if (scan.image != null) FilterChip(selected = false, enabled = !reading, onClick = { tapping = true }, label = { Text("사진 위에서 누르기") })
             FilterChip(selected = false, onClick = { seeing = true }, label = { Text("무엇을 읽었는지 보기") })
         }
+        // [PHOTO-09] 1.29 통합: the first setup's roster photo gets '사진이 달라요' too, like every other photo result.
+        if (roster?.from == com.bamnat.core.journal.RosterFrom.PHOTO && !reading) {
+            com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.ROSTER)
+        }
         if (tapping) com.bamnat.app.ui.imports.PhotoTapDialog(scan, onDismiss = { tapping = false }) { hint -> tapping = false; vm.readRosterTapped(hint) }
         if (seeing) com.bamnat.app.ui.imports.ReadDiagnosisDialog(scan, roster?.rows.orEmpty(), onDismiss = { seeing = false })
     }

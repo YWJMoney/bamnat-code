@@ -71,23 +71,36 @@ class CompanyFindViewModel(private val c: AppContainer) : ViewModel() {
     val result: StateFlow<Result> = _result.asStateFlow()
     private val _terms = MutableStateFlow(TermsCache.value)
     val terms: StateFlow<CompanyTerms?> = _terms.asStateFlow()
+    /** [SRCH-10] 1.29 AS: where the server's answer stands while companies are already on screen (asking, slow, failed). */
+    private val _stage = MutableStateFlow<com.bamnat.app.company.CompanySearch.State?>(null)
+    val stage: StateFlow<com.bamnat.app.company.CompanySearch.State?> = _stage.asStateFlow()
 
     init {
         viewModelScope.launch { _terms.value = c.loadTerms() }
         viewModelScope.launch {
-            combine(query, again) { q, _ -> q.trim() }.collectLatest { q ->
+            // AS 1.29 [SRCH-07][SRCH-11] Through CompanySearch: what the phone has at once, the server's answer when it comes.
+            // Before 1.29 a new letter waited here for the last letter's request to end (collectLatest waits for the block it
+            // cancels, and a connection does not hear that), so a slow answer held every next search back by its own length.
+            combine(query, again) { q, n -> q.trim() to n }.collectLatest { (q, n) ->
                 if (CompanyText.norm(q).length < 2) {
                     _result.value = Result.Idle
+                    _stage.value = null
                     return@collectLatest
                 }
-                // A pause in typing before asking, so each letter is not a request.
-                delay(300)
-                _result.value = Result.Searching
-                _result.value = try {
-                    // [SPAT-02] Without the company server the public rows are still searched, on the screen.
-                    Result.Found(q, if (c.companyApi.enabled) c.companyApi.search(q) else emptyList())
-                } catch (e: CompanyException) {
-                    Result.Failed(q, e.code)
+                if (n > 0) c.companySearch.forgetAnswer(q)
+                c.companySearch.states(q).collect { s ->
+                    val shown = when {
+                        s.stage == com.bamnat.app.company.CompanySearch.Stage.DONE -> Result.Found(q, s.hits)
+                        s.hits.isNotEmpty() -> Result.Found(q, s.hits)
+                        s.stage == com.bamnat.app.company.CompanySearch.Stage.FAILED -> Result.Failed(q, s.code ?: "offline")
+                        // [SRCH-10] The last companies stay on screen while the next letter is asked about.
+                        else -> (_result.value as? Result.Found)?.takeIf { it.hits.isNotEmpty() && q.startsWith(it.query) }
+                            ?.let { prev -> Result.Found(q, prev.hits.filter { h -> CompanyText.norm(h.name).contains(CompanyText.norm(q)) }) }
+                            ?.takeIf { it.hits.isNotEmpty() }
+                            ?: Result.Searching
+                    }
+                    _stage.value = s.takeIf { shown is Result.Found && it.stage != com.bamnat.app.company.CompanySearch.Stage.DONE }
+                    _result.value = shown
                 }
             }
         }
@@ -191,14 +204,24 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
         load()
     }
 
+    /** [SRCH-13] The page on screen is the one kept from before, still being read again. */
+    @Volatile private var fromKept = false
+
     fun load() {
-        _state.value = State.Loading
+        // AS 1.29 [SRCH-09][SRCH-13] The page as last read (or read ahead after the first month) shows at once, then afresh.
+        val kept = c.companySearch.page(id)
+        fromKept = kept != null
+        _state.value = kept?.let { State.Loaded(it) } ?: State.Loading
         viewModelScope.launch {
+            // A member's room is read beside the page, not after it.
+            val room = if (kept?.member == true) launch { loadRoom() } else null
             _state.value = try {
-                State.Loaded(c.companyApi.company(id))
+                State.Loaded(c.companyApi.company(id).also(c.companySearch::keepPage))
             } catch (e: CompanyException) {
-                State.Failed(e.code)
+                kept?.let { State.Loaded(it) } ?: State.Failed(e.code)
             }
+            fromKept = false
+            room?.join()
             loadRoom()
         }
     }
@@ -252,11 +275,23 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
      * Applies [setup] with today at [todayStep] of its rotation. What is still to do comes back:
      * the user's own amounts when there was no pay setup yet.
      */
-    fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) {
+    fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) =
+        apply(page, setup, todayStep, withPay = true, done = done, failed = failed)
+
+    /**
+     * [PAYF-03] 1.29 AP: [withPay] false puts in the cycle alone ("근무주기만 넣을게요"): the setup's pay part is left out, and the
+     * pay the user has stays as it is. With the pay, the way is remembered for 맞아요·달라요 on the pay screen and the 기본급 is
+     * asked next ([com.bamnat.app.company.PayWayStore.askBase]).
+     */
+    fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, withPay: Boolean, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) {
         viewModelScope.launch {
             try {
                 // [PLAZA-07] 결정 D79: applying is joining. The pay way comes only then, so the page is read again as a member.
                 var text = setup.text
+                // [SRCH-13] A page kept from before is read again first, so what goes in is the version as it is now.
+                if (fromKept && !setup.payHidden && page.member) {
+                    c.companyApi.company(page.id).also(c.companySearch::keepPage).setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
+                }
                 if (setup.payHidden || !page.member) {
                     val m = c.companyApi.join(c.companyStore.device, page.id, com.bamnat.app.company.AutoShare.CAL)
                     if (!m.joined) {
@@ -264,11 +299,18 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
                         return@launch
                     }
                     c.companyStore.setMember(page.id, page.name)
-                    val again = c.companyApi.company(page.id)
+                    val again = c.companyApi.company(page.id).also(c.companySearch::keepPage)
                     _state.value = State.Loaded(again)
                     again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
                 }
+                if (!withPay) text = org.json.JSONObject(text).apply { remove("pay") }.toString()
                 val result = c.companyShare.apply(text, rotation = true, todayStep = todayStep)
+                if (withPay && (result.rules || result.pendingPay)) {
+                    c.payWays.use(com.bamnat.app.company.PayWay(page.id, page.name, setup.dept, setup.id))
+                    c.payWays.decided = true
+                    // A pay with amounts got the company's rules: its 기본급 is checked on the pay screen next.
+                    if (result.rules) c.payWays.askBase(true)
+                }
                 // [PLZ-08] 쓰는 사람: this phone now uses this rule set, and no longer the one before.
                 val before = c.companyStore.applied.value
                 if (before != null && before.setup != setup.id) launch { runCatching { c.companyApi.use(c.companyStore.device, before.company, before.setup, false) } }
@@ -309,7 +351,7 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
                 _votes.value = _votes.value + (setup.id to ok)
                 if (c.companyStore.applied.value?.setup == setup.id) c.companyStore.voted(ok)
                 c.telemetry.event("company_vote", if (ok) "ok_board" else why ?: "wrong")
-                _state.value = runCatching { State.Loaded(c.companyApi.company(id)) }.getOrDefault(_state.value)
+                _state.value = runCatching { State.Loaded(c.companyApi.company(id).also(c.companySearch::keepPage)) }.getOrDefault(_state.value)
                 null
             } catch (e: CompanyException) {
                 companyProblem(e.code, e.field)
@@ -610,6 +652,8 @@ class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch { _terms.value = c.loadTerms() }
         viewModelScope.launch { _plazas.value = runCatching { c.companyApi.plazas() }.getOrDefault(emptyList()) }
         more(false)
+        // AS 1.29 [SRCH-13] The 대표판 tab's first page is read beside the first one, so switching to it shows at once.
+        more(true)
         viewModelScope.launch {
             query.collectLatest { typed ->
                 val q = typed.trim()
@@ -638,15 +682,20 @@ class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
         val f = tabs.getValue(adopted)
         val from = f.value.next ?: return
         if (f.value.loading) return
-        f.value = f.value.copy(loading = true, error = null)
         val q = asked
         val fl = _filter.value
+        // AS 1.29 [SRCH-13] A first page read before (this run) shows at once while it is read again.
+        val key = "$adopted|$q|${fl.job}|${fl.region}|${fl.sort}"
+        val kept = if (from == 0) c.companySearch.boardPages.get(key) else null
+        f.value = if (kept != null) f.value.copy(items = kept.items, next = kept.next, loading = true, error = null)
+        else f.value.copy(loading = true, error = null)
         viewModelScope.launch {
             val done = try {
                 val b = c.companyApi.board(adopted, from, q, fl.job, fl.region, fl.sort)
-                f.value.copy(items = f.value.items + b.items, next = b.next, loading = false)
+                if (from == 0) c.companySearch.boardPages.put(key, b)
+                f.value.copy(items = (if (from == 0) emptyList() else f.value.items) + b.items, next = b.next, loading = false)
             } catch (e: CompanyException) {
-                f.value.copy(loading = false, error = companyProblem(e.code, e.field))
+                f.value.copy(loading = false, error = if (kept != null) null else companyProblem(e.code, e.field))
             }
             // A page for a name no longer in the box is dropped; the new name's pages are on their way.
             if (q == asked && fl == _filter.value) {
@@ -843,6 +892,8 @@ class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
     val summary: CompanySummary? get() = text?.let { runCatching { c.companyShare.summarize(it) }.getOrNull() }
     /** [PLAZA-03] Whether the company's setup has pay rules to ask "이 회사 급여 설정을 쓸까요?" about. */
     val hasRules: Boolean get() = summary?.hasRules == true
+    /** [PAYF-01] 1.29 AP: the user just chose this pay way on the screen before; the question is not asked twice. */
+    val decided: Boolean = c.payWays.decided.also { c.payWays.decided = false }
     /** [PLAZA-03] The talk the 다른 점 proposal goes to. */
     val talk = TalkHolder(c, viewModelScope)
 
@@ -881,12 +932,16 @@ class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
 
     fun save(
         wageType: WageType, base: Long, rough: Boolean, dailyHours: Int, since: YearMonth, amounts: Map<String, Long>,
-        done: () -> Unit, failed: (String) -> Unit,
+        hours: Int? = null, done: () -> Unit, failed: (String) -> Unit,
     ) {
         val t = text ?: return failed("설정을 다시 골라 주세요")
         viewModelScope.launch {
             try {
-                c.companyShare.createPay(t, wageType, base, rough, dailyHours, since, amounts)
+                val made = c.companyShare.createPay(t, wageType, base, rough, dailyHours, since, amounts)
+                // [PAYF-06] The 통상시급's hours the user knew, over the company's (theirs are only the sender's usual).
+                hours?.takeIf { wageType == WageType.MONTHLY && it in com.bamnat.core.pay.BaseAsk.HOURS_RANGE }?.let { h ->
+                    c.payStore.save(com.bamnat.core.pay.RuleOnlyNeeds.settled(made.copy(monthlyHours = h)), keepUndo = false)
+                }
                 c.companyStore.pendingPay = null
                 c.telemetry.event("pay_setup_done", "COMPANY")
                 done()
@@ -1060,8 +1115,9 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
     val terms: StateFlow<CompanyTerms?> = _terms.asStateFlow()
 
     /** The setup in use while 맞았어요·달라요 is still to say and was not put off. */
-    val askVote: StateFlow<AppliedSetup?> = combine(c.companyStore.applied, c.companyStore.voteLater) { a, later ->
-        a?.takeIf { enabled && it.vote == null && Today.millis() >= later }
+    val askVote: StateFlow<AppliedSetup?> = combine(c.companyStore.applied, c.companyStore.voteLater, c.payWays.way) { a, later, way ->
+        // [PAYF-04] 1.29 AP: the pay screen's own card keeps 맞아요·달라요 on a pay way in use; not asked twice on one screen.
+        a?.takeIf { enabled && it.vote == null && Today.millis() >= later && way?.setup != it.setup }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**

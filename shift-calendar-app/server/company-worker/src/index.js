@@ -32,6 +32,7 @@
 // POST   /api/purchases           a Play purchase token, checked with Play when PLAY_SERVICE_ACCOUNT is set [MON-03]
 // POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
 // POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
+// POST   /api/photo-wrong         AQ 1.29 [PHOTO-10] '사진이 달라요' counts: day, screen, reason, app version. No photo, no text, no install id
 // GET    /api/plaza/news?since=   [COMM-10] header X-Device: my rule changed, my rule or proposal adopted
 // *      /api/members             [PLAZA-07] header X-Device (GET) or body device: the companies this phone joined; POST joins, DELETE leaves
 // GET    /api/companies/:id/room  [PLAZA-09] header X-Device, members only: my version, the department's others, 안정
@@ -53,7 +54,7 @@ import { adminFile, adminBuild } from "./admin-app.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
-import { CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
+import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -173,7 +174,7 @@ const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, p
 export default {
   async fetch(request, env, ctx) {
     try {
-      return await route(request, env);
+      return await route(request, env, ctx);
     } catch (e) {
       if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
       console.error(e && e.stack ? e.stack : String(e));
@@ -240,6 +241,7 @@ export async function prune(env, now) {
     // AM 1.28 [FLAG-30]
     stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
+    stmt(env, "DELETE FROM photo_wrong WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AQ 1.29 [PHOTO-10]
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
   ]);
@@ -283,17 +285,19 @@ async function once(request, env, path, handle) {
   return res;
 }
 
-async function route(request, env) {
+async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
   // [SRV-08] Any write through this Worker may change 모두의 문의, so its kept rows are read afresh.
   if (method !== "GET") publicRows.delete(env.DB ?? env);
+  // AS 1.29 [SRCH-01] and may add a name whose 초성 and reading are not there yet.
+  if (method !== "GET") namesFilled.delete(env.DB ?? env);
   if (path.startsWith("/api/") && !path.startsWith("/api/admin") && method === "POST" && env.DB && request.headers.get("x-request-id")) {
     await ready(env);
-    return once(request, env, path, () => routeOnce(request, env, url));
+    return once(request, env, path, () => routeOnce(request, env, url, ctx));
   }
-  return routeOnce(request, env, url);
+  return routeOnce(request, env, url, ctx);
 }
 
 /**
@@ -304,6 +308,8 @@ async function route(request, env) {
 const PUBLIC_PER_HOUR = 600;
 const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/history$/,
   /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/,
+  // AS 1.29 [SRCH-04]
+  /^\/api\/companies\/top$/,
   // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
   /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
 const publicReads = new Map();
@@ -319,7 +325,7 @@ async function publicAllowed(request, env, path) {
   return n <= PUBLIC_PER_HOUR;
 }
 
-async function routeOnce(request, env, url) {
+async function routeOnce(request, env, url, ctx) {
   const path = url.pathname;
   const method = request.method;
   if (!(await publicAllowed(request, env, path))) return json({ error: "rate_limited" }, 429);
@@ -334,7 +340,10 @@ async function routeOnce(request, env, url) {
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
-  if (path === "/api/companies" && method === "GET") return search(env, url);
+  // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
+  if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
+  if (path === "/api/companies/top" && method === "GET") return edgeCached(request, ctx, TOP_EDGE_SECONDS, () => topCompanies(env, url));
+  // AS 1.29 끝
   if (path === "/api/terms" && method === "GET") return json(await terms(env));
   let m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})$/);
   if (m && method === "GET") return company(env, m[1], request);
@@ -374,6 +383,7 @@ async function routeOnce(request, env, url) {
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path === "/api/events" && method === "POST") return usage(request, env);
+  if (path === "/api/photo-wrong" && method === "POST") return photoWrong(request, env); // AQ 1.29 [PHOTO-10]
   if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
   if (path === "/api/digest" && method === "GET") return digest(request, env, url);
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
@@ -614,6 +624,11 @@ const COLUMNS = [
   "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   // X 1.25 끝
+  // AS 1.29 시작
+  // [SRCH-02] A name as said in Korean letters ("지에스칼텍스" for GS칼텍스), filled by search when empty, so the reading finds it.
+  "ALTER TABLE companies ADD COLUMN said TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE aliases ADD COLUMN said TEXT NOT NULL DEFAULT ''",
+  // AS 1.29 끝
   // AI 1.27 시작
   // [PLAZA-30] What a 명세서 tick rested on ("2026-09|match" or "2026-09|gap"), and an older app's tick with nothing behind it.
   "ALTER TABLE reports ADD COLUMN proof TEXT",
@@ -623,6 +638,11 @@ const COLUMNS = [
   // 1.28 통합 [FLAG-36] AL-D3: an override's app versionCode range (판단 2단계 '앱 판 밖').
   "ALTER TABLE flag_overrides ADD COLUMN min_app INTEGER",
   "ALTER TABLE flag_overrides ADD COLUMN max_app INTEGER",
+  // AT 1.29 시작
+  // [ADMCP-03] 복사함: when a question was last copied for development and by whom (the activity log keeps each copy).
+  "ALTER TABLE inquiries ADD COLUMN copied_at INTEGER",
+  "ALTER TABLE inquiries ADD COLUMN copied_by TEXT",
+  // AT 1.29 끝
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -645,6 +665,13 @@ const LATE_INDEXES = [
   `CREATE TABLE IF NOT EXISTS usage_startup (day TEXT NOT NULL, app TEXT NOT NULL, kind TEXT NOT NULL, step TEXT NOT NULL,
     bucket INTEGER NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app, kind, step, bucket))`,
   // AO 1.28 끝
+  // AT 1.29 시작 [ADMCP-04] 복사 전 문제 제보 for the badges and the list's strip: only the rows nobody copied yet.
+  "CREATE INDEX IF NOT EXISTS inquiries_uncopied ON inquiries (kind, status) WHERE copied_at IS NULL",
+  // AT 1.29 끝
+  // AQ 1.29 시작 [PHOTO-10] '사진이 달라요' presses: per day, app version, screen and reason, how many. No phone, no photo, no text.
+  `CREATE TABLE IF NOT EXISTS photo_wrong (day TEXT NOT NULL, app TEXT NOT NULL, screen TEXT NOT NULL, reason TEXT NOT NULL,
+    total INTEGER NOT NULL, PRIMARY KEY (day, app, screen, reason))`,
+  // AQ 1.29 끝
 ];
 
 const schemas = new WeakMap();
@@ -1404,33 +1431,43 @@ async function terms(env) {
 
 async function search(env, url) {
   const raw = String(url.searchParams.get("q") ?? "");
-  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) });
+  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) }, 200, SEARCH_CACHE);
   const q = normName(raw).slice(0, 40);
-  if (q.length < 2) return json({ companies: [] });
-  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const rows = await all(env, `
-    SELECT c.id, c.name, c.norm,
-      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?1 ESCAPE '\\' ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
+  if (q.length < 2) return json({ companies: [] }, 200, SEARCH_CACHE);
+  const esc = (t) => `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const like = esc(q);
+  // AS 1.29 [SRCH-02] The name as said in Korean letters too: 지에스칼텍스 finds GS칼텍스, gs칼텍스 still finds it by its letters.
+  const said = spoken(raw).slice(0, 60);
+  const saidLike = said.length >= 2 ? esc(said) : like;
+  // Names from before 1.29 get their reading beside the search, not before it.
+  const [rows] = await Promise.all([all(env, `
+    SELECT c.id, c.name, c.norm, c.said,
+      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\')
+        ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
       EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm = ?2) AS alias_exact,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
       (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
     FROM companies c
     WHERE c.hidden = 0 AND c.merged_into IS NULL
-      AND (c.norm LIKE ?1 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?1 ESCAPE '\\'))
-    LIMIT 200`, like, q);
-  const exact = (c) => (c.norm === q || c.alias_exact === 1 ? 1 : 0);
+      AND (c.norm LIKE ?1 ESCAPE '\\' OR c.said LIKE ?3 ESCAPE '\\'
+        OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\')))
+    LIMIT 200`, like, q, saidLike), fillNames(env)]);
+  const exact = (c) => (c.norm === q || c.said === said || c.alias_exact === 1 ? 1 : 0);
+  const starts = (c) => (c.norm.startsWith(q) || (said.length >= 2 && String(c.said ?? "").startsWith(said)) ? 1 : 0);
   const companies = rows
     // [PLAZA-10] One that coworkers are still checking shows up too (결정 D79): a company's first setup, even with only its
     // shifts, is there for the next person to find and use at once.
     .filter((c) => c.adopted > 0 || c.pending > 0)
-    .sort((a, b) => exact(b) - exact(a) || (b.adopted > 0) - (a.adopted > 0) || b.norm.startsWith(q) - a.norm.startsWith(q) ||
+    .sort((a, b) => exact(b) - exact(a) || (b.adopted > 0) - (a.adopted > 0) || starts(b) - starts(a) ||
       a.name.length - b.name.length || a.name.localeCompare(b.name, "ko"))
     .slice(0, 20)
-    .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
-      ...(c.adopted === 0 ? { first: true } : {}) }));
-  // AH 1.27 [PLAZA-14] The first few with their 대표 주기 and users, for the list under the name box.
-  for (const c of companies.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
-  return json({ companies });
+    .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) || (said.length >= 2 && String(c.said ?? "").includes(said)) ? null : c.alias,
+      adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
+  // AS 1.29 [SRCH-01] Every company listed with its 대표 주기 and users, read for all of them at once. Before 1.29 only the
+  // first five had it, read one company after another (41 reads in a row for eight companies): an answer the app gave
+  // up waiting for, and a company 6th or lower with no 대표 주기 at all.
+  await withLeads(env, companies);
+  return json({ companies }, 200, SEARCH_CACHE);
 }
 
 // ---- [PLAZA-03] 초성 찾기 ----
@@ -1458,21 +1495,30 @@ export function isChoseong(q) {
   return t.length >= 2 && [...t].every((ch) => CHO.includes(ch));
 }
 
-/** Names whose 초성 were not worked out yet (new, renamed, or from before 1.25) get them, a batch at a time. */
-async function fillChoseong(env) {
+/**
+ * Names whose 초성 (and, AS 1.29 [SRCH-02], Korean reading) were not worked out yet (new, renamed, or from before 1.25 / 1.29)
+ * get them, a batch at a time.
+ */
+async function fillNames(env) {
+  // AS 1.29 [SRCH-01] Once a look found nothing to fill, this Worker does not look again for a while (a write here looks at once).
+  const key = env.DB ?? env;
+  if (Date.now() - (namesFilled.get(key) ?? 0) < NAMES_FILLED_MS) return;
   const [cs, as] = await Promise.all([
-    all(env, "SELECT id, norm FROM companies WHERE cho = '' LIMIT 500"),
-    all(env, "SELECT norm FROM aliases WHERE cho = '' LIMIT 500"),
+    all(env, "SELECT id, name, norm, cho, said FROM companies WHERE cho = '' OR said = '' LIMIT 500"),
+    all(env, "SELECT norm, name, cho, said FROM aliases WHERE cho = '' OR said = '' LIMIT 500"),
   ]);
-  if (!cs.length && !as.length) return;
+  if (!cs.length && !as.length) {
+    namesFilled.set(key, Date.now());
+    return;
+  }
   await batch(env, [
-    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ? WHERE id = ?", choseong(c.norm) || "-", c.id)),
-    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ? WHERE norm = ?", choseong(a.norm) || "-", a.norm)),
+    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ?, said = ? WHERE id = ?", c.cho || choseong(c.norm) || "-", c.said || spoken(c.name) || "-", c.id)),
+    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ?, said = ? WHERE norm = ?", a.cho || choseong(a.norm) || "-", a.said || spoken(a.name) || "-", a.norm)),
   ]);
 }
 
 async function searchChoseong(env, q) {
-  await fillChoseong(env);
+  await fillNames(env);
   const like = `%${q}%`;
   const rows = await all(env, `
     SELECT c.id, c.name, c.cho,
@@ -1490,8 +1536,8 @@ async function searchChoseong(env, q) {
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
       ...(c.adopted === 0 ? { first: true } : {}) }));
-  // AH 1.27 [PLAZA-14]
-  for (const c of out.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
+  // AH 1.27 [PLAZA-14] AS 1.29 [SRCH-01] every one, read at once.
+  await withLeads(env, out);
   return out;
 }
 
@@ -1504,37 +1550,40 @@ async function company(env, id, request) {
   const view = (text) => (who.member ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
   const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
   const now = Date.now();
-  const { adoptPoints } = await settings(env);
-  const aliases = (await all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", c.id)).map((a) => a.name);
-  const setups = [];
-  const rules = await all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id);
-  for (const r of rules) {
-    setups.push({ ...(await state(env, c.id, r.grp, adoptPoints, true)), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at),
-      setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...(await payMark(env, c.id, r.dept_norm, r.grp, r.setup, who, now)) });
-  }
-  const groups = await all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
-    GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id);
-  const pending = [];
-  for (const g of groups) {
-    if (rules.some((r) => r.grp === g.grp)) continue;
-    const s = await state(env, c.id, g.grp, adoptPoints, false);
-    if (s.persons === 0) continue;
-    const rep = await representative(env, c.id, g.grp);
+  // AS 1.29 [SRCH-05] The page's reads go together, not one setup after another (the same answer, in the same order): a
+  // company with three versions took about 30 reads in a row before its 대표판 showed.
+  const [{ adoptPoints }, aliasRows, rules, groups] = await Promise.all([
+    settings(env),
+    all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", c.id),
+    all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id),
+    all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
+      GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id),
+  ]);
+  const aliases = aliasRows.map((a) => a.name);
+  const setups = await Promise.all(rules.map(async (r) => {
+    const [s, mark] = await Promise.all([state(env, c.id, r.grp, adoptPoints, true), payMark(env, c.id, r.dept_norm, r.grp, r.setup, who, now)]);
+    return { ...s, dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at), setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...mark };
+  }));
+  const waiting = await Promise.all(groups.filter((g) => !rules.some((r) => r.grp === g.grp)).map(async (g) => {
+    const [s, rep] = await Promise.all([state(env, c.id, g.grp, adoptPoints, false), representative(env, c.id, g.grp)]);
+    if (s.persons === 0 || !rep) return null;
     // What the developer turned down is not offered to coworkers again.
     const why = await blocker(env, c.id, g.grp, rep.dept_norm);
-    if (why === "withdrawn" || why === "rejected") continue;
-    pending.push({ s, rep });
-  }
+    return why === "withdrawn" || why === "rejected" ? null : { s, rep };
+  }));
+  const pending = waiting.filter(Boolean);
   // The likeliest first, and a few for each department are enough.
   pending.sort((a, b) => b.s.points - a.s.points);
   const shown = new Map();
+  const picked = [];
   for (const { s, rep } of pending) {
     const n = shown.get(rep.dept_norm) ?? 0;
     if (n >= 3) continue;
     shown.set(rep.dept_norm, n + 1);
-    setups.push({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
-      ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) });
+    picked.push({ s, rep });
   }
+  setups.push(...await Promise.all(picked.map(async ({ s, rep }) => ({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
+    ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) }))));
   // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
   await markLeads(env, c.id, setups, who.dev);
   return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups,
@@ -1900,8 +1949,10 @@ async function opinions(env, companyId, grp, dev) {
 /** [PLAZA-14][PLAZA-15] company()'s setups marked: each with its opinions, doubted ones, and each department's lead. */
 async function markLeads(env, companyId, setups, dev) {
   const byDept = new Map();
-  for (const s of setups) {
-    s.opinion = await opinions(env, companyId, s.id, dev);
+  // AS 1.29 [SRCH-05] read together.
+  const said = await Promise.all(setups.map((s) => opinions(env, companyId, s.id, dev)));
+  for (const [i, s] of setups.entries()) {
+    s.opinion = said[i];
     if (doubted(s)) {
       s.doubted = true;
       // A version people say is wrong has not settled, whatever its age.
@@ -1958,9 +2009,18 @@ async function searchLead(env, companyId) {
     sites: all_.length,
     lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
       roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
-      ...(main.doubted ? { doubted: true } : {}) },
+      ...(main.doubted ? { doubted: true } : {}), ...payWayOf(all_, main) },
   };
 }
+
+// AP 1.29 — [PAYF-08] 급여 방식 찾기: the company's pay way even when its main 대표 주기 has none (the pay came with another
+// 사업장's). Only which setup, its department and how many said 맞아요 (결정 D79: never its values). Older apps read lead.pay only.
+export function payWayOf(all_, main) {
+  if (!main || main.setup.pay !== undefined) return {};
+  const other = all_.filter((l) => l !== main && l.setup.pay !== undefined && !l.doubted).sort((a, b) => b.persons - a.persons)[0];
+  return other ? { payWay: { setup: other.id, dept: other.dept, ok: other.persons } } : {};
+}
+// AP 1.29 끝
 
 /** [PLAZA-15] Whether the department's rule in use has too many 달라요: then another version may take over by its own right. */
 async function activeDoubted(env, companyId, active) {
@@ -1974,24 +2034,217 @@ async function settleDept(env, companyId, deptNorm, now) {
 }
 // AH 1.27 끝
 
+// AS 1.29 시작
+// [SRCH-01..04] 1.29 묶음 AS (사용자 2026-10-27): "광장에 대표판이 있는데 회사 검색 시 뜨지 않는다 … 안 뜨는 게 아니라 늦게 떠서
+// 안 뜨는 것처럼 보인다". The search read each listed company's 대표 주기 one company and one version after another
+// (searchLead: about five reads per company, only the first five), so an answer took long enough for the app to give up on
+// it (the app's 2.5 s), and a company below the fifth came without its 대표 주기. Now every listed company's line is made
+// from five reads in all, sent together; a name is found by its Korean reading too; a search keeps a short edge copy; and
+// the most used companies are a list of their own for the app to keep, so a first user sees them before any answer.
+
+/** [SRCH-03] How long a search's answer may be kept at the edge (and by anything between): short, as a new setup should show. */
+export const SEARCH_EDGE_SECONDS = 30;
+/** [SRCH-04] The most used companies change slowly. */
+export const TOP_EDGE_SECONDS = 600;
+const SEARCH_CACHE = { "cache-control": `public, max-age=${SEARCH_EDGE_SECONDS}, stale-while-revalidate=300` };
+const TOP_CACHE = { "cache-control": `public, max-age=${TOP_EDGE_SECONDS}, stale-while-revalidate=3600` };
+/** [SRCH-04] How many companies the list of the most used has at most (about 300 bytes each). */
+export const TOP_MAX = 60;
+
+const namesFilled = new WeakMap();
+const NAMES_FILLED_MS = 5 * 60 * 1000;
+
+const LETTERS = {
+  a: "에이", b: "비", c: "씨", d: "디", e: "이", f: "에프", g: "지", h: "에이치", i: "아이", j: "제이", k: "케이", l: "엘", m: "엠",
+  n: "엔", o: "오", p: "피", q: "큐", r: "알", s: "에스", t: "티", u: "유", v: "브이", w: "더블유", x: "엑스", y: "와이", z: "제트",
+};
+/** English words read as a word, not letter by letter: the same list as the app's core CompanyMatch. */
+const WORDS = [["hyundai", "현대"], ["samsung", "삼성"], ["hanwha", "한화"], ["lotte", "롯데"], ["doosan", "두산"], ["posco", "포스코"],
+  ["emart", "이마트"], ["korail", "코레일"], ["kepco", "한전"], ["hanjin", "한진"], ["oil", "오일"], ["steel", "스틸"], ["power", "파워"],
+  ["chemical", "케미칼"], ["logis", "로지스"], ["tech", "테크"], ["eps", "이피에스"]];
+const WORD_OF = new Map(WORDS);
+
+function readWord(w) {
+  if (!w) return "";
+  if (WORD_OF.has(w)) return WORD_OF.get(w);
+  for (const [en, ko] of WORDS) {
+    const at = w.indexOf(en);
+    if (at >= 0 && en.length >= 3) return readWord(w.slice(0, at)) + ko + readWord(w.slice(at + en.length));
+  }
+  return [...w].map((c) => LETTERS[c] ?? c).join("");
+}
+
+/**
+ * [SRCH-02] How a name is said in Korean letters, as normName leaves it otherwise: GS칼텍스 → 지에스칼텍스, S-OIL → 에스오일.
+ * The app's core CompanyMatch.spoken does the same (AH-I1), so the phone and the server find the same companies.
+ */
+export function spoken(s) {
+  return normName(s).replace(/[a-z]+/g, readWord);
+}
+
+/** [SRCH-01] The search's 대표 주기 line for each of [companies], added to it (see searchLeads). */
+async function withLeads(env, companies) {
+  const lines = await searchLeads(env, companies.map((c) => c.id));
+  for (const c of companies) Object.assign(c, lines.get(c.id) ?? { users: 0 });
+}
+
+/**
+ * [SRCH-01] What searchLead says for one company, for many at once: the versions, what was sent and voted on them, who uses
+ * them and the company's users, five reads sent together whatever the number of companies or versions. The same answer as
+ * searchLead (a test holds them together); leadOf, doubted, support and tally decide as before.
+ */
+export async function searchLeads(env, ids) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const marks = ids.map((_, i) => `?${i + 1}`).join(", ");
+  const [rows, sent, votes, used, users] = await Promise.all([
+    all(env, `SELECT company_id, grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id IN (${marks}) AND withdrawn = 0 AND superseded = 0
+      UNION ALL SELECT r.company_id, r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id IN (${marks}) AND r.status = 'pending'
+        AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
+        AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
+      GROUP BY r.company_id, r.grp`, ...ids),
+    all(env, `SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE company_id IN (${marks}) AND status IN ('pending', 'adopted')`, ...ids),
+    all(env, `SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id IN (${marks})`, ...ids),
+    all(env, `SELECT company_id, grp, COUNT(*) AS n FROM uses WHERE company_id IN (${marks}) GROUP BY company_id, grp`, ...ids),
+    all(env, `SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses WHERE company_id IN (${marks})
+      UNION SELECT company_id, device FROM reports WHERE company_id IN (${marks}) AND status IN ('pending', 'adopted')) GROUP BY company_id`, ...ids),
+  ]);
+  const at = (c, g) => `${c}\u0001${g}`;
+  const backing = new Map();
+  const doubters = new Map();
+  const checked = new Map();
+  const add = (m, k, v) => m.set(k, [...(m.get(k) ?? []), v]);
+  for (const r of sent) {
+    add(backing, at(r.company_id, r.grp), { device: r.device, points: r.points, cluster: r.cluster });
+    if (r.verified === 1) checked.set(at(r.company_id, r.grp), (checked.get(at(r.company_id, r.grp)) ?? 0) + 1);
+  }
+  for (const v of votes) {
+    if (v.ok === 1) add(backing, at(v.company_id, v.grp), { device: v.device, points: v.verified === 1 ? 2 : 1, cluster: v.cluster });
+    else add(doubters, at(v.company_id, v.grp), v.device);
+  }
+  const uses = new Map(used.map((u) => [at(u.company_id, u.grp), u.n]));
+  const userCount = new Map(users.map((u) => [u.company_id, u.n]));
+  const byCompany = new Map();
+  for (const r of rows) {
+    const k = at(r.company_id, r.grp);
+    const s = tally(backing.get(k) ?? [], doubters.get(k) ?? []);
+    const n = uses.get(k) ?? 0;
+    add(byCompany, r.company_id, { id: r.grp, dept: r.dept, deptNorm: r.dept_norm, adopted: r.adopted === 1, setup: JSON.parse(r.setup),
+      persons: s.persons, bad: s.bad, uses: n, doubted: doubted(s),
+      support: support({ uses: n, ok: s.persons, bad: s.bad, verified: checked.get(k) ?? 0 }) });
+  }
+  for (const id of ids) {
+    const versions = byCompany.get(id) ?? [];
+    const leadsOf = [];
+    for (const k of new Set(versions.map((v) => v.deptNorm))) {
+      const list = versions.filter((v) => v.deptNorm === k);
+      const lead = leadOf(list);
+      const v = list.find((x) => x.id === lead) ?? list[0];
+      leadsOf.push({ ...v, doubted: lead === null });
+    }
+    out.set(id, leadLine(leadsOf, userCount.get(id) ?? 0));
+  }
+  return out;
+}
+
+/** [PLAZA-14] searchLead's answer from a company's department leads and its users. */
+function leadLine(all_, users) {
+  const main = all_.find((l) => l.deptNorm === "") ?? [...all_].sort((a, b) => b.persons - a.persons)[0];
+  if (!main) return { users };
+  const offs = main.setup.shiftTypes.filter((t) => t.off).map((t) => t.name);
+  return {
+    users,
+    sites: all_.length,
+    lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
+      roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
+      ...(main.doubted ? { doubted: true } : {}), ...payWayOf(all_, main) },
+  };
+}
+
+/** [SRCH-01] The one-company way searchLeads replaced, kept for the test that holds the two to the same answer. */
+export const searchLeadOne = (env, companyId) => searchLead(env, companyId);
+
+const topMemo = new WeakMap();
+
+/**
+ * [SRCH-04] GET /api/companies/top: the companies the most phones use or sent (each phone once), with their 대표 주기 line as the
+ * search gives it, at most [TOP_MAX] (`?n=` fewer). Made at most every ten minutes per Worker and kept at the edge as long:
+ * the app keeps it after its first month is drawn (Wi-Fi, not 절전), so the companies most people look for show on the
+ * first letter, before any answer. Nothing about a phone is in it.
+ */
+async function topCompanies(env, url) {
+  const n = Math.min(TOP_MAX, Math.max(1, Number.parseInt(url.searchParams.get("n") ?? `${TOP_MAX}`, 10) || TOP_MAX));
+  const key = env.DB ?? env;
+  const kept = topMemo.get(key);
+  if (kept && Date.now() - kept.at < TOP_EDGE_SECONDS * 1000) return json({ ...kept.body, companies: kept.body.companies.slice(0, n) }, 200, TOP_CACHE);
+  const rows = await all(env, `SELECT c.id, c.name, u.n,
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+    FROM (SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses
+      UNION SELECT company_id, device FROM reports WHERE status IN ('pending', 'adopted')) GROUP BY company_id ORDER BY n DESC LIMIT ?) u
+    JOIN companies c ON c.id = u.company_id
+    WHERE c.hidden = 0 AND c.merged_into IS NULL AND c.kind != 'topic'
+    ORDER BY u.n DESC, c.name`, TOP_MAX * 2);
+  const companies = rows.filter((c) => c.adopted > 0 || c.pending > 0).slice(0, TOP_MAX)
+    .map((c) => ({ id: c.id, name: c.name, alias: null, adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
+  await withLeads(env, companies);
+  const body = { companies, at: new Date().toISOString() };
+  topMemo.set(key, { at: Date.now(), body });
+  return json({ ...body, companies: companies.slice(0, n) }, 200, TOP_CACHE);
+}
+
+/**
+ * [SRCH-03] A public GET answered from the edge's copy (Cloudflare's Cache API) when one is there and still fresh, else made
+ * and kept for [seconds]. Only answers that are the same for everyone come here (no X-Device). Off where there is no Cache
+ * API (the tests on Node, a local run), and a cache that fails never fails the answer.
+ */
+async function edgeCached(request, ctx, seconds, make) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return make();
+  const url = new URL(request.url);
+  // One copy for every way of writing the same search.
+  const q = url.searchParams.get("q");
+  if (q !== null) url.searchParams.set("q", isChoseong(q) ? q.replace(/\s/g, "") : normName(q));
+  url.searchParams.sort();
+  const key = new Request(url.toString(), { method: "GET" });
+  try {
+    const hit = await cache.match(key);
+    if (hit) return hit;
+  } catch {
+    // Read afresh.
+  }
+  const res = await make();
+  if (res.status === 200) {
+    const copy = res.clone();
+    const put = cache.put(key, copy).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(put);
+    else await put;
+  }
+  return res;
+}
+// AS 1.29 끝
+
 
 async function state(env, companyId, grp, threshold, adopted) {
-  const s = await score(env, companyId, grp);
-  const posts = await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp);
-  // [PLZ-08] Who stands behind it: how many sent it, how many checked it on a pay slip, how many use it,
-  // and the names they chose to be shown by (no one else's).
-  const who = await one(env, `SELECT
-      (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
-      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
-      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
-        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
-      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp);
-  const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
-      WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
-  // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
-  const span = await one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
-      SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
-      UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
+  // AS 1.29 [SRCH-05] Its five reads go together.
+  const [s, posts, who, names, span] = await Promise.all([
+    score(env, companyId, grp),
+    one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp),
+    // [PLZ-08] Who stands behind it: how many sent it, how many checked it on a pay slip, how many use it,
+    // and the names they chose to be shown by (no one else's).
+    one(env, `SELECT
+        (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
+        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
+        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
+          + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
+        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp),
+    all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
+        WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp).then((l) => l.map((n) => n.nick)),
+    // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
+    one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
+        SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
+        UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp),
+  ]);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
     ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
     // [PLAZA-05] What decides the 대표 판 of a department (D74): phones using it, people behind it, less 달라요.
@@ -2107,8 +2360,8 @@ async function companyFor(env, name, now, r = {}) {
   }
   const id = randomId(12);
   const kind = r.topic ? "topic" : r.job === "nurse" ? "hospital" : "company";
-  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
-    id, name, norm, now, kind, r.job ?? "", r.region ?? "");
+  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region, said) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
+    id, name, norm, now, kind, r.job ?? "", r.region ?? "", spoken(name) || "-");
   return one(env, "SELECT * FROM companies WHERE id = ?", id);
 }
 
@@ -2144,11 +2397,12 @@ async function clusterFor(env, companyId, net) {
  * networks they sent from. Someone who says 달라요 does not count for it.
  */
 async function score(env, companyId, grp) {
-  const rows = await all(env, `
+  // AS 1.29 [SRCH-05] both reads together.
+  const [rows, doubters] = await Promise.all([all(env, `
     SELECT device, points, cluster FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')
     UNION ALL
-    SELECT device, CASE WHEN verified = 1 THEN 2 ELSE 1 END, cluster FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1`, companyId, grp);
-  const doubters = (await all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp)).map((v) => v.device);
+    SELECT device, CASE WHEN verified = 1 THEN 2 ELSE 1 END, cluster FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1`, companyId, grp),
+  all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp).then((l) => l.map((v) => v.device))]);
   return tally(rows, doubters);
 }
 
@@ -3598,6 +3852,9 @@ async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
   if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams, env.actor?.id ?? ""));
   if (path === "/inquiries/bulk" && method === "POST") return inquiryBulk(request, env, now);
+  // AT 1.29 [ADMCP-01][ADMCP-03] 문의 복사: read whole (seeing is enough), then 복사함 (changing questions).
+  if (path === "/inquiries/export" && method === "GET") return json(await inquiryExport(env, url.searchParams));
+  if (path === "/inquiries/copied" && method === "POST") return inquiryCopied(request, env, now);
   // [SRV-06] A photo sent with a question, for an admin who may read questions.
   const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
   if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
@@ -3767,6 +4024,9 @@ async function adminInquiryView(env, row) {
     ...view,
     events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
+    // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
+    ...copyFields(row),
+    sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
   };
   if (view.waitingHours !== null) {
     const last = view.messages[view.messages.length - 1];
@@ -3831,8 +4091,12 @@ async function inquiryList(env, params, actorId = "") {
   const who = ["mine", "free"].includes(params.get("who")) ? params.get("who") : "";
   const sort = INQUIRY_SORTS.includes(params.get("sort")) ? params.get("sort") : "default";
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  // AT 1.29 [ADMCP-02] One kind (문제 신고만), copied or not yet (복사함), and one sending phone (같은 기기).
+  const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
+  const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
+  const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
   const now = Date.now();
-  const [rows, statusRows, slaRows, typing] = (await batch(env, [stmt(env, `SELECT i.*,
+  const [rows, statusRows, slaRows, typing, fresh] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -3840,13 +4104,19 @@ async function inquiryList(env, params, actorId = "") {
       (SELECT COUNT(*) FROM inquiry_notes n WHERE n.inquiry_id = i.id) AS notes
     FROM inquiries i
     WHERE (?1 IS NULL OR i.status = ?1)
-      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
+      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\')
+        OR i.info LIKE ?3 ESCAPE '\\' OR i.id = ?2)
       AND (?4 = '' OR (?4 = 'mine' AND i.assignee = ?5) OR (?4 = 'free' AND i.assignee IS NULL))
       AND (?6 = 0 OR (i.status = 'open' AND i.updated_at < ?6))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late),
+      AND (?7 IS NULL OR i.kind = ?7)
+      AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
+      AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
   slaQuery(env),
-  stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now)])).map((r) => r.results);
+  stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now),
+  // AT 1.29 [ADMCP-04] 복사 전 문제 제보, whatever the filter: how many, and how many came today.
+  stmt(env, FRESH_BUGS_SQL, todayStart(now))])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
   for (const r of statusRows) {
     if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
@@ -3881,6 +4151,8 @@ async function inquiryList(env, params, actorId = "") {
       rating: r.rating ?? 0,
       // [ADMIN-16] Another admin writing an answer to it right now.
       typing: writing[r.id] ?? [],
+      // AT 1.29 [ADMCP-03] 복사함 (when, by whom) and [ADMCP-06] a short mark of the phone that sent it.
+      ...copyFields(r),
     };
   });
   // How many of this view are in each topic, so the filter shows where the questions pile up.
@@ -3902,8 +4174,121 @@ async function inquiryList(env, params, actorId = "") {
   const { items, next } = paged(shown, page(params));
   return { counts, topics, topicNames: TOPIC_NAMES, inquiries: items, total: shown.length, next, sort, sla: targets,
     // [ADMUX-02] What the server took the filter to be, so the app shows the status 놓친 것 fixed.
-    status: status ?? "", late: Boolean(late) };
+    status: status ?? "", late: Boolean(late),
+    // AT 1.29 [ADMCP-02][ADMCP-04] The new filters as taken, and 복사 전 문제 제보 for the strip above the list.
+    kind: kind ?? "", copied, sender, fresh: { bugs: fresh[0]?.n ?? 0, today: fresh[0]?.today ?? 0 } };
 }
+
+// AT 1.29 시작
+// [ADMCP-01]~[ADMCP-06] 문의 복사: a question (or many) read whole to copy into a development task, 복사함 marked
+// on the ones copied (with, if asked, a 개발사항 made from them and their status changed in the same step), and
+// the open problem reports nobody copied yet counted for the badges and the list.
+
+/** Open or answered 문제 신고 nobody copied yet, and how many of them came since ?1 (today's start). */
+const FRESH_BUGS_SQL = `SELECT COUNT(*) AS n, COALESCE(SUM(created_at >= ?1), 0) AS today FROM inquiries
+  WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'`;
+
+const todayStart = (now) => Date.parse(`${kstDay(now)}T00:00:00+09:00`);
+
+/**
+ * [ADMCP-03] 복사함 as the lists and a question show it, and [ADMCP-06] the sending phone as six letters of the
+ * hash the server already keeps: enough to see that two questions came from one phone, nothing that names it.
+ */
+const copyFields = (row) => ({
+  copied: row.copied_at ? { at: iso(row.copied_at), by: row.copied_by ?? "" } : null,
+  sender: String(row.device ?? "").slice(0, 6),
+});
+
+/** At most this many questions in one copy, like the other bulk steps (DEV.bulk). */
+const COPY_MOST = 100;
+
+/** The ids in [v] (an array, or "a,b,c" from an address): 1 to 100 question ids, each once, or a refusal. */
+function copyIds(v) {
+  const list = Array.isArray(v) ? v : String(v ?? "").split(",").filter(Boolean);
+  const ids = [...new Set(list)];
+  if (!ids.length || ids.length > COPY_MOST || ids.some((id) => typeof id !== "string" || !/^[A-Za-z0-9]{22}$/.test(id))) refuse("ids", "ids");
+  return ids;
+}
+
+/**
+ * [ADMCP-01][ADMCP-02] GET /inquiries/export?ids=: the questions whole (thread, what came with it, notes, the
+ * timeline), in the order asked, for the app to write as one text. Reading only: 복사함 is marked by /copied
+ * once the text is really on the clipboard. Anyone who may see questions may copy them.
+ */
+async function inquiryExport(env, params) {
+  const ids = copyIds(params.get("ids"));
+  const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const out = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) continue;
+    const { templates, typing, ...view } = await adminInquiryView(env, row);
+    out.push(view);
+  }
+  return { inquiries: out, missing: ids.length - out.length };
+}
+
+/**
+ * [ADMCP-03] POST /inquiries/copied {ids, dev?: {title, body}, item?, status?, assign?}: 복사함 on each (now, by
+ * me), and in the same step, when asked, a new 개발사항 made from them or an existing one they join (both need
+ * 개발사항 고치기), closed or opened again, and taken by me where nobody holds them. One activity line for the lot.
+ */
+async function inquiryCopied(request, env, now) {
+  const body = await readJson(request, 32 * 1024);
+  const ids = copyIds(body.ids);
+  if (body.status !== undefined && body.status !== null && !["open", "closed"].includes(body.status)) refuse("status", "status");
+  const wantsDev = (body.dev !== undefined && body.dev !== null) || (body.item !== undefined && body.item !== null);
+  if (wantsDev && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
+  const rows = await all(env, `SELECT id, assignee FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  if (!rows.length) return json({ error: "not_found" }, 404);
+  const name = actorName(env);
+  const a = env.actor;
+  let item = null;
+  if (body.item !== undefined && body.item !== null) {
+    item = typeof body.item === "string" ? await one(env, "SELECT id, title FROM dev_items WHERE id = ? AND deleted_at IS NULL", body.item) : null;
+    if (!item) return json({ error: "not_found" }, 404);
+  } else if (body.dev !== undefined && body.dev !== null) {
+    if (typeof body.dev !== "object" || Array.isArray(body.dev)) refuse("title", "title");
+    const title = plainText(body.dev.title, DEV.title, "title", true);
+    const text = plainText(body.dev.body, DEV.body, "body");
+    item = { id: `d${randomId(15)}`, title };
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, item.id, title, text, a.id, name, now, now),
+      devEvent(env, item.id, now, "create", { title, body: cut(text) }),
+    ]);
+    await audit(env, now, "dev_create", title, item.id);
+  }
+  const found = rows.map((r) => r.id);
+  const marks = found.map(() => "?").join(", ");
+  const stmts = [stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...found)];
+  if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...found));
+  // Only the ones nobody holds: copying is no reason to take a question from another admin.
+  const free = body.assign === true ? rows.filter((r) => !r.assignee).map((r) => r.id) : [];
+  if (free.length) {
+    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${free.map(() => "?").join(", ")})`, a.id, name, ...free));
+  }
+  await batch(env, stmts);
+  let linked = 0;
+  if (item) {
+    for (const id of found) {
+      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", item.id, id, name, now);
+      if (r.meta.changes) {
+        linked++;
+        await devEvent(env, item.id, now, "link", { inquiry: id }).run();
+      }
+    }
+    await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
+  }
+  const status = body.status === "open" || body.status === "closed" ? body.status : null;
+  const steps = [`${found.length}건`, item ? `개발사항 ${linked}건 연결` : "", status ? (status === "closed" ? "닫음" : "다시 엶") : "",
+    free.length ? `${free.length}건 맡음` : ""].filter(Boolean).join(" · ");
+  await audit(env, now, "inquiry_copy", item ? item.title : "", steps);
+  return json({ marked: found.length, skipped: ids.length - found.length, copied: { at: iso(now), by: name },
+    item: item ? { id: item.id, title: item.title } : null, linked, status, assigned: free.length });
+}
+// AT 1.29 끝
 
 const SLA_SQL = `SELECT key, value FROM settings WHERE key IN (${Object.keys(SLA.keys).map((k) => `'${slaSetting(k)}'`).join(", ")})`;
 const slaQuery = (env) => env.DB.prepare(SLA_SQL);
@@ -4424,14 +4809,16 @@ async function signedRoute(request, env, url, path, method, now, session) {
     await audit(env, now, "logout_all", actor.id);
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
-  if (path === "/overview" && method === "GET") return json(await overview(env, actor));
-  // AN 1.28 [ADMUX-37] /overview in three: numbers for the menu, the 오늘 screen, and what rarely changes.
+  // AT 1.29 [ADMCP-07] AN-D6: the 1.27 app's /overview and /inbox are gone; the app reads /badges, /today and /basics
+  // since 1.28. A tab still open from back then gets 410 with where things went and this build; reloading it gets the new app.
+  if ((path === "/overview" || path === "/inbox") && method === "GET") {
+    return json({ error: "moved", to: path === "/overview" ? "/api/admin/badges" : "/api/admin/today", build: adminBuild() }, 410);
+  }
+  // AN 1.28 [ADMUX-37] What 1.27's /overview was, in three: numbers for the menu, the 오늘 screen, and what rarely changes.
   if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
   if (path === "/today" && method === "GET") return json(await today(env, actor, now));
   if (path === "/basics" && method === "GET") return json(await basics(env));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
-  // [ADMUX-17] 할 일 받은함: everything this admin may act on, nearest deadline first.
-  if (path === "/inbox" && method === "GET") return json(await inbox(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") return json(serverState(env));
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
@@ -4504,6 +4891,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/metrics" && method === "GET") {
     const m = await metrics(env, url, now);
     m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
+    m.photoWrong = await photoWrongMetrics(env, m.from, m.to); // AQ 1.29 [PHOTO-10]
     return json(m);
   }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
@@ -5142,7 +5530,7 @@ function auditAbout(r) {
 
 /**
  * AN 1.28 [ADMUX-37] The counts behind the developer app's menu numbers, each with the area an admin needs to see
- * it. /badges reads only these; /overview reads them among its other numbers.
+ * it. /badges reads them in one trip (AT 1.29: /overview, which read them too, is gone).
  */
 const BADGE_SQL = {
   pending: ["review", "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')"],
@@ -5160,127 +5548,9 @@ const BADGE_SQL = {
   waiting: ["owner", "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'"],
   // [MON-09] Admins' phones waiting for the owner's 승인.
   phones: ["owner", "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'"],
+  // AT 1.29 [ADMCP-04] 문제 신고 not closed that nobody copied for development yet (오늘's tile and 문의's strip).
+  bugsUncopied: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'"],
 };
-
-/** The home screen's numbers, only for the areas this admin can see. */
-async function overview(env, actor) {
-  // One trip to the database for every number: the home screen waits on this call.
-  const now = Date.now();
-  const today = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
-  const counts = { settings: `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`,
-    // [ADMUX-06] 오늘 내가 처리한 것 (sign-ins left out), and the answer targets.
-    doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, today],
-    sla: SLA_SQL };
-  // [ADMIN-17] The home screen's 최근 활동, so it does not read 50 lines of /audit for ten.
-  if (can(actor, "audit")) counts.recent = `${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`;
-  if (can(actor, "review")) {
-    for (const k of ["pending", "asks", "flagged"]) counts[k] = BADGE_SQL[k][1];
-    counts.reports = "SELECT COUNT(*) AS n FROM reports";
-    counts.queueGroups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
-      FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 5`;
-  }
-  if (can(actor, "inquiries")) {
-    counts.inquiries = BADGE_SQL.inquiries[1];
-    // [ADMIN-12] 오늘 할 일: the waiting questions I took, and the ones nobody took yet.
-    counts.inquiriesMine = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee = ?", actor.id];
-    counts.inquiriesFree = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NULL";
-    // [INQ-04] 놓친 문의 on the home screen, so nothing waits past a day unseen.
-    counts.inquiriesLate = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND updated_at < ?", Date.now() - INQUIRY.lateMs];
-    counts.inquiriesBad = "SELECT COUNT(*) AS n FROM inquiries WHERE rating = -1 AND status != 'closed'";
-    // [ADMUX-06] New questions today and yesterday, the waiting ones for the 할 일 queue, and who holds how many.
-    counts.inquiriesToday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ?", today];
-    counts.inquiriesYesterday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ? AND created_at < ?", today - DAY, today];
-    counts.queueInquiries = `SELECT i.id, i.kind, i.updated_at, i.assignee, i.assignee_name, i.same,
-        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
-        (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
-      FROM inquiries i WHERE i.status = 'open' ORDER BY i.updated_at LIMIT 300`;
-    counts.assigned = "SELECT assignee AS id, assignee_name AS name, COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NOT NULL GROUP BY assignee ORDER BY n DESC";
-  }
-  if (can(actor, "dev")) {
-    // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
-    counts.devTodo = BADGE_SQL.devTodo[1];
-    counts.devDoing = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'doing'";
-    counts.devMine = ["SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status IN ('todo', 'doing') AND assignee = ?", actor.id];
-  }
-  if (can(actor, "rewards")) counts.owed = BADGE_SQL.owed[1];
-  if (can(actor, "community")) {
-    // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
-    counts.flaggedPosts = BADGE_SQL.flaggedPosts[1];
-    counts.flaggedPostsLate = ["SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND status = 'hidden' AND hide_reason = 'flags' AND hidden_at < ?",
-      Date.now() - (LIMITS.hiddenReviewDays - 7) * DAY];
-    counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
-    counts.queuePosts = `SELECT p.id, p.body, p.flags, p.status, p.created_at, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-      WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at LIMIT 5`;
-  }
-  if (can(actor, "companies")) {
-    counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
-    counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
-    counts.versionConflicts = BADGE_SQL.versionConflicts[1];
-  }
-  // [ADMIN-14] 이달 할 일 still open on the home screen.
-  if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
-  if (actor.owner) {
-    counts.waiting = BADGE_SQL.waiting[1];
-    counts.phones = BADGE_SQL.phones[1];
-  }
-  // AM 1.28 [FLAG-22][ADMUX-27] the flags ride in the same trip too (billingLive, 홈 경고, 메뉴 숫자).
-  Object.assign(counts, FLAG_STORE_SQL);
-  // [ADMUX-17] 받은함's statements ride in the same trip, for the menu badge (what is past its deadline).
-  for (const [k, v] of Object.entries(inboxQueries(actor, now))) counts[`inbox_${k}`] = v;
-  const keys = Object.keys(counts);
-  const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
-  const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
-  // AH 1.27 [PLAZA-15] doubt: when 달라요 take a version out of the lead (AH-D7), shown on the settings page.
-  const out = { me: me(actor), settings: readSettings(got.settings), doubt: DOUBT, reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
-    flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
-  const rows = new Set([...Object.keys(FLAG_STORE_SQL), "settings", "waiting", "phones", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
-  for (const k of keys) {
-    if (rows.has(k) || k.startsWith("inbox_")) continue;
-    out[k] = got[k][0].n;
-  }
-  // [ADMUX-08] The developer app's build, so an open app can say a new one is out.
-  out.build = adminBuild();
-  // [ADMUX-17] What in 받은함 is past its deadline, for the menu badge.
-  out.inboxLate = inboxItems(Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]])), actor, now).counts.late;
-  out.sla = readSla(got.sla);
-  if (got.recent) {
-    out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
-      detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
-  }
-  // [ADMUX-06] 할 일: the waiting questions closest to their target, the oldest setups to review and the
-  // most flagged posts, each with what the home screen needs to act on it there.
-  const queue = [];
-  let lateToday = 0;
-  if (got.queueInquiries) {
-    const end = today + DAY;
-    for (const r of got.queueInquiries) {
-      if (r.last !== "user") continue;
-      const left = slaLeft(r.kind, r.updated_at, out.sla, now);
-      if (r.updated_at + out.sla[slaKey(r.kind)] * HOUR < end) lateToday++;
-      queue.push({ type: "inquiry", id: r.id, kind: r.kind, text: [...(r.first ?? "")].slice(0, 80).join(""), slaLeft: left, same: r.same ?? 0,
-        assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null, at: iso(r.updated_at) });
-    }
-    queue.sort((a, b) => a.slaLeft - b.slaLeft);
-    queue.splice(8);
-    out.assigned = got.assigned.map((a) => ({ id: a.id, name: a.name ?? "", n: a.n }));
-    out.slaLateToday = lateToday;
-  }
-  for (const g of got.queueGroups ?? []) {
-    queue.push({ type: "group", id: `${g.company_id}/${g.grp}`, company: g.name, dept: g.dept, n: g.n, at: iso(g.since) });
-  }
-  for (const p of got.queuePosts ?? []) {
-    queue.push({ type: "post", id: p.id, company: p.name, text: [...p.body].slice(0, 80).join(""), flags: p.flags, hidden: p.status === "hidden", at: iso(p.created_at) });
-  }
-  out.queue = queue;
-  if (actor.owner) out.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
-  // [MON-10] Every screen shows whether 정식 출시 is on: AM 1.28 [FLAG-22] the billing flag by the server's view.
-  // [ADMUX-27][FLAG-28] flagAlerts (legal flags on for under 24 hours) and flagsDue for the home screen and the menu.
-  const flagStoreNow = storeFrom(got.flagOverrides, got.flagChecks, got.flagPolicy, got.flagState);
-  out.billingLive = serverEval(flagStoreNow, "billing", now).on;
-  Object.assign(out, await flagOverview(env, actor, now, flagStoreNow));
-  if (got.opsDone) out.opsLeft = opsItems(kstDay(Date.now()).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
-  return out;
-}
 
 // AN 1.28 시작
 
@@ -5319,7 +5589,7 @@ async function badges(env, actor, now) {
   for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
   if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
-  // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as /overview's flagsDue) and the
+  // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as 1.27 /overview's flagsDue) and the
   // legal flags on for under 24 hours (오늘's top card), for admins who may see 기능 관리.
   Object.assign(data, await flagOverview(env, actor, now, store));
   if (kept.size >= BADGES.maxKept) kept.clear();
@@ -5651,7 +5921,7 @@ async function createCompany(request, env, now) {
   const taken = await named(env, norm);
   if (taken) return json({ error: "exists", company: taken }, 409);
   const id = randomId(12);
-  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at) VALUES (?, ?, ?, 0, NULL, ?)", id, name, norm, now);
+  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, said) VALUES (?, ?, ?, 0, NULL, ?, ?)", id, name, norm, now, spoken(name) || "-");
   await audit(env, now, "company_create", id, name);
   return json({ id, name }, 201);
 }
@@ -5669,7 +5939,7 @@ async function updateCompany(request, env, id, now) {
     // The old name keeps finding the company.
     if (norm !== c.norm) stmts.push(stmt(env, "INSERT OR IGNORE INTO aliases (norm, company_id, name) VALUES (?, ?, ?)", c.norm, id, c.name));
     stmts.push(stmt(env, "DELETE FROM aliases WHERE norm = ? AND company_id = ?", norm, id));
-    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '' WHERE id = ?", name, norm, id));
+    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '', said = '' WHERE id = ?", name, norm, id));
   }
   if (body.hidden !== undefined) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
@@ -7261,6 +7531,88 @@ async function startupMetrics(env, from, to) {
 }
 // AO 1.28 끝 --------------------------------------------------------------------------------------------------
 
+// AQ 1.29 시작 ------------------------------------------------------------------------------------------------
+/**
+ * [PHOTO-09][PHOTO-10] The screens with a '사진이 달라요' button and the reasons it offers, the same codes as the app's
+ * core/stats/PhotoWrong.kt (PhotoScreen, PhotoWrongReason). Anything else is refused.
+ */
+export const PHOTO_SCREENS = {
+  roster: "근무표 사진", payslip: "명세서 사진", rules: "회사 규칙 사진", pay_table: "호봉표 사진",
+  invest: "투자 캡처", tax: "세금 서류 사진", receipt: "영수증 사진",
+};
+export const PHOTO_REASONS = {
+  numbers: "숫자가 틀려요", missing: "빠진 칸이 있어요", extra: "없는 칸이 생겼어요", names: "이름이나 종류가 틀려요",
+  nothing: "거의 읽지 못했어요", other: "다른 점이 있어요",
+};
+/** Rows a bundle may carry, days a phone keeps them (the app's PhotoWrongBook), presses a row, bundles a network a day. */
+const PHOTO_WRONG = { rows: 60, keepDays: 60, count: 99, perNetworkDay: 30, bytes: 8 * 1024 };
+
+/**
+ * [PHOTO-10] `{v:1, app:"1.29.0", counts:[{day, screen, reason, n}]}`, sent by the app once 처리방침 3.3 lets it (flag
+ * photo.wrong). Added to the day's totals; the same bundle sent again the same day (after a timeout) counts once.
+ */
+async function photoWrong(request, env) {
+  const body = await readJson(request, PHOTO_WRONG.bytes);
+  if (body.v !== 1) refuse("version", "v");
+  if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
+  if (!Array.isArray(body.counts) || body.counts.length < 1 || body.counts.length > PHOTO_WRONG.rows) refuse("counts", "counts");
+  const now = Date.now();
+  const latest = kstDay(now + DAY);
+  const oldest = kstDay(now - (PHOTO_WRONG.keepDays + 1) * DAY);
+  const rows = new Map();
+  for (const c of body.counts) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) refuse("count", "counts");
+    if (typeof c.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(c.day) || c.day > latest || c.day < oldest) refuse("day", "day");
+    if (typeof c.screen !== "string" || !Object.hasOwn(PHOTO_SCREENS, c.screen)) refuse("screen", "screen");
+    if (typeof c.reason !== "string" || !Object.hasOwn(PHOTO_REASONS, c.reason)) refuse("reason", "reason");
+    if (!Number.isInteger(c.n) || c.n < 1 || c.n > PHOTO_WRONG.count) refuse("n", "n");
+    const key = `${c.day}|${c.screen}|${c.reason}`;
+    rows.set(key, Math.min(PHOTO_WRONG.count, (rows.get(key) ?? 0) + c.n));
+  }
+  const net = await network(request, env, now);
+  if (!(await allow(env, `photo-wrong|${net.day}`, PHOTO_WRONG.perNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const bundle = (await sha256(`photo-wrong|${kstDay(now)}|${JSON.stringify(body)}`)).slice(0, 32);
+  if (!(await allow(env, `bundle|${bundle}`, 1, DAY, now))) return json({ ok: true, again: true });
+  const list = [...rows].map(([k, n]) => [...k.split("|"), n]);
+  const stmts = [];
+  // D1 binds at most 100 values a query: 20 rows of five.
+  for (let i = 0; i < list.length; i += 20) {
+    const part = list.slice(i, i + 20);
+    stmts.push(stmt(env, `INSERT INTO photo_wrong (day, app, screen, reason, total) VALUES ${part.map(() => "(?, ?, ?, ?, ?)").join(", ")}
+      ON CONFLICT (day, app, screen, reason) DO UPDATE SET total = total + excluded.total`,
+    ...part.flatMap(([day, screen, reason, n]) => [day, body.app, screen, reason, n])));
+  }
+  await batch(env, stmts);
+  return new Response(null, { status: 204 });
+}
+
+/** [PHOTO-10] 지표 › 사진이 달라요: totals per day, per screen (with its reasons) and per app version, from..to. */
+async function photoWrongMetrics(env, from, to) {
+  const rows = await all(env, `SELECT day, app, screen, reason, SUM(total) AS total FROM photo_wrong
+    WHERE day BETWEEN ? AND ? GROUP BY day, app, screen, reason`, from, to);
+  const days = new Map();
+  const screens = new Map();
+  const apps = new Map();
+  let total = 0;
+  for (const r of rows) {
+    total += r.total;
+    days.set(r.day, (days.get(r.day) ?? 0) + r.total);
+    apps.set(r.app, (apps.get(r.app) ?? 0) + r.total);
+    if (!screens.has(r.screen)) screens.set(r.screen, { screen: r.screen, label: PHOTO_SCREENS[r.screen] ?? r.screen, total: 0, reasons: {} });
+    const s = screens.get(r.screen);
+    s.total += r.total;
+    s.reasons[r.reason] = (s.reasons[r.reason] ?? 0) + r.total;
+  }
+  return {
+    total,
+    days: [...days].sort((a, b) => a[0].localeCompare(b[0])).map(([day, n]) => ({ day, total: n })),
+    screens: [...screens.values()].sort((a, b) => b.total - a.total),
+    apps: [...apps].sort((a, b) => appOrder(a[0], b[0])).map(([app, n]) => ({ app, total: n })),
+    reasons: PHOTO_REASONS,
+  };
+}
+// AQ 1.29 끝 --------------------------------------------------------------------------------------------------
+
 /**
  * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share
  * is phone-days that did it within 28 days over all phone-days: about how many of the phones in use
@@ -7771,14 +8123,7 @@ function inboxQueries(actor, now) {
   return q;
 }
 
-async function inbox(env, actor, now) {
-  const q = inboxQueries(actor, now);
-  const keys = Object.keys(q);
-  const res = await batch(env, keys.map((k) => (Array.isArray(q[k]) ? stmt(env, ...q[k]) : env.DB.prepare(q[k]))));
-  return inboxItems(Object.fromEntries(keys.map((k, i) => [k, res[i].results])), actor, now);
-}
-
-/** [ADMUX-17] The list from what [inboxQueries] read (also read inside the overview's one trip). */
+/** [ADMUX-17] The list from what [inboxQueries] read (inside /today's one trip). */
 function inboxItems(got, actor, now) {
   const items = [];
   const add = (item) => items.push({ due: null, ...item, at: iso(item.at), ...(item.due ? { due: iso(item.due) } : {}) });
@@ -8216,11 +8561,14 @@ export const FLAG_CATALOG = CORE_FLAGS;
 /** The keys of the contract (통합계획 2-1) and the integrator's stats.more; free.<FEATURE> are made on demand. */
 export const FLAG_KEYS = FLAG_CATALOG.map((f) => f.key);
 
-/** [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>. */
-const FREE_FEATURES = { NO_ADS: "광고 없음", PAYSLIP_MATCH: "명세서 대조", PAY_RULE_IMPORT: "임금 규칙 자동 인식", PAY_BULK_EDIT: "값 일괄 적용",
-  MONEY_STATS: "돈 통계", MORE_CALENDARS: "달력 여러 개", PAY_REPORT: "급여 리포트 PDF·CSV", WORK_COMPARE: "근무·급여 비교",
-  DEVICE_CALENDAR: "휴대폰 캘린더에 근무 쓰기", ICS_FEED: "캘린더 구독 주소", AUTO_BACKUP: "매일 자동 백업", MORE_LINKS: "공유 링크 여러 개, 1년까지",
-  ROSTER_PDF: "근무표 PDF", SURE_ALARM: "끄기 미션·일어났는지 확인", LEAVE_PAYOUT: "미사용 연차수당 계산", TAX_FORECAST: "세금 예측·실수령" };
+// AU 1.29
+/**
+ * [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>.
+ * [NXT-03] The names are core's ProFeatures (CORE_FEATURES, made by FlagCatalogExportTest), so the developer app and
+ * the phone's 진단 name a free.<FEATURE> row the same way.
+ */
+const FREE_FEATURES = CORE_FEATURES;
+// AU 1.29 끝
 /** [FLAG-34] free.<FEATURE>, the same pattern as core FlagCatalog.free. */
 const FREE_KEY = new RegExp(CORE_FREE.pattern);
 
@@ -8242,7 +8590,7 @@ function flagDef(key) {
  * [FLAG-34] The versions the app ships with (core PolicyCalendar.SEED: 3.1, 3.2) take their dates from it; 3.2's are a
  * placeholder until 순번 459 fixes them (관리자 앱에서 고쳐요).
  */
-const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true };
+const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true, "3.3": false };
 const POLICY_CALENDAR = [
   { version: "2.5", posted: "2026-10-22", effective: "2026-11-21", heldUntil: null },
   { version: "3.0", posted: "2026-10-25", effective: "2026-11-24", heldUntil: null },
@@ -8790,10 +9138,12 @@ async function flagEffects(env, actor, now) {
   const pivots = measured.map((r) => store.state.get(r.key).since);
   const lo = pivots.length ? Math.min(...pivots) - 7 * DAY : now;
   const hi = pivots.length ? Math.max(...pivots) + 7 * DAY : now;
-  const [bugs, errors] = pivots.length ? (await batch(env, [
-    stmt(env, "SELECT created_at FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", lo, hi),
+  const [bugs, errors, flips] = pivots.length ? (await batch(env, [
+    stmt(env, "SELECT created_at, info FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", lo, hi),
     stmt(env, "SELECT key, count FROM counters WHERE key >= ? AND key <= ?", `errors|${kstDay(lo)}`, `errors|${kstDay(hi)}`),
-  ])).map((r) => r.results) : [[], []];
+    // AU 1.29 [NXT-07]: whether `since` is a turn the server saw (flagTick's audit line) or only when it first looked.
+    stmt(env, "SELECT target, at FROM audit WHERE action IN ('flag_auto_on', 'flag_auto_off') AND at >= ?", lo + 7 * DAY),
+  ])).map((r) => r.results) : [[], [], []];
   const around = (pivot) => {
     const b = bugs.filter((x) => x.created_at >= pivot - 7 * DAY && x.created_at < pivot + 7 * DAY);
     const e = errors.filter((x) => x.key.slice(7) >= kstDay(pivot - 7 * DAY) && x.key.slice(7) <= kstDay(pivot + 7 * DAY));
@@ -8804,10 +9154,60 @@ async function flagEffects(env, actor, now) {
   return {
     serverTime: iso(now), statsPhones: shares.base, flagsReach: can(actor, "flags"),
     flags: rows.map((r) => ({ key: r.key, name: r.name, group: r.group, risk: r.risk, state: r.state, on: r.on, onShare: r.onShare,
-      compare: store.state.get(r.key)?.since ? around(store.state.get(r.key).since) : null })),
+      compare: store.state.get(r.key)?.since ? { ...around(store.state.get(r.key).since), split: bugSplit(store, r, bugs, flips) } : null })),
   };
 }
 // AM 1.28 끝
+
+// AU 1.29
+/**
+ * [NXT-07] AM 4-3: the problem reports of the same 7 days before and after, split by whether the flag was on for the
+ * phone that sent them, as far as the server can tell from what it already keeps (처리방침 3.2 1-3항: the time the
+ * report came and the app version that goes with every question), nothing new asked of the phone:
+ * - off: sent before the server saw the flag turn on (after it saw it turn off), or from an app version outside the
+ *   flag's range (the override's minApp/maxApp, an `app` condition);
+ * - on: sent while it was on, from a version inside the range, and nothing about the phone decides it;
+ * - maybe: as on, but a condition the server cannot see (동의·프로필·근무 유형·나눠 켜기) decides it per phone;
+ * - unknown: no app version on the question (an old app, or a question typed by mail);
+ * - unseen: sent before the server first looked at the flag (its first look is not a turn, so the state before is unknown).
+ * The 기능 상태 lines a user may attach in the 점검 기록 are not read for this: 1-3항 keeps them for answering that question.
+ */
+function bugSplit(store, row, bugs, flips = []) {
+  const st = store.state.get(row.key);
+  const since = st?.since;
+  const nowOn = st?.on_now === 1;
+  const turned = flips.some((f) => f.target === row.key && f.at === since);
+  const def = flagDef(row.key);
+  const o = store.overrides.get(row.key) ?? null;
+  const conds = o?.conditions ?? def?.conditions ?? [];
+  const lo = o?.minApp ?? def?.minApp ?? null;
+  const hi = o?.maxApp ?? def?.maxApp ?? null;
+  const appConds = conds.filter((c) => c.type === "app");
+  const inRange = (app) => (lo == null || app >= lo) && (hi == null || app <= hi)
+    && appConds.every((c) => (c.min == null || app >= c.min) && (c.max == null || app <= c.max));
+  const varies = row.checklist.some((x) => x.met === "phone");
+  const out = { on: 0, maybe: 0, off: 0, unknown: 0, unseen: 0 };
+  for (const b of bugs) {
+    if (since == null || b.created_at < since - 7 * DAY || b.created_at >= since + 7 * DAY) continue;
+    if (b.created_at < since && !turned) { out.unseen++; continue; }
+    const app = appCode(b.info);
+    if (app == null) { out.unknown++; continue; }
+    const onThen = b.created_at >= since ? nowOn : !nowOn;
+    if (!onThen || !inRange(app)) out.off++;
+    else if (varies) out.maybe++;
+    else out.on++;
+  }
+  return out;
+}
+
+/** [NXT-07] The versionCode in a question's app line ("1.28.0 (39)" → 39), or null. */
+function appCode(info) {
+  let app;
+  try { app = JSON.parse(info ?? "{}").app; } catch { return null; }
+  const m = /\((\d+)\)\s*$/.exec(typeof app === "string" ? app : "");
+  return m ? Number(m[1]) : null;
+}
+// AU 1.29 끝
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {

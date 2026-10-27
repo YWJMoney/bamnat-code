@@ -137,7 +137,9 @@ internal enum class ItemKind(val title: String, val example: String, val icon: I
             rule.pay is RulePay.PerTime -> PER_SHIFT
             rule.pay is RulePay.PerHour -> PER_HOUR
             rule.pay is RulePay.OfHourly -> PREMIUM
-            rule.pay is RulePay.OfBaseMonthly -> SHARE
+            rule.pay is RulePay.OfBaseMonthly || rule.pay is RulePay.OfOrdinaryMonthly -> SHARE
+            // [PHOTO-06] A monthly amount read from a rules photo (근속수당 3년 이상 월 5만원) is a rule, not a pay item.
+            rule.pay is RulePay.Monthly -> MONTHLY
             else -> null
         }
     }
@@ -147,7 +149,7 @@ internal enum class ItemKind(val title: String, val example: String, val icon: I
 internal enum class DeductWay(val label: String) { MONTHLY("매달"), PER_DAY("일한 날마다"), PER_SHIFT("정한 근무·요일마다") }
 
 /** [PAYS-07] What the builder made: an allowance, or a rule of the company's own that stays on the phone. */
-internal sealed interface MadeItem {
+sealed interface MadeItem {
     val name: String
     data class Item(val item: PayItem) : MadeItem { override val name get() = item.name }
     data class Rule(val rule: CustomRule) : MadeItem { override val name get() = rule.name }
@@ -173,6 +175,31 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var to by mutableStateOf(6)
     var overHours by mutableStateOf(0)
     var ordinary by mutableStateOf(false)
+    /** [PHOTO-05] 기본급의 n% or 통상임금의 n%. */
+    var ofOrdinary by mutableStateOf(false)
+    /** [PHOTO-06] Kept as a rule even for 매달·일한 날마다 (it came from one, or it has limits a pay item cannot hold). */
+    var asRule by mutableStateOf(false)
+    /** [PHOTO-05] 근속 n년 이상 (0 none), n년 미만 (0 none). */
+    var minYears by mutableStateOf(0)
+    var maxYears by mutableStateOf(0)
+    /** [PHOTO-05] 월 한도 (null none) and 월 n회까지 (0 none). */
+    var cap by mutableStateOf<Long?>(null)
+    var maxTimes by mutableStateOf(0)
+    /** [PHOTO-05] The months it applies in; null is open. */
+    var since by mutableStateOf<YearMonth?>(null)
+    var until by mutableStateOf<YearMonth?>(null)
+
+    /** The sentence a rule was read from, kept when it is changed. */
+    var source: String = ""
+
+    val hasLimits: Boolean get() = minYears > 0 || maxYears > 0 || (cap ?: 0) > 0 || maxTimes > 0 || since != null || until != null
+
+    /** The limits on [rule]. */
+    private fun limited(rule: CustomRule): CustomRule = rule.copy(
+        minTenureMonths = minYears * 12, maxTenureMonths = if (maxYears > minYears) maxYears * 12 else 0,
+        capPerMonth = cap?.takeIf { it > 0 && !rule.pay.monthly } ?: 0, maxTimes = if (rule.pay.monthly) 0 else maxTimes,
+        from = since, until = until?.takeIf { s -> since == null || !s.isBefore(since) },
+    )
 
     /** The share the percent field holds, 50 → 0.5; null when it is not a number above 0. */
     val share: Double? get() = percent.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 && it <= 1000 }?.div(100)
@@ -203,36 +230,62 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         val won = amount?.takeIf { it > 0 } ?: if (probe) 1_000L else return null
         val pct = share ?: if (probe) 0.1 else null
         val title = name.trim().ifEmpty { k.defaultName }
-        fun rule(pay: RulePay, deduct: Boolean = false) =
-            MadeItem.Rule(CustomRule(id, title.take(CustomRule.MAX_NAME), whenever(), pay, deduct = deduct))
+        fun rule(pay: RulePay, deduct: Boolean = false, whenever: RuleWhen = whenever()) =
+            MadeItem.Rule(limited(CustomRule(id, title.take(CustomRule.MAX_NAME), whenever, pay, deduct = deduct, source = source)))
         return when (k) {
-            ItemKind.MONTHLY, ItemKind.PER_DAY -> MadeItem.Item(PayItem(
-                id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))),
-                if (k == ItemKind.MONTHLY) Cadence.MONTHLY else Cadence.PER_WORK_DAY, ordinary = ordinary,
+            // [PHOTO-06] With limits (근속, 기간, 한도) only a rule can hold them.
+            ItemKind.MONTHLY -> if (asRule || hasLimits) rule(RulePay.Monthly(won), whenever = RuleWhen()) else MadeItem.Item(PayItem(
+                id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))), Cadence.MONTHLY, ordinary = ordinary,
+            ))
+            ItemKind.PER_DAY -> if (asRule || hasLimits) rule(RulePay.PerTime(won), whenever = RuleWhen(dayKind = RuleDayKind.WORK_DAY)) else MadeItem.Item(PayItem(
+                id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))), Cadence.PER_WORK_DAY, ordinary = ordinary,
             ))
             ItemKind.PER_SHIFT -> rule(RulePay.PerTime(won))
             ItemKind.PER_HOUR -> rule(RulePay.PerHour(won))
             ItemKind.PREMIUM -> rule(RulePay.OfHourly(pct ?: return null))
-            ItemKind.SHARE -> rule(RulePay.OfBaseMonthly(pct ?: return null))
+            ItemKind.SHARE -> rule(if (ofOrdinary) RulePay.OfOrdinaryMonthly(pct ?: return null) else RulePay.OfBaseMonthly(pct ?: return null))
             ItemKind.DEDUCT -> rule(if (deductWay == DeductWay.MONTHLY) RulePay.Monthly(won) else RulePay.PerTime(won), deduct = true)
         }
     }
 
     companion object {
+        /** [PHOTO-06] The builder filled in from an allowance read from a photo (매달·일한 날마다), to change it before it is saved. */
+        fun ofItem(item: PayItem): ItemDraft? {
+            val kind = when (item.cadence) {
+                Cadence.MONTHLY -> ItemKind.MONTHLY
+                Cadence.PER_WORK_DAY -> ItemKind.PER_DAY
+                else -> return null
+            }
+            return ItemDraft(kind, item.id).apply {
+                name = item.name
+                amount = item.amount.entries.lastOrNull()?.value
+                ordinary = item.ordinary
+            }
+        }
+
         /** The builder filled in from a rule made before, to change it. */
         fun of(rule: CustomRule): ItemDraft? {
             val kind = ItemKind.of(rule) ?: return null
             val w = rule.whenever
             return ItemDraft(kind, rule.id).apply {
                 name = rule.name
+                source = rule.source
+                asRule = true
                 when (val p = rule.pay) {
                     is RulePay.PerTime -> amount = p.amount
                     is RulePay.PerHour -> amount = p.amount
                     is RulePay.Monthly -> amount = p.amount
                     is RulePay.OfHourly -> percent = ExtraRuleText.number(p.rate * 100)
                     is RulePay.OfBaseMonthly -> percent = ExtraRuleText.number(p.share * 100)
+                    is RulePay.OfOrdinaryMonthly -> { percent = ExtraRuleText.number(p.share * 100); ofOrdinary = true }
                     is RulePay.OfBase -> Unit
                 }
+                minYears = rule.minTenureMonths / 12
+                maxYears = rule.maxTenureMonths / 12
+                cap = rule.capPerMonth.takeIf { it > 0 }
+                maxTimes = rule.maxTimes
+                since = rule.from
+                until = rule.until
                 if (rule.deduct) deductWay = when {
                     rule.pay is RulePay.Monthly -> DeductWay.MONTHLY
                     w == RuleWhen(dayKind = RuleDayKind.WORK_DAY) -> DeductWay.PER_DAY
@@ -262,7 +315,6 @@ internal object ExtraRuleText {
  * when it is paid. What it does to this month shows as it is typed. [gap] is set when it comes from 명세서로
  * 맞춰 보기 [PAYS-08]: the amount starts at the difference and the bar shows what is left of it.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CustomItemDialog(
     vm: PayViewModel,
@@ -274,29 +326,55 @@ internal fun CustomItemDialog(
     editing: CustomRule? = null,
     gap: Long? = null,
     startKind: ItemKind? = null,
+) = CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf)
+
+/**
+ * [PHOTO-06] 1.29: the one builder for a line of the company's own, also used from a photo's result (명세서·규칙 사진) before
+ * anything is saved: [effectOf] works out what it does to the month on the profile being set up. [keepRule] keeps 매달·일한 날마다
+ * as a rule, as a rules photo makes them, so a list of rules stays one list.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CustomItemDialog(
+    profile: PayProfile,
+    snapshot: ScheduleSnapshot,
+    month: YearMonth,
+    onDismiss: () -> Unit,
+    onSave: (MadeItem) -> Unit,
+    editing: CustomRule? = null,
+    gap: Long? = null,
+    startKind: ItemKind? = null,
+    keepRule: Boolean = false,
+    startName: String = "",
+    editingItem: PayItem? = null,
+    effectOf: suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?,
 ) {
-    val id = remember { editing?.id ?: "rule-" + System.currentTimeMillis().toString(36) }  // real clock: an id, not a time
-    val draft = remember { editing?.let { ItemDraft.of(it) } ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) } }
+    val id = remember { editing?.id ?: editingItem?.id ?: ("rule-" + System.currentTimeMillis().toString(36)) }  // real clock: an id, not a time
+    val draft = remember {
+        (editing?.let { ItemDraft.of(it) } ?: editingItem?.let { ItemDraft.ofItem(it) }
+            ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) })
+            .also { d -> if (keepRule) d.asRule = true; if (editing == null && startName.isNotBlank()) { d.name = startName.take(CustomRule.MAX_NAME); d.source = startName } }
+    }
     val start = profile.period.start(month)
+    val isEdit = editing != null || editingItem != null
     val base = remember(profile, editing) { if (editing == null) profile else profile.copy(customRules = profile.customRules.filterNot { it.id == editing.id }) }
     // Only rules count to the limit: 월 고정·일당 go in as pay items.
-    val full = editing == null && draft.kind.let { it != null && it != ItemKind.MONTHLY && it != ItemKind.PER_DAY } &&
-        base.customRules.size >= CustomRule.MAX
     val made = draft.made(start)
     val probe = draft.made(start, probe = true)
-    val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { vm.effectOf(base, snapshot, month, it) } }
+    val full = !isEdit && probe is MadeItem.Rule && base.customRules.size >= CustomRule.MAX
+    val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { effectOf(base, snapshot, month, it) } }
     val real = if (made != null && effect != null) effect else null
-    fun back() { if (draft.kind != null && editing == null) draft.kind = null else onDismiss() }
+    fun back() { if (draft.kind != null && !isEdit) draft.kind = null else onDismiss() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        BackHandler(enabled = draft.kind != null && editing == null) { back() }
+        BackHandler(enabled = draft.kind != null && !isEdit) { back() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (editing != null) "항목 고치기" else "우리 회사 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        title = { Text(if (isEdit) "항목 고치기" else "우리 회사 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
-                            if (draft.kind != null && editing == null) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
+                            if (draft.kind != null && !isEdit) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
                             else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
                         },
                     )
@@ -304,7 +382,7 @@ internal fun CustomItemDialog(
                 bottomBar = {
                     if (draft.kind != null) {
                         EffectBar(month, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
-                            label = if (editing != null) "저장" else "만들기") { made?.let(onSave) }
+                            label = if (isEdit) "저장" else "만들기") { made?.let(onSave) }
                     }
                 },
             ) { padding ->
@@ -315,7 +393,7 @@ internal fun CustomItemDialog(
                     ) {
                         val k = draft.kind
                         if (k == null) KindStep(gap) { picked -> draft.kind = picked; prefill(draft, gap) }
-                        else FormStep(draft, k, snapshot, gap, onChangeKind = if (editing == null) ({ draft.kind = null }) else null)
+                        else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null)
                         if (full) Text("직접 만든 항목은 ${CustomRule.MAX}개까지예요. 쓰지 않는 항목을 지운 뒤 만들어 주세요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(24.dp))
@@ -436,12 +514,20 @@ private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: Sch
             Hint("통상시급에 이만큼을 더해요. 50%면 1시간에 시급의 반을 더 받아요. 법정 가산(연장·야간·휴일)과 따로, 그 위에 더해요.")
             TermLink("통상시급")
         }
-        ItemKind.SHARE -> Hint("매달 기본급에 이 비율을 곱해 더해요. 기본급이 오르면 함께 올라요.")
+        ItemKind.SHARE -> {
+            Label("무엇의 몇 %인가요?")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(false to "기본급", true to "통상임금").forEach { (v, l) ->
+                    FilterChip(selected = draft.ofOrdinary == v, onClick = { draft.ofOrdinary = v }, label = { Text(l) }, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
+            Hint(if (draft.ofOrdinary) "매달 통상임금(기본급과 통상임금에 드는 수당)에 이 비율을 곱해 더해요." else "매달 기본급에 이 비율을 곱해 더해요. 기본급이 오르면 함께 올라요.")
+        }
         ItemKind.DEDUCT -> {
             Hint("명세서 지급 칸에서 빠지는 돈만 넣어요. 세금과 4대보험은 넣지 않아도 돼요. 앱은 세금 떼기 전 금액을 계산해요.")
             TermLink("차감")
         }
-        ItemKind.MONTHLY, ItemKind.PER_DAY -> {
+        ItemKind.MONTHLY, ItemKind.PER_DAY -> if (!draft.asRule && !draft.hasLimits) {
             Toggle(
                 "통상임금에 넣어요",
                 if (kind == ItemKind.MONTHLY) "매달 모두에게 똑같이 주는 수당이면 켜요. 연장·야간 수당도 함께 올라가요. 모르면 꺼 두세요."
@@ -454,6 +540,68 @@ private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: Sch
     }
 
     if (draft.asksWhen) WhenSection(draft, kind, snapshot)
+    LimitsSection(draft, kind)
+}
+
+/**
+ * [PHOTO-05] 근속·한도·횟수·기간, folded away until asked for: "근속 3년 이상", "월 10만원까지", "월 10회까지", "2026년 7월부터".
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LimitsSection(draft: ItemDraft, kind: ItemKind) {
+    var open by remember { mutableStateOf(draft.hasLimits) }
+    val monthly = kind == ItemKind.MONTHLY || kind == ItemKind.SHARE || kind == ItemKind.DEDUCT && draft.deductWay == DeductWay.MONTHLY
+    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+    Row(
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = if (open) "접기" else "펼치기") { open = !open }.heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("근속·한도·기간 (선택)", style = MaterialTheme.typography.titleSmall)
+            Text("근속 몇 년 이상만, 한 달에 얼마까지, 언제부터 같은 조건이 있으면 넣어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+    }
+    AnimatedVisibility(open) {
+        Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Label("근속")
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                com.bamnat.app.ui.components.CountStepper(draft.minYears, { draft.minYears = it }, name = "근속 몇 년 이상", range = 0..40,
+                    format = { if (it == 0) "처음부터" else "${it}년 이상" }, valueWidth = 84.dp)
+                com.bamnat.app.ui.components.CountStepper(draft.maxYears, { draft.maxYears = it }, name = "근속 몇 년 미만", range = 0..40,
+                    format = { if (it == 0) "끝 없음" else "${it}년 미만" }, valueWidth = 84.dp)
+            }
+            if (draft.minYears > 0 || draft.maxYears > 0) Hint("입사일로 근속을 세요. 입사일이 없으면 이 항목은 계산하지 않고 알려 드려요.")
+            if (!monthly) {
+                MoneyField("한 달에 이만큼까지 (선택)", draft.cap, { draft.cap = it }, placeholder = "없으면 비워 두세요")
+                Label("한 달에 몇 번까지")
+                com.bamnat.app.ui.components.CountStepper(draft.maxTimes, { draft.maxTimes = it }, name = "한 달에 몇 번까지", range = 0..31,
+                    format = { if (it == 0) "제한 없음" else "${it}번까지" }, valueWidth = 84.dp)
+            }
+            Label("언제부터 언제까지")
+            MonthLimit("시작", draft.since) { draft.since = it }
+            MonthLimit("끝", draft.until) { draft.until = it }
+        }
+    }
+}
+
+/** [PHOTO-05] A month the item starts or ends in, or none; ‹ › move it a month. */
+@Composable
+private fun MonthLimit(label: String, value: YearMonth?, onChange: (YearMonth?) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(40.dp))
+        if (value == null) {
+            TextButton(onClick = { onChange(com.bamnat.core.time.Today.month()) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (label == "시작") "정하지 않음 · 눌러서 정하기" else "끝 없음 · 눌러서 정하기")
+            }
+        } else {
+            IconButton(onClick = { onChange(value.minusMonths(1)) }) { Icon(Icons.Filled.Remove, "$label 한 달 앞으로") }
+            Text("${value.year}년 ${value.monthValue}월", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(110.dp))
+            IconButton(onClick = { onChange(value.plusMonths(1)) }) { Icon(Icons.Filled.Add, "$label 한 달 뒤로") }
+            TextButton(onClick = { onChange(null) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지우기") }
+        }
+    }
 }
 
 /** [INPUT-02] The share or premium in %: the usual values as chips, or stepped (1% of 기본급, 5% of the hourly), not typed. */

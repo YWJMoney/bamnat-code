@@ -3,7 +3,7 @@
 // which flags phones had on: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 import worker, { FLAG_CATALOG, FLAG_KEYS } from "../src/index.js";
 import { adminLib } from "../src/admin-lib.js";
 
@@ -12,9 +12,9 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse("2026-10-26T01:00:00Z");
 const L = adminLib();
 
-/** 통합계획 2-1: the keys the app's core FlagCatalog has too, and stats.more the integrator added. */
+/** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
-  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more"];
+  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
@@ -176,10 +176,10 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   const cfg = (await call("GET", "/api/config")).data;
   assert.equal(cfg.billingLive, true);
   assert.equal(cfg.launchedAt, "2026-11-09T15:00:00.000Z");
-  const home = (await call("GET", "/api/admin/overview", undefined, owner)).data;
+  const home = (await adminHome(call, owner)).data;
   assert.deepEqual(home.flagAlerts.map((a) => a.key).sort(), ["ads", "billing"]);
   t.mock.timers.tick(DAY + 1000);
-  assert.deepEqual((await call("GET", "/api/admin/overview", undefined, owner)).data.flagAlerts, []);
+  assert.deepEqual((await adminHome(call, owner)).data.flagAlerts, []);
 
   // Off and on again: the launch stays the first moment.
   await call("POST", "/api/admin/flags/billing/force", { force: "off", why: "결제 오류" }, owner);
@@ -311,7 +311,7 @@ test("[FLAG-29][FLAG-33] the owner moves a policy's dates; too little notice is 
   assert.match(row.warnings[0], /18일.*30일/);
   assert.equal(row.next, "2026-11-15", "the date condition follows the calendar");
   assert.deepEqual((await call("GET", "/api/config")).data.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-15", heldUntil: null });
-  assert.ok((await call("GET", "/api/admin/overview", undefined, owner)).data.flagsDue >= 1);
+  assert.ok((await adminHome(call, owner)).data.flagsDue >= 1);
 });
 
 test("[FLAG-26] /api/passes says whether the phone was linked by the owner", async (t) => {

@@ -40,40 +40,44 @@ enum class Tier(val label: String) {
  * included (결정 2): 받을 돈 [RECV-02], the work tools, the watch, 출퇴근 자동 기록, the duty roster
  * photo, the attendance sheet and quotes stay free too.
  */
-enum class Feature(val label: String, val minTier: Tier) {
-    NO_ADS("광고 없음", Tier.PRO),
+enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
+    NO_ADS(Tier.PRO),
     /** [PAYS-04] 명세서로 맞춰 보기 and the places it points at. */
-    PAYSLIP_MATCH("명세서 대조", Tier.PRO),
-    PAY_RULE_IMPORT("임금 규칙 자동 인식", Tier.PRO),
+    PAYSLIP_MATCH(Tier.PRO),
+    PAY_RULE_IMPORT(Tier.PRO),
     /** [PAYX-03] A value changed over a chosen range of months, and a raise worked out over past years. */
-    PAY_BULK_EDIT("값 일괄 적용", Tier.PRO),
+    PAY_BULK_EDIT(Tier.PRO),
     /** [TIER-05] This month's records and totals stay free; comparisons, trends and breakdowns are pro. */
-    MONEY_STATS("돈 통계", Tier.PRO),
+    MONEY_STATS(Tier.PRO),
     /** [MCAL-07] The main calendar and one added calendar are free; a second added calendar on is pro. */
-    MORE_CALENDARS("달력 여러 개", Tier.PRO),
+    MORE_CALENDARS(Tier.PRO),
     // [PROV-08] 1.20.0 filled the four pillars (수익화 확정 5-2); each is its own row so the server can open one.
     /** [PROV-01] A month's or a year's pay as a PDF and a CSV, with how each line was worked out. */
-    PAY_REPORT("급여 리포트 PDF·CSV", Tier.PRO),
+    PAY_REPORT(Tier.PRO),
     /** [PROV-02] This month beside last month and the same month a year ago, and the year month by month. */
-    WORK_COMPARE("근무·급여 비교", Tier.PRO),
+    WORK_COMPARE(Tier.PRO),
     /** [FEAT-07] The shifts written to a calendar of their own on the phone, which the phone's calendar apps show. */
-    DEVICE_CALENDAR("휴대폰 캘린더에 근무 쓰기", Tier.PRO),
+    DEVICE_CALENDAR(Tier.PRO),
     /** [FEAT-15] An address other calendar apps subscribe to, beside a share link. */
-    ICS_FEED("캘린더 구독 주소", Tier.PRO),
+    ICS_FEED(Tier.PRO),
     /** [PROV-03] A password-protected backup written to a file of the user's choosing every day. */
-    AUTO_BACKUP("매일 자동 백업", Tier.PRO),
+    AUTO_BACKUP(Tier.PRO),
     /** [PROV-04] Up to five links per calendar, each with its own parts and period, and 180 days or a year. */
-    MORE_LINKS("공유 링크 여러 개, 1년까지", Tier.PRO),
+    MORE_LINKS(Tier.PRO),
     /** [PROV-05] A month's and a year's roster as an A4 PDF to print. */
-    ROSTER_PDF("근무표 PDF", Tier.PRO),
+    ROSTER_PDF(Tier.PRO),
     /** [PROV-06][PROV-07] A task before the alarm stops, and a check a few minutes later that the user is up. */
-    SURE_ALARM("끄기 미션·일어났는지 확인", Tier.PRO),
+    SURE_ALARM(Tier.PRO),
     /** [LEAVE-05] 미사용 연차수당: what the days left are worth, and a 정산 row on the 연차 원장. */
-    LEAVE_PAYOUT("미사용 연차수당 계산", Tier.PRO),
+    LEAVE_PAYOUT(Tier.PRO),
     /** [TAX-02][TAX-05] 1.25 W: 세전·세후 learned from real pay, and a 사업자's year of tax (결정 W-D4). */
-    TAX_FORECAST("세금 예측·실수령", Tier.PRO),
+    TAX_FORECAST(Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
-    TEAM_ROSTER("팀 근무표 만들기", Tier.LEADER),
+    TEAM_ROSTER(Tier.LEADER, "팀 근무표 만들기"),
+    ;
+
+    /** [NXT-03] 1.29 AU: a 프로 feature's name is core's ProFeatures table, the one the server and 진단 use for free.<FEATURE>. */
+    val label: String get() = ownLabel ?: com.bamnat.core.flags.ProFeatures.name(name)
 }
 
 /**

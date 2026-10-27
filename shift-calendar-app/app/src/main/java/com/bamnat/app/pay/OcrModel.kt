@@ -25,6 +25,8 @@ object OcrModel {
 
     /** The words of [image], read on the phone. */
     suspend fun read(context: Context, image: InputImage): Text {
+        // [NXT-01] 1.29 AU: ML Kit starts here, on the first photo, not at every app start.
+        com.bamnat.app.MlKitStart.ensure(context)
         val recognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         try {
             if (!available(context, recognizer)) throw NotReady()

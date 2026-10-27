@@ -61,6 +61,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 
+private const val COMPANY = "company"
 private const val FORM = "form"
 private const val AMOUNT = "amount"
 private const val HOLIDAY = "holiday"
@@ -94,29 +95,41 @@ fun PayQuickSetup(
      * in, marked 확인 필요, for a first pay setup.
      */
     fromCycle: Pair<PublicCycle, String>? = null,
-    /** [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, on the first question (main calendar only). */
-    companyFind: (@Composable () -> Unit)? = null,
+    /**
+     * [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, on the first question (main calendar only). [PAYF-01] 1.29 AP: the first
+     * question itself, with the box to type the company in (1.27 had a button among the forms that few saw).
+     */
+    companyFind: Boolean = false,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
     val pattern = remember(snapshot) { PatternTimeline.current(snapshot.patterns, today) }
     val guessed = remember(snapshot, initial) { WorkForms.guess(snapshot.shiftTypes, pattern, initial) }
-    val cycleStart = fromCycle?.takeIf { initial == null }
+    // [PAYF-01] A public row picked in 급여 방식 찾기 with no pay way of its own starts the setup like a cycle put in from it.
+    var foundCycle by remember { mutableStateOf<PublicCycle?>(null) }
+    val cycleStart = fromCycle?.takeIf { initial == null } ?: foundCycle?.takeIf { initial == null }?.let { it to it.codes }
     var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: initial?.let { guessed }) }
     var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
+    // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
+    var hours by remember { mutableStateOf<Int?>(null) }
+    val payFind = com.bamnat.app.ui.company.rememberPayFindState()
     var holiday by remember { mutableStateOf(initial?.rules?.holidayWork) }
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
     var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
-    val steps = listOfNotNull(FORM, AMOUNT, HOLIDAY.takeIf { form?.asksHoliday == true }, CONFIRM)
-    var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: FORM) }
+    // [PAYF-07] Opened from a public cycle just put in, the company was already looked up (CompanyPayOffer asked "급여 계산
+    // 방식도 같이 넣을까요?" when it had one): not asked again. 설정 고치기 of a pay there is asks it first all the same.
+    val steps = listOfNotNull(COMPANY.takeIf { companyFind && (fromCycle == null || initial != null) }, FORM, AMOUNT, HOLIDAY.takeIf { form?.asksHoliday == true }, CONFIRM)
+    var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: steps.first()) }
     val index = steps.indexOf(step).coerceAtLeast(0)
     val scope = rememberCoroutineScope()
+    val container = LocalContext.current.appContainer
 
     val since = if (initial != null) thisMonth.atDay(1) else thisMonth.minusMonths(12).atDay(1)
     fun draftOf(f: WorkForm?, a: Long?, h: HolidayWork?): PayProfile? {
         fromSlip?.let { return it }
         val chosen = f ?: return initial
         val p = WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
+            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
     val draft = draftOf(form, amount, holiday)
@@ -157,10 +170,25 @@ fun PayQuickSetup(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             when (step) {
+                // [PAYF-01] 1.29 AP: 우리 회사 급여 방식 찾기 is the first question, the box on it; 직접 만들게요 goes on to the forms.
+                COMPANY -> com.bamnat.app.ui.company.PayFindFlow(
+                    payFind,
+                    onByHand = { _, publicId ->
+                        com.bamnat.core.plaza.PublicCycles.byId(publicId)?.takeIf { initial == null && fromCycle == null }?.let { row ->
+                            foundCycle = row
+                            if (form == null) form = PublicPay.form(row, row.codes)
+                        }
+                        payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME
+                        next()
+                    },
+                    onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME },
+                    // A pay that had amounts: the way went onto it and its 기본급 was checked there; that is the setup now.
+                    onSaved = { p -> onDone(p, false) },
+                    byHandHere = false,
+                )
                 FORM -> {
                     StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
-                    companyFind?.invoke()
                     SlipEntry { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
                     val first = cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed
@@ -184,10 +212,9 @@ fun PayQuickSetup(
                             WageType.DAILY -> "하루 일하고 받는 금액이에요."
                         },
                     )
-                    MoneyField(
-                        when (wage) { WageType.MONTHLY -> "월 기본급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" },
-                        amount, onChange = { fromSlip = null; amount = it },
-                    )
+                    // [PAYF-06] The base, and folded under it the 통상시급's hours when the user knows them.
+                    BaseFields(wage, amount, onBase = { fromSlip = null; amount = it }, hours = hours, onHours = { fromSlip = null; hours = it },
+                        profile = draft ?: initial, month = thisMonth)
                     SlipEntry { slipOpen = true }
                 }
                 HOLIDAY -> {
@@ -203,14 +230,28 @@ fun PayQuickSetup(
                     }
                 }
                 CONFIRM -> draft?.let { p ->
-                    ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
+                    // [PAYF-06] 1.29: a payslip read for its rules only came with no base, and 1.27 saved it as 0원. The base is
+                    // asked right here instead, on the page that shows what the month comes to.
+                    if (!com.bamnat.core.pay.BaseAsk.showsEstimate(p, thisMonth)) {
+                        StepTitle("기본급만 넣으면 끝나요", "회사 방식은 기본급으로 계산해요. 넣으면 이번 달 예상 급여가 바로 보여요.")
+                        var typed by remember { mutableStateOf<Long?>(null) }
+                        BaseFields(p.wageType, typed, onBase = { typed = it }, hours = hours, onHours = { hours = it }, profile = p, month = thisMonth)
+                        Button(onClick = {
+                            val b = typed ?: return@Button
+                            amount = b
+                            fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, hours) }
+                        }, enabled = (typed ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("예상 급여 보기") }
+                    } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
                         onDetailed = { onDetailed(p) })
                 }
             }
         }
         Surface(tonalElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val finding = step == COMPANY && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
                 when {
+                    // [PAYF-01] Back inside 급여 방식 찾기 goes back to the box, never out of the setup by surprise.
+                    finding -> OutlinedButton(onClick = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME }) { Text("이전") }
                     index > 0 -> OutlinedButton(onClick = { go(steps[index - 1]) }) { Text("이전") }
                     onCancel != null -> TextButton(onClick = onCancel) { Text("취소") }
                 }
@@ -218,9 +259,17 @@ fun PayQuickSetup(
                 val ready = when (step) {
                     FORM -> form != null
                     AMOUNT -> (amount ?: 0) > 0
+                    // [PAYF-06] Never 0원: the base is there before the setup is kept.
+                    CONFIRM -> draft?.let { com.bamnat.core.pay.BaseAsk.showsEstimate(it, thisMonth) } == true
                     else -> true
                 }
-                Button(
+                if (step == COMPANY) {
+                    // The box's own way on: no company of ours there, or no wish to look.
+                    if (!finding) Button(onClick = {
+                        payFind.name.trim().takeIf { com.bamnat.core.plaza.PayFindRows.ready(it) }?.let { com.bamnat.app.company.PayFind(container).none(it) }
+                        next()
+                    }) { Text("직접 만들게요") }
+                } else Button(
                     onClick = { if (step == CONFIRM) draft?.let { onDone(it, fromSlip != null) } else next() },
                     enabled = ready && (step != CONFIRM || draft != null),
                 ) { Text(if (step == CONFIRM) "이대로 계산" else "다음") }

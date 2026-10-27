@@ -154,6 +154,8 @@ class XScreenshotTest : ScreenshotBase() {
         tapText("지금 판과 비교 · 되돌리기", exact = true)
         assertTrue(shows("v1과 지금 비교", exact = true))
         tapText("이 판으로 되돌리기", exact = true)
+        // [PAYF-03] 1.29: a setup with a pay way asks first whether the pay goes in too.
+        if (shows("근무주기만 넣을게요", exact = true)) tapText("근무주기만 넣을게요", exact = true)
         // Through the rotation sheet as any rule set, then this phone uses v1.
         if (shows("이 순서로 쓸게요", exact = true)) tapText("이 순서로 쓸게요", exact = true)
         settle()
