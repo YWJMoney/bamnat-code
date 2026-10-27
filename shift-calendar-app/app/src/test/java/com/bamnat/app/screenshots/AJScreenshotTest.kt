@@ -178,9 +178,12 @@ class AJScreenshotTest : ScreenshotBase() {
         tapText("읽기", exact = true)
         settle()
         assertTrue(shows("명세서 없이 회사 계산 방법만으로 계산해요"))
+        // [PHOTO-34] 1.30 AW: what the rules come to shows under them as they are, before anything is applied.
+        waitFor(800)
+        assertTrue(shows("월 규칙으로 계산"))
         tapText("규칙으로 계산하기", exact = true)
         settle()
         waitFor(800)
-        assertTrue(shows("규칙으로 계산"))
+        assertTrue(!shows("규칙으로 계산하기", exact = true))
     })
 }

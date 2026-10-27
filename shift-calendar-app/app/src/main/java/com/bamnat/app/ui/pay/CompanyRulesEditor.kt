@@ -413,17 +413,34 @@ fun CompanyRulesEditor(
             }
 
             // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.
-            SectionCard(title = "회사만의 규칙") {
-                Hint("위에 없는 방식은 아래에서 골라 담아요. 담기지 않는 것(‘19~23시 25% 가산’ 같은)은 글로 적거나 취업규칙 사진으로 읽어요. " +
-                    "가산율이나 대근 방식처럼 위에 있는 것도 담으면 알아서 맞춰 넣어요.")
-                if (draft.customRules.isNotEmpty()) {
-                    CustomRuleList(
-                        draft.customRules,
-                        shiftNames = snapshot.shiftTypes.associate { it.id to it.name },
-                        extraNames = kinds.names,
-                        onChange = { draft = draft.copy(customRules = it) },
-                    )
+            // [RULE-ED-05] 1.30 AW (사용자 "사진 촬영 금지 회사… 칸 추가 방식으로"): the company's own allowances and rules as the same 칸 as
+            // the photo's result, each opened where it is; '칸 더하기' starts from the usual allowances. Words and photos stay under it.
+            SectionCard(title = "우리 회사 항목") {
+                Hint("수당·더 받는 근무·빠지는 돈을 칸으로 하나씩 더해요. 사진이 없어도 돼요. 위에 있는 가산율이나 대근 방식도 칸으로 담으면 알아서 맞춰 넣어요.")
+                val shiftNames = remember(snapshot.shiftTypes) { snapshot.shiftTypes.associate { it.id to it.name } }
+                val own = remember(draft.items, draft.customRules, shiftNames) { com.bamnat.core.pay.RuleSheet.of(draft, shiftNames) }
+                val host = remember(draft, snapshot, month) {
+                    com.bamnat.app.ui.pay.rulesheet.RuleSheetHost(draft, snapshot, month, { change ->
+                        val made = when (change) {
+                            is com.bamnat.core.pay.RuleChange.Item -> MadeItem.Item(change.item)
+                            is com.bamnat.core.pay.RuleChange.Custom -> MadeItem.Rule(change.rule)
+                            else -> null
+                        }
+                        made?.let { vm.effectOf(draft, snapshot, month, it) }?.let { com.bamnat.app.ui.pay.rulesheet.CellEffect(it.amount, it.times) }
+                    })
                 }
+                com.bamnat.app.ui.pay.rulesheet.RuleCellList(
+                    cells = own.cells, unread = emptyList(), host = host,
+                    onToggle = { cell -> draft = com.bamnat.core.pay.RuleSheet.setOn(draft, cell, !cell.on) },
+                    ticks = { it.change is com.bamnat.core.pay.RuleChange.Custom },
+                    onPut = { cell -> draft = com.bamnat.core.pay.RuleSheet.put(draft, cell, month) },
+                    onRemove = { cell -> draft = com.bamnat.core.pay.RuleSheet.remove(draft, cell) },
+                    onUnreadDone = {},
+                    onAdd = { change, source ->
+                        draft = com.bamnat.core.pay.RuleSheet.put(draft, com.bamnat.core.pay.RuleCell.of(change, source = source, shiftNames = shiftNames), month)
+                    },
+                    empty = "아직 칸이 없어요. 아래 ‘칸 더하기’에서 자주 쓰는 수당을 고르면 금액만 넣으면 돼요.",
+                )
                 RuleSentenceBox(kinds.kinds, snapshot.shiftTypes, draft.fiveOrMoreEmployees) { changes ->
                     draft = com.bamnat.core.pay.RuleText.apply(draft, changes, month)
                 }

@@ -8,18 +8,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.pay.PayslipScanner
 import com.bamnat.app.ui.pay.PayslipFillDialog
-import com.bamnat.app.ui.pay.RuleCells
+import com.bamnat.app.ui.pay.PhotoCellsLogic
 import com.bamnat.app.ui.pay.RuleTarget
+import com.bamnat.app.ui.pay.rulesheet.RuleSheetCells
+import com.bamnat.app.ui.pay.rulesheet.RuleSheetHost
+import com.bamnat.app.ui.pay.rulesheet.rememberRuleSheetState
 import com.bamnat.core.pay.OcrLine
 import com.bamnat.core.pay.OcrRows
-import com.bamnat.core.pay.RuleFinding
+import com.bamnat.core.pay.RuleSheet
 import com.bamnat.core.pay.RuleText
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,7 +90,9 @@ class AQScreenshotTest : ScreenshotBase() {
     @Test fun payslipTable() = shoot("1250_aq_payslip_table", FOLDED, slip {
         assertTrue("기본급I의 금액이 반 줄 아래에서 읽혀야 해요", sees("2,397,500", exact = false))
     })
+    // [PHOTO-30] 1.30 AW: the 통상시급 the payslip says is on the 회사 규칙 tab's 통상시급 card.
     @Test fun payslipHourly() = shoot("1251_aq_payslip_hourly", FOLDED, slip {
+        tapText("회사 규칙", prefix = true)
         reveal("명세서로 보면 통상시급 21,618원이에요", exact = false)
     })
     @Test fun payslipWrong() = shoot("1252_aq_photo_wrong", FOLDED, slip {
@@ -114,19 +118,20 @@ class AQScreenshotTest : ScreenshotBase() {
 
     private fun cells(then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         content {
-            val ticks = remember { mutableStateListOf<Pair<RuleFinding, Boolean>>().apply { addAll(RuleText.read(RULES).map { it to true }) } }
-            val unread = remember { mutableStateListOf<String>().apply { addAll(RuleText.unread(RULES)) } }
-            Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-                RuleCells(ticks, unread, RuleTarget(emptyList(), emptyList(), true) { _, _ -> }, YearMonth.of(2026, 11))
+            // [PHOTO-32] 1.30 AW: the same 칸 list as the photo's result and 칸으로 적기.
+            val state = rememberRuleSheetState { RuleSheet.read(RuleText.read(RULES), RuleText.unread(RULES)) }
+            val host = remember {
+                RuleSheetHost(PhotoCellsLogic.blank, com.bamnat.app.data.ScheduleSnapshot(emptyList(), emptyList(), emptyList()), YearMonth.of(2026, 11))
             }
+            Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) { RuleSheetCells(state, host) }
         }
         settle()
         then()
     }
 
     @Test fun ruleCells() = shoot("1254_aq_rule_cells", FOLDED, cells {
-        assertTrue(sees("휴일 8시간 초과 가산 100%", exact = false))
-        assertTrue(sees("세금 계산 가족 3명", exact = false))
+        assertTrue(sees("휴일 8시간 넘게", exact = false))
+        assertTrue(sees("세금 계산 가족", exact = false))
     })
     @Test fun ruleCellsByHand() = shoot("1255_aq_rule_cells_by_hand", FOLDED, cells { reveal("휴가보상", exact = false) })
     @Test fun ruleCellsSmallBig() = shoot("1256_aq_rule_cells_320_200", SMALL_PHONE, 2f, cells())

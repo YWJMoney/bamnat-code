@@ -659,6 +659,8 @@ private fun PayResult(
         shiftTypes = snapshot.shiftTypes,
         fiveOrMore = profile.fiveOrMoreEmployees,
         kinds = slipSettings.extraKinds.kinds,
+        // [RULE-ED-06] 1.30 AW: each 칸's own amount on this setup and calendar.
+        profile = profile, snapshot = snapshot, effectOf = { p, s, m, made -> vm.effectOf(p, s, m, made) },
         onDismiss = { slipRules = false },
         onApply = { r -> vm.applySlipRules(r); slipRules = false; if (onShareWay != null && r.changes.isNotEmpty()) plazaAsk = true },
     )
