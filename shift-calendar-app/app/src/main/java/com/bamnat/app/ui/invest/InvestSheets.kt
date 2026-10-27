@@ -34,6 +34,9 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.CompositionLocalProvider
+import com.bamnat.app.ui.components.LongTextField
+import com.bamnat.app.ui.components.edgeScrollViewport
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -131,12 +134,17 @@ internal fun InvestSheetFrame(
                 actions()
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
             }
-            Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                content()
-                Spacer(Modifier.height(4.dp))
+            // [MEMO-SEL-02] 1.30 AY: a long note's selection handles (일지 복기) scroll the form, like a memo's.
+            val formScroll = rememberScrollState()
+            val edge = com.bamnat.app.ui.components.rememberEdgeScroll(formScroll)
+            CompositionLocalProvider(com.bamnat.app.ui.components.LocalEdgeScroll provides edge) {
+                Column(
+                    Modifier.weight(1f, fill = false).edgeScrollViewport(edge).verticalScroll(formScroll).padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    content()
+                    Spacer(Modifier.height(4.dp))
+                }
             }
             if (onSave != null) {
                 Button(onClick = onSave, enabled = canSave, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).navigationBarsPadding()) {
@@ -381,7 +389,7 @@ internal fun TradeSheet(
         ChoiceChips(Emotion.entries, { it in emotions }, { it.label }, { e -> if (e in emotions) emotions.remove(e) else emotions.add(e) })
         FieldLabel("내 원칙")
         ChoiceChips(listOf(true, false), { rules == it }, { if (it) "지켰어요" else "어겼어요" }, { v -> rules = if (rules == v) null else v })
-        OutlinedTextField(memo, { memo = it.take(500) }, label = { Text("메모") }, placeholder = { Text("왜 샀는지, 언제 팔지") },
+        LongTextField(memo, { memo = it.take(500) }, label = { Text("메모") }, placeholder = { Text("왜 샀는지, 언제 팔지") },
             modifier = Modifier.fillMaxWidth(), minLines = 2)
     }
     if (editingFees) FeeRatesDialog(book.settings, onDismiss = { editingFees = false }) { buy, sell ->
