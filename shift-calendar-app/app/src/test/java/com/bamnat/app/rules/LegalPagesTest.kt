@@ -271,6 +271,6 @@ class LegalPagesTest {
         com.bamnat.core.stats.PhotoWrongReason.entries.forEach { assertTrue(it.label, text.contains(it.label)) }
         assertTrue(text.contains("사진, 읽은 글자와 숫자, 이용자가 적은 글, 설치 번호, 휴대폰 모델과 정확한 시각은 보내지 않습니다"))
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG)!!
-        assertTrue(flag.basis.policy.startsWith("3.3 1-13항"))
+        assertTrue(flag.basis.policy.orEmpty().startsWith("3.3 1-13항"))
     }
 }
