@@ -77,7 +77,8 @@ test("anything carrying money is refused, not dropped", () => {
   refused((s) => { s.pay.items[1].amount = { entries: [], raise: { month: 3, percent: 0.03 } }; }, "amount", "items");
   refused((s) => { s.shiftTypes.push({ name: "교육 2,500,000", start: "09:00", end: "18:00", break: 60, off: false }); }, "amount", "shiftTypes");
   refused((s) => { s.pay.items[1].name = "010-1234-5678"; }, "phone", "items");
-  refused((s) => { s.v = 4; }, "setup_version", "v");
+  // BC 1.30 [ITEM-04] 4 is read now (수당 종류); a newer one still asks to update.
+  refused((s) => { s.v = 5; }, "setup_version", "v");
   refused((s) => { s.format = "bamnat-backup"; }, "setup", "format");
   refused((s) => { s.rotation.steps[0] = "오후"; }, "setup", "rotation");
   refused((s) => { s.shiftTypes[0].start = "7시"; }, "setup", "shiftTypes");
@@ -160,7 +161,8 @@ test("a setup reads as plain Korean for the developer", () => {
   assert.equal(lines["연장·휴무일 근무"], "잔업(근무 뒤 2시간) · 특근(09:00~18:00) · 대근(주간·야간 대신) · 조기출근(근무 앞 1시간)");
   assert.equal(lines["대근"], "8시간에 기본급 10% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%");
   assert.equal(lines["빨간날 근무"], "대근처럼");
-  assert.equal(lines["수당"], "상여(2·4·6·8·10·12월 기본급 100%) · 자격수당(매달) · 야간수당(야간마다)");
+  // BC 1.30 [ITEM-04] An allowance in 통상임금 says so, so a proposal that only moves it in or out shows as a change.
+  assert.equal(lines["수당"], "상여(2·4·6·8·10·12월 기본급 100%) · 자격수당(매달 통상임금) · 야간수당(야간마다)");
 });
 
 test("a report waits for coworkers, then is adopted by two people", async () => {
