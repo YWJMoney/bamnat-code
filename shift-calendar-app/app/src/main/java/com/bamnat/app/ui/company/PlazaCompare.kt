@@ -162,8 +162,11 @@ fun DiffEditorSheet(
     var takeMine by rememberSaveable(base) { mutableStateOf(true) }
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    // [ITEM-03] 결정 D102: the company's one amounts go only while the plaza.fixed_amount row is on.
-    val amounts = remember { runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }.getOrDefault(true) }
+    // [ITEM-03] 결정 D102: the company's one amounts go only while the plaza.fixed_amount row is on. [FIN130-02] A flag that
+    // cannot be read is off, as the flag itself is until 처리방침 3.4.
+    val amounts = remember { runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }.getOrDefault(false) }
+    // [FIN130-02] 내 급여도 이 값으로 goes onto the pay of the calendar on screen, never 내 달력's from another calendar's plaza.
+    val mineScope = companyScope(c)
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val e = edit
         if (start == null || e == null) {
@@ -216,7 +219,7 @@ fun DiffEditorSheet(
                     if (alsoMine && takeMine) {
                         val text = e.text
                         scope.launch {
-                            val n = runCatching { c.companyShare.takeEdited(base, text) }.getOrDefault(0)
+                            val n = runCatching { mineScope.share.takeEdited(base, text) }.getOrDefault(0)
                             c.telemetry.event("plaza_diff", if (n > 0) "mine_taken" else "mine_same")
                         }
                     }

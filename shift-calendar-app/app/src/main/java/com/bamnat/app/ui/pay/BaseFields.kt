@@ -131,12 +131,16 @@ fun MonthlyHoursChips(
     modifier: Modifier = Modifier,
     companyHours: Int? = null,
     companyName: String? = null,
+    /** [FIN130-09] The usual hours after the company's (회사 규칙 설정 also offers 180, as the payslip match tries it). */
+    choices: List<Int> = BaseAsk.HOURS_CHOICES,
+    /** [FIN130-09] Hours other than the company's sent as an opinion now (회사 규칙 설정); null says it is asked after they go in. */
+    onPropose: ((Int) -> Unit)? = null,
 ) {
     val company = companyHours?.takeIf { it in BaseAsk.HOURS_RANGE }
     val shown = hours ?: company
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            BaseAsk.hoursChoices(company).forEach { h ->
+            (listOfNotNull(company) + choices).distinct().forEach { h ->
                 val own = h == company
                 FilterChip(
                     selected = shown == h,
@@ -149,9 +153,15 @@ fun MonthlyHoursChips(
             val differs = BaseAsk.hoursToPropose(hours, company)
             Text(
                 if (differs == null) "${companyName?.let { "‘$it’ " } ?: "같은 회사 "}분들이 맞춘 값이에요. 명세서와 다르면 고쳐 주세요."
+                else if (onPropose != null) "회사 규칙은 ${company}시간이에요. ${differs}시간이 맞다면 같은 회사 분들께 의견으로 알려 주세요."
                 else "회사 규칙은 ${company}시간이에요. ${differs}시간으로 계산하고, 넣은 뒤 같은 회사 분들께 의견으로 보낼지 여쭤볼게요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (differs != null && onPropose != null) {
+                androidx.compose.material3.TextButton(onClick = { onPropose(differs) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("${differs}시간으로 의견 보내기")
+                }
+            }
         }
     }
 }

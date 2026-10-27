@@ -428,6 +428,13 @@ internal fun CustomItemDialog(
 ) = CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf)
 
 /**
+ * [ITEM-06][FIN130-08] Whether calendar [calendar]'s pay comes from a company's way (광장): its pay way in use, or a coworkers'
+ * setup it uses. That calendar's own, so an added calendar's item never follows 내 달력's company.
+ */
+internal fun payFromCompany(c: com.bamnat.app.AppContainer, calendar: String): Boolean =
+    c.companyOf(calendar).let { s -> s.payWays.way.value != null || s.store.applied.value != null }
+
+/**
  * [PHOTO-06] 1.29: the one builder for a line of the company's own, also used from a photo's result (명세서·규칙 사진) before
  * anything is saved: [effectOf] works out what it does to the month on the profile being set up. [keepRule] keeps 매달·일한 날마다
  * as a rule, as a rules photo makes them, so a list of rules stays one list.
@@ -455,9 +462,9 @@ internal fun CustomItemDialog(
 ) {
     val id = remember { editing?.id ?: editingItem?.id ?: ("rule-" + System.currentTimeMillis().toString(36)) }  // real clock: an id, not a time
     val context = androidx.compose.ui.platform.LocalContext.current
-    val fromCompany = companyWay ?: remember {
-        runCatching { context.appContainer.let { c -> c.payWays.way.value != null || c.companyStore.applied.value != null } }.getOrDefault(false)
-    }
+    // [FIN130-08] The calendar on screen's company (its pay way, the setup it uses), not 내 달력's.
+    val calendar = com.bamnat.app.ui.company.LocalCompanyCalendar.current
+    val fromCompany = companyWay ?: remember(calendar) { runCatching { payFromCompany(context.appContainer, calendar) }.getOrDefault(false) }
     val draft = remember {
         (editing?.let { ItemDraft.of(it) } ?: editingItem?.let { ItemDraft.ofItem(it) }
             ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) })

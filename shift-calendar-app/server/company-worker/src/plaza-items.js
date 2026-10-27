@@ -42,6 +42,19 @@ export function readItemShare(i, out, bad) {
   return out;
 }
 
+/** [FIN130-15] The privacy policy version that lets a company's one amount (FIXED fixedAmount) come to the 광장 (core FlagCatalog plaza.fixed_amount). */
+export const ITEM_FIXED_POLICY = "3.4";
+
+/**
+ * [FIN130-15] Before [ITEM_FIXED_POLICY] is in force the server takes no amount at all: a checked setup's company amounts are
+ * dropped, quietly (not refused), so an older app or one whose plaza.fixed_amount was forced on still sends; the allowance stays
+ * 회사 공통 and each person types it, as before 1.30. Changes [setup] in place and returns it.
+ */
+export function withoutFixedAmounts(setup) {
+  for (const i of setup?.pay?.items ?? []) delete i.fixedAmount;
+  return setup;
+}
+
 /** [ITEM-04] The 1.30 fields that make two allowances different rules (canonical); nothing for PERSONAL. */
 export function itemShareCanon(i) {
   if (!i.share) return {};

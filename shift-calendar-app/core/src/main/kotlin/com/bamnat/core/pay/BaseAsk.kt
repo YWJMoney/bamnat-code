@@ -50,7 +50,10 @@ object BaseAsk {
         }
         val withBase = p.copy(base = timeline, estimatedFields = p.estimatedFields - Unknowns.BASE)
         val h = hours?.takeIf { it in HOURS_RANGE && p.wageType == WageType.MONTHLY } ?: return withBase
-        return RuleOnlyNeeds.settled(withBase.copy(monthlyHours = h))
+        // [FIN130-04] Where the hours came from: the setup's own (a company's way says PLAZA) when they are the same, the user's
+        // (TYPED) when they changed them, so the 통상시급 card says 광장 or 직접 truly.
+        val source = if (h == p.monthlyHours) p.hoursSource else HourlySource.TYPED
+        return RuleOnlyNeeds.settled(withBase.copy(monthlyHours = h, hoursSource = source))
     }
 
     /** What a month comes to is worth showing only with a base of the user's own (else it reads 0원 or a guess). */

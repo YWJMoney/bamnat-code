@@ -66,7 +66,8 @@ fun SendGuardAsk(
         ) {
             GuardText("${place(v.page.name, v.setup.dept)}에 내 달력과 같은 규칙이 올라와 있어요. 새로 보내지 않고 이 규칙을 쓰면 맞아요 1명으로 세요.")
             DeptGroups.summary(v.setup.text)?.let { GuardLine(it) }
-            if (v.withPay) GuardLine("이 규칙의 급여 계산 방식도 같이 넣어요. 내 금액은 그대로예요.")
+            // [FIN130-01] The pay way goes in with the 기본급 on the pay screen (PendingWay), never before it.
+            if (v.withPay) GuardLine("이 규칙의 급여 계산 방식은 급여 화면에서 기본급을 넣으면 같이 들어가요. 그 전에는 내 급여가 그대로예요.")
             GuardButtons {
                 Button(onClick = { onUse(v) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 규칙 쓰기") }
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("취소") }
@@ -178,14 +179,17 @@ fun GuardProposalSheet(v: SendGuard.Differ, calendar: String, onSent: () -> Unit
     )
 }
 
-/** [PLZD-01][PLZD-03] After 이 규칙 쓰기 or a proposal: what happened, and the company's 광장. */
+/**
+ * [PLZD-01][PLZD-03] After 이 규칙 쓰기 or a proposal: what happened, and the company's 광장. [FIN130-01] A pay way that waits
+ * for its 기본급 ([CompanyReportViewModel.Sending.Used.toPay]) makes the pay screen the one button ([onOpenPay]).
+ */
 @Composable
-fun GuardDonePanel(s: CompanyReportViewModel.Sending, onDone: () -> Unit, onOpenCompany: ((String) -> Unit)?) {
+fun GuardDonePanel(s: CompanyReportViewModel.Sending, onDone: () -> Unit, onOpenCompany: ((String) -> Unit)?, onOpenPay: (() -> Unit)? = null) {
     val (title, body, id, company) = when (s) {
         is CompanyReportViewModel.Sending.Used -> listOf(
             "이 규칙을 쓰고 있어요",
             "${place(s.company, s.dept)} 규칙을 내 달력에 쓰고 맞아요 1명으로 셌어요. 새로 올린 것은 없어요." +
-                if (s.withPay) " 급여 계산 방식도 같이 넣었어요. 기본급은 급여 화면에서 확인해 주세요." else "",
+                if (s.toPay) " 급여 계산 방식은 급여 화면에서 기본급을 넣으면 들어가요." else "",
             s.companyId, s.company)
         is CompanyReportViewModel.Sending.Proposed -> listOf(
             "제안을 보냈어요",
@@ -202,7 +206,11 @@ fun GuardDonePanel(s: CompanyReportViewModel.Sending, onDone: () -> Unit, onOpen
         HeroIcon(if (s is CompanyReportViewModel.Sending.Used) Icons.Outlined.CheckCircle else Icons.Outlined.RateReview)
         Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        if (onOpenCompany != null && id.isNotEmpty()) {
+        if (s is CompanyReportViewModel.Sending.Used && s.toPay && onOpenPay != null) {
+            Button(onClick = onOpenPay, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("급여 화면에서 기본급 넣기") }
+            if (onOpenCompany != null && id.isNotEmpty()) OutlinedButton(onClick = { onOpenCompany(id) }, modifier = Modifier.fillMaxWidth()) { Text("‘$company’ 광장 보기") }
+            TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
+        } else if (onOpenCompany != null && id.isNotEmpty()) {
             Button(onClick = { onOpenCompany(id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("‘$company’ 광장 보기") }
             TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
         } else {

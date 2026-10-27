@@ -1,14 +1,6 @@
 package com.bamnat.app.ui.company
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +30,9 @@ data class CompanyWayText(val way: PayWay, val text: String) {
 }
 
 /**
- * [ITEM-07] The company's way of this phone's pay, read once from the server (null while reading, offline, or with no way).
- * Never on the main thread: the read is the client's own.
+ * [ITEM-07] The company's way of this phone's pay (null while reading, offline, or with no way). [FIN130-05] The company's
+ * page kept on the phone first ([com.bamnat.app.company.PageCache]), read from the server only when it is not there (and kept
+ * then), so the pay screens do not ask the server each time they open. Never on the main thread: the read is the client's own.
  */
 @Composable
 fun rememberCompanyWayText(): CompanyWayText? {
@@ -49,36 +42,41 @@ fun rememberCompanyWayText(): CompanyWayText? {
     val way = remember(payWays) { runCatching { payWays.way.value }.getOrNull() }
     val text by produceState<CompanyWayText?>(null, way) {
         val w = way ?: return@produceState
-        value = runCatching { c.companyApi.company(w.companyId).setups.firstOrNull { it.id == w.setup }?.text }.getOrNull()
-            ?.let { CompanyWayText(w, it) }
+        value = companyWayText(c, w)
     }
     return text
+}
+
+/** [FIN130-05] [way]'s file as the 광장 has it, from the page kept on the phone when there ([keptSetupText]). */
+internal suspend fun companyWayText(c: com.bamnat.app.AppContainer, way: PayWay): CompanyWayText? =
+    keptSetupText(c, way.companyId, way.setup)?.let { CompanyWayText(way, it) }
+
+/**
+ * [FIN130-05] Setup [setup] of [companyId] as the 광장 has it: the page kept on the phone first; else read once and kept, so the
+ * next screen has it. Null offline, or when the version is not on the page; a kept page whose pay this phone was not shown
+ * (read before it joined) is read again.
+ */
+internal suspend fun keptSetupText(c: com.bamnat.app.AppContainer, companyId: String, setup: String): String? {
+    c.companySearch.page(companyId)?.setups?.firstOrNull { it.id == setup && !it.payHidden }?.let { return it.text }
+    val page = runCatching { c.companyApi.company(companyId) }.getOrNull() ?: return null
+    c.companySearch.keepPage(page)
+    return page.setups.firstOrNull { it.id == setup }?.text
 }
 
 /**
  * [ITEM-07] The hours chips with the company's first ("회사 규칙 180시간"), and, when the user's [hours] differ from the company's,
  * the line that sends them as a proposal ([HoursProposalSheet]). [onPick] sets the user's own hours.
+ * [FIN130-09] One set of chips, 묶음 BA's [com.bamnat.app.ui.pay.MonthlyHoursChips], with [choices] after the company's (1.30 had
+ * three: this line, the screen's own chips and BA's); without a company way it is those chips alone.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CompanyHoursLine(way: CompanyWayText?, hours: Int, onPick: (Int) -> Unit) {
-    val company = way?.hours ?: return
-    var proposing by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            com.bamnat.app.ui.components.FilterChip(selected = hours == company, onClick = { onPick(company) },
-                label = { Text("회사 규칙 ${company}시간") }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-        if (hours == company) {
-            Text("‘${way.way.company}’ 분들이 맞춘 값이에요. 명세서와 다르면 고쳐 주세요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Text("회사 규칙은 ${company}시간이에요. ${hours}시간이 맞다면 같은 회사 분들께 의견으로 알려 주세요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { proposing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${hours}시간으로 의견 보내기") }
-        }
-    }
-    if (proposing) HoursProposalSheet(way, hours) { proposing = false }
+fun CompanyHoursLine(way: CompanyWayText?, hours: Int, choices: List<Int> = com.bamnat.core.pay.BaseAsk.HOURS_CHOICES, onPick: (Int) -> Unit) {
+    val company = way?.hours
+    var proposing by remember { mutableStateOf<Int?>(null) }
+    com.bamnat.app.ui.pay.MonthlyHoursChips(hours, onHours = { h -> onPick(h ?: company ?: hours) }, companyHours = company,
+        companyName = way?.way?.company, choices = choices, onPropose = if (way != null && company != null) ({ proposing = it }) else null)
+    val p = proposing
+    if (p != null && way != null) HoursProposalSheet(way, p) { proposing = null }
 }
 
 /**
@@ -89,7 +87,9 @@ fun CompanyHoursLine(way: CompanyWayText?, hours: Int, onPick: (Int) -> Unit) {
 fun HoursProposalSheet(way: CompanyWayText, hours: Int, from: String = "명세서", onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
-    val holder = remember { TalkHolder(c, scope) }
+    // [FIN130-08] The calendar on screen's: a proposal that carries a setup carries this calendar's.
+    val calendar = LocalCompanyCalendar.current
+    val holder = remember(calendar) { TalkHolder(c, scope, calendar) }
     val draft = remember(way.text, hours) { ProposalDraft.hours(way.text, hours, from) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

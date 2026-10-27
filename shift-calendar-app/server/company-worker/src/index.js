@@ -65,7 +65,7 @@ import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalo
 // SP1 1.30 [SPD-01][SPD-02][SPD-04][SPD-06] what the plaza's fast reads share.
 import { spDbKey, spSession, spBookmarked, spNoCache, spKept, spPairChunks, spInMarks, spEtag, spNotModified } from "./read-fast.js";
 // BC 1.30 [ITEM-04][PROP-01]
-import { readItemShare, itemShareCanon, itemShareText, withProposalTexts } from "./plaza-items.js";
+import { readItemShare, itemShareCanon, itemShareText, withProposalTexts, withoutFixedAmounts, ITEM_FIXED_POLICY } from "./plaza-items.js";
 // BD 1.30 [PLZD-04][PLZD-05][PLZD-07] 광장 중복·변별: a version of another shape held, a day's versions from one phone, what folded versions change.
 import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.js";
 
@@ -1703,8 +1703,9 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
  * last other version and adoption. stable(deptNorm, grp, uses, now) then answers as stableOf does.
  */
 async function stableFacts(env, companyId) {
+  // [FIN130-12] A version held for its shape is no change of its department (stableOf reads the same).
   const [sent, ruled] = await Promise.all([
-    all(env, `SELECT grp, dept_norm, MIN(created_at) AS born, MAX(CASE WHEN status IN ('pending', 'adopted', 'replaced') THEN created_at END) AS last
+    all(env, `SELECT grp, dept_norm, MIN(created_at) AS born, MAX(CASE WHEN status IN ('pending', 'adopted', 'replaced') AND ${pgShown()} THEN created_at END) AS last
       FROM reports WHERE company_id = ? GROUP BY grp, dept_norm`, companyId),
     all(env, "SELECT dept_norm, MAX(adopted_at) AS at FROM rules WHERE company_id = ? GROUP BY dept_norm", companyId),
   ]);
@@ -1779,7 +1780,8 @@ async function stableOf(env, companyId, deptNorm, grp, now) {
   const row = await one(env, `SELECT
       (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?3) AS uses,
       (SELECT MIN(created_at) FROM reports WHERE company_id = ?1 AND grp = ?3) AS born,
-      (SELECT MAX(created_at) FROM reports WHERE company_id = ?1 AND dept_norm = ?2 AND grp != ?3 AND status IN ('pending', 'adopted', 'replaced')) AS other,
+      (SELECT MAX(created_at) FROM reports WHERE company_id = ?1 AND dept_norm = ?2 AND grp != ?3 AND status IN ('pending', 'adopted', 'replaced')
+        AND ${pgShown()}) AS other,
       (SELECT MAX(adopted_at) FROM rules WHERE company_id = ?1 AND dept_norm = ?2) AS adopted`, companyId, deptNorm, grp);
   const since = Math.max(row.born ?? 0, row.other ?? 0, row.adopted ?? 0);
   return { stable: row.uses >= MEMBER.stablePhones && since > 0 && now - since >= MEMBER.stableDays * DAY, uses: row.uses, since };
@@ -2602,6 +2604,8 @@ async function report(request, env) {
   if (!device) refuse("device", "device");
   const r = readReport(body);
   const now = Date.now();
+  // [FIN130-15] No company amount before 처리방침 3.4 is in force (the server's own policy calendar).
+  if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(r.setup);
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   if (!(await allow(env, `report|${dev}`, LIMITS.reportsPerDay, DAY, now)) ||
@@ -2624,8 +2628,9 @@ async function report(request, env) {
   const active = await activeRule(env, c.id, r.deptNorm);
   const adopted = active?.grp === grp;
   // [PLAZA-10] The first version of this company's department from anyone: shown at once as 제보 1 · 확인 중.
+  // [FIN130-12] A version held for its shape is no one's first: the next one people see still is.
   const first = !active && !(await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND dept_norm = ? AND device != ?
-    AND status IN ('pending', 'adopted') LIMIT 1`, c.id, r.deptNorm, dev));
+    AND status IN ('pending', 'adopted') AND ${pgShown()} LIMIT 1`, c.id, r.deptNorm, dev));
   const id = randomId(22);
   await batch(env, [
     // A newer setup from the same sender for the same place takes the place of the older one.
@@ -2757,8 +2762,10 @@ async function settle(env, companyId, grp, now) {
   // [COMM-07] Too many 달라요 for the 맞았어요: the developer decides, however many points it has.
   if (s.persons * 100 < adoptAgree * (s.persons + s.bad)) return;
   const rep = await representative(env, companyId, grp);
-  // BD 1.30 [PLZD-04] A version of another shape is the developer's to place, however many agree.
-  if (!rep || rep.reason === PG_HELD) return;
+  // BD 1.30 [PLZD-04] A version of another shape is the developer's to place, however many agree. [FIN130-17] Held means no
+  // report of it is shown: one shown report of the same setup makes it a version like any other, whichever is the representative.
+  if (!rep || !(await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted') AND ${pgShown()} LIMIT 1`,
+    companyId, grp))) return;
   const why = await blocker(env, companyId, grp, rep.dept_norm);
   if (!why) {
     // [PLZ-03] At least this many different people (결정 D32).
@@ -2812,8 +2819,9 @@ async function adopt(env, companyId, grp, source, now) {
     stmt(env, "UPDATE rules SET superseded = 1 WHERE company_id = ? AND dept_norm = ? AND superseded = 0", companyId, rep.dept_norm),
     stmt(env, `INSERT INTO rules (id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`, ruleId, companyId, rep.dept, rep.dept_norm, grp, (last?.v ?? 0) + 1, rep.setup, source, now),
-    stmt(env, "UPDATE reports SET status = 'adopted', rule_id = ?, decided_at = ? WHERE company_id = ? AND grp = ? AND status = 'pending'",
-      ruleId, now, companyId, grp),
+    // [FIN130-14] Adopted (by the developer) is placed: the 'held for its shape' note goes, so its senders no longer read it.
+    stmt(env, `UPDATE reports SET status = 'adopted', rule_id = ?, decided_at = ?, reason = CASE WHEN reason = '${PG_HELD}' THEN NULL ELSE reason END
+      WHERE company_id = ? AND grp = ? AND status = 'pending'`, ruleId, now, companyId, grp),
   ];
   if (rewardMonths > 0) {
     stmts.push(stmt(env, `
@@ -2988,7 +2996,8 @@ async function vote(request, env) {
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   const grp = body.setup;
   const rule = await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp);
-  const pending = rule ? null : await one(env, "SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' LIMIT 1", c.id, grp);
+  // [FIN130-12] A version held for its shape is not on the plaza: nothing to vote on until the developer places it.
+  const pending = rule ? null : await one(env, `SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND ${pgShown()} LIMIT 1`, c.id, grp);
   if (!rule && !pending) return json({ error: "not_found" }, 404);
   const dev = await deviceHash(device);
   await forgetNetworks(env, now);
@@ -3095,13 +3104,14 @@ async function board(env, url) {
  * older version a newer one replaced, whose talk stays readable as part of the rule's history ([PLZ-04]).
  */
 async function talkable(env, companyId, grp, past = false) {
+  // [FIN130-12] A version held for its shape has no talk (talkData's openOf reads the same).
   // AI 1.27 [PLAZA-32] A room is there as long as its company (or kind of work) is.
   if (grp === ROOM) return roomPlace(env, companyId);
   const c = await follow(env, companyId);
   if (!c || c.hidden) return null;
   const live = await one(env, `SELECT
       EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND (superseded = 0 OR ?3)) AS rule,
-      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, c.id, grp, past ? 1 : 0);
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending' AND ${pgShown()}) AS pending`, c.id, grp, past ? 1 : 0);
   return live.rule || live.pending ? c : null;
 }
 
@@ -3126,7 +3136,7 @@ async function talkData(request, env, companyId, grp, known = null) {
   const openOf = (id) => one(env, `SELECT
       EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0) AS rule,
       EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND superseded = 0) AS current,
-      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, id, grp);
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending' AND ${pgShown()}) AS pending`, id, grp);
   // AI 1.27 [PLAZA-32] A company's room is only for its members; a kind's plaza for any phone with the app (AI-D6·D7).
   const style = room && Object.hasOwn(STYLE_ROOMS, companyId);
   let [c, who, live] = known ? [known.c, known.who, null] : await Promise.all([
@@ -3289,6 +3299,8 @@ async function post(request, env) {
       const why = personal(t);
       if (why) refuse(why, field);
     }
+    // [FIN130-15] As a report: no company amount before 처리방침 3.4 is in force.
+    if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(setup);
     const base = await one(env, `SELECT dept, dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
       UNION ALL SELECT dept, dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
     const grp = (await sha256(`${base.dept_norm}|${await fingerprint(setup)}`)).slice(0, 16);
@@ -3452,8 +3464,9 @@ async function plazas(env) {
       COUNT(DISTINCT CASE WHEN r.id IS NOT NULL THEN r.id END) AS adopted
     FROM companies c LEFT JOIN rules r ON r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0
     WHERE c.hidden = 0 AND c.merged_into IS NULL GROUP BY c.job`),
+    // [FIN130-13] 투표 중 counts what the board lists: a version held for its shape is not on it.
     all(env, `SELECT c.job, COUNT(DISTINCT p.company_id || p.grp) AS n FROM reports p JOIN companies c ON c.id = p.company_id
-    WHERE p.status = 'pending' AND c.hidden = 0 GROUP BY c.job`),
+    WHERE p.status = 'pending' AND ${pgShown("p")} AND c.hidden = 0 GROUP BY c.job`),
     all(env, "SELECT job, COUNT(*) AS n FROM rates WHERE status = 'adopted' GROUP BY job"),
   ]);
   const count = (list, job, key = "n") => list.find((r) => r.job === job)?.[key] ?? 0;
@@ -5955,8 +5968,9 @@ const BADGE_SQL = {
   owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
   flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
   // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
+  // [FIN130-11] A version held for its shape (BD) is counted once, under 모양이 다른 판 (ax_shape), not here as well.
   versionConflicts: ["companies", `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
-      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
+      WHERE status = 'pending' AND ${pgShown()} GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
       WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`],
   waiting: ["owner", "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'"],
   // [MON-09] Admins' phones waiting for the owner's 승인.
@@ -8439,7 +8453,7 @@ export function wilson(ok, n) {
 async function versions(env, show) {
   const [ruleRows, groupRows, reports, votes, useRows, postRows, companyRows, settingRows] = (await batch(env, [
     env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
-    env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at FROM reports WHERE status = 'pending'
+    env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at, reason FROM reports WHERE status = 'pending'
       ORDER BY verified DESC, created_at DESC`),
     env.DB.prepare("SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE status IN ('pending', 'adopted')"),
     env.DB.prepare("SELECT company_id, grp, device, ok, verified, cluster FROM votes"),
@@ -8477,14 +8491,16 @@ async function versions(env, show) {
     if (seen.has(key)) continue;
     seen.add(key);
     const reportsOf = groupRows.filter((x) => x.company_id === g.company_id && x.grp === g.grp);
+    // [FIN130-11] Held for its shape (every report of it, as pgShown reads them): shown, marked, never live nor recommended.
+    const shape = reportsOf.every((x) => x.reason === PG_HELD);
     at(g.company_id, g.dept_norm, g.dept).list.push(card(g.company_id, g.grp, {
       state: "pending", reports: reportsOf.length,
-      at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup }));
+      at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup, ...(shape ? { shape: true } : {}) }));
   }
   const out = [];
   let conflicts = 0;
   for (const d of depts.values()) {
-    const live = d.list.filter((c) => c.state !== "previous");
+    const live = d.list.filter((c) => c.state !== "previous" && !c.shape);
     const conflict = live.length >= 2;
     if (conflict) conflicts++;
     if (d.list.length < 2 || (!conflict && show !== "history")) continue;
@@ -9116,6 +9132,16 @@ function readOverride(r) {
     until: r.until ? iso(r.until) : null, reviewAt: r.review_at ?? null, by: r.by_name ?? "", byId: r.by_id ?? "", at: iso(r.at), auto: r.auto === 1,
     // 1.28 통합 [FLAG-36] AL-D3: outside this versionCode range the phone turns the flag off (판단 2단계).
     minApp: r.min_app ?? null, maxApp: r.max_app ?? null };
+}
+
+/**
+ * [FIN130-15] Whether 처리방침 [ITEM_FIXED_POLICY] is in force today (KST), by the calendar as the owner set it in the developer
+ * app: a company's one amount (fixedAmount) is taken only from then. A version not in the calendar is not in force.
+ */
+async function fixedAmountsOpen(env, now = Date.now()) {
+  const raw = (await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value;
+  const p = mergePolicy(raw).find((x) => x.version === ITEM_FIXED_POLICY);
+  return Boolean(p?.effective) && kstDay(now) >= p.effective;
 }
 
 /** [FLAG-33] The calendar with the owner's changes, and versions the owner added. */

@@ -78,18 +78,29 @@ class FirstSetup(
          */
         suspend fun keepCompany(scope: CompanyScope, marked: SetupDraft, used: (CompanyScope, AppliedSetup) -> Unit = { _, _ -> }) {
             val source = marked.source
-            // A broken part of a shared file was turned down when it was read; the shifts are saved either way.
-            val pendingPay = source != null && runCatching { scope.share.applyRules(source.text) }.getOrDefault(false)
             val store = scope.store
             val companyId = source?.id
             val setupId = source?.setupId
-            if (source?.kind == SetupSource.Kind.SERVER && companyId != null && setupId != null) {
+            val fromServer = source?.kind == SetupSource.Kind.SERVER && companyId != null && setupId != null
+            val withPay = source != null && runCatching { org.json.JSONObject(source.text).has("pay") }.getOrDefault(false)
+            // [FIN130-07] A coworkers' setup with its pay, on a calendar whose pay is already set up (설정 다시 하기, a calendar
+            // that had its pay): the pay way is never merged into that pay without a word. Its kinds of extra work go in now, the
+            // way waits on the pay screen for its 기본급 and goes in all at once there, or not at all (묶음 BA's PendingWay).
+            val payWaits = fromServer && withPay && scope.pay.profile.value != null
+            val text = if (payWaits) org.json.JSONObject(source!!.text).apply { remove("pay") }.toString() else source?.text
+            // A broken part of a shared file was turned down when it was read; the shifts are saved either way.
+            val pendingPay = text != null && runCatching { scope.share.applyRules(text) }.getOrDefault(false)
+            if (fromServer && source != null && companyId != null && setupId != null) {
                 // [COMM-03] 맞았어요·달라요 is asked about the company's setup in use.
                 val applied = AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Today.instant())
                 store.setApplied(applied)
                 store.setDraft(null)
                 store.setHandMade(false)
-                if (runCatching { org.json.JSONObject(source.text).has("pay") }.getOrDefault(false)) {
+                if (payWaits) {
+                    com.bamnat.app.company.PendingWays.of(scope).offer(com.bamnat.app.company.PendingWay(companyId, source.name, source.dept, setupId,
+                        source.text, com.bamnat.app.company.PendingWay.Source.FIRST_SETUP))
+                    scope.payWays.askBase(true)
+                } else if (withPay) {
                     scope.payWays.use(PayWay(companyId, source.name, source.dept, setupId))
                     if (pendingPay) scope.payWays.decided = true
                 }

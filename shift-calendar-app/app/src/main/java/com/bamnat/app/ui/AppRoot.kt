@@ -827,7 +827,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         // (LeadShare), the pay after it is answered, never two sheets over each other.
         val leadAsking by container.leadShare.step.collectAsStateWithLifecycle()
         if (saved.style?.usesPayEngine != true || payProfile != null) {
-            LaunchedEffect(saved) { container.firstSetup.consumeSaved() }
+            LaunchedEffect(saved) {
+                container.firstSetup.consumeSaved()
+                // [FIN130-07] A coworkers' setup with its pay on a pay already set up: its way waits for the 기본급 on the pay
+                // screen, which opens next (the cycle is in already).
+                if (saved.style?.usesPayEngine == true && com.bamnat.app.company.PendingWays.of(container.companyOf(PersonalCalendar.MAIN)).pending.value != null) {
+                    nav.navigate(Routes.pay()) { launchSingleTop = true }
+                }
+            }
         } else if (leadAsking == null) {
             // [PAYF-02][PAYF-05] 1.29 AP: the company named in the setup is asked for while the user reads this, so the pay's
             // first question lists its pay way at once.
@@ -1385,6 +1392,8 @@ private fun AppNavHost(
                 onOpenCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
                 // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 on the calendar's pay; back comes to this form with the tick open.
                 onMatch = { nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } },
+                // [FIN130-01] 이 규칙 쓰기 with its pay way: the pay screen asks the 기본급 and puts the way in.
+                onOpenPay = { nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true }; launchSingleTop = true } },
             )
             }
         }

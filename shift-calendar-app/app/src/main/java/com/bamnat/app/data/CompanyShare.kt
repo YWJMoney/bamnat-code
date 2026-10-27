@@ -401,9 +401,13 @@ class CompanyShare(
             }
         }
         apply(patched, rotation = false)
-        // The kinds' own names (extraNames) are the user's: the export leaves them out, so they are put back.
+        // The kinds' own names (extraNames) are the user's: the export leaves them out, so they are put back. [FIN130-04] So is
+        // where the hours came from, unless the hours were what was taken (then the 광장's).
         payStore.profile.value?.let { now ->
-            if (before != null && now.rules.extraNames != before.rules.extraNames) payStore.save(now.copy(rules = now.rules.copy(extraNames = before.rules.extraNames)))
+            val source = if (key == HOURS_KEY) com.bamnat.core.pay.HourlySource.PLAZA else before?.hoursSource
+            if (before != null && (now.rules.extraNames != before.rules.extraNames || now.hoursSource != source)) {
+                payStore.save(now.copy(rules = now.rules.copy(extraNames = before.rules.extraNames), hoursSource = source))
+            }
         }
         return true
     }
@@ -584,10 +588,14 @@ class CompanyShare(
             val item = PayCodec.itemFrom(o.put("types", JSONArray())).copy(id = "c" + java.util.UUID.randomUUID().toString().take(8), shiftTypeIds = types)
             if (item.name in have) null else if (withAmounts) item else item.copy(amount = ValueTimeline())
         }
+        // [FIN130-04] Hours the company's file says are the 광장's (PLAZA): the 통상시급 card says so, and an opinion on them says
+        // where they came from. A file that says none keeps the user's own and where they came from.
+        val hours = pay.optInt("monthlyHours", -1).takeIf { it in 100..320 }
         return p.copy(
             fiveOrMoreEmployees = pay.optBoolean("fiveOrMore", p.fiveOrMoreEmployees),
             // Values from someone else's file stay within what the pay setup screens allow.
-            monthlyHours = pay.optInt("monthlyHours", p.monthlyHours).takeIf { it in 100..320 } ?: p.monthlyHours,
+            monthlyHours = hours ?: p.monthlyHours,
+            hoursSource = if (hours != null) com.bamnat.core.pay.HourlySource.PLAZA else p.hoursSource,
             holidayPayMode = runCatching { HolidayPayMode.valueOf(pay.getString("holidayMode")) }.getOrDefault(p.holidayPayMode),
             dailyLimitMinutes = if (pay.has("dailyLimit")) pay.getInt("dailyLimit").takeIf { it in 1..24 * 60 } else p.dailyLimitMinutes,
             weeklyLimitMinutes = if (pay.has("weeklyLimit")) pay.getInt("weeklyLimit").takeIf { it in 1..168 * 60 } else p.weeklyLimitMinutes,
@@ -708,6 +716,8 @@ class CompanyShare(
         /** [ITEM-03] Whether [items] say who sets an amount (회사 공통·%), which 1.29 and before cannot read. */
         fun usesNewItems(items: List<com.bamnat.core.pay.PayItem>): Boolean = items.any { !it.mine && it.share != ItemShare.PERSONAL }
         const val MIME_TYPE = "application/json"
+        /** [FIN130-04] The 이 값 쓰기 key of the 통상시급 hours (core SetupFacts "place:hours"). */
+        private const val HOURS_KEY = "place:hours"
         private const val MAX_NAME = 40
         const val MAX_TEAM = 12
 

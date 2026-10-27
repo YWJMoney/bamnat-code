@@ -85,15 +85,29 @@ class SendGuard(private val c: AppContainer, val calendar: String = com.bamnat.a
     /**
      * 이 규칙 쓰기 on [Same]: the calendar now uses the plaza's rule (its shifts are already these), says 맞아요 for it and, when
      * [Same.withPay], takes its pay way too. Nothing new goes to the plaza.
+     *
+     * [FIN130-01] The pay way goes in as every other way into the pay does (묶음 BA's PendingWay): on a pay with its amounts it
+     * waits on the pay screen for its 기본급 and goes in all at once there, or not at all ([PendingWays]); with no pay yet the
+     * amounts screen makes one from it, and the way is in use only once that is saved ([PendingWays.keptWith]). Never the
+     * company's rules over the user's pay before the 기본급, nor the way marked in use before it.
      */
     suspend fun useSame(v: Same, verified: Boolean = false): CompanyShare.Applied? {
         val s = v.setup
         val store = scope.store
-        val result = if (v.withPay) scope.share.apply(s.text, rotation = false) else null
-        if (result != null && (result.rules || result.pendingPay)) {
-            scope.payWays.use(PayWay(v.page.id, v.page.name, s.dept, s.id))
-            scope.payWays.decided = true
-            if (result.rules) scope.payWays.askBase(true)
+        val payWaits = v.withPay && scope.pay.profile.value != null && hasPay(s.text)
+        val result = when {
+            !v.withPay -> null
+            payWaits -> {
+                // The shifts and kinds of work are the plaza's already; only the pay waits.
+                val cycle = scope.share.apply(JSONObject(s.text).apply { remove("pay") }.toString(), rotation = false)
+                PendingWays.of(scope).offer(PendingWay(v.page.id, v.page.name, s.dept, s.id, s.text, PendingWay.Source.APPLY))
+                scope.payWays.askBase(true)
+                cycle.copy(rules = true)
+            }
+            else -> scope.share.apply(s.text, rotation = false).also { r ->
+                // The amounts screen does not ask "쓸까요?" again; the way is kept when its amounts are saved.
+                if (r.pendingPay) scope.payWays.decided = true
+            }
         }
         val before = store.applied.value
         if (before != null && before.setup != s.id) runCatching { c.companyApi.use(store.device, before.companyId, before.setup, false, scope.serverCal) }
@@ -103,6 +117,8 @@ class SendGuard(private val c: AppContainer, val calendar: String = com.bamnat.a
         store.setMember(v.page.id, v.page.name)
         store.setDraft(null)
         if (result?.pendingPay == true) store.pendingPay = s.text
+        // [FIN130-06] The page this phone kept is older than its own 맞아요 now: the next check reads it again.
+        c.companySearch.forgetPage(v.page.id)
         // What the calendar has is what the plaza has: saving it again asks nothing.
         scope.autoShare.rebase()
         c.telemetry.event("company_apply", if (v.withPay) "same_pay" else "same")
