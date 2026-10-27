@@ -108,6 +108,41 @@ class ZFullBackupTest {
         c.settingsRepository.update { AppSettings() }
     }
 
+    /**
+     * [CALI-07] 1.30 BB: an added calendar's company connection (its own `company.json`·`pay_way.json`) travels with the
+     * same keys as 내 달력's; what is this phone's own (참여, 저절로 나누기 기준) stays here.
+     */
+    @Test fun anAddedCalendarsCompanyTravelsWithTheSameKeys() = runBlocking {
+        val id = c.calendars.begin("둘째").also { c.calendars.finishSetup(it, WorkStyle.SHIFT) }
+        try {
+            val files = com.bamnat.app.company.CompanyScopeStorage
+            files.prefs(app, id, files.COMPANY).edit().putString("applied", "{\"id\":\"c2\"}").putString("member", "c2|병원")
+                .putString("auto_base", "{}").commit()
+            files.prefs(app, id, files.PAY_WAY).edit().putString("way", "{\"companyId\":\"c2\"}").commit()
+            val file = c.backupManager.export()
+            val company = JSONObject(file).toString().let { s ->
+                val o = JSONObject(s)
+                fun find(j: JSONObject): JSONObject? = j.optJSONObject("calendarCompany")
+                    ?: j.keys().asSequence().mapNotNull { k -> j.optJSONObject(k)?.let(::find) }.firstOrNull()
+                requireNotNull(find(o)) { "calendarCompany 없음" }.getJSONObject(id)
+            }
+            assertTrue(company.getJSONObject("company").has("applied"))
+            assertTrue("참여는 이 휴대폰의 것", !company.getJSONObject("company").has("member"))
+            assertTrue(!company.getJSONObject("company").has("auto_base"))
+            assertTrue(company.getJSONObject("pay_way").has("way"))
+
+            // A new phone with the calendar back but its company forgotten: the backup puts it in again.
+            files.prefs(app, id, files.COMPANY).edit().clear().putString("member", "c9|여기").commit()
+            files.prefs(app, id, files.PAY_WAY).edit().clear().commit()
+            c.backupManager.restore(file)
+            assertEquals("{\"id\":\"c2\"}", files.prefs(app, id, files.COMPANY).getString("applied", null))
+            assertEquals("c9|여기", files.prefs(app, id, files.COMPANY).getString("member", null))
+            assertEquals("{\"companyId\":\"c2\"}", files.prefs(app, id, files.PAY_WAY).getString("way", null))
+        } finally {
+            c.calendars.delete(id)
+        }
+    }
+
     /** [BAK-01] Guard: a new setting goes in the backup (and in [sample]) or on the phone's list, never nowhere. */
     @Test fun everySettingIsBackedUpOrKeptOnThePhoneOnPurpose() {
         val fresh = AppSettings()

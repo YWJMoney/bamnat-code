@@ -301,10 +301,6 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: Stri
     // [CALI-08] 1.30 BB: with two calendars or more, the rules this calendar sent; the others' are on their own 광장.
     Text((calendarName?.let { "‘$it’에서 " } ?: "") + "보낸 규칙 ${a.reports.size}", style = MaterialTheme.typography.titleSmall)
     if (a.reports.isEmpty()) Text("아직 없어요", style = MaterialTheme.typography.bodySmall)
-    elsewhere.forEach { (name, n) ->
-        Text("‘$name’에서 보낸 규칙 ${n}개는 그 달력의 광장에서 보여요", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
     a.reports.forEach { r ->
         Text("${r.company} · ${r.dept.ifEmpty { "회사 전체" }} — " + when (r.status) {
             "adopted" -> "채택${r.version?.let { " v$it" } ?: ""}, 쓰는 사람 ${r.uses}명"
@@ -313,6 +309,10 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: Stri
             "withdrawn" -> "내려감"
             else -> r.status
         }, style = MaterialTheme.typography.bodyMedium)
+    }
+    elsewhere.forEach { (name, n) ->
+        Text("‘$name’에서 보낸 규칙 ${n}개는 그 달력의 광장에서 보여요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (a.proposals.isNotEmpty()) {
         Text("고치자는 제안 ${a.proposals.size}", style = MaterialTheme.typography.titleSmall)
