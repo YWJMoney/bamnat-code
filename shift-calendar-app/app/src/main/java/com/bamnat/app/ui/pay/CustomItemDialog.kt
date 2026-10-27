@@ -74,8 +74,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.appContainer
+import com.bamnat.core.pay.BonusBasis
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.CustomRule
+import com.bamnat.core.pay.ItemShare
+import com.bamnat.core.pay.ItemShares
+import com.bamnat.core.pay.ShareGuess
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
@@ -177,6 +182,16 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var ordinary by mutableStateOf(false)
     /** [PHOTO-05] 기본급의 n% or 통상임금의 n%. */
     var ofOrdinary by mutableStateOf(false)
+    /**
+     * [ITEM-05] 1.30 BC: who sets the amount of an allowance (매달·일한 날마다): the company for everyone, or each person. A
+     * percent ([ItemKind.SHARE]) is the third. Guessed from the name until the user picks ([whoPicked]).
+     */
+    var who by mutableStateOf(ItemShare.PERSONAL)
+    var whoPicked = false
+    /** [ITEM-05] What a percent allowance is of: 기본급, 기본급+고정수당 or 통상임금. */
+    var basis by mutableStateOf(BonusBasis.BASE)
+    /** [ITEM-06] The user's own allowance on top of the company's way: never sent to the 광장. */
+    var mine by mutableStateOf(false)
     /** [PHOTO-06] Kept as a rule even for 매달·일한 날마다 (it came from one, or it has limits a pay item cannot hold). */
     var asRule by mutableStateOf(false)
     /** [PHOTO-05] 근속 n년 이상 (0 none), n년 미만 (0 none). */
@@ -236,30 +251,58 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
             // [PHOTO-06] With limits (근속, 기간, 한도) only a rule can hold them.
             ItemKind.MONTHLY -> if (asRule || hasLimits) rule(RulePay.Monthly(won), whenever = RuleWhen()) else MadeItem.Item(PayItem(
                 id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))), Cadence.MONTHLY, ordinary = ordinary,
+                share = itemWho, mine = mine,
             ))
             ItemKind.PER_DAY -> if (asRule || hasLimits) rule(RulePay.PerTime(won), whenever = RuleWhen(dayKind = RuleDayKind.WORK_DAY)) else MadeItem.Item(PayItem(
                 id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))), Cadence.PER_WORK_DAY, ordinary = ordinary,
+                share = itemWho, mine = mine,
             ))
             ItemKind.PER_SHIFT -> rule(RulePay.PerTime(won))
             ItemKind.PER_HOUR -> rule(RulePay.PerHour(won))
             ItemKind.PREMIUM -> rule(RulePay.OfHourly(pct ?: return null))
-            ItemKind.SHARE -> rule(if (ofOrdinary) RulePay.OfOrdinaryMonthly(pct ?: return null) else RulePay.OfBaseMonthly(pct ?: return null))
+            // [ITEM-05] 1.30 BC: with no limits a percent is an allowance (기본급2 = 기본급의 n%), so it can go with the company's setup.
+            ItemKind.SHARE -> if (asRule || hasLimits) {
+                rule(if (ofOrdinary) RulePay.OfOrdinaryMonthly(pct ?: return null) else RulePay.OfBaseMonthly(pct ?: return null))
+            } else MadeItem.Item(PayItem(
+                id, title.take(20), ValueTimeline(), Cadence.MONTHLY, ordinary = ordinary,
+                share = ItemShare.PERCENT, percent = (pct ?: return null).coerceAtMost(ItemShares.MAX_PERCENT), percentOf = basis, mine = mine,
+            ))
             ItemKind.DEDUCT -> rule(if (deductWay == DeductWay.MONTHLY) RulePay.Monthly(won) else RulePay.PerTime(won), deduct = true)
         }
+    }
+
+    /** [ITEM-05] 회사 공통 or 사람마다 for an allowance with an amount (a percent is its own kind). */
+    private val itemWho: ItemShare get() = if (who == ItemShare.FIXED) ItemShare.FIXED else ItemShare.PERSONAL
+
+    /** [ITEM-05] The name typed: who sets it and what a percent is of, guessed until the user picks. */
+    fun guessFrom(name: String) {
+        if (whoPicked) return
+        ShareGuess.of(name)?.takeIf { it != ItemShare.PERCENT }?.let { who = it }
+        if (kind == ItemKind.SHARE) basis = ShareGuess.basisOf(name).also { ofOrdinary = it == BonusBasis.ORDINARY }
     }
 
     companion object {
         /** [PHOTO-06] The builder filled in from an allowance read from a photo (매달·일한 날마다), to change it before it is saved. */
         fun ofItem(item: PayItem): ItemDraft? {
-            val kind = when (item.cadence) {
-                Cadence.MONTHLY -> ItemKind.MONTHLY
-                Cadence.PER_WORK_DAY -> ItemKind.PER_DAY
+            val kind = when {
+                // [ITEM-05] A percent allowance is changed as one.
+                item.isPercent -> ItemKind.SHARE
+                item.cadence == Cadence.MONTHLY -> ItemKind.MONTHLY
+                item.cadence == Cadence.PER_WORK_DAY -> ItemKind.PER_DAY
                 else -> return null
             }
             return ItemDraft(kind, item.id).apply {
                 name = item.name
-                amount = item.amount.entries.lastOrNull()?.value
+                amount = item.amount.entries.lastOrNull()?.value ?: item.fixedAmount
                 ordinary = item.ordinary
+                who = item.share
+                whoPicked = true
+                mine = item.mine
+                if (item.isPercent) {
+                    percent = ExtraRuleText.number((item.percent ?: 0.0) * 100)
+                    basis = item.percentOf
+                    ofOrdinary = item.percentOf == BonusBasis.ORDINARY
+                }
             }
         }
 
@@ -347,13 +390,23 @@ internal fun CustomItemDialog(
     keepRule: Boolean = false,
     startName: String = "",
     editingItem: PayItem? = null,
+    /**
+     * [ITEM-06] 1.30 BC: the pay comes from a company's way (광장), so a new allowance starts as the user's own (나만 받아요) and
+     * stays off the 광장. Null works it out from this phone's company.
+     */
+    companyWay: Boolean? = null,
     effectOf: suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?,
 ) {
     val id = remember { editing?.id ?: editingItem?.id ?: ("rule-" + System.currentTimeMillis().toString(36)) }  // real clock: an id, not a time
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val fromCompany = companyWay ?: remember {
+        runCatching { context.appContainer.let { c -> c.payWays.way.value != null || c.companyStore.applied.value != null } }.getOrDefault(false)
+    }
     val draft = remember {
         (editing?.let { ItemDraft.of(it) } ?: editingItem?.let { ItemDraft.ofItem(it) }
             ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) })
-            .also { d -> if (keepRule) d.asRule = true; if (editing == null && startName.isNotBlank()) { d.name = startName.take(CustomRule.MAX_NAME); d.source = startName } }
+            .also { d -> if (keepRule) d.asRule = true; if (editing == null && startName.isNotBlank()) { d.name = startName.take(CustomRule.MAX_NAME); d.source = startName; d.guessFrom(startName) } }
+            .also { d -> if (editing == null && editingItem == null) d.mine = fromCompany }
     }
     val start = profile.period.start(month)
     val isEdit = editing != null || editingItem != null
@@ -392,8 +445,8 @@ internal fun CustomItemDialog(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         val k = draft.kind
-                        if (k == null) KindStep(gap) { picked -> draft.kind = picked; prefill(draft, gap) }
-                        else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null)
+                        if (k == null) KindStep(gap) { picked -> draft.kind = picked; prefill(draft, gap); draft.guessFrom(draft.name) }
+                        else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null, fromCompany = fromCompany)
                         if (full) Text("직접 만든 항목은 ${CustomRule.MAX}개까지예요. 쓰지 않는 항목을 지운 뒤 만들어 주세요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(24.dp))
@@ -465,7 +518,7 @@ private fun KindCard(kind: ItemKind, onClick: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: ScheduleSnapshot, gap: Long?, onChangeKind: (() -> Unit)?) {
+private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: ScheduleSnapshot, gap: Long?, onChangeKind: (() -> Unit)?, fromCompany: Boolean = false) {
     if (gap != null) GapBanner(gap)
     // The kind chosen, with the way back to the list.
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
@@ -479,13 +532,16 @@ private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: Sch
 
     OutlinedTextField(
         value = draft.name,
-        onValueChange = { draft.name = it.take(if (kind == ItemKind.MONTHLY || kind == ItemKind.PER_DAY) 20 else CustomRule.MAX_NAME) },
+        onValueChange = { draft.name = it.take(if (kind == ItemKind.MONTHLY || kind == ItemKind.PER_DAY) 20 else CustomRule.MAX_NAME); draft.guessFrom(draft.name) },
         label = { Text("이름 (선택)") },
         placeholder = { Text(kind.namePlaceholder) },
         supportingText = { Text("명세서에 적힌 이름 그대로 쓰면 다음에 맞춰 보기 쉬워요") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+
+    // [ITEM-05] 1.30 BC: who sets the amount, 회사 공통 · 사람마다 · %, for an allowance (a rule stays on the phone).
+    if (!draft.asRule && (kind == ItemKind.MONTHLY || kind == ItemKind.PER_DAY || kind == ItemKind.SHARE)) ShareSegment(draft, kind, fromCompany)
 
     if (kind == ItemKind.DEDUCT) {
         Label("언제 빠지나요?")
@@ -516,12 +572,22 @@ private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: Sch
         }
         ItemKind.SHARE -> {
             Label("무엇의 몇 %인가요?")
+            // [ITEM-05] 기본급+고정수당 only as an allowance: a rule knows 기본급 and 통상임금.
+            val bases = if (draft.asRule || draft.hasLimits) listOf(BonusBasis.BASE, BonusBasis.ORDINARY) else BonusBasis.entries
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(false to "기본급", true to "통상임금").forEach { (v, l) ->
-                    FilterChip(selected = draft.ofOrdinary == v, onClick = { draft.ofOrdinary = v }, label = { Text(l) }, modifier = Modifier.heightIn(min = 48.dp))
+                bases.forEach { b ->
+                    FilterChip(selected = draft.basis == b || draft.basis !in bases && b == BonusBasis.BASE,
+                        onClick = { draft.basis = b; draft.ofOrdinary = b == BonusBasis.ORDINARY }, label = { Text(b.label) }, modifier = Modifier.heightIn(min = 48.dp))
                 }
             }
-            Hint(if (draft.ofOrdinary) "매달 통상임금(기본급과 통상임금에 드는 수당)에 이 비율을 곱해 더해요." else "매달 기본급에 이 비율을 곱해 더해요. 기본급이 오르면 함께 올라요.")
+            Hint(when (draft.basis) {
+                BonusBasis.ORDINARY -> "매달 통상임금(기본급과 통상임금에 드는 수당)에 이 비율을 곱해 더해요."
+                BonusBasis.BASE_FIXED -> "매달 기본급과 매달 받는 고정 수당을 더한 금액에 이 비율을 곱해 더해요."
+                BonusBasis.BASE -> "매달 기본급에 이 비율을 곱해 더해요. 기본급이 오르면 함께 올라요."
+            })
+            if (!draft.asRule && !draft.hasLimits) {
+                Toggle("통상임금에 넣어요", "기본급2처럼 매달 모두에게 주는 몫이면 켜요. 모르면 꺼 두세요.", draft.ordinary) { draft.ordinary = it }
+            }
         }
         ItemKind.DEDUCT -> {
             Hint("명세서 지급 칸에서 빠지는 돈만 넣어요. 세금과 4대보험은 넣지 않아도 돼요. 앱은 세금 떼기 전 금액을 계산해요.")
@@ -608,13 +674,50 @@ private fun MonthLimit(label: String, value: YearMonth?, onChange: (YearMonth?) 
 @Composable
 private fun PercentField(draft: ItemDraft, kind: ItemKind) {
     val share = kind == ItemKind.SHARE
-    Text(if (share) "기본급의" else "시급에 더하는 몫", style = MaterialTheme.typography.labelLarge)
+    Text(if (share) "${draft.basis.label}의" else "시급에 더하는 몫", style = MaterialTheme.typography.labelLarge)
     com.bamnat.app.ui.components.QuickDecimalChips(
         value = draft.percent.replace(',', '.').toDoubleOrNull(), onChange = { draft.percent = com.bamnat.app.ui.components.decimalText(it) },
-        name = if (share) "기본급의 비율" else "시급에 더하는 몫",
-        quick = if (share) listOf(1.0, 3.0, 5.0, 10.0) else listOf(25.0, 50.0, 100.0),
-        step = if (share) 0.5 else 5.0, range = 0.5..1000.0, unit = "%",
+        name = if (share) "${draft.basis.label}의 비율" else "시급에 더하는 몫",
+        // [ITEM-05] 기본급2·위험예지 are often 5~20%.
+        quick = if (share) listOf(1.0, 5.0, 10.0, 15.0, 20.0) else listOf(25.0, 50.0, 100.0),
+        step = if (share) 0.5 else 5.0, range = 0.5..if (share) 500.0 else 1000.0, unit = "%",
     )
+}
+
+/**
+ * [ITEM-05] 1.30 BC (사용자 2026-10-27 "정액인지 아니면 사람마다 다른지 아니면 기본급의 %로 따라오는지 정할수 있게"): three chips under the
+ * name. 회사 공통 goes with the company's setup with its amount (결정 D102), 사람마다 is asked of each coworker, % follows another amount.
+ * [fromCompany]: the pay came from a company's way, so the user's own allowance (나만 받아요) can stay off the 광장.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ShareSegment(draft: ItemDraft, kind: ItemKind, fromCompany: Boolean) {
+    Label("금액은 누가 정하나요?")
+    val picked = if (kind == ItemKind.SHARE) ItemShare.PERCENT else if (draft.who == ItemShare.FIXED) ItemShare.FIXED else ItemShare.PERSONAL
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ItemShare.entries.forEach { s ->
+            FilterChip(
+                selected = picked == s,
+                onClick = {
+                    draft.whoPicked = true
+                    when (s) {
+                        ItemShare.PERCENT -> { if (kind != ItemKind.SHARE) draft.kind = ItemKind.SHARE; draft.basis = ShareGuess.basisOf(draft.name) }
+                        else -> { draft.who = s; if (kind == ItemKind.SHARE) draft.kind = ItemKind.MONTHLY }
+                    }
+                },
+                label = { Text(s.label) },
+                modifier = Modifier.heightIn(min = 48.dp),
+            )
+        }
+    }
+    Hint(when (picked) {
+        ItemShare.FIXED -> "회사가 모두에게 같은 금액을 줘요. 회사 설정을 나누면 이 금액도 함께 가서 같은 회사 분들은 적지 않아도 돼요."
+        ItemShare.PERSONAL -> "자격·직책처럼 사람마다 달라요. 나누면 이름과 주는 방식만 가고, 금액은 각자 적어요."
+        ItemShare.PERCENT -> "기본급2·위험예지처럼 다른 금액의 몇 %로 따라와요. 기본급이 오르면 함께 올라요."
+    })
+    if (fromCompany) {
+        Toggle("나만 받는 수당이에요", "켜 두면 회사 설정을 나누거나 고치자고 제안할 때 빼요. 같은 회사 모두가 받는 수당이면 꺼 주세요.", draft.mine) { draft.mine = it }
+    }
 }
 
 /** When the item is paid: the shifts and days first, the rest folded away until asked for. */

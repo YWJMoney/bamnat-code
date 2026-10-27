@@ -628,6 +628,13 @@ object PayCodec {
         .putOpt("covers", i.covers?.let { c -> JSONArray(PayItem.COVERABLE.filter { it in c }.map { it.name }) })
         // [PAYX-31] Only when not 기본급.
         .apply { if (i.bonusBasis != BonusBasis.BASE) put("bonusBasis", i.bonusBasis.name) }
+        // [ITEM-02] 1.30 BC: only when not 사람마다 (what every allowance before 1.30 was), so older files stay byte for byte.
+        .apply {
+            if (i.share != com.bamnat.core.pay.ItemShare.PERSONAL) put("share", i.share.name)
+            if (i.share == com.bamnat.core.pay.ItemShare.PERCENT) { putOpt("percent", i.percent); put("percentOf", i.percentOf.name) }
+            if (i.share == com.bamnat.core.pay.ItemShare.FIXED) putOpt("fixedAmount", i.fixedAmount?.takeIf { it > 0 })
+            if (i.mine) put("mine", true)
+        }
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -646,6 +653,12 @@ object PayCodec {
             (0 until a.length()).mapNotNull { n -> PayItem.COVERABLE.firstOrNull { it.name == a.optString(n) } }.toSet()
         },
         bonusBasis = o.optString("bonusBasis").let { n -> BonusBasis.entries.firstOrNull { it.name == n } } ?: BonusBasis.BASE,
+        // [ITEM-02] An allowance from before 1.30, or a kind this version does not know, is 사람마다 as it always was.
+        share = o.optString("share").let { n -> com.bamnat.core.pay.ItemShare.entries.firstOrNull { it.name == n } } ?: com.bamnat.core.pay.ItemShare.PERSONAL,
+        percent = o.optDouble("percent", Double.NaN).takeIf { it.isFinite() && it > 0 && it <= com.bamnat.core.pay.ItemShares.MAX_PERCENT },
+        percentOf = o.optString("percentOf").let { n -> BonusBasis.entries.firstOrNull { it.name == n } } ?: BonusBasis.BASE,
+        fixedAmount = o.optLong("fixedAmount", 0).takeIf { it > 0 },
+        mine = o.optBoolean("mine", false),
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =

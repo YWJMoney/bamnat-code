@@ -27,3 +27,30 @@ object OrdinaryGuess {
         return null
     }
 }
+
+/**
+ * [ITEM-05] 1.30 BC: who sets a new allowance's amount, guessed from its name so the writer of a company's setup starts on
+ * the usual one (사용자 2026-10-27 "자격수당이나 직책수당 같은 것은 같은 회사여도 추가사항이 존재할수 있으므로").
+ *
+ * - [ItemShare.PERCENT]: a name that says it is a share ("%", "비율"), 기본급2 and 위험예지 (often a % of 기본급·통상임금).
+ * - [ItemShare.PERSONAL]: 자격·면허·직책·직급·직무·가족·부양·근속(호봉처럼 사람마다), 성과·인센티브, 고정 연장(계약마다).
+ * - [ItemShare.FIXED]: 식대·교통·통근·차량·교대·위험·야간·명절 정액, the same for everyone at a workplace.
+ * - Anything else is left to the writer (null): 사람마다 is the safe start, since it is asked rather than assumed.
+ */
+object ShareGuess {
+    private val percent = Regex("%|퍼센트|비율|기본급2|위험예지|예지")
+    private val personal = Regex("자격|면허|직책|직급|직무|가족|부양|자녀|근속|호봉|성과|인센티브|고정.*(연장|시간외|OT)|조정", RegexOption.IGNORE_CASE)
+    private val fixed = Regex("식대|식비|급식|중식|교통|통근|차량|교대|위험|야간|나이트|심야|명절|휴가비|복지")
+
+    fun of(name: String): ItemShare? {
+        val n = name.filterNot { it.isWhitespace() }
+        if (n.isEmpty()) return null
+        if (percent.containsMatchIn(n)) return ItemShare.PERCENT
+        if (personal.containsMatchIn(n)) return ItemShare.PERSONAL
+        if (fixed.containsMatchIn(n)) return ItemShare.FIXED
+        return null
+    }
+
+    /** [ITEM-05] What a percent allowance is of, from its name: 위험예지·통상 → 통상임금, else 기본급. */
+    fun basisOf(name: String): BonusBasis = if (Regex("예지|통상").containsMatchIn(name)) BonusBasis.ORDINARY else BonusBasis.BASE
+}

@@ -40,7 +40,7 @@ test("[ADMX-02] an allowance added and one taken out are named, each on its own"
   });
   assert.deepEqual(c.facts.added.map(([l]) => l), ["수당·식대"]);
   assert.deepEqual(c.facts.removed.map(([l]) => l), ["수당·야간수당"]);
-  assert.equal(c.summary, "수당·식대 매달 더함 · 수당·야간수당 야간마다 뺌");
+  assert.equal(c.summary, "수당·식대 매달 통상임금 더함 · 수당·야간수당 야간마다 뺌");
 });
 
 test("[ADMX-02] two allowances added are counted", () => {

@@ -84,7 +84,29 @@ data class PayItem(
     val covers: Set<LineKind>? = null,
     /** [PAYX-31] For a bonus paid as [percentOfBase]: the amount the percent is of. */
     val bonusBasis: BonusBasis = BonusBasis.BASE,
+    /**
+     * [ITEM-01] 1.30 BC: who sets the amount, as the company's setup says (사용자 2026-10-27 "정액인지 사람마다 다른지 기본급의
+     * %로 따라오는지"). A setup from before 1.30 has none of it and reads as [ItemShare.PERSONAL], as it always worked.
+     */
+    val share: ItemShare = ItemShare.PERSONAL,
+    /** [ITEM-01] For [ItemShare.PERCENT]: the share of [percentOf] paid every month, 1.0 = 100%. */
+    val percent: Double? = null,
+    /** [ITEM-01] For [ItemShare.PERCENT]: the amount [percent] is of (기본급, 기본급+고정수당 or 통상임금). */
+    val percentOf: BonusBasis = BonusBasis.BASE,
+    /**
+     * [ITEM-01] For [ItemShare.FIXED]: the company's one amount for everyone (결정 D102, 회사 공통 정액만 광장에 공유). It pays
+     * when the user typed no amount of their own ([amount] wins when it has one).
+     */
+    val fixedAmount: Long? = null,
+    /** [ITEM-01] The user's own allowance, not the company's (자격·직책 that only some get): never sent to the 광장. */
+    val mine: Boolean = false,
 ) {
+    /** [ITEM-01] Paid as a share of another amount every month; the amount typed is not used. */
+    val isPercent: Boolean get() = share == ItemShare.PERCENT && cadence == Cadence.MONTHLY && (percent ?: 0.0) > 0
+
+    /** [ITEM-01] The company's one amount, with no amount of the user's own over it. */
+    val isCompanyFixed: Boolean get() = share == ItemShare.FIXED && (fixedAmount ?: 0) > 0 && amount.entries.isEmpty()
+
     /** How many payments of this bonus fall in [month]: its fixed months plus any 명절 [PAYX-10]. */
     fun timesIn(month: java.time.YearMonth): Int =
         (if (month.monthValue in months) 1 else 0) + festivals.count { f ->
@@ -130,6 +152,19 @@ data class PayItem(
         /** [PAYS-03] The premium lines an allowance can stand in for; company rules for extra work never are. */
         val COVERABLE: List<LineKind> = listOf(LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY)
     }
+}
+
+/**
+ * [ITEM-01] 1.30 BC: who decides an allowance's amount. The writer of a company's setup picks one for each allowance, and
+ * the people who use the setup then type only the [PERSONAL] ones.
+ */
+enum class ItemShare(val label: String, val short: String) {
+    /** One amount for everyone at the company (식대·교통비·교대수당 정액): it travels with the setup (결정 D102). */
+    FIXED("회사 공통 금액", "회사 공통"),
+    /** Each person's own (자격·직책·가족): asked of everyone who uses the setup, never sent. */
+    PERSONAL("사람마다 달라요", "사람마다"),
+    /** A share of another amount every month (기본급2 = 기본급의 n%, 위험예지 = 통상임금의 n%). */
+    PERCENT("다른 금액의 %", "%"),
 }
 
 /**
@@ -288,12 +323,19 @@ data class PayProfile(
      * [PAYX-31] The amount [item]'s percent is of in [month]: 기본급, plus the fixed monthly allowances (not standing in
      * for premiums) for [BonusBasis.BASE_FIXED], or plus those in 통상임금 for [BonusBasis.ORDINARY].
      */
-    fun bonusBase(item: PayItem, month: YearMonth): Long {
+    fun bonusBase(item: PayItem, month: YearMonth): Long = basisAmount(item.bonusBasis, month)
+
+    /**
+     * [PAYX-31][ITEM-01] [basis] in [month]: 기본급, plus the fixed monthly allowances (not standing in for premiums) for
+     * [BonusBasis.BASE_FIXED], or plus those in 통상임금 for [BonusBasis.ORDINARY]. Shared by a 상여 paid as a percent and an
+     * allowance paid as a percent ([ItemShare.PERCENT]).
+     */
+    fun basisAmount(basis: BonusBasis, month: YearMonth): Long {
         val base = base.on(month).value
         fun fixed(ordinaryOnly: Boolean) = items.filter {
             it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() && (!ordinaryOnly || it.ordinary)
         }.sumOf { it.amount.on(month).value }
-        return when (item.bonusBasis) {
+        return when (basis) {
             BonusBasis.BASE -> base
             BonusBasis.BASE_FIXED -> base + fixed(false)
             BonusBasis.ORDINARY -> base + fixed(true)

@@ -20,6 +20,8 @@ data class SetupFact(val key: String, val group: FactGroup, val label: String, v
             key == "rate:hw" || key == "rate:ho" || key == "rule:restDay" || key == "rule:weeklyDay" ||
                 key == "rule:holiday" || key == "rule:holidaysU5" -> "holiday"
             key == "rule:breakPay" -> "break"
+            // [ITEM-08] 1.30 BC: the 통상시급's hours have their own field (the server's CHANGE_FIELDS.hours).
+            key == "place:hours" -> "hours"
             key.startsWith("item:") -> if (value.contains("월 기본급") || value.contains("상여")) "bonus" else "allowance"
             else -> "other"
         }
@@ -216,8 +218,27 @@ object SetupFacts {
             if (c.isEmpty()) "가산과 따로" else c.joinToString("·") { mapOf("OVERTIME" to "연장", "NIGHT" to "야간", "HOLIDAY" to "휴일")[it] ?: it } + " 가산 대신"
         }
         val festivals = (i["festivals"] as? List<*>).orEmpty().joinToString("·") { if (it == "SEOLLAL") "설" else "추석" }
-        return listOfNotNull(how, num(i["percentOfBase"])?.let { "기본급 ${pct(it)}" }, festivals.ifEmpty { null }, covers).joinToString(" ")
+        return listOfNotNull(how, num(i["percentOfBase"])?.let { "기본급 ${pct(it)}" }, festivals.ifEmpty { null }, covers, shareText(i))
+            .joinToString(" ")
     }
+
+    /**
+     * [ITEM-04] 1.30 BC: who sets the amount, the server's itemText words: "회사 공통 100,000원", "기본급의 10%", and "통상임금"
+     * when it is in it, so a proposal that only moves it in or out of 통상임금 shows as a change. Nothing for 사람마다.
+     */
+    internal fun shareText(i: Map<*, *>): String? {
+        val share = when (i["share"]) {
+            "FIXED" -> "회사 공통" + ((i["fixedAmount"] as? Number)?.toLong()?.takeIf { it > 0 }?.let { " %,d원".format(it) } ?: "")
+            "PERCENT" -> num(i["percent"])?.let { p ->
+                "${BASES[i["percentOf"]] ?: "기본급"}의 ${pct(p)}"
+            }
+            else -> null
+        }
+        val ordinary = "통상임금".takeIf { i["ordinary"] == true }
+        return listOfNotNull(share, ordinary).joinToString(" · ").ifEmpty { null }
+    }
+
+    private val BASES = mapOf("BASE" to "기본급", "BASE_FIXED" to "기본급+고정수당", "ORDINARY" to "통상임금")
 
     /** [HOLI-01] The 빨간날 choice a file's rules come to, as [com.bamnat.core.pay.CompanyRules.holidayWork] reads its fields. */
     fun holidayWork(rules: Map<*, *>?): HolidayWork = when {

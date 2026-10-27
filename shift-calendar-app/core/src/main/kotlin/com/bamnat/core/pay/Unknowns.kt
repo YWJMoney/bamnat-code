@@ -169,7 +169,8 @@ object Unknowns {
                 if (profile.wageType != WageType.MONTHLY) emptyList()
                 else HolidayPayMode.entries.filter { it != profile.holidayPayMode }.map { m -> answer(m.label) { it.copy(holidayPayMode = m) } },
                 null)
-            key.startsWith(ITEM) -> profile.items.firstOrNull { it.id == key.removePrefix(ITEM) }?.let { item ->
+            // [ITEM-06] 1.30 BC: a company amount or a percent is known, so it is never asked as 금액 모름.
+            key.startsWith(ITEM) -> profile.items.firstOrNull { it.id == key.removePrefix(ITEM) && !it.isPercent && !it.isCompanyFixed }?.let { item ->
                 Unknown(key, "${item.name} 금액", "금액을 몰라 합계에서 뺐어요", emptyList(), null)
             }
             key.startsWith(COVERS) -> profile.items.firstOrNull { it.id == key.removePrefix(COVERS) }?.let { item ->

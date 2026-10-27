@@ -64,6 +64,8 @@ import { trendQueries, trendFrom, alertsFrom, adminSearch, metricExtras } from "
 import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
 // SP1 1.30 [SPD-01][SPD-02][SPD-04][SPD-06] what the plaza's fast reads share.
 import { spDbKey, spSession, spBookmarked, spNoCache, spKept, spPairChunks, spInMarks, spEtag, spNotModified } from "./read-fast.js";
+// BC 1.30 [ITEM-04][PROP-01]
+import { readItemShare, itemShareCanon, itemShareText, withProposalTexts } from "./plaza-items.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -109,7 +111,8 @@ const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
-const SETUP_VERSION = 3;
+// BC 1.30 [ITEM-04] 4 carries who sets each allowance's amount (회사 공통 · 사람마다 · %) and a company's one amount (결정 D102).
+const SETUP_VERSION = 4;
 
 /** Why a report was not adopted, as the sender's app shows it. */
 const REASONS = {
@@ -1060,7 +1063,8 @@ export function cleanSetup(raw, texts = []) {
     setup.pay = pay;
   }
   // [PAYS-03] Only a setup that uses the newer choices is 3, so apps before them can still read the rest.
-  setup.v = usesNewer(setup.pay) ? 3 : Math.min(setup.v, 2);
+  // BC 1.30 [ITEM-04] Only one that says who sets an amount (회사 공통 · %) is 4: 1.29 asks to update rather than read it as 사람마다.
+  setup.v = setup.pay?.items.some((i) => i.share) ? 4 : usesNewer(setup.pay) ? 3 : Math.min(setup.v, 2);
   return setup;
 }
 
@@ -1206,6 +1210,8 @@ function item(raw, names, say) {
   };
   // Left out when there is none: the app reads a present value as a number.
   if (given(i.percentOfBase)) out.percentOfBase = real(i.percentOfBase, 0, 50, "items");
+  // BC 1.30 [ITEM-04] 회사 공통 · 사람마다 · % and the company's one amount, only with FIXED (결정 D102).
+  readItemShare(i, out, (code) => refuse(code, "items"));
   // [PAYS-03] The premiums it is paid instead of; kept only when not what the app assumes anyway
   // (a 고정 연장수당 stands in for 연장, any other allowance for none).
   if (given(i.covers)) {
@@ -1334,6 +1340,8 @@ function canonical(setup) {
         types: i.types.map(sig).sort(),
         // Only when set, so allowances from before version 3 keep their fingerprint.
         ...(i.covers ? { covers: i.covers } : {}),
+        // BC 1.30 [ITEM-04] Only when not 사람마다, so allowances from before version 4 keep theirs too.
+        ...itemShareCanon(i),
       })).sort((a, b) => cmp(stable(a), stable(b))),
     } : null,
   };
@@ -1465,7 +1473,9 @@ function itemText(i) {
     BONUS: i.months.length ? `${i.months.join("·")}월` : "정한 달",
   }[i.cadence];
   const covers = i.covers ? (i.covers.length ? `${i.covers.map((k) => ({ OVERTIME: "연장", NIGHT: "야간", HOLIDAY: "휴일" })[k]).join("·")} 가산 대신` : "가산과 따로") : "";
-  const parts = [how, given(i.percentOfBase) ? `기본급 ${pct(i.percentOfBase)}` : "", i.festivals.map((f) => (f === "SEOLLAL" ? "설" : "추석")).join("·"), covers];
+  // BC 1.30 [ITEM-04] 회사 공통 · % and 통상임금, the app's SetupFacts.shareText words.
+  const parts = [how, given(i.percentOfBase) ? `기본급 ${pct(i.percentOfBase)}` : "", i.festivals.map((f) => (f === "SEOLLAL" ? "설" : "추석")).join("·"), covers,
+    itemShareText(i)];
   return `${i.name}(${parts.filter(Boolean).join(" ")})`;
 }
 
@@ -3213,6 +3223,7 @@ async function talkData(request, env, companyId, grp, known = null) {
     });
   }
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
+  if (member && !room) await withProposalTexts(all, env, c, posts); // BC 1.30 [PROP-01]
   const past = !room && !(live.current || live.pending);
   const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
@@ -3292,9 +3303,10 @@ async function post(request, env) {
  * up to six lines of what (one of CHANGE_FIELDS), how it is now, how it should be, and why. No amounts
  * (the same rule as everything else sent here), so 기본급의 10% rather than a sum.
  */
+// BC 1.30 [ITEM-08] hours: 통상시급 기준 시간 (월 소정근로시간), as a proposal from the 기본급 screen says it.
 const CHANGE_FIELDS = {
   shift: "근무 시간", order: "근무 순서", break: "휴게", overtime: "연장 근무", night: "야간", holiday: "휴일 근무",
-  allowance: "수당", bonus: "상여", leave: "연차·휴가", other: "그 밖의 것",
+  allowance: "수당", bonus: "상여", leave: "연차·휴가", hours: "통상시급 기준 시간", other: "그 밖의 것",
 };
 
 function readChange(raw) {

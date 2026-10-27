@@ -381,7 +381,8 @@ fun TalkSheet(holder: TalkHolder) {
                         val tops = talk.posts.filter { it.parent == null || talk.posts.none { t -> t.id == it.parent } }
                         tops.forEach { p ->
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
-                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }))
+                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                company = o.company, setup = o.setup)
                             talk.posts.filter { it.parent == p.id }.forEach { r ->
                                 Row {
                                     Spacer(Modifier.width(20.dp))
@@ -502,7 +503,11 @@ fun TalkSheet(holder: TalkHolder) {
 }
 
 @Composable
-private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null) {
+private fun PostRow(
+    p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null,
+    /** [PROP-02] The talk's company and version, for 이 제안으로 내 월급 계산해 보기 on a proposal. */
+    company: String = "", setup: String = "",
+) {
     var menu by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
@@ -563,6 +568,10 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHid
                     p.proposal?.let { r ->
                         Text(if (r.adopted) "이 제안대로 규칙이 바뀌었어요" else "이 제안에 공감 ${r.persons}명 · 모이면 규칙이 바뀌어요",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        // [PROP-02] 1.30 BC: before it is adopted, anyone of the company can try it on their own month.
+                        r.text?.takeIf { !r.adopted && company.isNotEmpty() && p.hidden == null }?.let { text ->
+                            ProposalTrialButton(company, setup, text, onVote = { ok -> if (!p.mine) onVote(ok) })
+                        }
                     }
                 }
             }

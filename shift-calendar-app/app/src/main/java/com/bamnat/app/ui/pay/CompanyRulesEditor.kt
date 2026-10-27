@@ -211,6 +211,11 @@ fun CompanyRulesEditor(
                 }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
+                    // [ITEM-07] 1.30 BC: the company's hours first, and a different value can go back as a proposal.
+                    val companyWay = com.bamnat.app.ui.company.rememberCompanyWayText()
+                    com.bamnat.app.ui.company.CompanyHoursLine(companyWay, draft.monthlyHours) { h ->
+                        draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS)
+                    }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         // [PAYX-34] 180시간 too: the payslip match already tries it (PayslipMatcher.SNAP_HOURS).
                         Unknowns.MONTHLY_HOURS_CHIPS.forEach { h ->
