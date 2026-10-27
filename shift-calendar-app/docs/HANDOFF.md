@@ -1,11 +1,27 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-27, 앱 1.29.0(versionCode 40, 워치 100040) 기준이에요. 맨 위 0-new항이 지금 판(1.29.0), 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-28, 앱 1.30.0(versionCode 41, 워치 100041) 기준이에요. 맨 위 0-new항이 지금 판(1.30.0), 0-a2항이 1.29.0, 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0-new. 지금 판: 1.29.0 급여 흐름·사진 정확도·투자 캡처·검색 속도·관리자 복사 (2026-10-27)
+## 0-new. 지금 판: 1.30.0 달력 독립·급여 적용 한 번에·수당 종류·광장 중복 정리·조회 속도·사진 견고화·관리자 혁신 (2026-10-28)
+
+사용자 지시(2026-10-27 14:24Z): 11월 3일 프로덕션 신청 전 "모든 흐름이 간편하고 정확하고 빠르게, 적은 조작으로 최대 활용". 통합 브랜치 `claude/project-thread-fn252f`(main b535d1b = 1.29.0에서). Fable 점검 3명 → Opus 1차 6묶음(BB·SP1·AV·AX·AY·BC) → 2차 4묶음(BA·BD·AP1·AW) → 통합 → Fable 최종 점검 2명 → Opus FIX(FIN130). 전체 정리는 `docs/plans/1.30-통합계획.md`, 묶음마다 `docs/plans/1.30-<묶음>-개발계획.md`.
+
+- **달력 독립(BB, CALI)**: 회사·급여 방식·자동 나누기는 `c.companyOf(달력)`/`companyScope(c)`(Compose는 `LocalCompanyCalendar`)로만. `c.companyStore`·`c.payWays`·`c.companyShare`·`c.autoShare`는 본 달력 별칭이라 새 코드에서 직접 쓰지 않아요. 보조 달력 파일은 `files/calendars/<id>/company.json`·`pay_way.json`(백업 `calendarCompany`).
+- **급여 적용 한 번에(BA, PAYG)**: 회사 급여 방식은 `PendingWay`(메모리, 달력별)로 기다렸다가 기본급과 함께 `CompanyScope.commit`. 닫으면 취소. 회사 방식을 넣는 새 길을 만들면 반드시 PendingWay로(FIN130-01·07이 그 실수를 고친 것).
+- **수당 종류(BC, ITEM·PROP)**: `PayItem.share`(FIXED·PERSONAL·PERCENT)·`percent`·`percentOf`·`fixedAmount`·`mine`, 회사 파일 v4, 서버 `SETUP_VERSION=4`. 회사 공통 금액은 플래그 `plaza.fixed_amount`(LEGAL, 처리방침 3.4 날짜)와 서버(3.4 시행 전 빼기) 두 겹. PERSONAL 금액은 절대 안 보냄.
+- **광장 중복·변별(BD, PLZD)**: 앱 `SendGuard`, 서버 `src/plaza-guard.js`(reports.reason='shape' 보류, `pgShown()`을 모든 공개 읽기에). 새 공개 읽기를 만들면 `pgShown()`을 꼭.
+- **조회 속도(SP1·AP1, SPD)**: 서버 `src/read-fast.js`(D1 Sessions·bookmark·ETag·메모), `statesFor` 묶음 읽기, `test/perf-rounds.test.mjs` 왕복 예산. 앱 `company/PageCache.kt`(cacheDir, 14일, LRU)·`NetTimings.kt`·`RoundTripBudgetTest`. 쓰기 뒤에는 `companySearch.forgetPage`.
+- **사진(AV·AW, PHOTO·RULE-ED·HOURLY)**: core `SlipTable`·`SlipVote`·`SlipTemplate`·`SlipHourly`, 시험 `PlantSampleGridTest`(486가지 흔들기), `pay/RuleSheet.kt`, 앱 `ui/pay/rulesheet/`·`PhotoResultScreen.kt`·`ScanButtons.kt`. 통상시급·기준 시간에 `HourlySource`(명세서·회사 규칙·광장·직접).
+- **관리자 앱(AX, ADMX)**: `src/plaza-diff.js`(diffFacts, 판 차이의 정본), `src/admin-insight.js`, `src/admin/style.js`·`admin/views/*`(번들러가 하위 폴더를 따라감).
+- **메모(AY)**: `ui/components/SelectionEdgeScroll.kt`(`LongTextField`·`rememberEdgeScroll`). 긴 글 칸은 이걸로. `diag/TestLab.kt`: Test Lab 기기는 서버에 쓰지 않음.
+- **처리방침 3.4**(게시 10-28, 시행 11-27, 3.2·3.3과 같은 날): 1-2항 회사 공통 수당 금액, 1-13항 이유 두 개. 늦게 합치면 관리자 앱 일정에서 날짜를 옮겨요.
+- **빌드**: release `ndk.debugSymbolLevel=FULL`(NDK 27.0.12077973 필요, AAB 예산 안). Gradle 데몬이 메모리 부족이면 `-Dorg.gradle.jvmargs=-Xmx3g`. 서버는 **앱보다 먼저** 배포(옛 서버는 v4 설정을 거절).
+- 사용자 몫: 회사 서버 배포 + Cloudflare 대시보드(D1 지역 확인·Smart Placement·읽기 복제·RATE_SALT 확인), PR 합치기 = 3.4 게시, 휴대폰 확인, Play 업로드. `release/1.30.0/사용자가-해야-할-일.md`.
+
+## 0-a2. 앞 판: 1.29.0 급여 흐름·사진 정확도·투자 캡처·검색 속도·관리자 복사 (2026-10-27)
 
 사용자 지시(2026-10-27 04:10Z): Phase 0~2 남은 일 마무리와 요청 아홉 가지. 통합 브랜치 `claude/project-thread-fn252f`(main 6733f2d에서). 오케스트레이터-워커로 여섯 묶음을 나눠 만들고 통합 브랜치에 합쳤어요. 전체 정리는 `docs/plans/1.29-통합계획.md`.
 
