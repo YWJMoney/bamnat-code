@@ -78,6 +78,25 @@ sealed interface RuleChange {
     data class Custom(val rule: CustomRule, val shiftNames: Map<Long, String> = emptyMap()) : RuleChange {
         override val summary get() = rule.describe(shiftNames)
     }
+    /**
+     * [RULE-ED-01] 1.30 AW: an allowance as the 칸 편집기 made it, whole: who sets the amount (회사 공통·사람마다·%, 묶음 BC),
+     * 통상임금, 나만 받는 것. [Allowance] keeps only a name and an amount, so a % or a 사람마다 칸 made on a photo's result lost what
+     * it was on the way in (1.29: a % 수당 came in as 0원). One with no amount of its own and the person's to say is asked
+     * (금액 모름, [Unknowns.item]).
+     */
+    data class Item(val item: PayItem) : RuleChange {
+        override val summary get() = "${item.name} " + when {
+            item.isPercent -> "매달 ${ItemShares.percentText(item)}"
+            asked -> "${item.cadence.label} · 사람마다 달라요"
+            else -> "${item.cadence.label} ${won(amount ?: 0)}"
+        } + if (item.ordinary) " · 통상임금" else ""
+
+        /** The amount it was given (its own, or the company's one), or null. */
+        val amount: Long? get() = item.amount.entries.lastOrNull()?.value?.takeIf { it > 0 } ?: item.fixedAmount?.takeIf { it > 0 }
+
+        /** Each person says it: no amount and not a % (the 광장's "쓰는 사람이 채우는 칸"). */
+        val asked: Boolean get() = !item.isPercent && amount == null
+    }
     /** [PHOTO-12] "통상임금: 기본급, 직책수당, 자격수당, 기술전수교육수당": these of the user's 수당 count in 통상임금. */
     data class OrdinaryItems(val names: List<String>) : RuleChange {
         override val summary get() = "통상임금에 드는 것: " + names.joinToString(", ")
@@ -902,7 +921,20 @@ object RuleText {
                 p.copy(items = p.items.map { if (it.cadence != Cadence.BONUS && it.name.replace(" ", "") in wanted) it.copy(ordinary = true) else it })
             }
             is RuleChange.TaxFamily -> p.copy(taxFamily = change.family, taxChildren = change.children)
-            is RuleChange.OrdinaryHourly -> p.copy(ordinaryHourly = change.hourly, ordinarySource = change.source)
+            is RuleChange.Item -> {
+                // [RULE-ED-01] By its id, else an allowance of the same name (its id kept, as [RuleChange.Allowance] does).
+                val i = p.items.indexOfFirst { it.id == change.item.id }.takeIf { it >= 0 }
+                    ?: p.items.indexOfFirst { it.cadence != Cadence.BONUS && it.name.replace(" ", "") == change.item.name.replace(" ", "") }.takeIf { it >= 0 }
+                val item = i?.let { change.item.copy(id = p.items[it].id) } ?: change.item
+                val key = Unknowns.item(item.id)
+                p.copy(
+                    items = if (i == null) p.items + item else p.items.toMutableList().also { it[i] = item },
+                    estimatedFields = if (change.asked) p.estimatedFields + key else p.estimatedFields - key - item.id,
+                )
+            }
+            // [HOURLY-04] 1.30 AW: 0 takes the set 통상시급 off, so it is worked out again (통상임금 ÷ 기준 시간).
+            is RuleChange.OrdinaryHourly -> if (change.hourly <= 0) p.copy(ordinaryHourly = null, ordinarySource = null)
+            else p.copy(ordinaryHourly = change.hourly, ordinarySource = change.source)
                 .withRules { it.copy(wonRounding = if (change.roundUp) WonRounding.AT_END_UP else if (change.roundDown) WonRounding.AT_END_DOWN else WonRounding.AT_END) }
             is RuleChange.Custom -> p.copy(customRules = (p.customRules.filterNot { it.id == change.rule.id || it.source.isNotEmpty() && it.source == change.rule.source && it.name == change.rule.name } +
                 change.rule).takeLast(CustomRule.MAX))
