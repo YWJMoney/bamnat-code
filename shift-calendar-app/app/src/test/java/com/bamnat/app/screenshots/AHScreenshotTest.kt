@@ -261,9 +261,10 @@ class AHScreenshotTest : ScreenshotBase() {
         tapText("(주)예시정밀", exact = true)
         assertTrue(shows("‘(주)예시정밀’ 급여 방식을 쓸까요?", exact = true))
         tapText("이 급여 방식 쓰기", exact = true)
-        assertTrue(shows("이제 내 금액만 넣으면 돼요", exact = true))
+        // [PAYG-01] 1.30 BA: joined, and the way waits for its 기본급 (nothing in yet).
+        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
         assertEquals("c1", c.companyStore.member.value?.first)
-        assertTrue(c.companyStore.pendingPay != null)
+        assertNull(c.payWays.way.value)
     }
 
     @Test fun noPayWayAsksTheEasySetup() = shoot("1114_ah_pay_find_none", PHONE_393_NIGHT) {

@@ -84,7 +84,8 @@ internal fun BaseFields(
                 if (company != null) {
                     Text("통상시급 기준 시간: " + if (hours == null || hours == company) "회사 규칙 ${company}시간" else "월 ${hours}시간",
                         style = MaterialTheme.typography.bodyLarge)
-                    Text(if (hours == null || hours == company) "명세서와 다르면 고쳐 주세요" else "회사 규칙은 ${company}시간이에요",
+                    // Said once, under the chips, while it is the company's own.
+                    if (hours != null && hours != company) Text("회사 규칙은 ${company}시간이에요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Text("통상시급 기준 시간도 알아요 (선택)", style = MaterialTheme.typography.bodyLarge)

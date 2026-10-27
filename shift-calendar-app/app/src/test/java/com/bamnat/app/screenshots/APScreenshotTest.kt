@@ -170,7 +170,8 @@ class APScreenshotTest : ScreenshotBase() {
         settle()
         assertFalse(shows("이 회사 급여 설정을 쓸까요?", exact = true))
         assertTrue(shows("거의 다 됐어요! 내 금액만 넣어요", exact = true))
-        reveal("통상시급 기준 시간도 알아요 (선택)", exact = true)
+        // [PAYG-08] 1.30 BA: the company's 통상시급 hours shown first, open.
+        reveal("회사 규칙 180시간", exact = true)
     }
 
     @Test fun usingItOnAPayAsksTheBase() = shoot("1235_ap_pay_find_base", PHONE_393) {

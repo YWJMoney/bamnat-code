@@ -177,9 +177,10 @@ class PayFindState(name: String) {
  * 검색, 검색에도 없으면 직접 설정하는 흐름"): it opens on the company the user already works for — its way at once ("‘현대제철’
  * 급여 방식을 쓸까요?") when coworkers made one and the server answers in time, 직접 만들기 first when it has none; the box as
  * before when nothing is known. [usingStep] lets it open on "쓰고 있어요" when the pay uses a way already (the easy setup).
+ * Without [autoStart] it is the box alone (자세히 고치기 opens on the questions, not on a company's way).
  */
 @Composable
-fun rememberPayFindState(usingStep: Boolean = false): PayFindState {
+fun rememberPayFindState(usingStep: Boolean = false, autoStart: Boolean = true): PayFindState {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
     // [CALI-04] 1.30 BB: the calendar on screen's company and pay ([LocalCompanyCalendar]).
@@ -191,7 +192,7 @@ fun rememberPayFindState(usingStep: Boolean = false): PayFindState {
     LaunchedEffect(find) {
         val using = company.payWays.way.value != null && company.pay.profile.value != null
         val known = state.name
-        if (state.step != PayFindStep.NAME) return@LaunchedEffect
+        if (state.step != PayFindStep.NAME || !autoStart) return@LaunchedEffect
         if (using && usingStep) {
             state.step = PayFindStep.USING
             return@LaunchedEffect
