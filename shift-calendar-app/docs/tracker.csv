@@ -968,15 +968,15 @@ PERF-17,"순번 457 회사 서버 /api/events가 시작 시간을 받아 판별 
 PERF-18,순번 457 관리자 앱 지표 '앱 시작 시간' 카드(판마다 중앙값·90%),2 (1.28.0),완료,,"관리자 앱: admin-app.js startupCard(판마다 가운데·90%, 30대 미만은 데이터 부족). 시험: admin-ui.test.mjs [PERF-18]"
 PERF-19,"순번 457 그 밖의 시작 경로: 저장된 원격 파일 서명 다시 확인 줄이기(확인 지문, 새 키 먼저), 첫 화면에 안 쓰는 필드 늦게, 메인 스레드 읽기",2 (1.28.0),완료,,"원격 파일: RemoteFile.openChecked·checkedMark, RemoteFilesStore 확인 지문(.json.ok), 새 키부터 확인. 시험: RemoteFilesStoreTest 7. ML Kit·WorkManager 시작 제공자는 그대로 둠(계획 4장)"
 PRIV-04,"순번 459 결정 D100: 처리방침 3.2(게시 2026-10-28, 시행 2026-11-27, 수집 항목이 늘어 30일) — 1-9항 사용 통계 더 보내기(켜진 기능 목록, 앱 시작 시간 0.1초~15초 구간 값, 3.2 시행 뒤 따로 동의, stats.more), 1-5항 기능 켜짐 확인, 1-7항 최고 관리자 휴대폰 표시",2 (1.28.0),완료,,"privacy/index.html 3.2, core flags/PolicyCalendar.SEED 3.2 날짜 같음(서버 policy가 덮음), legal/개인정보처리방침-3.2.html·3.2-바뀐-곳.md, docs/play-data-safety.md 1.28.0장; LegalPagesTest.policy32NamesTheExtraUsageItemsAndItsDates"
-PHOTO-01,"1.29 AQ 명세서 사진을 글자 상자 위치로 표로 다시 짜기: 2단·3단 표, 지급/공제 좌우, 이름 아래 금액(가로 머리줄), 이름 위 칸, 시간·산출근거 칸, 점선 이끔",2 (1.29.0),진행 중,,core pay/SlipTable
-PHOTO-02,"1.29 AQ 명세서 숫자·이름 고치기: 쉼표·점·'원'·공백 섞인 숫자, 괄호·△ 음수, O/0·l/1·원/윈, 띄어쓰기·비슷한 이름(편집 거리)",2 (1.29.0),진행 중,,core pay/SlipTable SlipLexicon·SlipNumber
-PHOTO-03,"1.29 AQ 여러 번 읽기 합의에 표 읽기를 넣고, 합계 검산(지급합계=항목 합, 실지급=지급−공제)으로 틀린 숫자 하나를 찾아 고치고 노란 칸으로 묻기",2 (1.29.0),진행 중,,core pay/SlipReading·SlipSums
-PHOTO-04,"1.29 AQ 회사 규칙 사진 읽기 보강: 야간 시간대+가산 한 문장, 휴일 8시간 이내/초과 한 문장, 근속 n년 이상, 상여 통상임금 기준, 월 한도·횟수, 기간; 읽지 못한 문장은 '직접 넣기' 칸",2 (1.29.0),진행 중,,core pay/RuleText
-PHOTO-05,"1.29 AQ 규칙 엔진 보강: 회사 규칙에 근속 조건(입사일), 월 한도 금액·횟수, 적용 기간, 통상임금 기준 매달 정률",2 (1.29.0),진행 중,,core pay/CustomRules·PayCalculator
-PHOTO-06,"1.29 AQ 칸 직접 추가: 사진 결과 화면 안에서 명세서 줄·규칙 칸을 더하고 고치고 지우기, 우리 회사 항목 만들기와 한 흐름",2 (1.29.0),진행 중,,app ui/pay PayslipImport·CustomItemDialog
-PHOTO-07,"1.29 AQ 정확성 시험: ML Kit 출력 모양(글자 상자·잡음·오타·기울기) 명세서 24꼴·규칙 문서 32개, 계산 골든 대조, 바꾸기 전/후 숫자 (체크리스트 47 C 몫·51)",2 (1.29.0),진행 중,,core SlipPhotoCorpusTest·RulePhotoCorpusTest
-PHOTO-08,"1.29 AQ 합성 이미지(PNG)로 사진 → 전처리 → 읽기 앞뒤를 나눠 앱 시험",2 (1.29.0),진행 중,,app PayslipImageTest
-PHOTO-09,"1.29 AQ '사진이 달라요' 버튼: 사진 읽기 결과가 보이는 모든 화면, 날짜·화면 종류·앱 판·이유 코드 카운트만(사진·글자 없음), 오프라인 모아 보내기, '직접 문의하기'는 문의 화면 종류 자동",2 (1.29.0),진행 중,,app photo/PhotoWrong
-PHOTO-10,"1.29 AQ 회사 서버 /api/photo-wrong(합계만, 횟수 제한·검증)과 관리자 앱 분석 허브 '사진이 달라요' 날짜·화면별 카운트",2 (1.29.0),진행 중,,server company-worker // AQ 1.29
-PHOTO-11,"1.29 AQ 사진 → 규칙 → 계산 경로 오류 고침(목록은 1.29-AQ 개발계획)",2 (1.29.0),진행 중,,core·app
-PHOTO-12,"1.29 AQ 화면 사진 1250~1269(명세서 결과·칸 더하기·규칙 직접 넣기·사진이 달라요)",2 (1.29.0),진행 중,,app screenshots/AQScreenshotTest
+PHOTO-01,"1.29 AQ 명세서 사진을 글자 상자 위치로 표로 다시 짜기: 2단·3단 표, 지급/공제 좌우, 이름 아래 금액(가로 머리줄), 이름 위 칸, 시간·산출근거 칸, 점선 이끔",2 (1.29.0),완료,,"core SlipTable(위치로 표 다시 짜기, 반 줄 아래 금액 beside, 지급/공제 구역, 근태 시간 머리줄, 워터마크 각도 빼기, 각도 없을 때 이름 글자로 기울기); SlipPhotoCorpusTest 명세서 24꼴 3463/3468(1.28 3140), PlantSampleTest 화학 공장 명세서 960/960"
+PHOTO-02,"1.29 AQ 명세서 숫자·이름 고치기: 쉼표·점·'원'·공백 섞인 숫자, 괄호·△ 음수, O/0·l/1·원/윈, 띄어쓰기·비슷한 이름(편집 거리)",2 (1.29.0),완료,,"core SlipNumber·SlipLexicon(쉼표·점·원·괄호·△, O/0·l/1, 편집 거리, 1.234.567 고정 숫자), 괄호 이름 붙이기; SlipTableTest·SlipPhotoCorpusTest"
+PHOTO-03,"1.29 AQ 여러 번 읽기 합의에 표 읽기를 넣고, 합계 검산(지급합계=항목 합, 실지급=지급−공제)으로 틀린 숫자 하나를 찾아 고치고 노란 칸으로 묻기",2 (1.29.0),완료,,"core SlipReading·SlipVote·SlipSums(읽기마다 표·글자 중 나은 것, 금액·시간 다수결, 합계 검산으로 하나 고치고 노란 칸); 조용히 틀림 0; PlantSampleTest 잡음 3번 읽기·1번 읽기 모두 100%"
+PHOTO-04,"1.29 AQ 회사 규칙 사진 읽기 보강: 야간 시간대+가산 한 문장, 휴일 8시간 이내/초과 한 문장, 근속 n년 이상, 상여 통상임금 기준, 월 한도·횟수, 기간; 읽지 못한 문장은 '직접 넣기' 칸",2 (1.29.0),완료,,"core RuleText(야간 시간대+가산, 휴일 8시간 이내/초과, 근속·한도·횟수·기간, 산출식 표 해당시간×N, 통상임금 구성, 세금 가족, 설명 줄 무시, 못 읽은 줄은 직접 넣기); RulePhotoCorpusTest 32문서, PlantSampleTest 계산 방법 10줄 200/200"
+PHOTO-05,"1.29 AQ 규칙 엔진 보강: 회사 규칙에 근속 조건(입사일), 월 한도 금액·횟수, 적용 기간, 통상임금 기준 매달 정률",2 (1.29.0),완료,,"core CustomRules·PayCalculator(근속 조건, 월 한도 금액·횟수, 적용 기간, 통상임금 정률, 명세서로 맞춘 통상시급·원 미만 올림 AT_END_UP); PlantSampleTest nextMonthReproducesThePayslip 3개 수당 원 단위 일치"
+PHOTO-06,"1.29 AQ 칸 직접 추가: 사진 결과 화면 안에서 명세서 줄·규칙 칸을 더하고 고치고 지우기, 우리 회사 항목 만들기와 한 흐름",2 (1.29.0),완료,,"app ui/pay PhotoCells·CustomItemDialog(사진 칸을 우리 회사 항목 만들기와 같은 창으로 고치기·더하기·지우기); PhotoCellsLogicTest, 스크린샷 1254~1257"
+PHOTO-07,"1.29 AQ 정확성 시험: ML Kit 출력 모양(글자 상자·잡음·오타·기울기) 명세서 24꼴·규칙 문서 32개, 계산 골든 대조, 바꾸기 전/후 숫자 (체크리스트 47 C 몫·51)",2 (1.29.0),완료,,core SlipPhotoCorpusTest(24꼴)·RulePhotoCorpusTest(32문서)·PlantSampleTest(화학 공장 실제 두 장을 이름·IP 지운 글자 상자로); 바꾸기 전/후 숫자는 docs/plans/1.29-AQ-개발계획.md
+PHOTO-08,1.29 AQ 합성 이미지(PNG)로 사진 → 전처리 → 읽기 앞뒤를 나눠 앱 시험,2 (1.29.0),완료,,"app PayslipImageTest(합성 PNG: 빛·점 무늬·워터마크, 전처리 크기·되돌림, 흑백 점 무늬 억제, 되돌린 글자 상자 읽기), PayslipScanner.onPhoto"
+PHOTO-09,"1.29 AQ '사진이 달라요' 버튼: 사진 읽기 결과가 보이는 모든 화면, 날짜·화면 종류·앱 판·이유 코드 카운트만(사진·글자 없음), 오프라인 모아 보내기, '직접 문의하기'는 문의 화면 종류 자동",2 (1.29.0),조건부,G-PRIVACY-3.3,"app PhotoWrongStore·PhotoWrongButton(명세서·계산 방법·근무표·호봉표·세금·영수증·투자 채우기), 날짜·화면·판·이유 횟수만, 오프라인 모아 두기, 직접 문의하기 BUG; PhotoWrongStoreTest, 스크린샷 1252. 보내기는 photo.wrong(LEGAL, 기본 꺼짐)이 처리방침 3.3 개정과 함께 켜질 때"
+PHOTO-10,"1.29 AQ 회사 서버 /api/photo-wrong(합계만, 횟수 제한·검증)과 관리자 앱 분석 허브 '사진이 달라요' 날짜·화면별 카운트",2 (1.29.0),완료,,"server company-worker // AQ 1.29 POST /api/photo-wrong(코드·숫자만, 하루 30번, 400일 보관), 관리자 앱 사진이 달라요 카드; npm test 283·test:ui 36"
+PHOTO-11,1.29 AQ 사진 → 규칙 → 계산 경로 오류 고침(목록은 1.29-AQ 개발계획),2 (1.29.0),완료,,"core·app 고친 오류 목록은 docs/plans/1.29-AQ-개발계획.md(교대근무수당→대근, 야간근무수당, 배우자→자녀, 점 무늬 흑백 등)"
+PHOTO-12,1.29 AQ 화면 사진 1250~1269(명세서 결과·칸 더하기·규칙 직접 넣기·사진이 달라요),2 (1.29.0),완료,,app screenshots/AQScreenshotTest 1250~1257
