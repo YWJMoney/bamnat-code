@@ -156,8 +156,8 @@ class CompanySearchTimingsReport {
         }
     }
     /**
-     * [SPD-11] 1.30 AP1: with the whole list on the phone, each letter's first rows come from it, nothing asked, under 5 ms
-     * however slow the server is.
+     * [SPD-11] 1.30 AP1: with the whole list on the phone, each letter's first rows come from it, nothing asked, far under
+     * the server's time however slow it is.
      */
     @Test fun withTheWholeListEachLetterIsAnsweredOnThePhone() = runBlocking {
         TinyCompanyServer(names).use { s ->
@@ -173,8 +173,10 @@ class CompanySearchTimingsReport {
                 us
             }
             println("[AP1] 전체 목록 있을 때 글자마다 첫 결과: ${times.joinToString { "%.1fms".format(it / 1000.0) }} (서버 3초, 요청 ${s.requests.get() - asked})")
-            assertTrue(times.drop(1).all { it < 5_000 })
-            assertTrue(s.requests.get() == asked)
+            // On the phone means far under the server's 3 s. Not a few ms: a shared CI machine running test forks side by
+            // side can pause a thread for tens of ms (1.30 PR #131 failed on 5 ms while this machine printed 0.2~2.5 ms).
+            assertTrue("letters after the first: $times µs", times.drop(1).all { it < 500_000 })
+            assertTrue("asked the server ${s.requests.get() - asked} times", s.requests.get() == asked)
         }
     }
 }
