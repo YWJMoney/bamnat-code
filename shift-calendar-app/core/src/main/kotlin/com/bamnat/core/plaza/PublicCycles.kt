@@ -124,10 +124,40 @@ object PublicCycles {
     /** Shown on every public card, so no one takes it for a company's own setup. */
     const val BADGE = "공개 자료 기반"
 
-    data class Book(val forms: List<Pair<String, String>>, val cycles: List<PublicCycle>)
+    data class Book(val forms: List<Pair<String, String>>, val cycles: List<PublicCycle>) {
+        /** [SRCH-12] Each row's words as search compares them, made once per file (not per row, per letter typed). */
+        internal val indexLazy = lazy { cycles.map(::Entry) }
+    }
 
-    private val bundled: Book by lazy {
+    /** [SRCH-12] 1.29 AS: one row with its name, 사업장, 업종 and 근무형태 already as [search] compares them. */
+    internal class Entry(val c: PublicCycle) {
+        val fields = listOf(norm(c.company), norm(c.site), norm(c.industry), norm(c.formKey), norm(c.form), norm(c.display))
+        val name get() = fields[0]
+        val site get() = fields[1]
+        val cho: String by lazy { Choseong.of(c.company) }
+        val match: CompanyMatch.Name by lazy { CompanyMatch.Name(c.company) }
+    }
+
+    private val bundledLazy = lazy {
         RemoteFiles.bundled(RemoteFiles.CYCLES)?.let { runCatching { read(it) }.getOrNull() } ?: Book(emptyList(), emptyList())
+    }
+    private val bundled: Book by bundledLazy
+
+    /**
+     * [SRCH-12] 1.29 AS: reads the file and makes its index ahead (off the main thread, after the first month is drawn), so the
+     * first letter typed in 회사 찾기 does not wait for them.
+     */
+    fun warm() {
+        book.indexLazy.value.forEach { it.match.jamos }
+    }
+
+    /**
+     * [SRCH-12] [search], only when it costs nothing more than the search itself (the file read and its index made);
+     * else empty, and the screen asks [search] off its frame. For the first frame of a screen.
+     */
+    fun searchIfReady(query: String): List<PublicCycle> {
+        val b = downloaded ?: if (bundledLazy.isInitialized()) bundled else return emptyList()
+        return if (b.indexLazy.isInitialized()) search(query) else emptyList()
     }
     private val bundledVersion: Long by lazy { RemoteFiles.bundled(RemoteFiles.CYCLES)?.version ?: 0L }
 
@@ -194,40 +224,43 @@ object PublicCycles {
      */
     fun search(query: String, industry: String? = null, form: String? = null, rows: List<PublicCycle> = all): List<PublicCycle> {
         val q = query.trim()
-        val pool = rows.filter { (industry == null || it.industry == industry) && (form == null || it.formKey == form) }
-        if (norm(q).length < 2) return if (industry != null || form != null) pool.sortedBy { norm(it.company) } else emptyList()
+        // AS 1.29 [SRCH-12] The rows' words from the file's index (made once), not worked out again for every letter typed.
+        val b = book
+        val entries = if (rows === b.cycles) b.indexLazy.value else rows.map(::Entry)
+        val pool = entries.filter { (industry == null || it.c.industry == industry) && (form == null || it.c.formKey == form) }
+        if (norm(q).length < 2) return if (industry != null || form != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
         // "4조 2교대" is one thing when some row has it as one; "포스코 광양" two that must both be there.
         val whole = norm(q)
-        fun fields(c: PublicCycle) = listOf(norm(c.company), norm(c.site), norm(c.industry), norm(c.formKey), norm(c.form), norm(c.display))
-        val words = if (pool.any { c -> fields(c).any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
+        val words = if (pool.any { e -> e.fields.any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
         val cho = Choseong.isQuery(q)
-        fun score(c: PublicCycle): Int? {
-            val name = norm(c.company)
+        val letters = q.filter { !it.isWhitespace() }
+        val asTyped = CompanyMatch.Query(q)
+        fun score(e: Entry): Int? {
+            val name = e.name
             if (cho) {
-                val letters = q.filter { !it.isWhitespace() }
-                val of = Choseong.of(c.company)
+                val of = e.cho
                 return when {
                     of.startsWith(letters) -> 0
                     letters in of -> 1
                     else -> null
                 }
             }
-            val all = fields(c)
+            val all = e.fields
             if (words.any { w -> all.none { w in it } }) {
                 // [PLAZA-17] 1.27 AH-I1: the name said the other way (GS ↔ 지에스) or with one 자모 wrong, after every exact one.
-                return if (words.size == 1) CompanyMatch.fit(c.company, q)?.let { 3 + it } else null
+                return if (words.size == 1) CompanyMatch.fit(e.match, asTyped)?.let { 3 + it } else null
             }
             val first = words.first()
             return when {
                 name.startsWith(first) -> 0
                 first in name -> 1
-                first in norm(c.site) -> 2
+                first in e.site -> 2
                 else -> 3
             }
         }
-        return pool.mapNotNull { c -> score(c)?.let { it to c } }
-            .sortedWith(compareBy<Pair<Int, PublicCycle>> { it.first }.thenBy { it.second.weak }.thenBy { norm(it.second.company) }.thenBy { it.second.id })
-            .map { it.second }
+        return pool.mapNotNull { e -> score(e)?.let { it to e } }
+            .sortedWith(compareBy<Pair<Int, Entry>> { it.first }.thenBy { it.second.c.weak }.thenBy { it.second.name }.thenBy { it.second.c.id })
+            .map { it.second.c }
     }
 
     /**
