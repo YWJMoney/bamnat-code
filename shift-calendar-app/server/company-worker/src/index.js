@@ -66,6 +66,8 @@ import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalo
 import { spDbKey, spSession, spBookmarked, spNoCache, spKept, spPairChunks, spInMarks, spEtag, spNotModified } from "./read-fast.js";
 // BC 1.30 [ITEM-04][PROP-01]
 import { readItemShare, itemShareCanon, itemShareText, withProposalTexts } from "./plaza-items.js";
+// BD 1.30 [PLZD-04][PLZD-05][PLZD-07] 광장 중복·변별: a version of another shape held, a day's versions from one phone, what folded versions change.
+import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -1511,7 +1513,7 @@ async function search(env, url) {
         ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
       EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm = ?2) AS alias_exact,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM companies c
     WHERE c.hidden = 0 AND c.merged_into IS NULL
       AND (c.norm LIKE ?1 ESCAPE '\\' OR c.said LIKE ?3 ESCAPE '\\'
@@ -1589,7 +1591,7 @@ async function searchChoseong(env, q) {
     SELECT c.id, c.name, c.cho,
       (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1 LIMIT 1) AS alias,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM companies c
     WHERE c.hidden = 0 AND c.merged_into IS NULL
       AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
@@ -1630,7 +1632,7 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
     settings(env),
     all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
     all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", id),
-    all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
+    all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending' AND ${pgShown()}
       GROUP BY grp ORDER BY last DESC LIMIT 30`, id),
     // What the developer took down or turned down (blocker()'s withdrawn and rejected), for every version at once.
     all(env, "SELECT grp FROM rules WHERE company_id = ?1 AND withdrawn = 1 UNION SELECT grp FROM reports WHERE company_id = ?1 AND status = 'rejected'", id),
@@ -1683,6 +1685,8 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
     ...mark(rep.dept_norm, rep.grp, rep.setup) })));
   // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
   markLeads(setups, (grp) => facts.opinions(c.id, grp, who.dev));
+  // BD 1.30 [PLZD-07] What each folded version says against its department's 대표.
+  pgChanges(setups, normName);
   const body = { id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases: aliasRows.map((a) => a.name),
     setups, member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
   // SP1 1.30 [SPD-05] The room (as /room answers it) and the room's talk (as /setups/room/posts does), keys an older app never reads.
@@ -1859,7 +1863,7 @@ async function roomData(env, c, who, now) {
     all(env, `SELECT grp, dept, dept_norm, setup, version, 'adopted' AS status, adopted_at AS at FROM rules
       WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
     UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, NULL, 'pending', MAX(r.created_at) FROM reports r
-      WHERE r.company_id = ?1 AND r.status = 'pending'
+      WHERE r.company_id = ?1 AND r.status = 'pending' AND ${pgShown("r")}
         AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
         AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp AND (w.withdrawn = 1 OR w.superseded = 0))
       GROUP BY r.grp`, c.id),
@@ -2111,7 +2115,7 @@ function markLeads(setups, opinionOf) {
  */
 async function leads(env, companyId) {
   const rows = await all(env, `SELECT grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
-    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id = ?1 AND r.status = 'pending'
+    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id = ?1 AND r.status = 'pending' AND ${pgShown("r")}
       AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
       AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
     GROUP BY r.grp`, companyId);
@@ -2240,7 +2244,7 @@ export async function searchLeads(env, ids, every = false) {
   const values = every ? [] : ids;
   const [rows, sent, votes, used, users] = await Promise.all([
     all(env, `SELECT company_id, grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE ${of("company_id")} AND withdrawn = 0 AND superseded = 0
-      UNION ALL SELECT r.company_id, r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE ${of("r.company_id")} AND r.status = 'pending'
+      UNION ALL SELECT r.company_id, r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE ${of("r.company_id")} AND r.status = 'pending' AND ${pgShown("r")}
         AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
         AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
       GROUP BY r.company_id, r.grp`, ...values),
@@ -2320,7 +2324,7 @@ async function topCompanies(env, url) {
   if (kept && Date.now() - kept.at < TOP_EDGE_SECONDS * 1000) return json({ ...kept.body, companies: kept.body.companies.slice(0, n) }, 200, TOP_CACHE);
   const rows = await all(env, `SELECT c.id, c.name, u.n,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM (SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses
       UNION SELECT company_id, device FROM reports WHERE status IN ('pending', 'adopted')) GROUP BY company_id ORDER BY n DESC LIMIT ?) u
     JOIN companies c ON c.id = u.company_id
@@ -2541,7 +2545,7 @@ async function allCompanies(env) {
     const [rows, aliasRows] = await Promise.all([
       all(env, `SELECT c.id, c.name, c.norm, c.said, c.cho,
           (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-          (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+          (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
         FROM companies c WHERE c.hidden = 0 AND c.merged_into IS NULL AND c.kind != 'topic'`),
       all(env, `SELECT a.company_id, a.name FROM aliases a JOIN companies c ON c.id = a.company_id
         WHERE c.hidden = 0 AND c.merged_into IS NULL ORDER BY a.name`),
@@ -2613,6 +2617,9 @@ async function report(request, env) {
   // [PLAZA-07] Who sends a company's setup joins it (결정 D79), the same again or not.
   const member = c.kind === "topic" ? null : await joinCompany(env, dev, c.id, calOf(body.cal), now);
   if (again) return json({ ...(await reportView(env, again.id)), again: true, first: false, newInfo: false, ...(member ? { member } : {}) });
+  // BD 1.30 [PLZD-04][PLZD-05] Another shape than the department's waits for the developer; a day's other versions are replaced.
+  const guard = c.kind === "topic" ? { held: false, replaced: [] } : await pgGuard({ one, all, doubted: async (g) => doubted(await score(env, c.id, g)) },
+    env, c.id, r, dev, grp, now);
   const cluster = await clusterFor(env, c.id, net);
   const active = await activeRule(env, c.id, r.deptNorm);
   const adopted = active?.grp === grp;
@@ -2622,21 +2629,24 @@ async function report(request, env) {
   const id = randomId(22);
   await batch(env, [
     // A newer setup from the same sender for the same place takes the place of the older one.
-    stmt(env, "UPDATE reports SET status = 'replaced', decided_at = ? WHERE company_id = ? AND dept_norm = ? AND device = ? AND status = 'pending'",
-      now, c.id, r.deptNorm, dev),
+    stmt(env, `UPDATE reports SET status = 'replaced', decided_at = ?1 WHERE company_id = ?2 AND device = ?4 AND status = 'pending'
+      AND (dept_norm = ?3 OR id IN (SELECT value FROM json_each(?5)))`, now, c.id, r.deptNorm, dev, JSON.stringify(guard.replaced.map((x) => x.id))),
     stmt(env, `INSERT INTO reports (id, company_id, dept, dept_norm, grp, setup, verified, note, device, net, cluster, points, status,
-      rule_id, reason, created_at, decided_at, amends) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+      rule_id, reason, created_at, decided_at, amends) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, c.id, r.dept, r.deptNorm, grp, JSON.stringify(r.setup), r.verified ? 1 : 0, r.note, dev, net.now, cluster, r.verified ? 2 : 1,
-      adopted ? "adopted" : "pending", adopted ? active.id : null, now, adopted ? now : null,
+      adopted ? "adopted" : "pending", adopted ? active.id : null, guard.held ? PG_HELD : null, now, adopted ? now : null,
       // [PLZ-02] Only a change of the rule in use counts as one.
       !adopted && active && r.amends === active.id ? active.id : null),
   ]);
   // AI 1.27 [PLAZA-30] What the 명세서 tick rested on: the month and whether it matched, or an older app's bare claim.
   if (r.proof || r.claim) await run(env, "UPDATE reports SET proof = ?, claim = ? WHERE id = ?", proofText(r.proof), r.claim ? 1 : 0, id);
-  if (!adopted) await settle(env, c.id, grp, now);
-  const reward = await newInfo(env, c, r, id, dev, now);
+  if (!adopted && !guard.held) await settle(env, c.id, grp, now);
+  const reward = guard.held ? null : await newInfo(env, c, r, id, dev, now);
   const view = await reportView(env, id);
-  return json({ ...view, first, newInfo: reward !== null, ...(reward ? { reward } : {}), ...(member ? { member } : {}) }, 201);
+  // BD 1.30 [PLZD-01] [same]: another phone had sent this very rule and it is in use; this one counts as one more 맞아요.
+  return json({ ...view, first: first && !guard.held, newInfo: reward !== null, ...(reward ? { reward } : {}), ...(member ? { member } : {}),
+    ...(adopted ? { same: true } : {}), ...(guard.held ? { held: PG_HELD, shape: { lead: guard.lead, mine: guard.mine } } : {}),
+    ...(guard.replaced.length ? { replaced: guard.replaced } : {}) }, 201);
 }
 
 /**
@@ -2747,7 +2757,8 @@ async function settle(env, companyId, grp, now) {
   // [COMM-07] Too many 달라요 for the 맞았어요: the developer decides, however many points it has.
   if (s.persons * 100 < adoptAgree * (s.persons + s.bad)) return;
   const rep = await representative(env, companyId, grp);
-  if (!rep) return;
+  // BD 1.30 [PLZD-04] A version of another shape is the developer's to place, however many agree.
+  if (!rep || rep.reason === PG_HELD) return;
   const why = await blocker(env, companyId, grp, rep.dept_norm);
   if (!why) {
     // [PLZ-03] At least this many different people (결정 D32).
@@ -2877,7 +2888,7 @@ async function reportView(env, id) {
     review: r.status === "pending" && s.persons >= 2 && s.points >= adoptPoints,
     createdAt: iso(r.created_at),
     decidedAt: r.decided_at ? iso(r.decided_at) : null,
-    reason: r.reason ? { code: r.reason, text: (ask ? ANSWERS : REASONS)[r.reason] ?? "" } : null,
+    reason: r.reason ? { code: r.reason, text: (ask ? ANSWERS : REASONS)[r.reason] ?? PG_REASONS[r.reason] ?? "" } : null,
     reward: reward ? { months: reward.months, status: reward.status } : null,
     rewardMonths,
   };
@@ -3048,7 +3059,7 @@ async function board(env, url) {
             COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
             COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
         FROM reports p JOIN companies c ON c.id = p.company_id
-        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
+        WHERE p.status = 'pending' AND ${pgShown("p")} AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
           AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
           AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
         GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like, job, region)]);
