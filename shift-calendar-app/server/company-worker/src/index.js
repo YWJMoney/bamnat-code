@@ -173,7 +173,7 @@ const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, p
 export default {
   async fetch(request, env, ctx) {
     try {
-      return await route(request, env);
+      return await route(request, env, ctx);
     } catch (e) {
       if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
       console.error(e && e.stack ? e.stack : String(e));
@@ -283,17 +283,19 @@ async function once(request, env, path, handle) {
   return res;
 }
 
-async function route(request, env) {
+async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
   // [SRV-08] Any write through this Worker may change 모두의 문의, so its kept rows are read afresh.
   if (method !== "GET") publicRows.delete(env.DB ?? env);
+  // AS 1.29 [SRCH-01] and may add a name whose 초성 and reading are not there yet.
+  if (method !== "GET") namesFilled.delete(env.DB ?? env);
   if (path.startsWith("/api/") && !path.startsWith("/api/admin") && method === "POST" && env.DB && request.headers.get("x-request-id")) {
     await ready(env);
-    return once(request, env, path, () => routeOnce(request, env, url));
+    return once(request, env, path, () => routeOnce(request, env, url, ctx));
   }
-  return routeOnce(request, env, url);
+  return routeOnce(request, env, url, ctx);
 }
 
 /**
@@ -304,6 +306,8 @@ async function route(request, env) {
 const PUBLIC_PER_HOUR = 600;
 const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/history$/,
   /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/,
+  // AS 1.29 [SRCH-04]
+  /^\/api\/companies\/top$/,
   // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
   /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
 const publicReads = new Map();
@@ -319,7 +323,7 @@ async function publicAllowed(request, env, path) {
   return n <= PUBLIC_PER_HOUR;
 }
 
-async function routeOnce(request, env, url) {
+async function routeOnce(request, env, url, ctx) {
   const path = url.pathname;
   const method = request.method;
   if (!(await publicAllowed(request, env, path))) return json({ error: "rate_limited" }, 429);
@@ -334,7 +338,10 @@ async function routeOnce(request, env, url) {
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
-  if (path === "/api/companies" && method === "GET") return search(env, url);
+  // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
+  if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
+  if (path === "/api/companies/top" && method === "GET") return edgeCached(request, ctx, TOP_EDGE_SECONDS, () => topCompanies(env, url));
+  // AS 1.29 끝
   if (path === "/api/terms" && method === "GET") return json(await terms(env));
   let m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})$/);
   if (m && method === "GET") return company(env, m[1], request);
@@ -614,6 +621,11 @@ const COLUMNS = [
   "ALTER TABLE companies ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE aliases ADD COLUMN cho TEXT NOT NULL DEFAULT ''",
   // X 1.25 끝
+  // AS 1.29 시작
+  // [SRCH-02] A name as said in Korean letters ("지에스칼텍스" for GS칼텍스), filled by search when empty, so the reading finds it.
+  "ALTER TABLE companies ADD COLUMN said TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE aliases ADD COLUMN said TEXT NOT NULL DEFAULT ''",
+  // AS 1.29 끝
   // AI 1.27 시작
   // [PLAZA-30] What a 명세서 tick rested on ("2026-09|match" or "2026-09|gap"), and an older app's tick with nothing behind it.
   "ALTER TABLE reports ADD COLUMN proof TEXT",
@@ -1404,33 +1416,43 @@ async function terms(env) {
 
 async function search(env, url) {
   const raw = String(url.searchParams.get("q") ?? "");
-  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) });
+  if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) }, 200, SEARCH_CACHE);
   const q = normName(raw).slice(0, 40);
-  if (q.length < 2) return json({ companies: [] });
-  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const rows = await all(env, `
-    SELECT c.id, c.name, c.norm,
-      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?1 ESCAPE '\\' ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
+  if (q.length < 2) return json({ companies: [] }, 200, SEARCH_CACHE);
+  const esc = (t) => `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const like = esc(q);
+  // AS 1.29 [SRCH-02] The name as said in Korean letters too: 지에스칼텍스 finds GS칼텍스, gs칼텍스 still finds it by its letters.
+  const said = spoken(raw).slice(0, 60);
+  const saidLike = said.length >= 2 ? esc(said) : like;
+  // Names from before 1.29 get their reading beside the search, not before it.
+  const [rows] = await Promise.all([all(env, `
+    SELECT c.id, c.name, c.norm, c.said,
+      (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\')
+        ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
       EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm = ?2) AS alias_exact,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
       (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
     FROM companies c
     WHERE c.hidden = 0 AND c.merged_into IS NULL
-      AND (c.norm LIKE ?1 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?1 ESCAPE '\\'))
-    LIMIT 200`, like, q);
-  const exact = (c) => (c.norm === q || c.alias_exact === 1 ? 1 : 0);
+      AND (c.norm LIKE ?1 ESCAPE '\\' OR c.said LIKE ?3 ESCAPE '\\'
+        OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\')))
+    LIMIT 200`, like, q, saidLike), fillNames(env)]);
+  const exact = (c) => (c.norm === q || c.said === said || c.alias_exact === 1 ? 1 : 0);
+  const starts = (c) => (c.norm.startsWith(q) || (said.length >= 2 && String(c.said ?? "").startsWith(said)) ? 1 : 0);
   const companies = rows
     // [PLAZA-10] One that coworkers are still checking shows up too (결정 D79): a company's first setup, even with only its
     // shifts, is there for the next person to find and use at once.
     .filter((c) => c.adopted > 0 || c.pending > 0)
-    .sort((a, b) => exact(b) - exact(a) || (b.adopted > 0) - (a.adopted > 0) || b.norm.startsWith(q) - a.norm.startsWith(q) ||
+    .sort((a, b) => exact(b) - exact(a) || (b.adopted > 0) - (a.adopted > 0) || starts(b) - starts(a) ||
       a.name.length - b.name.length || a.name.localeCompare(b.name, "ko"))
     .slice(0, 20)
-    .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
-      ...(c.adopted === 0 ? { first: true } : {}) }));
-  // AH 1.27 [PLAZA-14] The first few with their 대표 주기 and users, for the list under the name box.
-  for (const c of companies.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
-  return json({ companies });
+    .map((c) => ({ id: c.id, name: c.name, alias: c.norm.includes(q) || (said.length >= 2 && String(c.said ?? "").includes(said)) ? null : c.alias,
+      adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
+  // AS 1.29 [SRCH-01] Every company listed with its 대표 주기 and users, read for all of them at once. Before 1.29 only the
+  // first five had it, read one company after another (41 reads in a row for eight companies): an answer the app gave
+  // up waiting for, and a company 6th or lower with no 대표 주기 at all.
+  await withLeads(env, companies);
+  return json({ companies }, 200, SEARCH_CACHE);
 }
 
 // ---- [PLAZA-03] 초성 찾기 ----
@@ -1458,21 +1480,30 @@ export function isChoseong(q) {
   return t.length >= 2 && [...t].every((ch) => CHO.includes(ch));
 }
 
-/** Names whose 초성 were not worked out yet (new, renamed, or from before 1.25) get them, a batch at a time. */
-async function fillChoseong(env) {
+/**
+ * Names whose 초성 (and, AS 1.29 [SRCH-02], Korean reading) were not worked out yet (new, renamed, or from before 1.25 / 1.29)
+ * get them, a batch at a time.
+ */
+async function fillNames(env) {
+  // AS 1.29 [SRCH-01] Once a look found nothing to fill, this Worker does not look again for a while (a write here looks at once).
+  const key = env.DB ?? env;
+  if (Date.now() - (namesFilled.get(key) ?? 0) < NAMES_FILLED_MS) return;
   const [cs, as] = await Promise.all([
-    all(env, "SELECT id, norm FROM companies WHERE cho = '' LIMIT 500"),
-    all(env, "SELECT norm FROM aliases WHERE cho = '' LIMIT 500"),
+    all(env, "SELECT id, name, norm, cho, said FROM companies WHERE cho = '' OR said = '' LIMIT 500"),
+    all(env, "SELECT norm, name, cho, said FROM aliases WHERE cho = '' OR said = '' LIMIT 500"),
   ]);
-  if (!cs.length && !as.length) return;
+  if (!cs.length && !as.length) {
+    namesFilled.set(key, Date.now());
+    return;
+  }
   await batch(env, [
-    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ? WHERE id = ?", choseong(c.norm) || "-", c.id)),
-    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ? WHERE norm = ?", choseong(a.norm) || "-", a.norm)),
+    ...cs.map((c) => stmt(env, "UPDATE companies SET cho = ?, said = ? WHERE id = ?", c.cho || choseong(c.norm) || "-", c.said || spoken(c.name) || "-", c.id)),
+    ...as.map((a) => stmt(env, "UPDATE aliases SET cho = ?, said = ? WHERE norm = ?", a.cho || choseong(a.norm) || "-", a.said || spoken(a.name) || "-", a.norm)),
   ]);
 }
 
 async function searchChoseong(env, q) {
-  await fillChoseong(env);
+  await fillNames(env);
   const like = `%${q}%`;
   const rows = await all(env, `
     SELECT c.id, c.name, c.cho,
@@ -1490,8 +1521,8 @@ async function searchChoseong(env, q) {
     .slice(0, 20)
     .map((c) => ({ id: c.id, name: c.name, alias: c.cho.includes(q) ? null : c.alias, adopted: c.adopted, pending: c.pending,
       ...(c.adopted === 0 ? { first: true } : {}) }));
-  // AH 1.27 [PLAZA-14]
-  for (const c of out.slice(0, 5)) Object.assign(c, await searchLead(env, c.id));
+  // AH 1.27 [PLAZA-14] AS 1.29 [SRCH-01] every one, read at once.
+  await withLeads(env, out);
   return out;
 }
 
@@ -1504,37 +1535,40 @@ async function company(env, id, request) {
   const view = (text) => (who.member ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
   const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
   const now = Date.now();
-  const { adoptPoints } = await settings(env);
-  const aliases = (await all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", c.id)).map((a) => a.name);
-  const setups = [];
-  const rules = await all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id);
-  for (const r of rules) {
-    setups.push({ ...(await state(env, c.id, r.grp, adoptPoints, true)), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at),
-      setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...(await payMark(env, c.id, r.dept_norm, r.grp, r.setup, who, now)) });
-  }
-  const groups = await all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
-    GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id);
-  const pending = [];
-  for (const g of groups) {
-    if (rules.some((r) => r.grp === g.grp)) continue;
-    const s = await state(env, c.id, g.grp, adoptPoints, false);
-    if (s.persons === 0) continue;
-    const rep = await representative(env, c.id, g.grp);
+  // AS 1.29 [SRCH-05] The page's reads go together, not one setup after another (the same answer, in the same order): a
+  // company with three versions took about 30 reads in a row before its 대표판 showed.
+  const [{ adoptPoints }, aliasRows, rules, groups] = await Promise.all([
+    settings(env),
+    all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", c.id),
+    all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id),
+    all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
+      GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id),
+  ]);
+  const aliases = aliasRows.map((a) => a.name);
+  const setups = await Promise.all(rules.map(async (r) => {
+    const [s, mark] = await Promise.all([state(env, c.id, r.grp, adoptPoints, true), payMark(env, c.id, r.dept_norm, r.grp, r.setup, who, now)]);
+    return { ...s, dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at), setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...mark };
+  }));
+  const waiting = await Promise.all(groups.filter((g) => !rules.some((r) => r.grp === g.grp)).map(async (g) => {
+    const [s, rep] = await Promise.all([state(env, c.id, g.grp, adoptPoints, false), representative(env, c.id, g.grp)]);
+    if (s.persons === 0 || !rep) return null;
     // What the developer turned down is not offered to coworkers again.
     const why = await blocker(env, c.id, g.grp, rep.dept_norm);
-    if (why === "withdrawn" || why === "rejected") continue;
-    pending.push({ s, rep });
-  }
+    return why === "withdrawn" || why === "rejected" ? null : { s, rep };
+  }));
+  const pending = waiting.filter(Boolean);
   // The likeliest first, and a few for each department are enough.
   pending.sort((a, b) => b.s.points - a.s.points);
   const shown = new Map();
+  const picked = [];
   for (const { s, rep } of pending) {
     const n = shown.get(rep.dept_norm) ?? 0;
     if (n >= 3) continue;
     shown.set(rep.dept_norm, n + 1);
-    setups.push({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
-      ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) });
+    picked.push({ s, rep });
   }
+  setups.push(...await Promise.all(picked.map(async ({ s, rep }) => ({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
+    ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) }))));
   // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
   await markLeads(env, c.id, setups, who.dev);
   return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups,
@@ -1900,8 +1934,10 @@ async function opinions(env, companyId, grp, dev) {
 /** [PLAZA-14][PLAZA-15] company()'s setups marked: each with its opinions, doubted ones, and each department's lead. */
 async function markLeads(env, companyId, setups, dev) {
   const byDept = new Map();
-  for (const s of setups) {
-    s.opinion = await opinions(env, companyId, s.id, dev);
+  // AS 1.29 [SRCH-05] read together.
+  const said = await Promise.all(setups.map((s) => opinions(env, companyId, s.id, dev)));
+  for (const [i, s] of setups.entries()) {
+    s.opinion = said[i];
     if (doubted(s)) {
       s.doubted = true;
       // A version people say is wrong has not settled, whatever its age.
@@ -1974,24 +2010,217 @@ async function settleDept(env, companyId, deptNorm, now) {
 }
 // AH 1.27 끝
 
+// AS 1.29 시작
+// [SRCH-01..04] 1.29 묶음 AS (사용자 2026-10-27): "광장에 대표판이 있는데 회사 검색 시 뜨지 않는다 … 안 뜨는 게 아니라 늦게 떠서
+// 안 뜨는 것처럼 보인다". The search read each listed company's 대표 주기 one company and one version after another
+// (searchLead: about five reads per company, only the first five), so an answer took long enough for the app to give up on
+// it (the app's 2.5 s), and a company below the fifth came without its 대표 주기. Now every listed company's line is made
+// from five reads in all, sent together; a name is found by its Korean reading too; a search keeps a short edge copy; and
+// the most used companies are a list of their own for the app to keep, so a first user sees them before any answer.
+
+/** [SRCH-03] How long a search's answer may be kept at the edge (and by anything between): short, as a new setup should show. */
+export const SEARCH_EDGE_SECONDS = 30;
+/** [SRCH-04] The most used companies change slowly. */
+export const TOP_EDGE_SECONDS = 600;
+const SEARCH_CACHE = { "cache-control": `public, max-age=${SEARCH_EDGE_SECONDS}, stale-while-revalidate=300` };
+const TOP_CACHE = { "cache-control": `public, max-age=${TOP_EDGE_SECONDS}, stale-while-revalidate=3600` };
+/** [SRCH-04] How many companies the list of the most used has at most (about 300 bytes each). */
+export const TOP_MAX = 60;
+
+const namesFilled = new WeakMap();
+const NAMES_FILLED_MS = 5 * 60 * 1000;
+
+const LETTERS = {
+  a: "에이", b: "비", c: "씨", d: "디", e: "이", f: "에프", g: "지", h: "에이치", i: "아이", j: "제이", k: "케이", l: "엘", m: "엠",
+  n: "엔", o: "오", p: "피", q: "큐", r: "알", s: "에스", t: "티", u: "유", v: "브이", w: "더블유", x: "엑스", y: "와이", z: "제트",
+};
+/** English words read as a word, not letter by letter: the same list as the app's core CompanyMatch. */
+const WORDS = [["hyundai", "현대"], ["samsung", "삼성"], ["hanwha", "한화"], ["lotte", "롯데"], ["doosan", "두산"], ["posco", "포스코"],
+  ["emart", "이마트"], ["korail", "코레일"], ["kepco", "한전"], ["hanjin", "한진"], ["oil", "오일"], ["steel", "스틸"], ["power", "파워"],
+  ["chemical", "케미칼"], ["logis", "로지스"], ["tech", "테크"], ["eps", "이피에스"]];
+const WORD_OF = new Map(WORDS);
+
+function readWord(w) {
+  if (!w) return "";
+  if (WORD_OF.has(w)) return WORD_OF.get(w);
+  for (const [en, ko] of WORDS) {
+    const at = w.indexOf(en);
+    if (at >= 0 && en.length >= 3) return readWord(w.slice(0, at)) + ko + readWord(w.slice(at + en.length));
+  }
+  return [...w].map((c) => LETTERS[c] ?? c).join("");
+}
+
+/**
+ * [SRCH-02] How a name is said in Korean letters, as normName leaves it otherwise: GS칼텍스 → 지에스칼텍스, S-OIL → 에스오일.
+ * The app's core CompanyMatch.spoken does the same (AH-I1), so the phone and the server find the same companies.
+ */
+export function spoken(s) {
+  return normName(s).replace(/[a-z]+/g, readWord);
+}
+
+/** [SRCH-01] The search's 대표 주기 line for each of [companies], added to it (see searchLeads). */
+async function withLeads(env, companies) {
+  const lines = await searchLeads(env, companies.map((c) => c.id));
+  for (const c of companies) Object.assign(c, lines.get(c.id) ?? { users: 0 });
+}
+
+/**
+ * [SRCH-01] What searchLead says for one company, for many at once: the versions, what was sent and voted on them, who uses
+ * them and the company's users, five reads sent together whatever the number of companies or versions. The same answer as
+ * searchLead (a test holds them together); leadOf, doubted, support and tally decide as before.
+ */
+export async function searchLeads(env, ids) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const marks = ids.map((_, i) => `?${i + 1}`).join(", ");
+  const [rows, sent, votes, used, users] = await Promise.all([
+    all(env, `SELECT company_id, grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id IN (${marks}) AND withdrawn = 0 AND superseded = 0
+      UNION ALL SELECT r.company_id, r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id IN (${marks}) AND r.status = 'pending'
+        AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
+        AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
+      GROUP BY r.company_id, r.grp`, ...ids),
+    all(env, `SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE company_id IN (${marks}) AND status IN ('pending', 'adopted')`, ...ids),
+    all(env, `SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id IN (${marks})`, ...ids),
+    all(env, `SELECT company_id, grp, COUNT(*) AS n FROM uses WHERE company_id IN (${marks}) GROUP BY company_id, grp`, ...ids),
+    all(env, `SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses WHERE company_id IN (${marks})
+      UNION SELECT company_id, device FROM reports WHERE company_id IN (${marks}) AND status IN ('pending', 'adopted')) GROUP BY company_id`, ...ids),
+  ]);
+  const at = (c, g) => `${c}\u0001${g}`;
+  const backing = new Map();
+  const doubters = new Map();
+  const checked = new Map();
+  const add = (m, k, v) => m.set(k, [...(m.get(k) ?? []), v]);
+  for (const r of sent) {
+    add(backing, at(r.company_id, r.grp), { device: r.device, points: r.points, cluster: r.cluster });
+    if (r.verified === 1) checked.set(at(r.company_id, r.grp), (checked.get(at(r.company_id, r.grp)) ?? 0) + 1);
+  }
+  for (const v of votes) {
+    if (v.ok === 1) add(backing, at(v.company_id, v.grp), { device: v.device, points: v.verified === 1 ? 2 : 1, cluster: v.cluster });
+    else add(doubters, at(v.company_id, v.grp), v.device);
+  }
+  const uses = new Map(used.map((u) => [at(u.company_id, u.grp), u.n]));
+  const userCount = new Map(users.map((u) => [u.company_id, u.n]));
+  const byCompany = new Map();
+  for (const r of rows) {
+    const k = at(r.company_id, r.grp);
+    const s = tally(backing.get(k) ?? [], doubters.get(k) ?? []);
+    const n = uses.get(k) ?? 0;
+    add(byCompany, r.company_id, { id: r.grp, dept: r.dept, deptNorm: r.dept_norm, adopted: r.adopted === 1, setup: JSON.parse(r.setup),
+      persons: s.persons, bad: s.bad, uses: n, doubted: doubted(s),
+      support: support({ uses: n, ok: s.persons, bad: s.bad, verified: checked.get(k) ?? 0 }) });
+  }
+  for (const id of ids) {
+    const versions = byCompany.get(id) ?? [];
+    const leadsOf = [];
+    for (const k of new Set(versions.map((v) => v.deptNorm))) {
+      const list = versions.filter((v) => v.deptNorm === k);
+      const lead = leadOf(list);
+      const v = list.find((x) => x.id === lead) ?? list[0];
+      leadsOf.push({ ...v, doubted: lead === null });
+    }
+    out.set(id, leadLine(leadsOf, userCount.get(id) ?? 0));
+  }
+  return out;
+}
+
+/** [PLAZA-14] searchLead's answer from a company's department leads and its users. */
+function leadLine(all_, users) {
+  const main = all_.find((l) => l.deptNorm === "") ?? [...all_].sort((a, b) => b.persons - a.persons)[0];
+  if (!main) return { users };
+  const offs = main.setup.shiftTypes.filter((t) => t.off).map((t) => t.name);
+  return {
+    users,
+    sites: all_.length,
+    lead: { setup: main.id, dept: main.dept, adopted: main.adopted, steps: main.setup.rotation?.steps ?? null, weekly: main.setup.weekly ?? null,
+      roster: main.setup.roster === true, offs, pay: main.setup.pay !== undefined, ok: main.persons, bad: main.bad,
+      ...(main.doubted ? { doubted: true } : {}) },
+  };
+}
+
+/** [SRCH-01] The one-company way searchLeads replaced, kept for the test that holds the two to the same answer. */
+export const searchLeadOne = (env, companyId) => searchLead(env, companyId);
+
+const topMemo = new WeakMap();
+
+/**
+ * [SRCH-04] GET /api/companies/top: the companies the most phones use or sent (each phone once), with their 대표 주기 line as the
+ * search gives it, at most [TOP_MAX] (`?n=` fewer). Made at most every ten minutes per Worker and kept at the edge as long:
+ * the app keeps it after its first month is drawn (Wi-Fi, not 절전), so the companies most people look for show on the
+ * first letter, before any answer. Nothing about a phone is in it.
+ */
+async function topCompanies(env, url) {
+  const n = Math.min(TOP_MAX, Math.max(1, Number.parseInt(url.searchParams.get("n") ?? `${TOP_MAX}`, 10) || TOP_MAX));
+  const key = env.DB ?? env;
+  const kept = topMemo.get(key);
+  if (kept && Date.now() - kept.at < TOP_EDGE_SECONDS * 1000) return json({ ...kept.body, companies: kept.body.companies.slice(0, n) }, 200, TOP_CACHE);
+  const rows = await all(env, `SELECT c.id, c.name, u.n,
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+    FROM (SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses
+      UNION SELECT company_id, device FROM reports WHERE status IN ('pending', 'adopted')) GROUP BY company_id ORDER BY n DESC LIMIT ?) u
+    JOIN companies c ON c.id = u.company_id
+    WHERE c.hidden = 0 AND c.merged_into IS NULL AND c.kind != 'topic'
+    ORDER BY u.n DESC, c.name`, TOP_MAX * 2);
+  const companies = rows.filter((c) => c.adopted > 0 || c.pending > 0).slice(0, TOP_MAX)
+    .map((c) => ({ id: c.id, name: c.name, alias: null, adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
+  await withLeads(env, companies);
+  const body = { companies, at: new Date().toISOString() };
+  topMemo.set(key, { at: Date.now(), body });
+  return json({ ...body, companies: companies.slice(0, n) }, 200, TOP_CACHE);
+}
+
+/**
+ * [SRCH-03] A public GET answered from the edge's copy (Cloudflare's Cache API) when one is there and still fresh, else made
+ * and kept for [seconds]. Only answers that are the same for everyone come here (no X-Device). Off where there is no Cache
+ * API (the tests on Node, a local run), and a cache that fails never fails the answer.
+ */
+async function edgeCached(request, ctx, seconds, make) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return make();
+  const url = new URL(request.url);
+  // One copy for every way of writing the same search.
+  const q = url.searchParams.get("q");
+  if (q !== null) url.searchParams.set("q", isChoseong(q) ? q.replace(/\s/g, "") : normName(q));
+  url.searchParams.sort();
+  const key = new Request(url.toString(), { method: "GET" });
+  try {
+    const hit = await cache.match(key);
+    if (hit) return hit;
+  } catch {
+    // Read afresh.
+  }
+  const res = await make();
+  if (res.status === 200) {
+    const copy = res.clone();
+    const put = cache.put(key, copy).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(put);
+    else await put;
+  }
+  return res;
+}
+// AS 1.29 끝
+
 
 async function state(env, companyId, grp, threshold, adopted) {
-  const s = await score(env, companyId, grp);
-  const posts = await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp);
-  // [PLZ-08] Who stands behind it: how many sent it, how many checked it on a pay slip, how many use it,
-  // and the names they chose to be shown by (no one else's).
-  const who = await one(env, `SELECT
-      (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
-      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
-      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
-        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
-      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp);
-  const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
-      WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
-  // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
-  const span = await one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
-      SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
-      UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
+  // AS 1.29 [SRCH-05] Its five reads go together.
+  const [s, posts, who, names, span] = await Promise.all([
+    score(env, companyId, grp),
+    one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp),
+    // [PLZ-08] Who stands behind it: how many sent it, how many checked it on a pay slip, how many use it,
+    // and the names they chose to be shown by (no one else's).
+    one(env, `SELECT
+        (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
+        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
+        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
+          + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
+        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp),
+    all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
+        WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp).then((l) => l.map((n) => n.nick)),
+    // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
+    one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
+        SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
+        UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp),
+  ]);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
     ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
     // [PLAZA-05] What decides the 대표 판 of a department (D74): phones using it, people behind it, less 달라요.
@@ -2107,8 +2336,8 @@ async function companyFor(env, name, now, r = {}) {
   }
   const id = randomId(12);
   const kind = r.topic ? "topic" : r.job === "nurse" ? "hospital" : "company";
-  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
-    id, name, norm, now, kind, r.job ?? "", r.region ?? "");
+  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region, said) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
+    id, name, norm, now, kind, r.job ?? "", r.region ?? "", spoken(name) || "-");
   return one(env, "SELECT * FROM companies WHERE id = ?", id);
 }
 
@@ -2144,11 +2373,12 @@ async function clusterFor(env, companyId, net) {
  * networks they sent from. Someone who says 달라요 does not count for it.
  */
 async function score(env, companyId, grp) {
-  const rows = await all(env, `
+  // AS 1.29 [SRCH-05] both reads together.
+  const [rows, doubters] = await Promise.all([all(env, `
     SELECT device, points, cluster FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')
     UNION ALL
-    SELECT device, CASE WHEN verified = 1 THEN 2 ELSE 1 END, cluster FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1`, companyId, grp);
-  const doubters = (await all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp)).map((v) => v.device);
+    SELECT device, CASE WHEN verified = 1 THEN 2 ELSE 1 END, cluster FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1`, companyId, grp),
+  all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp).then((l) => l.map((v) => v.device))]);
   return tally(rows, doubters);
 }
 
@@ -5651,7 +5881,7 @@ async function createCompany(request, env, now) {
   const taken = await named(env, norm);
   if (taken) return json({ error: "exists", company: taken }, 409);
   const id = randomId(12);
-  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at) VALUES (?, ?, ?, 0, NULL, ?)", id, name, norm, now);
+  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, said) VALUES (?, ?, ?, 0, NULL, ?, ?)", id, name, norm, now, spoken(name) || "-");
   await audit(env, now, "company_create", id, name);
   return json({ id, name }, 201);
 }
@@ -5669,7 +5899,7 @@ async function updateCompany(request, env, id, now) {
     // The old name keeps finding the company.
     if (norm !== c.norm) stmts.push(stmt(env, "INSERT OR IGNORE INTO aliases (norm, company_id, name) VALUES (?, ?, ?)", c.norm, id, c.name));
     stmts.push(stmt(env, "DELETE FROM aliases WHERE norm = ? AND company_id = ?", norm, id));
-    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '' WHERE id = ?", name, norm, id));
+    stmts.push(stmt(env, "UPDATE companies SET name = ?, norm = ?, cho = '', said = '' WHERE id = ?", name, norm, id));
   }
   if (body.hidden !== undefined) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
