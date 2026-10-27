@@ -110,6 +110,8 @@ class SettingsFilesBackup(
             Part("calendar_import", keys = setOf("auto")),
             // [READ-19] 1.27 AJ: 사진 읽기에서 고친 명세서 줄 이름·듀티표 글자.
             Part("read_fixes"),
+            // [PAYF-04] 1.29 AP: 쓰는 회사 급여 방식, like the company setup in use ("company:applied").
+            Part("pay_way"),
         )
 
         /**

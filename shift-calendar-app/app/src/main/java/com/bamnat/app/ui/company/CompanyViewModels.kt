@@ -252,7 +252,15 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
      * Applies [setup] with today at [todayStep] of its rotation. What is still to do comes back:
      * the user's own amounts when there was no pay setup yet.
      */
-    fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) {
+    fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) =
+        apply(page, setup, todayStep, withPay = true, done = done, failed = failed)
+
+    /**
+     * [PAYF-03] 1.29 AP: [withPay] false puts in the cycle alone ("근무주기만 넣을게요"): the setup's pay part is left out, and the
+     * pay the user has stays as it is. With the pay, the way is remembered for 맞아요·달라요 on the pay screen and the 기본급 is
+     * asked next ([com.bamnat.app.company.PayWayStore.askBase]).
+     */
+    fun apply(page: CompanyPage, setup: SharedSetup, todayStep: Int?, withPay: Boolean, done: (CompanyShare.Applied) -> Unit, failed: (String) -> Unit) {
         viewModelScope.launch {
             try {
                 // [PLAZA-07] 결정 D79: applying is joining. The pay way comes only then, so the page is read again as a member.
@@ -268,7 +276,14 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
                     _state.value = State.Loaded(again)
                     again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
                 }
+                if (!withPay) text = org.json.JSONObject(text).apply { remove("pay") }.toString()
                 val result = c.companyShare.apply(text, rotation = true, todayStep = todayStep)
+                if (withPay && (result.rules || result.pendingPay)) {
+                    c.payWays.use(com.bamnat.app.company.PayWay(page.id, page.name, setup.dept, setup.id))
+                    c.payWays.decided = true
+                    // A pay with amounts got the company's rules: its 기본급 is checked on the pay screen next.
+                    if (result.rules) c.payWays.askBase(true)
+                }
                 // [PLZ-08] 쓰는 사람: this phone now uses this rule set, and no longer the one before.
                 val before = c.companyStore.applied.value
                 if (before != null && before.setup != setup.id) launch { runCatching { c.companyApi.use(c.companyStore.device, before.company, before.setup, false) } }
@@ -843,6 +858,8 @@ class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
     val summary: CompanySummary? get() = text?.let { runCatching { c.companyShare.summarize(it) }.getOrNull() }
     /** [PLAZA-03] Whether the company's setup has pay rules to ask "이 회사 급여 설정을 쓸까요?" about. */
     val hasRules: Boolean get() = summary?.hasRules == true
+    /** [PAYF-01] 1.29 AP: the user just chose this pay way on the screen before; the question is not asked twice. */
+    val decided: Boolean = c.payWays.decided.also { c.payWays.decided = false }
     /** [PLAZA-03] The talk the 다른 점 proposal goes to. */
     val talk = TalkHolder(c, viewModelScope)
 
@@ -881,12 +898,16 @@ class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
 
     fun save(
         wageType: WageType, base: Long, rough: Boolean, dailyHours: Int, since: YearMonth, amounts: Map<String, Long>,
-        done: () -> Unit, failed: (String) -> Unit,
+        hours: Int? = null, done: () -> Unit, failed: (String) -> Unit,
     ) {
         val t = text ?: return failed("설정을 다시 골라 주세요")
         viewModelScope.launch {
             try {
-                c.companyShare.createPay(t, wageType, base, rough, dailyHours, since, amounts)
+                val made = c.companyShare.createPay(t, wageType, base, rough, dailyHours, since, amounts)
+                // [PAYF-06] The 통상시급's hours the user knew, over the company's (theirs are only the sender's usual).
+                hours?.takeIf { wageType == WageType.MONTHLY && it in com.bamnat.core.pay.BaseAsk.HOURS_RANGE }?.let { h ->
+                    c.payStore.save(com.bamnat.core.pay.RuleOnlyNeeds.settled(made.copy(monthlyHours = h)), keepUndo = false)
+                }
                 c.companyStore.pendingPay = null
                 c.telemetry.event("pay_setup_done", "COMPANY")
                 done()
@@ -1060,8 +1081,9 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
     val terms: StateFlow<CompanyTerms?> = _terms.asStateFlow()
 
     /** The setup in use while 맞았어요·달라요 is still to say and was not put off. */
-    val askVote: StateFlow<AppliedSetup?> = combine(c.companyStore.applied, c.companyStore.voteLater) { a, later ->
-        a?.takeIf { enabled && it.vote == null && Today.millis() >= later }
+    val askVote: StateFlow<AppliedSetup?> = combine(c.companyStore.applied, c.companyStore.voteLater, c.payWays.way) { a, later, way ->
+        // [PAYF-04] 1.29 AP: the pay screen's own card keeps 맞아요·달라요 on a pay way in use; not asked twice on one screen.
+        a?.takeIf { enabled && it.vote == null && Today.millis() >= later && way?.setup != it.setup }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
