@@ -95,6 +95,18 @@ object PhotoVariants {
         })
     }
 
+    /**
+     * [PHOTO-12] 1.29 AQ: each pixel the mean of the 3 × 3 around it. A photo of a monitor (사용자 2026-10-27 화학 공장 명세서)
+     * has a moiré of fine dots that black and white turned into specks all over the table; smoothed first, the specks
+     * mostly go and the letters stay.
+     */
+    fun soft(g: Gray): Gray = Gray(g.w, g.h, IntArray(g.px.size) { i ->
+        val x = i % g.w; val y = i / g.w
+        var s = 0; var n = 0
+        for (yy in max(0, y - 1)..min(g.h - 1, y + 1)) for (xx in max(0, x - 1)..min(g.w - 1, x + 1)) { s += g.px[yy * g.w + xx]; n++ }
+        s / n
+    })
+
     /** Black where a pixel is darker than its neighbourhood's mean by [k] (Bradley's adaptive threshold), white elsewhere. */
     fun binary(g: Gray, k: Double = 0.12): Gray {
         val win = max(15, max(g.w, g.h) / 50) or 1
@@ -172,7 +184,7 @@ object PhotoVariants {
         Kind.ORIG -> g
         Kind.CONTRAST -> contrast(g)
         Kind.FLAT -> flat(g)
-        Kind.BINARY -> binary(flat(g))
+        Kind.BINARY -> binary(soft(flat(g)))
         Kind.UP2 -> up2(flat(g))
         Kind.INVERT -> invert(g)
     }

@@ -16,6 +16,8 @@ data class PayPhotos(
     val rules: List<RuleFinding>,
     /** Which of the texts was taken for the payslip, or -1. */
     val slipIndex: Int = -1,
+    /** [PHOTO-04] 1.29: rule sentences of the rules texts that gave no rule, shown as '직접 넣기' rows. */
+    val unread: List<String> = emptyList(),
 ) {
     /** Share of 지급 총액 taken off (4대 보험과 세금), for the tax estimate; null without both. */
     val deductionRate: Double?
@@ -38,7 +40,8 @@ data class PayPhotos(
             // A rules page names amounts too (식대 월 200,000원): it is a payslip only when it reads as more pay lines than rules.
             val best = score.indices.filter { score[it] >= SLIP_LINES && score[it] > found[it].size }.maxByOrNull { score[it] } ?: -1
             val rules = texts.indices.filter { it != best }.flatMap { found[it] }
-            return PayPhotos(slips.getOrNull(best), rules, best)
+            val unread = texts.indices.filter { it != best }.flatMap { RuleText.unread(texts[it], kinds, shiftTypes, fiveOrMore) }.distinct()
+            return PayPhotos(slips.getOrNull(best), rules, best, unread)
         }
 
         private val TOTALS = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.NET, SlipRole.DEDUCTION_TOTAL)

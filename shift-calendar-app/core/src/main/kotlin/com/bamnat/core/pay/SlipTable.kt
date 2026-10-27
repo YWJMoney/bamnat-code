@@ -137,6 +137,11 @@ object SlipNumber {
                 val d = body.toDouble() * sign
                 Num(d.toLong(), d, unit, money = false, fixed = fixed)
             }
+            // [PHOTO-12] "2397,500": a comma lost (화학 공장 명세서 사진의 모아레); money, looked at.
+            Regex("""\d{4,6}([,.]\d{3})+""").matches(body) && (unit.isEmpty() || won) -> {
+                val v = body.filter { it.isDigit() }.toLong() * sign
+                Num(v, v.toDouble(), if (won) "원" else unit, money = true, fixed = true)
+            }
             // "2,856,0": the last digits off the photo; worked out by the sums, never taken as it is.
             Regex("""\d{1,3}(,\d{3})*,\d{1,2}""").matches(body) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
@@ -173,6 +178,8 @@ object SlipTable {
         var hit: SlipLexicon.Hit? = null
         var col: Col? = null
         var used = false
+        /** [PHOTO-12] A name no list holds, taken as a line because it stands in the 지급 or 공제 column: always looked at. */
+        var guessed = false
         val left: Double get() = x - w / 2
         val right: Double get() = x + w / 2
     }
@@ -190,6 +197,7 @@ object SlipTable {
         if (rows.isEmpty()) return SlipVote.Result(PayslipRead(emptyList()), emptySet(), "")
         val text = rows.joinToString("\n") { r -> r.joinToString("  ") { it.text } }
         classify(rows)
+        sections(rows)
         val found = mutableListOf<Found>()
         val heads = mutableListOf<Cell>()
         for ((ri, row) in rows.withIndex()) {
@@ -216,7 +224,8 @@ object SlipTable {
                         val o = open ?: continue
                         val col = columnOf(cell, heads)
                         val hoursLabel = o.label.text.contains("시간") || o.label.text.contains("시수")
-                        val hoursLike = n.hours || col == Col.HOURS || hoursLabel && !n.money ||
+                        // [PHOTO-12] Under a 시간 head of a table above (총근로시간 209), 2,200,000원 is still money.
+                        val hoursLike = n.hours || col == Col.HOURS && !(n.money && abs(n.value) >= 1_000) || hoursLabel && !n.money ||
                             !n.money && n.unit.isEmpty() && n.decimal != n.value.toDouble() && abs(n.decimal) < 400
                         when {
                             hoursLike -> {
@@ -236,6 +245,7 @@ object SlipTable {
             }
         }
         under(rows, found)
+        beside(rows, found)
         totalsByColumn(rows, found)
         val lines = mutableListOf<SlipLine>()
         val unsure = HashSet<Int>()
@@ -243,11 +253,11 @@ object SlipTable {
             val hit = f.label.hit ?: continue
             if (f.amount == null && f.minutes == null) continue
             val name = if (hit.distance > 0) hit.name else f.label.text
-            if (f.doubt || hit.distance > 0 || f.under && f.label.text.length <= 1) unsure += lines.size
+            if (f.doubt || hit.distance > 0 || f.label.guessed || f.under && f.label.text.length <= 1) unsure += lines.size
             lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text })
         }
         val (merged, keep) = mergeHours(lines, unsure)
-        return SlipVote.Result(PayslipRead(merged, PayslipReader.monthOf(text)), keep, text)
+        return SlipVote.Result(PayslipRead(attendance(rows, merged), PayslipReader.monthOf(text)), keep, text)
     }
 
     /** Hours read on a line of their own ("연장근로시간 16") join the amount line of the same kind, as [PayslipReader] does. */
@@ -281,6 +291,120 @@ object SlipTable {
                 break
             }
         }
+    }
+
+    /**
+     * [PHOTO-12] 1.29 AQ: a name whose amount stands in a column of its own to the right, up to two rows lower (화학 공장 명세서
+     * 사진, 사용자 2026-10-27: 금액 칸이 이름 칸 오른쪽에 반 줄 아래로 따로 있어 기본급I·총지급액이 빠짐). A name with no amount
+     * yet takes the nearest unused amount to its right from its own height down to about two rows lower, when no other name
+     * stands between them and the amount is not right under another name. Found more than a row lower, the line is looked at.
+     */
+    private fun beside(rows: List<List<Cell>>, found: List<Found>) {
+        val all = rows.flatten()
+        val labels = found.map { it.label }
+        for (f in found.filter { it.amount == null && it.minutes == null }) {
+            val l = f.label
+            // A head of hours (야간근로시간) holds hours, never money.
+            if (l.text.contains("시간") || l.text.contains("시수")) continue
+            val pick = all.filter { c ->
+                val n = c.num
+                if (c.kind != Kind.NUM || c.used || n == null || !n.money || n.cut || c.left <= l.right) return@filter false
+                val h = max(l.h, c.h)
+                val dy = c.y - l.y
+                if (dy < -0.5 * h || dy > 2.2 * h) return@filter false
+                // Another name between them, at the name's height or the amount's.
+                val between = labels.any { o -> o !== l && o.x > l.right && o.right < c.left && (abs(o.y - c.y) < h || abs(o.y - l.y) < 0.6 * h) }
+                // The amount right under another name is that name's.
+                val underOther = labels.any { o -> o !== l && overlaps(o, c) && c.y > o.y && c.y - o.y < 3 * h }
+                // A row of names or heads between them is another table's.
+                val across = all.any { o -> (o.kind == Kind.LABEL || o.kind == Kind.HEAD) && o !== l && o.y > l.y + 0.5 * h && o.y < c.y - 0.5 * h &&
+                    o.right > l.left && o.left < c.right }
+                // An amount with a name of its own to its left in its row is that name's.
+                val ownRow = labels.any { o -> o !== l && abs(o.y - c.y) < 0.6 * h && o.right < c.left && abs(c.y - l.y) > 0.6 * h }
+                !between && !underOther && !across && !ownRow
+            }.minWithOrNull(compareBy<Cell> { abs(it.y - l.y) }.thenBy { it.left - l.right }) ?: continue
+            val n = pick.num!!
+            f.amount = n.value; pick.used = true
+            if (n.fixed || abs(pick.y - l.y) > 0.9 * max(l.h, pick.h)) f.doubt = true
+        }
+    }
+
+    /**
+     * [PHOTO-12] 1.29 AQ: the 지급 and 공제 columns say what a name is (화학 공장 명세서: 볼링회·축구회·노동조합·사택관리비·소급분이
+     * 공제내역 아래, 위험예지훈련/LMS가 지급내역 아래). A name under a 공제 head is 공제 even when it reads like a 수당 (…관리비); a
+     * name no list holds, under a 지급 or 공제 head, is a line of that side, looked at. A column ends at its 계.
+     */
+    private fun sections(rows: List<List<Cell>>) {
+        val all = rows.flatten()
+        val heads = all.filter { it.kind == Kind.HEAD }.mapNotNull { c ->
+            val f = PayslipReader.ocrFix(c.text.filter { it.isLetter() })
+            when {
+                f.startsWith("공제") && !f.contains("합계") && !f.contains("총") -> c to true
+                f.startsWith("지급") && !f.contains("일") && !f.contains("합계") && !f.contains("총") -> c to false
+                else -> null
+            }
+        }
+        if (heads.isEmpty()) return
+        val totals = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
+        fun inColumn(h: Cell, c: Cell) = c.left < h.right + h.h && c.right > h.left - h.h
+        for (c in all) {
+            val role = c.hit?.role
+            val candidate = c.kind == Kind.LABEL && role == SlipRole.ALLOWANCE || c.kind == Kind.TEXT && nameLike(c.text)
+            if (!candidate) continue
+            val (head, deduction) = heads.filter { (h, _) -> h.y < c.y && inColumn(h, c) }.maxByOrNull { it.first.y } ?: continue
+            // Past the column's 계 it is another table.
+            if (all.any { o -> o.kind == Kind.LABEL && o.hit?.role in totals && o.y > head.y && o.y < c.y - 0.5 * c.h && inColumn(head, o) }) continue
+            when {
+                c.kind == Kind.TEXT -> {
+                    c.kind = Kind.LABEL; c.guessed = true
+                    c.hit = SlipLexicon.Hit(c.text, if (deduction) SlipRole.DEDUCTION else SlipRole.ALLOWANCE, 0)
+                }
+                deduction -> { c.hit = c.hit!!.copy(role = SlipRole.DEDUCTION); c.guessed = true }
+            }
+        }
+    }
+
+    /** A cell that reads as a name of pay: a few words with two 한글 letters or more, no clock or sentence. */
+    private fun nameLike(t: String): Boolean {
+        val hangul = t.count { it in '가'..'힣' }
+        if (hangul < 2 || t.length > 24 || t.count { it == ' ' } > 3) return false
+        if (t.any { it.isDigit() } || ':' in t || t.endsWith("다") || t.endsWith("요")) return false
+        return !PayslipReader.isHeader(PayslipReader.ocrFix(t.filter { it.isLetter() }))
+    }
+
+    /**
+     * [PHOTO-12] 1.29 AQ: a 근태 table puts its heads on one row (휴일근로시간수, 야간근로시간수, 향군수당 시간수) and the hours on
+     * the row under them (화학 공장 명세서). Each value goes to the line of pay its head names: the head and the line agree once
+     * 시간수·근로·근무·수당 are taken off (휴일근로시간수 → 휴일 → 휴일근로수당, 휴일연장근로시간수 → 휴일연장 → 휴일연장수당).
+     */
+    private fun attendance(rows: List<List<Cell>>, lines: List<SlipLine>): List<SlipLine> {
+        val hourHead = Regex("(시간수|시간|시수)$")
+        val anyHead = Regex("(시간수|시간|시수|일수)$")
+        fun letters(t: String) = PayslipReader.ocrFix(t.filter { it.isLetter() })
+        fun stem(t: String) = letters(t).replace(hourHead, "").replace("수당", "").replace("근로", "").replace("근무", "")
+        val all = rows.flatten()
+        // A letter's height on this page: one box read short is not the page's.
+        val line = all.map { it.h }.sorted().let { it[it.size / 2] }
+        // A head of the table: it ends in 시간수, or its row holds two heads or more (휴일근로시간 · 야간근로시간).
+        val tableRows = rows.filter { r -> r.count { it.kind != Kind.NUM && anyHead.containsMatchIn(letters(it.text)) && letters(it.text).length >= 3 } >= 2 }.flatten().toSet()
+        var out = lines
+        for (v in all) {
+            val n = v.num ?: continue
+            if (v.used || v.kind != Kind.NUM || n.unit.isNotEmpty() && !n.hours) continue
+            if (n.money && n.decimal == n.value.toDouble() && abs(n.value) >= 1_000) continue
+            // The cell right above it, in its column, within three rows.
+            val above = all.filter { o -> o !== v && o.kind != Kind.PUNCT && o.y < v.y - 0.3 * v.h && v.y - o.y < 3.5 * maxOf(o.h, v.h, line) && abs(o.x - v.x) <= max(o.w, v.w) * 0.6 }
+                .maxByOrNull { it.y } ?: continue
+            val t = letters(above.text)
+            if (above.kind == Kind.NUM || !hourHead.containsMatchIn(t) || !(t.endsWith("시간수") || above in tableRows)) continue
+            val minutes = (n.decimal * 60).roundToInt()
+            if (minutes !in 1..(744 * 60)) continue
+            val s = stem(above.text)
+            if (s.isEmpty()) continue
+            val at = out.indexOfFirst { it.amount != null && stem(it.name) == s }
+            if (at >= 0) out = out.toMutableList().also { it[at] = it[at].copy(minutes = minutes) }
+        }
+        return out
     }
 
     private fun overlaps(label: Cell, c: Cell): Boolean {
@@ -321,7 +445,7 @@ object SlipTable {
 
     private fun rows(words: List<OcrLine>): List<MutableList<Cell>> {
         val pieces = mutableListOf<RosterWord>()
-        for (w in words) {
+        for (w in OcrRows.unmarked(words)) {
             val t = w.text.replace(' ', ' ').replace('：', ':').replace('，', ',')
             if (t.isBlank()) continue
             val weights = t.map(::width)
@@ -362,6 +486,17 @@ object SlipTable {
                     !last.text.contains(',') && gap < 0.8 * h
                 val wonAfter = lastNum != null && c.text in setOf("원", "윈", "웜") && gap < 1.2 * h
                 val unitAfter = lastNum != null && lastNum.unit.isEmpty() && c.text in setOf("시간", "h", "H", "분", "일", "회", "%") && gap < 0.8 * h
+                // [PHOTO-12] "볼링회 ( 남부공장 )": the brackets of a name read as words of their own.
+                val bracket = gap < 1.4 * h && (c.text == "(" && lastNum == null && last.text.any { it.isLetter() } ||
+                    c.text == ")" && last.text.contains('(') && !last.text.contains(')') ||
+                    last.text.endsWith("(") && cNum == null && c.text.any { it.isLetter() })
+                if (bracket) {
+                    val l = min(last.left, c.left)
+                    val r = max(last.right, c.right)
+                    last.text = last.text + c.text
+                    last.x = (l + r) / 2; last.w = r - l
+                    continue
+                }
                 if (bothWords && gap < 1.4 * h && keepTogether(last.text, c.text) || digitsGroup || wonAfter || unitAfter) {
                     val l = min(last.left, c.left)
                     val r = max(last.right, c.right)

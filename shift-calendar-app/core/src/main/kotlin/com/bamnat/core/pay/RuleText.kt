@@ -74,6 +74,21 @@ sealed interface RuleChange {
     data class Custom(val rule: CustomRule, val shiftNames: Map<Long, String> = emptyMap()) : RuleChange {
         override val summary get() = rule.describe(shiftNames)
     }
+    /** [PHOTO-12] "통상임금: 기본급, 직책수당, 자격수당, 기술전수교육수당": these of the user's 수당 count in 통상임금. */
+    data class OrdinaryItems(val names: List<String>) : RuleChange {
+        override val summary get() = "통상임금에 드는 것: " + names.joinToString(", ")
+    }
+    /** [PHOTO-12] 세금 산정 기준 (부양가족 본인1 배우자1 직계비속1, 만8~20세 자녀 0): 간이세액표 가족 수. */
+    data class TaxFamily(val family: Int, val children: Int) : RuleChange {
+        override val summary get() = "세금 계산 가족 ${family}명 (8~20세 자녀 ${children}명)"
+    }
+    /**
+     * [PHOTO-11] 통상시급 worked out from a payslip's own premium lines (휴일근로 81시간 2,626,592원 → 21,618.04원), and whether
+     * each line's won are rounded up as that payslip's are.
+     */
+    data class OrdinaryHourly(val hourly: Double, val roundUp: Boolean) : RuleChange {
+        override val summary get() = "명세서로 보면 통상시급 ${won(kotlin.math.round(hourly).toLong())}" + if (roundUp) " (원 미만 올림)" else ""
+    }
 }
 
 private fun WageType.label() = when (this) {
@@ -104,7 +119,43 @@ object RuleText {
     private val monthListRe = Regex("""(\d{1,2})\s*월""")
 
     fun read(text: String, kinds: List<ExtraKind> = emptyList(), shiftTypes: List<ShiftType> = emptyList(), fiveOrMore: Boolean = true): List<RuleFinding> =
-        sentences(tidy(text)).flatMap { readSentence(it, kinds, shiftTypes, fiveOrMore) }
+        sentences(tidy(text)).flatMap { readSentence(it, kinds, shiftTypes, fiveOrMore) } + listOfNotNull(taxFamily(text))
+
+    /**
+     * [PHOTO-12] 1.29 AQ: a 세금 산정 기준 table (화학 공장 명세서의 계산 방법 사진): heads 본인·배우자·직계존속·직계비속·만8세 이상
+     * 20세 이하 자녀 on one line, their numbers on a line under it, then 원천징수 비율. 공제대상가족 is 본인 + 배우자 + 직계존속 +
+     * 직계비속 (the children of 8 to 20 are among them).
+     */
+    internal fun taxFamily(text: String): RuleFinding? {
+        val lines = text.lines()
+        val first = lines.indexOfFirst { l -> FAMILY_HEADS.count { (re, _) -> re.containsMatchIn(l.replace(" ", "")) } >= 2 }
+        if (first < 0) return null
+        // The numbers' line: small numbers, maybe a stray letter of a head beside them ("녀  1  1  0  1  0  100%").
+        val small = Regex("""^\d{1,2}$""")
+        val vi = (first + 1..minOf(lines.lastIndex, first + 4)).firstOrNull { i ->
+            val t = lines[i].trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+            t.count { small.matches(it) } >= 3 && t.none { w -> w.count { it in '가'..'힣' } >= 2 }
+        } ?: return null
+        val values = lines[vi].trim().split(Regex("""\s+""")).filter { small.matches(it) }.map { it.toInt() }
+        // The heads, from the lines above the numbers (a photo can put one of them on a line of its own), in the form's order.
+        val heads = (first until vi).flatMap { i -> lines[i].replace(" ", "").let { l -> FAMILY_HEADS.filter { (re, _) -> re.containsMatchIn(l) }.map { it.second } } }
+            .distinct().sorted()
+        if (heads.size < 2 || "본인" != FAMILY_ORDER.getOrNull(heads.first())) return null
+        var family = 0
+        var children = 0
+        heads.forEachIndexed { i, rank ->
+            val v = values.getOrNull(i) ?: return@forEachIndexed
+            if (FAMILY_ORDER[rank] == "자녀") children = v else family += v
+        }
+        if (family !in 1..20 || children > family) return null
+        return RuleFinding(heads.joinToString(" ") { FAMILY_ORDER[it] } + " / " + values.joinToString(" "), RuleChange.TaxFamily(family, children), 0.7)
+    }
+
+    private val FAMILY_ORDER = listOf("본인", "배우자", "직계존속", "직계비속", "형제자매", "자녀")
+    private val FAMILY_HEADS = listOf(
+        Regex("본인") to 0, Regex("배우자") to 1, Regex("직계존속") to 2, Regex("직계비속") to 3, Regex("형제자매") to 4,
+        Regex("자녀|\\d+세이하|만\\d+세") to 5,
+    )
 
     /**
      * [READ-08] A rules page read from a photo loses small marks (1.25 사진 고정 파일): the dot of "1.5배" ("15배", "1 5배"), the commas
@@ -167,7 +218,8 @@ object RuleText {
     fun unread(text: String, kinds: List<ExtraKind> = emptyList(), shiftTypes: List<ShiftType> = emptyList(), fiveOrMore: Boolean = true): List<String> =
         sentences(tidy(text)).filter { s ->
             val c = s.replace(" ", "")
-            c.length >= 4 && c.any { it.isDigit() } && RULE_SIGNAL.containsMatchIn(c) && !LAW_ALREADY.containsMatchIn(c) && !isPayslipAmount(s, c) &&
+            c.length >= 4 && c.any { it.isDigit() } && c.count { it in '가'..'힣' } >= 2 && RULE_SIGNAL.containsMatchIn(c) && !LAW_ALREADY.containsMatchIn(c) &&
+                !EXPLAIN.containsMatchIn(c) && !isPayslipAmount(s, c) &&
                 !PayslipReader.isHeader(c.filter { it.isLetter() }) && readSentence(s, kinds, shiftTypes, fiveOrMore).isEmpty()
         }.distinct()
 
@@ -176,9 +228,18 @@ object RuleText {
     /** What the law pays already and the app counts by itself: nothing to put in. */
     private val LAW_ALREADY = Regex("""주휴(수당|일).*(1일분|유급|지급)|연차(유급)?휴가|근로기준법(에|에서)?(따라|정한|의)|최저임금(이상|법)""")
 
+    /**
+     * [PHOTO-12] Rows of a 계산 방법 table that explain rather than set a rule: a rule for 사무직 only (보상휴가), and what the
+     * payslip's 미공제 lines mean. Neither a rule nor a '직접 넣기' row.
+     */
+    private val EXPLAIN = Regex("""사무직限|사무직한정|사무직만|보상휴가로부여|이전미공제|다음공제예정|미공제된금액|원천징수비율""")
+
     private fun readSentence(line: String, kinds: List<ExtraKind>, shiftTypes: List<ShiftType>, fiveOrMore: Boolean): List<RuleFinding> {
         val c = line.replace(" ", "")
         if (isPayslipAmount(line, c)) return emptyList()
+        if (EXPLAIN.containsMatchIn(c)) return emptyList()
+        formulaRow(line, c)?.let { return it }
+        ordinaryItems(line, c)?.let { return listOf(it) }
         // [PAYS-07] Money taken off is never a way of paying extra work: "식대 근무일마다 3,000원 공제" holds "대근".
         val takenOff = Regex("차감|공제|감액").containsMatchIn(c)
         if (!takenOff) extraRule(line, c, kinds, fiveOrMore)?.let { return listOf(it) }
@@ -194,6 +255,42 @@ object RuleText {
         val found = clauses.filterNot { clause -> clauses.size > 1 && LIMIT_ONLY.matches(clause.replace(" ", "")) }
             .flatMap { clause -> readClause(line, clause, clause.replace(" ", ""), shiftTypes) }
         return limited(line, c, found)
+    }
+
+    /**
+     * [PHOTO-12] 1.29 AQ: a row of a 계산 방법 table, the name then how it is worked out (화학 공장 명세서 사진: "휴일근로수당 해당시간
+     * × 1.5 × (통상임금 / 시수)", "휴일연장수당 해당시간 × 2 × …", "야간근로수당 해당시간 × 0.5 × …"). The name says which premium:
+     * 휴일연장 is 휴일 past 8 hours, 평일연장 is 연장 (1.28 read 평일 as a day rule, "평일 가산"). A row paid by days
+     * (휴가보상 해당일수 × …) is left for the user ('직접 넣기').
+     */
+    private fun formulaRow(line: String, c: String): List<RuleFinding>? {
+        val at = Regex("해당(시간|일수)|(근로|근무)시간수?(?=\\d|×|x)").find(c) ?: return null
+        if (!Regex("통상임금|통상시급|기준급|시급|시수").containsMatchIn(c)) return null
+        if (at.value.endsWith("일수")) return emptyList()
+        val head = c.substring(0, at.range.first)
+        val times = timesRe.find(c.substring(at.range.last + 1))?.groupValues?.get(1)?.toDouble() ?: return null
+        val (target, over8h) = when {
+            head.contains("휴일") && head.contains("연장") -> PremiumTarget.HOLIDAY to true
+            head.contains("야간") || head.contains("심야") -> PremiumTarget.NIGHT to false
+            head.contains("휴일") || head.contains("특근") -> PremiumTarget.HOLIDAY to false
+            head.contains("연장") || head.contains("시간외") -> PremiumTarget.OVERTIME to false
+            else -> return null
+        }
+        val premium = (if (times < 1.0) times else times - 1.0).coerceIn(0.0, Premium.MAX_RATE)
+        return listOf(RuleFinding(line, RuleChange.Premium(target, premium, over8h), 0.85))
+    }
+
+    /**
+     * [PHOTO-12] "통상임금  기본급, 직책수당, 자격수당, 기술전수교육수당 등 … 임금 일체": what counts in 통상임금, named. Read as which
+     * of the user's 수당 count (commas would cut it into clauses that read nothing).
+     */
+    private fun ordinaryItems(line: String, c: String): RuleFinding? {
+        val m = Regex("^통상임금(의범위|범위|은|는|:|=|이란)?").find(c) ?: return null
+        val rest = line.substring(line.indexOf("통상임금") + 4)
+        val names = Regex("""[가-힣]{1,10}(수당|급|비)(?![가-힣])""").findAll(rest).map { it.value }
+            .filter { it != "통상임금" && it != "기준급" && !it.endsWith("성") }.distinct().toList()
+        if (names.size < 2 || m.value.isEmpty() && rest.isBlank()) return null
+        return RuleFinding(line, RuleChange.OrdinaryItems(names), 0.75)
     }
 
     /** A clause that only limits the rule before it ("월 10회 한도", "월 100,000원까지"): read with the line by [limited]. */
@@ -782,6 +879,13 @@ object RuleText {
             is RuleChange.WeeklyHolidayDay -> p.withRules { it.copy(weeklyHoliday = WeeklyHoliday.Fixed(change.day)) }
             is RuleChange.Raise -> p.copy(base = p.base.copy(raise = RaiseRule(month = change.month, percent = change.percent, unit = 1_000)))
             is RuleChange.Extra -> p.withRules { it.copy(extra = it.extra + (change.kind to change.rule)) }
+            is RuleChange.OrdinaryItems -> {
+                val wanted = change.names.map { it.replace(" ", "") }.toSet()
+                p.copy(items = p.items.map { if (it.cadence != Cadence.BONUS && it.name.replace(" ", "") in wanted) it.copy(ordinary = true) else it })
+            }
+            is RuleChange.TaxFamily -> p.copy(taxFamily = change.family, taxChildren = change.children)
+            is RuleChange.OrdinaryHourly -> p.copy(ordinaryHourly = change.hourly)
+                .withRules { it.copy(wonRounding = if (change.roundUp) WonRounding.AT_END_UP else WonRounding.AT_END) }
             is RuleChange.Custom -> p.copy(customRules = (p.customRules.filterNot { it.id == change.rule.id || it.source.isNotEmpty() && it.source == change.rule.source && it.name == change.rule.name } +
                 change.rule).takeLast(CustomRule.MAX))
         }

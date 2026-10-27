@@ -45,6 +45,14 @@ object SlipVote {
             if (line.amount == null) return@forEachIndexed
             val k = key(line)
             val theirs = others.mapNotNull { r -> r.lines.firstOrNull { key(it) == k && it.amount != null }?.amount }
+            // [PHOTO-12] Hours too: one reading that lost a line's hours (a box read short) takes what the others read.
+            val hours = (others.mapNotNull { r -> r.lines.firstOrNull { key(it) == k && it.amount != null }?.minutes } + listOfNotNull(line.minutes))
+                .groupingBy { it }.eachCount()
+            if (hours.isNotEmpty()) {
+                val topH = hours.values.max()
+                val m = line.minutes?.takeIf { hours[it] == topH } ?: hours.filterValues { it == topH }.keys.first()
+                if (m != line.minutes) lines[i] = lines[i].copy(minutes = m)
+            }
             // Read by one way only: nothing backs it up but the payslip's own sums (checked below).
             if (theirs.isEmpty()) { unsure += i; return@forEachIndexed }
             val counts = (theirs + line.amount).groupingBy { it }.eachCount()

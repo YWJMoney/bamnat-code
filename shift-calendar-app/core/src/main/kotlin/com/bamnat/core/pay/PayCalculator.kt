@@ -235,13 +235,18 @@ class PayCalculator(
         val bonusMonthly = ordinary.bonuses
         // [PAYS-03] The minutes of 소정근로 one 일당 pays for.
         val dailyMinutes = profile.dailyHours.coerceIn(1, 8 * 60)
-        val hourly = when (profile.wageType) {
+        // [PHOTO-11] 1.29 AQ: 통상시급 taken from the payslip, when the user set it.
+        val setHourly = profile.ordinaryHourly?.takeIf { it > 0 && profile.wageType == WageType.MONTHLY }
+        val hourly = when {
+            setHourly != null -> setHourly.roundToLong()
+            else -> when (profile.wageType) {
             WageType.MONTHLY -> (ordinary.total.toDouble() / profile.monthlyHours.coerceAtLeast(1)).roundToLong()
             WageType.HOURLY -> base.value
             // [PAYS-03] 일급 금액 ÷ 1일 소정근로시간 (시행령 제6조 제2항 제2호).
             WageType.DAILY -> (base.value * 60.0 / dailyMinutes).roundToLong()
+            }
         }
-        val hourlyFormula = when (profile.wageType) {
+        val hourlyFormula = if (setHourly != null) "명세서로 맞춘 통상시급 ${"%,.2f".format(setHourly)}원" else when (profile.wageType) {
             WageType.MONTHLY -> "(기본급 ${won(base.value)}" +
                 (if (ordinaryMonthly > 0) " + 통상 수당 ${won(ordinaryMonthly)}" else "") +
                 (if (bonusMonthly > 0) " + 상여금 월할 ${won(bonusMonthly)}" else "") +
@@ -871,16 +876,18 @@ class PayCalculator(
                 basis = "근로기준법 제57조 (근로자대표와 서면 합의가 있을 때)")
         }
         // [PAYX-27] 줄마다 마지막에: the lines worked out as minutes × 시급 × 배율 are worked again with the exact 시급.
-        val exactHourly = when (profile.wageType) {
+        val exactHourly = setHourly ?: when (profile.wageType) {
             WageType.MONTHLY -> ordinary.total.toDouble() / profile.monthlyHours.coerceAtLeast(1)
             WageType.HOURLY -> base.value.toDouble()
             WageType.DAILY -> base.value * 60.0 / dailyMinutes
         }
-        if (rules.wonRounding == WonRounding.AT_END && exactHourly != hourly.toDouble()) {
+        if (rules.wonRounding != WonRounding.HOURLY_FIRST && (exactHourly != hourly.toDouble() || rules.wonRounding == WonRounding.AT_END_UP)) {
             val exactLabel = "%,.2f원".format(exactHourly)
+            val up = rules.wonRounding == WonRounding.AT_END_UP
             lines.replaceAll { l ->
                 if (l.hourly != hourly || l.minutes == 0 || l.multiplier == 0.0 || l.amount != (l.minutes / 60.0 * hourly * l.multiplier).roundToLong()) l
-                else l.copy(amount = (l.minutes / 60.0 * exactHourly * l.multiplier).roundToLong(), formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 반올림)")
+                else l.copy(amount = lineWon(l.minutes, exactHourly, l.multiplier, up),
+                    formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 ${if (up) "올림" else "반올림"})")
             }
         }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
@@ -1267,6 +1274,15 @@ class PayCalculator(
             val bonuses = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
             else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }.sumOf { it.bonusMonthlyShare(profile.bonusBase(it, month), month) }
             return OrdinaryWage(base, allowances, bonuses)
+        }
+
+        /**
+         * [PAYX-27][PHOTO-11] One line's 원: [minutes] × [hourly] × [multiplier], rounded half up or (with [up]) any 원 미만 up. A
+         * hair of floating error is not a 원 more: 81시간 × 21,618.04 × 1.5 is 2,626,591.86 → 2,626,592.
+         */
+        fun lineWon(minutes: Int, hourly: Double, multiplier: Double, up: Boolean): Long {
+            val v = minutes / 60.0 * hourly * multiplier
+            return if (up) kotlin.math.ceil(v - 1e-6).toLong() else v.roundToLong()
         }
 
         fun hours(minutes: Int): String =

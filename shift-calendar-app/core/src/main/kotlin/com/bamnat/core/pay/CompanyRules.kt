@@ -307,6 +307,8 @@ enum class ProrationBasis(val label: String) {
 enum class WonRounding(val label: String) {
     HOURLY_FIRST("시급을 먼저 원 단위로"),
     AT_END("줄마다 마지막에"),
+    /** [PHOTO-11] 1.29 AQ: the exact 시급 and each line's 원 미만 rounded up (올림), as some payslips do (화학 공장 명세서 표본). */
+    AT_END_UP("줄마다 마지막에 올림"),
 }
 
 /** Rounding of overtime minutes per day, e.g. 30분 단위 버림. */

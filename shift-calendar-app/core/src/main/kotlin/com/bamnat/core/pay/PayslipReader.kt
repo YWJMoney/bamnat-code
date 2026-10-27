@@ -171,6 +171,8 @@ object PayslipReader {
         "공제", "대출", "연말정산", "기숙사", "경조", "원천", "징수", "환급", "보험료", "사우회",
         // [PHOTO-11] 1.29: 공무원 명세서의 기여금(연금)은 공제예요(1.28은 ‘…금’이라 수당으로 읽음).
         "기여금",
+        // [PHOTO-12] 노동조합(비)·회비는 공제예요.
+        "노동조합", "회비",
     )
 
     /** The role of a pay line by its name, or null when the name says nothing about pay. */
@@ -192,11 +194,15 @@ object PayslipReader {
             n.length == 3 && n.startsWith("기본") -> SlipRole.BASE
             "고정" in n && ("연장" in n || "시간외" in n || "ot" in n) -> SlipRole.ALLOWANCE
             "주휴" in n -> SlipRole.WEEKLY_HOLIDAY
-            "잔업" in n || "특근" in n || "대근" in n || "조출" in n -> SlipRole.EXTRA_WORK
+            // [PHOTO-12] 교대근무수당 holds "대근" but is a 수당 of the shift work, not 대근 (1.28 read it as extra work).
+            "잔업" in n || "특근" in n || "대근" in n && "교대근" !in n || "조출" in n -> SlipRole.EXTRA_WORK
             "휴일" in n && ("근로" in n || "수당" in n || "가산" in n || "연장" in n) -> SlipRole.HOLIDAY
-            ("야간" in n || "심야" in n) && ("근로" in n || "가산" in n || n == "야간수당" || n == "야간" || n == "심야수당") -> SlipRole.NIGHT
+            // [PHOTO-12] 야간근무수당 (화학 공장 명세서) is 야간 too; 1.28 read it as a plain 수당.
+            ("야간" in n || "심야" in n) && ("근로" in n || "근무수당" in n || "가산" in n || n == "야간수당" || n == "야간" || n == "심야수당") -> SlipRole.NIGHT
             "연장" in n || "시간외" in n || n == "ot" || "초과근무" in n -> SlipRole.OVERTIME
             listOf("상여", "성과급", "인센티브", "명절", "보너스", "격려금").any { it in n } -> SlipRole.BONUS
+            // [PHOTO-12] 소급분(지급): back pay paid now (소급분(공제) is 공제 above).
+            "소급" in n -> SlipRole.ALLOWANCE
             listOf("수당", "식대", "식비", "보조", "지원", "교통", "차량", "급", "비", "금", "료").any { n.endsWith(it) || it in n && it.length > 1 } ->
                 SlipRole.ALLOWANCE
             else -> null
