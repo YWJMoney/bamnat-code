@@ -413,6 +413,8 @@ fun CompanyDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     val p = s.page
+                    // [SPD-13] 1.30 AP1: the page kept from before is on screen while it is read again.
+                    RefreshLine(vm.refreshing.collectAsStateWithLifecycle().value, vm.stale.collectAsStateWithLifecycle().value, onRetry = vm::load)
                     if (p.aliases.isNotEmpty()) {
                         Text("다른 이름: ${p.aliases.joinToString(", ")}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)

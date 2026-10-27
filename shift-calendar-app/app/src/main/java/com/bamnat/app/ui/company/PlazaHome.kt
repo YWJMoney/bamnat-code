@@ -33,6 +33,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
@@ -46,6 +49,8 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.RoomPage
 import com.bamnat.app.company.Talk
+import com.bamnat.app.company.bundle
+import com.bamnat.app.company.warmCompanies
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.core.plaza.RoomCard
 import com.bamnat.core.plaza.SetupFacts
@@ -54,7 +59,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -84,14 +88,22 @@ class PlazaHomeViewModel(
     /** The one line after 이 설정 쓰기 (443), once. */
     val note: String? = c.pendingPlazaNote.also { c.pendingPlazaNote = null }
 
+    /**
+     * [SPD-13] [refreshing]: what is on screen is the one kept on the phone, being read again (a thin line on top); [stale]
+     * when reading it again failed ("최근 본 내용이에요 · 다시 시도").
+     */
     data class State(val talk: Talk? = null, val error: String? = null, val room: RoomPage? = null, val cards: List<RoomCard> = emptyList(),
-        val facts: List<Pair<String, String>> = emptyList())
+        val facts: List<Pair<String, String>> = emptyList(), val refreshing: Boolean = false, val stale: Boolean = false)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
     val talk = TalkHolder(c, viewModelScope, calendar)
 
-    init { load() }
+    init {
+        // [SPD-12] The whole list of companies, for 다른 회사 규칙 광장 and its search, if the start of the app did not yet.
+        c.warmCompanies()
+        load()
+    }
 
     /** Back and forth between a company's room and its kind of work's plaza ([StylePlaza.Plan.alsoRoom]). */
     fun across() {
@@ -101,35 +113,75 @@ class PlazaHomeViewModel(
         load()
     }
 
+    /**
+     * AS 1.29 [SRCH-13] The talk and the company's room are asked together, and the cards worked out off the screen's thread.
+     * [SPD-13][SPD-14] 1.30 AP1 (사용자 2026-10-27 "조회하는 로딩이 너무 느리다"): what the phone kept ([com.bamnat.app.company.PageCache]:
+     * the company's page with its room and room talk, or a kind of work's talk) shows at once, then one request reads it all
+     * again ([com.bamnat.app.company.bundle]; 1.29 asked twice for each, and read the plaza twice as it opened).
+     */
     fun load() {
         val p = _plan.value
         val room = p.room ?: return
+        val started = com.bamnat.app.company.NetTimings.start()
+        val company = p.top == StylePlaza.Top.COMPANY_ROOM
+        val cache = c.companySearch.cache
         viewModelScope.launch {
-            // AS 1.29 [SRCH-13] The talk and the company's room are asked together (one after the other before 1.29), and the
-            // cards worked out off the screen's thread.
-            val roomAsk = if (p.top == StylePlaza.Top.COMPANY_ROOM) async { runCatching { c.companyApi.room(c.companyStore.device, room) }.getOrNull() } else null
+            cache.load()
+            val keptRoom = if (company) cache.bundle(room)?.room else null
+            val keptTalk = cache.talk(room, StylePlaza.ROOM)?.value
+            if (_state.value.talk == null && keptTalk != null) {
+                val shown = stateOf(keptTalk, null, keptRoom).copy(refreshing = true)
+                if (_plan.value == p) _state.value = shown
+            } else if (_plan.value == p) _state.value = _state.value.copy(refreshing = true, stale = false)
+            val atOnce = _state.value.talk != null
+            com.bamnat.app.company.NetTimings.cached(atOnce)
+            if (atOnce) com.bamnat.app.company.NetTimings.end(com.bamnat.app.company.NetTimings.Wait.PLAZA, started)
+            var r: RoomPage? = keptRoom
             val talk = try {
-                c.companyApi.talk(c.companyStore.device, room, StylePlaza.ROOM) to null
+                if (company) {
+                    val b = c.companyApi.bundle(room, c.companyStore.device)
+                    cache.keepBundle(b)
+                    r = b.room
+                    // A server's page without the talk (this phone not a member there now): the talk itself says why.
+                    b.talk ?: c.companyApi.talk(c.companyStore.device, room, StylePlaza.ROOM).also { cache.keepTalk(room, StylePlaza.ROOM, it) }
+                } else {
+                    c.companyApi.talk(c.companyStore.device, room, StylePlaza.ROOM).also { cache.keepTalk(room, StylePlaza.ROOM, it) }
+                } to null
             } catch (e: CompanyException) {
                 null to companyProblem(e.code, e.field)
             }
-            var next = State(talk = talk.first, error = talk.second)
-            if (roomAsk != null) {
-                val r = roomAsk.await()
-                if (r != null) next = withContext(Dispatchers.Default) {
-                    val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull()
-                    val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
-                        .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
-                    val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, versions, max = 3) }.getOrNull() }.orEmpty()
-                    val base = r.base?.text ?: mine
-                    val facts = base?.let { t -> runCatching { SetupFacts.read(t) }.getOrNull() }.orEmpty()
-                        .filter { it.key.startsWith("cycle:") || it.key.startsWith("shift:") || it.key.startsWith("rate:") }
-                        .take(5).map { it.label to it.value }
-                    next.copy(room = r, cards = cards, facts = facts)
-                }
-            }
+            val next = if (talk.first == null && _state.value.talk != null) _state.value.copy(refreshing = false, stale = true)
+                else stateOf(talk.first, talk.second, r)
+            if (!atOnce && talk.first != null) com.bamnat.app.company.NetTimings.end(com.bamnat.app.company.NetTimings.Wait.PLAZA, started)
             if (_plan.value == p) _state.value = next
         }
+    }
+
+    /** The plaza's state from a talk and a company's room: 고친 점 cards and the 근무·급여 정보 lines, worked out off the screen's thread. */
+    private suspend fun stateOf(talk: Talk?, error: String?, r: RoomPage?): State {
+        val next = State(talk = talk, error = error)
+        if (r == null) return next
+        return withContext(Dispatchers.Default) {
+            val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull()
+            val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
+                .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
+            val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, versions, max = 3) }.getOrNull() }.orEmpty()
+            val base = r.base?.text ?: mine
+            val facts = base?.let { t -> runCatching { SetupFacts.read(t) }.getOrNull() }.orEmpty()
+                .filter { it.key.startsWith("cycle:") || it.key.startsWith("shift:") || it.key.startsWith("rate:") }
+                .take(5).map { it.label to it.value }
+            next.copy(room = r, cards = cards, facts = facts)
+        }
+    }
+
+    /**
+     * [SPD-14] The talk sheet closed: when this phone wrote (or took back, voted) there, its talk as the sheet last read it takes
+     * the place of the one on screen; nothing changed, nothing is read again (1.29 read the whole plaza again each time).
+     */
+    fun sheetClosed() {
+        if (!talk.changed) return
+        val t = talk.last ?: return load()
+        _state.value = _state.value.copy(talk = t, error = null)
     }
 
     fun openTalk() {
@@ -155,8 +207,13 @@ fun PlazaHomeScreen(
     val plan by vm.plan.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val open by vm.talk.open.collectAsStateWithLifecycle()
-    // The room's own posts come back changed after the sheet closes.
-    LaunchedEffect(open == null) { if (open == null) vm.load() }
+    // [SPD-14] 1.30 AP1: the room's own posts come back changed after the sheet closes, only when this phone wrote there; the
+    // plaza is not read a second time as it opens (1.29: init and this both read it).
+    var sheetWasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(open == null) {
+        if (open != null) sheetWasOpen = true
+        else if (sheetWasOpen) { sheetWasOpen = false; vm.sheetClosed() }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -171,6 +228,8 @@ fun PlazaHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // [SPD-13] What the phone kept is on screen while it is read again: a thin line, not a spinner.
+                RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
                 header?.invoke()
                 vm.note?.let { n ->
                     SoftCard(highlighted = true) {

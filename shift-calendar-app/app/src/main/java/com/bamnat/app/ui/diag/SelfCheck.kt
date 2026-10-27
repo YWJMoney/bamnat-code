@@ -158,6 +158,44 @@ internal fun ServerCheckCard(initial: ServerCheck.Facts? = null) {
 }
 
 /**
+ * [SPD-17] 1.30 묶음 AP1 (사용자 2026-10-27 "여전히 조회하는 로딩이 너무 느리다"): how fast the company server answered this
+ * phone lately and how often a screen showed at once from what the phone kept, from [com.bamnat.app.company.NetTimings]. Only
+ * numbers, measured and kept on this phone, never sent: a capture of this card is what the next version is tuned by.
+ */
+object SpeedCheck {
+    fun lines(s: com.bamnat.app.company.NetTimings.Summary): List<String> = buildList {
+        if (s.count == 0 && s.shown == 0 && s.waits.isEmpty()) {
+            add("아직 잰 것이 없어요. 회사 찾기나 광장을 열면 재요.")
+            return@buildList
+        }
+        if (s.count > 0) {
+            add("서버 응답 최근 ${s.count}개: 보통 ${time(s.medianMs)} · 가장 느림 ${time(s.maxMs)}")
+            add("느린 응답(2.5초 넘음) ${s.slow}번 · 연결 안 됨 ${s.offline}번")
+        }
+        if (s.shown > 0) add("기다리지 않고 바로 보인 화면: ${s.atOncePercent}% (${s.shown}번 중 ${s.shownAtOnce}번)")
+        com.bamnat.app.company.NetTimings.Wait.entries.forEach { w ->
+            s.waits[w]?.let { (mid, max) -> add("${w.label}: 보통 ${time(mid)} · 가장 느림 ${time(max)}") }
+        }
+    }
+
+    /** 320ms, 1.2초. */
+    fun time(ms: Long): String = if (ms < 1_000) "${ms}ms" else "%.1f초".format(ms / 1_000.0)
+}
+
+@Composable
+internal fun SpeedCheckCard(initial: com.bamnat.app.company.NetTimings.Summary? = null) {
+    var summary by remember { mutableStateOf(initial ?: com.bamnat.app.company.NetTimings.summary()) }
+    SectionCard(title = "조회 속도") {
+        SpeedCheck.lines(summary).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Text("이 휴대폰 안에서만 재고 어디에도 보내지 않아요. 앱을 다시 열면 처음부터 재요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = { summary = com.bamnat.app.company.NetTimings.summary() }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("다시 보기")
+        }
+    }
+}
+
+/**
  * [ALRM-02] I27 동의·권한 요약 한 장: everything the user said yes or no to, and every permission, each
  * with a 바꾸기 to where it changes.
  */

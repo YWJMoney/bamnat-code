@@ -165,6 +165,10 @@ fun CompanyBoardScreen(
                         Tab(selected = adopted, onClick = { vm.pick(true) }, text = { Text("채택됨") })
                     }
                 }
+                // [SPD-13] 1.30 AP1: the first page kept on the phone is on screen while it is read again.
+                if (tab.items.isNotEmpty() && ((tab.fromCache && tab.loading) || tab.stale)) item(key = "refresh") {
+                    RefreshLine(tab.fromCache && tab.loading, tab.stale, onRetry = vm::refresh)
+                }
                 item {
                     // [COMM-07] Any company's rules by name, adopted or still being voted on.
                     OutlinedTextField(
@@ -202,7 +206,8 @@ fun CompanyBoardScreen(
                 }
                 item {
                     when {
-                        tab.loading -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                        tab.loading && !tab.fromCache -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                        tab.loading -> Unit
                         tab.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(24.dp)) {
                             Text(tab.error, style = MaterialTheme.typography.bodyMedium)
                             OutlinedButton(onClick = vm::refresh, modifier = Modifier.padding(top = 8.dp)) { Text("다시 불러오기") }
@@ -371,6 +376,8 @@ fun TalkSheet(holder: TalkHolder) {
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val talk = o.talk
+                // [SPD-13] The talk kept on the phone is on screen while it is read again.
+                if (talk != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::reload)
                 when {
                     talk == null && o.error != null -> Text(o.error, style = MaterialTheme.typography.bodyMedium)
                     talk == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))

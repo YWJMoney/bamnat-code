@@ -293,6 +293,8 @@ fun ActivitySheet(holder: ActivityHolder) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("내 활동", style = MaterialTheme.typography.titleLarge)
+            // [SPD-13] 1.30 AP1: 내 활동 kept on the phone is on screen while it is read again.
+            if (o.activity != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::show)
             val a = o.activity
             when {
                 o.error != null -> Text(o.error)
