@@ -138,7 +138,7 @@ fun PayQuickSetup(
         fromSlip?.let { return it }
         val chosen = f ?: return initial
         val p = WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
-            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it)) } ?: p }
+            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
     val draft = draftOf(form, amount, holiday)
@@ -362,9 +362,11 @@ private fun ConfirmPage(
 
 /**
  * [PAYS-14] 명세서 + 회사 계산 방법, two photos read on the phone (사용자 2026-10-25, D68), worked out into the company's rules.
- * The photos go through 묶음 U's [PayslipFillDialog] (READ-08: either photo in either slot, the rules found ticked); the
- * payslip and the ticked rules then go to [infer] with the month's work, and this shows what changes in words and the
- * payslip's total against the app's before 적용.
+ * The photos go through 묶음 U's [PayslipFillDialog] (READ-08: either photo in either slot); the payslip and the rules then go
+ * to [infer] with the month's work.
+ * [PHOTO-34] 1.30 AW (사용자 "인식은 되지만 그 이후 입력 방식이 불편함"): no second window "이렇게 바꿀게요" any more. The result's
+ * screen shows under the 칸, as they are changed, the payslip's total against the app's and what changes ([infer] a moment after
+ * each change, off the main thread); its button applies. [byHand] opens on the 칸 with no photo (촬영이 안 되는 회사).
  */
 @Composable
 internal fun SlipRulesDialog(
@@ -374,63 +376,64 @@ internal fun SlipRulesDialog(
     onDismiss: () -> Unit,
     onApply: (SlipRulesResult) -> Unit,
     kinds: List<com.bamnat.core.model.ExtraKind> = emptyList(),
+    /** [RULE-ED-06] The setup and calendar a 칸's own amount is worked out on ("+80,000원 · 4번"); null shows the month's change. */
+    profile: PayProfile? = null,
+    snapshot: ScheduleSnapshot? = null,
+    effectOf: (suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?)? = null,
+    /** [RULE-ED-01] Opens on the 칸 with no photo. */
+    byHand: Boolean = false,
 ) {
     var ticked by remember { mutableStateOf(emptyList<RuleChange>()) }
-    var read by remember { mutableStateOf<PayslipRead?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<SlipRulesResult?>(null) }
-    var failed by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf<PayslipRead?>(null) }
     val scope = rememberCoroutineScope()
+    val plaza = com.bamnat.app.ui.company.rememberCompanyWayText()
 
-    fun analyse(r: PayslipRead) {
-        read = r
+    fun apply(r: PayslipRead) {
         busy = true
-        failed = false
         scope.launch {
-            try {
-                result = infer(r, ticked)
-                failed = result == null
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                failed = true
-            } finally {
-                busy = false
-            }
+            val res = try { infer(r, ticked) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            busy = false
+            if (res != null) onApply(res) else failed = r
         }
     }
 
-    if (read == null) {
-        // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
-        PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
-            rules = RuleTarget(kinds, shiftTypes, fiveOrMore) { changes, _ -> ticked = changes }) { r -> analyse(r) }
-        return
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (result != null) "이렇게 바꿀게요" else "회사 계산 방식 찾기") },
+    // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
+    PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
+        rules = RuleTarget(kinds, shiftTypes, fiveOrMore, profile, snapshot, effectOf) { changes, _ -> ticked = changes },
+        preview = { r, changes -> infer(r, changes)?.let(::sheetPreviewOf) },
+        plaza = plaza, startByHand = byHand,
+    ) { r -> apply(r) }
+    if (busy) AlertDialog(
+        onDismissRequest = {},
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val res = result
-                when {
-                    res != null -> SlipRulesSummary(res)
-                    busy -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
-                    }
-                    failed -> Text(if (read?.lines.isNullOrEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍어 주세요."
-                        else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = {
-            val res = result
-            if (res != null) Button(onClick = { onApply(res) }) { Text("이대로 적용") }
-        },
-        dismissButton = { TextButton(onClick = { read = null; result = null; ticked = emptyList() }) { Text("다시 하기") } },
+        confirmButton = {},
     )
+    failed?.let { r ->
+        AlertDialog(
+            onDismissRequest = { failed = null },
+            title = { Text("회사 계산 방식 찾기") },
+            text = {
+                Text(if (r.lines.isEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍거나 ‘칸 더하기’로 넣어 주세요."
+                    else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            },
+            confirmButton = { TextButton(onClick = { failed = null }) { Text("확인") } },
+        )
+    }
 }
+
+/** [PHOTO-34] What [SlipRulesResult] says, for the bar under the result. */
+internal fun sheetPreviewOf(res: SlipRulesResult) = com.bamnat.app.ui.pay.rulesheet.SheetPreview(
+    month = res.month, total = res.total,
+    hourly = com.bamnat.core.pay.HourlyFacts.of(res.profile, res.month)?.hourly,
+    gross = res.gross.takeIf { res.withSlip }, changes = res.changes, hints = res.hints, close = res.close, profile = res.profile,
+)
 
 /** What a payslip changed, and how close the month now comes to it. */
 @Composable

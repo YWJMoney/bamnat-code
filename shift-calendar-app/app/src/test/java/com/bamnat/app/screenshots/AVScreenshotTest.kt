@@ -156,7 +156,9 @@ class AVScreenshotTest : ScreenshotBase() {
         reveal("통상시급이 달라요", exact = false)
         reveal("기준 시간이 달라요", exact = false)
     })
+    // [PHOTO-33] 1.30 AW: the 기준 시간 the payslip shows is offered on the 회사 규칙 tab's 통상시급 card.
     @Test fun hoursFromPayslip() = shoot("1407_av_hours_from_payslip", FOLDED, slip {
+        tapText("회사 규칙", prefix = true)
         reveal("명세서로 보면 통상임금 기준 180시간이에요", exact = false)
     })
     @Test fun yellowSmallBig() = shoot("1408_av_yellow_320_200", SMALL_PHONE, 2f, check(true))

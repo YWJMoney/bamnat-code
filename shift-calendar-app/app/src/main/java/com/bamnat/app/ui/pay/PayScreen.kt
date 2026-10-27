@@ -397,7 +397,11 @@ private fun PayResult(
         if (noBase) {
             val companyWay = rememberCompanyWayTextIf(profile.wageType == WageType.MONTHLY)
             BaseNeededCard(profile, result.month,
-                onSave = { b, h -> vm.update { com.bamnat.core.pay.BaseAsk.apply(it, b, result.month, h) } },
+                onSave = { b, h ->
+                    // [HOURLY-04] 1.30 AW: hours said here are the user's own, or the 광장's when they are its chip.
+                    vm.update { com.bamnat.core.pay.BaseAsk.apply(it, b, result.month, h).let { p -> if (h == null) p
+                        else p.copy(hoursSource = if (h == companyWay?.hours) com.bamnat.core.pay.HourlySource.PLAZA else com.bamnat.core.pay.HourlySource.TYPED) } }
+                },
                 companyHours = companyWay?.hours, companyName = companyWay?.way?.company)
         } else TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
@@ -675,7 +679,7 @@ private fun PayResult(
         }, fixLabel = if (fix != null) "이 값 고치기" else "계산 방식 고치기") { detail = null }
     }
     if (hoursAsk) MonthlyHoursDialog(profile.monthlyHours, onDismiss = { hoursAsk = false }) { h ->
-        vm.update { com.bamnat.core.pay.RuleOnlyNeeds.settled(it.copy(monthlyHours = h)) }
+        vm.update { com.bamnat.core.pay.RuleOnlyNeeds.settled(it.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) }
         hoursAsk = false
     }
     if (fiveAsk) FiveOrMoreDialog(onDismiss = { fiveAsk = false }) { yes -> vm.update { fiveOrMoreSaid(it, yes) }; fiveAsk = false }
@@ -695,6 +699,8 @@ private fun PayResult(
         shiftTypes = snapshot.shiftTypes,
         fiveOrMore = profile.fiveOrMoreEmployees,
         kinds = slipSettings.extraKinds.kinds,
+        // [RULE-ED-06] 1.30 AW: each 칸's own amount on this setup and calendar.
+        profile = profile, snapshot = snapshot, effectOf = { p, s, m, made -> vm.effectOf(p, s, m, made) },
         onDismiss = { slipRules = false },
         onApply = { r -> vm.applySlipRules(r); slipRules = false; if (onShareWay != null && r.changes.isNotEmpty()) plazaAsk = true },
     )

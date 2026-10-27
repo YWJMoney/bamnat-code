@@ -129,6 +129,17 @@ internal enum class ItemKind(val title: String, val example: String, val icon: I
         DEDUCT -> "예: 기숙사비"
     }
 
+    /** [RULE-ED-03] 1.30 AW: the kind on a chip of the 칸 더하기 sheet. */
+    val chip: String get() = when (this) {
+        MONTHLY -> "매달"
+        PER_DAY -> "일한 날마다"
+        PER_SHIFT -> "정한 근무마다"
+        PER_HOUR -> "시간당"
+        PREMIUM -> "시급에 % 더"
+        SHARE -> "기본급의 %"
+        DEDUCT -> "빠지는 돈"
+    }
+
     /** Kinds that pay for some of the work only, so they ask when. */
     val asksWhen: Boolean get() = this == PER_SHIFT || this == PER_HOUR || this == PREMIUM
 
@@ -271,6 +282,18 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         }
     }
 
+    /**
+     * [RULE-ED-07] 1.30 AW: what [made] makes, or a 사람마다 수당 with no amount yet, put in to be asked (금액 모름, "자격수당 금액을
+     * 넣어 주세요") instead of held back: a company's rules written as 칸 name the 수당 each person has an amount of.
+     */
+    fun madeOrAsked(start: java.time.LocalDate): MadeItem? = made(start) ?: run {
+        val k = kind
+        if ((k == ItemKind.MONTHLY || k == ItemKind.PER_DAY) && !asRule && !hasLimits && itemWho == ItemShare.PERSONAL && (amount ?: 0) <= 0)
+            MadeItem.Item(PayItem(id, name.trim().ifEmpty { k.defaultName }.take(20), ValueTimeline(),
+                if (k == ItemKind.MONTHLY) Cadence.MONTHLY else Cadence.PER_WORK_DAY, ordinary = ordinary, share = ItemShare.PERSONAL, mine = mine))
+        else null
+    }
+
     /** [ITEM-05] 회사 공통 or 사람마다 for an allowance with an amount (a percent is its own kind). */
     private val itemWho: ItemShare get() = if (who == ItemShare.FIXED) ItemShare.FIXED else ItemShare.PERSONAL
 
@@ -282,6 +305,39 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     }
 
     companion object {
+        /**
+         * [RULE-ED-03] 1.30 AW: the builder started from a chip of '칸 더하기' (자격수당 → 매달·사람마다·통상임금, 기본급2 → 기본급의 %,
+         * 심야 시간 수당 → 시간당·22~06시, 기숙사비 → 매달 빠지는 돈). A premium of the law is not the builder's ([CellPreset.isPremium]).
+         */
+        fun ofPreset(p: com.bamnat.core.pay.CellPreset, id: String): ItemDraft = ItemDraft(when (p.way) {
+            com.bamnat.core.pay.CellWay.MONTHLY -> ItemKind.MONTHLY
+            com.bamnat.core.pay.CellWay.PER_DAY -> ItemKind.PER_DAY
+            com.bamnat.core.pay.CellWay.PER_SHIFT -> ItemKind.PER_SHIFT
+            com.bamnat.core.pay.CellWay.PER_HOUR -> ItemKind.PER_HOUR
+            com.bamnat.core.pay.CellWay.PERCENT -> ItemKind.SHARE
+            com.bamnat.core.pay.CellWay.PREMIUM -> ItemKind.PREMIUM
+            com.bamnat.core.pay.CellWay.DEDUCT_MONTHLY, com.bamnat.core.pay.CellWay.DEDUCT_PER_DAY -> ItemKind.DEDUCT
+        }, id).apply {
+            name = p.name
+            ordinary = p.ordinary
+            who = if (p.share == ItemShare.PERCENT) ItemShare.PERSONAL else p.share
+            whoPicked = true
+            basis = p.basis
+            ofOrdinary = p.basis == BonusBasis.ORDINARY
+            dayKind = p.dayKind
+            p.window?.let { (f, t) -> window = true; from = f; to = t }
+            if (p.way == com.bamnat.core.pay.CellWay.DEDUCT_PER_DAY) deductWay = DeductWay.PER_DAY
+        }
+
+        /** [RULE-ED-03] A name typed with no chip: the kind its words point to (기본급의 %, 매달), who sets it guessed. */
+        fun ofName(name: String, id: String): ItemDraft = ItemDraft(
+            if (ShareGuess.of(name) == ItemShare.PERCENT) ItemKind.SHARE else ItemKind.MONTHLY, id,
+        ).apply {
+            this.name = name.take(20)
+            ordinary = com.bamnat.core.pay.OrdinaryGuess.of(name, Cadence.MONTHLY) ?: false
+            guessFrom(name)
+        }
+
         /** [PHOTO-06] The builder filled in from an allowance read from a photo (매달·일한 날마다), to change it before it is saved. */
         fun ofItem(item: PayItem): ItemDraft? {
             val kind = when {
@@ -518,8 +574,25 @@ private fun KindCard(kind: ItemKind, onClick: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: ScheduleSnapshot, gap: Long?, onChangeKind: (() -> Unit)?, fromCompany: Boolean = false) {
+internal fun ColumnScope.FormStep(
+    draft: ItemDraft, kind: ItemKind, snapshot: ScheduleSnapshot, gap: Long?, onChangeKind: (() -> Unit)?, fromCompany: Boolean = false,
+    /**
+     * [RULE-ED-03] 1.30 AW: the 칸 더하기 sheet's second step: the kinds as one row of chips ("어떻게 주나요?") in place of the chosen
+     * kind's banner, so changing it is one tap, not a page back.
+     */
+    kindChips: Boolean = false,
+) {
     if (gap != null) GapBanner(gap)
+    if (kindChips) {
+        Label("어떻게 주나요?")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ItemKind.entries.forEach { k ->
+                FilterChip(selected = kind == k, onClick = { draft.kind = k; draft.guessFrom(draft.name) }, label = { Text(k.chip) },
+                    modifier = Modifier.heightIn(min = 48.dp))
+            }
+        }
+        Hint("예: ${kind.example}")
+    } else
     // The kind chosen, with the way back to the list.
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {

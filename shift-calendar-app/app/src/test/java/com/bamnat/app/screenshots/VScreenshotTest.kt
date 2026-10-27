@@ -170,18 +170,17 @@ class VScreenshotTest : ScreenshotBase() {
     @Test fun slipRulesRead() = shoot("839_v_slip_read", FOLDED, slipRules {
         typeSlip()
         assertTrue(shows("2026년 9월 명세서"))
-        reveal("이대로 채우기", exact = true)
+        reveal("이대로 채우", exact = false)
     })
 
     /** The payslip read, worked out against September's calendar, applied: the 교대수당 is now in the setup. */
     @Test fun slipRulesAppliedEndToEnd() = shoot("840_v_slip_changes", FOLDED, slipRules {
         val before = saved!!
         typeSlip()
-        tapText("이대로 채우기", exact = true)
+        // [PHOTO-34] 1.30 AW: what changes shows under the result as it is read; its one button applies (no second window).
         waitFor(800)
-        assertTrue(shows("이렇게 바꿀게요", exact = true))
-        assertTrue(shows("2026년 9월 명세서 3,612,000원"))
-        tapText("이대로 적용", exact = true)
+        assertTrue(shows("9월 명세서 3,612,000원"))
+        tapText("이대로 채우", prefix = true)
         waitFor(400)
         val after = saved!!
         assertTrue("교대수당 added", after.items.any { it.name == "교대수당" })
@@ -192,9 +191,8 @@ class VScreenshotTest : ScreenshotBase() {
     })
     @Test fun slipRulesPlazaAsk() = shoot("841_v_plaza_ask", FOLDED_NIGHT, slipRules {
         typeSlip()
-        tapText("이대로 채우기", exact = true)
         waitFor(800)
-        tapText("이대로 적용", exact = true)
+        tapText("이대로 채우", prefix = true)
         waitFor(400)
         assertTrue(shows("이렇게 채택돼요"))
         tapText("광장에 올리기", exact = true)
@@ -205,9 +203,8 @@ class VScreenshotTest : ScreenshotBase() {
     @Test fun quickSetupFromSlip() = shoot("842_v_quick_from_slip", FOLDED, quickSetup {
         tapText("모르겠으면 명세서 사진으로 맞추기")
         typeSlip()
-        tapText("이대로 채우기", exact = true)
         waitFor(800)
-        tapText("이대로 적용", exact = true)
+        tapText("이대로 채우", prefix = true)
         waitFor(400)
         assertTrue(shows("명세서에서 찾은 회사 방식을 넣었어요"))
         tapText("이대로 계산", exact = true)
@@ -274,9 +271,8 @@ class VScreenshotTest : ScreenshotBase() {
     })
     @Test fun slipRulesSmallPhone() = shoot("848_v_slip_small", SMALL_PHONE, slipRules {
         typeSlip()
-        tapText("이대로 채우기", exact = true)
         waitFor(800)
-        assertTrue(shows("이렇게 바꿀게요", exact = true))
+        assertTrue(shows("9월 명세서 3,612,000원"))
     })
     @Test fun payGapDialogDark() = shoot("849_v_pay_gap_dialog_dark", FOLDED_NIGHT, {
         withPay()

@@ -19,15 +19,20 @@ class PhotoCellsLogicTest {
     private val nov = YearMonth.of(2026, 11)
 
     @Test fun cellsOpenInTheBuilderAndComeBack() {
-        assertTrue(PhotoCellsLogic.editable(RuleChange.Premium(PremiumTarget.NIGHT, 0.5)))
+        // [PHOTO-32] 1.30 AW: a premium's rate is changed on the 칸 sheet's own form (CellSheet.PremiumForm), not in the builder.
+        assertFalse(PhotoCellsLogic.editable(RuleChange.Premium(PremiumTarget.NIGHT, 0.5)))
         val monthly = RuleChange.Allowance("자격수당", 57_500, Cadence.MONTHLY, ordinary = true)
         assertTrue(PhotoCellsLogic.editable(monthly))
         val (rule, item) = PhotoCellsLogic.toEdit(monthly, nov)!!
         assertNull(rule)
         assertNotNull(item)
         assertEquals(57_500L, item!!.amount.on(nov.atDay(1)).value)
-        // Back from the builder as the same allowance.
-        assertEquals(monthly, PhotoCellsLogic.change(MadeItem.Item(item), emptyMap(), nov))
+        // [RULE-ED-01] Back from the builder as the whole allowance (its name, amount and 통상임금 kept), not a name and an amount.
+        val back = PhotoCellsLogic.change(MadeItem.Item(item), emptyMap(), nov) as RuleChange.Item
+        assertEquals("자격수당", back.item.name)
+        assertEquals(57_500L, back.amount)
+        assertTrue(back.item.ordinary)
+        assertTrue(PhotoCellsLogic.editable(back))
         val perShift = RuleChange.Custom(CustomRule("r", "교대수당", RuleWhen(), RulePay.PerTime(10_000)))
         assertEquals(perShift.rule, PhotoCellsLogic.toEdit(perShift, nov)!!.first)
         assertEquals(perShift, PhotoCellsLogic.change(MadeItem.Rule(perShift.rule), emptyMap(), nov))
