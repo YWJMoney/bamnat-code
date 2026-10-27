@@ -126,7 +126,7 @@ class BBScreenshotTest : ScreenshotBase() {
         assertNull(c.payWays.way.value)
         assertTrue(c.companyOf(b).payWays.askBase.value)
         assertFalse(c.payWays.askBase.value)
-        on(b) { PayWayCard(c.calendars.pay(b).profile.value, update = {}) }
+        c.calendars.pay(b).profile.value.let { p -> on(b) { PayWayCard(p, update = {}) } }
         assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
     }
 

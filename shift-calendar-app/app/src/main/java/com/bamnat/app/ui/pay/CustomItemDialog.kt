@@ -592,9 +592,8 @@ internal fun ColumnScope.FormStep(
             }
         }
         Hint("예: ${kind.example}")
-    } else
-    // The kind chosen, with the way back to the list.
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        // Else: the kind chosen, with the way back to the list.
+    } else Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(kind.icon, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))

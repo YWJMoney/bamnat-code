@@ -123,7 +123,7 @@ class BAScreenshotTest : ScreenshotBase() {
         leads()
         runBlocking { c.payStore.save(bare(), keepUndo = false) }
         c.companyOf(PersonalCalendar.MAIN).pendingWays.offer(way(PendingWay.Source.APPLY))
-        box { PayWayCard(c.payStore.profile.value, update = {}) }
+        c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
         assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
         tapText("급여 방식은 넣지 않을게요", exact = true)
         assertTrue(shows("‘(주)예시정밀’ 급여 방식은 넣지 않았어요. 급여는 그대로예요.", exact = true))
@@ -145,7 +145,7 @@ class BAScreenshotTest : ScreenshotBase() {
         waitFor(200)
         assertTrue(done)
         assertNull("the pay waits for its 기본급", c.payWays.way.value)
-        box { PayWayCard(c.payStore.profile.value, update = {}) }
+        c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
         assertTrue(shows("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))
         assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
         typeInto("월 기본급", "2600000")
@@ -296,7 +296,7 @@ class BAScreenshotTest : ScreenshotBase() {
         scope.pendingWays.offer(w)
         assertTrue(runBlocking { scope.commit(c, w, 2_800_000, 209, Today.month()) })
         assertEquals(w to 209, scope.pendingWays.hoursAsk.value)
-        box { PayWayCard(c.payStore.profile.value, update = {}) }
+        c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
         assertTrue(shownDialogs().isNotEmpty())
     }
 
@@ -304,7 +304,7 @@ class BAScreenshotTest : ScreenshotBase() {
         leads()
         runBlocking { c.payStore.save(bare(), keepUndo = false) }
         c.companyOf(PersonalCalendar.MAIN).pendingWays.offer(way(PendingWay.Source.APPLY))
-        box { PayWayCard(c.payStore.profile.value, update = {}) }
+        c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
         assertTrue(shows("통상시급 기준 시간: 회사 규칙 180시간", exact = true))
         tapText("209시간", exact = true)
         assertTrue(shows("회사 규칙은 180시간이에요. 209시간으로 계산하고, 넣은 뒤 같은 회사 분들께 의견으로 보낼지 여쭤볼게요.", exact = true))
