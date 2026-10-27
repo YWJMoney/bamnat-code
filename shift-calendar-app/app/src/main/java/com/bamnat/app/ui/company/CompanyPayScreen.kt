@@ -127,6 +127,19 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     }
                 }
 
+                // [ITEM-06][PAYG-11] 1.30: what the company sets for everyone is in already, said once and not asked.
+                vm.text?.let { CommonItemLines(it) }
+                // [PAYF-06] The one field that cannot be left out (회사 방식은 기본급으로 계산), and the 통상시급's hours:
+                // [PAYG-08] the company's own first, shown open.
+                com.bamnat.app.ui.pay.BaseFields(wageType, base, { base = it }, hours, { hours = it },
+                    profile = remember(wageType) { com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, com.bamnat.core.pay.ValueTimeline()) },
+                    month = Today.month(), companyHours = remember(vm.text) { vm.text?.let(com.bamnat.app.data.CompanyShare::hoursIn) }, companyName = vm.company.ifEmpty { null })
+                // [PAYG-11] 월급·1년 전부터·정확이 거의 모두: the rest folded, one tap away (fewer things to read before 계산 시작).
+                var more by rememberSaveable { mutableStateOf(wageType != WageType.MONTHLY || rough) }
+                TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(if (more) "급여 형태·시작 달 접기" else "시급·일당이거나 받기 시작한 달이 다르면")
+                }
+                if (more) {
                 Text("급여 형태", style = MaterialTheme.typography.titleSmall)
                 val wages = listOf(WageType.MONTHLY to "월급", WageType.HOURLY to "시급", WageType.DAILY to "일당")
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -135,10 +148,6 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                             shape = SegmentedButtonDefaults.itemShape(index = i, count = wages.size)) { Text(label) }
                     }
                 }
-                // [PAYF-06] The one field that cannot be left out (회사 방식은 기본급으로 계산), and folded the 통상시급's hours.
-                com.bamnat.app.ui.pay.BaseFields(wageType, base, { base = it }, hours, { hours = it },
-                    profile = remember(wageType) { com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, com.bamnat.core.pay.ValueTimeline()) },
-                    month = Today.month())
                 FilterChip(selected = rough, onClick = { rough = !rough }, label = { Text("대략이에요") })
                 if (wageType == WageType.DAILY) {
                     // [PAYS-03] 일당 ÷ 하루 소정근로시간 is the hourly rate premiums are paid on.
@@ -164,9 +173,10 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     Text(com.bamnat.core.pay.PaySince.why(vm.hireDate, Today.month()), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                }
 
                 if (vm.needs.isNotEmpty()) {
-                    Text("내 수당 금액", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+                    Text("내 수당 금액 (사람마다 다른 것만)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                     vm.needs.forEach { need ->
                         MoneyField(
                             label = "${need.label} · ${need.hint}",

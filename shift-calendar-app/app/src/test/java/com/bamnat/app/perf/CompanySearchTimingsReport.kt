@@ -155,4 +155,26 @@ class CompanySearchTimingsReport {
             assertTrue(now < old - 800)
         }
     }
+    /**
+     * [SPD-11] 1.30 AP1: with the whole list on the phone, each letter's first rows come from it, nothing asked, under 5 ms
+     * however slow the server is.
+     */
+    @Test fun withTheWholeListEachLetterIsAnsweredOnThePhone() = runBlocking {
+        TinyCompanyServer(names).use { s ->
+            val search = CompanySearch({ CompanyClient(s.base) }, null)
+            search.warm(saver = false)
+            s.latencyMs = 3_000
+            val asked = s.requests.get()
+            val times = listOf("가상", "가상화", "가상화학", "가상화학1", "ㄱㅅ", "현대").map { q ->
+                val t = System.nanoTime()
+                val st = search.states(q, pauseMs = 0).first { it.stage == CompanySearch.Stage.DONE }
+                val us = (System.nanoTime() - t) / 1_000
+                assertTrue(q, st.hits.isNotEmpty())
+                us
+            }
+            println("[AP1] 전체 목록 있을 때 글자마다 첫 결과: ${times.joinToString { "%.1fms".format(it / 1000.0) }} (서버 3초, 요청 ${s.requests.get() - asked})")
+            assertTrue(times.drop(1).all { it < 5_000 })
+            assertTrue(s.requests.get() == asked)
+        }
+    }
 }

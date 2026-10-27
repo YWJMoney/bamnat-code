@@ -159,14 +159,19 @@ class APScreenshotTest : ScreenshotBase() {
     @Test fun usingThePayWayAsksOnlyTheAmounts() = shoot("1234_ap_company_pay_amounts", PHONE_393) {
         leads()
         runBlocking { c.payStore.save(null, keepUndo = false) }
-        assertEquals(PayFind.Used.Amounts, runBlocking { PayFind(c).use("c1", "s1") })
-        assertEquals("s1", c.payWays.way.value?.setup)
+        // [PAYG-01] 1.30 BA: chosen only; the way is in use once its amounts are saved.
+        val ready = runBlocking { PayFind(c).use("c1", "s1") } as PayFind.Used.Ready
+        assertNull(c.payWays.way.value)
+        assertNull(c.payStore.profile.value)
+        // As the first setup leaves a coworkers' setup with its pay for the amounts screen.
+        c.companyStore.pendingPay = ready.way.text
         val vm = CompanyPayViewModel(c)
         content { CompanyPayScreen(vm, onBack = {}, onByHand = {}) }
         settle()
         assertFalse(shows("이 회사 급여 설정을 쓸까요?", exact = true))
         assertTrue(shows("거의 다 됐어요! 내 금액만 넣어요", exact = true))
-        reveal("통상시급 기준 시간도 알아요 (선택)", exact = true)
+        // [PAYG-08] 1.30 BA: the company's 통상시급 hours shown first, open.
+        reveal("회사 규칙 180시간", exact = true)
     }
 
     @Test fun usingItOnAPayAsksTheBase() = shoot("1235_ap_pay_find_base", PHONE_393) {
@@ -178,10 +183,12 @@ class APScreenshotTest : ScreenshotBase() {
         waitFor(400)
         tapText("(주)예시정밀", exact = true)
         tapText("이 급여 방식 쓰기", exact = true)
-        assertTrue(shows("급여 방식을 넣었어요", exact = true))
-        assertEquals("(주)예시정밀", c.payWays.way.value?.company)
+        // [PAYG-01] 1.30 BA: nothing in until 이대로 계산 with the 기본급.
+        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertNull(c.payWays.way.value)
         typeInto("월 기본급", "2500000")
         tapText("이대로 계산", exact = true)
+        assertEquals("(주)예시정밀", c.payWays.way.value?.company)
         assertEquals(2_500_000L, BaseAsk.known(saved, Today.month()))
         assertFalse(BaseAsk.needed(saved, Today.month()))
     }
@@ -192,7 +199,8 @@ class APScreenshotTest : ScreenshotBase() {
         c.payWays.use(PayWay("c1", "(주)예시정밀", "생산팀", "s1", null, null))
         box { PayWayCard(bare(), update = {}) }
         assertTrue(shows("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
-        assertTrue(shows("기본급을 넣어야 예상 급여가 맞아요", exact = true))
+        // [PAYG-04] 1.30 BA: the 기본급 is asked by the pay screen's one card, not by a line here.
+        assertFalse(shows("기본급을 넣어야 예상 급여가 맞아요", exact = true))
         assertTrue(shows("맞았어요", exact = true))
         assertTrue(shows("달라요", exact = true))
         assertTrue(shows("고쳐서 제안하기", exact = true))
@@ -208,7 +216,6 @@ class APScreenshotTest : ScreenshotBase() {
         leads()
         c.payWays.use(PayWay("c1", "(주)예시정밀", "생산팀", "s1", null, null))
         box { PayWayCard(bare(), update = {}) }
-        assertTrue(shows("기본급을 넣어야 예상 급여가 맞아요", exact = true))
         reveal("토론 보기", exact = true)
     }
 
@@ -237,16 +244,17 @@ class APScreenshotTest : ScreenshotBase() {
         assertTrue(done)
         assertNull(c.payWays.way.value)
         assertTrue(c.payStore.profile.value?.rules == bare().rules)
-        // With the pay: remembered for 맞아요·달라요, and the 기본급 is asked next.
+        // With the pay: [PAYG-03] 1.30 BA the cycle is in, the pay waits for its 기본급 in one sheet.
         done = false
         vm.apply(page, s1, null, withPay = true, done = { done = true }, failed = { error(it) })
         waitFor(200)
         assertTrue(done)
-        assertEquals("s1", c.payWays.way.value?.setup)
-        assertTrue(c.payWays.askBase.value)
+        assertNull(c.payWays.way.value)
+        assertTrue(c.payStore.profile.value?.rules == bare().rules)
         val profile = c.payStore.profile.value
         box { PayWayCard(profile, update = {}) }
-        assertTrue(shows("기본급을 확인해 주세요", exact = true))
+        assertTrue(shows("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))
+        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
     }
 
     // ---- [PAYF-06] 기본급은 꼭, 통상시급 기준 시간은 선택 ----
@@ -314,7 +322,7 @@ class APScreenshotTest : ScreenshotBase() {
         // The wizard's own 다음 waits while the box's steps are on; 이전 goes back to the box.
         assertFalse(shows("다음", exact = true))
         tapText("이 급여 방식 쓰기", exact = true)
-        assertTrue(shows("급여 방식을 넣었어요", exact = true))
+        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
         typeInto("월 기본급", "2700000")
         tapText("이대로 계산", exact = true)
         assertEquals(2_700_000L, BaseAsk.known(done, Today.month()))

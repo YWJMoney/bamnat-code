@@ -10,20 +10,20 @@ import com.bamnat.app.data.PersonalCalendar
  * question ("다른 분도 쓰게 나눌까요?") comes when it is saved.
  *
  * [PAYF-01][PAYF-04] 1.29 묶음 AP: using it is remembered ([PayWayStore]) and counted on the server as this phone using that
- * setup, so the pay screen keeps 맞아요·달라요 on it and the search says "n명 쓰고 있어요" truly; the amounts screen that
- * follows does not ask the same question again.
+ * setup, so the pay screen keeps 맞아요·달라요 on it and the search says "n명 쓰고 있어요" truly.
  *
  * [CALI-04] 1.30 BB: for one calendar's pay ([CompanyScope.find]); it joins the company for that calendar and remembers the
  * way in that calendar's stores.
+ *
+ * [PAYG-01] 1.30 묶음 BA: "이 급여 방식 쓰기" only joins and reads the way: it waits as a [PendingWay] until the 기본급 is given
+ * ([commit]), and nothing of the pay, the pay way in use, the company record or the server's '쓰고 있어요' changes before.
  */
 class PayFind(private val c: AppContainer, val calendar: String = PersonalCalendar.MAIN) {
     private val scope: CompanyScope get() = c.companyOf(calendar)
 
     sealed interface Used {
-        /** The rules went onto the pay setup the user had. */
-        data object Applied : Used
-        /** No pay setup yet: the company's way waits for the user's own amounts (the pay screen asks only those). */
-        data object Amounts : Used
+        /** The way is read and waits for the 기본급 ([PendingWays.pending]); nothing is put in yet. */
+        data class Ready(val way: PendingWay) : Used
         /** The server had no pay way to give after joining (taken down meanwhile). */
         data object Gone : Used
     }
@@ -36,36 +36,34 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
         val api = c.companyApi
         val s = scope
         val store = s.store
-        val m = api.join(store.device, id, s.serverCal)
+        // [PAYG-09] SP1: the join answers with the page as a member reads it (one round trip less); an older server does not.
+        val (m, joined) = api.joinWithPage(store.device, id, s.serverCal)
         if (!m.joined) throw CompanyException(m.error ?: "member")
-        val page = api.company(id)
+        val page = joined ?: api.company(id)
+        runCatching { c.companySearch.keepPage(page) }
+        // The server keeps a join for 30 days whatever happens next, so the phone says it truly (결정 D79: members see the way).
         store.setMember(page.id, page.name)
         val setup = page.setups.firstOrNull { it.id == lead && !it.payHidden && it.hasPay }
             ?: page.setups.filter { it.hasPay && !it.payHidden && !it.doubted }.maxByOrNull { if (it.lead) 1 else 0 }
             ?: return Used.Gone
         c.telemetry.event("pay_find", "use")
-        // The company the pay is for, as a setup typed by hand would say, so a later share goes to the same 광장.
-        if (store.applied.value == null) store.setDraft(CompanyDraft(page.name, setup.dept))
-        // [PAYF-04] Remembered for 맞아요·달라요 on the pay screen, and counted as one more phone using it ("n명 쓰고 있어요").
-        s.payWays.use(PayWay(page.id, page.name, setup.dept, setup.id))
-        runCatching { api.use(store.device, page.id, setup.id, true, s.serverCal) }
-        return if (s.pay.profile.value == null) {
-            store.pendingPay = setup.text
-            s.payWays.decided = true
-            Used.Amounts
-        } else {
-            s.share.applyRules(setup.text)
-            Used.Applied
-        }
+        val way = PendingWay(page.id, page.name, setup.dept, setup.id, setup.text, PendingWay.Source.FIND)
+        s.pendingWays.offer(way)
+        return Used.Ready(way)
     }
 
     /** None found: the easy setup under [company]'s name; saving it asks the one-time plaza question (AutoShare). */
     fun none(company: String) {
         val name = company.trim().take(40)
-        if (CompanyText.norm(name).length < 2) return
         val store = scope.store
-        if (store.applied.value == null) store.setDraft(CompanyDraft(name))
         c.telemetry.event("pay_find", "none")
+        if (store.applied.value != null) return
+        // [PAYG-12] No name to go by (R1 2장): made by hand all the same, so the plaza asks with the company's name then.
+        if (CompanyText.norm(name).length < 2) {
+            if (store.draft.value == null) store.setHandMade(true)
+            return
+        }
+        store.setDraft(CompanyDraft(name))
     }
 
     /** The company the user is known to work for, to start the search from. */

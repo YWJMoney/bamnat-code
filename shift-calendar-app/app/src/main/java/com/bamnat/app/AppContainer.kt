@@ -3,6 +3,7 @@ package com.bamnat.app
 import kotlinx.coroutines.sync.withLock
 import android.content.Context
 import com.bamnat.app.alarm.AlarmScheduler
+import com.bamnat.app.company.warmCompaniesNow
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.MemoRepository
 import com.bamnat.app.data.MoneyRepository
@@ -860,7 +861,8 @@ class AppContainer(context: Context) {
             appScope.launch {
                 // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
                 runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
-                runCatching { companySearch.warm(com.bamnat.app.company.CompanySearch.saveData(appContext), companyStore.applied.value?.companyId) }
+                // [SPD-12] 1.30 AP1: the whole list of companies and this phone's company page with its room, on mobile data too.
+                runCatching { warmCompaniesNow() }
                 // [CALI-01] 1.30 BB: an added calendar's two small company files, read here rather than on its first screen.
                 runCatching { calendars.added().forEach { companyOf(it.id) } }
             }

@@ -420,6 +420,8 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             }
             // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
             item { ServerCheckCard() }
+            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
+            item { SpeedCheckCard() }
             item {
                 SectionCard(title = "점검") {
                     val bad = checks.count { it.ok == false }
