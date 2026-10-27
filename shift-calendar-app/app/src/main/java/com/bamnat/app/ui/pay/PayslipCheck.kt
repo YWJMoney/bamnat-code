@@ -71,14 +71,26 @@ internal fun PhotoThumb(photo: Bitmap) {
  * [READ-18] 1.27 순번 447: the lines read from a payslip, "사진과 내용이 같은가요?" under them. '네, 같아요' takes them as looked
  * at; '다른 곳이 있어요' makes each line a button that fixes only that line ([SlipLineDialog]), with 줄 더하기. Lines read
  * two ways ([unsure], by index) are yellow until looked at. [onChange] gets the payslip and the lines still to look at.
+ * [PHOTO-29] 1.30 AV (R3 A-6 상): with yellow lines, '네, 같아요' is not the first button any more: it took every line as looked at
+ * in one tap, and taught pressing it without looking. '노란 n줄 확인하기' opens each yellow line with [맞아요]·[고치기]; when the
+ * last one is answered and the payslip's own sums meet, the photo counts as looked at.
  */
 @Composable
 internal fun SlipCheck(
     read: PayslipRead, unsure: Set<Int>, same: Boolean?, fromPhoto: Boolean,
     onAnswer: (Boolean) -> Unit, onChange: (PayslipRead, Set<Int>) -> Unit,
+    /** [PHOTO-29] Tests open the yellow lines' answers at once. */
+    reviewingAtFirst: Boolean = false,
 ) {
     var editing by remember { mutableStateOf<Int?>(null) }
+    var reviewing by remember { mutableStateOf(reviewingAtFirst) }
     val fixing = same == false || !fromPhoto && same != true
+    // [PHOTO-29] One yellow line answered 'that is right': the rest stay; the last one, with the sums meeting, ends the look.
+    fun rightAsRead(i: Int) {
+        val left = unsure - i
+        onChange(read, left)
+        if (left.isEmpty() && com.bamnat.core.pay.SlipVote.adds(read) && com.bamnat.core.pay.SlipVote.stated(read)) { reviewing = false; onAnswer(true) }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         read.lines.forEachIndexed { i, line ->
             val doubt = i in unsure
@@ -98,6 +110,11 @@ internal fun SlipCheck(
                 Text(line.amount?.let(::won) ?: "", style = MaterialTheme.typography.bodyMedium)
                 if (fixing) Text("  고치기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
+            // [PHOTO-29] A yellow line being looked at: is it as the photo shows?
+            if (reviewing && doubt && !fixing) Row(Modifier.fillMaxWidth().padding(start = 76.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { rightAsRead(i) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("맞아요") }
+                TextButton(onClick = { editing = i }, modifier = Modifier.heightIn(min = 48.dp)) { Text("고치기") }
+            }
         }
         read.gross?.let { g ->
             Text(
@@ -113,12 +130,17 @@ internal fun SlipCheck(
             same == true -> Text("사진과 같다고 확인했어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             fromPhoto && same == null -> Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("사진과 내용이 같은가요?", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    if (unsure.isNotEmpty()) Text("노란 줄 ${unsure.size}개는 사진에서 두 가지로 읽혔어요. 사진을 눌러 크게 보고 맞는지 봐 주세요.",
+                    Text(if (unsure.isNotEmpty()) "노란 줄 ${unsure.size}개만 사진과 맞는지 봐 주세요" else "사진과 내용이 같은가요?",
+                        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    if (unsure.isNotEmpty()) Text(
+                        if (reviewing) "노란 줄마다 ‘맞아요’나 ‘고치기’를 눌러 주세요. 사진을 누르면 크게 보여요."
+                        else "사진에서 두 가지로 읽혔거나 짐작한 줄이에요. 나머지는 명세서 합계로 맞는 걸 확인했어요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onAnswer(true); onChange(read, emptySet()) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("네, 같아요") }
-                        OutlinedButton(onClick = { onAnswer(false) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("다른 곳이 있어요") }
+                        // [PHOTO-29] Yellow lines first: their own answers, not one '같아요' for all.
+                        if (unsure.isEmpty()) Button(onClick = { onAnswer(true); onChange(read, emptySet()) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("네, 같아요") }
+                        else if (!reviewing) Button(onClick = { reviewing = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("노란 ${unsure.size}줄 확인하기") }
+                        OutlinedButton(onClick = { reviewing = false; onAnswer(false) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("다른 곳이 있어요") }
                     }
                 }
             }
@@ -141,7 +163,12 @@ internal fun SlipCheck(
                     val at = read.lines.indexOfFirst { it.role in TOTALS }.takeIf { it >= 0 } ?: read.lines.size
                     val lines = read.lines.toMutableList().apply { add(at, fixed) }
                     onChange(read.copy(lines = lines), unsure.map { if (it >= at) it + 1 else it }.toSet())
-                } else onChange(read.copy(lines = read.lines.mapIndexed { j, l -> if (j == i) fixed else l }), unsure - i)
+                } else {
+                    val next = read.copy(lines = read.lines.mapIndexed { j, l -> if (j == i) fixed else l })
+                    onChange(next, unsure - i)
+                    // [PHOTO-29] The last yellow line fixed while looking at them, the sums meeting: looked at.
+                    if (reviewing && (unsure - i).isEmpty() && com.bamnat.core.pay.SlipVote.adds(next) && com.bamnat.core.pay.SlipVote.stated(next)) { reviewing = false; onAnswer(true) }
+                }
                 editing = null
             })
     }

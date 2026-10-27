@@ -63,7 +63,8 @@ fun PhotoWrongButton(screen: PhotoScreen, modifier: Modifier = Modifier, onAsk: 
                 } else {
                     Text("어떤 점이 다른지 하나 골라 주세요.", style = MaterialTheme.typography.bodyMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PhotoWrongReason.entries.forEach { r ->
+                        // [PHOTO-28] 1.30: 통상시급·기준 시간 on a payslip's or the rules' screen only.
+                        PhotoWrongReason.of(screen).forEach { r ->
                             FilterChip(selected = reason == r, onClick = { reason = r }, label = { Text(r.label) }, modifier = Modifier.heightIn(min = 48.dp))
                         }
                     }

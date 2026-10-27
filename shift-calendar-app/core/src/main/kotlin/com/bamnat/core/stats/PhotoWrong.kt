@@ -26,11 +26,21 @@ enum class PhotoWrongReason(val code: String, val label: String) {
     EXTRA("extra", "없는 칸이 생겼어요"),
     NAMES("names", "이름이나 종류가 틀려요"),
     NOTHING("nothing", "거의 읽지 못했어요"),
+    /**
+     * [PHOTO-28] 1.30 AV (R3 A-6 중): the 통상시급 or the 기준 시간 worked out from the payslip is not the company's. 1.30 works
+     * them out from the photo ([com.bamnat.core.pay.SlipHourly]), and these are what tells whether it does so right.
+     */
+    HOURLY("hourly", "통상시급이 달라요"),
+    HOURS("hours", "기준 시간이 달라요"),
     OTHER("other", "다른 점이 있어요"),
     ;
 
     companion object {
         fun of(code: String): PhotoWrongReason? = entries.firstOrNull { it.code == code }
+
+        /** [PHOTO-28] The reasons a screen offers: 통상시급·기준 시간 only where a payslip or the company's rules were read. */
+        fun of(screen: PhotoScreen): List<PhotoWrongReason> =
+            if (screen == PhotoScreen.PAYSLIP || screen == PhotoScreen.RULES) entries else entries - HOURLY - HOURS
     }
 }
 

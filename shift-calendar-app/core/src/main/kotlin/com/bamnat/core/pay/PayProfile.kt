@@ -251,7 +251,7 @@ data class PayProfile(
      * the user took it from a payslip: premiums are worked out on it instead of (기본급 + 통상 수당) ÷ 시간. null works it out.
      */
     val ordinaryHourly: Double? = null,
-    /** [HOURLY-04] 1.30 AV: where [ordinaryHourly] came from (명세서·회사 규칙·광장·직접); null when not known (set before 1.30). */
+    /** [HOURLY-01] 1.30 AV: where [ordinaryHourly] came from (명세서·회사 규칙·광장·직접); null when not known (set before 1.30). */
     val ordinarySource: HourlySource? = null,
     /** [HOURLY-01] 1.30 AV: where [monthlyHours] came from; null when not known (the default 209, or set before 1.30). */
     val hoursSource: HourlySource? = null,

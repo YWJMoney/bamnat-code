@@ -7542,7 +7542,9 @@ export const PHOTO_SCREENS = {
 };
 export const PHOTO_REASONS = {
   numbers: "숫자가 틀려요", missing: "빠진 칸이 있어요", extra: "없는 칸이 생겼어요", names: "이름이나 종류가 틀려요",
-  nothing: "거의 읽지 못했어요", other: "다른 점이 있어요",
+  nothing: "거의 읽지 못했어요",
+  hourly: "통상시급이 달라요", hours: "기준 시간이 달라요", // AV 1.30 [PHOTO-28] 명세서로 계산한 통상시급·기준 시간이 틀렸을 때
+  other: "다른 점이 있어요",
 };
 /** Rows a bundle may carry, days a phone keeps them (the app's PhotoWrongBook), presses a row, bundles a network a day. */
 const PHOTO_WRONG = { rows: 60, keepDays: 60, count: 99, perNetworkDay: 30, bytes: 8 * 1024 };
