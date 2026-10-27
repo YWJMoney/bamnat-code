@@ -323,3 +323,59 @@ test("[ADMCP-01][ADMCP-02] c copies and Space picks, and the ? list says so", ()
   assert.deepEqual(L.keyAction("c", {}, false, "g"), { act: "go", to: L.GO.c }, "g c still goes to 회사");
   assert.ok(L.KEYS.some(([k]) => k === "c") && L.KEYS.some(([k]) => k.startsWith("Space")));
 });
+
+// ---- AX 1.30 ----
+
+test("[ADMX-01] every activity code the server writes has words, and an unknown one never shows as a code", () => {
+  const src = ["../src/index.js", "../src/admin-insight.js", "../src/push.js"].map(read).join("\n");
+  const codes = new Set([
+    ...[...src.matchAll(/audit\(env, [^,]+, "([a-z_]+)"/g)].map((m) => m[1]),
+    ...[...src.matchAll(/audit\(env, [^,]+, [^,]*\? "([a-z]+_[a-z_]+)" : "([a-z]+_[a-z_]+)"/g)].flatMap((m) => [m[1], m[2]]),
+    // Codes made from a status: rate_${status}, reward_${status}, ${what}_bulk; and flag_migrate written in SQL.
+    "rate_adopted", "rate_hidden", "rate_pending", "reward_paid", "reward_void", "reward_owed", "post_bulk", "rate_bulk", "flag_migrate",
+  ]);
+  assert.ok(codes.size > 40, "the codes were found");
+  assert.deepEqual([...codes].filter((c) => !Object.hasOwn(L.ACTION_NAMES, c)), []);
+  assert.equal(L.actionName("reward_auto"), "보상 저절로 지급");
+  assert.equal(L.actionName("invite_something_new"), "친구 초대 처리");
+  assert.equal(L.actionName("zzz"), "그 밖의 처리");
+});
+
+test("[ADMX-01][ADMX-07] change, sparkline and a week that rose", () => {
+  assert.equal(L.change(12, 10), 20);
+  assert.equal(L.change(5, 0), null);
+  const svg = L.spark([0, 1, 2, 3, 4, 5, 9], { name: "문의" });
+  assert.match(svg, /^<svg class="spark"[^>]*role="img" aria-label="문의 최근 7일: 0, 1, 2, 3, 4, 5, 9"/);
+  assert.ok(!/style=/.test(svg));
+  assert.equal(L.spark([1]), "");
+  assert.equal(L.trendTone([1, 1, 1, 1, 1, 1, 4]), "up");
+  assert.equal(L.trendTone([3, 3, 3, 3, 3, 3, 4]), "");
+  // [ADMX-07] A release marked on the chart: a line over that day and its name in the table.
+  const chart = L.barChart([1, 2, 3], { labels: ["a", "b", "c"], marks: [{ i: 1, label: "1.30.0 첫날" }], name: "x" });
+  assert.match(chart, /<g class="mark">.*<title>1\.30\.0 첫날<\/title><\/g>/);
+  assert.match(chart, /<td>2 \(1\.30\.0 첫날\)<\/td>/);
+});
+
+test("[ADMX-02][ADMX-03] marked words and the comparison rows", () => {
+  const tokens = [{ t: "기본급 ", kind: "same" }, { t: "10%", kind: "del" }, { t: "12%", kind: "add" }, { t: " <b>", kind: "same" }];
+  assert.equal(L.tokenHtml(tokens), "기본급 <del>10%</del><ins>12%</ins> &lt;b&gt;");
+  assert.equal(L.tokenHtml(tokens, "before"), "기본급 <del>10%</del> &lt;b&gt;");
+  assert.equal(L.tokenHtml(tokens, "after"), "기본급 <ins>12%</ins> &lt;b&gt;");
+  const rows = L.compareRows([{ facts: [["대근", "10%"], ["순서", "4일"]] }, { facts: [["대근", "12%"], ["순서", "4일"], ["수당·식대", "매달"]] }]);
+  assert.deepEqual(rows.map((r) => [r.label, r.same, r.differs]), [["대근", false, [false, true]], ["순서", true, [false, false]], ["수당·식대", false, [false, true]]]);
+  assert.deepEqual(rows[2].values, [null, "매달"]);
+});
+
+test("[ADMX-05] n goes to the next waiting question", () => {
+  assert.deepEqual(L.keyAction("n"), { act: "next" });
+  assert.equal(L.keyAction("n", {}, true), null);
+  assert.deepEqual(L.keyAction("n", {}, false, "g"), { act: "go", to: "notices" });
+});
+
+test("[ADMX-01][ADMX-12] the stylesheet no longer hides the numbers on a phone, and the screens come from src/admin/views", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.ok(!css.includes("@media (max-width:599.98px){.tiles{display:none}}"));
+  assert.match(css, /\.tiles\.core\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  const app = await adminFile("/admin/app.js").text();
+  for (const f of ["todayViews", "plazaViews", "insightViews"]) assert.ok(app.includes(`function ${f}(A)`), f);
+});

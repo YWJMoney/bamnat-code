@@ -209,7 +209,7 @@ export function adminLib() {
     community: { show: "flagged", q: "" },
     rewards: { status: "owed", q: "" },
     rates: { status: "review", q: "" },
-    companies: { q: "" },
+    companies: { q: "", sort: "" /* AX 1.30 [ADMX-06] */ },
     metrics: { days: "28", from: "", to: "" },
     inbox: { view: "all" },
     versions: { show: "conflict" },
@@ -524,7 +524,7 @@ export function adminLib() {
    * [values], a dashed line for [before] (the period before), round steps on the axis and every bar's
    * label and number in <title> for a pointer. The numbers also go in a table for screen readers.
    */
-  function barChart(values, { labels = [], before = null, width = 640, height = 180, name = "", beforeName = "이전 기간" } = {}) {
+  function barChart(values, { labels = [], before = null, width = 640, height = 180, name = "", beforeName = "이전 기간", marks = [] } = {}) {
     const top = Math.max(1, ...values, ...(before ?? []));
     const steps = ticks(top);
     const max = steps[steps.length - 1];
@@ -540,10 +540,16 @@ export function adminLib() {
     }).join("");
     const line = before && before.length === values.length
       ? `<polyline class="before" fill="none" points="${before.map((v, i) => `${(left + i * w + w / 2).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}"/>` : "";
+    // AX 1.30 [ADMX-07] A new app version's first day: a dashed line over that day, its name on hover and in the table.
+    const marked = (marks ?? []).filter((m) => m.i >= 0 && m.i < values.length);
+    const pins = marked.map((m) => {
+      const x = (left + m.i * w + w / 2).toFixed(1);
+      return `<g class="mark"><line x1="${x}" x2="${x}" y1="6" y2="${8 + plotH}"/><circle cx="${x}" cy="6" r="3"/><title>${esc(m.label)}</title></g>`;
+    }).join("");
     const every = Math.max(1, Math.ceil(values.length / 7));
     const xs = labels.map((l, i) => (i % every === 0 ? `<text class="axis" x="${(left + i * w + w / 2).toFixed(1)}" y="${height - 4}" text-anchor="middle">${esc(l)}</text>` : "")).join("");
-    const table = `<table class="sr"><caption>${esc(name)}</caption><thead><tr><th>날짜</th><th>값</th>${before ? `<th>${esc(beforeName)}</th>` : ""}</tr></thead><tbody>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? "")}</td><td>${v}</td>${before ? `<td>${before[i] ?? ""}</td>` : ""}</tr>`).join("")}</tbody></table>`;
-    return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(name)}">${grid}${bars}${line}${xs}</svg>${table}`;
+    const table = `<table class="sr"><caption>${esc(name)}</caption><thead><tr><th>날짜</th><th>값</th>${before ? `<th>${esc(beforeName)}</th>` : ""}</tr></thead><tbody>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? "")}</td><td>${v}${marked.filter((m) => m.i === i).map((m) => ` (${esc(m.label)})`).join("")}</td>${before ? `<td>${before[i] ?? ""}</td>` : ""}</tr>`).join("")}</tbody></table>`;
+    return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(name)}">${grid}${bars}${line}${pins}${xs}</svg>${table}`;
   }
 
   // ---- [ADMUX-05] colour ----
@@ -586,6 +592,8 @@ export function adminLib() {
       a: { act: "assign" }, r: { act: "reply" }, e: { act: "close" }, x: { act: "reject" }, s: { act: "skip" }, q: { act: "queue" },
       // AT 1.29 [ADMCP-01][ADMCP-02] c copies (the open question, the picked ones or the row in focus); Space picks a row.
       c: { act: "copy" }, " ": { act: "pick" },
+      // AX 1.30 [ADMX-05] n: the next question that waits for an answer, from the list or a question.
+      n: { act: "next" },
     };
     if (/^[1-9]$/.test(key)) return { act: "template", n: Number(key) };
     return plain[key] ?? null;
@@ -600,7 +608,7 @@ export function adminLib() {
     ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g i · g d", "문의·개발사항으로"],
     ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
     ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"],
-    ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
+    ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -1143,6 +1151,116 @@ export function adminLib() {
   }
   // ---- AT 1.29 끝 ----
 
+  // ---- AX 1.30 시작 ----
+
+  /**
+   * AX 1.30 [ADMX-01] What every activity code says, so 최근 활동 and 활동 기록 show words and never a code. An unknown
+   * code still reads as words: its first part (reward_x → 보상) and "처리".
+   */
+  const ACTION_NAMES = {
+    login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
+    adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
+    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
+    post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
+    reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음",
+    inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
+    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐",
+    dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
+    dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
+    dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
+    launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
+    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음",
+    pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
+    purchase_rebind: "구매를 새 휴대폰에 다시 이음", purchase_rebind_refused: "구매 다시 잇기 거절",
+    notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
+    ops_done: "이달 할 일 마침", ops_undo: "이달 할 일 되돌림", share_remove: "공유 링크 내림",
+    inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
+    inquiry_copy: "문의 개발로 복사함", rate_set: "임금표 처리", rate_adopted: "임금표 채택", rate_hidden: "임금표 숨김", rate_pending: "임금표 다시 검토로",
+    invite_credit: "친구 초대 보상 쌓임", invite_capped: "친구 초대 보상 한도에 닿음", invite_refused: "친구 초대 보상 거절", invite_burst: "친구 초대가 몰려 멈춤",
+    invite_settings: "친구 초대 규칙 바꿈",
+    flag_force_off: "기능 강제로 끔", flag_force_on: "기능 강제로 켬", flag_clear: "기능 강제 풀기", flag_conditions: "기능 조건 바꿈", flag_range: "기능 앱 판 범위 바꿈",
+    flag_check: "확인했어요", flag_uncheck: "확인 취소", flag_auto_on: "기능이 조건대로 켜짐", flag_auto_off: "기능이 조건대로 꺼짐",
+    flag_expire: "강제 기한이 끝남", flag_migrate: "1.27 스위치를 기능 관리로 옮김", policy_edit: "처리방침 일정 고침",
+    launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
+    auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
+  };
+  const ACTION_AREAS = { login: "로그인", admin: "관리자", invite: "친구 초대", reward: "보상", post: "토론 글", rate: "임금표", inquiry: "문의", dev: "개발사항",
+    template: "자주 쓰는 답", device: "관리자 휴대폰", notice: "공지", ops: "이달 할 일", flag: "기능", rule: "규칙", company: "회사", alias: "다른 이름",
+    purchase: "구매", type: "근무 유형", launch: "정식 출시", share: "공유 링크" };
+
+  /** [ADMX-01] An activity code in words; a code nobody named yet reads "<area> 처리", never the code itself. */
+  function actionName(code) {
+    const c = String(code ?? "");
+    if (Object.hasOwn(ACTION_NAMES, c)) return ACTION_NAMES[c];
+    const area = ACTION_AREAS[c.split("_")[0]];
+    return area ? `${area} 처리` : "그 밖의 처리";
+  }
+
+  /** [ADMX-01][ADMX-07] Now against before in percent, or null when there is nothing before to compare to. */
+  function change(now, before) {
+    if (!Number.isFinite(now) || !Number.isFinite(before) || before <= 0) return null;
+    return Math.round(((now - before) / before) * 100);
+  }
+
+  /**
+   * [ADMX-01] A sparkline: one small line over the last days (no style attributes, the CSP allows none). The last
+   * point is a dot; the numbers are in the label for a screen reader. It stretches to the tile's width.
+   */
+  function spark(values, { width = 240, height = 28, name = "" } = {}) {
+    const list = (values ?? []).map((v) => Math.max(0, Number(v) || 0));
+    if (list.length < 2) return "";
+    const top = Math.max(1, ...list);
+    const x = (i) => ((i / (list.length - 1)) * (width - 4) + 2).toFixed(1);
+    const y = (v) => (height - 3 - (v / top) * (height - 6)).toFixed(1);
+    const points = list.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    const last = list.length - 1;
+    return `<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${esc(`${name} 최근 ${list.length}일: ${list.join(", ")}`)}">`
+      + `<polyline points="${points}"/><circle cx="${x(last)}" cy="${y(list[last])}" r="2.5"/></svg>`;
+  }
+
+  /**
+   * [ADMX-02] The tokens of a changed field (server diffFacts: [{ t, kind: same|del|add }]) as marked words: what went
+   * is struck through, what came is marked. [side] "before" keeps only same and del, "after" same and add.
+   */
+  function tokenHtml(tokens, side = "both") {
+    return (tokens ?? []).filter((x) => side === "both" || x.kind === "same" || (side === "before" ? x.kind === "del" : x.kind === "add"))
+      .map((x) => (x.kind === "same" ? esc(x.t) : x.kind === "del" ? `<del>${esc(x.t)}</del>` : `<ins>${esc(x.t)}</ins>`)).join("");
+  }
+
+  /**
+   * [ADMX-03] The rows of the 여러 판 table: every field label of every candidate in the order they first appear,
+   * each with its value per candidate and whether it differs from the reference (the active one, or the first).
+   */
+  function compareRows(candidates, ref = 0) {
+    const order = [];
+    const maps = candidates.map((c) => {
+      const m = new Map();
+      for (const [label, text] of c.facts ?? []) {
+        if (!m.has(label)) m.set(label, text);
+        if (!order.includes(label)) order.push(label);
+      }
+      return m;
+    });
+    const base = maps[ref] ?? new Map();
+    return order.map((label) => {
+      const values = maps.map((m) => (m.has(label) ? m.get(label) : null));
+      const differs = values.map((v, i) => i !== ref && v !== (base.has(label) ? base.get(label) : null));
+      return { label, values, differs, same: !differs.some(Boolean) };
+    });
+  }
+
+  /** [ADMX-01] How hot a number is against its last days: "up" past twice the week's mean (3 at least), else "". */
+  function trendTone(list) {
+    if (!Array.isArray(list) || list.length < 2) return "";
+    const today = list[list.length - 1];
+    const past = list.slice(0, -1);
+    const mean = past.reduce((n, v) => n + v, 0) / past.length;
+    return today >= 3 && today >= 2 * Math.max(1, mean) ? "up" : "";
+  }
+  // ---- AX 1.30 끝 ----
+
   return {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
@@ -1153,5 +1271,7 @@ export function adminLib() {
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
     // AT 1.29 [ADMCP-01][ADMCP-02][ADMCP-03]
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,
+    // AX 1.30 [ADMX-01][ADMX-02][ADMX-03][ADMX-07]
+    ACTION_NAMES, actionName, change, spark, tokenHtml, compareRows, trendTone,
   };
 }
