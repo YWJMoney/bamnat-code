@@ -110,12 +110,13 @@ class AKCaptureFlowTest {
 
     @Test fun askNoMoreSurvivesABackup() = runBlocking {
         com.bamnat.app.data.ScheduleRepository(db).ensureDefaults()
-        assertFalse(repo.fillTrust.first())
-        repo.setFillTrust(true)
+        // [INVA-02] 1.29: on from the start; the user's '넣기 전에 묻기' is what a backup carries.
+        assertTrue(repo.fillTrust.first())
+        repo.setFillTrust(false)
         val manager = BackupManager(db, SettingsRepository(app))
         val json = manager.export()
-        repo.setFillTrust(false)
+        repo.setFillTrust(true)
         manager.restore(json)
-        assertTrue(repo.fillTrust.first())
+        assertFalse(repo.fillTrust.first())
     }
 }

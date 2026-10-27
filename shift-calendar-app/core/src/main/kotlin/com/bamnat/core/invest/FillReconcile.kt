@@ -34,6 +34,13 @@ object FillReconcile {
         val fill: FillSheetReader.Fill get() = fills.first()
         /** The read numbers have a yellow field: never put in without asking (결정 AK-D4). */
         val unsure: Boolean get() = fills.any { !it.sure || it.price <= 0 || it.checked == false }
+
+        /**
+         * [INVA-02] 1.29 AR: a new row that goes in without a question — every row behind it [confident], or a waiting
+         * notification's own quantity and time confirmed by sure rows whose price agrees with their amount.
+         */
+        val auto: Boolean get() = kind == Kind.NEW && !unsure &&
+            (fills.all { confident(it) } || alert != null && fills.all { it.checked != false && !it.priceFromAmount })
     }
 
     data class Result(val items: List<Item>) {
@@ -44,7 +51,22 @@ object FillReconcile {
         val sureNew: List<Item> get() = new.filter { !it.unsure }
         /** What still has to be asked with 묻지 않기 on: every difference, and new rows with a yellow field. */
         val toAsk: List<Item> get() = different + new.filter { it.unsure }
+
+        /** [INVA-02] New rows put in at once (바로 넣기, the default since 1.29). */
+        val autoNew: List<Item> get() = new.filter { it.auto }
+        /** [INVA-02] What is asked even with 바로 넣기: every difference, and each new row not sure enough. */
+        val asks: List<Item> get() = different + new.filter { !it.auto }
     }
+
+    /**
+     * [INVA-02] 1.29 AR (사용자 2026-10-27 "시간과 수량을 보고 자동으로 넣기"): a row sure enough to go in without a question —
+     * its name or code, side, quantity, price and time all read, nothing asked, and 수량 × 단가 the screen's own 금액 to the
+     * last won ([FillMath.exact]; a price worked out from the amount proves nothing).
+     */
+    fun confident(f: FillSheetReader.Fill): Boolean =
+        f.sure && f.title.isNotBlank() && f.quantity > 0 && f.price > 0 && f.time != null && !f.priceFromAmount &&
+            FillMath.exact(f.quantity, f.price, f.amount, f.market)
+
 
     /** A capture's row this far from a written trade's time is another trade. */
     const val MINUTES = FillMatcher.MINUTES
@@ -163,7 +185,8 @@ object FillReconcile {
         }
         val f = item.fill
         val at = (f.date ?: today).atTime(f.time ?: LocalTime.NOON).atZone(zone).toInstant().toEpochMilli()
-        return TradeAlerts.Pending(at, CAPTURE_APP, f.side, f.symbol, f.name, f.quantity, f.price, f.market, f.amount, filledBy = TradeAlerts.BY_CAPTURE)
+        return TradeAlerts.Pending(at, CAPTURE_APP, f.side, f.symbol, f.name, f.quantity, f.price, f.market, f.amount, filledBy = TradeAlerts.BY_CAPTURE,
+            timeKnown = f.time != null)
     }
 
     /** A written trade changed to what the capture says: quantity, price and minute only (결정 AK-D2). */

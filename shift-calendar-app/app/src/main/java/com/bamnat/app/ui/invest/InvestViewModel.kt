@@ -173,8 +173,8 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) runCatching { WidgetRefresher.refresh(container.appContext) }
     }
 
-    private fun say(message: String, undo: (suspend () -> Unit)? = null) {
-        _messages.tryEmit(UndoMessage(message, undo = undo))
+    private fun say(message: String, long: Boolean = false, undo: (suspend () -> Unit)? = null) {
+        _messages.tryEmit(UndoMessage(message, long = long, undo = undo))
     }
 
     /** [INV-03][INV-08] A new trade's sheet, filled from the day, the last account and, from a notice, the alarm. */
@@ -221,34 +221,139 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         say("${p.title} ${p.side.label} 알림을 넘겼어요") { repo.addAlert(p) }
     }
 
-    /** [INV-40] Prices read from a 체결 내역 capture filled in; the lines still wait for 적기 (결정 D37). */
-    fun fillFromCapture(matches: List<com.bamnat.core.invest.FillMatcher.Match>, extra: List<com.bamnat.core.invest.TradeAlerts.Pending>) =
-        viewModelScope.launch {
-            val before = repo.alertsNow()
-            repo.fillAlerts(matches, extra)
-            val words = listOfNotNull(matches.size.takeIf { it > 0 }?.let { "단가 ${it}건을 채웠어요" }, extra.size.takeIf { it > 0 }?.let { "새 체결 ${it}건을 넣었어요" })
-            say(words.joinToString(", ") + ". 맞는지 보고 적기를 눌러 주세요") { repo.restoreAlerts(before) }
-        }
-
     // ---- 1.27 AK 순번 450 (INV-42~45): 캡처로 채우기 — 같으면 건너뛰고, 다르면 묻고, 새 것만 확인, 믿으면 묻지 않기 ----
+    // ---- 1.29 AR (INVA-01~02): 읽기부터 넣기까지 화면이 아니라 여기서, 바로 넣기가 처음부터 켜짐 ----
 
-    /** [INV-44] Put a capture's sure new rows in without asking. */
-    val fillTrust: StateFlow<Boolean> = repo.fillTrust.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** [INV-44][INVA-02] Put a capture's sure new rows in without asking: on unless the user chose to be asked. */
+    val fillTrust: StateFlow<Boolean> = repo.fillTrust.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     fun setFillTrust(on: Boolean, quiet: Boolean = false) = viewModelScope.launch {
         repo.setFillTrust(on)
-        if (!quiet) say(if (on) "다음부터 캡처는 묻지 않고 바로 넣어요. 기록과 다르거나 흐린 값은 계속 물어요" else "캡처로 채우기는 넣기 전에 다시 물어요")
+        if (!quiet) say(if (on) "이제 캡처는 확실한 체결을 묻지 않고 바로 넣어요. 기록과 다르거나 흐린 값은 계속 물어요"
+            else "캡처로 채우기는 넣기 전에 물어요. 투자 탭 ⋮에서 다시 바로 넣기로 바꿀 수 있어요")
     }
 
     private val _capturing = MutableStateFlow(false)
     /** [INV-45] The capture sheet is open: from the found trades, the ⋮ menu or a shared screenshot. */
     val capturing: StateFlow<Boolean> = _capturing.asStateFlow()
     fun openCapture() { _capturing.value = true }
-    fun closeCapture() { _capturing.value = false }
+    fun closeCapture() {
+        _capturing.value = false
+        _captureRead.value = null
+    }
 
     /**
-     * [INV-43] The rows the user checked (or, with 묻지 않기, the sure new ones) written as trades, the fixes made; one
-     * line says what happened, with 되돌리기 for all of it.
+     * [INVA-01] 1.29 AR: one capture read and put beside what is written. The sheet shows only what is left to ask; the
+     * reading, the comparing and what went in without a question live here, so turning the phone or the screen going off
+     * while it reads loses nothing (before 1.29 the sheet did all of it and a shared capture was read again or lost).
+     */
+    data class CaptureRead(
+        val id: Long,
+        val fills: List<com.bamnat.core.invest.FillSheetReader.Fill>,
+        /** Rows put in already or written before: not shown again. */
+        val done: Set<Int> = emptySet(),
+        val putQuietly: Int = 0,
+        val same: Int = 0,
+        /** What was written when it was read, with what went in now: a row left is compared with these. */
+        val written: List<Trade> = emptyList(),
+        /** The waiting alerts no row took yet. */
+        val waiting: List<com.bamnat.core.invest.TradeAlerts.Pending> = emptyList(),
+        /** The capture's own day (its file's), standing for today for rows without a day. */
+        val day: LocalDate = Today.date(),
+        val error: String? = null,
+    )
+
+    private val _captureRead = MutableStateFlow<CaptureRead?>(null)
+    val captureRead: StateFlow<CaptureRead?> = _captureRead.asStateFlow()
+    private val _captureReading = MutableStateFlow<String?>(null)
+    /** What the reading says while it goes on ("2/4번째 방법으로 읽는 중"), null when idle. */
+    val captureReading: StateFlow<String?> = _captureReading.asStateFlow()
+    private var captureJob: kotlinx.coroutines.Job? = null
+
+    /** [INVA-01] A screenshot shared to 밤낮 (or chosen): read on the phone (결정 D68), then [takeCapture]. */
+    fun readCapture(uri: android.net.Uri) {
+        openCapture()
+        captureJob?.cancel()
+        captureJob = viewModelScope.launch {
+            _captureReading.value = "휴대폰 안에서 캡처를 읽고 있어요"
+            try {
+                val context = container.appContext
+                val scan = com.bamnat.app.pay.PayslipScanner.scan(context, uri) { n, m ->
+                    _captureReading.value = if (m > 0) "휴대폰 안에서 캡처를 읽고 있어요 · $n/$m" else "휴대폰 안에서 캡처를 읽고 있어요"
+                }
+                val day = com.bamnat.app.invest.IncomingFills.dayOf(context, uri)
+                take(scan.text, scan.fills, day)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
+                _captureRead.value = CaptureRead(Today.millis(), emptyList(), error = e.message)
+            } catch (e: Exception) {
+                _captureRead.value = CaptureRead(Today.millis(), emptyList(), error = "캡처를 읽지 못했어요. 다른 캡처로 해 보세요.")
+            } finally {
+                _captureReading.value = null
+            }
+        }
+    }
+
+    /** [INVA-01] Text read elsewhere (the sheet's own buttons, a test): [voted] when it was read several ways. */
+    fun takeCapture(text: String, voted: List<com.bamnat.core.invest.FillSheetReader.Fill>? = null, day: LocalDate? = null) {
+        openCapture()
+        captureJob?.cancel()
+        captureJob = viewModelScope.launch { take(text, voted, day) }
+    }
+
+    /**
+     * [INVA-01][INVA-02] Compared with what is written now (read from the database, never a screen's state that may not
+     * have loaded yet, which put a capture in twice), the sure new rows go in at once unless the user chose to be asked;
+     * what is left waits on the sheet. Nothing left: the sheet closes and one line says what happened, with 되돌리기.
+     */
+    private suspend fun take(text: String, voted: List<com.bamnat.core.invest.FillSheetReader.Fill>?, day: LocalDate?) {
+        val reference = day ?: Today.date()
+        var fills = voted ?: com.bamnat.core.invest.FillSheetReader.read(text, reference)
+        // A row without a day is the capture's day when the file says it (a screenshot of yesterday shared today).
+        if (day != null) fills = fills.map { it.copy(date = it.date ?: day) }
+        val id = Today.millis()
+        if (fills.isEmpty()) {
+            _captureRead.value = CaptureRead(id, fills, day = reference,
+                error = "체결을 찾지 못했어요. 종목·매수/매도·수량·단가가 한 화면에 보이게 다시 캡처해 주세요.")
+            return
+        }
+        val zone = Today.zone()
+        val trades = repo.now().trades
+        val alerts = repo.alertsNow()
+        val r = com.bamnat.core.invest.FillReconcile.reconcile(fills, trades, alerts, reference, zone)
+        val quiet = repo.fillTrustNow()
+        val put = if (quiet) r.autoNew else emptyList()
+        val applied = if (put.isNotEmpty()) repo.applyCapture(put.map { com.bamnat.core.invest.FillReconcile.pending(it, zone, reference) }, emptyList()) else null
+        if (applied != null) changed()
+        val done = (put + r.same).flatMap { item -> item.fills.map { f -> fills.indexOfFirst { it === f } } }.filter { it >= 0 }.toSet()
+        val taken = put.mapNotNull { it.alert?.at }.toSet()
+        val read = CaptureRead(id, fills, done, put.size, r.same.size, trades + applied?.written.orEmpty(), alerts.filter { it.at !in taken }, reference)
+        val left = if (quiet) r.asks else r.different + r.new
+        if (left.isEmpty()) {
+            closeCapture()
+            if (applied == null) say(if (r.same.isNotEmpty()) "이미 적은 체결이에요 · 이미 있음 ${r.same.size}건" else "새로 넣을 체결이 없어요")
+            else sayPut(put.size, r.same.size, applied)
+        } else {
+            _captureRead.value = read
+            // Read on after the sheet was closed: it comes back for what is left to ask.
+            _capturing.value = true
+            if (applied != null) sayPut(put.size, r.same.size, applied)
+        }
+    }
+
+    /** One line for what went in without a question; the first time, where to have it ask instead. */
+    private suspend fun sayPut(n: Int, same: Int, applied: com.bamnat.app.data.InvestRepository.CaptureApplied) {
+        val first = !repo.fillAutoToldNow()
+        if (first) repo.setFillAutoTold()
+        val words = listOfNotNull("캡처에서 ${n}건을 바로 넣었어요", same.takeIf { it > 0 }?.let { "이미 있음 ${it}건" }).joinToString(" · ")
+        // Long enough to read and to take back: it went in without a question.
+        say(words + if (first) ". 넣기 전에 묻게 하려면 투자 탭 ⋮ › ‘캡처로 채우기: 넣기 전에 묻기’" else "", long = true) { repo.undoCapture(applied) }
+    }
+
+    /**
+     * [INV-43] The rows the user checked written as trades, the fixes made; one line says what happened, with 되돌리기
+     * for all of it.
      */
     fun applyCapture(lines: List<com.bamnat.core.invest.TradeAlerts.Pending>, fixes: List<Trade>, skipped: Int, asked: Boolean = true) =
         viewModelScope.launch {

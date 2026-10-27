@@ -65,13 +65,16 @@ class AKScreenshotTest : ScreenshotBase() {
 
     private fun capture(trust: Boolean = false, then: Screen.(Pair<Long, Long>) -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
         val ids = written()
-        if (trust) runBlocking { repo().setFillTrust(true) }
+        // [INVA-02] 1.29: 바로 넣기 is on unless asked for; these shots choose.
+        runBlocking { repo().setFillTrust(trust) }
         settle()
         val vm = com.bamnat.app.ui.invest.InvestViewModel(c, PersonalCalendar.MAIN)
         // The trades are in the screen's state before the capture is read, as when the 투자 tab is open.
         val end = System.currentTimeMillis() + 10_000
         while (vm.state.value.full.trades.size < 2 && System.currentTimeMillis() < end) settle()
         content { com.bamnat.app.ui.invest.FillCaptureSheet(vm, emptyList(), null, onDismiss = {}, initialText = CAPTURE) }
+        // [INVA-01] 1.29: the model reads and compares with the database on its own threads.
+        while (vm.captureRead.value == null && System.currentTimeMillis() < end + 10_000) settle()
         settle()
         then(ids)
     }
@@ -79,7 +82,8 @@ class AKScreenshotTest : ScreenshotBase() {
     private fun trades() = runBlocking { repo().now().trades }
 
     @Test fun captureSkipsAsksAndChecksOnlyNew() = shoot("1160_ak_capture_review", FOLDED, capture {
-        assertTrue(shows("이미 적은 체결 1건은 건너뛰어요"))
+        // [INVA-01] 1.29: what is written already is said in the line on top, not listed.
+        assertTrue(shows("이미 있음 1건. 아래만 확인해 주세요.", exact = false))
         assertTrue(shows("기록과 다른 체결 1건 · 고칠까요?"))
         assertTrue(shows("아직 안 적은 체결 2건"))
         // Below 1.27 AJ's scanner button on a folded phone: scrolled to.
@@ -118,7 +122,7 @@ class AKScreenshotTest : ScreenshotBase() {
         assertFalse(shows("NAVER", exact = true))
         assertEquals(41_000.0, trades().single { it.symbol == "035720" }.price, 0.0)
         assertTrue(trades().none { it.symbol == "000660" })
-        assertTrue(shows("묻지 않고 바로 넣기가 켜져 있어요"))
+        assertTrue(shows("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
     })
 
     @Test fun trustedCaptureUndo() = shoot("1163_ak_capture_trusted_dark", FOLDED_NIGHT, capture(trust = true) {
@@ -136,8 +140,8 @@ class AKScreenshotTest : ScreenshotBase() {
     })
 
     @Test fun captureAsksAgain() = shoot("1164_ak_capture_ask_again", PHONE, capture(trust = true) {
-        // '다시 묻기' on the sheet turns asking back on (the ⋮ menu of the 투자 tab does the same).
-        tapText("다시 묻기", exact = true)
+        // '넣기 전에 묻기' on the sheet turns asking back on (the ⋮ menu of the 투자 tab does the same).
+        tapText("넣기 전에 묻기", exact = true)
         assertFalse(runBlocking { repo().fillTrust.first() })
     })
 

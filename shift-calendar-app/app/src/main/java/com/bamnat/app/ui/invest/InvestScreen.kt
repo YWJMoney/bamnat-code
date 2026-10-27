@@ -168,9 +168,10 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
     val capturing by vm.capturing.collectAsStateWithLifecycle()
     val alerts by vm.alerts.collectAsStateWithLifecycle()
     val shot by com.bamnat.app.invest.IncomingFills.shot.collectAsStateWithLifecycle()
-    var sharedShot by remember { mutableStateOf<android.net.Uri?>(null) }
-    LaunchedEffect(shot) { com.bamnat.app.invest.IncomingFills.take()?.let { sharedShot = it; vm.openCapture() } }
-    if (capturing) FillCaptureSheet(vm, alerts, sharedShot, onDismiss = { vm.closeCapture(); sharedShot = null })
+    // [INVA-01] 1.29 AR: the shared capture is read by the screen's model, so it survives the sheet, a turn of the phone
+    // and the screen going off; the sheet opens on what is left to ask (or not at all when everything went in).
+    LaunchedEffect(shot) { com.bamnat.app.invest.IncomingFills.take()?.let(vm::readCapture) }
+    if (capturing) FillCaptureSheet(vm, alerts, null, onDismiss = vm::closeCapture)
 }
 
 /** Saved and deleted, with 되돌리기, on the screen's snackbar. */
@@ -179,7 +180,8 @@ fun InvestMessages(vm: InvestViewModel, snackbar: SnackbarHostState) {
     LaunchedEffect(vm) {
         vm.messages.collect { m ->
             launch {
-                val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
+                val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel },
+                    duration = if (m.long) SnackbarDuration.Long else SnackbarDuration.Short)
                 if (r == SnackbarResult.ActionPerformed) m.undo?.let { vm.run(it) }
             }
         }
@@ -208,7 +210,7 @@ private fun InvestHeader(vm: InvestViewModel, state: InvestState, open: (InvestS
                 // [INV-45][INV-44] 1.27 AK: the capture from anywhere, and 묻지 않기 turned back.
                 DropdownMenuItem(text = { Text("체결 내역 캡처로 채우기") }, onClick = { menu = false; vm.openCapture() })
                 val trust by vm.fillTrust.collectAsStateWithLifecycle()
-                DropdownMenuItem(text = { Text(if (trust) "캡처로 채우기: 넣기 전에 다시 묻기" else "캡처로 채우기: 묻지 않고 바로 넣기") },
+                DropdownMenuItem(text = { Text(if (trust) "캡처로 채우기: 넣기 전에 묻기" else "캡처로 채우기: 묻지 않고 바로 넣기") },
                     onClick = { menu = false; vm.setFillTrust(!trust) })
                 CsvKind.entries.forEach { k ->
                     DropdownMenuItem(text = { Text("${k.label} CSV로 내보내기") }, onClick = { menu = false; onCsv(k) })

@@ -121,4 +121,46 @@ class FillReconcileTest {
         assertEquals(FillReconcile.CAPTURE_APP, p.app)
         assertEquals(705_200.0, p.amount, 0.0)
     }
+
+    // ---- [INVA-02] 1.29 AR: 시간과 수량으로 바로 넣기 ----
+
+    @Test fun aNewRowWithItsTimeAndAnAmountThatAddsUpGoesInAtOnce() {
+        val sure = fill("NAVER", "035420", Side.BUY, 4.0, 176_300.0, time = LocalTime.of(11, 20))
+        val noTime = fill("카카오", "035720", Side.SELL, 5.0, 41_250.0)
+        val noAmount = fill("기아", "000270", Side.BUY, 3.0, 98_000.0, a = 0.0, time = LocalTime.of(10, 0))
+        val fromAmount = fill("현대차", "005380", Side.BUY, 3.0, 250_000.0, time = LocalTime.of(10, 5)).copy(priceFromAmount = true)
+        // 0.2% lets 176,330 pass the old check; to the won it does not.
+        val slipped = fill("셀트리온", "068270", Side.BUY, 4.0, 176_330.0, a = 705_200.0, time = LocalTime.of(10, 10))
+        val r = FillReconcile.reconcile(listOf(sure, noTime, noAmount, fromAmount, slipped), emptyList(), emptyList(), today, zone)
+        assertEquals(listOf("NAVER"), r.autoNew.map { it.fill.name })
+        assertEquals(4, r.asks.size)
+        assertTrue(FillReconcile.confident(sure))
+        assertTrue(!FillReconcile.confident(slipped))
+    }
+
+    @Test fun aRowThatConfirmsAWaitingAlertGoesInAtOnceWithTheAlertsTime() {
+        val at = LocalDateTime.of(today, LocalTime.of(9, 12)).atZone(zone).toInstant().toEpochMilli()
+        val waiting = TradeAlerts.Pending(at, "키움", Side.BUY, "", "삼성전자", 10.0, 0.0, Market.KR_STOCK)
+        // The capture row shows no time and no amount; the notification said quantity and time.
+        val row = fill("삼성전자", "005930", Side.BUY, 10.0, 71_500.0, a = 0.0)
+        val r = FillReconcile.reconcile(listOf(row), emptyList(), listOf(waiting), today, zone)
+        assertEquals(1, r.autoNew.size)
+        val p = FillReconcile.pending(r.autoNew.single(), zone, today)
+        assertEquals(at, p.at)
+        assertEquals(9 * 60 + 12, p.toTrade(1, 1.0, zone).minute)
+    }
+
+    @Test fun aRowWithoutATimeBecomesATradeWithoutOne() {
+        val row = fill("NAVER", "035420", Side.BUY, 4.0, 176_300.0)
+        val p = FillReconcile.pending(FillReconcile.reconcile(listOf(row), emptyList(), emptyList(), today, zone).items.single(), zone, today)
+        assertNull(p.toTrade(1, 1.0, zone).minute)
+        assertEquals(today, p.toTrade(1, 1.0, zone).date)
+    }
+
+    @Test fun theSameBuyEveryDayAtTheSameTimeIsNotTakenForYesterdays() {
+        // 정기 매수: the same 1 share at 09:00 each day. Yesterday's is written; today's capture row (its day read) is new.
+        val yesterday = trade("KODEX 200", "069500", Side.BUY, 1.0, 35_000.0, date = today.minusDays(1), minute = 9 * 60)
+        val row = fill("KODEX 200", "069500", Side.BUY, 1.0, 35_000.0, time = LocalTime.of(9, 0))
+        assertEquals(Kind.NEW, FillReconcile.reconcile(listOf(row), listOf(yesterday), emptyList(), today, zone).items.single().kind)
+    }
 }

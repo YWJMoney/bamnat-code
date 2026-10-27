@@ -39,6 +39,8 @@ object TradeAlerts {
         val parts: Int = 1,
         /** [INV-40] Where the price came from when it was not said: [BY_AMOUNT], [BY_PARTS] or [BY_CAPTURE]. */
         val filledBy: String = "",
+        /** [INVA-01] 1.29: false for a capture's row that showed no time (its trade then has none, not a made-up 12:00). Not stored. */
+        val timeKnown: Boolean = true,
     ) {
         val title: String get() = name.ifBlank { symbol }
         val tag: String get() = TAG_PREFIX + app.take(20)
@@ -50,7 +52,7 @@ object TradeAlerts {
 
         /** The trade it becomes once confirmed: fees left at zero (the sheet suggests them when opened). */
         fun toTrade(accountId: Long, fxRate: Double, zone: ZoneId = Today.zone()) = Trade(
-            accountId = accountId, date = day(zone), minute = minute(zone), symbol = symbol, name = name, market = market,
+            accountId = accountId, date = day(zone), minute = if (timeKnown) minute(zone) else null, symbol = symbol, name = name, market = market,
             side = side, quantity = quantity, price = price, fxRate = if (market.foreign) fxRate else 1.0, tags = listOf(tag),
         )
 
@@ -104,6 +106,26 @@ object TradeAlerts {
         }
         val next = if (merged != null) list.map { if (it.at == order!!.at) merged else it } else list + p
         return next.sortedBy { it.at }.takeLast(MAX)
+    }
+
+    /**
+     * [INVA-06] 1.29 AR: a notification for a fill that is written already — from a capture put in first, or a notification
+     * posted again later — of the same side, holding and quantity, that day, within [FillMatcher.MINUTES] of a trade with
+     * its time. It neither waits nor (with 알림 오면 바로 적기) goes in a second time. A trade written without a time is not
+     * taken for it (two buys of one stock on one day stay two).
+     */
+    fun writtenAlready(p: Pending, trades: List<Trade>, zone: ZoneId = Today.zone()): Boolean = trades.any { t ->
+        val m = t.minute ?: return@any false
+        t.side == p.side && t.date == p.day(zone) && kotlin.math.abs(t.quantity - p.quantity) < 1e-9 &&
+            kotlin.math.abs(m - p.minute(zone)) <= FillMatcher.MINUTES && sameHolding(t, p) &&
+            (p.price <= 0 || kotlin.math.abs(t.price - p.price) * t.quantity <= FillMath.tolerance(t.quantity * t.price, t.quantity))
+    }
+
+    private fun sameHolding(t: Trade, p: Pending): Boolean {
+        if (t.symbol.isNotBlank() && p.symbol.isNotBlank()) return t.symbol.equals(p.symbol, ignoreCase = true)
+        val a = FillMatcher.key(t.name.ifBlank { t.symbol })
+        val b = FillMatcher.key(p.name.ifBlank { p.symbol })
+        return a.isNotEmpty() && b.isNotEmpty() && (a.contains(b) || b.contains(a))
     }
 
     /** One order is split into this many notifications at most before a new line starts. */
