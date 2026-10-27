@@ -3922,7 +3922,10 @@ function adminApp(L, BUILD) {
     const line = (r) => {
       const c = r.compare;
       const share = r.onShare !== null && r.onShare !== undefined ? `휴대폰 ${r.onShare}%에서 켜짐` : "켜진 휴대폰 수 모름";
-      const nums = c ? `<span class="preview">${esc(moment(c.pivot))} 앞뒤 ${c.days}일 · 문제 신고 ${c.bugsBefore} → ${c.bugsAfter}${up(c.bugsBefore, c.bugsAfter)} · 서버 오류 ${c.errorsBefore} → ${c.errorsAfter}${up(c.errorsBefore, c.errorsAfter)}</span>`
+      // AU 1.29 [NXT-07]: the same reports split by whether the flag was on for the phone (문의 시각·앱 판으로만).
+      const sp = c?.split;
+      const split = sp ? ` · 켜진 휴대폰 ${sp.on}${sp.maybe ? `(+휴대폰마다 다름 ${sp.maybe})` : ""} / 꺼진 휴대폰 ${sp.off}${sp.unknown + sp.unseen ? ` / 모름 ${sp.unknown + sp.unseen}` : ""}` : "";
+      const nums = c ? `<span class="preview">${esc(moment(c.pivot))} 앞뒤 ${c.days}일 · 문제 신고 ${c.bugsBefore} → ${c.bugsAfter}${up(c.bugsBefore, c.bugsAfter)}${split} · 서버 오류 ${c.errorsBefore} → ${c.errorsAfter}${up(c.errorsBefore, c.errorsAfter)}</span>`
         : '<span class="preview">서버가 아직 켜짐·꺼짐을 보지 않았어요</span>';
       const inner = `<span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)} · ${share}</small>${nums}</span><span class="row-side pills">${statePill(r)}${riskPill(r)}</span>`;
       return `<li>${d.flagsReach ? `<a class="row" href="${flagLink(r.key)}">${inner}${icon(P.chevron)}</a>` : `<div class="row">${inner}</div>`}</li>`;
@@ -3930,7 +3933,7 @@ function adminApp(L, BUILD) {
     const measured = rows.filter((r) => r.compare);
     const rest = rows.filter((r) => !r.compare);
     return `<p class="hint">기능마다 켜진 휴대폰 비율(지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰${d.statsPhones ? ` ${d.statsPhones}대` : ""} 기준, 휴대폰 구별 없음)과
-        서버가 켜짐·꺼짐을 본 때 앞뒤 7일의 문제 신고·서버 오류를 나란히 봐요. 켠 휴대폰과 안 켠 휴대폰을 나눠 세지는 않아요.${d.flagsReach ? " 줄을 누르면 그 기능의 자세한 기록이 열려요." : ""}</p>
+        서버가 켜짐·꺼짐을 본 때 앞뒤 7일의 문제 신고·서버 오류를 나란히 봐요. 문제 신고는 보낸 시각과 앱 판으로 그 기능이 켜진 휴대폰·꺼진 휴대폰으로도 나눠요(동의·근무 유형처럼 휴대폰만 아는 조건은 '휴대폰마다 다름').${d.flagsReach ? " 줄을 누르면 그 기능의 자세한 기록이 열려요." : ""}</p>
       ${d.statsPhones ? "" : '<p class="note">아직 켜진 기능 목록을 보낸 휴대폰이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}
       ${measured.length ? `<h2 class="day-head">켜짐·꺼짐을 본 기능</h2><ul class="rows">${measured.map(line).join("")}</ul>` : ""}
       ${rest.length ? `<h2 class="day-head">아직 바뀐 적 없는 기능</h2><ul class="rows">${rest.map(line).join("")}</ul>` : ""}`;
