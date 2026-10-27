@@ -2,7 +2,7 @@
 // admin), /today (the 오늘 screen only), /basics (what rarely changes), and the indexes they read.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 const SUPPORT = { review: "none", inquiries: "edit", dev: "edit", devStatus: "none", companies: "none", rewards: "none", settings: "none",
@@ -28,26 +28,33 @@ function addQuestion(DB, n, at = Date.now() - 60000) {
   return id;
 }
 
-test("[ADMUX-37] /badges has the same numbers as /overview, and nothing of the home screen", async () => {
+test("[ADMUX-37][ADMCP-07] /badges has the menu numbers and nothing of the home screen; 1.27's /overview and /inbox say where they went", async () => {
   const { call, DB } = server();
   const owner = await signIn(call);
   for (let n = 0; n < 3; n++) addQuestion(DB, n);
   await call("POST", "/api/inquiries", { v: 1, device: device(9), kind: "bug", text: "앱에서 보낸 문의예요", info: { app: "1.27.0 (90)" } }, from(9));
   const b = (await call("GET", "/api/admin/badges", undefined, owner)).data;
-  const o = (await call("GET", "/api/admin/overview", undefined, owner)).data;
-  for (const k of ["pending", "asks", "flagged", "inquiries", "devTodo", "owed", "flaggedPosts", "versionConflicts"]) {
+  for (const k of ["pending", "asks", "flagged", "inquiries", "devTodo", "owed", "flaggedPosts", "versionConflicts", "bugsUncopied", "opsLeft"]) {
     assert.equal(typeof b[k], "number", k);
-    assert.equal(b[k], o[k], k);
   }
   assert.equal(b.inquiries, 4);
-  assert.deepEqual(b.admins, o.admins);
-  assert.equal(b.opsLeft, o.opsLeft);
-  assert.equal(b.billingLive, o.billingLive);
-  assert.equal(b.build, o.build);
-  assert.deepEqual(b.me, o.me);
+  assert.equal(b.bugsUncopied, 4, "AT 1.29: four 문제 신고 nobody copied yet");
+  assert.deepEqual(b.admins, { waiting: 0, phones: 0 });
+  assert.equal(b.billingLive, false);
+  assert.equal(typeof b.build, "string");
+  assert.equal(b.me.owner, true);
   // Only numbers: the lists and words stay with /today and /basics.
+  const o = (await adminHome(call, owner)).data;
   for (const k of ["queueInquiries", "recent", "settings", "sla", "reasons", "todo", "assigned"]) assert.ok(!(k in b), k);
-  assert.ok(JSON.stringify(b).length < JSON.stringify(o).length / 2, "much lighter than /overview");
+  assert.ok(JSON.stringify(b).length < JSON.stringify(o).length / 2, "much lighter than 오늘 and the words together");
+  // AT 1.29 AN-D6: the app has not called these since 1.28. A tab left open from 1.27 is told where things went and
+  // which build is out (reloading gets it); nothing of the old answer is left.
+  for (const [path, to] of [["/api/admin/overview", "/api/admin/badges"], ["/api/admin/inbox", "/api/admin/today"]]) {
+    const r = await call("GET", path, undefined, owner);
+    assert.equal(r.status, 410, path);
+    assert.deepEqual(r.data, { error: "moved", to, build: b.build });
+  }
+  assert.equal((await call("GET", "/api/admin/overview")).status, 401, "signed out is still the sign-in answer");
 });
 
 test("[ADMUX-37] /badges is kept 15 seconds per admin, and anything sent makes it fresh", async (t) => {
@@ -99,8 +106,6 @@ test("[ADMUX-33][ADMUX-37] /today is 받은함's list with 오늘's numbers; /ba
   addQuestion(DB, 2, Date.now() - 3 * 24 * 60 * 60 * 1000);
   for (const h of [owner, support]) {
     const d = (await call("GET", "/api/admin/today", undefined, h)).data;
-    const inbox = (await call("GET", "/api/admin/inbox", undefined, h)).data;
-    assert.deepEqual({ ...d.todo, now: "" }, { ...inbox, now: "" });
     assert.ok(d.todo.items.length >= 2);
     assert.equal(d.inquiriesToday, 1);
     assert.equal(typeof d.doneToday, "number");
@@ -134,7 +139,7 @@ test("[ADMUX-40][FLAG-28] /badges carries 기능 관리's number and 오늘's le
   const owner = await signIn(call);
   const support = await member(call, owner, { ...SUPPORT, ops: "edit", flags: "none" });
   const b = (await call("GET", "/api/admin/badges", undefined, owner)).data;
-  const o = (await call("GET", "/api/admin/overview", undefined, owner)).data;
+  const o = (await adminHome(call, owner)).data;
   assert.equal(typeof b.flagsWaiting, "number");
   assert.equal(b.flagsWaiting, o.flagsDue);
   assert.deepEqual(b.flagAlerts, []);

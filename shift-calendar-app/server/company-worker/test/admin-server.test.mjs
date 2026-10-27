@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { prune } from "../src/index.js";
 import { adminBuild } from "../src/admin-app.js";
-import { server, device, from, signIn, report, ORIGIN, PASSWORD } from "./helpers.mjs";
+import { server, device, from, signIn, report, ORIGIN, PASSWORD, adminHome } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 const DAY = 24 * 60 * 60 * 1000;
@@ -166,7 +166,7 @@ test("[ADMUX-08] the home screen carries the app's build and the latest activity
   const { call } = server();
   const owner = await signIn(call);
   await call("POST", "/api/admin/templates", { label: "인사", text: "안녕하세요" }, owner);
-  const o = (await call("GET", "/api/admin/overview", undefined, owner)).data;
+  const o = (await adminHome(call, owner)).data;
   assert.equal(o.build, adminBuild());
   assert.deepEqual(o.recent.map((r) => r.action), ["template_add"]);
   assert.equal(o.doneToday, 1);
@@ -382,11 +382,13 @@ test("[ADMUX-06] the home screen's 할 일: closest to its target first, setups 
   seedInquiries(DB, 1, { kind: "bug", start: now - 7 * 3600000 });
   await call("POST", "/api/admin/inquiries/q000000000000000000000/assign", { to: "me" }, headers);
   await call("POST", "/api/reports", report(1), from(1));
-  const o = (await call("GET", "/api/admin/overview", undefined, owner)).data;
-  assert.deepEqual(o.queue.map((x) => x.type), ["inquiry", "inquiry", "group"]);
-  assert.equal(o.queue[0].kind, "bug", "an hour left of eight comes before 71 of 72");
-  assert.equal(o.queue[0].assignee.name, "민지");
-  assert.deepEqual(o.assigned, [{ id: o.queue[0].assignee.id, name: "민지", n: 1 }]);
+  const o = (await adminHome(call, owner)).data;
+  // AT 1.29 [ADMCP-07] 1.27's home queue is 오늘's 할 일 (/today) since 1.28.
+  const queue = o.todo.items.filter((x) => x.type === "inquiry" || x.type === "group");
+  assert.deepEqual(queue.map((x) => x.type), ["inquiry", "inquiry", "group"]);
+  assert.equal(queue[0].kind, "bug", "an hour left of eight comes before 71 of 72");
+  assert.equal(queue[0].assignee.name, "민지");
+  assert.deepEqual(o.assigned, [{ id: queue[0].assignee.id, name: "민지", n: 1 }]);
   assert.equal(o.slaLateToday >= 1, true);
   assert.equal(o.inquiriesToday + o.inquiriesYesterday >= 2, true);
 });

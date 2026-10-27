@@ -1046,3 +1046,222 @@ test("[PERF-18] 지표: 앱 시작 시간 shows each version's middle value and 
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
+
+// ---- AT 1.29 문의 복사 [ADMCP-01]~[ADMCP-05], 큰 글자 [ADMCP-07] (화면의 단추 → 클립보드 → 서버가 가진 것) ----
+
+/** The browser's clipboard: [ok] false is a browser that keeps it shut (and has no old copy command either). */
+function clipboard(u, ok = true) {
+  const got = { text: null };
+  Object.defineProperty(u.window.navigator, "clipboard", { configurable: true,
+    value: { writeText: async (s) => { if (!ok) throw new Error("NotAllowedError"); got.text = s; } } });
+  u.document.execCommand = () => false;
+  return got;
+}
+
+test("[ADMCP-01][ADMCP-03] 복사 on a question: the box shows Markdown in both forms, the clipboard gets it, the server marks 복사함", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const got = clipboard(u);
+  const bug = (await u.api("GET", "/api/admin/inquiries?status=open&kind=bug")).inquiries[0];
+  await u.go(`#/inquiries/${bug.id}`);
+  assert.match(u.text("#main"), /아직 아무도 복사하지 않았어요/);
+  await u.click(`#main .card-head [data-act="inquiry-copy"]`);
+  await u.settle(20);
+  const box = u.$("dialog #copy-text");
+  assert.ok(box, "the copy box");
+  assert.ok(box.readOnly, "a box to select from, not to type in");
+  assert.match(box.value, /^## \[문제 신고 · 알람\] 알람 소리가 안 나요/);
+  assert.match(box.value, /- 앱 1\.22\.0 \(33\)/);
+  assert.match(box.value, new RegExp(`/admin/#/inquiries/${bug.id}`));
+  await u.click('dialog [data-act="copy-style"][data-key="short"]');
+  assert.equal(u.$("dialog #copy-text").value.split("\n").length, 2, "짧게");
+  await u.click('dialog [data-act="copy-do"]');
+  await u.settle(20);
+  assert.equal(got.text.split("\n").length, 2, "what the box showed is on the clipboard");
+  assert.match(u.text("#toast"), /1건을 복사했어요/);
+  assert.ok(!u.$("dialog[open]"), "the box closes");
+  const after = await u.api("GET", `/api/admin/inquiries/${bug.id}`);
+  assert.equal(after.copied.by, "최고 관리자");
+  assert.match(u.text("#main"), /최고 관리자님이 .*에 복사했어요/);
+  // The choice is remembered on this device: the next box opens in 짧게.
+  assert.equal(JSON.parse(u.window.localStorage.getItem("bamnat-admin-prefs") ?? "{}").copy?.style, "short");
+  await u.key("c");
+  await u.settle(20);
+  assert.equal(u.$('dialog [data-act="copy-style"][aria-pressed="true"]')?.dataset.key, "short", "c opens it again, as it was left");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMCP-02][ADMCP-03] picked questions: Shift picks a range, 선택 n개 복사 makes one text, and 개발사항·닫기 go with it", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const got = clipboard(u);
+  await u.go("#/inquiries");
+  assert.ok(u.$$('#main .row-tool[data-act="inquiry-copy"]').length >= 3, "복사 on every row");
+  // The strip of problem reports nobody copied, and the home tile with the same number.
+  assert.match(u.text("#main .fresh"), /복사 전 문제 신고 1건/);
+  await u.click('[data-act="inquiry-pick"]');
+  await u.click(u.$$("label[data-pick-row]")[0]);
+  const last = u.$$("label[data-pick-row]")[2];
+  last.dispatchEvent(new u.window.MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }));
+  await u.settle();
+  assert.match(u.text(".bulkbar b"), /3개/, "Shift picks everything between");
+  assert.match(u.text('.bulkbar [data-act="inquiry-copy-picked"]'), /선택 3개 복사/);
+  await u.click('.bulkbar [data-act="inquiry-copy-picked"]');
+  await u.settle(20);
+  const text = u.$("dialog #copy-text").value;
+  assert.match(text, /^# 문의 3건 \(/);
+  assert.match(text, /문제 신고 1 · 질문 1 · 건의·제안 1/);
+  assert.match(text, /## 문제 신고 \(1\)[\s\S]*## 질문 \(1\)[\s\S]*## 건의·제안 \(1\)/, "by kind, problem reports first");
+  const dev = u.$('dialog [data-copy-after="dev"]');
+  dev.checked = true;
+  dev.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  await u.settle();
+  assert.match(u.$("dialog #copy-dev-title").value, / 외 2건$/);
+  const close = u.$('dialog [data-copy-after="close"]');
+  close.checked = true;
+  close.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  await u.settle();
+  await u.click('dialog [data-act="copy-do"]');
+  await u.settle(30);
+  assert.match(got.text, /^# 문의 3건/);
+  assert.match(u.text("#toast"), /3건을 복사했어요 · 개발사항 ".* 외 2건"을 만들었어요 · 닫았어요/);
+  const all = (await u.api("GET", "/api/admin/inquiries?status=all")).inquiries;
+  assert.ok(all.every((q) => q.copied && q.status === "closed" && q.dev === 1), "every one copied, closed and in the new 개발사항");
+  const items = (await u.api("GET", "/api/admin/dev?status=all")).items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].links, 3);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMCP-01] a browser that keeps the clipboard shut gets the text selected to copy by hand, then 복사했어요 marks it", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  clipboard(u, false);
+  await u.go("#/inquiries");
+  await u.click('#main .row-tool[data-act="inquiry-copy"]');
+  await u.settle(20);
+  await u.click('dialog [data-act="copy-do"]');
+  assert.match(u.text("dialog #copy-fallback"), /바로 복사를 막았어요/);
+  assert.ok(u.$("dialog #copy-text").value.length > 20, "the text stays there to select");
+  assert.equal((await u.api("GET", "/api/admin/inquiries?status=all&copied=yes")).total, 0, "nothing marked before it is copied");
+  await u.click('dialog [data-act="copy-done"]');
+  await u.settle(20);
+  assert.equal((await u.api("GET", "/api/admin/inquiries?status=all&copied=yes")).total, 1);
+  assert.match(u.text("#main .rows"), /복사함/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMCP-02][ADMCP-04] keys pick and copy; 모아 보기 shows the reports nobody copied; the home tile counts them", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  clipboard(u);
+  await u.go("#/home");
+  const tile = u.$$("#main a.tile").find((a) => /복사 전 문제 신고/.test(a.textContent));
+  assert.ok(tile, "오늘 has the tile");
+  assert.match(tile.textContent, /1/);
+  assert.equal(tile.getAttribute("href"), "#/inquiries?status=all&kind=bug&copied=no");
+  await u.go("#/inquiries");
+  await u.click('#main [data-act="fresh-bugs"]');
+  await u.idle();
+  assert.match(u.window.location.hash, /kind=bug/);
+  assert.match(u.window.location.hash, /copied=no/);
+  assert.equal(u.$$("#main .rows > li").length, 1);
+  assert.ok(!u.$("#main .fresh"), "the strip hides while the list is just that");
+  assert.match(u.text("#main .rows"), /새/, "a report from today stands out");
+  await u.click('#main [data-act="inquiry-clear"]');
+  await u.idle();
+  await u.key("j");
+  await u.key(" ");
+  assert.match(u.text(".bulkbar b"), /1개/, "Space opens picking with the row in focus");
+  await u.key("j");
+  await u.key(" ", { shiftKey: true });
+  assert.match(u.text(".bulkbar b"), /2개/);
+  await u.key("c");
+  await u.settle(20);
+  assert.match(u.text("dialog h2"), /문의 2건 복사/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMCP-02] on a phone a long press on a row opens picking with it, and does not open the question", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/inquiries");
+  const row = u.$("#main [data-row]");
+  const id = row.dataset.row;
+  row.dispatchEvent(new u.window.PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }));
+  await new Promise((r) => setTimeout(r, 600));
+  await u.settle();
+  assert.match(u.text(".bulkbar b"), /1개/);
+  assert.ok(u.$(`[data-pick-inquiry="${id}"]`).checked, "the pressed row is picked");
+  assert.match(u.window.location.hash, /^#\/inquiries(\?|$)/, "still the list");
+  // A short tap is still a tap: no picking from it.
+  await u.click('[data-act="inquiry-pick"]');
+  const other = u.$("#main [data-row]");
+  other.dispatchEvent(new u.window.PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }));
+  other.dispatchEvent(new u.window.PointerEvent("pointerup", { bubbles: true, pointerType: "touch" }));
+  await new Promise((r) => setTimeout(r, 600));
+  assert.ok(!u.$(".bulkbar"));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMCP-06] a question shows the other questions from its phone, one tap to list them; 자주 쓰는 답 copies", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000011", kind: "question", text: "위젯은 어디서 켜요", info: { app: "1.22.0 (33)" } }, from(21));
+  const u = await asOwner(env, t);
+  const got = clipboard(u);
+  const bug = (await u.api("GET", "/api/admin/inquiries?status=open&kind=bug")).inquiries[0];
+  await u.go(`#/inquiries/${bug.id}`);
+  assert.match(u.text("#main"), /이 기기\(#[0-9a-f]{6}\)에서 온 다른 문의 1건/);
+  await u.click('#main [data-act="inquiry-sender"]');
+  await u.idle();
+  assert.match(u.window.location.hash, new RegExp(`sender=${bug.sender}`));
+  assert.equal(u.$$("#main .rows > li").length, 2);
+  assert.ok(u.$$("#main .chips button").some((b) => /같은 기기 #/.test(b.textContent)));
+  await u.go("#/templates");
+  await u.click('#main [data-act="template-copy"]');
+  assert.ok(got.text && got.text.length > 5, "a saved answer on the clipboard");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADMCP-07] 아주 크게 and 크게: the inquiries list, the bulk bar and the copy box still fit (wrapping rules, no fixed widths)", async (t) => {
+  offline(t);
+  const { env } = await world();
+  for (const size of ["large", "xlarge"]) {
+    const u = await asOwner(env, t);
+    clipboard(u);
+    await u.go("#/account");
+    const pick = u.$("#pref-size");
+    assert.ok([...pick.options].some((o) => o.value === "xlarge"), "아주 크게 is offered");
+    pick.value = size;
+    pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+    await u.settle();
+    assert.equal(u.document.documentElement.dataset.size, size);
+    await u.go("#/inquiries");
+    await u.click('[data-act="inquiry-pick"]');
+    await u.click('[data-act="inquiry-pick-all"]');
+    await u.click('.bulkbar [data-act="inquiry-copy-picked"]');
+    await u.settle(20);
+    assert.ok(u.$("dialog #copy-text"));
+    assert.equal(u.$$("#main [style], dialog [style]").length, 0, `${size}: no style attribute`);
+    assert.deepEqual(u.errors, [], size);
+  }
+  // Everything is in rem, so the root size scales it; what holds buttons wraps instead of running off a phone's edge.
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /:root\[data-size="xlarge"\]\{font-size:125%\}/);
+  for (const sel of [".bulkbar", ".fresh", ".chips", ".waiting"]) {
+    const rule = css.match(new RegExp(`(^|\\})${sel.replace(".", "\\.")}\\{([^}]*)\\}`, "m"));
+    assert.ok(rule, `${sel} has a rule`);
+    assert.match(rule[2], /flex-wrap:wrap/, `${sel} wraps`);
+  }
+  assert.match(css, /\.rows>li\.has-tool>\.row\{flex:1;min-width:0\}/, "a row with a copy button can still shrink");
+  assert.match(css, /\.row-main\{flex:1;min-width:0/);
+  assert.match(css, /\.copy-text\{[^}]*overflow-wrap:anywhere/);
+  // (Screen-width media queries aside; a photo thumbnail of 120px wraps with the others.)
+  assert.ok(!/[{;](min-)?width:\s*([2-9]\d\d|\d{4,})px/.test(css), "no wide fixed widths in px");
+});

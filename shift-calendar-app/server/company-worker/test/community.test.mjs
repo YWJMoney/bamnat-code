@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { trust, prune } from "../src/index.js";
-import { server, report, device, from, signIn, ORIGIN, slipProof } from "./helpers.mjs";
+import { server, report, device, from, signIn, ORIGIN, slipProof, adminHome } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -151,12 +151,14 @@ test("three 신고 hide a post until the developer looks; the developer keeps, h
   const own = (await read(2)).data.posts[0];
   assert.equal(own.hidden.code, "flags");
   assert.equal(own.hidden.text, "신고가 모여 개발자가 확인하고 있어요");
-  let o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  let o = (await adminHome(call, h)).data;
   assert.equal(o.flaggedPosts, 1);
-  // [COMM-08] Hidden by flags for three weeks and still unseen: the home screen warns before the rules' 30 days.
-  assert.equal(o.flaggedPostsLate, 0);
+  // [COMM-08] Hidden by flags for three weeks and still unseen: 오늘's 할 일 has it due within the week, before the
+  // rules' 30 days (AT 1.29: read from /today, as 1.27's /overview flaggedPostsLate is gone).
+  const late = (x) => x.todo.items.filter((i) => i.type === "hidden_post" && Date.parse(i.due) < Date.now() + 7 * 24 * 3600e3).length;
+  assert.equal(late(o), 0);
   DB.db.prepare("UPDATE posts SET hidden_at = ? WHERE id = ?").run(Date.now() - 24 * 24 * 3600e3, bad);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).data.flaggedPostsLate, 1);
+  assert.equal(late((await adminHome(call, h)).data), 1);
   assert.equal(o.hideReasons.offtopic, "이 규칙과 상관없는 글이에요");
 
   // The developer looks and keeps it: shown again, and flags no longer hide it.

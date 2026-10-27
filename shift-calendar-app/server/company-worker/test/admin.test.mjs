@@ -1,7 +1,7 @@
 // [ADMIN-01] The developer app: sign-in, review, companies, rules, rewards and its files: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, setup, report, from, device, signIn, ORIGIN, PASSWORD } from "./helpers.mjs";
+import { server, setup, report, from, device, signIn, ORIGIN, PASSWORD, adminHome } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 
@@ -15,7 +15,7 @@ async function adopted(call, extra = {}) {
 
 test("only a signed-in developer app gets in", async () => {
   const { call } = server();
-  assert.deepEqual((await call("GET", "/api/admin/overview")).data, { error: "login" });
+  assert.deepEqual((await call("GET", "/api/admin/badges")).data, { error: "login" });
   // Changes need the app's own header, from its own address.
   assert.equal((await call("POST", "/api/admin/login", { password: PASSWORD })).status, 403);
   assert.equal((await call("POST", "/api/admin/login", { password: PASSWORD }, { ...APP, origin: "https://elsewhere.example" })).status, 403);
@@ -25,13 +25,13 @@ test("only a signed-in developer app gets in", async () => {
   const set = res.headers.get("set-cookie");
   assert.match(set, /^__Host-bamnat_admin=[A-Za-z0-9]{40}; Path=\/; Secure; HttpOnly; SameSite=Strict; Max-Age=604800$/);
   const cookie = { cookie: set.split(";")[0] };
-  assert.equal((await call("GET", "/api/admin/overview", undefined, cookie)).status, 200);
+  assert.equal((await adminHome(call, cookie)).status, 200);
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 3 }, cookie)).status, 403);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, { cookie: "__Host-bamnat_admin=" + "A".repeat(40) })).status, 401);
+  assert.equal((await call("GET", "/api/admin/badges", undefined, { cookie: "__Host-bamnat_admin=" + "A".repeat(40) })).status, 401);
 
   const out = await call("POST", "/api/admin/logout", {}, { ...cookie, ...APP });
   assert.match(out.headers.get("set-cookie"), /^__Host-bamnat_admin=; .*Max-Age=0$/);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, cookie)).status, 401);
+  assert.equal((await adminHome(call, cookie)).status, 401);
 });
 
 test("five wrong passwords lock that network out for an hour", async (t) => {
@@ -61,7 +61,7 @@ test("a session left alone ends after a week", async (t) => {
   const { call } = server();
   const h = await signIn(call);
   t.mock.timers.tick(7 * 24 * 60 * 60 * 1000 + 60 * 1000);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 401);
+  assert.equal((await adminHome(call, h)).status, 401);
 });
 
 test("[ADMIN-15] a session in use runs on a week at a time, for at most 30 days", async (t) => {
@@ -71,28 +71,28 @@ test("[ADMIN-15] a session in use runs on a week at a time, for at most 30 days"
   const DAY = 24 * 60 * 60 * 1000;
   // More than half the week left: nothing to renew.
   t.mock.timers.tick(2 * DAY);
-  const early = await call("GET", "/api/admin/overview", undefined, h);
+  const early = await adminHome(call, h);
   assert.equal(early.status, 200);
   assert.equal(early.headers.get("set-cookie"), null);
   // Less than half left: another week from now, on the same token.
   t.mock.timers.tick(2 * DAY);
-  const renewed = await call("GET", "/api/admin/overview", undefined, h);
+  const renewed = await adminHome(call, h);
   assert.equal(renewed.status, 200);
   assert.match(renewed.headers.get("set-cookie"), new RegExp(`^${h.cookie}; .*Max-Age=${7 * 24 * 60 * 60}$`));
   // Six days later (ten in all) it still works, since it was used.
   t.mock.timers.tick(6 * DAY);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 200);
+  assert.equal((await adminHome(call, h)).status, 200);
   // Used every few days it ends 30 days after the password, and the last renewal says so.
   let last = null;
   for (let day = 10; day < 30; day += 3) {
-    const res = await call("GET", "/api/admin/overview", undefined, h);
+    const res = await adminHome(call, h);
     assert.equal(res.status, 200, `day ${day}`);
     last = res.headers.get("set-cookie") ?? last;
     t.mock.timers.tick(3 * DAY);
   }
   assert.match(last, /Max-Age=\d+$/);
   assert.ok(Number(last.match(/Max-Age=(\d+)/)[1]) < 7 * 24 * 60 * 60, "the last renewal stops at day 30");
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 401, "day 31");
+  assert.equal((await adminHome(call, h)).status, 401, "day 31");
 });
 
 test("without a password set, sign-in says what is missing", async () => {
@@ -143,7 +143,7 @@ test("the developer adopts or turns down what coworkers sent", async () => {
   q = (await call("GET", "/api/admin/queue", undefined, h)).data;
   assert.deepEqual(q.groups, []);
   assert.equal((await call("POST", `/api/admin/groups/${a.data.company.id}/${a.data.setup}/adopt`, {}, h)).status, 404);
-  const o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  const o = (await adminHome(call, h)).data;
   assert.deepEqual([o.pending, o.flagged, o.owed, o.companies, o.rules, o.reports], [0, 0, 1, 2, 1, 2]);
   assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
     firstMonths: 0, firstCapYear: 3 });
@@ -286,7 +286,7 @@ test("the developer answers a way the app cannot set yet, with a reward when the
   assert.deepEqual(q.asks.map((x) => [x.company.name, x.dept, x.note, x.verified]),
     [["예시정밀", "생산팀", note, false], ["예시정밀", "", "야간 대근은 0.6 가산이에요", true]]);
   assert.deepEqual(q.asks[0].lines[0], ["근무", "주간 07:00~19:00 휴게 60분 · 야간 19:00~07:00 휴게 60분 · 휴무(쉬는 날)"]);
-  let o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  let o = (await adminHome(call, h)).data;
   assert.deepEqual([o.pending, o.asks], [0, 2]);
   assert.equal(o.answers.planned, "알려 주신 방식을 앱에 넣을게요. 업데이트되면 바로 설정할 수 있어요");
 
@@ -303,7 +303,7 @@ test("the developer answers a way the app cannot set yet, with a reward when the
   assert.deepEqual([theirs.status, theirs.reason.code, theirs.reward], ["answered", "possible", null]);
   const list = (await call("GET", "/api/admin/rewards", undefined, h)).data;
   assert.deepEqual(list.rewards.map((w) => [w.id, w.ask, w.version, w.dept]), [[`w${a.data.id}`, true, null, "생산팀"]]);
-  o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  o = (await adminHome(call, h)).data;
   assert.deepEqual([o.asks, o.owed], [0, 1]);
   assert.deepEqual((await call("GET", "/api/admin/queue", undefined, h)).data.asks, []);
 });
@@ -426,7 +426,7 @@ test("doubts about a rule reach the developer", async () => {
   }
   const { flagged } = (await call("GET", "/api/admin/queue", undefined, h)).data;
   assert.deepEqual(flagged.map((f) => [f.company.name, f.version, f.good, f.bad, f.names, f.old]), [["예시정밀", 1, 2, 3, 1, 1]]);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).data.flagged, 1);
+  assert.equal((await adminHome(call, h)).data.flagged, 1);
 });
 
 test("the developer app's files are served safely", async () => {
@@ -506,7 +506,7 @@ test("the developer app's screens take a few trips to the database however much 
       inBatch = false;
     }
   };
-  for (const path of ["/api/admin/overview", "/api/admin/inbox", "/api/admin/versions", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
+  for (const path of ["/api/admin/badges", "/api/admin/today", "/api/admin/versions", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
     trips = 0;
     const res = await call("GET", path, undefined, admin);
     assert.equal(res.status, 200, path);

@@ -3,7 +3,7 @@
 // which flags phones had on: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn, ORIGIN } from "./helpers.mjs";
+import { server, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
 import worker, { FLAG_CATALOG, FLAG_KEYS } from "../src/index.js";
 import { adminLib } from "../src/admin-lib.js";
 
@@ -176,10 +176,10 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   const cfg = (await call("GET", "/api/config")).data;
   assert.equal(cfg.billingLive, true);
   assert.equal(cfg.launchedAt, "2026-11-09T15:00:00.000Z");
-  const home = (await call("GET", "/api/admin/overview", undefined, owner)).data;
+  const home = (await adminHome(call, owner)).data;
   assert.deepEqual(home.flagAlerts.map((a) => a.key).sort(), ["ads", "billing"]);
   t.mock.timers.tick(DAY + 1000);
-  assert.deepEqual((await call("GET", "/api/admin/overview", undefined, owner)).data.flagAlerts, []);
+  assert.deepEqual((await adminHome(call, owner)).data.flagAlerts, []);
 
   // Off and on again: the launch stays the first moment.
   await call("POST", "/api/admin/flags/billing/force", { force: "off", why: "결제 오류" }, owner);
@@ -311,7 +311,7 @@ test("[FLAG-29][FLAG-33] the owner moves a policy's dates; too little notice is 
   assert.match(row.warnings[0], /18일.*30일/);
   assert.equal(row.next, "2026-11-15", "the date condition follows the calendar");
   assert.deepEqual((await call("GET", "/api/config")).data.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-15", heldUntil: null });
-  assert.ok((await call("GET", "/api/admin/overview", undefined, owner)).data.flagsDue >= 1);
+  assert.ok((await adminHome(call, owner)).data.flagsDue >= 1);
 });
 
 test("[FLAG-26] /api/passes says whether the phone was linked by the owner", async (t) => {
