@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.company
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import android.os.SystemClock
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -262,6 +264,22 @@ fun PayFindFlow(
                 // [PAYG-06] Opened by itself: why this company.
                 if (state.auto) Text("근무주기에 넣은 회사라 먼저 찾아 두었어요.", style = MaterialTheme.typography.bodyMedium)
                 if (row.dept.isNotEmpty()) Text("${row.dept}의 대표 주기에 딸린 방식이에요.", style = MaterialTheme.typography.bodyMedium)
+                // [PLZD-10] 1.30 통합: what kind of work the way belongs to, and a warning when this calendar's work has another
+                // shape (2교대 against 3교대). The page is the kept one when there is one; the work lines are public, pay never shown.
+                val fit by produceState<Pair<String?, String?>>(null to null, row.serverId, row.setup) {
+                    val id = row.serverId ?: return@produceState
+                    value = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val page = c.companySearch.page(id) ?: c.companyApi.company(id).also(c.companySearch::keepPage)
+                            val text = (page.setups.firstOrNull { it.id == row.setup } ?: page.setups.firstOrNull { it.lead })?.text
+                                ?: return@runCatching null to null
+                            val mine = runCatching { company.share.exportForServer(cycleOnly = true).toString() }.getOrNull()
+                            com.bamnat.core.plaza.DeptGroups.summary(text) to com.bamnat.core.plaza.DeptGroups.mismatch(mine, text)
+                        }.getOrDefault(null to null)
+                    }
+                }
+                fit.first?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                fit.second?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                 Text("쓰면 이 회사 광장에 참여되고, 수당과 계산 방식만 들어와요. 근무 순서는 그대로예요. 기본급은 바로 다음에 내 것만 넣어요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
