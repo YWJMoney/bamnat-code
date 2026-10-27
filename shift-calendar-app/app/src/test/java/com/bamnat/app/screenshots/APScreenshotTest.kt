@@ -161,7 +161,8 @@ class APScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(null, keepUndo = false) }
         assertEquals(PayFind.Used.Amounts, runBlocking { PayFind(c).use("c1", "s1") })
         assertEquals("s1", c.payWays.way.value?.setup)
-        content { CompanyPayScreen(CompanyPayViewModel(c), onBack = {}, onByHand = {}) }
+        val vm = CompanyPayViewModel(c)
+        content { CompanyPayScreen(vm, onBack = {}, onByHand = {}) }
         settle()
         assertFalse(shows("이 회사 급여 설정을 쓸까요?", exact = true))
         assertTrue(shows("거의 다 됐어요! 내 금액만 넣어요", exact = true))
@@ -243,7 +244,8 @@ class APScreenshotTest : ScreenshotBase() {
         assertTrue(done)
         assertEquals("s1", c.payWays.way.value?.setup)
         assertTrue(c.payWays.askBase.value)
-        box { PayWayCard(c.payStore.profile.value, update = {}) }
+        val profile = c.payStore.profile.value
+        box { PayWayCard(profile, update = {}) }
         assertTrue(shows("기본급을 확인해 주세요", exact = true))
     }
 

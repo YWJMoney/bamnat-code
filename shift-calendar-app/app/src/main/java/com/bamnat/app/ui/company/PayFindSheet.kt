@@ -321,7 +321,7 @@ private fun DoneStep(c: AppContainer, state: PayFindState, onDone: () -> Unit, o
     }
     val scope = rememberCoroutineScope()
     val month = remember { Today.month() }
-    val profile = c.payStore.profile.value
+    val profile by c.payStore.profile.collectAsStateWithLifecycle()
     var base by rememberSaveable { mutableStateOf(BaseAsk.known(profile, month)) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
     Text("급여 방식을 넣었어요", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
