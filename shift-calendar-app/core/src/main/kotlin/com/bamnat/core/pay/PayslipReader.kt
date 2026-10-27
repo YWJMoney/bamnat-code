@@ -64,11 +64,26 @@ data class PayslipRead(
                 .filter { earningsSum == 0L || it >= earningsSum - PayslipMatch.tolerance(earningsSum) }.minOrNull()
             ?: earningsSum.takeIf { it > 0 }
 
-    /** The stated total and the lines read agree, so no line was missed or misread. */
+    /**
+     * [PHOTO-11] The 지급 총액 the payslip itself states: its 지급 총액 line, else the 합계 that holds the items; null when it
+     * states none or only totals smaller than the items (then [gross] falls back to the items added up, which checks nothing).
+     */
+    val statedGross: Long?
+        get() = lines.firstOrNull { it.role == SlipRole.GROSS && it.amount != null }?.amount
+            ?: lines.filter { it.role == SlipRole.TOTAL && it.amount != null }.map { it.amount!! }
+                .filter { earningsSum == 0L || it >= earningsSum - PayslipMatch.tolerance(earningsSum) }.minOrNull()
+
+    /**
+     * The stated total and the lines read agree, so no line was missed or misread.
+     * [PHOTO-11] 1.29: a payslip that states a total none of whose totals hold the items is not consistent; 1.28 put the items'
+     * own sum in for the total and called it consistent (a 720,000 read for 120,000 then said 맞아요).
+     */
     val consistent: Boolean
         get() {
-            val g = gross ?: return false
-            return earnings.isNotEmpty() && abs(g - earningsSum) <= PayslipMatch.tolerance(g)
+            if (earnings.isEmpty()) return false
+            val stated = lines.any { (it.role == SlipRole.GROSS || it.role == SlipRole.TOTAL) && it.amount != null }
+            val g = statedGross ?: return !stated && gross != null
+            return abs(g - earningsSum) <= PayslipMatch.tolerance(g)
         }
 
     /** [READ-07] 공제 합계: as stated, else the deductions added up. */
@@ -140,9 +155,22 @@ object PayslipReader {
         "귀속", "근무일수", "총근로시간", "단위", "비고", "회사명", "사업장",
     )
 
+    /** [PHOTO-01] A section or column head ("지급항목", "금액", "근로일수"), never a line of pay; [c] has letters only. */
+    fun isHeader(c: String): Boolean = c.isNotEmpty() && headers.any {
+        // [PHOTO-11] "직급수당" starts with the head "직급" but is a line of pay: it was skipped (1.28 직급수당 0원).
+        c == it || c.startsWith(it) && c.length <= it.length + 2 && !c.endsWith("수당") && !c.endsWith("비") && c !in SlipLexicon.NAMES
+    }
+
+    /** [PHOTO-01] The month a payslip's text says it is for. */
+    fun monthOf(text: String): YearMonth? = monthRe.find(text)?.let { m ->
+        runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()
+    }
+
     private val deductions = listOf(
         "국민연금", "건강보험", "장기요양", "고용보험", "산재", "소득세", "지방소득세", "주민세", "노조", "조합비", "상조", "가불",
         "공제", "대출", "연말정산", "기숙사", "경조", "원천", "징수", "환급", "보험료", "사우회",
+        // [PHOTO-11] 1.29: 공무원 명세서의 기여금(연금)은 공제예요(1.28은 ‘…금’이라 수당으로 읽음).
+        "기여금",
     )
 
     /** The role of a pay line by its name, or null when the name says nothing about pay. */
@@ -157,6 +185,8 @@ object PayslipReader {
                 SlipRole.GROSS
             n in setOf("합계", "총계", "계", "총액", "소계", "합") -> SlipRole.TOTAL
             "기본급" in n || "기본월급" in n || "기본임금" in n || n == "기본" || n == "기본급여" -> SlipRole.BASE
+            // [PHOTO-11] 공무원 명세서의 봉급은 기본급이에요(1.28은 ‘…급’이라 수당으로 읽음).
+            n == "봉급" || n == "본봉" -> SlipRole.BASE
             n == "시급" || n == "기본시급" || n == "통상시급" -> SlipRole.HOURLY
             // [READ-13] 1.27: 기본급 with its last letter misread (기본려·기본료·기본터·기본다), a lone name of three letters.
             n.length == 3 && n.startsWith("기본") -> SlipRole.BASE
@@ -225,7 +255,7 @@ object PayslipReader {
                     for (part in value.split(Regex("""\s{2,}"""))) {
                         val name = part.replace(Regex("""\s+"""), " ").trim().trimEnd('(', '·').trim()
                         val compact = ocrFix(name.filterNot { it.isWhitespace() })
-                        if (compact.isEmpty() || headers.any { compact == it || compact.startsWith(it) && compact.length <= it.length + 2 }) continue
+                        if (compact.isEmpty() || isHeader(compact)) continue
                         // "지급내역 공제내역" one space apart: two column heads, not a 공제 line taking the first amount.
                         if (name.split(' ').all { w -> ocrFix(w).let { c -> headers.any { c == it } } }) continue
                         // A long run of words is a sentence or a heading, not a pay line.
