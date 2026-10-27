@@ -265,6 +265,8 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
                         ". 숫자가 맞는지 보고 다르면 고쳐 주세요."
                 })
                 read?.let { Muted(it) }
+                // [PHOTO-09] 1.29
+                if (read != null) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.TAX)
                 when (kind) {
                     IncomeKind.HOURLY -> {
                         DecimalField("일한 시간", hours, { hours = it }, suffix = "시간")

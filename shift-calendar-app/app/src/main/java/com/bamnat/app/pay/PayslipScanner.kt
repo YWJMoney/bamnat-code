@@ -12,6 +12,7 @@ import com.bamnat.core.invest.FillVote
 import com.bamnat.core.pay.OcrLine
 import com.bamnat.core.pay.OcrRows
 import com.bamnat.core.pay.RuleText
+import com.bamnat.core.pay.SlipReading
 import com.bamnat.core.pay.SlipVote
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -63,6 +64,8 @@ object PayslipScanner {
         val first = OcrModel.read(context, InputImage.fromBitmap(photo, 0))
         val firstLines = lines(first)
         val texts = mutableListOf(join(first, firstLines))
+        // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
+        val boxes = mutableListOf(words(first))
         val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
         val (stats, kinds) = ImagePrep.plan(photo, letter)
         val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
@@ -73,17 +76,19 @@ object PayslipScanner {
             val v = ImagePrep.variant(photo, kind, box) ?: return@forEachIndexed
             val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0)) }.getOrNull()
             if (v.bitmap !== photo) v.bitmap.recycle()
-            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it }
+            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += words(t) }
         }
         val quality = PhotoQuality.of(stats, letter, firstLines.sumOf { l -> l.text.split(' ').count { it.isNotBlank() } }, 0.0)
-        put(texts, ImagePrep.forScreen(photo).first, quality)
+        put(texts, ImagePrep.forScreen(photo).first, quality, boxes)
     }
 
     /** The readings put together. */
     @VisibleForTesting
-    internal fun put(texts: List<String>, image: Bitmap?, quality: PhotoQuality.Report?): Scan {
+    internal fun put(texts: List<String>, image: Bitmap?, quality: PhotoQuality.Report?, boxes: List<List<OcrLine>> = emptyList()): Scan {
         val read = texts.filter { it.isNotBlank() }
-        val slip = SlipVote.merge(read)
+        // [PHOTO-01][PHOTO-03] 1.29: with the words' boxes, each reading is read as a table and as text, the better kept, the
+        // readings voted and checked against the payslip's own sums; text alone (the tests' fake) is read as 1.28 did.
+        val slip = if (boxes.any { it.isNotEmpty() }) SlipReading.read(boxes) else SlipVote.merge(read)
         val fills = FillVote.merge(read.map { FillSheetReader.read(it) })
         // The text shown and read for rules: the payslip's own reading when it has amounts, else the one most rules read
         // from (a page of 취업규칙), more Korean letters on a tie.
@@ -95,6 +100,14 @@ object PayslipScanner {
     private fun lines(text: Text): List<OcrLine> = text.textBlocks.flatMap { it.lines }.mapNotNull { l ->
         val box = l.boundingBox ?: return@mapNotNull null
         OcrLine(l.text, box.left, box.top, box.right, box.bottom, angle = l.angle)
+    }
+
+    /** ML Kit's words (elements), each with its box and its line's slope. */
+    private fun words(text: Text): List<OcrLine> = text.textBlocks.flatMap { it.lines }.flatMap { l ->
+        l.elements.mapNotNull { e ->
+            val b = e.boundingBox ?: return@mapNotNull null
+            OcrLine(e.text, b.left, b.top, b.right, b.bottom, angle = l.angle)
+        }
     }
 
     private fun join(text: Text, lines: List<OcrLine>): String = if (lines.isEmpty()) text.text else OcrRows.join(lines)

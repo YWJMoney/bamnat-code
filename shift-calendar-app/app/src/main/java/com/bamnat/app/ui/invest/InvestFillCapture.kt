@@ -226,6 +226,7 @@ internal fun FillCaptureSheet(
                 }
                 if (yellowLeft) Text("노란 칸은 확인해야 넣을 수 있어요.", style = MaterialTheme.typography.bodySmall, color = warning())
                 if (new.isEmpty() && different.isEmpty()) Text("새로 넣을 체결이 없어요.", style = MaterialTheme.typography.bodyMedium)
+                com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.INVEST) // [PHOTO-09] 1.29 AQ
                 HorizontalDivider()
                 // [INV-44] Once the user trusts it: the next captures go in without this sheet.
                 if (!trust) {

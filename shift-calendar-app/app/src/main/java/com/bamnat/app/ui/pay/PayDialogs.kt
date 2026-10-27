@@ -582,7 +582,10 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
                 })
                 TextButton(onClick = { other = !other }) { Text(if (other) "사진·글로 넣기 접기" else "사진·글로 넣기") }
                 if (other) {
-                    ScanButtons(onText = { t -> text = t })
+                    var scanned by remember { mutableStateOf(false) }
+                    ScanButtons(onText = { t -> text = t; scanned = true })
+                    // [PHOTO-09] 1.29
+                    if (scanned) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.PAY_TABLE)
                     OutlinedTextField(text, { text = it.take(4000) }, label = { Text("호봉표 붙여 넣기") },
                         placeholder = { Text("1호봉 2,400,000\n2호봉 2,480,000") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                     val read = remember(text) { PayScale.parse(text) }

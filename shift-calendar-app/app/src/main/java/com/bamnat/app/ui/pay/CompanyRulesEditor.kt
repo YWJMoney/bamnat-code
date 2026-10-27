@@ -469,8 +469,20 @@ fun CompanyRulesEditor(
                         FilterChip(selected = rules.wonRounding == w, onClick = { setRules(rules.copy(wonRounding = w)) }, label = { Text(w.label) })
                     }
                 }
-                Hint(if (rules.wonRounding == com.bamnat.core.pay.WonRounding.AT_END) "시급을 소수점까지 그대로 들고 가서 줄마다 반올림해요. 명세서와 몇 원 다를 때 바꿔 보세요."
-                    else "시급을 먼저 원 단위로 반올림하고 곱해요. 법 기준은 없어 회사마다 달라요.")
+                Hint(when (rules.wonRounding) {
+                    com.bamnat.core.pay.WonRounding.AT_END -> "시급을 소수점까지 그대로 들고 가서 줄마다 반올림해요. 명세서와 몇 원 다를 때 바꿔 보세요."
+                    // [PHOTO-11] 1.29
+                    com.bamnat.core.pay.WonRounding.AT_END_UP -> "시급을 소수점까지 그대로 들고 가서 줄마다 원 미만을 올려요. 명세서 수당이 1원씩 많으면 이 방식이에요."
+                    else -> "시급을 먼저 원 단위로 반올림하고 곱해요. 법 기준은 없어 회사마다 달라요."
+                })
+                // [PHOTO-11] 1.29: the 통상시급 taken from a payslip, shown so it can be let go.
+                draft.ordinaryHourly?.let { h ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("명세서로 맞춘 통상시급 ${"%,.2f".format(h)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { draft = draft.copy(ordinaryHourly = null) }) { Text("지우기") }
+                    }
+                    Hint("가산수당을 이 시급으로 계산해요. 지우면 기본급과 통상임금 수당으로 다시 계산해요.")
+                }
                 if (draft.fiveOrMoreEmployees && !rules.supervisoryApproved) {
                     Toggle("단시간 근로자 초과근로 50%", "소정근로시간이 주 40시간보다 짧은 계약이면 켜요. 소정 넘는 시간은 8시간 안이어도 50%를 더 받아요(기간제법 제6조 제3항)",
                         rules.partTimePremium) { setRules(rules.copy(partTimePremium = it)) }

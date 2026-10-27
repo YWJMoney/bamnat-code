@@ -242,6 +242,40 @@ class PayCodecTest {
         assertEquals("perTime", stored.getJSONObject("of").getString("type"))
     }
 
+    /**
+     * [PHOTO-05] 1.29 limits (근속, 한도, 횟수, 기간) and 통상임금의 n% survive a round trip. A limited rule is stored inside a kind
+     * 1.28 does not know, so an older version drops it instead of paying it with no limit.
+     */
+    @Test fun limitedRulesRoundTrip() {
+        val rules = listOf(
+            com.bamnat.core.pay.CustomRule("t", "근속수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000),
+                minTenureMonths = 36, maxTenureMonths = 60),
+            com.bamnat.core.pay.CustomRule("c", "교대수당", com.bamnat.core.pay.RuleWhen(dayKind = com.bamnat.core.pay.RuleDayKind.WORK_DAY),
+                com.bamnat.core.pay.RulePay.PerTime(10_000), capPerMonth = 150_000, maxTimes = 12,
+                from = java.time.YearMonth.of(2026, 7), until = java.time.YearMonth.of(2027, 6)),
+            com.bamnat.core.pay.CustomRule("o", "자격수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.OfOrdinaryMonthly(0.03)),
+            com.bamnat.core.pay.CustomRule("d", "조합비", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(10_000), deduct = true,
+                from = java.time.YearMonth.of(2026, 12)),
+        )
+        val p = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))), customRules = rules)
+        val json = PayCodec.encode(p)
+        assertEquals(p, PayCodec.decode(json))
+        val stored = json.getJSONArray("customRules")
+        assertEquals("limited", stored.getJSONObject(0).getJSONObject("pay").getString("type"))
+        assertEquals("ofOrdinaryMonthly", stored.getJSONObject(2).getJSONObject("pay").getString("type"))
+        assertEquals("minus", stored.getJSONObject(3).getJSONObject("pay").getJSONObject("of").getString("type"))
+    }
+
+    /** [PHOTO-11] 명세서로 맞춘 통상시급 and 원 미만 올림 survive a round trip; unset, nothing is written. */
+    @Test fun payslipHourlyRoundTrip() {
+        val base = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_555_830))))
+        assertEquals(false, PayCodec.encode(base).has("ordinaryHourly"))
+        val p = base.copy(ordinaryHourly = 21_618.04, taxFamily = 3, rules = base.rules.copy(wonRounding = com.bamnat.core.pay.WonRounding.AT_END_UP))
+        val back = PayCodec.decode(PayCodec.encode(p))
+        assertEquals(p, back)
+        assertEquals(21_618.04, back.ordinaryHourly!!, 0.0)
+    }
+
     /** [PAYX-24]~[PAYX-33] 1.23's fields survive a round trip and are left out at their defaults, so older files stay the same. */
     @Test fun fields123RoundTrip() {
         val p = PayProfile(
