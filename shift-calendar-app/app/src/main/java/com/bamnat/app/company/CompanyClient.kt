@@ -399,6 +399,11 @@ interface CompanyApi {
     /** [PLAZA-07][PLAZA-10] A report for one calendar ([cal]); [auto] when it went by itself after the user said yes once. */
     suspend fun report(device: String, company: String, dept: String, setup: JSONObject, cal: String, auto: Boolean): ReportStatus =
         report(device, company, dept, false, "", setup)
+    /** [CALI-02] 1.30 BB: 내 설정 나누기 from one calendar ([cal]: "main", or an added calendar's id), so that calendar joins. */
+    suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
+        region: String, topic: Boolean, cal: String): ReportStatus =
+        if (job.isEmpty() && region.isEmpty() && !topic) report(device, company, dept, verified, note, setup)
+        else report(device, company, dept, verified, note, setup, job, region, topic)
     /** [PLAZA-07] Joins [company] for the calendar [cal]; a refusal (member_wait, member_limit) comes back, not thrown. */
     suspend fun join(device: String, company: String, cal: String): Membership = Membership(true, company)
     suspend fun leave(device: String, company: String) = Unit
@@ -783,6 +788,9 @@ class CompanyClient(
 
     override suspend fun report(device: String, company: String, dept: String, setup: JSONObject, cal: String, auto: Boolean): ReportStatus =
         send(device, company, dept, false, "", setup, false, "", "", false, cal, auto)
+
+    override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
+        region: String, topic: Boolean, cal: String): ReportStatus = send(device, company, dept, verified, note, setup, false, job, region, topic, cal)
 
     private suspend fun send(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean,
         job: String, region: String, topic: Boolean, cal: String = "", auto: Boolean = false): ReportStatus = serverCall {

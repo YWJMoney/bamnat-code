@@ -141,8 +141,10 @@ class PayViewModel(
         // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
         // [PAYS-15] Not when the screen asks itself right away (PlazaAskDialog after a payslip): one ask, not two.
         // [PLAZA-07] 결정 D79: a known company's pay way is shared by itself after the one-time yes, which this may ask.
-        val asked = calendarId == com.bamnat.app.data.PersonalCalendar.MAIN && container.autoShare.saved()
-        if (invite && !asked && container.companyStore.applied.value == null) _shareMoment.value =
+        // [CALI-04] 1.30 BB: the calendar's own company (1.29: the main calendar's only).
+        val company = container.companyOf(calendarId)
+        val asked = company.autoShare.saved()
+        if (invite && !asked && company.store.applied.value == null) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
@@ -156,7 +158,7 @@ class PayViewModel(
     fun reset() = viewModelScope.launch {
         payStore.save(null)
         // [PAYF-04] No pay, no company pay way in use.
-        if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) container.payWays.use(null)
+        container.companyOf(calendarId).payWays.use(null)
     }
 
     private val _shareMoment = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.ShareMoment?>(null)

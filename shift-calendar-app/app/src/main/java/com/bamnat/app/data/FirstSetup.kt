@@ -2,7 +2,8 @@ package com.bamnat.app.data
 
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyDraft
-import com.bamnat.app.company.CompanyStore
+import com.bamnat.app.company.CompanyScope
+import com.bamnat.app.company.PayWay
 import com.bamnat.app.company.PublicCycleFiles
 import com.bamnat.app.company.PublicUse
 import com.bamnat.core.plaza.PublicCycles
@@ -30,8 +31,10 @@ class FirstSetup(
     private val schedule: ScheduleRepository,
     private val settings: SettingsRepository,
     private val drafts: SetupDraftStore,
-    private val share: () -> CompanyShare,
-    private val company: () -> CompanyStore,
+    /** [CALI-05] The main calendar's company things ([com.bamnat.app.AppContainer.companyOf]). */
+    private val company: () -> CompanyScope,
+    /** [CALI-05] A coworkers' setup from the server is in use now: counted on the server for that calendar. */
+    private val used: (CompanyScope, AppliedSetup) -> Unit = { _, _ -> },
     private val today: () -> LocalDate = Today::date,
 ) {
     private val lock = Mutex()
@@ -52,33 +55,7 @@ class FirstSetup(
             drafts.flush()
         }
         val saved = schedule.applySetup(marked, today())
-        val source = marked.source
-        // A broken part of a shared file was turned down when it was read; the shifts are saved either way.
-        val pendingPay = source != null && runCatching { share().applyRules(source.text) }.getOrDefault(false)
-        val store = company()
-        val companyId = source?.id
-        val setupId = source?.setupId
-        if (source?.kind == SetupSource.Kind.SERVER && companyId != null && setupId != null) {
-            // [COMM-03] 맞았어요·달라요 is asked about the company's setup in use.
-            store.setApplied(AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Today.instant()))
-            store.setDraft(null)
-            store.setHandMade(false)
-        } else if (source?.kind == SetupSource.Kind.PUBLIC) {
-            // [SPAT-03] From a public row: its own way on (pay, then the plaza as '공개 자료 확인·고침'), not the hand-made invite,
-            // so one card asks, not two. The order is the one saved, as the user may have changed it in the setup.
-            val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept)
-            val codes = PublicCycleFiles.codesOf(cycle, marked)
-            store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis()))
-            store.setDraft(null)
-            store.setHandMade(false)
-        } else if (marked.companyName.isNotBlank()) {
-            // [COMM-02] Set up by hand under a company's name: the user is invited to share it later.
-            store.setDraft(CompanyDraft(marked.companyName.trim().take(40)))
-        } else if (source == null) {
-            // [PLAZA-04] By hand with no company at all: invited too, the company name asked when they share (U2, U26).
-            store.setHandMade(true)
-        }
-        if (pendingPay) store.pendingPay = source!!.text
+        keepCompany(company(), marked, used)
         settings.update { it.copy(workStyle = style, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
         drafts.clear()
         _saved.value = saved
@@ -89,5 +66,50 @@ class FirstSetup(
     suspend fun finishInterrupted() {
         val d = drafts.draft.value ?: return
         if (d.committing && d.style != null) save(d)
+    }
+
+    companion object {
+        /**
+         * The rest of a setup once its shifts and order are saved into the calendar of [scope]: a shared setup's kinds of
+         * extra work and pay rules, and what the company screens need. [CALI-05] 1.30 BB: the first setup and a calendar being
+         * added alike, each into its own calendar (an added calendar's company used to be left out). A coworkers' setup that
+         * came with its pay is remembered as the calendar's pay way and as already chosen ([com.bamnat.app.company.PayWayStore.decided]),
+         * so the pay screen asks for the amounts only, not "이 회사 급여 설정을 쓸까요?" again, and keeps 맞아요·달라요 on it.
+         */
+        suspend fun keepCompany(scope: CompanyScope, marked: SetupDraft, used: (CompanyScope, AppliedSetup) -> Unit = { _, _ -> }) {
+            val source = marked.source
+            // A broken part of a shared file was turned down when it was read; the shifts are saved either way.
+            val pendingPay = source != null && runCatching { scope.share.applyRules(source.text) }.getOrDefault(false)
+            val store = scope.store
+            val companyId = source?.id
+            val setupId = source?.setupId
+            if (source?.kind == SetupSource.Kind.SERVER && companyId != null && setupId != null) {
+                // [COMM-03] 맞았어요·달라요 is asked about the company's setup in use.
+                val applied = AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Today.instant())
+                store.setApplied(applied)
+                store.setDraft(null)
+                store.setHandMade(false)
+                if (runCatching { org.json.JSONObject(source.text).has("pay") }.getOrDefault(false)) {
+                    scope.payWays.use(PayWay(companyId, source.name, source.dept, setupId))
+                    if (pendingPay) scope.payWays.decided = true
+                }
+                used(scope, applied)
+            } else if (source?.kind == SetupSource.Kind.PUBLIC) {
+                // [SPAT-03] From a public row: its own way on (pay, then the plaza as '공개 자료 확인·고침'), not the hand-made invite,
+                // so one card asks, not two. The order is the one saved, as the user may have changed it in the setup.
+                val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept)
+                val codes = PublicCycleFiles.codesOf(cycle, marked)
+                store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis()))
+                store.setDraft(null)
+                store.setHandMade(false)
+            } else if (marked.companyName.isNotBlank()) {
+                // [COMM-02] Set up by hand under a company's name: the user is invited to share it later.
+                store.setDraft(CompanyDraft(marked.companyName.trim().take(40)))
+            } else if (source == null) {
+                // [PLAZA-04] By hand with no company at all: invited too, the company name asked when they share (U2, U26).
+                store.setHandMade(true)
+            }
+            if (pendingPay) store.pendingPay = source!!.text
+        }
     }
 }

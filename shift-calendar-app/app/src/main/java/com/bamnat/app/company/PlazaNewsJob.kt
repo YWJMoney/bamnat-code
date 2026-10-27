@@ -68,9 +68,9 @@ class PlazaNewsJob : JobService() {
         /** [SRV-10] 2: runs without a network too (the alive line and the calendar check need none). */
         private const val VERSION = 2
 
-        /** Whether this phone has anything in the plaza to hear about. */
-        fun takesPart(c: AppContainer): Boolean =
-            c.companyStore.sent.value.isNotEmpty() || c.companyStore.applied.value != null || c.settingsRepository.current.plazaRulesAgreed > 0
+        /** Whether this phone has anything in the plaza to hear about; [CALI-02] from any of its calendars. */
+        fun takesPart(c: AppContainer): Boolean = c.settingsRepository.current.plazaRulesAgreed > 0 ||
+            c.companyScopes().any { it.store.sent.value.isNotEmpty() || it.store.applied.value != null }
 
         /** [SRV-10] Whether the daily job has anything to do on this phone. */
         fun wanted(c: AppContainer): Boolean {
