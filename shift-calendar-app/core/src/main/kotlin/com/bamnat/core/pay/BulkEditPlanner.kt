@@ -10,6 +10,11 @@ sealed interface EditScope {
     data class FromMonth(val month: YearMonth) : EditScope
     /** "기간 지정": the months from [from] to [to], then back. */
     data class Range(val from: YearMonth, val to: YearMonth) : EditScope
+    /**
+     * A 1.32 [FIX132-03] "모든 달 같게" (사용자 2026-10-28 "급여 설정을 바꾸면 어떤 달은 옛 설정"): every month, before and after,
+     * one value; the yearly raise stays.
+     */
+    data object AllMonths : EditScope
 }
 
 data class MonthDiff(val month: YearMonth, val before: Long, val after: Long, val locked: Boolean) {
@@ -56,7 +61,11 @@ object BulkEditPlanner {
         }
         is EditScope.OnlyMonth -> applyRange(timeline, newValue, scope.month, scope.month)
         is EditScope.Range -> applyRange(timeline, newValue, scope.from, scope.to)
+        EditScope.AllMonths -> timeline.copy(entries = listOf(DatedValue(timeline.entries.minOfOrNull { it.from } ?: EARLIEST, newValue)))
     }
+
+    /** Before any month a calendar can hold. */
+    val EARLIEST: java.time.LocalDate = java.time.LocalDate.of(2000, 1, 1)
 
     private fun applyRange(timeline: ValueTimeline, newValue: Long, from: YearMonth, to: YearMonth): ValueTimeline {
         val start = from.atDay(1)

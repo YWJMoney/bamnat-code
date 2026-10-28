@@ -111,6 +111,9 @@ fun NewRecordsCard(
     waiting: Boolean = false,
     onConfirm: (List<MoneyEntry>) -> Unit = {},
     onDelete: (List<MoneyEntry>) -> Unit = {},
+    /** E 1.32 [LEDX-05] The two categories the phone learned are likeliest for a line it could not place. */
+    guesses: (MoneyEntry) -> List<com.bamnat.core.money.LedgerSmarts.Learner.Guess> = { emptyList() },
+    onPick: (MoneyEntry, String) -> Unit = { _, _ -> },
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
     var clearing by remember { mutableStateOf(false) }
@@ -148,7 +151,18 @@ fun NewRecordsCard(
             Text("결제 알림에서 적었어요. 분류가 틀리면 눌러서 고치면 그 가게는 다음부터 그 분류로 적어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (!waiting) unseen.take(10).forEach { e -> EntryRow(e, showDate = true) { onOpen(e) } }
+        if (!waiting) unseen.take(10).forEach { e ->
+            EntryRow(e, showDate = true) { onOpen(e) }
+            // E 1.32 [LEDX-05] Not sure where it goes: the two likeliest, one tap each.
+            if (e.category == "기타") {
+                val g = remember(e) { guesses(e) }
+                if (g.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) {
+                    Text("혹시", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    g.forEach { c -> androidx.compose.material3.AssistChip(onClick = { onPick(e, c.category) }, label = { Text(c.category) }) }
+                }
+            }
+        }
         if (!waiting && unseen.size > 10) {
             Text("그 밖에 ${unseen.size - 10}건은 아래 기록에 있어요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

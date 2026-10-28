@@ -75,6 +75,8 @@ object NoticeLinks {
         TAX,
         /** [SPAT-04] The main calendar's pay setup, from the card after a public cycle went in. */
         PAY,
+        /** D 1.32 [PAYA-05] 근무·급여 at 월급날 비교, for the calendar in [calendar], from the pay deposit's notice. */
+        PAY_GAP,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

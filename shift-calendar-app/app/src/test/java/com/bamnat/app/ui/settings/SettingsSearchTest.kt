@@ -119,15 +119,13 @@ class SettingsSearchTest {
         assertEquals("보낸 문의 1개에 모두 답했어요", standing(listOf(inquiry("a", "answered", 1))) { false })
     }
 
-    // ---- 1.28 통합 [FLAG-39] ----
-    @Test fun featureStateIsFoundAndAnswered() {
-        val hit = SettingsIndex.search("기능 상태").first()
-        assertEquals(com.bamnat.app.ui.diag.FLAG_SECTION, hit.title)
-        assertEquals(SettingPlace.Screen(SettingsGo.DIAGNOSTICS), hit.place)
-        assertEquals("기능 상태", first("결제 언제 켜져요"))
+    // ---- 1.28 통합 [FLAG-39] → S 1.32 [SECX-04] ----
+    @Test fun noDeveloperWordsAndNoFlagScreen() {
+        assertTrue(SettingsIndex.entries().none { "다크머지" in it.keywords || "관리자 미리 보기" in it.keywords || it.title == "기능 상태" })
         assertEquals("기능 켜고 끄기", first("기능 끄기"))
-        assertEquals("flagState", HelpFaq.search("결제는 언제 켜져요").first().id)
-        assertTrue(HelpFaq.about("알람 점검").any { it.id == "flagState" })
-        assertEquals(HelpAction.Go(SettingsGo.DIAGNOSTICS), HelpFaq.topics().single { it.id == "flagState" }.action?.second)
+        val topic = HelpFaq.topics().single { it.id == "flagState" }
+        assertEquals("flagState", HelpFaq.search("결제는 언제 생겨요").first().id)
+        assertEquals(null, topic.action)
+        assertFalse(topic.answer.contains("알람 점검"))
     }
 }

@@ -33,6 +33,24 @@ data class SlipProof(val month: YearMonth, val match: Boolean, val source: Strin
             return SlipProof(c.month, match, c.source)
         }
 
+        /** D 1.32 [PAYA-01] How many matched months a calendar keeps. */
+        const val KEEP = 12
+
+        /**
+         * D 1.32 [PAYA-01] (사용자 2026-10-28 "명세서로 맞춘 사용자가 '내 설정 보내기' 하면 자동 체크"): the proof from the best of
+         * every month matched — the newest that matched; else the newest at all. 1.31 looked at the last match only, so a
+         * later 맞춰 보기 that was off (or a month past 13) took the tick away from a calendar that had matched.
+         */
+        fun best(p: PayProfile?, today: YearMonth): SlipProof? {
+            val all = listOfNotNull(p?.verified) + p?.checks.orEmpty()
+            val proofs = all.mapNotNull { of(it, today) }.sortedByDescending { it.month }
+            return proofs.firstOrNull { it.match } ?: proofs.firstOrNull()
+        }
+
+        /** D 1.32 [PAYA-01] [checks] with [new] put first, a month once, at most [KEEP]. */
+        fun remember(checks: List<PayslipCheck>, new: PayslipCheck): List<PayslipCheck> =
+            (listOf(new) + checks.filter { it.month != new.month }).sortedByDescending { it.month }.take(KEEP)
+
         /** What the report form says under the tick: why it is on, or why it cannot be. */
         fun words(proof: SlipProof?): String = when {
             proof == null -> "이 달력에서 명세서로 맞춰 본 기록이 없어요. 명세서로 맞춰 본 분만 고를 수 있어요"

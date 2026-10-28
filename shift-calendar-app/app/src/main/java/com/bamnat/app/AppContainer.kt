@@ -131,7 +131,7 @@ class AppContainer(context: Context) {
             if (it == MoneyRepository.Outcome.SAVED) {
                 journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
                 // [TAX-01] A pay deposit just written becomes 월급 관측 (and 급여, so it is not added on top of the estimate).
-                runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt)) }
+                runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt), notify = true) }
                     .onFailure { e -> if (e is kotlinx.coroutines.CancellationException) throw e }
             }
         }
@@ -232,7 +232,7 @@ class AppContainer(context: Context) {
     var pendingMatch: Boolean = false
     /** [PLAZA-30] 1.27 AI: what a 명세서 tick on the plaza rests on now; null for none. */
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
-        com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
+        com.bamnat.core.pay.SlipProof.best(payStore.profile.value, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
     /**
      * The main calendar's company connection; [CALI-01] 1.30 BB: also the phone's install id and sharing choice for every
      * calendar. Another calendar's is [companyOf] that calendar.
@@ -416,8 +416,7 @@ class AppContainer(context: Context) {
     var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
-    /** [FLAG-15] The rows this admin phone previews; this phone only, not backed up. */
-    val flagPreviews = com.bamnat.app.flags.FlagPreviews(appContext)
+    init { com.bamnat.app.flags.clearOldPreviews(appContext) }
     /** [FLAG-07] Company facts wait for the first month on screen (a store read the start does not need). */
     @Volatile private var flagsWarm = false
     /**
@@ -430,7 +429,7 @@ class AppContainer(context: Context) {
             remoteConfig.agreed,
             settingsRepository.settings.map { listOf(it.shareUsageStats, it.usageStatsMore, it.usageStatsLookup, it.workStyle) }.distinctUntilChanged(),
             proStore.state.map { it.passes?.admin to it.passes?.checkedAt }.distinctUntilChanged(),
-            flagPreviews.keys, ads.consent,
+            ads.consent,
             payStore.profile.map { it != null }.distinctUntilChanged(),
         ),
         appScope, facts = { phoneFacts() }, serverNow = { remoteConfig.serverNow() },
@@ -473,7 +472,8 @@ class AppContainer(context: Context) {
             installHash = if (warm) flagInstallHash else null,
             admin = admin != null,
             owner = admin?.owner == true,
-            previews = flagPreviews.keys.value,
+            // S 1.32 [SECX-01] Only what the developer app set for this approved phone (nothing is switched on the phone).
+            previews = admin?.previews?.toSet().orEmpty(),
         )
     }
     private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }
@@ -765,9 +765,21 @@ class AppContainer(context: Context) {
         // [FLAG-07] Company facts (회사 연결, rollout place) join the rows now.
         flagsWarm = true
         flags.refresh()
+        // C 1.32 [STAB-04] A safe start leaves the waiting jobs asleep until "평소대로" ([wakeAfterSafe]).
+        if (com.bamnat.app.diag.StartGuard.safe.value) return
+        appScope.launch { delay(com.bamnat.app.diag.StartGuard.SETTLE_MS); com.bamnat.app.diag.StartGuard.settled(appContext) }
         startLater()
         if (laterGroups == 0) laterGroups = 1
         // [INVITE-03] Once, not kept: after the first setup Play's install referrer is read here (and nowhere at the start).
+        appScope.launch { runCatching { invites.sync() } }
+    }
+
+    /** C 1.32 [STAB-04] "평소대로" on the calendar's safe-start line. */
+    fun wakeAfterSafe() {
+        if (!com.bamnat.app.diag.StartGuard.safe.value) return
+        com.bamnat.app.diag.StartGuard.leave(appContext)
+        startLater()
+        if (laterGroups == 0) laterGroups = 1
         appScope.launch { runCatching { invites.sync() } }
     }
 

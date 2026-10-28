@@ -220,7 +220,8 @@ export function configFlags(store, now) {
     if (!force && !o?.conditions && !manual.length && !ranged) continue;
     const confirmed = Object.fromEntries(manual.filter((k) => store.checks[k]).map((k) => [k, store.checks[k].at]));
     // 1.28 통합 [FLAG-36] minApp/maxApp (AL-D3) go with every flag sent; null is no end.
-    out[key] = { force, why: force ? o.why : "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null,
+    // S 1.32 [SECX-04] The admin's 이유 stays in the developer app: the phone shows no flag reasons any more, so none is sent.
+    out[key] = { force, why: "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null,
       minApp: o?.minApp ?? null, maxApp: o?.maxApp ?? null, confirmed };
   }
   return out;

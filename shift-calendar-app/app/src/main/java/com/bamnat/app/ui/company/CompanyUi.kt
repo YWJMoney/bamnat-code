@@ -56,6 +56,10 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "setup", "setup_version", "version", "v" -> "이 설정은 보낼 수 없어요. 앱을 최신 버전으로 업데이트해 주세요"
     "too_large" -> "설정이 너무 커서 보낼 수 없어요"
     "not_found" -> "찾을 수 없어요. 이미 지워졌을 수 있어요"
+    // A 1.32 [FIX132-02] A vote on a version no longer open (1.31 said "인터넷에 연결되지 않았어요" for these).
+    "superseded" -> "이 설정은 새 버전으로 바뀌었어요. 회사 광장에서 지금 쓰는 설정을 보고 알려 주세요"
+    "withdrawn" -> "올린 분이 이 설정을 내렸어요. 더 이상 알려 줄 수 없어요"
+    "held" -> "이 설정은 아직 확인 중이라 알려 줄 수 없어요. 확인이 끝나면 다시 물어볼게요"
     // [SRV-04] A feature the developer paused for a while from the developer app.
     "paused" -> "지금은 잠시 쉬고 있어요. 곧 다시 열게요"
     // [PLAZA-07] 결정 D79: a calendar keeps its company 30 days, a phone joins two at most.

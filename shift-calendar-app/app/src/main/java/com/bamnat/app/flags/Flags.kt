@@ -86,7 +86,7 @@ class Flags(
      * [FLAG-12][FLAG-13] The kinds of work a place where a kind is newly picked shows: hidden ones only on the owner's
      * phone (marked), the kind in use [keep] always.
      */
-    fun types(keep: WorkStyle? = null): List<TypeExposure.Choice> = types(byKey.value, facts().let { it.owner && it.admin }, keep)
+    fun types(keep: WorkStyle? = null): List<TypeExposure.Choice> = types(byKey.value, facts().let { if (it.admin) it.previews else emptySet() }, keep)
 
     /**
      * [FLAG-16] What 사용 통계 adds when `stats.more` is on: the keys of the rows on, sorted, without the ones an admin
@@ -98,32 +98,22 @@ class Flags(
     }
 
     companion object {
-        fun types(states: Map<String, FlagState>, owner: Boolean, keep: WorkStyle? = null): List<TypeExposure.Choice> =
-            TypeExposure.choices({ s -> states[FlagCatalog.typeKey(s)]?.on ?: true }, owner, keep)
+        /**
+         * S 1.32 [SECX-01] A kind on only by 미리 보기 is listed as hidden (marked), and a hidden kind shows only on an
+         * approved admin phone the developer app gave its `type.*` 미리 보기 ([previews]); being the owner adds nothing.
+         */
+        fun types(states: Map<String, FlagState>, previews: Set<String>, keep: WorkStyle? = null): List<TypeExposure.Choice> =
+            TypeExposure.choices({ s -> states[FlagCatalog.typeKey(s)]?.let { it.on && it.source != FlagSource.ADMIN_PREVIEW } ?: true },
+                { s -> FlagCatalog.typeKey(s) in previews }, keep)
     }
 }
 
 /**
- * [FLAG-15] The rows an admin phone previews (판단 3단계). On this phone only: not in the backup (AL-D7), since a new
- * phone's admin link is approved again anyway.
+ * S 1.32 [SECX-01] 1.28~1.31 kept 관리자 미리 보기 on the phone (알람 점검 › 기능 상태 switches). The developer app sets
+ * it now, by role, and it comes with `/api/passes`; this clears what an old version left on the phone.
  */
-class FlagPreviews(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("flag_preview", Context.MODE_PRIVATE)
-    private val _keys = MutableStateFlow(prefs.getStringSet(KEY, null).orEmpty().toSet())
-    val keys: StateFlow<Set<String>> = _keys.asStateFlow()
-
-    fun set(key: String, on: Boolean) {
-        val next = if (on) _keys.value + key else _keys.value - key
-        prefs.edit().putStringSet(KEY, next).apply()
-        _keys.value = next
-    }
-
-    fun clear() {
-        prefs.edit().remove(KEY).apply()
-        _keys.value = emptySet()
-    }
-
-    private companion object { const val KEY = "keys" }
+fun clearOldPreviews(context: Context) {
+    context.applicationContext.getSharedPreferences("flag_preview", Context.MODE_PRIVATE).edit().clear().apply()
 }
 
 /** [FLAG-07] A hash of the install id for rollout places: the id itself never leaves [PhoneFacts]' maker. */

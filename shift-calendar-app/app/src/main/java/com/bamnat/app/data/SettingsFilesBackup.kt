@@ -222,7 +222,13 @@ class SettingsFilesBackup(
             // AG 1.27 [INVITE-11][INVITE-12]: when this phone was asked to invite or to tell the developer (끄기는 기능 스위치로 백업).
             "grow" to "친구 초대 카드·‘함께 만들어요’ 카드를 이 휴대폰에서 본 날과 닫은 날, 되돌리기 수",
             // [FLAG-15] 1.28 AL (AL-D7): an admin's previews are this phone's only.
-            "flag_preview" to "관리자 휴대폰의 기능 미리 보기 스위치, 이 휴대폰에서만",
+            "flag_preview" to "1.31까지의 관리자 미리 보기(1.32부터 비워 둬요, 관리자 앱이 정해요)",
+            // A 1.32 [FIX132-01]: which way this phone's payslip photos read well last.
+            "photo_turn" to "명세서 사진을 읽은 방향, 이 휴대폰의 사진기 것",
+            "plaza_offer" to "명세서로 맞춘 뒤 광장 올리기를 물어본 때, 이 휴대폰에서 본 만큼",
+            // C 1.32 [STAB-03][STAB-04]: this phone's stops, counted, and whether it opened safely.
+            "crash_notice" to "같은 곳에서 멈춘 횟수와 마지막으로 알린 날, 이 휴대폰에서만",
+            "start_guard" to "연달아 멈춘 시작 수(안전 모드), 이 휴대폰에서만",
             // [PERF-15][PERF-16] 1.28 AO: how long this phone took to open; 보내기 대기는 사용 통계와 같이 이 휴대폰의 것.
             "startup_stats" to "앱을 여는 데 걸린 시간, 이 휴대폰에서 잰 것",
             // AQ 1.29 [PHOTO-09]: '사진이 달라요' counts waiting to be sent (60 days), this phone's only.

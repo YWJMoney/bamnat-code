@@ -391,6 +391,11 @@ private fun NoticesPage(
             settings.moneyNotices, warning = warning(settings.moneyNotices, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(moneyNotices = on) }
         }
+        // D 1.32 [PAYA-05]
+        SwitchRow("급여 입금 비교", "은행 알림으로 급여가 들어온 걸 읽으면 예상 급여와 바로 비교해 알려 줘요(결제 알림 읽기를 켠 경우)",
+            settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
+            set(on) { it.copy(payDepositNotice = on) }
+        }
         SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
@@ -493,6 +498,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
+        // E 1.32 [LEDX-07] The day's spending in its cell; memo first-letters and work money come before it.
+        SwitchRow("날짜 밑에 그날 쓴 돈", "가계부에 적은 그날 지출이 날짜 밑에 작게 보여요(메모 첫 글자를 켜면 메모가 먼저예요)", settings.spendInCells) { on ->
+            vm.update { it.copy(spendInCells = on) }
+        }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
         ChoiceRow("메모 보기", when (memo) {
@@ -512,10 +521,17 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
         ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
             PhoneDayView.WEEK -> "그 주(월~일)만 남고, 아래에 하루 화면이 펼쳐져요"
-            else -> if (settings.showDayCard) "달력 아래 카드에 먼저 보이고, 한 번 더 누르면 크게 열려요" else "하루 화면이 바로 크게 열려요"
+            else -> if (settings.showDayCard) "달력 아래 카드에 먼저 보이고, 한 번 더 누르면 크게 열려요"
+                else if (settings.tapSelectFirst) "한 번 누르면 그 날이 골라지고, 한 번 더 누르면 하루 화면이 열려요" else "하루 화면이 바로 크게 열려요"
         }, listOf(PhoneDayView.SHEET to "하루 화면 열기", PhoneDayView.WEEK to "그 주만 보기"), settings.phoneDayView) { v ->
             vm.update { it.copy(phoneDayView = v) }
         }
+        // B 1.32 [CALX-04] (사용자 2026-10-28 "달력 화면 요소 모두 켜고 끄기"): every card at once; 화면 꾸미기 picks them one by one.
+        SwitchRow("달력만 보기", "달력 위아래의 카드(요약·오늘의 흐름·근무시간 줄·메모 목록 등)를 모두 숨겨요. 하나씩 고르려면 달력 › 도구 › 화면 꾸미기",
+            settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on) } }
+        // B 1.32 [CALX-03] 한 번 눌러 고르기, for a calendar looked over day by day before anything opens.
+        SwitchRow("한 번 눌러 고르기", "처음 누르면 그 날만 골라지고(테두리), 같은 날을 한 번 더 누르면 열려요. 잘못 눌러 화면이 열리는 일이 줄어요",
+            settings.tapSelectFirst) { on -> vm.update { it.copy(tapSelectFirst = on) } }
         // [CAL-20] Off by default; the day sheet holds the same.
         SwitchRow("달력 아래 하루 카드", "누른 날의 근무 시간·특근·알람 끄기를 달력 아래 작은 카드로 보여 줘요", settings.showDayCard) { on ->
             vm.update { it.copy(showDayCard = on) }

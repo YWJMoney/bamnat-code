@@ -217,6 +217,9 @@ data class BoardItem(
     /** [PLZ-08] Phones using it and the names its senders chose. */
     val uses: Int = 0,
     val by: List<String> = emptyList(),
+    /** D 1.32 [PAYA-06] People who matched it on a payslip, and [COMM-11] checks in two months: the list shows the badges too. */
+    val checked: Int = 0,
+    val checkedLong: Boolean = false,
 )
 
 data class Board(val items: List<BoardItem>, val next: Int?)
@@ -1091,6 +1094,7 @@ internal fun boardOf(o: JSONObject): Board = Board(
             cycle = i.optString("cycle"), pay = i.optBoolean("pay"),
             kind = c.optString("kind", "company"), job = c.optString("job"), region = c.optString("region"),
             uses = i.optInt("uses"), by = i.optJSONArray("by").strings(),
+            checked = i.optInt("checked"), checkedLong = i.optBoolean("checkedLong"),
         )
     },
     next = if (o.has("next") && !o.isNull("next")) o.getInt("next") else null,

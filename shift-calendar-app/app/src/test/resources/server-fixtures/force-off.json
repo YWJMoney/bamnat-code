@@ -15,7 +15,7 @@
     "flags": {
       "billing": {
         "force": "off",
-        "why": "결제 오류 조사 중",
+        "why": "",
         "conditions": null,
         "until": "2026-11-19T15:00:00.000Z",
         "minApp": null,
@@ -39,7 +39,7 @@
       },
       "type.invest": {
         "force": "off",
-        "why": "캡처 인식 검증 중",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,
@@ -48,7 +48,7 @@
       },
       "plaza.write": {
         "force": "off",
-        "why": "도배",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,
@@ -119,7 +119,8 @@
     "admin": {
       "status": "approved",
       "name": "최고 관리자",
-      "owner": true
+      "owner": true,
+      "previews": []
     },
     "code": false,
     "checkedAt": "2026-11-12T03:00:00.000Z"
@@ -132,7 +133,8 @@
     "admin": {
       "status": "pending",
       "name": "민지",
-      "owner": false
+      "owner": false,
+      "previews": []
     },
     "code": false,
     "checkedAt": "2026-11-12T03:00:00.000Z"

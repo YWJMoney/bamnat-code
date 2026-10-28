@@ -60,17 +60,21 @@ fun SendGuardAsk(
 ) {
     val f = held.form
     when (val v = held.verdict) {
+        // A 1.32 [FIX132-04] (사용자 2026-10-28 "같은 규칙이면 기분 나쁘지 않게 '이미 같은 방식이 있어요! 구경하러 갈까요?'"):
+        // glad words, the same rule counted as one more 맞아요, and a look at it.
         is SendGuard.Same -> GuardDialog(
-            title = "이미 같은 규칙이 있어요",
+            title = "이미 같은 방식이 있어요! 🎉",
             onDismiss = onDismiss,
         ) {
-            GuardText("${place(v.page.name, v.setup.dept)}에 내 달력과 같은 규칙이 올라와 있어요. 새로 보내지 않고 이 규칙을 쓰면 맞아요 1명으로 세요.")
+            GuardText("${place(v.page.name, v.setup.dept)}에 내 달력과 똑같은 방식이 먼저 올라와 있어요. 제대로 맞췄다는 뜻이에요! " +
+                "새로 올리지 않고 이 방식을 쓰면 ‘맞아요’ 1명으로 세서 같은 회사 분들이 더 믿고 쓸 수 있어요.")
             DeptGroups.summary(v.setup.text)?.let { GuardLine(it) }
             // [FIN130-01] The pay way goes in with the 기본급 on the pay screen (PendingWay), never before it.
             if (v.withPay) GuardLine("이 규칙의 급여 계산 방식은 급여 화면에서 기본급을 넣으면 같이 들어가요. 그 전에는 내 급여가 그대로예요.")
             GuardButtons {
-                Button(onClick = { onUse(v) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 규칙 쓰기") }
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("취소") }
+                Button(onClick = { onUse(v) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("맞았다고 알리고 이 방식 쓰기") }
+                OutlinedButton(onClick = { onOpenCompany(v.page.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("구경하러 가기") }
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
             }
         }
         is SendGuard.Shape -> {

@@ -48,7 +48,7 @@ class CompanyScope(
 
     /** What a 명세서 tick rests on for this calendar's pay ([com.bamnat.app.AppContainer.slipProof] for the main one). */
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
-        com.bamnat.core.pay.SlipProof.of(pay.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
+        com.bamnat.core.pay.SlipProof.best(pay.profile.value, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
 
     /** The company this calendar is known to be in: the one in use, else joined, else typed for it; null for none. */
     fun companyName(): String? = store.applied.value?.company

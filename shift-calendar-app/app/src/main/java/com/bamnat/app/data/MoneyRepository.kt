@@ -97,6 +97,7 @@ class MoneyRepository(
      * moves a place to another category, that place keeps the new category from now on [LEDG-04].
      */
     suspend fun save(entry: MoneyEntry): MoneyEntry {
+        saves++
         if (entry.id == 0L) return entry.copy(id = dao.insertEntry(entry.toEntity(clock())))
         val before = dao.entry(entry.id)?.toModel()
         if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.EXPENSE && before.category != entry.category) {
@@ -347,6 +348,17 @@ class MoneyRepository(
         // A chat message ("어제 5,000원 입금했어") is not a bank text: from a messenger only texts that
         // name a card or bank count, and nothing else from it is ever kept.
         if (fromMessenger && (parsed == null || (parsed.issuer == null && parsed.last4 == null))) return Outcome.IGNORED
+        // E 1.32 [LEDX-08] Paid abroad without a won figure: written down at once at a rough rate with the usual fee (임시),
+        // to be fixed from the card's bill, instead of waiting in the list of texts to finish.
+        val abroad = parsed?.takeIf { it.needsWon }?.foreign?.let { f -> com.bamnat.core.money.LedgerSmarts.abroad(f.currency, f.amount) }
+        if (parsed != null && abroad != null && (parsed.merchant.isNotBlank() || parsed.issuer != null)) {
+            val day = parsed.date ?: arrived.toLocalDate()
+            val e = PaymentParser.toEntry(parsed.copy(amount = abroad.won), arrived.toLocalDate(), MoneySource.NOTIFICATION) ?: return Outcome.IGNORED
+            if (PaymentParser.findDuplicate(parsed.copy(amount = abroad.won), day, recent(day)) != null) return Outcome.DUPLICATE
+            save(e.copy(note = listOf(e.note, abroad.note).filter { it.isNotBlank() }.joinToString(" · "), reviewed = false,
+                accountId = MoneyAccounts.match(e.cardLast4, allAccounts())))
+            return Outcome.SAVED
+        }
         if (parsed == null || !parsed.confident) {
             if (kept.has(text)) return Outcome.DUPLICATE
             val reason = when {
@@ -362,14 +374,48 @@ class MoneyRepository(
         val recent = recent(day)
         if (PaymentParser.findDuplicate(parsed, day, recent) != null) return Outcome.DUPLICATE
         if (PaymentParser.findDuplicate(parsed, day, elsewhere(day)) != null) return Outcome.DUPLICATE
-        val category = if (parsed.type == PaymentParser.Type.CANCEL) {
-            PaymentParser.findCancelTarget(parsed, day, recent)?.category ?: parsed.category
-        } else parsed.category
-        PaymentParser.toEntry(parsed, arrived.toLocalDate(), MoneySource.NOTIFICATION, category)
+        // E 1.32 [LEDX-03] A refund finds its payment even when it is a part of it (부분취소) or a little off (abroad).
+        val refundOf = if (parsed.type == PaymentParser.Type.CANCEL) parsed.amount?.let {
+            com.bamnat.core.money.LedgerSmarts.refundTarget(it, parsed.merchant, parsed.last4, day, recent, foreign = parsed.foreign != null)
+        } ?: PaymentParser.findCancelTarget(parsed, day, recent) else null
+        // E 1.32 [LEDX-05] A place the dictionary does not know goes where the user's own lines say, when the phone is sure.
+        val learned = if (parsed.category == "기타" && parsed.type == PaymentParser.Type.APPROVAL) {
+            val probe = MoneyEntry(date = day, kind = MoneyKind.EXPENSE, amount = parsed.amount ?: 0, category = "", merchant = parsed.merchant,
+                time = parsed.time, cardLast4 = parsed.last4.orEmpty())
+            learner().guess(probe, 1).firstOrNull()?.takeIf { it.share >= com.bamnat.core.money.LedgerSmarts.Learner.SURE }?.category
+        } else null
+        val category = refundOf?.category ?: learned ?: parsed.category
+        val accounts = allAccounts()
+        val entry = PaymentParser.toEntry(parsed, arrived.toLocalDate(), MoneySource.NOTIFICATION, category)
             // [LEDG-08] A card the user added picks up its payments by the last four digits.
-            ?.let { e -> e.copy(accountId = MoneyAccounts.match(e.cardLast4, allAccounts())) }
-            ?.let { save(it) }
+            ?.let { e -> e.copy(accountId = MoneyAccounts.match(e.cardLast4, accounts)) }
+            ?.let { e -> if (refundOf != null) e.copy(note = listOf(e.note, com.bamnat.core.money.LedgerSmarts.refundNote(parsed.amount ?: 0, refundOf)).filter { it.isNotBlank() }.joinToString(" · ")) else e }
+            ?.let { e -> if (com.bamnat.core.money.LedgerSmarts.looksDcc(text)) e.copy(memo = com.bamnat.core.money.LedgerSmarts.DCC_NOTE) else e }
+            ?: return Outcome.SAVED
+        // E 1.32 [LEDX-02] The same payment told by the card and the bank (or a pay app and its card) is one line: the card's.
+        val near = recent + elsewhere(day)
+        com.bamnat.core.money.LedgerSmarts.crossDuplicate(entry, near)?.let { other ->
+            val keep = com.bamnat.core.money.LedgerSmarts.keepOf(other, entry)
+            if (keep !== other && recent.any { it.id == other.id }) save(entry.copy(id = other.id, reviewed = other.reviewed, memo = other.memo, tags = other.tags))
+            return Outcome.DUPLICATE
+        }
+        // E 1.32 [LEDX-01] A deposit and a withdrawal of the same amount between two of the user's own accounts are one move.
+        com.bamnat.core.money.LedgerSmarts.ownTransfer(entry, recent)?.let { other ->
+            val joined = com.bamnat.core.money.LedgerSmarts.joinTransfer(other, entry)
+            if (joined.id == 0L) { dao.deleteEntry(other.id); save(joined) } else save(joined)
+            return Outcome.SAVED
+        }
+        save(entry)
         return Outcome.SAVED
+    }
+
+    /** E 1.32 [LEDX-05] Learned from this calendar's lines, again after [LEARN_EVERY] saves. */
+    @Volatile private var learned: Pair<Int, com.bamnat.core.money.LedgerSmarts.Learner>? = null
+    private var saves = 0
+
+    suspend fun learner(): com.bamnat.core.money.LedgerSmarts.Learner {
+        learned?.takeIf { saves - it.first < LEARN_EVERY }?.let { return it.second }
+        return com.bamnat.core.money.LedgerSmarts.Learner.of(allEntries()).also { learned = saves to it }
     }
 
     suspend fun dismissCapture(id: Long) = kept.delete(id)
@@ -383,5 +429,6 @@ class MoneyRepository(
 
     companion object {
         const val KEEP_MILLIS = 30L * 24 * 60 * 60 * 1000
+        const val LEARN_EVERY = 20
     }
 }

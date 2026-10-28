@@ -5,6 +5,8 @@ import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -104,8 +106,18 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
     fun asText(): String = sections.joinToString("\n\n") { (title, lines) -> "[$title]\n" + lines.joinToString("\n") }
 
     /** [NXT-12] The same report without the dark-merge rows, for what leaves the phone with an inquiry. */
-    fun withoutFlags(): DiagReport = copy(sections = sections.filter { it.first != FLAG_SECTION })
+    fun withoutFlags(): DiagReport = copy(sections = sections.filter { it.first != OLD_FLAG_SECTION })
+
+    companion object {
+        /** S 1.32 [SECX-02] 1.28~1.31's 기능 상태 section; never written now, dropped if an old text holds it. */
+        const val OLD_FLAG_SECTION = "기능 상태"
+    }
 }
+
+/** S 1.32 [SECX-03] The raw records go with an inquiry; on the screen they stay folded under [SENT_RECORDS]. */
+const val USAGE_SECTION = "최근 30일 사용량"
+const val EVENTS_SECTION = "최근 이벤트"
+const val SENT_RECORDS = "문의할 때 함께 보내는 기록"
 
 class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     val upcoming = container.alarmScheduler.upcoming
@@ -244,6 +256,9 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     val previewTier = container.settingsRepository.settings.map { it.previewTier }
         .stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.previewTier)
     fun setPreview(t: Tier?) = container.settingsRepository.update { it.copy(previewTier = t) }
+    /** S 1.32 [SECX-01] The tester's tier preview shows only on an admin phone the developer app approved (or a debug build). */
+    val adminPhone = container.proStore.state.map { it.passes?.admin?.approved == true }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.proStore.current.passes?.admin?.approved == true)
 
     fun report(context: Context, events: List<DiagEvent>): DiagReport {
         val now = Today.millis()
@@ -298,12 +313,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
                 "알람 상태" to alarm,
                 "권한" to permissions,
                 "기기" to device,
-                "최근 30일 사용량" to usage,
+                USAGE_SECTION to usage,
                 // [MEAS-08] 328: the person sees what stopped before "점검 내용과 함께 문의하기" sends it.
                 "앱 멈춤" to crashes,
-                "최근 이벤트 ${minOf(events.size, RECENT)}개" to recent,
-                // [FLAG-14] 1.28 AL: the dark-merge rows, in the text too (the screen shows them as [FlagStatusCard]).
-                FLAG_SECTION to flagReportLines(container),
+                "$EVENTS_SECTION ${minOf(events.size, RECENT)}개" to recent,
+                // S 1.32 [SECX-02] No 기능 상태 (flag rows, conditions, 관리자 미리 보기) any more: not on the screen, not in a report.
             ),
         )
     }
@@ -358,6 +372,8 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     // [ALRM-01] R11: a missing notification permission goes first, in red.
     val checks = remember(refresh, upcoming) { vm.checks(context).sortedBy { if (it.title == "알림 허용" && it.ok == false) 0 else 1 } }
     val week = remember(events) { events?.let { EventBook.week(it, Today.millis()) } }
+    val adminPhone by vm.adminPhone.collectAsStateWithLifecycle()
+    var rawOpen by rememberSaveable { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -463,7 +479,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (testing || BuildConfig.DEBUG) item {
+            if (BuildConfig.DEBUG || (testing && adminPhone)) item {
                 val preview by vm.previewTier.collectAsStateWithLifecycle()
                 val gate by vm.gate.collectAsStateWithLifecycle()
                 SectionCard(title = "출시 뒤 화면 미리 보기") {
@@ -480,9 +496,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                 }
             }
-            // [FLAG-14] 1.28 AL: 기능 상태 with its checklists (and an admin phone's preview switches).
-            item { FlagStatusCard() }
-            items(report.sections.filter { it.first != FLAG_SECTION }, key = { it.first }) { (title, lines) ->
+            // S 1.32 [SECX-01] 기능 상태 and its 관리자 미리 보기 switches are gone from the phone (the developer app sets previews).
+            // [SECX-03] The raw usage and event records fold into one card: what an inquiry sends, seen only when opened.
+            val raw = report.sections.filter { it.first == USAGE_SECTION || it.first.startsWith(EVENTS_SECTION) }
+            items(report.sections - raw.toSet(), key = { it.first }) { (title, lines) ->
                 SectionCard(title = title) {
                     for (line in lines) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
@@ -492,6 +509,17 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                                 fontFamily = if (title.startsWith("최근 이벤트")) FontFamily.Monospace else null,
                             )
                         }
+                    }
+                }
+            }
+            if (raw.isNotEmpty()) item(key = "raw") {
+                SectionCard(title = SENT_RECORDS) {
+                    Text("‘점검 내용과 함께 문의하기’를 고르면 위 내용과 함께 이 기록(기능 이름별 횟수와 최근 이벤트)이 가요. 메모·금액·위치는 담지 않아요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { rawOpen = !rawOpen }) { Text(if (rawOpen) "기록 접기" else "보내는 기록 보기") }
+                    if (rawOpen) for ((title, lines) in raw) {
+                        Text(title, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+                        for (line in lines) Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                     }
                 }
             }

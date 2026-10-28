@@ -27,8 +27,40 @@ object ImagePrep {
     /** Longest side read: a 31-day table's letters stay 20+ pixels high at this size. */
     const val MAX_SIDE = 3200
 
-    /** The photo at [uri], upright and at most [MAX_SIDE] on its longest side. */
+    /** C 1.32 [STAB-05] A phone Android calls low on memory, or one that gives this app under 256MB. */
+    fun tight(context: Context): Boolean {
+        val am = context.getSystemService(android.app.ActivityManager::class.java) ?: return false
+        return am.isLowRamDevice || am.memoryClass < 256
+    }
+
+    /** C 1.32 [STAB-05] Memory running low right now (Android's own line), or this app's heap nearly full. */
+    fun low(context: Context): Boolean {
+        val am = context.getSystemService(android.app.ActivityManager::class.java)
+        val info = android.app.ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+        val rt = Runtime.getRuntime()
+        return info.lowMemory || rt.maxMemory() - (rt.totalMemory() - rt.freeMemory()) < 48L * 1024 * 1024
+    }
+
+    /** The smallest side [load] steps down to on a phone short of memory. */
+    const val MIN_SIDE = 1400
+
+    /**
+     * The photo at [uri], upright and at most [MAX_SIDE] on its longest side. C 1.32 [STAB-05] 572: a phone short of
+     * memory gets the photo at half the size (down to [MIN_SIDE]) instead of the app stopping.
+     */
     fun load(context: Context, uri: Uri, maxSide: Int = MAX_SIDE): Bitmap {
+        var side = maxSide
+        while (true) {
+            try {
+                return loadAt(context, uri, side)
+            } catch (e: OutOfMemoryError) {
+                if (side / 2 < MIN_SIDE) throw IllegalArgumentException("메모리가 모자라 사진을 열지 못했어요. 다른 앱을 닫고 다시 해 주세요")
+                side /= 2
+            }
+        }
+    }
+
+    private fun loadAt(context: Context, uri: Uri, maxSide: Int): Bitmap {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -38,18 +70,29 @@ object ImagePrep {
         val decoded = resolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: throw IllegalArgumentException("사진을 열지 못했어요")
-        val turn = runCatching { resolver.openInputStream(uri)?.use { degrees(ExifInterface(it)) } }.getOrNull() ?: 0f
+        val orientation = runCatching {
+            resolver.openInputStream(uri)?.use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
+        }.getOrNull() ?: ExifInterface.ORIENTATION_NORMAL
         val scale = (maxSide.toFloat() / max(decoded.width, decoded.height)).coerceAtMost(1f)
-        if (turn == 0f && scale == 1f) return decoded
-        val m = Matrix().apply { postScale(scale, scale); postRotate(turn) }
+        val upright = upright(orientation)
+        if (upright == null && scale == 1f) return decoded
+        val m = Matrix().apply { postScale(scale, scale); upright?.let { postConcat(it) } }
         return Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, m, true).also { if (it !== decoded) decoded.recycle() }
     }
 
-    private fun degrees(exif: ExifInterface): Float = when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-        else -> 0f
+    /**
+     * What makes a photo upright from its EXIF orientation, null when it already is. A 1.32 [FIX132-01]: the mirrored ones
+     * too (뒤집힘·전치, a front camera or an editing app), which 1.31 read as they lay — mirrored text reads as nothing.
+     */
+    internal fun upright(orientation: Int): Matrix? = when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> Matrix().apply { setScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_180 -> Matrix().apply { setRotate(180f) }
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> Matrix().apply { setRotate(180f); postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_TRANSPOSE -> Matrix().apply { setRotate(90f); postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_90 -> Matrix().apply { setRotate(90f) }
+        ExifInterface.ORIENTATION_TRANSVERSE -> Matrix().apply { setRotate(-90f); postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_270 -> Matrix().apply { setRotate(-90f) }
+        else -> null
     }
 
     /**

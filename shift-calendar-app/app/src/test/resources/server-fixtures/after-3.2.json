@@ -39,7 +39,7 @@
       },
       "type.invest": {
         "force": "off",
-        "why": "캡처 인식 검증 중",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,
@@ -48,7 +48,7 @@
       },
       "plaza.write": {
         "force": "off",
-        "why": "도배",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,

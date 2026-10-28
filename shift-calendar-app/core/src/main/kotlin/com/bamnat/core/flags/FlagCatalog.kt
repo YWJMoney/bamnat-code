@@ -115,7 +115,7 @@ object FlagCatalog {
         Flag(
             typeKey(s), "${TYPE_NAMES.getValue(s)} 근무 유형",
             what = "첫 질문·첫 설정·새 달력·근무 형태 바꾸기·하는 일 찾기·둘러보기에 ‘${TYPE_NAMES.getValue(s)}’ 유형이 보여요.",
-            whyOff = "기본으로 켜 둬요. 끄면 새로 고르는 곳에서만 빠지고 이미 쓰는 달력·백업·회사 파일은 그대로예요. 최고 관리자로 연결된 휴대폰에는 숨긴 유형도 보여요.",
+            whyOff = "기본으로 켜 둬요. 끄면 새로 고르는 곳에서만 빠지고 이미 쓰는 달력·백업·회사 파일은 그대로예요. 관리자 앱에서 미리 보기를 받은 관리자 휴대폰에만 숨긴 유형이 보여요.",
             basis = Basis(decision = "D98", requirement = if (s == WorkStyle.INVEST) "INV-01" else "WORK-01", note = "근무 유형 노출(순번 454)"),
             conditions = emptyList(), default = true, group = FlagGroup.TYPE,
         )
@@ -230,15 +230,19 @@ object FlagCatalog {
 object TypeExposure {
     data class Choice(val style: WorkStyle, val hidden: Boolean)
 
-    const val HIDDEN_MARK = "숨김 · 관리자에게만 보여요"
+    // S 1.32 [SECX-01] Only a phone the developer app gave this kind's 미리 보기 sees it, marked so.
+    const val HIDDEN_MARK = "미리 보기 · 이 휴대폰에만 보여요"
 
-    fun choices(on: (WorkStyle) -> Boolean, owner: Boolean, keep: WorkStyle? = null): List<Choice> {
+    fun choices(on: (WorkStyle) -> Boolean, owner: Boolean, keep: WorkStyle? = null): List<Choice> = choices(on, { owner }, keep)
+
+    /** S 1.32 [SECX-01] [previewed]: the hidden kinds this admin phone was given 미리 보기 for in the developer app. */
+    fun choices(on: (WorkStyle) -> Boolean, previewed: (WorkStyle) -> Boolean, keep: WorkStyle? = null): List<Choice> {
         val open = WorkStyle.entries.filter { on(it) || it == keep }.toMutableSet()
         if (open.isEmpty()) open += WorkStyle.SHIFT
         return WorkStyle.entries.mapNotNull { s ->
             when {
                 s in open -> Choice(s, hidden = false)
-                owner -> Choice(s, hidden = true)
+                previewed(s) -> Choice(s, hidden = true)
                 else -> null
             }
         }

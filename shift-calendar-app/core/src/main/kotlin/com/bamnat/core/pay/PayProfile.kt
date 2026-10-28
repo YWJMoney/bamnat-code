@@ -273,6 +273,11 @@ data class PayProfile(
     val annual: AnnualPay? = null,
     /** [PAYS-02] The last month matched against a payslip; kept on the phone only. */
     val verified: PayslipCheck? = null,
+    /**
+     * D 1.32 [PAYA-01] Every month matched against a payslip (newest first, a month once, at most [SlipProof.KEEP]): the
+     * 명세서 tick rests on the best of them, not only the last ([SlipProof.best]). Kept on the phone only, like [verified].
+     */
+    val checks: List<PayslipCheck> = emptyList(),
     /** [PAYS-06] Rules the user stated in their own words, paid on top of everything else. */
     val customRules: List<CustomRule> = emptyList(),
     /** [HRLY-04] How tax comes off this pay, for 예상 실수령; nothing by default. */

@@ -75,7 +75,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, phoneList, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
+import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
@@ -720,6 +720,8 @@ const COLUMNS = [
   "ALTER TABLE inquiries ADD COLUMN copied_at INTEGER",
   "ALTER TABLE inquiries ADD COLUMN copied_by TEXT",
   // AT 1.29 끝
+  // S 1.32 [SECX-01] Flags an approved admin phone sees before everyone (미리 보기), as a JSON array the developer app sets.
+  "ALTER TABLE admin_devices ADD COLUMN previews TEXT",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -3160,7 +3162,7 @@ async function vote(request, env) {
   const rule = await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp);
   // [FIN130-12] A version held for its shape is not on the plaza: nothing to vote on until the developer places it.
   const pending = rule ? null : await one(env, `SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND ${pgShown()} LIMIT 1`, c.id, grp);
-  if (!rule && !pending) return json({ error: "not_found" }, 404);
+  if (!rule && !pending) return voteGone(env, c.id, grp);
   const dev = await deviceHash(device);
   await forgetNetworks(env, now);
   const cluster = await clusterFor(env, c.id, net);
@@ -3173,6 +3175,24 @@ async function vote(request, env) {
   if (!body.ok && rule) await settleDept(env, c.id, (await one(env, "SELECT dept_norm FROM rules WHERE id = ?", rule.id)).dept_norm, now);
   const adopted = rule ?? (await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp));
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
+}
+
+/**
+ * A 1.32 [FIX132-02] (사용자 2026-10-28 "'달라요' → 알려주기가 인터넷 연결 안 됨"): 1.31 answered every version not open to
+ * votes with not_found, and the app said "인터넷에 연결되지 않았어요" for any failure. Now the answer says why: replaced by a
+ * newer version of the same department (with the version in use, so the app can offer it), taken down, or held for review.
+ */
+async function voteGone(env, company, grp) {
+  const old = await one(env, "SELECT dept_norm, withdrawn, superseded FROM rules WHERE company_id = ? AND grp = ? ORDER BY adopted_at DESC LIMIT 1", company, grp);
+  if (old?.superseded && !old.withdrawn) {
+    const now = await one(env, "SELECT grp, version FROM rules WHERE company_id = ? AND dept_norm = ? AND withdrawn = 0 AND superseded = 0 ORDER BY adopted_at DESC LIMIT 1",
+      company, old.dept_norm);
+    return json({ error: "superseded", current: now ? { setup: now.grp, version: now.version } : null }, 409);
+  }
+  if (old?.withdrawn) return json({ error: "withdrawn" }, 410);
+  const held = await one(env, "SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' LIMIT 1", company, grp);
+  if (held) return json({ error: "held" }, 409);
+  return json({ error: "not_found" }, 404);
 }
 
 // ---- rule sets everyone can see, vote on and talk about [COMM-06][COMM-07] ----
@@ -4030,6 +4050,8 @@ function secretIssue(env, name, least) {
  */
 function areaFor(path) {
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
+  // S 1.32 [SECX-01] 휴대폰 미리 보기: phonePreviews checks owner, or flags:edit on the admin's own phone.
+  if (/^\/devices\/d[A-Za-z0-9]{15}\/previews$/.test(path)) return null;
   // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
   if (path === "/badges" || path === "/today" || path === "/basics") return null;
   // AX 1.30 [ADMX-08] One search: each part reads only what the admin may see (adminSearch).
@@ -4179,6 +4201,10 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) {
     return flagRoute(request, env, url, path, method, actor, now);
   }
+  // S 1.32 [SECX-01] The phones an admin may set 미리 보기 on (all for the owner, else their own) and the setting itself.
+  if (path === "/me/phones" && method === "GET") return json(await myPhones(env, actor));
+  m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/previews$/);
+  if (m && method === "POST") return phonePreviews(request, env, actor, m[1], now);
   if (path === "/devices" && method === "GET") return json(await phoneList(env));
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);

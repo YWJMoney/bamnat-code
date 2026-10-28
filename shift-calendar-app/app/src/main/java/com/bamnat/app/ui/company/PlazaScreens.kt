@@ -86,6 +86,9 @@ private fun won(v: Long): String = "%,d원".format(v)
 
 private val dateFormat = DateTimeFormatter.ofPattern("yyyy년 M월 d일")
 
+/** D 1.32 [PAYA-06] People who matched a rule set on a payslip before it carries the 명세서로 확인된 계산법 badge. */
+const val VERIFIED_PEOPLE = 2
+
 /** [PLZ-08] Who stands behind a rule set: how many sent it, checked it on a pay slip and use it, and the names they chose. */
 @Composable
 fun WhoLine(senders: Int, checked: Int, uses: Int, by: List<String>, checkedLong: Boolean = false) {
@@ -97,7 +100,11 @@ fun WhoLine(senders: Int, checked: Int, uses: Int, by: List<String>, checkedLong
     if (parts.isEmpty() && by.isEmpty() && !checkedLong) return
     Column {
         // [COMM-11] N7: checked on pay slips from different networks in two different months.
-        if (checkedLong) StatusChip("두 달 이상 확인됨", Tone.GOOD)
+        // D 1.32 [PAYA-06] 580: two people or more matched it on their own payslips.
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (checked >= VERIFIED_PEOPLE) StatusChip("명세서로 확인된 계산법", Tone.GOOD)
+            if (checkedLong) StatusChip("두 달 이상 확인됨", Tone.GOOD)
+        }
         if (parts.isNotEmpty()) Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (by.isNotEmpty()) Text("올린 분: ${by.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)

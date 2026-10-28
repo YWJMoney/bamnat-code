@@ -181,10 +181,16 @@ class WorkHoursCalculator(
         return Math.round(day.scheduledMinutes.toDouble() * after / span).toInt()
     }
 
-    fun month(month: YearMonth): MonthSummary {
-        val days = resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
-        val weeks = generateSequence(weekStartOf(month.atDay(1))) { it.plusWeeks(1) }
-            .takeWhile { !it.isAfter(month.atEndOfMonth()) }
+    fun month(month: YearMonth): MonthSummary = month(month, month.atDay(1), month.atEndOfMonth())
+
+    /**
+     * B 1.32 [CALX-05] (사용자 2026-10-28 "추가근로·이번 달 근무를 급여 주기(예 20일) 기준 또는 1일~말일 선택"): [month]'s figures
+     * over [from]..[to], e.g. a pay period of 9월 21일~10월 20일 for 10월.
+     */
+    fun month(month: YearMonth, from: java.time.LocalDate, to: java.time.LocalDate): MonthSummary {
+        val days = resolver.resolveRange(from, to)
+        val weeks = generateSequence(weekStartOf(from)) { it.plusWeeks(1) }
+            .takeWhile { !it.isAfter(to) }
             .map(::week)
             .toList()
         return MonthSummary(

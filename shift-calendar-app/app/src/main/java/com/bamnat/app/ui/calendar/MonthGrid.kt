@@ -227,6 +227,8 @@ fun MonthGrid(
     /** [WORK-02][WORK-03] Field and shop work show the day's income in place of hours. */
     money: MoneyBook = MoneyBook.EMPTY,
     showMoney: Boolean = false,
+    /** E 1.32 [LEDX-07] The day's spending under the date (가계부 lines of this calendar). */
+    showSpend: Boolean = false,
     /** [FEAT-17] Memo-first: the start of each day's memo in place of the hours. */
     memoTexts: Map<LocalDate, String> = emptyMap(),
     /** [CAL-01] With a stamp chosen in quick input, a finger dragged over days paints them all at once. */
@@ -348,6 +350,7 @@ fun MonthGrid(
                         quickMenu = quickMenu,
                         focus = focus,
                         showMoney = showMoney,
+                        showSpend = showSpend,
                         span = cells.spans[date],
                         startsHere = cells.starts[date] ?: 0,
                         sales = cells.sales[date],
@@ -406,6 +409,7 @@ fun WeekStrip(
     modifier: Modifier = Modifier,
     money: MoneyBook = MoneyBook.EMPTY,
     showMoney: Boolean = false,
+    showSpend: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     hourly: HourlyCells? = null,
@@ -439,6 +443,7 @@ fun WeekStrip(
                 onQuickAction = { onQuickAction(date, it) },
                 focus = focus,
                 showMoney = showMoney,
+                showSpend = showSpend,
                 span = cells.spans[date],
                 startsHere = cells.starts[date] ?: 0,
                 sales = cells.sales[date],
@@ -474,6 +479,7 @@ private fun DayCell(
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     /** [WORK-02][WORK-03] The day's income under the date, for field and shop work. */
     showMoney: Boolean = false,
+    showSpend: Boolean = false,
     span: JobSpan? = null,
     startsHere: Int = 0,
     sales: Long? = null,
@@ -694,11 +700,14 @@ private fun DayCell(
                 val investText = invest?.footer(date)
                 // [FLD-02] A day-rate day says its 공수 ("1공", "0.5") under the bar.
                 val unitsText = if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null
+                // E 1.32 [LEDX-07] What the day spent, when the user put it in the cells.
+                val spendText = if (showSpend && focus == CalendarFocus.SHIFTS) money?.expense?.takeIf { it > 0 }?.let { "−" + Fmt.wonShort(it) } else null
                 val footer = when {
                     memoText != null -> memoText
                     investText != null -> investText
                     unitsText != null -> unitsText
                     moneyText != null -> moneyText
+                    spendText != null -> spendText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
                     // [CAL-28] Both on: the hours first and the lunar date after them, in one line (I 리뷰 P10).
                     showLunar && showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes) + "·" + remember(date) { KoreanLunar.fromSolar(date).short }

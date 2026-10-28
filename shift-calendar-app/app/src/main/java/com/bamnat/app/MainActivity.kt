@@ -146,6 +146,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // C 1.32 [STAB-07] The freeze watch runs only while the app is on screen.
+        com.bamnat.app.diag.MainStall.start(this)
         // [PERF-09] Before the container is whole this part waits for it ([open] runs it).
         shown.value?.let(::started)
     }
@@ -174,6 +176,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        com.bamnat.app.diag.MainStall.stop()
         // [PERF-15] A screen gone before its month showed gives no startup sample.
         if (!isChangingConfigurations) StartupTrace.activityStopped()
         if (!startDone) return

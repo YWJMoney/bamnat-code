@@ -644,6 +644,8 @@ function adminApp(L, BUILD, M) {
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
+      // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
+      if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -1844,6 +1846,34 @@ function adminApp(L, BUILD, M) {
         : '<p class="hint">연결된 휴대폰이 없어요.</p>'}`;
   }
 
+  /**
+   * S 1.32 [SECX-01] 휴대폰 미리 보기: which flags an approved admin phone sees before everyone. Only here, by role
+   * (the owner for any phone, 기능 관리 바꾸기 for one's own); the phone app shows and changes nothing about flags.
+   */
+  function previewCard() {
+    const p = S.data.myPhones;
+    if (!p || !p.phones.length) return "";
+    const names = new Map(p.flags.map((f) => [f.key, f.name]));
+    return `<section class="card"><h2>휴대폰 미리 보기</h2>
+      <p class="hint">켜기 전인 기능을 이 휴대폰에만 먼저 보여요. 사용자 휴대폰에는 기능 상태나 스위치가 보이지 않고, 여기서만 바꿔요. 바뀐 것은 그 휴대폰이 다음에 이용권을 확인할 때(앱을 열 때) 반영돼요.${p.edit ? "" : " 바꾸려면 기능 관리 ‘바꾸기’ 권한이 있어야 해요."}</p>
+      <ul class="rows">${p.phones.map((d) => `<li class="item">
+        <div class="row-main"><b>${esc(d.adminName)}의 휴대폰${d.mine ? " (내 휴대폰)" : ""}</b>
+          <small>${d.status === "approved" ? "" : "승인 대기 · "}${d.previews.length ? esc(d.previews.map((k) => names.get(k) ?? k).join(", ")) : "미리 보기 없음"}</small></div>
+        ${p.edit ? `<div class="actions"><button class="btn small" data-act="phone-previews" data-id="${d.id}">고르기</button></div>` : ""}</li>`).join("")}</ul></section>`;
+  }
+
+  function openPreviews(id) {
+    const p = S.data.myPhones;
+    const d = p?.phones.find((x) => x.id === id);
+    if (!d) return;
+    const on = new Set(d.previews);
+    openDialog(`<form data-form="phone-previews" data-id="${d.id}"><h2>${esc(d.adminName)}의 휴대폰 미리 보기</h2>
+      <p class="hint">고른 기능은 조건이 아직 안 맞아도 이 휴대폰에서만 켜져요. 법·처리방침 조건이 있는 기능(LEGAL)은 미리 보기로도 서버에 정보를 보내지 않아요.</p>
+      <div class="radios">${p.flags.map((f) => `<label class="radio"><input type="checkbox" name="keys" value="${esc(f.key)}"${on.has(f.key) ? " checked" : ""}>
+        <span>${esc(f.name)}</span></label>`).join("")}</div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
+  }
+
   /** Area by area: nothing, a look, or changes too; presets fill the table in one tap. */
   function permEditor(perms, d) {
     const presets = Object.entries(d.presets ?? {});
@@ -2258,6 +2288,7 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
         <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
         <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
+      ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
@@ -3898,6 +3929,7 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
       document.getElementById("second-on-code")?.focus();
     },
+    "phone-previews": ({ id }) => openPreviews(id),
     "link-code": async () => {
       const r = await act(() => api("/me/link-code", "POST", {}));
       if (!r) return;
@@ -4214,6 +4246,14 @@ function adminApp(L, BUILD, M) {
       } catch (e) {
         fail(e);
       }
+    },
+    // S 1.32 [SECX-01]
+    "phone-previews": async (form) => {
+      const keys = new FormData(form).getAll("keys");
+      dialog.close();
+      const d = await act(() => api(`/devices/${form.dataset.id}/previews`, "POST", { keys }), keys.length ? "저장했어요. 그 휴대폰이 앱을 열면 반영돼요" : "미리 보기를 모두 껐어요");
+      if (d) S.data.myPhones = d;
+      render({ keepScroll: true });
     },
     reject: async (form) => {
       const reason = new FormData(form).get("reason");

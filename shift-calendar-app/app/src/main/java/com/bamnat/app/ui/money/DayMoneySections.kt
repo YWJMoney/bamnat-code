@@ -243,7 +243,7 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
                     if (showDate) Fmt.shortDate(e.date) else null, e.time?.let(Fmt::time),
                     if (e.isSplit) "${e.shares().size}개 분류" else e.category,
                     if (e.kind == MoneyKind.TRANSFER) "이체" else null,
-                    if (e.installments > 1) "${e.installments}개월 할부" else null, source,
+                    if (e.installments > 1) com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) else null, source,
                     e.note.takeIf { it.isNotBlank() && e.merchant.isNotBlank() },
                     e.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
                 ).joinToString(" · "),

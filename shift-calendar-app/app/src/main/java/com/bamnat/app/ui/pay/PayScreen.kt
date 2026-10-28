@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -405,6 +407,11 @@ private fun PayResult(
                 companyHours = companyWay?.hours, companyName = companyWay?.way?.company)
         } else TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // A 1.32 [FIX132-03] A month on an older value says so, with one tap to make every month the same.
+        if (closedSnap == null && unlocked) {
+            val older = remember(profile, month) { com.bamnat.core.pay.PaySameness.of(profile, month) }
+            if (!older.same) OlderValuesCard(older.line, onUnify = { vm.unifyMonths() }, onHistory = { editTarget = ValueTarget.Base })
+        }
         // [PAYS-17] 이것만 넣으면 정확해져요: each value straight from here, without leaving the month.
         val shownNeeds = if (noBase) needs.filter { it.kind != com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE } else needs
         if (closedSnap == null) RuleNeedsCard(shownNeeds, withSlip = profile.verified != null) { n ->
@@ -421,6 +428,11 @@ private fun PayResult(
         // way from a payslip or its rules page, free).
         SlipMatchCard(profile, gate, onCompare = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
             onFind = { slipRules = true })
+        // D 1.32 [PAYA-03] Two months or more matched: all of them at once (프로).
+        if (closedSnap == null && unlocked && com.bamnat.core.pay.MultiMonthFit.months(profile).size >= 2)
+            FitMonthsCard(vm, profile, snapshot, allowed = gate.allows(Feature.PAYSLIP_MATCH), onPro = { openPro(Feature.PAYSLIP_MATCH) })
+        // A 1.32 [FIX132-04] Just matched: offer the plaza once, the 명세서 tick on.
+        if (unlocked) ShareAfterMatchCard(profile)
         // [PAYG-04] The figures below all come from the 기본급: shown once it is in.
         if (!noBase) {
         // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
@@ -1278,6 +1290,59 @@ private fun LeaveStat(label: String, value: String, modifier: Modifier, warn: Bo
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleMedium,
                 color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+/** A 1.32 [FIX132-03] This month reads an older value than the latest one entered; '모든 달 같게' makes them one. */
+@Composable
+private fun OlderValuesCard(line: String, onUnify: () -> Unit, onHistory: () -> Unit) {
+    com.bamnat.app.ui.company.SoftCard(highlighted = true) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(line, style = MaterialTheme.typography.bodyMedium)
+            Text("값을 ‘이 달부터’로 바꾸면 그 전 달은 예전 값으로 남아요. 오른 게 아니라면 모든 달을 같게 맞춰 주세요. 마감한 달은 그대로예요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onUnify) { Text("모든 달 같게") }
+                TextButton(onClick = onHistory) { Text("기본급 바꾸기") }
+            }
+        }
+    }
+}
+
+/**
+ * D 1.32 [PAYA-03] 577: the months kept from payslips, each with the app's total, and one button that finds the settings
+ * that fit them all. What it would change is shown before anything is saved.
+ */
+@Composable
+private fun FitMonthsCard(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, allowed: Boolean, onPro: () -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var result by remember(profile) { mutableStateOf<com.bamnat.core.pay.MultiMonthFit.Result?>(null) }
+    var working by remember { mutableStateOf(false) }
+    val months = remember(profile) { com.bamnat.core.pay.MultiMonthFit.months(profile) }
+    SectionCard(title = "명세서 ${months.size}달 한꺼번에 맞추기", trailing = { if (!allowed) com.bamnat.app.ui.components.ProBadge(locked = true) }) {
+        Text("한 달만 맞추면 다른 달에 틀릴 수 있어요. 맞춰 본 달을 모두 같이 맞추면 회사 계산 방식에 더 가까워져요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val r = result
+        if (r == null) {
+            Button(enabled = !working, onClick = {
+                if (!allowed) onPro() else scope.launch { working = true; result = vm.fitMonths(profile, snapshot); working = false }
+            }, modifier = Modifier.padding(top = 6.dp).heightIn(min = 48.dp)) { Text(if (working) "맞추는 중…" else "${months.size}달 같이 맞추기") }
+        } else {
+            r.rows.forEachIndexed { i, row ->
+                val was = r.before.getOrNull(i)
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text("${row.month.monthValue}월", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text((if (was != null && was.total != row.total) "${won(was.gap)} → " else "") + if (row.matched) "일치" else "차이 ${won(row.gap)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (row.matched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                }
+            }
+            Text("${r.rows.size}달 중 ${r.matchedMonths}달이 맞아요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+            r.changes.forEach { c -> Text("· ${c.label}: ${c.from} → ${c.to}", style = MaterialTheme.typography.bodySmall) }
+            if (r.improved) Button(onClick = { vm.applyFit(r); result = null }, modifier = Modifier.padding(top = 6.dp).heightIn(min = 48.dp)) { Text("이 설정으로 바꾸기") }
+            else Text("지금 설정이 가장 잘 맞아요. 남은 차이는 회사만의 수당이나 공제일 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

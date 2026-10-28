@@ -277,8 +277,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { container.backupManager.exportFile(it, password) }
                 }
+                // C 1.32 [STAB-06] Read back from where it went and opened, so "저장했어요" means it will restore.
+                val opens = runCatching {
+                    context.contentResolver.openInputStream(uri)!!.use { container.backupManager.verifyFile(it, password) }
+                }.isSuccess
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
-                if (password == null) "백업 파일을 저장했어요" else "암호 건 백업을 저장했어요. 암호를 잊으면 열 수 없어요"
+                when {
+                    !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
+                    password == null -> "백업 파일을 저장하고, 다시 열어 확인했어요"
+                    else -> "암호 건 백업을 저장하고 확인했어요. 암호를 잊으면 열 수 없어요"
+                }
             }.getOrElse { "백업을 저장하지 못했어요" })
             password?.fill(' ')
         }

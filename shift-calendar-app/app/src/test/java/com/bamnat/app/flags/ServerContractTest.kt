@@ -109,7 +109,8 @@ class ServerContractTest {
         assertTrue(c.billingLive)
         assertEquals(setOf(Feature.MONEY_STATS), c.freeFeatures)
         assertEquals(setOf(ServerSwitch.PLAZA_WRITE), c.off)
-        assertTrue("from flags, not from the old switch", c.overrides().getValue(FlagCatalog.BILLING).why!!.contains("1.27"))
+        // S 1.32 [SECX-04] The admin's 이유 stays in the developer app; the force itself comes through flags.
+        assertTrue("from flags, not from the old switch", c.overrides().getValue(FlagCatalog.BILLING).why.isNullOrEmpty())
         val s = states(c, phone(c))
         assertEquals(FlagSource.FORCE_ON, s.getValue(FlagCatalog.BILLING).source)
         assertTrue(s.getValue(FlagCatalog.BILLING).on)
@@ -147,7 +148,8 @@ class ServerContractTest {
         val billing = states(c, phone(c, admin = true, previews = setOf(FlagCatalog.BILLING))).getValue(FlagCatalog.BILLING)
         assertEquals(FlagSource.FORCE_OFF, billing.source)
         assertFalse(billing.on)
-        assertTrue(billing.reason, billing.reason.contains("결제 오류 조사 중") && billing.reason.contains("2026년 11월 20일까지"))
+        // S 1.32 [SECX-04] The admin's 이유 is not sent to phones; the end date still is.
+        assertTrue(billing.reason, billing.reason.startsWith("관리자가 잠시 껐어요") && billing.reason.contains("2026년 11월 20일까지"))
         assertTrue("the force ended: conditions again", states(c, phone(c, later = 9 * days)).getValue(FlagCatalog.BILLING).on)
         assertFalse(states(c, phone(c)).getValue("plaza.write").on)
         assertEquals(setOf(ServerSwitch.PLAZA_WRITE), c.off)
@@ -155,16 +157,19 @@ class ServerContractTest {
         assertEquals(40, c.overrides().getValue("share.create").minApp)
         assertEquals(FlagSource.APP_RANGE, states(c, phone(c, versionCode = 39)).getValue("share.create").source)
         assertTrue(states(c, phone(c, versionCode = 40)).getValue("share.create").on)
-        // The owner's phone sees the hidden way of working, marked; an admin who is not the owner (or not approved) does not.
+        // S 1.32 [SECX-01] Only an approved admin phone given 투자's 미리 보기 in the developer app sees it, marked; being the
+        // owner adds nothing, and the server's previews list reads through.
         val ownerPass = TierClient.readPasses(fixture("force-off.json").getJSONObject("ownerPasses")).admin!!
         val memberPass = TierClient.readPasses(fixture("force-off.json").getJSONObject("memberPasses")).admin!!
         assertTrue(ownerPass.approved && ownerPass.owner)
         assertFalse(memberPass.owner)
         val ownerPhone = phone(c, admin = ownerPass.approved, owner = ownerPass.owner)
-        val owners = Flags.types(states(c, ownerPhone), owner = ownerPhone.admin && ownerPhone.owner)
-        assertTrue(owners.single { it.style == WorkStyle.INVEST }.hidden)
+        assertEquals(emptyList<String>(), ownerPass.previews)
+        assertTrue(Flags.types(states(c, ownerPhone), ownerPass.previews.toSet()).none { it.style == WorkStyle.INVEST })
+        val previewing = phone(c, admin = true, owner = true, previews = setOf("type.invest"))
+        assertTrue(Flags.types(states(c, previewing), previewing.previews).single { it.style == WorkStyle.INVEST }.hidden)
         val memberPhone = phone(c, admin = memberPass.approved, owner = memberPass.owner)
-        assertTrue(Flags.types(states(c, memberPhone), owner = memberPhone.admin && memberPhone.owner).none { it.style == WorkStyle.INVEST })
+        assertTrue(Flags.types(states(c, memberPhone), emptySet()).none { it.style == WorkStyle.INVEST })
     }
 
     @Test fun statsMoreStaysOffWithoutTheExtraYesAndItsListGoesToTheServer() {

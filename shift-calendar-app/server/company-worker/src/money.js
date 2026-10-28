@@ -1,4 +1,4 @@
-import { configFlags, configPolicy, flagStore, legacyFlags, recordLaunch, serverEval } from "./flags.js";
+import { FLAG_KEYS, configFlags, configPolicy, flagDef, flagStore, legacyFlags, recordLaunch, serverEval } from "./flags.js";
 import { OWNER, Refuse, all, allow, answer, audit, batch, deviceHash, deviceId, given, iso, item, json, network, one, overLimit, randomId, readJson, refuse, run, salt, sha256, stmt, tooMany } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { kstDay, noticeRows, noticeView } from "./usage.js";
@@ -108,7 +108,7 @@ export async function installOf(request) {
 export async function passes(env, dev, now) {
   const [rows, link, code, s] = await Promise.all([
     all(env, "SELECT months, status, paid_at, deferred, rule_id FROM rewards WHERE device = ?", dev),
-    one(env, "SELECT status, admin_name, admin FROM admin_devices WHERE device = ?", dev),
+    one(env, "SELECT status, admin_name, admin, previews FROM admin_devices WHERE device = ?", dev),
     one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
     launchState(env),
   ]);
@@ -120,7 +120,10 @@ export async function passes(env, dev, now) {
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
-    admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id } : null,
+    // S 1.32 [SECX-01] previews: the flags the developer app turned on for this phone only (approved phones only).
+    // The phone shows nothing about flags itself any more; the 기능 상태 card and its switches are gone.
+    admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id,
+      previews: link.status === "approved" ? previewKeys(link.previews) : [] } : null,
     code: Boolean(code),
     checkedAt: iso(now),
   };
@@ -559,6 +562,44 @@ export async function phoneList(env) {
     })),
     perAdmin: MONEY.phonesPerAdmin,
   };
+}
+
+/** S 1.32 [SECX-01] Stored 미리 보기 keys, kept only while the flag still exists. */
+export function previewKeys(text) {
+  let a;
+  try { a = JSON.parse(text ?? "[]"); } catch { a = []; }
+  return Array.isArray(a) ? [...new Set(a.filter((k) => typeof k === "string" && FLAG_KEYS.includes(k)))] : [];
+}
+
+/** S 1.32 [SECX-01] The phones this admin may set 미리 보기 on: every phone for the owner, else only their own. */
+export async function myPhones(env, actor) {
+  const rows = actor.owner
+    ? await all(env, "SELECT id, admin, admin_name, status, previews, seen_at FROM admin_devices ORDER BY created_at DESC")
+    : await all(env, "SELECT id, admin, admin_name, status, previews, seen_at FROM admin_devices WHERE admin = ? ORDER BY created_at DESC", actor.id);
+  const edit = actor.owner || (actor.perms?.flags === "edit");
+  return {
+    edit,
+    phones: rows.map((d) => ({ id: d.id, adminName: d.admin_name, mine: d.admin === actor.id, status: d.status,
+      previews: previewKeys(d.previews), seenAt: d.seen_at ? iso(d.seen_at) : null })),
+    flags: FLAG_KEYS.map((k) => ({ key: k, name: flagDef(k)?.name ?? k, group: flagDef(k)?.group ?? "" })),
+  };
+}
+
+/**
+ * S 1.32 [SECX-01] Sets which flags one admin phone sees before everyone. Only the owner, or an admin with 기능 관리
+ * 바꾸기 on a phone tied to themselves; the phone picks the list up at its next 이용권 check.
+ */
+export async function phonePreviews(request, env, actor, id, now) {
+  const body = await readJson(request, 4096);
+  const d = await one(env, "SELECT * FROM admin_devices WHERE id = ?", id);
+  if (!d) return json({ error: "not_found" }, 404);
+  if (!actor.owner && !(actor.perms?.flags === "edit" && d.admin === actor.id)) return json({ error: "forbidden" }, 403);
+  if (!Array.isArray(body.keys) || body.keys.length > FLAG_KEYS.length) refuse("keys", "keys");
+  const keys = [...new Set(body.keys)];
+  if (keys.some((k) => typeof k !== "string" || !FLAG_KEYS.includes(k))) refuse("keys", "keys");
+  await run(env, "UPDATE admin_devices SET previews = ? WHERE id = ?", JSON.stringify(keys), id);
+  await audit(env, now, "device_previews", d.admin_name, keys.join(",") || "없음");
+  return json(await myPhones(env, actor));
 }
 
 export async function setPhone(env, id, action, now) {

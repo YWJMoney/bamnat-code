@@ -1256,7 +1256,7 @@ class CompanyReportViewModel(
     /** [PLAZA-30] 1.27 AI: the calendar's pay, for what the 명세서 tick rests on as it changes (a match done from the form). */
     val payProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = scope.pay.profile
     fun proof(p: com.bamnat.core.pay.PayProfile?): com.bamnat.core.pay.SlipProof? =
-        com.bamnat.core.pay.SlipProof.of(p?.verified, java.time.YearMonth.from(Today.date()))
+        com.bamnat.core.pay.SlipProof.best(p, java.time.YearMonth.from(Today.date()))
     /** [PLAZA-30] Opens the main pay screen's 명세서로 맞춰 보기. */
     fun askMatch() { c.pendingMatch = true }
     val applied: StateFlow<AppliedSetup?> = scope.store.applied
@@ -1436,6 +1436,9 @@ class CompanyReportViewModel(
  * [COMM-02][COMM-03] The small asks around a company setup, on the pay screen and in settings:
  * 맞았어요·달라요 on the shared setup in use, and the invitation to share a hand-made or corrected one.
  */
+/** A 1.32 [FIX132-02] The server's answers for a version no longer open to votes. */
+private val GONE = setOf("superseded", "withdrawn", "not_found")
+
 class CompanyNudgeViewModel(
     private val c: AppContainer,
     /** [CALI-04] 1.30 BB: the calendar whose company setup is asked about. */
@@ -1484,21 +1487,34 @@ class CompanyNudgeViewModel(
     }
 
     /** [why] for 달라요: wrong, old or name. [done] says whether the server took it. */
-    fun vote(ok: Boolean, verified: Boolean = false, why: String? = null, done: (Boolean) -> Unit = {}) {
+    /**
+     * A 1.32 [FIX132-02] [done] gets null when it went, else what to say: the server's own reason (a newer version, taken
+     * down, under review), never "인터넷에 연결되지 않았어요" unless the phone really was offline.
+     */
+    fun vote(ok: Boolean, verified: Boolean = false, why: String? = null, done: (String?) -> Unit = {}) {
         val a = applied.value ?: return
         viewModelScope.launch {
-            val sent = runCatching { c.companyApi.vote(c.companyStore.device, a.companyId, a.setup, ok, verified, why) }.isSuccess
-            if (sent) {
+            val problem = try {
+                c.companyApi.vote(c.companyStore.device, a.companyId, a.setup, ok, verified, why)
                 store.voted(ok)
                 c.telemetry.event("company_vote", if (ok) (if (verified) "ok_verified" else "ok") else why ?: "wrong")
+                null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: CompanyException) {
+                // A version that is gone will not take a vote later either: the card stops asking about it.
+                if (e.code in GONE) store.voted(ok)
+                companyProblem(e)
+            } catch (e: Exception) {
+                companyProblem("server")
             }
-            done(sent)
+            done(problem)
         }
     }
 
     /** [PLAZA-30] 1.27 AI: whether 명세서와 맞춰 봤어요 may be chosen (a matched month on this calendar). */
     fun hasProof(): Boolean =
-        com.bamnat.core.pay.SlipProof.of(scope.pay.profile.value?.verified, java.time.YearMonth.from(Today.date()))?.counts == true
+        com.bamnat.core.pay.SlipProof.best(scope.pay.profile.value, java.time.YearMonth.from(Today.date()))?.counts == true
 
     /** "나중에": asked again in a week. */
     fun later() = store.voteLaterUntil(Today.millis() + 7L * 24 * 60 * 60 * 1000)

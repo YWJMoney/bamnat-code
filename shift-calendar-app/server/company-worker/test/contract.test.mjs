@@ -223,7 +223,8 @@ test("[FLAG-38] a developer app cached before 1.28 switches off without why: it 
   const res = await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true }, owner);
   assert.equal(res.status, 200);
   assert.ok(res.data.switches.find((s) => s.key === "PLAZA_WRITE").off);
-  assert.equal((await call("GET", "/api/config")).data.flags["plaza.write"].why, "옛 관리자 앱에서 끔");
+  // S 1.32 [SECX-04] The phone gets no 이유; the developer app keeps it in the history.
+  assert.equal((await call("GET", "/api/config")).data.flags["plaza.write"].why, "");
   const history = (await call("GET", "/api/admin/flags/plaza.write", undefined, owner)).data.history;
   assert.equal(history[0].why, "옛 관리자 앱에서 끔");
   const audit = DB.db.prepare("SELECT action, detail FROM audit WHERE action IN ('switch_off', 'flag_force_off') ORDER BY id").all().map((r) => ({ ...r }));
@@ -232,7 +233,7 @@ test("[FLAG-38] a developer app cached before 1.28 switches off without why: it 
   // Back on needs no why either (the 1.27 button), and a why given is kept as given.
   assert.equal((await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: false }, owner)).status, 200);
   await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true, why: "도배" }, owner);
-  assert.equal((await call("GET", "/api/config")).data.flags["plaza.write"].why, "도배");
+  assert.equal((await call("GET", "/api/config")).data.flags["plaza.write"].why, "");
 });
 
 // ---- web push keys and a browser subscription (the server only needs a valid key to encrypt for) ----

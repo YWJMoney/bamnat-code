@@ -144,6 +144,16 @@ data class AppSettings(
      * day sheet does all of it. On, the first tap shows the card and a second opens the day.
      */
     val showDayCard: Boolean = false,
+    /** B 1.32 [CALX-03] 한 번 눌러 고르기: the first tap only picks the day (marked); a second tap on it opens the day. */
+    val tapSelectFirst: Boolean = false,
+    /** E 1.32 [LEDX-07] Each day's spending under the date in the calendar. */
+    val spendInCells: Boolean = false,
+    /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
+    val payDepositNotice: Boolean = true,
+    /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
+    val calendarOnly: Boolean = false,
+    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
+    val statsByPayPeriod: Boolean = false,
     /** [LOCK-01] 앱 잠금: the phone's own lock before the app shows, on opening and after a minute away. */
     val appLock: Boolean = false,
     /** [CUST-01] 화면 꾸미기: the calendar page's parts in the user's order, "hours,-todayFlow" ([com.bamnat.core.layout.PageLayout]). */
@@ -301,6 +311,11 @@ class SettingsRepository(context: Context) {
             phoneDayView = runCatching { PhoneDayView.valueOf(prefs.getString(K_PHONE_DAY_VIEW, null) ?: "") }
                 .getOrDefault(d.phoneDayView).let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
             showDayCard = prefs.getBoolean(K_DAY_CARD, d.showDayCard),
+            tapSelectFirst = prefs.getBoolean(K_TAP_FIRST, d.tapSelectFirst),
+            spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
+            payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
+            calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
+            statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
             statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
@@ -380,6 +395,11 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
             .putBoolean(K_DAY_CARD, s.showDayCard)
+            .putBoolean(K_TAP_FIRST, s.tapSelectFirst)
+            .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
+            .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
+            .putBoolean(K_CAL_ONLY, s.calendarOnly)
+            .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
@@ -409,6 +429,11 @@ class SettingsRepository(context: Context) {
         const val K_WEEK_START_V2 = "week_start_v2"
         const val K_PHONE_DAY_VIEW = "phone_day_view"
         const val K_DAY_CARD = "day_card"
+        const val K_TAP_FIRST = "tap_select_first"
+        const val K_SPEND_IN_CELLS = "spend_in_cells"
+        const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
+        const val K_CAL_ONLY = "calendar_only"
+        const val K_STATS_PERIOD = "stats_pay_period"
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"

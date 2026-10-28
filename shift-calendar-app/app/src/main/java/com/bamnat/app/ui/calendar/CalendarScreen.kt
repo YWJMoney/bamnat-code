@@ -257,6 +257,7 @@ fun CalendarScreen(
     }
     // [ALRM-09] 오늘 남은 알람 모두 끄기, until when.
     val alarmsOffUntil by com.bamnat.app.alarm.AlarmsOff.until.collectAsStateWithLifecycle()
+    val safeStart by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     // [PERF-01] The month is there: Android's "Fully drawn" for this start, and the startup budget's last step.
     androidx.activity.compose.ReportDrawnWhen { snapshot != null }
@@ -538,6 +539,8 @@ fun CalendarScreen(
         if (!wide && !painting) when {
             dayView == PhoneDayView.WEEK -> weekOnly = true
             settings.showDayCard -> if (again) sheetOpen = true
+            // B 1.32 [CALX-03] (사용자 2026-10-28 "한 번 눌러 선택, 두 번째에 동작"): the first tap picks, the second opens.
+            settings.tapSelectFirst -> if (again) sheetOpen = true
             else -> sheetOpen = true
         }
     }
@@ -806,6 +809,7 @@ fun CalendarScreen(
                 onQuickAction = onQuickAction,
                 money = moneyBook,
                 showMoney = focus.moneyFirst,
+                showSpend = settings.spendInCells,
                 memoTexts = memoTexts,
                 focus = focus,
                 hourly = hourlyCells,
@@ -957,6 +961,11 @@ fun CalendarScreen(
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
+            // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
+            safeStart -> "안전 모드로 열었어요" to {
+                AlarmWarningLine("연달아 멈춰서 안전 모드로 열었어요. 달력·알람은 그대로, 위젯·워치·연동은 잠시 쉬어요",
+                    "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
+            }
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
             alarmsOffUntil != null -> "오늘 알람 끔" to {
                 val text = "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지"
@@ -1275,6 +1284,7 @@ fun CalendarScreen(
                         onQuickAction = onQuickAction,
                         money = moneyBook,
                         showMoney = focus.moneyFirst,
+                        showSpend = settings.spendInCells,
                         memoTexts = memoTexts,
                         onPaint = if (stamping) paintDays else null,
                         weeklyLimitHours = settings.weeklyLimitHours,
@@ -1287,6 +1297,9 @@ fun CalendarScreen(
                         quietWorkDays = settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && !stamping,
                     )
                 }
+                // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
+                // shows big over the grid, then fades; the top bar's small title alone was missed mid-swipe.
+                SwipeMonthBadge(pagerState, baseMonth, Modifier.align(Alignment.Center))
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
@@ -1796,6 +1809,11 @@ private fun CalendarHeader(
                 // [READ-11] 방금 넣은 것 되돌리기, after the tools so none of them moves (NAV-03).
                 val at = slots.indexOfFirst { it.away }.takeIf { it >= 0 } ?: slots.size
                 slots.toMutableList().apply {
+                    // B 1.32 [CALX-04] 달력만 보기 in one tap, and back.
+                    val only = context.appContainer.settingsRepository.current.calendarOnly
+                    add(at, CalendarTool(if (only) "카드 다시 보이기" else "달력만 보기", Icons.Outlined.Apps, onClick = {
+                        context.appContainer.settingsRepository.update { it.copy(calendarOnly = !only) }
+                    }))
                     recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
                     // [PLAZA-06] U25-나: the first setup again, a way out of the calendar, so last in that row and nothing moves
                     // (the main calendar only; an added one has its own 고치기).
@@ -2529,4 +2547,33 @@ private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: 
  */
 internal object FirstMonth {
     val settled = androidx.compose.runtime.mutableStateOf(false)
+}
+
+
+/** B 1.32 [CALX-01] The month a swipe lands on, big and centred while the pager moves (and a moment after). */
+@Composable
+internal fun SwipeMonthBadge(pager: androidx.compose.foundation.pager.PagerState, baseMonth: java.time.YearMonth, modifier: Modifier = Modifier) {
+    val moving = pager.isScrollInProgress
+    val target = pageToMonth(baseMonth, if (moving) pager.targetPage else pager.currentPage)
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(moving, target) {
+        if (moving) shown = true else { kotlinx.coroutines.delay(450); shown = false }
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = shown, modifier = modifier,
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(120)),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)),
+    ) {
+        androidx.compose.material3.Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+        ) {
+            Column(Modifier.padding(horizontal = 28.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (target.year != com.bamnat.core.time.Today.date().year) Text("${target.year}년", style = MaterialTheme.typography.titleMedium)
+                Text("${target.monthValue}월", style = MaterialTheme.typography.displayMedium)
+            }
+        }
+    }
 }

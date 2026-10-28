@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import com.bamnat.app.imports.DocScanner
 import com.bamnat.app.imports.rememberScanner
 import com.bamnat.app.pay.PayslipScanner
 import com.bamnat.core.imports.PhotoQuality
+import com.bamnat.core.pay.PhotoTurn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -73,8 +75,12 @@ internal fun ScanButtons(
     var scannerReady by remember { mutableStateOf(DocScanner.available(context)) }
     // [PHOTO-20] A picked or plain photo that came out slanted, small or hard to read: worth the scanner.
     var straighten by remember { mutableStateOf(false) }
+    // A 1.32 [FIX132-01] The photo just read, kept for '돌려서 다시 읽기' (a photo taken here is deleted once the screen goes).
+    var last by remember { mutableStateOf<Triple<Uri, Boolean, Boolean>?>(null) }
+    var lastTurn by remember { mutableStateOf(0) }
+    DisposableEffect(Unit) { onDispose { if (last?.second == true) PayslipScanner.clear(context) } }
 
-    fun read(uri: Uri, taken: Boolean, scanned: Boolean) {
+    fun read(uri: Uri, taken: Boolean, scanned: Boolean, turn: Int = 0) {
         reading = true
         error = null
         advice = null
@@ -82,7 +88,9 @@ internal fun ScanButtons(
         step = null
         scope.launch {
             try {
-                val scan = PayslipScanner.scan(context, uri, scanned = scanned) { n, m -> step = n to m }
+                val scan = PayslipScanner.scan(context, uri, scanned = scanned, turn = turn) { n, m -> step = n to m }
+                last = Triple(uri, taken, scanned)
+                lastTurn = scan.turn
                 val quality = scan.quality
                 val retake = quality?.takeIf { it.retake }?.line
                 straighten = !scanned && scannerReady && quality != null && (quality.retake || quality.issues.any { it in STRAIGHTEN })
@@ -98,7 +106,7 @@ internal fun ScanButtons(
             } catch (e: Exception) {
                 error = "사진을 읽지 못했어요. 다른 사진으로 해 보거나 글로 붙여 넣어 주세요."
             } finally {
-                if (taken) PayslipScanner.clear(context)
+                if (taken && last?.first != uri) PayslipScanner.clear(context)
                 reading = false
             }
         }
@@ -138,6 +146,14 @@ internal fun ScanButtons(
             if (onEmpty != null) TextButton(onClick = { error = null; onEmpty() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("직접 넣기") }
         }
         advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+        // A 1.32 [FIX132-01] The way up the phone chose was wrong: the same photo turned by the user, read again.
+        last?.takeIf { !reading && error == null }?.let { (uri, taken, scanned) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("방향이 틀렸나요?", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { read(uri, taken, scanned, PhotoTurn.add(lastTurn, 180)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("거꾸로 돌리기") }
+                TextButton(onClick = { read(uri, taken, scanned, PhotoTurn.add(lastTurn, 90)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("옆으로 돌리기") }
+            }
+        }
         // [PHOTO-20] The same photo once more, straightened: the scanner opens the gallery too.
         if (straighten && !reading) TextButton(onClick = scan, modifier = Modifier.heightIn(min = 48.dp)) {
             Icon(Icons.Filled.DocumentScanner, null, Modifier.size(18.dp))

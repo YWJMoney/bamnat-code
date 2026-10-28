@@ -148,9 +148,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
     // the first open of 통계 draws at once instead of waiting on nine months of days.
     // [UX-10] 1.25 Z (U7): back on this tab, the figures are there from the first frame; worked out again only when the days changed.
-    val figures by com.bamnat.app.ui.rememberLast("stats:${vm.calendarId}:$month", snap, settings.limits, month) {
+    // B 1.32 [CALX-05] Over the pay period when chosen and the pay has one (급여 기간 21일~20일), else 1일~말일.
+    val period = payProfile?.period?.takeIf { settings.statsByPayPeriod && it.endDay != null }
+    val figures by com.bamnat.app.ui.rememberLast("stats:${vm.calendarId}:$month:${period?.endDay}", snap, settings.limits, month, period) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            StatsFigures(calc.month(month), calc.threeMonths(month), (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) })
+            fun of(m: YearMonth) = if (period == null) calc.month(m) else calc.month(m, period.start(m), period.end(m))
+            StatsFigures(of(month), calc.threeMonths(month), (5 downTo 0).map { of(month.minusMonths(it.toLong())) })
         }
     }
     val shownFigures = figures
@@ -204,6 +207,16 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "화면 꾸미기") }
         }
         if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false }, style = style, calendar = vm.calendarId)
+        // B 1.32 [CALX-05] Which days the month counts: 1일~말일 or the pay period, when the pay has one.
+        payProfile?.period?.takeIf { it.endDay != null && pays }?.let { pp ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.FilterChip(selected = !settings.statsByPayPeriod, onClick = { vm.updateSettings { it.copy(statsByPayPeriod = false) } },
+                    label = { Text("1일~말일") })
+                val f = pp.start(month); val t = pp.end(month)
+                androidx.compose.material3.FilterChip(selected = settings.statsByPayPeriod, onClick = { vm.updateSettings { it.copy(statsByPayPeriod = true) } },
+                    label = { Text("급여 기간 ${f.monthValue}.${f.dayOfMonth}~${t.monthValue}.${t.dayOfMonth}") })
+            }
+        }
         // [MCAL-06] Whose hours and pay these are, once there are several calendars; [COMN-03] or all of them.
         var everyCalendar by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
         com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer,

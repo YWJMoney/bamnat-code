@@ -55,7 +55,8 @@ internal fun AppSettings.partFits(part: CalendarPart, added: Set<String>): Boole
 
 /** [FIT-01] [calendarParts] on screen: a part that does not suit this calendar is not shown, unless added. */
 internal fun AppSettings.calendarParts(added: Set<String>): List<PageLayout.Placed<CalendarPart>> =
-    calendarParts().map { if (it.shown && !partFits(it.part, added)) it.copy(shown = false) else it }
+    // B 1.32 [CALX-04] 달력만 보기 puts every part away; 화면 꾸미기's own choices come back when it is off.
+    calendarParts().map { if (it.shown && (calendarOnly || !partFits(it.part, added))) it.copy(shown = false) else it }
 
 /** [CUST-01] [shown] for [part]: the three with their own switch change that switch, the rest the layout line. */
 internal fun AppSettings.withPartShown(part: CalendarPart, shown: Boolean): AppSettings = when (part) {
@@ -124,6 +125,8 @@ internal fun CalendarEditSheet(
             settings.phoneDayView) { v -> update { it.copy(phoneDayView = v) } }
         OptionSwitch("날짜 칸에 근무 시간", settings.showHoursInCells) { on -> update { it.copy(showHoursInCells = on) } }
         OptionSwitch("음력 날짜", settings.showLunar) { on -> update { it.copy(showLunar = on) } }
+        // E 1.32 [LEDX-07]
+        OptionSwitch("날짜 밑에 그날 쓴 돈", settings.spendInCells) { on -> update { it.copy(spendInCells = on) } }
         OptionSwitch("날짜 밑에 메모 첫 글자", settings.memoInCells) { on -> update { it.copy(memoInCells = on, calendarMemos = it.calendarMemos || on) } }
         },
     )

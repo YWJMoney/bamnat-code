@@ -80,6 +80,8 @@ object FitTable {
         money("hero"), money("new"), money("recent"), money("income"), money("owed"),
         money("work", setOf(FIELD, SHOP)),
         money("all"), money("budget"), money("other"), money("upcoming"), money("repeat"), money("accounts"), money("auto"),
+        // E 1.32 [LEDX-07][LEDX-09][LEDX-10] 카드 문턱 is for pay that has 총급여.
+        money("pace"), money("subs"), money("card25", setOf(SHIFT, DAY, HOURLY)),
     )
 
     private val byKey: Map<String, FitItem> = all.associateBy { it.key }

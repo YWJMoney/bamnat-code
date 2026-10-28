@@ -60,6 +60,10 @@ fun CategoryRulesDialog(
     onSave: (merchant: String, category: String) -> Unit,
     onDelete: (merchant: String) -> Unit,
     onDismiss: () -> Unit,
+    /** E 1.32 [LEDX-06] The calendar's lines, to show what a rule would change before it is saved. */
+    entries: List<com.bamnat.core.money.MoneyEntry> = emptyList(),
+    /** E 1.32 [LEDX-06] The past lines the user chose to move with the rule. */
+    onApplyPast: (List<com.bamnat.core.money.MoneyEntry>, String) -> Unit = { _, _ -> },
 ) {
     var editing by remember { mutableStateOf<Pair<String, String>?>(null) }
     var adding by remember { mutableStateOf(false) }
@@ -90,11 +94,11 @@ fun CategoryRulesDialog(
     editing?.let { (m, c) ->
         RuleEditor(initialWord = m.removePrefix(PaymentParser.CONTAINS), initialContains = PaymentParser.isContainsRule(m), initialCategory = c,
             categories = categories, onSave = { key, cat -> if (key != m) onDelete(m); onSave(key, cat); editing = null },
-            onDismiss = { editing = null })
+            onDismiss = { editing = null }, entries = entries, onApplyPast = onApplyPast)
     }
     if (adding) {
         RuleEditor(initialWord = "", initialContains = true, initialCategory = categories.firstOrNull().orEmpty(), categories = categories,
-            onSave = { key, cat -> onSave(key, cat); adding = false }, onDismiss = { adding = false })
+            onSave = { key, cat -> onSave(key, cat); adding = false }, onDismiss = { adding = false }, entries = entries, onApplyPast = onApplyPast)
     }
 }
 
@@ -110,8 +114,11 @@ private fun RuleEditor(
     categories: List<String>,
     onSave: (key: String, category: String) -> Unit,
     onDismiss: () -> Unit,
+    entries: List<com.bamnat.core.money.MoneyEntry> = emptyList(),
+    onApplyPast: (List<com.bamnat.core.money.MoneyEntry>, String) -> Unit = { _, _ -> },
 ) {
     var word by rememberSaveable { mutableStateOf(initialWord) }
+    var past by rememberSaveable { mutableStateOf(true) }
     var contains by rememberSaveable { mutableStateOf(initialContains) }
     var category by rememberSaveable { mutableStateOf(initialCategory) }
     val clean = word.replace(Regex("\\s+"), " ").trim().take(40)
@@ -130,11 +137,31 @@ private fun RuleEditor(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     categories.forEach { c -> FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) }) }
                 }
+                // E 1.32 [LEDX-06] What the rule changes, before it is saved.
+                val key = if (contains) PaymentParser.CONTAINS + clean else clean
+                val changes = remember(key, category, entries) { com.bamnat.core.money.LedgerSmarts.ruleWouldChange(entries, key, category) }
+                if (changes.isNotEmpty()) {
+                    Text("지난 거래 ${changes.size}건이 ‘$category’(으)로 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    changes.take(5).forEach { e ->
+                        Text("${e.date.monthValue}/${e.date.dayOfMonth} ${e.title} · ${"%,d".format(e.amount)}원 · ${e.category} → $category",
+                            style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (changes.size > 5) Text("외 ${changes.size - 5}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { past = !past }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = past, onCheckedChange = { past = it })
+                        Text("지난 거래도 같이 바꾸기", style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else if (clean.isNotEmpty()) {
+                    Text("지난 거래 중 바뀌는 건 없어요. 앞으로 오는 결제부터 맞춰요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                }
             }
         },
         confirmButton = {
             TextButton(enabled = clean.isNotEmpty() && category.isNotEmpty(), onClick = {
-                onSave(if (contains) PaymentParser.CONTAINS + clean else clean, category)
+                val key = if (contains) PaymentParser.CONTAINS + clean else clean
+                if (past) com.bamnat.core.money.LedgerSmarts.ruleWouldChange(entries, key, category).takeIf { it.isNotEmpty() }?.let { onApplyPast(it, category) }
+                onSave(key, category)
             }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

@@ -60,7 +60,7 @@ object WhatsNew {
             // [PERF-15] Bundle AO.
             Line("앱을 여는 데 걸린 시간을 ‘알람 점검’ 화면에서 볼 수 있어요", "alarm.check"),
             // [FLAG-14] Bundle AL.
-            Line("‘알람 점검’ 화면 아래 ‘기능 상태’에서 기능마다 켜졌는지, 꺼졌으면 왜 그런지(남은 조건) 보여요. 문의할 때 그 부분을 보내 주시면 돼요", "alarm.check"),
+            Line("새 기능은 날짜·처리방침 같은 조건을 모두 채우면 인터넷이 없어도 그날 저절로 켜져요", "alarm.check"),
             // [FLAG-16][PERF-16] Bundles AL·AO.
             Line("사용 통계를 보내는 분께 처리방침 3.2가 시행된 뒤 한 번 더 물어요. ‘동의’를 고른 경우에만 켜진 기능 목록과 앱 여는 데 걸린 시간을 함께 보내요", "privacy.usageStats"),
         )),

@@ -261,7 +261,7 @@ private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit, l
             diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
             TrustLine(item.trust, item.agree, item.persons, item.bad, item.adopted)
             WaitReason(item.points, item.threshold, item.adopted, item.agree, agreeNeeded)
-            WhoLine(0, 0, item.uses, item.by)
+            WhoLine(0, item.checked, item.uses, item.by, item.checkedLong)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(ago(item.at), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 TextButton(onClick = onTalk) {

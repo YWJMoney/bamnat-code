@@ -297,7 +297,8 @@ private fun PayGapCard(
     nonTaxable: Long? = null, onOpenPay: () -> Unit = {}, onAddPay: (LocalDate, Long) -> Unit = { _, _ -> },
     takeHome: suspend (Long, YearMonth) -> com.bamnat.core.tax.TaxLearner.Forecast? = { _, _ -> null },
 ) {
-    val prefs = WorkTypePrefs.get(LocalContext.current)
+    val context = LocalContext.current
+    val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
@@ -350,10 +351,25 @@ private fun PayGapCard(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                if (!gap.matches && gap.diff < 0) {
+                PayGaps.short(gap)?.let { short ->
+                    // D 1.32 [PAYA-04] 덜 받은 돈: the amount free; the 근거표 and the 정리본 PDF are 프로 (PAY_REPORT).
+                    Text("덜 받은 돈 ${Fmt.won(short)}", style = MaterialTheme.typography.titleSmall, color = cal.warning,
+                        modifier = Modifier.padding(top = 6.dp))
                     Text("명세서와 근무 기록을 맞춰 보세요. 빠진 수당이나 공제가 있을 수 있어요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp))
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+                    TextButton(onClick = {
+                        if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
+                            val gross = payTotal ?: return@launch
+                            val ded = TakeHome.estimate(gross, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+                                nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).deductions
+                            com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
+                                "bamnat-덜받은돈-$month.pdf")
+                        } else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT)
+                    }) {
+                        Text("근거표·정리본 PDF")
+                        if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 4.dp), locked = true)
+                    }
                 }
                 TextButton(onClick = { adding = true }) { Text("더 들어온 급여 적기") }
             }

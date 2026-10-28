@@ -12,7 +12,7 @@ import com.bamnat.core.work.WorkStyle
 
 /**
  * [FLAG-12][FLAG-13] 1.28 AL: the kinds of work a place where a kind is newly picked shows, by the `type.*` rows. A hidden
- * kind is left out, except on the owner's phone (`/api/passes` `admin.owner`, approved), where it shows marked
+ * kind is left out, except on an approved admin phone the developer app gave its 미리 보기 (S 1.32 [SECX-01]), where it shows marked
  * [TypeExposure.HIDDEN_MARK]. [keep] (the kind in use or already picked) always stays. Calendars, backups and company
  * files of a hidden kind are not touched: only these lists read it.
  */
@@ -21,8 +21,8 @@ fun typeChoices(keep: WorkStyle? = null): TypeShown {
     val c = LocalContext.current.appContainer
     val rows by c.flags.byKey.collectAsStateWithLifecycle()
     val pro by c.proStore.state.collectAsStateWithLifecycle()
-    val owner = remember(pro, rows) { c.phoneFacts().let { it.admin && it.owner } }
-    return remember(rows, owner, keep) { TypeShown(Flags.types(rows, owner, keep)) }
+    val previews = remember(pro, rows) { c.phoneFacts().let { if (it.admin) it.previews else emptySet() } }
+    return remember(rows, previews, keep) { TypeShown(Flags.types(rows, previews, keep)) }
 }
 
 /** The kinds a list shows, each with whether it is hidden for everyone else. */

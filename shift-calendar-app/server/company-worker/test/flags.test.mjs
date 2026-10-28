@@ -69,7 +69,7 @@ test("[FLAG-22] /api/config: 1.27 apps read the same fields; 1.28 apps read flag
   await call("POST", "/api/admin/flags/free.MONEY_STATS/force", { force: "on", why: "돈 통계 모두에게" }, owner);
   const after = (await call("GET", "/api/config")).data;
   assert.deepEqual(Object.keys(after.flags.billing.confirmed), ["play.production"]);
-  assert.deepEqual(after.flags["plaza.write"], { force: "off", why: "도배", conditions: null, until: "2026-10-27T15:00:00.000Z", minApp: null, maxApp: null, confirmed: {} });
+  assert.deepEqual(after.flags["plaza.write"], { force: "off", why: "", conditions: null, until: "2026-10-27T15:00:00.000Z", minApp: null, maxApp: null, confirmed: {} });
   assert.equal(after.flags["free.MONEY_STATS"].force, "on");
   assert.deepEqual([after.off, after.freeFeatures], [["PLAZA_WRITE"], ["MONEY_STATS"]]);
   // The server stops taking what is forced off (the old switch), and the force ends by itself.
@@ -324,7 +324,7 @@ test("[FLAG-26] /api/passes says whether the phone was linked by the owner", asy
   await call("POST", "/api/admin-link", { code: oc }, { "x-device": device(1) });
   const mc = (await call("POST", "/api/admin/me/link-code", {}, m)).data.code;
   await call("POST", "/api/admin-link", { code: mc }, { "x-device": device(2), ...from(2) });
-  assert.deepEqual((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.admin, { status: "approved", name: "최고 관리자", owner: true });
+  assert.deepEqual((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.admin, { status: "approved", name: "최고 관리자", owner: true, previews: [] });
   assert.equal((await call("GET", "/api/passes", undefined, { "x-device": device(2) })).data.admin.owner, false);
 });
 

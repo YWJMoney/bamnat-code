@@ -17,7 +17,7 @@
     "flags": {
       "billing": {
         "force": "on",
-        "why": "1.27까지의 정식 출시 스위치가 켜져 있었어요",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,
@@ -26,7 +26,7 @@
       },
       "ads": {
         "force": "on",
-        "why": "1.27까지의 정식 출시 스위치가 켜져 있었어요",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,
@@ -35,7 +35,7 @@
       },
       "plaza.write": {
         "force": "off",
-        "why": "1.27까지의 기능 스위치로 꺼져 있었어요",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,
@@ -44,7 +44,7 @@
       },
       "free.MONEY_STATS": {
         "force": "on",
-        "why": "1.27까지 무료로 연 기능이었어요",
+        "why": "",
         "conditions": null,
         "until": null,
         "minApp": null,

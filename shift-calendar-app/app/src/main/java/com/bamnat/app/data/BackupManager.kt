@@ -361,6 +361,44 @@ class BackupManager(
     }
 
     /**
+     * C 1.32 [STAB-06] 573: the file 백업 저장 just wrote, read back from where it went and opened as a restore would
+     * (with [password] when it has one), every photo's sum checked, then let go. Its own folder, so nothing waiting for
+     * a restore is touched. Throws [BackupException] when it does not open.
+     */
+    suspend fun verifyFile(input: java.io.InputStream, password: CharArray?) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val dir = java.io.File(staging ?: throw BackupException("백업 파일을 읽을 수 없어요"), "../backup-verify").canonicalFile
+        try {
+            dir.deleteRecursively(); dir.mkdirs()
+            val buffered = java.io.BufferedInputStream(input, 64 * 1024)
+            if (password == null) {
+                BackupArchive.read(buffered, java.io.File(dir, "photos"))
+                return@withContext
+            }
+            val line = java.io.ByteArrayOutputStream().also { b ->
+                while (true) { val c = buffered.read(); if (c < 0) throw BackupException("백업 파일이 손상됐어요"); if (c == '\n'.code) break; b.write(c) }
+            }.toByteArray().decodeToString()
+            val o = runCatching { JSONObject(line) }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
+            val dec = Base64.getDecoder()
+            val key = BackupCrypto.deriveKey(password, dec.decode(o.getString("salt")), o.getInt("iter"))
+            val zip = java.io.File(dir, "opened.zip")
+            try {
+                zip.outputStream().use { out -> BackupCrypto.decrypt(buffered, key, dec.decode(o.getString("iv")), out) }
+            } catch (e: BackupCrypto.WrongPassword) {
+                throw BackupException("백업 파일이 손상됐어요")
+            } finally {
+                key.fill(0)
+            }
+            zip.inputStream().use { BackupArchive.read(it, java.io.File(dir, "photos")) }
+        } catch (e: BackupException) {
+            throw e
+        } catch (e: Exception) {
+            throw BackupException("백업 파일이 손상됐어요")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
      * [PROV-03][REL-15] 자동 백업's check that the file it wrote opens: the bytes read back, opened with [key],
      * every sum checked. Its own folder, so a file waiting for a restore is left alone.
      */
@@ -453,7 +491,7 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("spendInCells", s.spendInCells).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
@@ -910,6 +948,11 @@ class BackupManager(
                     phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView)
                         .let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
                     showDayCard = o.optBoolean("dayCard", o.optString("phoneDayView") == PhoneDayView.PREVIEW.name),
+                    tapSelectFirst = o.optBoolean("tapFirst", false),
+                    spendInCells = o.optBoolean("spendInCells", s.spendInCells),
+                    payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
+                    calendarOnly = o.optBoolean("calendarOnly", false),
+                    statsByPayPeriod = o.optBoolean("statsPayPeriod", false),
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),

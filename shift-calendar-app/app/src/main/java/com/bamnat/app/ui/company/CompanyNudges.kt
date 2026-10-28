@@ -110,9 +110,9 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
         null -> Unit
         else -> if (open.second) {
             RightSheet(open.first, proof = remember { vm.hasProof() }, onDismiss = { sheet = null }) { verified, done ->
-                vm.vote(true, verified) { ok ->
-                    done(ok)
-                    if (ok) {
+                vm.vote(true, verified) { problem ->
+                    done(problem)
+                    if (problem == null) {
                         sheet = null
                         thanked = "고마워요! ${open.first.company} 분들에게 큰 힘이 돼요 💪"
                     }
@@ -224,9 +224,9 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
 /** 맞았어요: checked against a payslip counts double [COMM-03]. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RightSheet(a: AppliedSetup, proof: Boolean = true, onDismiss: () -> Unit, onVote: (Boolean, (Boolean) -> Unit) -> Unit) {
+private fun RightSheet(a: AppliedSetup, proof: Boolean = true, onDismiss: () -> Unit, onVote: (Boolean, (String?) -> Unit) -> Unit) {
     var busy by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("좋아요! 무엇과 맞춰 보셨어요?", style = MaterialTheme.typography.titleLarge)
@@ -234,15 +234,15 @@ private fun RightSheet(a: AppliedSetup, proof: Boolean = true, onDismiss: () -> 
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             val send = { verified: Boolean ->
                 busy = true
-                failed = false
-                onVote(verified) { ok -> busy = false; failed = !ok }
+                failed = null
+                onVote(verified) { problem -> busy = false; failed = problem }
             }
             // [PLAZA-30] 1.27 AI: only with a month this calendar matched against a payslip.
             ChoiceRow("급여 명세서와 맞춰 봤어요", if (proof) "2점 · 가장 믿을 수 있어요" else "급여 화면에서 명세서로 맞춰 본 뒤 고를 수 있어요",
                 enabled = !busy && proof) { send(true) }
             ChoiceRow("근무표와 대충 맞아요", "1점", enabled = !busy) { send(false) }
             if (busy) CircularProgressIndicator(Modifier.size(22.dp).align(Alignment.CenterHorizontally), strokeWidth = 2.dp)
-            if (failed) Text(companyProblem("offline"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            failed?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }
@@ -258,7 +258,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
     var wrong by remember { mutableStateOf<Wrong?>(null) }
     var told by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf<String?>(null) }
     var asking by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         AnimatedContent(told, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "wrong-plea") { plea ->
@@ -273,15 +273,16 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Wrong.entries.forEach { w -> FilterChip(selected = wrong == w, onClick = { wrong = w }, label = { Text(w.label) }) }
                     }
-                    if (failed) Text(companyProblem("offline"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    failed?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                     Button(
                         onClick = {
                             val w = wrong ?: return@Button
                             busy = true
-                            failed = false
-                            vm.vote(false, why = w.why) { ok ->
+                            failed = null
+                            vm.vote(false, why = w.why) { problem ->
                                 busy = false
-                                if (ok) { vm.startFix(); told = true } else failed = true
+                                // A 1.32 [FIX132-02] A newer version is in use: still on to "혹시 정답도 아세요?", the fix goes to it.
+                                if (problem == null || problem == companyProblem("superseded")) { vm.startFix(); told = true } else failed = problem
                             }
                         },
                         enabled = wrong != null && !busy,

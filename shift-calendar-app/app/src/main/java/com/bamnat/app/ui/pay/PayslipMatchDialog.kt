@@ -613,13 +613,15 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
     val pay = remember(m) { com.bamnat.core.pay.PayCalculator().calculate(m.profile, m.month, snapshot.resolver::resolve, checks = false) }
     val gaps = remember(m, slip) { com.bamnat.core.pay.SlipAudit.gaps(slip, pay) }
     val deductions = remember(m, read) { read?.let { com.bamnat.core.pay.SlipAudit.deductions(it, m.profile, m.month) }.orEmpty() }
-    if (gaps.isEmpty() && deductions.isEmpty()) return
+    // D 1.32 [PAYA-02] The hours behind each premium, so a gap reads as 요율 or as 근무 기록·마감.
+    val hours = remember(m, slip) { com.bamnat.core.pay.SlipAudit.hours(slip, pay) }
+    if (gaps.isEmpty() && deductions.isEmpty() && hours.isEmpty()) return
     val context = androidx.compose.ui.platform.LocalContext.current
     val ui = androidx.compose.runtime.rememberCoroutineScope()
     SectionCard(title = "줄마다 맞춰 보기", trailing = {
         TextButton(onClick = {
             ui.launch {
-                com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw),
+                com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
                     "bamnat-명세서대조-${m.month}.pdf")
             }
         }) { Text("PDF") }
@@ -637,16 +639,37 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             }
             Text(b.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (hours.isNotEmpty()) {
+            Text("시간 비교 (명세서 · 달력)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            hours.forEach { h ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(h.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text("${com.bamnat.core.pay.SlipAudit.hoursText(h.slipMinutes)} · ${com.bamnat.core.pay.SlipAudit.hoursText(h.appMinutes)}",
+                        style = MaterialTheme.typography.bodySmall)
+                    Text(" ${h.cause.label}", style = MaterialTheme.typography.labelMedium,
+                        color = if (h.cause == com.bamnat.core.pay.SlipAudit.Cause.SAME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                }
+            }
+            com.bamnat.core.pay.SlipAudit.hoursVerdict(hours)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            hours.map { it.cause }.distinct().filter { it != com.bamnat.core.pay.SlipAudit.Cause.SAME }.forEach {
+                Text(it.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         if (gaps.any { it.basket == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS } || m.belowLaw != null) {
             Text(com.bamnat.core.pay.SlipAudit.ASK_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         if (deductions.isNotEmpty()) {
             Text("공제 (명세서 · 앱 예상)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            // E 1.32 [LEDX-11] Each line opens to how it is worked out.
+            var open by remember { mutableStateOf<String?>(null) }
             deductions.forEach { d ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text(d.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(onClickLabel = "${d.name} 설명") { open = if (open == d.name) null else d.name }
+                    .padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(d.name + if (open == d.name) " ▴" else " ▾", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text("${d.slip?.let(::won) ?: "없음"} · ${d.estimate?.let(::won) ?: "-"}", style = MaterialTheme.typography.bodySmall)
                 }
+                if (open == d.name) Text(com.bamnat.core.pay.SlipAudit.explain(d.name, m.gross, m.month), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
             }
             Text("국민연금은 작년 소득으로 정한 금액이라 다를 수 있어요. 소득세는 회사가 고른 비율(80·100·120%)과 가족 수에 따라 달라요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

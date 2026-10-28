@@ -449,6 +449,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
             NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay(companyCalendarOf(container, null))) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PAY_GAP -> {
+                NoticeLinks.calendar.value?.takeIf { container.calendars.get(it) != null }?.let(container.calendars::setActive)
+                com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(Place.STATS, "pay.gap"))
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }

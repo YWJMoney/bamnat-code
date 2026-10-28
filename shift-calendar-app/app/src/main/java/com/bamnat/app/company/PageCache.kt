@@ -305,7 +305,7 @@ internal fun Board.toJson(): JSONObject = JSONObject().put("next", next ?: JSONO
         JSONObject().put("id", i.setup).put("status", if (i.adopted) "adopted" else "pending").put("dept", i.dept).put("points", i.points)
             .put("persons", i.persons).put("bad", i.bad).put("threshold", i.threshold).put("trust", i.trust).put("agree", i.agree)
             .put("posts", i.posts).put("version", i.version ?: JSONObject.NULL).put("at", i.at.toString()).put("gist", i.gist)
-            .put("cycle", i.cycle).put("pay", i.pay).put("uses", i.uses).put("by", JSONArray(i.by))
+            .put("cycle", i.cycle).put("pay", i.pay).put("uses", i.uses).put("by", JSONArray(i.by)).put("checked", i.checked).put("checkedLong", i.checkedLong)
             .put("company", JSONObject().put("id", i.companyId).put("name", i.company).put("kind", i.kind).put("job", i.job).put("region", i.region))
     }))
 

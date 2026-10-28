@@ -27,6 +27,8 @@ class AutoRecordPrefs(context: Context) {
         val confirmFirst: Boolean = false,
         /** [COMN-04] The day 확인하고 적기 was turned on; older lines were already counted and stay counted. */
         val confirmSince: java.time.LocalDate? = null,
+        /** E 1.32 [LEDX-09] Place key → the day the user said they still use that subscription. */
+        val lookedAt: Map<String, java.time.LocalDate> = emptyMap(),
     ) {
         /** [COMN-04] From when unconfirmed lines wait, or null for 바로 적기. */
         val holdFrom: java.time.LocalDate? get() = if (confirmFirst) confirmSince ?: java.time.LocalDate.MIN else null
@@ -55,6 +57,12 @@ class AutoRecordPrefs(context: Context) {
     }
 
     fun notRepeating(key: String) = edit { putStringSet(K_NOT_REPEATING, current.notRepeating + key) }
+
+    /** E 1.32 [LEDX-09] "아직 써요": not asked again for 90 days. */
+    fun lookedAt(key: String, on: java.time.LocalDate = Today.date()) = edit {
+        val next = (current.lookedAt + (key to on)).entries.toList().takeLast(MAX_APPS)
+        putStringSet(K_LOOKED, next.map { "${it.key}\t${it.value.toEpochDay()}" }.toSet())
+    }
 
     /** [CALS-04] Where payment notifications are written down. */
     fun setCalendar(id: String) = edit { putString(K_CALENDAR, id) }
@@ -100,6 +108,9 @@ class AutoRecordPrefs(context: Context) {
         }.toMap(),
         confirmFirst = prefs.getBoolean(K_CONFIRM_FIRST, false),
         confirmSince = if (prefs.contains(K_CONFIRM_SINCE)) java.time.LocalDate.ofEpochDay(prefs.getLong(K_CONFIRM_SINCE, 0)) else null,
+        lookedAt = prefs.getStringSet(K_LOOKED, null).orEmpty().mapNotNull { line ->
+            line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { p -> p[1].toLongOrNull()?.let { p[0] to java.time.LocalDate.ofEpochDay(it) } }
+        }.toMap(),
     )
 
     private companion object {
@@ -112,6 +123,7 @@ class AutoRecordPrefs(context: Context) {
         const val K_APP_CALENDARS = "app_calendars"
         const val K_CONFIRM_FIRST = "confirm_first"
         const val K_CONFIRM_SINCE = "confirm_since"
+        const val K_LOOKED = "subs_looked"
         const val MAX_APPS = 30
     }
 }

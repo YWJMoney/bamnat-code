@@ -14,7 +14,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.AdminState
 import com.bamnat.app.tier.LaunchConfig
 import com.bamnat.app.tier.Passes
-import com.bamnat.app.ui.diag.FlagStatusCard
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.flags.FlagSource
 import com.bamnat.core.time.Today
@@ -29,9 +28,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * [FLAG-12][FLAG-13][FLAG-14][FLAG-15][FLAG-16] 묶음 AL's screenshots, numbers 1200~1219 (1.28 순번 454): 진단's 기능 상태 with
- * no server answer and with a 1.28 server's (an admin phone's preview switches), big text; the first question and the
- * kind-of-work screen with 투자 hidden, on a phone and on the owner's phone (marked); the 3.2 extra-yes card.
+ * [FLAG-12][FLAG-13][FLAG-16] 묶음 AL's screenshots, numbers 1203~1219 (1.28 순번 454): the first question and the
+ * kind-of-work screen with 투자 hidden, on a phone and on an admin phone given its 미리 보기 (marked); the 3.2 extra-yes card.
+ * S 1.32 [SECX-01]: the 기능 상태 shots (1200~1202) went with the card.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -57,42 +56,24 @@ class ALScreenshotTest : ScreenshotBase() {
         repeat(200) { if (ok()) return; Thread.sleep(10) }
     }
 
-    private fun owner(on: Boolean = true) {
-        c.proStore.setPasses(Passes(null, 0, emptyList(), 0, AdminState("approved", "dd", owner = on), false, Today.instant()))
+    /** S 1.32 [SECX-01] An approved admin phone with the 미리 보기 the developer app set for it ([previews]). */
+    private fun admin(vararg previews: String, owner: Boolean = true) {
+        c.proStore.setPasses(Passes(null, 0, emptyList(), 0, AdminState("approved", "dd", owner = owner, previews = previews.toList()), false, Today.instant()))
         c.featureGate.refresh()
-        until { c.phoneFacts().owner == on }
+        until { c.phoneFacts().admin && c.phoneFacts().previews == previews.toSet() }
         settle()
     }
 
-    private fun Screen.status() = content {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) { FlagStatusCard() }
-        }
-    }
+    // S 1.32 [SECX-01] 1200~1202 (진단's 기능 상태 card and its switches) are gone with the card.
 
-    @Test fun phoneFlagStatusWithoutServer() = shoot("1200_phone_flag_status", PHONE) {
-        status()
-        settle()
-        assertTrue("결제 waits for the server's facts", c.flags.state(FlagCatalog.BILLING)!!.reason.startsWith("대기 중이에요"))
-    }
-
-    @Test fun phoneFlagStatusServerAdmin() = shoot("1201_phone_flag_status_admin", PHONE) {
+    @Test fun ownerWithoutPreviewSeesNoHiddenKind() {
         server()
-        owner()
-        c.flagPreviews.set(FlagCatalog.LEAVE_HOURLY, true)
-        c.featureGate.refresh()
+        admin()
+        assertFalse("being the owner alone shows nothing hidden", c.flags.types().any { it.style == WorkStyle.INVEST })
+        admin(FlagCatalog.LEAVE_HOURLY)
         until { c.flags.on(FlagCatalog.LEAVE_HOURLY) }
-        settle()
-        status()
-        settle()
-        assertTrue(c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE))
         assertEquals(FlagSource.ADMIN_PREVIEW, c.flags.state(FlagCatalog.LEAVE_HOURLY)!!.source)
-        c.flagPreviews.clear()
-    }
-
-    @Test fun phoneFlagStatusBigText() = shoot("1202_phone_flag_status_big", PHONE, 1.5f) {
-        server()
-        status()
+        assertFalse(c.flags.statsOn().orEmpty().contains(FlagCatalog.LEAVE_HOURLY))
     }
 
     @Test fun phoneFirstQuestionHidesInvest() = shoot("1203_phone_first_question_hidden", PHONE) {
@@ -103,7 +84,7 @@ class ALScreenshotTest : ScreenshotBase() {
 
     @Test fun phoneFirstQuestionOwner() = shoot("1204_phone_first_question_owner", PHONE) {
         server()
-        owner()
+        admin("type.invest")
         assertTrue(c.flags.types().single { it.style == WorkStyle.INVEST }.hidden)
         content { com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = {}, onSkip = {}) }
         settle()
@@ -112,7 +93,7 @@ class ALScreenshotTest : ScreenshotBase() {
 
     @Test fun phoneWorkStyleOwner() = shoot("1205_phone_work_style_owner", PHONE) {
         server()
-        owner()
+        admin("type.invest")
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = WorkStyle.SHIFT, onPick = {}) }
         settle()
         scrollUp(900)

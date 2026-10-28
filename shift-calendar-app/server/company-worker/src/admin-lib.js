@@ -1180,7 +1180,7 @@ export function adminLib() {
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
     launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
-    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음",
+    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음", device_previews: "관리자 휴대폰 미리 보기",
     pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
     purchase_rebind: "구매를 새 휴대폰에 다시 이음", purchase_rebind_refused: "구매 다시 잇기 거절",
     notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
