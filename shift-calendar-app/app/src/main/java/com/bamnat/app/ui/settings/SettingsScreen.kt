@@ -283,6 +283,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     context.contentResolver.openInputStream(uri)!!.use { container.backupManager.verifyFile(it, password) }
                 }.isSuccess
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
+                if (opens) container.backupNudge.saved() // 1.32 [STAB-08]
                 when {
                     !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
                     password == null -> "백업 파일을 저장하고, 다시 열어 확인했어요"

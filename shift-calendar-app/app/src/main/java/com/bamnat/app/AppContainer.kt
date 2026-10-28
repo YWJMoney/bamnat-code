@@ -519,6 +519,8 @@ class AppContainer(context: Context) {
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
     /** 1.32 [PROX-02] The money-day 체험 권유, this phone only. */
     val proMoments by lazy { com.bamnat.app.tier.ProMomentStore(appContext) }
+    /** 1.32 [STAB-08] The last backup saved by hand, for the calendar's 30-day line. */
+    val backupNudge by lazy { com.bamnat.app.data.BackupNudgeStore(appContext) }
 
     /**
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's

@@ -1157,6 +1157,10 @@ fun CalendarScreen(
                 } == true
                 com.bamnat.app.ui.pro.ProMomentNotice(settings.workStyle, payday)
             })
+            // 1.32 [STAB-08] 백업한 지 30일, without 매일 자동 백업.
+            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("backupNudge", "백업 알림") {
+                com.bamnat.app.ui.settings.BackupNudgeNotice(hasRecords = settings.workStyle != null)
+            })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             if (guideHere) add(Notice("guide", "오늘의 팁") {

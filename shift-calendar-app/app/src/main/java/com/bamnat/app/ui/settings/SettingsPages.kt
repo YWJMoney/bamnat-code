@@ -81,7 +81,7 @@ internal fun ColumnScope.SettingsPageContent(
         }
         SettingsPage.PAY -> PayPage(vm, settings, files, onOpenPay, company)
         SettingsPage.CALENDAR -> CalendarPage(vm, settings, onOpenCalendars)
-        SettingsPage.DATA -> DataPage(vm, files)
+        SettingsPage.DATA -> DataPage(vm, files, settings)
         // [SET-02] 개인정보·앱 정보: privacy and permissions, then the terms, licences and version.
         SettingsPage.PRIVACY -> {
             PrivacyPage(vm, settings, refresh, askNotifications)
@@ -583,7 +583,7 @@ private fun BackupPhotosRow(vm: SettingsViewModel) {
 }
 
 @Composable
-private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
+private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppSettings) {
     val savedAt by vm.importSavedAt.collectAsStateWithLifecycle()
     var confirmUndo by remember { mutableStateOf(false) }
     val savedLabel = savedAt?.let { AlarmScheduler.millisToLocal(it) }?.let { "${Fmt.monthDay(it.toLocalDate())} ${Fmt.time(it.toLocalTime())}" }
@@ -599,7 +599,16 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
     }
     SectionCard(title = "백업") {
         Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정, 내가 만든 근무표 링크를 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없어요.")
-        NavRow("백업 저장", "파일로 저장해요. 암호를 걸 수 있어요", files.saveBackup)
+        // 1.32 [STAB-08] When the last backup was, said where it is made.
+        val c = LocalContext.current.appContainer
+        val nudge by c.backupNudge.state.collectAsStateWithLifecycle()
+        val auto by vm.autoBackup.collectAsStateWithLifecycle()
+        val today = com.bamnat.core.time.Today.date()
+        val lastAuto = auto.lastOk?.atZone(com.bamnat.core.time.Today.zone())?.toLocalDate()
+        NavRow("백업 저장", "파일로 저장해요. 암호를 걸 수 있어요 · " + com.bamnat.core.backup.BackupNudge.words(nudge, lastAuto, today), files.saveBackup)
+        HorizontalDivider()
+        SwitchRow(BACKUP_NUDGE_ROW, "자동 백업을 쓰지 않을 때, 백업한 지 ${com.bamnat.core.backup.BackupNudge.DAYS}일이 지나면 달력 위에 한 줄로 알려 줘요",
+            settings.backupNudge) { on -> vm.update { it.copy(backupNudge = on) } }
         HorizontalDivider()
         // [BAK-01] 1.25 Z (U8): what goes to a new phone and what stays here, said before the user relies on it.
         var moving by remember { mutableStateOf(false) }
@@ -986,6 +995,7 @@ const val SETUP_AGAIN_ROW = "처음 설정 다시 받기"
 
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
+internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"
