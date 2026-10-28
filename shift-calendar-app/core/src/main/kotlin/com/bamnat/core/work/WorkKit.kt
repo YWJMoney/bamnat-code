@@ -218,3 +218,9 @@ object WorkStats {
             .map { (c, l) -> ClientTotal(c, l.size, l.sumOf { it.payable }, l.sumOf { it.unpaid }) }
             .sortedWith(compareByDescending<ClientTotal> { it.earned }.thenBy { it.client })
 }
+
+/**
+ * U 1.32 [UX132-01] The money tab's name and its screen's title, one name for both: 가계부 (가계부와 통계를 아울러요), and
+ * 장부 for a shop's or a field worker's calendar, whose money is the work's own.
+ */
+fun moneyTab(style: WorkStyle?): String = if (style == WorkStyle.BUSINESS || style == WorkStyle.FIELD) "장부" else "가계부"

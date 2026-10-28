@@ -343,7 +343,7 @@ private fun PayGapCard(
             }
             gap == null -> {
                 Text("예상 ${Fmt.won(expected)} ($basisLabel)", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
-                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 돈 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
+                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 가계부 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp))
                 Button(onClick = { adding = true }, modifier = Modifier.padding(top = 8.dp)) { Text("들어온 급여 적기") }

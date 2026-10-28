@@ -531,7 +531,7 @@ internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when
         MoneyShare.SALES -> "달마다 매출 합계만, 경비와 날마다 금액은 빼요"
     }
     else -> when (kind) {
-        MoneyShare.PAY -> "급여 계산을 설정하거나 돈 탭에 받은 급여를 적으면 고를 수 있어요"
+        MoneyShare.PAY -> "급여 계산을 설정하거나 가계부 탭에 받은 급여를 적으면 고를 수 있어요"
         MoneyShare.JOBS -> "이 기간 일감에 금액을 적으면 고를 수 있어요"
         MoneyShare.SALES -> "이 기간 매출을 적으면 고를 수 있어요. 달력에서 날짜를 눌러 적어요"
     }

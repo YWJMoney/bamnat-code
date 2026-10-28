@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -123,7 +126,9 @@ class StatsViewModel(
 }
 
 @Composable
-fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
+fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
+                /** U 1.32 [UX132-02] A 고치기 chip: the pay screen at that value ([com.bamnat.app.ui.pay.PayFocus] key). */
+                onOpenPayFocus: (String) -> Unit = { onOpenPay() }) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -255,6 +260,20 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 withContext(Dispatchers.Default) { com.bamnat.core.pay.TakeHome.nonTaxable(p, month, vm.monthPay(p, snap, month)) }
             }
         }.value
+        // [NAV-01] 근무·급여: the month's pay. U 1.32 [UX132-02] (조사 4.1): first, before the work cards, with a 고치기 chip for
+        // each value people come to change, each straight to its tab and value.
+        if (pays && shown(StatsPart.PAY)) {
+            val total = payTotal
+            PayEntryCard(
+                month = month,
+                total = total,
+                hasProfile = payProfile != null,
+                onClick = onOpenPay,
+                onFocus = if (payProfile != null) onOpenPayFocus else null,
+            )
+            // [HRLY-04] 예상 실수령 next to the pay before tax.
+            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
+        }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
         WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree,
             range = period?.let { it.start(month) to it.end(month) })
@@ -283,18 +302,6 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             FeatureCard("hourly.weeks", vm.calendarId) { HolidayPayWeeks(weeks, month) }
         }
 
-        // [NAV-01] 근무·급여: the month's pay right under its hours.
-        if (pays && shown(StatsPart.PAY)) {
-            val total = payTotal
-            PayEntryCard(
-                month = month,
-                total = total,
-                hasProfile = payProfile != null,
-                onClick = onOpenPay,
-            )
-            // [HRLY-04] 예상 실수령 next to the pay before tax.
-            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
-        }
         // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
         if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
@@ -541,8 +548,9 @@ private fun MonthTrend(values: List<Pair<YearMonth, Long>>, floor: Long, label: 
 }
 
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit) {
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -569,6 +577,16 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    }
+    // U 1.32 [UX132-02] 고치기: 기본급 · 수당 · 근무시간 · 월급날·정산 · 회사 규칙, one tap each.
+    if (onFocus != null) {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "급여 고치기" }) {
+            com.bamnat.app.ui.pay.PayFocus.CHIPS.forEach { f ->
+                androidx.compose.material3.AssistChip(onClick = { onFocus(f.key) }, label = { Text(f.label) },
+                    leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(16.dp)) })
+            }
         }
     }
 }

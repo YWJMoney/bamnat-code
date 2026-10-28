@@ -152,7 +152,7 @@ import com.bamnat.core.time.Today
 internal enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
     /** [WORK-06] Income, spending and what is left, for every kind of work. */
-    MONEY("money", "돈", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
+    MONEY("money", "가계부", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
     MEMOS("memos", "메모", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
     /** [NAV-01] Hours and pay of the month together; field and shop work, paid in 돈, keep 통계. */
     STATS("stats", "근무·급여", Icons.Outlined.Insights, Icons.Filled.Insights),
@@ -160,7 +160,12 @@ internal enum class TopLevel(val route: String, val label: String, val icon: Ima
     ;
 
     /** [TYPE-02] The hours-and-money tab is named for the work of the calendar on screen. */
-    fun labelFor(style: WorkStyle?): String = if (this == STATS) style.words().tab else label
+    // U 1.32 [UX132-01] (사용자 2026-10-28 "돈 메뉴 이름을 가계부와 통계를 포괄하는 말로"): 가계부, and 장부 for a shop or field calendar.
+    fun labelFor(style: WorkStyle?): String = when (this) {
+        STATS -> style.words().tab
+        MONEY -> com.bamnat.core.work.moneyTab(style)
+        else -> label
+    }
 
     companion object {
         /** [NAV-05] The tabs in the order kept in settings ([com.bamnat.core.layout.TabOrder] keys are the routes). */
@@ -207,8 +212,9 @@ private object Routes {
 
     fun diagnostics(testing: Boolean) = "diagnostics?testing=$testing"
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
-    const val PAY = "pay?calendar={calendar}"
-    fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
+    const val PAY = "pay?calendar={calendar}&focus={focus}"
+    // U 1.32 [UX132-02] [focus] is a [com.bamnat.app.ui.pay.PayFocus] key: the tab and value the screen opens on.
+    fun pay(calendar: String = PersonalCalendar.MAIN, focus: String? = null) = "pay?calendar=$calendar" + (focus?.let { "&focus=$it" } ?: "")
     /** [LEAVE-06] One calendar's 연차 원장; without one, the main calendar's. */
     const val LEAVE = "leave?calendar={calendar}"
     fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
@@ -1123,7 +1129,8 @@ private fun AppNavHost(
                 return@composable
             }
             val vm = appViewModel(key = "stats_$calendar") { StatsViewModel(it, calendar) }
-            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
+            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } },
+                onOpenPayFocus = { f -> nav.navigate(Routes.pay(vm.calendarId, f)) { launchSingleTop = true } })
         }
         composable(TopLevel.SETTINGS.route) {
             val vm = appViewModel { SettingsViewModel(it) }
@@ -1163,8 +1170,10 @@ private fun AppNavHost(
             val vm = appViewModel { InquiryViewModel(it) }
             InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
         }
-        composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("focus") { type = NavType.StringType; nullable = true; defaultValue = null })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val payFocus = com.bamnat.app.ui.pay.PayFocus.of(entry.arguments?.getString("focus"))
             val vm = appViewModel(key = "pay_$calendar") { PayViewModel(it, calendar) }
             val profile by vm.profile.collectAsStateWithLifecycle()
             // [CALI-04] 1.30 BB: the calendar's own company: its coworkers' setup, pay way, notices and 광장.
@@ -1196,7 +1205,7 @@ private fun AppNavHost(
                 }
             }
             CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
-            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
+            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 top = {

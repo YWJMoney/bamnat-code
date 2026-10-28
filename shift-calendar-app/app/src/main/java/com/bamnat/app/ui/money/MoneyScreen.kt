@@ -145,7 +145,7 @@ class MoneyViewModel(
     }
 
     /** [LEDG-15] The money tab's three pages. */
-    enum class Page(val label: String) { SUMMARY("요약"), LIST("내역"), REPORT("분석") }
+    enum class Page(val label: String) { SUMMARY("요약"), LIST("내역"), REPORT("통계") }
 
     private val _page = MutableStateFlow(Page.SUMMARY)
     val page: StateFlow<Page> = _page.asStateFlow()
@@ -645,11 +645,11 @@ fun MoneyScreen(
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
-            // and the title gives its room to the month: the 돈 tab below already says where this is.
+            // and the title gives its room to the month: the 가계부 tab below already says where this is.
             val roomy = LocalDensity.current.fontScale < 1.3f
             Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (roomy) {
-                    FitText("돈 관리", MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
+                    FitText(com.bamnat.core.work.moneyTab(style), MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
@@ -662,7 +662,7 @@ fun MoneyScreen(
                 }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
                 Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "돈 탭 메뉴") }
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "가계부 탭 메뉴") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
@@ -893,7 +893,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
 }
 
 /**
- * [DAILY-15] 돈 관리 › 요약's cards the user can order or turn off (화면 꾸미기). [DAILY-04] 결정 1.21 UX: the
+ * [DAILY-15] 가계부 › 요약's cards the user can order or turn off (화면 꾸미기). [DAILY-04] 결정 1.21 UX: the
  * month's sum first, then what waits for a look, then the month's lines; [right] is the unfolded right side.
  */
 internal enum class MoneyPart(val id: String, val label: String, val what: String, val movable: Boolean = true, val right: Boolean = false) {
@@ -939,7 +939,7 @@ internal fun MoneyEditSheet(
         placed.filter { it.part.movable == movable && com.bamnat.core.guide.FitTable.visible(surface, it.part.id, style, added) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
-        title = "돈 관리 화면 꾸미기",
+        title = "가계부 화면 꾸미기",
         groups = listOf(
             com.bamnat.app.ui.components.EditGroup("위쪽", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),

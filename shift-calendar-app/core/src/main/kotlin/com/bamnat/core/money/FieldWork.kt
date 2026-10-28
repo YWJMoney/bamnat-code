@@ -40,7 +40,9 @@ data class FieldRules(
 
     /** G 1.32 [WTYP-04] From [from] the 일당 is [rate]; the remembered [dayRate] follows when [from] is not in the past of the last change. */
     fun withRateFrom(from: LocalDate, rate: Long): FieldRules {
-        val list = (rateFrom.filter { it.first != from } + (from to rate)).sortedBy { it.first }.takeLast(24)
+        // The first change keeps the 일당 before it for the days before it, so 지난 날 stay at what they were.
+        val kept = rateFrom.ifEmpty { if (dayRate > 0 && dayRate != rate) listOf(LocalDate.of(2000, 1, 1) to dayRate) else emptyList() }
+        val list = (kept.filter { it.first != from } + (from to rate)).sortedBy { it.first }.takeLast(24)
         return copy(rateFrom = list, dayRate = list.last().second)
     }
 

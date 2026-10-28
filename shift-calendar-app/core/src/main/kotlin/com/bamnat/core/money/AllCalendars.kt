@@ -20,3 +20,19 @@ data class AllCalendarsMonth(val rows: List<CalendarMonth>) {
     val workDays: Int get() = rows.sumOf { it.workDays }
     val workMinutes: Int get() = rows.sumOf { it.workMinutes }
 }
+
+/**
+ * G 1.32 [WTYP-07] 609 N잡: the year so far by calendar, each one's income and its share, for the 5월 종합소득세 talk
+ * (근로소득 말고 다른 수입이 있으면 신고해요).
+ */
+data class AllCalendarsYear(val year: Int, val months: List<AllCalendarsMonth>) {
+    data class Row(val calendar: String, val name: String, val income: Long, val workDays: Int)
+
+    val rows: List<Row> get() = months.flatMap { it.rows }.groupBy { it.calendar }.map { (id, l) ->
+        Row(id, l.last().name, l.sumOf { it.money.income }, l.sumOf { it.workDays })
+    }.sortedByDescending { it.income }
+    val income: Long get() = rows.sumOf { it.income }
+    fun share(r: Row): Int = if (income <= 0) 0 else (r.income * 100 / income).toInt()
+    /** More than one calendar brought money in: the 5월 신고 line is worth a look. */
+    val manyJobs: Boolean get() = rows.count { it.income > 0 } >= 2
+}

@@ -103,7 +103,7 @@ object FlagCatalog {
 
     val ADS_FLAG = Flag(
         ADS, "광고(띠·보상형)",
-        what = "프로가 아닌 휴대폰에 근무·급여와 돈 탭 아래 띠 광고 한 곳과 사용자가 고르는 보상형 광고가 보여요(알람·잠금·첫 설정 화면에는 없음).",
+        what = "프로가 아닌 휴대폰에 근무·급여와 가계부 탭 아래 띠 광고 한 곳과 사용자가 고르는 보상형 광고가 보여요(알람·잠금·첫 설정 화면에는 없음).",
         whyOff = "결제와 같은 날, Google 광고 동의 화면이 막지 않을 때만 시작해요(아직 묻지 않았으면 동의 화면을 띄울 수 있게 켬, 거절하면 꺼짐). 결제와 따로 끌 수 있게 나눴어요.",
         basis = Basis(policy = "3.1 1-8항", decision = "D84·D98·D99", requirement = "MON-07"),
         conditions = launch + Condition.Consent("ads", unknownMeets = true), default = false, risk = Risk.LEGAL, sunset = "1.30.0",

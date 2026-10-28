@@ -152,7 +152,7 @@ internal fun MonthSummaryBar(
     val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + f.notes.joinToString("") { " $it" } } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
         CalendarFocus.SHIFTS -> "근무·급여 열기"
-        else -> "돈 탭 열기"
+        else -> "가계부 탭 열기"
     }
     Surface(
         onClick = onOpen,
@@ -321,7 +321,7 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                     snapshot.kinds.kinds.firstOrNull()?.let { k ->
                         LegendRow("추가 근무", "잔업·특근·대근은 모서리 표시, 시간은 +2h처럼") { ExtraKindMark(k, size = 18.dp) }
                     }
-                    LegendRow("부업 일감", "돈 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
+                    LegendRow("부업 일감", "가계부 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
                     }

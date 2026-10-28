@@ -97,7 +97,7 @@ fun WorkStyleScreen(
                 }
                 Text(title, style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "고른 형태에 맞춰 달력과 돈 관리가 바뀌어요. 설정에서 언제든 바꿀 수 있고, 적어 둔 기록은 그대로 남아요.",
+                    "고른 형태에 맞춰 달력과 가계부가 바뀌어요. 설정에서 언제든 바꿀 수 있고, 적어 둔 기록은 그대로 남아요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

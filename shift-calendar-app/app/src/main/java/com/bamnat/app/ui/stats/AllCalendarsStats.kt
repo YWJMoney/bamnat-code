@@ -63,5 +63,35 @@ fun AllCalendarsStats(month: YearMonth): Boolean {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp))
     }
+    com.bamnat.app.ui.guide.FeatureCard("all.yearIncome", com.bamnat.app.data.PersonalCalendar.MAIN) { YearIncomeCard(month, calendars) }
     return true
+}
+
+/** G 1.32 [WTYP-07] 609 N잡: 올해 달력별 수입과 몫, 둘 이상에서 돈이 들어오면 5월 신고 안내. */
+@Composable
+private fun YearIncomeCard(month: YearMonth, calendars: List<com.bamnat.app.data.PersonalCalendar>) {
+    val c = LocalContext.current.appContainer
+    val parts by androidx.compose.runtime.remember(c) { com.bamnat.app.data.EveryCalendar.parts(c) }.collectAsStateWithLifecycle(null)
+    val year by com.bamnat.app.ui.rememberLast("allYear:${month.year}:${month.monthValue}", parts, month) {
+        val p = parts ?: return@rememberLast null
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.bamnat.core.money.AllCalendarsYear(month.year, (1..month.monthValue).map { com.bamnat.app.data.EveryCalendar.month(p, YearMonth.of(month.year, it)) })
+        }
+    }
+    val y = year ?: return
+    if (y.income <= 0) return
+    SectionCard(title = "${month.year}년 달력별 수입 (1~${month.monthValue}월)") {
+        y.rows.filter { it.income > 0 }.forEach { r ->
+            val color = calendars.firstOrNull { it.id == r.calendar }?.color
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(color?.let { Color(it) } ?: MaterialTheme.colorScheme.outline))
+                Text(r.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp))
+                Text("${com.bamnat.app.ui.Fmt.won(r.income)} · ${y.share(r)}%", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
+            }
+        }
+        if (y.manyJobs) Text("두 곳 이상에서 돈이 들어왔어요. 근로소득 말고 사업·기타소득이 있으면 다음 해 5월 종합소득세 신고 대상일 수 있어요 " +
+            "(가계부 › 리포트 › 5월 신고 준비).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp))
+    }
 }

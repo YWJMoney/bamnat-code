@@ -225,7 +225,7 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
                 if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
                 if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
-                Text("돈 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
+                Text("가계부 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             }
         },

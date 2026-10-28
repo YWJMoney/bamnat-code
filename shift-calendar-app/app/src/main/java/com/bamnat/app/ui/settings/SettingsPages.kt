@@ -802,7 +802,7 @@ private fun PrivacyPage(
         }
         // [UX-04] Where 결제 알림 읽기 is turned on, as a way there.
         // [LEDG-16] Straight to the money tab's 자동 기록 sheet.
-        NavRow("결제 알림 읽기", "카드·은행 알림으로 돈 기록을 채우는 것은 돈 탭 › ⋮ › 자동 기록에서 켜고 꺼요") {
+        NavRow("결제 알림 읽기", "카드·은행 알림으로 돈 기록을 채우는 것은 가계부 탭 › ⋮ › 자동 기록에서 켜고 꺼요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.AUTO_RECORD)
         }
         Note("허용을 바꾸면 휴대폰 설정 화면이 열려요.")
@@ -833,7 +833,7 @@ private fun AboutPage() {
 
 /** [MON-07] Said where Google gives no consent form of its own to open again. */
 internal const val AD_PRIVACY_WORDS =
-    "정식 출시 뒤 무료로 쓸 때만 근무·급여 탭과 돈 탭 아래에 광고 한 줄이 나와요. 프로를 쓰면 광고가 아예 없어요.\n\n" +
+    "정식 출시 뒤 무료로 쓸 때만 근무·급여 탭과 가계부 탭 아래에 광고 한 줄이 나와요. 프로를 쓰면 광고가 아예 없어요.\n\n" +
         "광고는 Google AdMob이 보여 주고, 휴대폰의 광고 ID와 기기 정보를 써요. 근무표·급여·메모·돈 기록은 광고에 쓰지 않아요.\n\n" +
         "맞춤 광고를 끄려면 휴대폰 설정 › 개인정보 보호(또는 Google) › 광고에서 광고 ID를 지우면 돼요. " +
         "유럽처럼 법이 따로 묻는 지역에서는 여기서 Google의 동의 화면이 다시 열려요."
