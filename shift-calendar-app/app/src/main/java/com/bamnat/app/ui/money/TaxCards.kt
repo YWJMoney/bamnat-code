@@ -123,7 +123,10 @@ private fun BusinessTaxLines(y: BusinessTax.Year?) {
     TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
     TaxLine("  종합소득세 (${y.best.method.label})", Fmt.won(y.incomeTaxDue.coerceAtLeast(0)), muted = true)
     TaxLine("  부가가치세", if (y.vatExempt) "면제" else Fmt.won(y.vat.coerceAtLeast(0)), muted = true)
+    // F 1.32 [TAXP-07] 카드 매출 발행세액공제, already taken off the 부가세 above.
+    if (y.cardCredit > 0) TaxLine("    카드 매출 발행세액공제 (1.3%)", "−" + Fmt.won(y.cardCredit), muted = true)
     TaxLine("매달 모아 둘 돈", Fmt.won(y.perMonth))
+    y.lineNote?.let { Muted(it) }
     y.dues.firstOrNull { !it.date.isBefore(y.until) }?.let { d ->
         TaxLine("다음 납부 ${Fmt.monthDay(d.date)} ${d.name}", d.amount?.let(Fmt::won) ?: "")
     }
@@ -141,6 +144,8 @@ internal fun TakeHomeSheet(
     onNotPay: (PayObservation) -> Unit,
     onDismiss: () -> Unit,
     today: LocalDate,
+    profile: com.bamnat.core.pay.PayProfile? = null,
+    gate: Gate? = null,
 ) {
     var adding by remember { mutableStateOf(false) }
     FormSheet(
@@ -155,6 +160,12 @@ internal fun TakeHomeSheet(
                     if (f.tableNet != f.net) TaxLine("  간이세액표대로라면", Fmt.won(f.tableNet), muted = true)
                 }
                 Muted(view.fit.words)
+                // F 1.32 [TAXP-02] Each deduction with its rate and the 간이세액표 row.
+                val g = view.forecast?.gross ?: view.gross
+                if (g != null && g > 0 && gate != null) {
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    TaxExplainSection(g, profile, view.month, gate)
+                }
                 val y = view.year
                 if (y.months > 0) {
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -326,6 +337,7 @@ internal fun BusinessTaxSheet(
                 } else TaxLine("종합소득세 낼 돈 (지방세 포함)", Fmt.won(y.incomeTaxDue))
                 TaxLine("부가가치세", if (y.vatExempt) "면제 (연 4,800만 원 미만)" else Fmt.won(y.vat))
                 TaxLine("매달 모아 둘 돈", Fmt.won(y.perMonth))
+    y.lineNote?.let { Muted(it) }
                 Text("내는 날", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                 y.dues.forEach { d ->
                     TaxLine("${Fmt.shortFullDate(d.date)} ${d.name}", d.amount?.let(Fmt::won) ?: "")
@@ -354,6 +366,7 @@ internal fun BusinessTaxSheet(
                 SwitchRow("올해 처음 시작한 사업", p.newBusiness) { p = p.copy(newBusiness = it) }
                 SwitchRow("성실사업자 (표준세액공제 12만 원)", p.sincere) { p = p.copy(sincere = it) }
                 Muted(BusinessTax.NOT_ADVICE)
+                RateSourcesSection()
             }
         },
     )
@@ -369,7 +382,7 @@ private fun SwitchRow(label: String, on: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun TaxLine(label: String, value: String, muted: Boolean = false, strong: Boolean = false) {
+internal fun TaxLine(label: String, value: String, muted: Boolean = false, strong: Boolean = false) {
     val color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
     // 1.25 통합 직접 시험 (855): at the largest text sizes the amount left the name a few letters a line ("세후 / 예상 /
     // (실수 / 령)"); there the amount goes under the name, as the other cards do (VIS-05).
@@ -390,6 +403,6 @@ private fun TaxLine(label: String, value: String, muted: Boolean = false, strong
 }
 
 @Composable
-private fun Muted(text: String) {
+internal fun Muted(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

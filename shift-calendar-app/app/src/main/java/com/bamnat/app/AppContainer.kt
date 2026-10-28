@@ -833,6 +833,8 @@ class AppContainer(context: Context) {
         appScope.launch {
             mainIdle()
             delay(LATER_SECOND_MILLIS)
+            // F 1.32 [TAXP-03] 연말정산 매주 다시 계산 (프로 구독, 10월~1월, its switch on the card).
+            launch { runCatching { com.bamnat.app.tax.YearEndWeekly.check(this@AppContainer) } }
             // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
             // [SLP-15] So does the 나갈 돈·받을 돈 switch.
             keep("money") {

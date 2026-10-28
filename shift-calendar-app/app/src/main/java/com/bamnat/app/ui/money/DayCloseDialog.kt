@@ -118,6 +118,8 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                 Text("매출 ${Fmt.won(sales)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("순수익 ${Fmt.won(net)}", style = MaterialTheme.typography.bodyLarge,
                     color = if (net < 0) LocalCalendarColors.current.expense else MaterialTheme.colorScheme.onSurface)
+                // F 1.32 [TAXP-07] 세금 통장: what of today's sales to put aside.
+                SetAsideLine(calendar.id, book, date, sales)
             }
         },
         confirmButton = {

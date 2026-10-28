@@ -80,6 +80,8 @@ fun LedgerReportsPane(
     onOpen: (MoneyEntry) -> Unit,
     onPlace: (String) -> Unit,
     month: YearMonth,
+    snapshot: com.bamnat.app.data.ScheduleSnapshot? = null,
+    onMessage: (String) -> Unit = {},
 ) {
     if (analysis == null) return
     val places = remember(book, month) { MoneyStats.places(book.entries, month) }
@@ -107,6 +109,8 @@ fun LedgerReportsPane(
         } else {
             com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) { YearCard(analysis.year, r.month) }
         }
+        // F 1.32 [TAXP-09] The year as a PDF (프로) or CSV (무료).
+        YearReportCard(book, month.year, snapshot, gate, onMessage)
         if (!gate.live) ProNote()
     }
     if (!r.hasData && analysis.year.activeMonths == 0) {

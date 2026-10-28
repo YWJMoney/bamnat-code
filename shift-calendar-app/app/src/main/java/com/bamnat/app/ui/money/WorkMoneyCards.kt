@@ -120,5 +120,8 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
         val total = waiting.sumOf { it.amount }
         Text("들어올 카드 매출 ${Fmt.won(total)} · 수수료 ${rules.feeLabel}, ${rules.settleDays}영업일 뒤로 셌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        // F 1.32 [TAXP-08] The deposits that came, set against the days they pay.
+        val gate by c.featureGate.state.collectAsStateWithLifecycle()
+        CardMatchLines(calendarId, book, today, gate)
     }
 }

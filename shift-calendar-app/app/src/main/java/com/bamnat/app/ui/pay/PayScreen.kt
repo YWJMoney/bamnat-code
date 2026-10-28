@@ -502,7 +502,7 @@ private fun PayResult(
         // [PAYX-38] 만약에: a raise, more nights or another 월 소정근로시간, worked out again.
         if (unlocked && closedSnap == null && shown.lines.isNotEmpty()) WhatIfCard(profile, snapshot, month)
         // [PAYX-42] 연말정산 미리보기, [PAYX-44] the new year's 최저임금 once.
-        if (unlocked && shown.lines.isNotEmpty()) YearEndCard(profile, snapshot, month)
+        if (unlocked && shown.lines.isNotEmpty()) YearEndCard(profile, snapshot, month, vm.calendarId)
         RateNewsCard(profile, result.ordinaryHourly)
 
         LeaveCard(vm, snapshot, month, onOpenLeave)

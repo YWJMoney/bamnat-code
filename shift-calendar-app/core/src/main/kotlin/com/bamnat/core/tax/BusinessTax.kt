@@ -98,10 +98,43 @@ object BusinessTax {
         val vat: Long,
         val vatExempt: Boolean,
         val dues: List<Due>,
+        /** F 1.32 [TAXP-07] 신용카드매출전표 등 발행세액공제 taken off [vat] (부가가치세법 제46조). */
+        val cardCredit: Long = 0,
+        /** F 1.32 [TAXP-07] Said when the year's pace crosses the 간이과세 line, or comes near it. */
+        val lineNote: String? = null,
     ) {
         val total: Long get() = incomeTaxDue.coerceAtLeast(0) + vat.coerceAtLeast(0)
         /** What to put aside each month of the year for both. */
         val perMonth: Long get() = (total / 12) / 100 * 100
+
+        /**
+         * F 1.32 [TAXP-07] 598 세금 통장: of a day's [daySales], what to put aside for 부가세 and 종소세 at the year's
+         * pace, to the 100원. Zero before any sales.
+         */
+        fun setAside(daySales: Long): Pair<Long, Long> {
+            if (projectedSales <= 0 || daySales <= 0) return 0L to 0L
+            val v = (daySales.toDouble() * vat.coerceAtLeast(0) / projectedSales).roundToLong() / 100 * 100
+            val i = (daySales.toDouble() * incomeTaxDue.coerceAtLeast(0) / projectedSales).roundToLong() / 100 * 100
+            return v to i
+        }
+    }
+
+    /**
+     * F 1.32 [TAXP-07] 발행세액공제 rate and yearly cap by the year (제46조 제1항, 부칙): 1.3%·1,000만 원 through 2026. 2027 is
+     * 정부 개편안 (1.2%·500만 원 안, 2029년까지) not yet law when this was written: 확인 필요, the 2026 numbers stay until then.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun cardRate(year: Int): Pair<Double, Long> = 0.013 to 10_000_000L
+    const val CARD_RATE_CHECKED = "2026년 1.3%·연 1,000만 원 확인. 2027년부터는 국회 통과 뒤 다시 확인 필요"
+
+    /** 간이과세 기준 (부가가치세법 시행령 제109조, 2024-07-01부터 1억 400만 원). */
+    const val SIMPLE_LINE = 104_000_000L
+
+    /** F 1.32 [TAXP-07] The 발행세액공제 for [cardSales] (card and 배달앱 sales, VAT in), within the cap and the VAT itself. */
+    fun cardCredit(p: Profile, year: Int, cardSales: Long, vat: Long): Long {
+        if (p.vat == VatType.EXEMPT || (p.lastYearIncome ?: 0) > 1_000_000_000L) return 0
+        val (rate, cap) = cardRate(year)
+        return minOf((cardSales * rate).roundToLong(), cap, vat.coerceAtLeast(0))
     }
 
     /** [TAX-06] One payment ahead: when, what, and how much when it can be told. */
@@ -123,11 +156,11 @@ object BusinessTax {
         val costs = spent.sumOf { it.amount } + j.sumOf { it.costs } + s.sumOf { it.costs }
         val proved = spent.filter { it.proof in VAT_PROOFS }.sumOf { it.amount }
         val withheld = j.sumOf { it.withheld }
-        return of(year, until, profile, income, costs, proved, withheld)
+        return of(year, until, profile, income, costs, proved, withheld, cardSales = s.sumOf { it.card + it.delivery })
     }
 
     /** The year from totals so far; projected to the year's end at the pace of the days gone. */
-    fun of(year: Int, until: LocalDate, profile: Profile, sales: Long, costs: Long, proved: Long, withheld: Long): Year {
+    fun of(year: Int, until: LocalDate, profile: Profile, sales: Long, costs: Long, proved: Long, withheld: Long, cardSales: Long = 0): Year {
         val start = LocalDate.of(year, 1, 1)
         val gone = (until.toEpochDay() - start.toEpochDay() + 1).coerceAtLeast(1).toDouble()
         val days = start.lengthOfYear().toDouble()
@@ -141,10 +174,17 @@ object BusinessTax {
         val bookCosts = if (profile.vat == VatType.GENERAL) pc - pp / 11 else pc
         val options = options(profile, revenue, bookCosts, if (profile.vat == VatType.GENERAL) pp * 10 / 11 else pp)
         val best = options.filter { it.allowed }.minBy { it.tax }
-        val vat = vat(profile, ps, pp)
+        val vat0 = vat(profile, ps, pp)
+        val card = if (vat0.second) 0L else cardCredit(profile, year, (cardSales * f).roundToLong(), vat0.first)
+        val vat = (vat0.first - card) to vat0.second
         val due = best.tax - pw
+        val line = when {
+            profile.vat == VatType.SIMPLE && ps >= SIMPLE_LINE -> "이대로면 올해 매출이 간이과세 기준(1억 400만 원)을 넘어요. 다음 해 7월부터 일반과세자가 될 수 있어요"
+            profile.vat == VatType.SIMPLE && ps >= SIMPLE_LINE * 9 / 10 -> "올해 매출이 간이과세 기준(1억 400만 원)에 가까워요"
+            else -> null
+        }
         return Year(year, until, sales, costs, proved, withheld, ps, pc, pp, options, best, due, vat.first, vat.second,
-            dues(year, profile, due, vat.first, ps, pp))
+            dues(year, profile, due, vat.first, ps, pp), card, line)
     }
 
     private fun options(p: Profile, revenue: Long, costs: Long, proved: Long): List<Option> {

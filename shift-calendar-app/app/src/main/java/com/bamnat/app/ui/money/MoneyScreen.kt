@@ -92,6 +92,7 @@ import com.bamnat.core.money.LedgerFilter
 import com.bamnat.core.money.LedgerPeriod
 import com.bamnat.core.money.MoneyAccount
 import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.tax.TaxPlus
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MoneyStats
@@ -590,7 +591,11 @@ fun MoneyScreen(
                 guesses = { e -> learner.guess(e).filter { it.category != "기타" } }, onPick = { e, c -> vm.recategorize(listOf(e), c) })
         },
         MoneyPart.RECENT to { RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) }) },
-        MoneyPart.INCOME to { IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome) },
+        MoneyPart.INCOME to {
+            // F 1.32 [TAXP-01] 세전·세후 on one line: 명세서 > 입금 > 직접 적음 > 추정.
+            val net = remember(takeHome, payRecords, month) { takeHome?.let { v -> TaxPlus.netLine(month, payRecords, v.gross, v.forecast) } }
+            IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net, gate = gate)
+        },
         // [TAX-02][TAX-05] 세전·세후 and this year's tax (프로).
         MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true }) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
@@ -623,6 +628,10 @@ fun MoneyScreen(
             val gross by androidx.compose.runtime.produceState<Long?>(null, profile, snapshot, today.year) { value = vm.yearGross(style, profile, snapshot, today.year) }
             CardGaugeCard(book, today, gross)
         },
+        MoneyPart.CARDBILL to { CardBillCard(book, today, gate) },
+        MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate) },
+        MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
+        MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
     )
     // [FIT-01][FIT-02] The parts that suit this calendar's kind of work, and those the user added.
     val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
@@ -694,7 +703,8 @@ fun MoneyScreen(
                 MoneyViewModel.Page.LIST -> LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
                     onAdd = { adding = MoneyKind.EXPENSE })
                 MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
-                    onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month)
+                    onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
+                    snapshot = snapshot, onMessage = vm::message)
             }
         }
         AnimatedVisibility(selection.isEmpty(), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
@@ -753,7 +763,7 @@ fun MoneyScreen(
     }
     if (takingHome) takeHome?.let { v ->
         TakeHomeSheet(v, onAdd = vm::savePayRecord, onDelete = vm::deletePayRecord, onNotPay = vm::notPay,
-            onDismiss = { takingHome = false }, today = today)
+            onDismiss = { takingHome = false }, today = today, profile = profile, gate = gate)
     }
     if (bizTax) BusinessTaxSheet(taxSettings.business,
         yearOf = { p -> com.bamnat.core.tax.BusinessTax.year(month.year, today, p, book.jobs, book.sales, book.entries) },
@@ -778,7 +788,8 @@ private fun RecentCard(recent: List<MoneyEntry>, month: YearMonth, onOpen: (Mone
 }
 
 @Composable
-internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit) {
+internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit,
+                        netLine: TaxPlus.NetLine? = null, gate: com.bamnat.app.tier.Gate? = null) {
     val hasProfile = profile != null
     val net = profile?.ledgerTakeHome == true
     SectionCard(title = "수입 내역") {
@@ -793,6 +804,7 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
             }
             if (m.payRecorded > 0 || m.payEstimate != null) {
                 Line(label, Fmt.won(m.payCounted))
+                if (gate != null) NetSummaryLine(netLine, gate)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (hasProfile) "급여 계산을 열면 예상 급여가 들어가요" else "시급·월급을 정하면 근무표로 급여를 계산해요",
@@ -902,6 +914,10 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     PACE("pace", "이번 달 흐름", "이대로면 월말 지출, 오늘 쓸 수 있는 돈"),
     SUBS("subs", "구독 점검", "매달 나가는 결제와 1년치, 오른 값"),
     CARD25("card25", "카드 소득공제 문턱", "총급여 25% 문턱과 신용·체크 고르기"),
+    CARDBILL("cardbill", "다음 카드값", "카드별 다음 결제 금액과 이대로면 얼마"),
+    SHIFTSPEND("shiftspend", "근무별 소비", "야간 다음 날·쉬는 날 하루 소비"),
+    SALESSPLIT("salessplit", "매출 나눠 보기", "카드·현금·이체·배달앱 비율"),
+    FREELANCE("freelance", "3.3% 합계", "일한 곳별 뗀 3.3%와 5월 신고 준비"),
     AUTO("auto", "덜 적는 법", "결제 알림 읽기·문자 붙여넣기", right = true),
 }
 

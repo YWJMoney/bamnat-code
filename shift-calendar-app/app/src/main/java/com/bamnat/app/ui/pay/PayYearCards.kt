@@ -12,6 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,13 +41,31 @@ import com.bamnat.core.time.Today
 /**
  * [PAYX-42] 연말정산 미리보기: from January to the month on screen, the 결정세액 roughly against the 간이세액표
  * withholding, run on to the year. Only for 4대보험 pay, where 소득세 is withheld each month.
+ *
+ * F 1.32 [TAXP-03] 594: with 프로 (세금 예측) the 신용·체크카드, 의료·교육, 보험, 월세 come from this calendar's 가계부 (run on to
+ * December) and 기부·연금저축·IRP can be typed; what more could come back is said with its won. A 하루 이용권 sees the
+ * result; the weekly 다시 계산 알림 is for a subscription.
  */
 @Composable
-internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth) {
+internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, calendarId: String? = null) {
     if (profile.taxMode != TaxMode.INSURANCE_4) return
+    val c = LocalContext.current.appContainer
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+    val pro = gate.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)
+    val tax = remember(calendarId) { calendarId?.let(c::tax) }
+    val settings by (tax?.settings ?: kotlinx.coroutines.flow.flowOf(null)).collectAsStateWithLifecycle(null)
+    val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
-    val r by produceState<YearEndPreview.Result?>(null, open, profile, snapshot, month) {
-        if (open) value = withContext(Dispatchers.Default) { runCatching { YearEndPreview.ofYear(profile, month, snapshot.resolver::resolve) }.getOrNull() }
+    var editing by remember { mutableStateOf(false) }
+    val typed = settings?.yearEndFor(month.year) ?: YearEndPreview.Extras()
+    val r by produceState<YearEndPreview.Result?>(null, open, profile, snapshot, month, typed, pro) {
+        if (open) value = withContext(Dispatchers.Default) {
+            val extras = if (pro && calendarId != null) {
+                val money = c.calendars.money(calendarId)
+                YearEndPreview.extrasFrom(money.allEntries(), money.allAccounts(), month.year, Today.date(), typed)
+            } else YearEndPreview.Extras()
+            runCatching { YearEndPreview.ofYear(profile, month, snapshot.resolver::resolve, extras = extras) }.getOrNull()
+        }
     }
     SectionCard(title = "${month.year}년 연말정산 미리보기", trailing = { if (!open) TextButton(onClick = { open = true }) { Text("계산하기") } }) {
         if (!open) {
@@ -55,16 +79,91 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
             color = if (x.refund >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
         )
+        settings?.yearEndLastRefund?.takeIf { settings?.yearEndLastAt != null && it != x.refund }?.let { last ->
+            Text("지난 계산(${settings?.yearEndLastAt?.let { "${it.monthValue}/${it.dayOfMonth}" }})보다 ${won(kotlin.math.abs(x.refund - last))} " +
+                if (x.refund > last) "늘었어요" else "줄었어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Line("총급여 (한 해로 어림, ${x.months}개월 기준)", won(x.salary))
         Line("근로소득공제", "−" + won(x.earnedDeduction))
+        if (x.cardDeduction > 0) Line("신용카드 등 소득공제", "−" + won(x.cardDeduction))
         Line("과세표준", won(x.taxBase))
         Line("산출세액 − 세액공제", "${won(x.calculated)} − ${won(x.credits)}")
+        if (x.specialCredits > 0) Line("  의료·교육·보험·기부·월세 세액공제", won(x.specialCredits))
+        if (x.pensionCredit > 0) Line("  연금저축·IRP 세액공제", won(x.pensionCredit))
+        if (x.standard && x.extras.any) Line("  표준세액공제가 더 커서 그것으로 셌어요", won(YearEndPreview.STANDARD_CREDIT))
         Line("결정세액 (지방소득세 ${won(x.local)} 따로)", won(x.determined))
         Line("매달 뗀 소득세 (간이세액표 어림)", won(x.withheld))
-        Text(YearEndPreview.LEFT_OUT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        x.tips.forEach { t -> Text("💡 ${t.text}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 4.dp)) }
+        if (pro && calendarId != null) {
+            Text("카드·의료·교육·보험·월세는 가계부에서 12월까지 어림했어요. 기부·연금저축은 직접 넣어 주세요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { editing = true }) { Text("금액 고치기") }
+                // A subscription (not a day pass) can have it worked out again every week until January.
+                if (gate.access.reason != com.bamnat.core.tier.ProReason.DAY_PASS) {
+                    Text("매주 다시 계산 알림", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                    androidx.compose.material3.Switch(checked = settings?.yearEndWeekly == true, onCheckedChange = { on ->
+                        scope.launch { tax?.saveSettings { it.copy(yearEndWeekly = on, yearEndLastRefund = x.refund, yearEndLastAt = Today.date()) } }
+                    })
+                }
+            }
+            Text(YearEndPreview.LEFT_OUT_EXTRAS, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text(YearEndPreview.LEFT_OUT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!pro) TextButton(onClick = { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.TAX_FORECAST) }) {
+                Text("카드·의료비·월세·연금저축까지 넣어 보기 (프로)")
+            }
+        }
         Text("소득세법 제47조·제55조·제59조로 셌어요. 정확한 값은 홈택스 연말정산 미리보기에서 확인해 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    if (editing) YearEndExtrasSheet(typed, onSave = { e ->
+        editing = false
+        scope.launch { tax?.saveSettings { it.copy(yearEnd = e, yearEndYear = month.year) } }
+    }, onDismiss = { editing = false })
+}
+
+/** F 1.32 [TAXP-03] The year's amounts to type over the ledger's; an empty field takes the ledger's again. */
+@Composable
+private fun YearEndExtrasSheet(start: YearEndPreview.Extras, onSave: (YearEndPreview.Extras) -> Unit, onDismiss: () -> Unit) {
+    fun d(v: Long) = if (v > 0) v.toString() else ""
+    var credit by remember { mutableStateOf(d(start.credit)) }
+    var debit by remember { mutableStateOf(d(start.debit)) }
+    var market by remember { mutableStateOf(d(start.market)) }
+    var insurance by remember { mutableStateOf(d(start.insurance)) }
+    var medical by remember { mutableStateOf(d(start.medical)) }
+    var education by remember { mutableStateOf(d(start.education)) }
+    var donation by remember { mutableStateOf(d(start.donation)) }
+    var rent by remember { mutableStateOf(d(start.rent)) }
+    var pension by remember { mutableStateOf(d(start.pensionSavings)) }
+    var irp by remember { mutableStateOf(d(start.irp)) }
+    fun v(s: String) = s.toLongOrNull() ?: 0L
+    com.bamnat.app.ui.components.FormSheet(
+        onDismissRequest = onDismiss,
+        title = { Text("연말정산 금액 (1년치)") },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(YearEndPreview.Extras(v(credit), v(debit), v(market), v(insurance), v(medical), v(education), v(donation), v(rent), v(pension), v(irp)))
+            }) { Text("저장") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        text = {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                Text("비워 두면 가계부 기록으로 어림해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.money.AmountField("신용카드", credit, { credit = it })
+                com.bamnat.app.ui.money.AmountField("체크카드·현금영수증·페이", debit, { debit = it })
+                com.bamnat.app.ui.money.AmountField("전통시장·대중교통", market, { market = it })
+                com.bamnat.app.ui.money.AmountField("보장성 보험료", insurance, { insurance = it })
+                com.bamnat.app.ui.money.AmountField("의료비", medical, { medical = it })
+                com.bamnat.app.ui.money.AmountField("교육비", education, { education = it })
+                com.bamnat.app.ui.money.AmountField("기부금", donation, { donation = it })
+                com.bamnat.app.ui.money.AmountField("월세 (무주택, 총급여 8천만 원 이하)", rent, { rent = it })
+                com.bamnat.app.ui.money.AmountField("연금저축", pension, { pension = it })
+                com.bamnat.app.ui.money.AmountField("IRP", irp, { irp = it })
+            }
+        },
+    )
 }
 
 @Composable
