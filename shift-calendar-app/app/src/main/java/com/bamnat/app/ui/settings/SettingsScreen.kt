@@ -725,6 +725,8 @@ private fun SettingsHub(
         }
         // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
         if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
+        // 1.32 [PROX-03] 다음 결제일·금액·해지, first, while money is taken.
+        com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
         // AG 1.27 [INVITE-11][INVITE-12] 친구 초대 and '불편한 점 알려 주기' at the top, not only on the 프로 screen.
         com.bamnat.app.ui.grow.GrowSettingsCard()
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)

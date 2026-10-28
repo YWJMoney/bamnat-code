@@ -421,6 +421,7 @@ class DutyRosterViewModel(
             // A roster whose common codes were matched to the user's kinds says something about those kinds.
             if (u.from != RosterFrom.TYPED && u.row?.guessed.orEmpty().any { it in cells && it !in u.edits }) markShiftsInferred()
             _ui.update { it.copy(applied = cells.size, history = emptyList()) }
+            container.proMoments.rosterIn() // 1.32 [PROX-02]
             val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요"
             val undo: suspend () -> Unit = {
                 before.forEach { (d, e) -> repo.restoreDay(d, e) }

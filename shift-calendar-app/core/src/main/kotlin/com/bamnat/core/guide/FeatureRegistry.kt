@@ -637,6 +637,23 @@ object FeatureRegistry {
             ALL, "설정 › 화면과 글자 › 날짜 밑에 그날 쓴 돈", at(Place.SETTINGS_CALENDAR, "날짜 밑에 그날 쓴 돈"), "달력 지출", "그날 쓴 돈", "칸에 금액", off = Off.ELSEWHERE),
         f("pay.depositCompare", "PAYA-05", "월급 들어오면 바로 비교", "급여 입금 알림이 오면 예상 급여와 바로 견줘 알려 줘요",
             PAID, "설정 › 알림과 잠 › 급여 입금 비교", at(Place.SETTINGS_NOTICES, "급여 입금 비교"), "월급 입금", "급여 알림", "예상과 차이", "덜 받은 돈", off = Off.ELSEWHERE),
+        // 1.32 조사 대조 (계획/1.32-조사-대조표.md): 빠졌거나 줄었던 가계부·프로 기능.
+        f("money.merchant", "LEDX-12", "가맹점 이름 정리", "알림의 ‘(주)’·지점·결제대행 이름을 덜어 목록에 알아보기 쉬운 이름으로 보여요. 원래 이름은 그대로 남아요",
+            ALL, "가계부 › 내역 › 항목 누르기", at(Place.MONEY), "가맹점", "상호", "결제대행", "이름 정리", "KG이니시스", under = "money.auto"),
+        f("money.route", "LEDX-13", "결제 경로", "네이버페이·카카오페이·토스로 낸 돈을 어느 카드·계좌로 냈는지 함께 적고, 충전은 지출로 두 번 세지 않아요",
+            ALL, "가계부 › 내역 › 항목 누르기", at(Place.MONEY), "간편결제", "네이버페이", "카카오페이", "토스페이", "충전", "두 번", under = "money.auto"),
+        f("money.billCheck", "LEDX-14", "카드값 맞춰 보기", "카드 대금이 빠져나가면 그 카드 청구 기간에 적은 돈과 견줘 빠진 결제가 있는지 알려 줘요",
+            ALL, "가계부 › 내역 › 카드값 항목", at(Place.MONEY), "카드 대금", "청구서", "빠진 결제", "카드값 차이", under = "money.auto"),
+        f("money.asks", "LEDX-16", "확인할 것", "원래 결제를 못 찾은 환불과 처음 보는 카드를 모아 한 번에 물어요. 환불은 원래 결제와 짝지어 지출에서 빼요",
+            ALL, "가계부 › 요약 › 확인할 것", at(Place.MONEY), "환불", "취소", "처음 보는 카드", "체크카드", "짝 찾기", off = Off.ELSEWHERE),
+        f("money.installPlan", "LEDX-17", "할부 청구 기준", "할부를 달마다 나갈 돈·수수료와 남은 잔액으로 보여 주고, 무이자가 아니면 수수료를 연 %로 넣어 셈해요",
+            ALL, "가계부 › 요약 › 할부 청구 기준", at(Place.MONEY), "할부", "할부 수수료", "남은 할부", "무이자", "할부 잔액", off = Off.ELSEWHERE),
+        f("money.tune", "LEDX-15", "더 정확하게 적기", "내 이름(내 계좌끼리 옮긴 돈 가려내기), 해외 결제 수수료와 자주 쓰는 환율을 정해 자동 기록을 더 맞게 해요",
+            ALL, "가계부 › ⋮ › 자동 기록 › 더 정확하게 적기", at(Place.AUTO_RECORD), "내 이름", "내 계좌 이체", "해외 결제", "환율", "해외 수수료", under = "money.auto"),
+        f("money.heat", "LEDX-23", "지출 히트맵", "많이 쓴 날일수록 달력 날짜 아래 줄을 진하게 칠해 이달 소비 흐름을 한눈에 봐요. 금액은 보이지 않아요",
+            ALL, "설정 › 화면과 글자 › 지출 히트맵", at(Place.SETTINGS_CALENDAR, "지출 히트맵"), "히트맵", "많이 쓴 날", "소비 패턴", "지출 색", off = Off.ELSEWHERE),
+        f("pro.moments", "PROX-02", "돈이 걸린 날 하루 무료 권유", "급여일·근무표 넣은 날·신고 달에만, 그날 쓸 프로 기능을 하루 무료로 열어 볼지 한 번 물어요. 2주에 한 번까지예요",
+            ALL, "달력 맨 위 카드", at(Place.FEATURES), "하루 무료", "체험", "프로 권유", "광고 보고 열기", off = Off.APP),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

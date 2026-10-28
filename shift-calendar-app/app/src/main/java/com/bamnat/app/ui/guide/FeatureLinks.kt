@@ -105,11 +105,13 @@ object FeatureSwitches {
     val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules", "privacy.usageStats", "plaza.news", "leave.promotion",
         "alarm.suggest", // O 1.23 (I)
         // 1.32 [WTYP-08] 가계부 cards turned off in 가계부 화면 꾸미기, and the two settings rows they live in.
-        "money.cardBill", "money.shiftSpend", "money.subscriptions", "money.cardThreshold", "money.inCells", "pay.depositCompare")
+        "money.cardBill", "money.shiftSpend", "money.subscriptions", "money.cardThreshold", "money.inCells", "pay.depositCompare",
+        // 1.32 조사 대조 [LEDX-16][LEDX-17][LEDX-23]
+        "money.asks", "money.installPlan", "money.heat")
 
     /** 1.32 [WTYP-08] The 가계부 card each of these features is ([com.bamnat.app.ui.money.MoneyPart]). */
     private val MONEY_CARDS = mapOf("money.cardBill" to "cardbill", "money.shiftSpend" to "shiftspend",
-        "money.subscriptions" to "subs", "money.cardThreshold" to "card25")
+        "money.subscriptions" to "subs", "money.cardThreshold" to "card25", "money.asks" to "ask", "money.installPlan" to "install")
 
     private fun moneyCardShown(c: AppContainer, card: String) =
         com.bamnat.app.ui.money.moneyParts(c.settingsRepository.current.moneyLayout).firstOrNull { it.part.id == card }?.shown ?: true
@@ -136,6 +138,7 @@ object FeatureSwitches {
             "alarm.suggest" -> c.settingsRepository.current.alarmSuggest // O 1.23 (I)
             "money.inCells" -> c.settingsRepository.current.spendInCells
             "pay.depositCompare" -> c.settingsRepository.current.payDepositNotice
+            "money.heat" -> c.settingsRepository.current.spendHeat
             in MONEY_CARDS -> moneyCardShown(c, MONEY_CARDS.getValue(feature.id))
             else -> true
         }
@@ -170,6 +173,7 @@ object FeatureSwitches {
                 "alarm.suggest" -> c.settingsRepository.update { it.copy(alarmSuggest = on) } // O 1.23 (I)
                 "money.inCells" -> c.settingsRepository.update { it.copy(spendInCells = on) }
                 "pay.depositCompare" -> c.settingsRepository.update { it.copy(payDepositNotice = on) }
+                "money.heat" -> c.settingsRepository.update { it.copy(spendHeat = on) }
                 in MONEY_CARDS -> showMoneyCard(c, MONEY_CARDS.getValue(feature.id), on)
                 else -> { FeatureLinks.open(feature); return false }
             }
