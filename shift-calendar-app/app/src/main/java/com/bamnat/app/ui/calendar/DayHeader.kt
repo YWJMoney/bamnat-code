@@ -470,13 +470,16 @@ private fun QuickChips(
     val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
     val fieldRules = calendar.field ?: com.bamnat.core.money.FieldRules()
     val dayRate = focus == CalendarFocus.JOBS && fieldRules.dayRateMode
+    val platform = focus == CalendarFocus.JOBS && fieldRules.platformMode
     ChipRow(modifier, start = 12.dp, end = endSpace) {
         if (dayRate) dayRateChips(day.date, book, fieldRules, onDelete = vm::deleteJob, onSave = { job, r ->
-            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient) }
+            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient, rateFrom = r.rateFrom) }
             vm.saveJob(job)
-        })
+        }, onReprice = { list -> list.forEach(vm::saveJob) })
+        // G 1.32 [WTYP-02] 플랫폼형: 오늘 플랫폼마다 건수·금액·운행 시간.
+        if (platform) platformChips(day.date, book, fieldRules, onSave = vm::saveJob, onDelete = vm::deleteJob)
         // [CAL-05] Field and shop work: the day's job or sales is the first chip.
-        focus.addLabel?.takeIf { !dayRate }?.let { label ->
+        focus.addLabel?.takeIf { !dayRate && !platform }?.let { label ->
             val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null
             item {
                 AssistChip(
@@ -551,7 +554,7 @@ private fun QuickChips(
         if (focus == CalendarFocus.JOBS && calendar.field?.mode == null) {
             FieldModePrompt { m ->
                 calendars.updateField(calendar.id) { it.copy(mode = m) }
-                if (m == com.bamnat.core.money.FieldMode.DAY_RATE) addingMoney = false
+                if (m == com.bamnat.core.money.FieldMode.DAY_RATE || m == com.bamnat.core.money.FieldMode.PLATFORM) addingMoney = false
             }
         } else if (focus == CalendarFocus.INVEST) {
             // [INV-03] 매매 기록 for this day.

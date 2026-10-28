@@ -81,6 +81,12 @@ class Ads(private val scope: CoroutineScope) {
         if (started) return
         started = true
         // Google asks for this off the main thread.
-        scope.launch { MobileAds.initialize(context) { _ready.value = true } }
+        // G 1.32 [WTYP-01] Every ad starts without sound (AdRules.MUTED).
+        scope.launch {
+            MobileAds.initialize(context) {
+                if (com.bamnat.core.tier.AdRules.MUTED) runCatching { MobileAds.setAppMuted(true); MobileAds.setAppVolume(0f) }
+                _ready.value = true
+            }
+        }
     }
 }

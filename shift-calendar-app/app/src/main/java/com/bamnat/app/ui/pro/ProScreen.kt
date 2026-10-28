@@ -199,6 +199,9 @@ fun ProScreen(onBack: () -> Unit) {
                         }
                     }
                     Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // G 1.32 [WTYP-01] The ad promise, in words.
+                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 }
 
                 if (!gate.live || gate.preview) {

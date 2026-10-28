@@ -148,6 +148,8 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // C 1.32 [STAB-07] The freeze watch runs only while the app is on screen.
         com.bamnat.app.diag.MainStall.start(this)
+        // G 1.32 [WTYP-01] No banner right after the app comes to the front.
+        com.bamnat.app.ui.components.AdMoment.opened(com.bamnat.core.time.Today.instant())
         // [PERF-09] Before the container is whole this part waits for it ([open] runs it).
         shown.value?.let(::started)
     }

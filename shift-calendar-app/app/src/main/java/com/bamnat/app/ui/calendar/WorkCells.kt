@@ -59,7 +59,10 @@ internal fun fieldJobsOf(money: MoneyBook, from: LocalDate, to: LocalDate): Map<
 
 /** [FLD-02] The day's 공수 for the line under a field cell ("1공", "0.5"); null when no job counts 공수. */
 internal fun fieldUnitsText(jobs: List<Job>?): String? {
-    val units = jobs.orEmpty().filter { !it.cancelled }.mapNotNull { it.units }.takeIf { it.isNotEmpty() } ?: return null
+    val live = jobs.orEmpty().filter { !it.cancelled }
+    // G 1.32 [WTYP-02] A platform day says its 건수.
+    live.filter(com.bamnat.core.money.PlatformWork::isPlatform).takeIf { it.isNotEmpty() }?.let { p -> return "${p.sumOf(com.bamnat.core.money.PlatformWork::count)}건" }
+    val units = live.mapNotNull { it.units }.takeIf { it.isNotEmpty() } ?: return null
     return DayRate.cell(units.sum())
 }
 
@@ -109,7 +112,8 @@ private fun FieldBar(job: Job, date: LocalDate, dark: Boolean, modifier: Modifie
     ) {
         // Only the first day names the job; the days after carry its colour.
         if (first) {
-            val label = job.units?.let { DayRate.cell(it) } ?: job.client.ifBlank { job.title }.trim().take(4)
+            val label = if (com.bamnat.core.money.PlatformWork.isPlatform(job)) "${job.client.take(2)}${com.bamnat.core.money.PlatformWork.count(job)}"
+                else job.units?.let { DayRate.cell(it) } ?: job.client.ifBlank { job.title }.trim().take(4)
             Text(
                 label, fontSize = 8.sp, lineHeight = 9.sp, maxLines = 1, overflow = TextOverflow.Clip, fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (cancelled) 0.5f else 1f),

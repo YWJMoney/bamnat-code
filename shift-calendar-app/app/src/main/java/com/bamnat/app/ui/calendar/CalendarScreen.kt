@@ -563,10 +563,10 @@ fun CalendarScreen(
     // [SCHED-03] The day "이 날부터 순서 다시 맞추기" was asked on; survives a fold.
     var realigning by rememberSaveable(stateSaver = DateSaver) { mutableStateOf<LocalDate?>(null) }
     realigning?.let { date ->
-        RealignDialog(date, snap, onDismiss = { realigning = null }) { step, clear ->
+        RealignDialog(date, snap, onDismiss = { realigning = null }, onConfirm = { step, clear ->
             realigning = null
             vm.realignFrom(date, step, clear)
-        }
+        }, onPause = { days -> realigning = null; vm.pausePattern(date, days) })
     }
     val onQuickActionNow: (LocalDate, QuickAction) -> Unit = { date, action ->
         // [CAL-17] Found the long press already: the tip is not needed.

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
@@ -46,6 +47,7 @@ internal fun RealignDialog(
     snap: ScheduleSnapshot,
     onDismiss: () -> Unit,
     onConfirm: (step: Int, clear: List<LocalDate>) -> Unit,
+    onPause: ((days: Int) -> Unit)? = null,
 ) {
     val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return
     var step by rememberSaveable(date) { mutableIntStateOf(rotation.stepIndexOn(date)) }
@@ -69,6 +71,21 @@ internal fun RealignDialog(
                             label = { Text("${i + 1}") },
                             leadingIcon = { ShiftBadge(type, size = 18.dp, text = type?.label ?: "휴") },
                         )
+                    }
+                }
+                // G 1.32 [WTYP-07] 명절 휴무: stop the order for a few days and go on where it left off.
+                if (onPause != null) {
+                    var days by rememberSaveable(date) { mutableIntStateOf(3) }
+                    androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text("명절·공장 휴무로 며칠 멈추기", style = MaterialTheme.typography.titleSmall)
+                    Text("${Fmt.monthDay(date)}부터 ${days}일 쉬고, 그다음 날 이 날 순서로 이어 가요. 쉬는 날은 비워 둬요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(onClick = { days = (days - 1).coerceAtLeast(1) }) { Text("−") }
+                        Text("${days}일", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { days = (days + 1).coerceAtMost(30) }) { Text("+") }
+                        Spacer(Modifier.weight(1f))
+                        androidx.compose.material3.OutlinedButton(onClick = { onPause(days) }) { Text("멈추고 이어 가기") }
                     }
                 }
                 if (handChanged.isNotEmpty()) {

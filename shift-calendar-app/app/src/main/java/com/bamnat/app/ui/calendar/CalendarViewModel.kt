@@ -830,6 +830,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [SCHED-03] Restarts the rotation on [date] at [step] (0-based) from that day on, keeping every day before,
      * and sets the days in [clear] back to the pattern. Said back with one undo for both.
      */
+    /** G 1.32 [WTYP-07] 명절 휴무: the order stops for [days] days from [date] and goes on after, with one undo. */
+    fun pausePattern(date: LocalDate, days: Int) {
+        val snap = snapshot.value ?: return
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule
+            val before = snap.patterns
+            schedule.restorePatterns(PatternTimeline.pause(before, date, date.plusDays(days - 1L)))
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)}부터 ${days}일 멈추고 ${Fmt.monthDay(date.plusDays(days.toLong()))}부터 이어 가요") {
+                schedule.restorePatterns(before)
+            })
+        }
+    }
+
     fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) {
         val snap = snapshot.value ?: return
         val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return

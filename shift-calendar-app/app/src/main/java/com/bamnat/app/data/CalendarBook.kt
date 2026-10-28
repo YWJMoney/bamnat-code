@@ -531,12 +531,23 @@ class CalendarBook(
         fun fieldJson(r: com.bamnat.core.money.FieldRules): JSONObject = JSONObject()
             .putOpt("mode", r.mode?.name).put("rate", r.dayRate).put("client", r.lastClient)
             .putOpt("notMatched", r.notMatched.takeIf { it.isNotEmpty() }?.joinToString(","))
+            // G 1.32 [WTYP-04][WTYP-02]
+            .putOpt("rateFrom", r.rateFrom.takeIf { it.isNotEmpty() }?.joinToString(",") { "${it.first}:${it.second}" })
+            .putOpt("platformPay", r.platformPay.takeIf { it.isNotEmpty() }?.entries?.joinToString("|") { "${it.key}:${it.value.first}:${it.value.second}" })
 
         fun fieldOf(o: JSONObject): com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(
             mode = o.optString("mode").takeIf { it.isNotEmpty() }?.let { m -> runCatching { com.bamnat.core.money.FieldMode.valueOf(m) }.getOrNull() },
             dayRate = o.optLong("rate").coerceAtLeast(0),
             lastClient = o.optString("client").take(30),
             notMatched = o.optString("notMatched").split(',').mapNotNull { it.toLongOrNull() },
+            rateFrom = o.optString("rateFrom").split(',').mapNotNull { p ->
+                val (d, r) = p.split(':').takeIf { it.size == 2 } ?: return@mapNotNull null
+                runCatching { java.time.LocalDate.parse(d) to r.toLong().coerceAtLeast(0) }.getOrNull()
+            }.sortedBy { it.first },
+            platformPay = o.optString("platformPay").split('|').mapNotNull { p ->
+                val parts = p.split(':').takeIf { it.size == 3 } ?: return@mapNotNull null
+                runCatching { parts[0] to (java.time.DayOfWeek.valueOf(parts[1]) to java.time.DayOfWeek.valueOf(parts[2])) }.getOrNull()
+            }.toMap(),
         )
 
         /** [SHOP-02] */
