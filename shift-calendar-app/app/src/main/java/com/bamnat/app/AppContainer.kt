@@ -63,7 +63,7 @@ class AppContainer(context: Context) {
     val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds },
         extraName = { settingsRepository.current.extraKinds.name(it) }, shareScope = appScope)
     /** [MCAL-01] The user's calendars; the main one is [scheduleRepository]. */
-    val calendars = com.bamnat.app.data.CalendarBook(
+    val calendars: com.bamnat.app.data.CalendarBook = com.bamnat.app.data.CalendarBook(
         java.io.File(appContext.filesDir, "calendars.json"), scheduleRepository, com.bamnat.app.data.CalendarStorage.Files(appContext),
         repositoryOf = { db ->
             ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds }, extraName = { settingsRepository.current.extraKinds.name(it) },
@@ -77,7 +77,8 @@ class AppContainer(context: Context) {
                 // [CALS-02] An added calendar without a kind of work of its own follows the main one, as its tabs do.
                 list.firstOrNull { it.id == id }?.takeIf { !it.isMain }?.style ?: s.workStyle
             }, confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
-                marks = com.bamnat.app.data.RecurringMarks(java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "recurring_marks.json")))
+                marks = com.bamnat.app.data.RecurringMarks(java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "recurring_marks.json")),
+                tune = ::captureTune, dayLabel = { dayLabels(calendars.repository(id)) })
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
@@ -109,7 +110,19 @@ class AppContainer(context: Context) {
     private val captureStore by lazy { com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")) }
     val moneyRepository = MoneyRepository(database, captureStore, style = settingsRepository.settings.map { it.workStyle },
         confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
-        marks = com.bamnat.app.data.RecurringMarks(java.io.File(appContext.filesDir, "recurring_marks.json")))
+        marks = com.bamnat.app.data.RecurringMarks(java.io.File(appContext.filesDir, "recurring_marks.json")),
+        tune = ::captureTune, dayLabel = { dayLabels(scheduleRepository) })
+
+    /** 1.32 [LEDX-15][LEDX-18] 결제 알림 › 더 정확하게 적기, as the capture reads it. */
+    private fun captureTune(): com.bamnat.app.data.CaptureTune = autoRecordPrefs.current.let { com.bamnat.app.data.CaptureTune(it.myNames, it.abroadFee, it.rates) }
+
+    /** 1.32 [LEDX-21] What each day was on [schedule] (the shift's name, or 쉬는 날), for the ledger's learner. */
+    private suspend fun dayLabels(schedule: ScheduleRepository): (java.time.LocalDate) -> String? {
+        val snap = schedule.snapshot.first()
+        if (snap.isEmpty) return { null }
+        // The labels 근무별 소비 uses (야간 다음 날, 쉬는 날, the shift's name), so both read a day alike.
+        return com.bamnat.core.tax.TaxPlus.dayLabel(snap.resolver::resolve)
+    }
     /** The calendar list as a flow, for repositories made before [calendars] is there. */
     private val calendarsFlow: kotlinx.coroutines.flow.Flow<List<com.bamnat.app.data.PersonalCalendar>>
         get() = calendars.calendars

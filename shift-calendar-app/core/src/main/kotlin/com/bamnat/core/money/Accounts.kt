@@ -154,8 +154,10 @@ object CardCycle {
         var count = 0
         for (e in entries) {
             if (e.kind != MoneyKind.EXPENSE || MoneyAccounts.of(e, accounts) != card.id) continue
-            val p = portion(e, billMonth(card, e.date), payMonth)
-            if (p != 0L) { amount += p; count++ }
+            val first = billMonth(card, e.date)
+            val p = portion(e, first, payMonth)
+            // 1.32 [LEDX-17] 유이자 할부 adds the 회차's 수수료 to the bill.
+            if (p != 0L) { amount += p + (if (e.installmentRate > 0) LedgerChecks.installmentRow(e, first, payMonth)?.fee ?: 0L else 0L); count++ }
         }
         val (from, to) = period(card, payMonth)
         return Bill(card, payDate(card, payMonth), from, to, amount, count)

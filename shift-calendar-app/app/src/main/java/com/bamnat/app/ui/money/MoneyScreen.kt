@@ -267,8 +267,16 @@ class MoneyViewModel(
     override fun saveEntry(entry: MoneyEntry) {
         val before = book.value
         val old = before?.entries?.firstOrNull { it.id == entry.id && entry.id != 0L }
+        // 1.32 [LEDX-18] A line written at a rough rate, fixed to the card's bill: the rate it shows is kept for next time.
+        val settled = old?.let { o ->
+            com.bamnat.core.money.LedgerSmarts.abroadOf(o)?.takeIf { o.amount != entry.amount && entry.amount > 0 && com.bamnat.core.money.LedgerSmarts.abroadOf(entry) != null }
+        }?.let { (cur, amount) ->
+            val prefs = container.autoRecordPrefs
+            com.bamnat.core.money.LedgerSmarts.learnedRate(amount, entry.amount, prefs.current.abroadFee)?.let { prefs.setRate(cur, it) }
+            entry.copy(note = com.bamnat.core.money.LedgerSmarts.settledAbroad(entry.note))
+        } ?: entry
         container.appScope.launch {
-            money.save(entry)
+            money.save(settled)
             // [LEDG-18] The other lines from this place can follow in one tap.
             val same = old?.let { money.samePlace(entry, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
@@ -563,7 +571,10 @@ fun MoneyScreen(
     val unseen = remember(book) { book.pending + book.entries.filter { !it.reviewed } }
     val otherPlaces = remember(book, today) { OtherPlaces.groups(book.entries, today) }
     // E 1.32 [LEDX-05] Learned from this calendar's own lines, on the phone.
-    val learner = remember(book.entries) { com.bamnat.core.money.LedgerSmarts.Learner.of(book.entries) }
+    // 1.32 [LEDX-21] With what each day was on this calendar, as the notification reader learns.
+    val learner = remember(book.entries, snapshot) {
+        com.bamnat.core.money.LedgerSmarts.Learner.of(book.entries, snapshot?.takeIf { !it.isEmpty }?.let { com.bamnat.core.tax.TaxPlus.dayLabel(it.resolver::resolve) } ?: { null })
+    }
     val repeats = remember(book, today, autoRecord.notRepeating) {
         RepeatFinder.find(book.entries, book.fixed, today, autoRecord.notRepeating)
     }
@@ -629,6 +640,8 @@ fun MoneyScreen(
             CardGaugeCard(book, today, gross)
         },
         MoneyPart.CARDBILL to { CardBillCard(book, today, gate) },
+        MoneyPart.ASK to { LedgerAsksCard(book, today, vm) },
+        MoneyPart.INSTALL to { InstallmentPlanCard(book, today) },
         MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate) },
         MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
         MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
@@ -900,6 +913,8 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
 internal enum class MoneyPart(val id: String, val label: String, val what: String, val movable: Boolean = true, val right: Boolean = false) {
     HERO("hero", "이번 달 합계", "수입·지출·남은 돈과 예산", movable = false),
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),
+    // 1.32 [LEDX-16][LEDX-19]
+    ASK("ask", "확인할 것", "원래 결제를 못 찾은 환불, 처음 보는 카드", movable = false, right = true),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
     INCOME("income", "수입 내역", "급여 예상과 적은 수입", right = true),
     TAX("tax", "세금·실수령", "세전·세후 예상, 올해 낼 세금", right = true),
@@ -916,6 +931,8 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     SUBS("subs", "구독 점검", "매달 나가는 결제와 1년치, 오른 값"),
     CARD25("card25", "카드 소득공제 문턱", "총급여 25% 문턱과 신용·체크 고르기"),
     CARDBILL("cardbill", "다음 카드값", "카드별 다음 결제 금액과 이대로면 얼마"),
+    // 1.32 [LEDX-17]
+    INSTALL("install", "할부 청구 기준", "달마다 나갈 할부와 수수료, 남은 잔액"),
     SHIFTSPEND("shiftspend", "근무별 소비", "야간 다음 날·쉬는 날 하루 소비"),
     SALESSPLIT("salessplit", "매출 나눠 보기", "카드·현금·이체·배달앱 비율"),
     FREELANCE("freelance", "3.3% 합계", "일한 곳별 뗀 3.3%와 5월 신고 준비"),

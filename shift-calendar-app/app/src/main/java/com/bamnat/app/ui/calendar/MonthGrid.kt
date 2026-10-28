@@ -229,6 +229,8 @@ fun MonthGrid(
     showMoney: Boolean = false,
     /** E 1.32 [LEDX-07] The day's spending under the date (가계부 lines of this calendar). */
     showSpend: Boolean = false,
+    /** 1.32 [LEDX-23] 지출 히트맵: a strip under each date, darker where the month spent more. */
+    spendHeat: Boolean = false,
     /** [FEAT-17] Memo-first: the start of each day's memo in place of the hours. */
     memoTexts: Map<LocalDate, String> = emptyMap(),
     /** [CAL-01] With a stamp chosen in quick input, a finger dragged over days paints them all at once. */
@@ -259,6 +261,10 @@ fun MonthGrid(
         MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
     }
     val cardDue = rememberCardDue(money)
+    val shades = remember(cells, spendHeat, month) {
+        if (!spendHeat || focus != CalendarFocus.SHIFTS) emptyMap()
+        else com.bamnat.core.money.LedgerChecks.heat(cells.days.filterKeys { YearMonth.from(it) == month }.mapValues { it.value.expense })
+    }
     // Days under the finger while painting, shown at once and written when it lifts.
     var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
     val paint by rememberUpdatedState(onPaint)
@@ -355,6 +361,7 @@ fun MonthGrid(
                         startsHere = cells.starts[date] ?: 0,
                         sales = cells.sales[date],
                         heat = if (focus == CalendarFocus.SALES && inMonth) cells.heat(date) else 0f,
+                        spendShade = if (inMonth) shades[date] ?: 0 else 0,
                         fieldJobs = cells.field[date],
                         cardDue = date in cardDue,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
@@ -485,6 +492,8 @@ private fun DayCell(
     sales: Long? = null,
     /** [CAL-06] A shop's day tinted by how strong its sales were. */
     heat: Float = 0f,
+    /** 1.32 [LEDX-23] The day's spending against the month's, 1~4; 0 for none or the heat map off. */
+    spendShade: Int = 0,
     onLongPress: (() -> Unit)? = null,
     isRangeStart: Boolean = false,
     /** [FLD-04] Field work's jobs on this day, drawn in their clients' colours. */
@@ -566,6 +575,8 @@ private fun DayCell(
         day.entry?.attendance?.let { append(", ").append(it.label) }
         if (holidayWeekDone) append(", 이 주 주휴 충족")
         invest?.describe(date)?.let { append(", ").append(it) }
+        // 1.32 [LEDX-23]
+        if (spendShade >= 3) append(if (spendShade == 4) ", 이달 지출 많은 날" else ", 이달 지출 조금 많은 날")
     }
 
     Box(
@@ -608,6 +619,8 @@ private fun DayCell(
             }
             .alpha(if (inMonth) 1f else 0.35f),
     ) {
+        // 1.32 [LEDX-23] 지출 히트맵: under everything, at the cell's foot.
+        if (spendShade > 0) com.bamnat.app.ui.money.SpendHeatStrip(spendShade, Modifier.align(Alignment.BottomCenter))
         // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
             Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp),

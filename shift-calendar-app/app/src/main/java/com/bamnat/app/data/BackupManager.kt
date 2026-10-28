@@ -122,7 +122,7 @@ class BackupManager(
                     // [PAYX-18] Version 19; only when set.
                     .apply { if (x.compLeave) put("comp", true) }
                     // [PAYX-30] Version 20; only when set.
-                    .putOpt("sub", x.substituteEpochDay))
+                    .putOpt("sub", x.substituteEpochDay).putOpt("approved", x.approvedMinutes)) // [WTYP-24] Version 22.
             }
         })
         // [LEAVE-01] The 연차 원장's stored rows (version 19). Uses stay on the days above.
@@ -155,7 +155,9 @@ class BackupManager(
                     .putOpt("account", e.accountId).putOpt("toAccount", e.toAccountId).putOpt("fixedId", e.fixedId)
                     .putOpt("memo", e.memo.ifEmpty { null }).putOpt("tags", e.tags.ifEmpty { null })
                     .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 })
-                    .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null }))
+                    .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null })
+                    // [LEDX-17] Version 22.
+                    .putOpt("instRate", e.installmentRate.takeIf { it > 0 }))
             }
         })
         into.put("jobs", JSONArray().apply {
@@ -173,7 +175,8 @@ class BackupManager(
                 put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)
                     // [SHOP-01][SHOP-02][SHOP-03] Version 17.
                     .put("card", d.card).put("cash", d.cash).put("transfer", d.transfer).put("delivery", d.delivery)
-                    .putOpt("counted", d.cashCounted).put("settled", d.cardSettled))
+                    .putOpt("counted", d.cashCounted).put("settled", d.cardSettled)
+                    .putOpt("cashReceipt", d.cashReceipt.takeIf { it > 0 })) // [TAXP-14] Version 22.
             }
         })
         // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
@@ -491,7 +494,7 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
@@ -643,6 +646,7 @@ class BackupManager(
                 coveredShiftTypeId = if (o.has("covered") && !o.isNull("covered")) o.getLong("covered") else null,
                 needsReview = o.optBoolean("review"), position = o.optInt("pos"), compLeave = o.optBoolean("comp"),
                 substituteEpochDay = if (o.has("sub") && !o.isNull("sub")) o.getLong("sub") else null,
+                approvedMinutes = o.optIntOrNull("approved"),
             )
         }
         val leave = from.optJSONArray("leave")?.objects()?.mapNotNull { o ->
@@ -719,6 +723,7 @@ class BackupManager(
                 accountId = o.optLongOrNull("account"), toAccountId = o.optLongOrNull("toAccount"), memo = o.optString("memo"),
                 tags = o.optString("tags"), parts = o.optString("parts"), installments = o.optInt("installments", 1).coerceIn(1, 60),
                 fixedId = o.optLongOrNull("fixedId"), proof = o.optString("proof"), receipt = o.optString("receipt"),
+                installmentRate = o.optDouble("instRate", 0.0).takeIf { !it.isNaN() }?.coerceIn(0.0, com.bamnat.core.money.MoneyEntry.MAX_INSTALLMENT_RATE) ?: 0.0,
             )
         }
         val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
@@ -771,6 +776,7 @@ class BackupManager(
                 o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"),
                 card = o.optLong("card"), cash = o.optLong("cash"), transfer = o.optLong("transfer"), delivery = o.optLong("delivery"),
                 cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
+                cashReceipt = o.optLong("cashReceipt").coerceAtLeast(0),
             )
         }
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
@@ -954,6 +960,8 @@ class BackupManager(
                     textStep = o.optInt("textStep", s.textStep),
                     clock12 = o.optBoolean("clock12", s.clock12),
                     spendInCells = o.optBoolean("spendInCells", s.spendInCells),
+                    spendHeat = o.optBoolean("spendHeat", s.spendHeat),
+                    backupNudge = o.optBoolean("backupNudge", s.backupNudge),
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
                     calendarOnly = o.optBoolean("calendarOnly", false),
                     statsByPayPeriod = o.optBoolean("statsPayPeriod", false),

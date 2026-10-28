@@ -225,6 +225,10 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
                 if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
                 if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
+                // 1.32 [LEDX-15][LEDX-18] 내 이름, 해외 수수료, 내 환율.
+                var tuning by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { tuning = true }, modifier = Modifier.fillMaxWidth()) { Text("더 정확하게 적기") }
+                if (tuning) CaptureTuneDialog(onDismiss = { tuning = false })
                 Text("가계부 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             }

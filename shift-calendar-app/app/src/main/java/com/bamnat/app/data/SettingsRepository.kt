@@ -156,6 +156,10 @@ data class AppSettings(
     val clock12: Boolean = false,
     /** E 1.32 [LEDX-07] Each day's spending under the date in the calendar. */
     val spendInCells: Boolean = false,
+    /** 1.32 [LEDX-23] 지출 히트맵: a strip under each date, darker where the month spent more. */
+    val spendHeat: Boolean = false,
+    /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
+    val backupNudge: Boolean = true,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
     val payDepositNotice: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
@@ -325,6 +329,8 @@ class SettingsRepository(context: Context) {
             textStep = prefs.getInt(K_TEXT_STEP, d.textStep),
             clock12 = prefs.getBoolean(K_CLOCK12, d.clock12),
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
+            spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
+            backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
@@ -413,6 +419,8 @@ class SettingsRepository(context: Context) {
             .putInt(K_TEXT_STEP, s.textStep)
             .putBoolean(K_CLOCK12, s.clock12)
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
+            .putBoolean(K_SPEND_HEAT, s.spendHeat)
+            .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
@@ -451,6 +459,8 @@ class SettingsRepository(context: Context) {
         const val K_TEXT_STEP = "text_step"
         const val K_CLOCK12 = "clock_12h"
         const val K_SPEND_IN_CELLS = "spend_in_cells"
+        const val K_SPEND_HEAT = "spend_heat"
+        const val K_BACKUP_NUDGE = "backup_nudge"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_CAL_ONLY = "calendar_only"
         const val K_STATS_PERIOD = "stats_pay_period"

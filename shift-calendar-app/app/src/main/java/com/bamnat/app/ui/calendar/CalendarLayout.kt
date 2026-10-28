@@ -127,6 +127,8 @@ internal fun CalendarEditSheet(
         OptionSwitch("음력 날짜", settings.showLunar) { on -> update { it.copy(showLunar = on) } }
         // E 1.32 [LEDX-07]
         OptionSwitch("날짜 밑에 그날 쓴 돈", settings.spendInCells) { on -> update { it.copy(spendInCells = on) } }
+        // 1.32 [LEDX-23]
+        OptionSwitch("지출 히트맵", settings.spendHeat) { on -> update { it.copy(spendHeat = on) } }
         OptionSwitch("날짜 밑에 메모 첫 글자", settings.memoInCells) { on -> update { it.copy(memoInCells = on, calendarMemos = it.calendarMemos || on) } }
         },
     )

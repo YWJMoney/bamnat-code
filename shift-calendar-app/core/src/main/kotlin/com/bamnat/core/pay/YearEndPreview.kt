@@ -67,24 +67,56 @@ object YearEndPreview {
         /** 연금저축 (600만 원까지) and IRP (합쳐 900만 원까지). */
         val pensionSavings: Long = 0,
         val irp: Long = 0,
+        /**
+         * 1.32 [TAXP-12] 18세 미만 자녀, for the card 한도 from 2026 (-1: the 자녀 수 of 급여 설정). Not the 자녀세액공제's
+         * 8세 이상, so it is asked apart.
+         */
+        val under18: Int = -1,
+        /**
+         * 1.32 [TAXP-13] 홈택스 연말정산 미리보기's 1~9월 국세청 합계, typed by the user (0 = not typed): 10~12월 then comes
+         * from the ledger instead of the whole year.
+         */
+        val htCredit: Long = 0,
+        val htDebit: Long = 0,
+        val htMarket: Long = 0,
     ) {
         val any: Boolean get() = listOf(credit, debit, market, insurance, medical, education, donation, rent, pensionSavings, irp).any { it > 0 }
+        /** 1.32 [TAXP-13] Whether 홈택스's 1~9월 numbers were typed. */
+        val hasHometax: Boolean get() = htCredit + htDebit + htMarket > 0
     }
 
     data class Tip(val text: String, val worth: Long)
 
     const val LEFT_OUT_EXTRAS = "주택자금·주택청약, 벤처 투자, 중소기업 취업자 감면은 넣지 않았어요. 해당되면 더 돌려받아요."
 
-    /** 신용카드 등 소득공제: the 25% 문턱 taken from the 신용카드 first, then the rest at their rates, under the 한도. */
-    fun cardDeduction(salary: Long, x: Extras): Long {
+    /**
+     * 신용카드 등 소득공제: the 25% 문턱 taken from the 신용카드 first, then the rest at their rates, under the 한도. 1.32
+     * [TAXP-12] From [year] 2026 the 기본 한도 grows with 18세 미만 [children] ([childCardCap]).
+     */
+    fun cardDeduction(salary: Long, x: Extras, year: Int = 0, children: Int = 0): Long {
         var left = (salary * 0.25).roundToLong()
         fun over(v: Long): Long { val o = (v - left).coerceAtLeast(0); left = (left - v).coerceAtLeast(0); return o }
         val c = over(x.credit); val d = over(x.debit); val m = over(x.market)
         val main = (c * 0.15 + d * 0.30).roundToLong()
-        val cap = if (salary <= 70_000_000) 3_000_000L else 2_500_000L
+        val cap = baseCardCap(salary) + childCardCap(salary, year, children)
         val marketCap = if (salary <= 70_000_000) 3_000_000L else 2_000_000L
         return minOf(main, cap) + minOf((m * 0.40).roundToLong(), marketCap)
     }
+
+    /** 기본 한도: 총급여 7천만 원 이하 300만, 넘으면 250만. */
+    fun baseCardCap(salary: Long): Long = if (salary <= 70_000_000) 3_000_000L else 2_500_000L
+
+    /**
+     * 1.32 [TAXP-12] 2026년 사용분부터 (2025 세제개편, 조사 3-2): 18세 미만 자녀 1명당 +50만 원 (총급여 7천만 원 이하, 최대
+     * +100만), 넘으면 1명당 +25만 원 (최대 +50만). 0 before 2026.
+     */
+    fun childCardCap(salary: Long, year: Int, children: Int): Long {
+        if (year < 2026 || children <= 0) return 0
+        return if (salary <= 70_000_000) minOf(children * 500_000L, 1_000_000L) else minOf(children * 250_000L, 500_000L)
+    }
+
+    /** 1.32 [TAXP-12] The 자녀 the card 한도 counts: [Extras.under18], or the 자녀 수 of 급여 설정. */
+    fun cardChildren(x: Extras, children: Int): Int = if (x.under18 >= 0) x.under18 else children
 
     /** 보장성보험·의료비·교육비·기부금·월세 세액공제 (제59조의4, 조세특례제한법 제95조의2). */
     fun specialCredits(salary: Long, x: Extras): Long {
@@ -166,7 +198,7 @@ object YearEndPreview {
         val k = 12.0 / months.coerceIn(1, 12)
         val salary = (gross * k).roundToLong()
         val earned = earnedDeduction(salary)
-        val card = cardDeduction(salary, extras)
+        val card = cardDeduction(salary, extras, year, cardChildren(extras, children))
         val base = (salary - earned - 1_500_000L * dependents.coerceAtLeast(1) - (pension * k).roundToLong() - card).coerceAtLeast(0)
         // 보험료 특별소득공제 with the 특별세액공제, or the 표준세액공제: whichever leaves less tax.
         val withInsurance = (base - (insurance * k).roundToLong()).coerceAtLeast(0)
@@ -204,10 +236,24 @@ object YearEndPreview {
             if (worth > 0) out += Tip("12월 말까지 연금저축·IRP에 ${"%,d".format(add)}원 더 넣으면 약 ${"%,d".format(worth)}원 더 돌려받아요", worth)
         }
         val rest = (x.credit * (12 - months.coerceIn(1, 12)) / 12)
-        if (rest > 0 && x.credit + x.debit + x.market > r.salary / 4) {
+        val threshold = r.salary / 4
+        val used = x.credit + x.debit + x.market
+        if (rest > 0 && used > threshold) {
             val worth = again(x.copy(credit = x.credit - rest, debit = x.debit + rest))
             if (worth > 0) out += Tip("남은 달은 신용카드 대신 체크카드를 쓰면 약 ${"%,d".format(worth)}원 더 돌려받아요", worth)
         }
+        // 1.32 [TAXP-12] 남은 달 행동 제안 (조사 3-3): the rest said in won where it can be, as a plain fact where it cannot.
+        val left = 12 - months.coerceIn(1, 12)
+        if (left > 0 && x.any) {
+            if (x.market == 0L && used > threshold) out += Tip("대중교통·전통시장에서 쓴 돈을 ‘금액 고치기’에 따로 넣으면 공제율 40%로 세요(신용카드는 15%)", 0)
+            if (used in 1 until threshold) out += Tip("카드 공제 문턱(총급여 25%)까지 ${"%,d".format(threshold - used)}원 남았어요. 문턱 전엔 혜택 좋은 신용카드, 넘은 뒤엔 체크카드·현금영수증(공제율 2배)이 좋아요", 0)
+            val medicalFloor = (r.salary * 0.03).roundToLong()
+            if (x.medical in 1 until medicalFloor) out += Tip("의료비는 총급여 3%(${"%,d".format(medicalFloor)}원)를 넘는 몫부터 공제돼요. ${"%,d".format(medicalFloor - x.medical)}원 남았어요. 미룬 치료가 있으면 연내가 좋아요", 0)
+        }
+        val kids = cardChildren(x, children)
+        val bonus = childCardCap(r.salary, year, kids)
+        if (bonus > 0 && r.cardDeduction > baseCardCap(r.salary)) out += Tip("자녀 ${kids}명이라 카드 공제 한도가 ${"%,d".format(bonus)}원 늘어 그만큼 더 공제됐어요", 0)
+        if (!x.hasHometax && months >= 10) out += Tip("홈택스 연말정산 미리보기의 1~9월 카드 합계를 넣으면 더 정확해져요 (금액 고치기)", 0)
         return out.sortedByDescending { it.worth }
     }
 
@@ -266,8 +312,34 @@ object YearEndPreview {
             }
         }
         fun pick(t: Long, v: Long) = if (t > 0) t else run(v)
+        // 1.32 [TAXP-13] With 홈택스's 1~9월 typed: those, and 10월 on from the ledger run on to December.
+        if (typed.hasHometax && year >= today.year - 1) {
+            val oct = LocalDate.of(year, 10, 1)
+            val after = lines.filter { !it.date.isBefore(oct) }
+            val daysIn = (java.time.temporal.ChronoUnit.DAYS.between(oct, until) + 1).coerceAtLeast(1)
+            val k10 = if (until.isBefore(oct)) 0.0 else 92.0 / daysIn
+            var c10 = 0L; var d10 = 0L
+            for (e in after) {
+                val text = e.merchant + " " + e.note
+                if (e.category in setOf("보험", "공과금") || (e.category == "주거" && text.contains("월세"))) continue
+                when (com.bamnat.core.money.MoneyAccounts.of(e, accounts)?.let(byId::get)?.type) {
+                    com.bamnat.core.money.AccountType.CREDIT -> c10 += e.amount
+                    com.bamnat.core.money.AccountType.CHECK, com.bamnat.core.money.AccountType.PAY -> d10 += e.amount
+                    else -> if (e.cardLast4.isNotBlank()) c10 += e.amount
+                }
+            }
+            credit = typed.htCredit + (c10 * k10).roundToLong()
+            debit = typed.htDebit + (d10 * k10).roundToLong()
+            return Extras(
+                credit = if (typed.credit > 0) typed.credit else credit, debit = if (typed.debit > 0) typed.debit else debit,
+                market = if (typed.market > 0) typed.market else typed.htMarket,
+                insurance = pick(typed.insurance, insurance), medical = pick(typed.medical, medical), education = pick(typed.education, education),
+                donation = pick(typed.donation, donation), rent = pick(typed.rent, rent), pensionSavings = typed.pensionSavings, irp = typed.irp,
+                under18 = typed.under18, htCredit = typed.htCredit, htDebit = typed.htDebit, htMarket = typed.htMarket,
+            )
+        }
         return Extras(
-            credit = pick(typed.credit, credit), debit = pick(typed.debit, debit), market = typed.market,
+            credit = pick(typed.credit, credit), debit = pick(typed.debit, debit), market = typed.market, under18 = typed.under18,
             insurance = pick(typed.insurance, insurance), medical = pick(typed.medical, medical), education = pick(typed.education, education),
             donation = pick(typed.donation, donation), rent = pick(typed.rent, rent), pensionSavings = typed.pensionSavings, irp = typed.irp,
         )

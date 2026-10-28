@@ -151,6 +151,7 @@ fun DayExtraEntity.toModel() = ExtraEntry(
     needsReview = needsReview,
     compLeave = compLeave,
     substitute = substituteEpochDay?.let(LocalDate::ofEpochDay),
+    approvedMinutes = approvedMinutes?.coerceAtLeast(0),
 )
 
 fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
@@ -167,6 +168,7 @@ fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
     position = position,
     compLeave = compLeave,
     substituteEpochDay = substitute?.toEpochDay(),
+    approvedMinutes = approvedMinutes?.coerceAtLeast(0),
 )
 
 /** [EXTRA-01] Days as the calendar sees them: each stored day with its extra work, and days that have only extra work. */

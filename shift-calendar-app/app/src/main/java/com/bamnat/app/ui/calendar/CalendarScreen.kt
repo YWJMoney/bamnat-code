@@ -1285,6 +1285,7 @@ fun CalendarScreen(
                         money = moneyBook,
                         showMoney = focus.moneyFirst,
                         showSpend = settings.spendInCells,
+                        spendHeat = settings.spendHeat && !stamping,
                         memoTexts = memoTexts,
                         onPaint = if (stamping) paintDays else null,
                         weeklyLimitHours = settings.weeklyLimitHours,
@@ -1300,6 +1301,10 @@ fun CalendarScreen(
                 // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
                 // shows big over the grid, then fades; the top bar's small title alone was missed mid-swipe.
                 SwipeMonthBadge(pagerState, baseMonth, Modifier.align(Alignment.Center))
+            }
+            // 1.32 [LEDX-23] What the strips under the dates mean, while the heat map is on.
+            if (settings.spendHeat && focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null) {
+                com.bamnat.app.ui.money.SpendHeatLegend(Modifier.padding(start = 16.dp, top = 4.dp))
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.

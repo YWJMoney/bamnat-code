@@ -512,6 +512,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         SwitchRow("날짜 밑에 그날 쓴 돈", "가계부에 적은 그날 지출이 날짜 밑에 작게 보여요(메모 첫 글자를 켜면 메모가 먼저예요)", settings.spendInCells) { on ->
             vm.update { it.copy(spendInCells = on) }
         }
+        // 1.32 [LEDX-23]
+        SwitchRow(SPEND_HEAT_ROW, "날짜 밑 막대가 진할수록 그달 다른 날보다 많이 쓴 날이에요. 금액은 보이지 않아요", settings.spendHeat) { on ->
+            vm.update { it.copy(spendHeat = on) }
+        }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
         ChoiceRow("메모 보기", when (memo) {
@@ -979,6 +983,9 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
 
 /** [PLAZA-06] The row's name, for 설정 찾기 and the tests. */
 const val SETUP_AGAIN_ROW = "처음 설정 다시 받기"
+
+/** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
+internal const val SPEND_HEAT_ROW = "지출 히트맵"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"

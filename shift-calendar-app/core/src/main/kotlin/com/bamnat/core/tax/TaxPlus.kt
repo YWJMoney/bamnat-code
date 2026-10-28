@@ -189,17 +189,24 @@ object TaxPlus {
     /** Names a card company's settlement deposit carries. */
     private val CARD_PAYERS = Regex("카드|KB국민|신한|삼성|현대|롯데|하나|우리|비씨|BC|NH|농협|씨티|카카오페이|네이버페이|토스페이먼츠|배달의민족|배민|쿠팡이츠|요기요")
 
-    data class CardMatch(val date: LocalDate, val card: Long, val paid: Long, val deposits: List<MoneyEntry>, val late: Boolean) {
+    data class CardMatch(val date: LocalDate, val card: Long, val paid: Long, val deposits: List<MoneyEntry>, val late: Boolean,
+                         /** 1.32 [TAXP-15] What should come in after the fee the user set; [card] when none was set. */
+                         val expected: Long = card) {
         val fee: Long get() = (card - paid).coerceAtLeast(0)
         val matched: Boolean get() = paid > 0 && !late
+        /** 1.32 [TAXP-15] Taken beyond the set fee: worth a look at the card company's 가맹점 page. */
+        val overFee: Long get() = if (matched && expected < card) (expected - paid).coerceAtLeast(0) else 0
     }
+
+    /** 1.32 [TAXP-15] Below this, a difference against the set fee is rounding and 부가세 on the fee, not news. */
+    const val OVER_FEE_NOTE = 1_000L
 
     /**
      * The card (and 배달앱) sales of each day against the settlement deposits that followed: deposits from a card or
      * delivery company within [WINDOW] working days after the day are taken in order until they reach [MIN_SHARE] of the
      * day's card sales. A day already marked 입금 확인 is left out. A day with nothing found after the window is late.
      */
-    fun cardDeposits(sales: List<DailySales>, entries: List<MoneyEntry>, today: LocalDate): List<CardMatch> {
+    fun cardDeposits(sales: List<DailySales>, entries: List<MoneyEntry>, today: LocalDate, feeBp: Int = 0): List<CardMatch> {
         val pool = entries.filter { it.kind == MoneyKind.INCOME && CARD_PAYERS.containsMatchIn(it.merchant + " " + it.note) }
             .sortedBy { it.date }.toMutableList()
         val out = mutableListOf<CardMatch>()
@@ -215,7 +222,8 @@ object TaxPlus {
                 if (sum >= want * MIN_SHARE) break
             }
             if (sum < want * MIN_SHARE) { pool.addAll(taken); pool.sortBy { it.date }; taken.clear(); sum = 0 }
-            out += CardMatch(s.date, want, sum, taken, late = sum == 0L && today.isAfter(end))
+            out += CardMatch(s.date, want, sum, taken, late = sum == 0L && today.isAfter(end),
+                expected = want - (want * feeBp.coerceIn(0, 1_000) / 10_000))
         }
         return out
     }

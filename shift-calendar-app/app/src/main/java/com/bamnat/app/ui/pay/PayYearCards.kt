@@ -86,6 +86,8 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
         Line("총급여 (한 해로 어림, ${x.months}개월 기준)", won(x.salary))
         Line("근로소득공제", "−" + won(x.earnedDeduction))
         if (x.cardDeduction > 0) Line("신용카드 등 소득공제", "−" + won(x.cardDeduction))
+        if (x.extras.hasHometax) Text("카드는 홈택스 1~9월 숫자에 10월부터 가계부를 더했어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Line("과세표준", won(x.taxBase))
         Line("산출세액 − 세액공제", "${won(x.calculated)} − ${won(x.credits)}")
         if (x.specialCredits > 0) Line("  의료·교육·보험·기부·월세 세액공제", won(x.specialCredits))
@@ -138,19 +140,36 @@ private fun YearEndExtrasSheet(start: YearEndPreview.Extras, onSave: (YearEndPre
     var rent by remember { mutableStateOf(d(start.rent)) }
     var pension by remember { mutableStateOf(d(start.pensionSavings)) }
     var irp by remember { mutableStateOf(d(start.irp)) }
+    // 1.32 [TAXP-13] 홈택스 미리보기의 1~9월 국세청 합계; [TAXP-12] 18세 미만 자녀 for the card 한도.
+    var htCredit by remember { mutableStateOf(d(start.htCredit)) }
+    var htDebit by remember { mutableStateOf(d(start.htDebit)) }
+    var htMarket by remember { mutableStateOf(d(start.htMarket)) }
+    var under18 by remember { mutableStateOf(if (start.under18 >= 0) start.under18.toString() else "") }
     fun v(s: String) = s.toLongOrNull() ?: 0L
     com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
         title = { Text("연말정산 금액 (1년치)") },
         confirmButton = {
             TextButton(onClick = {
-                onSave(YearEndPreview.Extras(v(credit), v(debit), v(market), v(insurance), v(medical), v(education), v(donation), v(rent), v(pension), v(irp)))
+                onSave(YearEndPreview.Extras(v(credit), v(debit), v(market), v(insurance), v(medical), v(education), v(donation), v(rent), v(pension), v(irp),
+                    under18 = under18.toIntOrNull()?.coerceIn(0, 20) ?: -1, htCredit = v(htCredit), htDebit = v(htDebit), htMarket = v(htMarket)))
             }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
         text = {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
                 Text("비워 두면 가계부 기록으로 어림해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("홈택스 미리보기 1~9월 (있으면)", style = MaterialTheme.typography.titleSmall)
+                Text("홈택스 › 연말정산 미리보기에 국세청이 채운 1~9월 합계를 보고 넣어 주세요. 10~12월은 가계부로 어림해요. 자동으로 가져오지 않아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.money.AmountField("1~9월 신용카드", htCredit, { htCredit = it })
+                com.bamnat.app.ui.money.AmountField("1~9월 체크카드·현금영수증", htDebit, { htDebit = it })
+                com.bamnat.app.ui.money.AmountField("1~9월 전통시장·대중교통", htMarket, { htMarket = it })
+                androidx.compose.material3.OutlinedTextField(under18, { t -> under18 = t.filter { it.isDigit() }.take(2) }, singleLine = true,
+                    label = { Text("18세 미만 자녀 (카드 공제 한도, 2026년부터)") }, placeholder = { Text("비우면 급여 설정의 자녀 수") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth())
+                Text("한 해 전체 금액 (직접 넣으면 위보다 먼저 써요)", style = MaterialTheme.typography.titleSmall)
                 com.bamnat.app.ui.money.AmountField("신용카드", credit, { credit = it })
                 com.bamnat.app.ui.money.AmountField("체크카드·현금영수증·페이", debit, { debit = it })
                 com.bamnat.app.ui.money.AmountField("전통시장·대중교통", market, { market = it })

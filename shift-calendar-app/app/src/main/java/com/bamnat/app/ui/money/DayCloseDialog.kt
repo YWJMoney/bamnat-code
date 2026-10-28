@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +58,8 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
     var total by rememberSaveable { mutableStateOf(amountDigits(initial?.sales ?: 0)) }
     var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
     var counted by rememberSaveable { mutableStateOf(initial?.cashCounted?.toString().orEmpty()) }
+    // 1.32 [TAXP-14] Of the cash sales, what a 현금영수증 was issued for.
+    var receipt by rememberSaveable { mutableStateOf(amountDigits(initial?.cashReceipt ?: 0)) }
     var credit by rememberSaveable { mutableStateOf("") }
     var creditWho by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
@@ -75,6 +78,7 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
         date = date, sales = sales, costs = costs.toAmount(), note = note.trim(),
         card = card.toAmount(), cash = cash.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount(),
         cashCounted = counted.toLongOrNull(), cardSettled = initial?.cardSettled == true && card.toAmount() == initial.card,
+        cashReceipt = receipt.toAmount().coerceAtMost(cash.toAmount()),
     )
 
     AlertDialog(
@@ -89,6 +93,18 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AmountField("계좌이체", transfer, { transfer = it }, Modifier.weight(1f))
                     AmountField("배달앱", delivery, { delivery = it }, Modifier.weight(1f))
+                }
+                // 1.32 [TAXP-14] 현금영수증 발행 확인 (조사 4장): cash sales without one are what 신고 most often misses.
+                if (cash.toAmount() > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AmountField("그중 현금영수증 발행", receipt, { receipt = it }, Modifier.weight(1f), allowZero = true)
+                        androidx.compose.material3.FilterChip(selected = receipt.toAmount() == cash.toAmount(), onClick = { receipt = cash },
+                            label = { Text("전부 발행") })
+                    }
+                    val missing = (cash.toAmount() - receipt.toAmount()).coerceAtLeast(0)
+                    if (missing > 0) Text("현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요. 부가세·종소세 신고 때 빠뜨리지 마세요. " +
+                        "손님이 원하면 발행해야 하고, 의무발행업종은 10만 원 이상이면 원하지 않아도 발행해야 해요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (parts == 0L) {
                     AmountField("매출 합계", total, { total = it })

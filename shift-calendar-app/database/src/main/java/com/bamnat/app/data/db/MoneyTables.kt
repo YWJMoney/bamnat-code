@@ -57,6 +57,8 @@ data class MoneyEntryEntity(
     /** Version 17 [FLD-08]. */
     @ColumnInfo(defaultValue = "''") val proof: String = "",
     @ColumnInfo(defaultValue = "''") val receipt: String = "",
+    /** Version 22 [LEDX-17]: 유이자 할부's yearly fee in percent; 0 for 무이자. */
+    @ColumnInfo(defaultValue = "0") val installmentRate: Double = 0.0,
 )
 
 /** [LEDG-05] Money leaving on a set day each month; version 9. [LEDG-09] Any repeating line since version 15. */
@@ -159,6 +161,8 @@ data class DailySalesEntity(
     @ColumnInfo(defaultValue = "0") val delivery: Long = 0,
     @ColumnInfo(defaultValue = "NULL") val cashCounted: Long? = null,
     @ColumnInfo(defaultValue = "0") val cardSettled: Boolean = false,
+    /** Version 22 [TAXP-14]: of [cash], how much a 현금영수증 was issued for. */
+    @ColumnInfo(defaultValue = "0") val cashReceipt: Long = 0,
 )
 
 @Dao
@@ -359,6 +363,7 @@ fun MoneyEntryEntity.toModel() = MoneyEntry(
     fixedId = fixedId,
     proof = proof,
     receipt = receipt,
+    installmentRate = installmentRate.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE),
 )
 
 fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
@@ -367,7 +372,7 @@ fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
     cardLast4 = cardLast4, reviewed = reviewed,
     accountId = accountId, toAccountId = toAccountId, memo = memo, tags = tags.joinToString(","),
     parts = encodeParts(parts), installments = installments.coerceAtLeast(1), fixedId = fixedId,
-    proof = proof, receipt = receipt,
+    proof = proof, receipt = receipt, installmentRate = installmentRate.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE),
 )
 
 /** [LEDG-11] Split parts as "amount<TAB>category" lines; categories never hold a tab ([MoneyCategories.clean]). */
@@ -437,9 +442,11 @@ fun Job.toEntity() = JobEntity(
 fun DailySalesEntity.toModel() = DailySales(
     LocalDate.ofEpochDay(epochDay), sales, costs, note,
     card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
+    cashReceipt = cashReceipt.coerceAtLeast(0),
 )
 
 fun DailySales.toEntity() = DailySalesEntity(
     date.toEpochDay(), sales, costs, note,
     card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
+    cashReceipt = cashReceipt.coerceAtLeast(0),
 )

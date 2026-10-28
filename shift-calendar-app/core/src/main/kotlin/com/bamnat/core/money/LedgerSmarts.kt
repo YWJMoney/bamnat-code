@@ -109,10 +109,16 @@ object LedgerSmarts {
         }.sortedWith(compareBy<MoneyEntry> { if (abs(it.amount - amount) <= (if (foreign) it.amount * FOREIGN_SHARE else 0.0)) 0 else 1 }.thenByDescending { it.date })
             .firstOrNull()
 
-    /** [LEDX-03] "부분취소 12,000원 (원래 35,000원, 3/12)" or "결제 취소 (3/12 결제)". */
-    fun refundNote(amount: Long, target: MoneyEntry): String =
-        if (amount < target.amount) "부분취소 ${won(amount)} (원래 ${won(target.amount)}, ${target.date.monthValue}/${target.date.dayOfMonth})"
+    /**
+     * [LEDX-03] "부분취소 12,000원 (원래 35,000원, 3/12)" or "결제 취소 (3/12 결제)". 1.32 [LEDX-16] With what is left of
+     * the payment once this and [earlier] refunds of it are taken off: "… · 남은 23,000원".
+     */
+    fun refundNote(amount: Long, target: MoneyEntry, earlier: Long = 0): String {
+        val left = target.amount - earlier - amount
+        return if (amount < target.amount && left > 0) "부분취소 ${won(amount)} (원래 ${won(target.amount)}, ${target.date.monthValue}/${target.date.dayOfMonth}) · 남은 ${won(left)}"
+        else if (amount < target.amount) "부분취소 ${won(amount)} (원래 ${won(target.amount)}, ${target.date.monthValue}/${target.date.dayOfMonth}) · 모두 돌려받았어요"
         else "결제 취소 (${target.date.monthValue}/${target.date.dayOfMonth} 결제)"
+    }
 
     // ---- [LEDX-04] 584: 할부 ----
 
@@ -145,12 +151,15 @@ object LedgerSmarts {
      * user kept or fixed. Small: a few hundred lines teach it; nothing leaves the phone. [guess] gives the best category and how
      * sure it is; under [SURE] the app shows the two best as chips instead of picking.
      */
-    class Learner private constructor(private val counts: Map<String, Map<String, Int>>, private val totals: Map<String, Int>, private val docs: Map<String, Int>) {
+    class Learner private constructor(
+        private val counts: Map<String, Map<String, Int>>, private val totals: Map<String, Int>, private val docs: Map<String, Int>,
+        private val dayLabel: (LocalDate) -> String? = { null },
+    ) {
         data class Guess(val category: String, val share: Double)
 
         fun guess(e: MoneyEntry, top: Int = 2): List<Guess> {
             if (docs.isEmpty()) return emptyList()
-            val words = features(e)
+            val words = features(e, dayLabel)
             if (words.isEmpty()) return emptyList()
             val vocab = counts.values.flatMap { it.keys }.toSet().size.coerceAtLeast(1)
             val all = docs.values.sum().toDouble()
@@ -166,31 +175,42 @@ object LedgerSmarts {
 
         companion object {
             const val SURE = 0.6
-            /** Lines the learner needs before it says anything. */
-            const val MIN_LINES = 20
+            /** Lines the learner needs before it says anything: 1.32 [LEDX-21] 30, as Copilot waits (조사 2-5장). */
+            const val MIN_LINES = 30
 
-            fun of(entries: List<MoneyEntry>): Learner {
+            /**
+             * [dayLabel] gives what the day was on the calendar (주간, 야간, 비번, 쉬는 날: 1.32 [LEDX-21], the feature only
+             * 밤낮 has); null where the calendar is not known.
+             */
+            fun of(entries: List<MoneyEntry>, dayLabel: (LocalDate) -> String? = { null }): Learner {
                 val taught = entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 && it.reviewed && it.category.isNotBlank() && it.category != "기타" && it.parts.isEmpty() }
-                if (taught.size < MIN_LINES) return Learner(emptyMap(), emptyMap(), emptyMap())
+                if (taught.size < MIN_LINES) return Learner(emptyMap(), emptyMap(), emptyMap(), dayLabel)
                 val counts = HashMap<String, HashMap<String, Int>>()
                 val totals = HashMap<String, Int>()
                 val docs = HashMap<String, Int>()
                 for (e in taught) {
                     docs[e.category] = (docs[e.category] ?: 0) + 1
                     val m = counts.getOrPut(e.category) { HashMap() }
-                    for (w in features(e)) { m[w] = (m[w] ?: 0) + 1; totals[e.category] = (totals[e.category] ?: 0) + 1 }
+                    for (w in features(e, dayLabel)) { m[w] = (m[w] ?: 0) + 1; totals[e.category] = (totals[e.category] ?: 0) + 1 }
                 }
-                return Learner(counts, totals, docs)
+                return Learner(counts, totals, docs, dayLabel)
             }
 
-            /** The place's name as 2-letter pieces (Korean names have no spaces to split on), its card and its hour band. */
-            fun features(e: MoneyEntry): List<String> {
+            /**
+             * The place's name as 2- and 3-letter pieces (Korean names have no spaces to split on), its card, its hour band and
+             * amount band; 1.32 [LEDX-21] also the pay app it went through, the weekday and what the day was on the calendar.
+             */
+            fun features(e: MoneyEntry, dayLabel: (LocalDate) -> String? = { null }): List<String> {
                 val key = PaymentParser.placeKey(e.merchant)
                 val grams = if (key.length < 2) listOfNotNull(key.takeIf { it.isNotEmpty() }) else (0..key.length - 2).map { key.substring(it, it + 2) }
-                return grams + listOfNotNull(
+                val tri = if (key.length < 3) emptyList() else (0..key.length - 3).map { "3:" + key.substring(it, it + 3) }
+                return grams + tri + listOfNotNull(
                     e.cardLast4.takeIf { it.isNotEmpty() }?.let { "#card$it" },
                     e.time?.let { "#h${it.hour / 3}" },
                     "#amt${amountBand(e.amount)}",
+                    LedgerChecks.viaOf(e)?.let { "#via$it" },
+                    "#wd${e.date.dayOfWeek.value}",
+                    runCatching { dayLabel(e.date) }.getOrNull()?.let { "#day$it" },
                 )
             }
 
@@ -251,13 +271,49 @@ object LedgerSmarts {
 
     data class Abroad(val won: Long, val fee: Long, val note: String)
 
-    /** [LEDX-08] [amount] of [currency] in won with the usual fee, or null for a currency the table does not know. */
-    fun abroad(currency: String, amount: Double): Abroad? {
-        val rate = ROUGH_WON[currency.uppercase()] ?: return null
+    /**
+     * [LEDX-08] [amount] of [currency] in won with the fee, or null for a currency the table does not know. 1.32 [LEDX-18]
+     * [rates] are the user's own (set by hand or learned from a line fixed to the bill) and win over the table; [fee] is the
+     * user's 해외 이용 수수료 (0.0135 for 1.35%).
+     */
+    fun abroad(currency: String, amount: Double, rates: Map<String, Double> = emptyMap(), fee: Double = ABROAD_FEE): Abroad? {
+        val cur = currency.uppercase()
+        val own = rates[cur]?.takeIf { it > 0 }
+        val rate = own ?: ROUGH_WON[cur] ?: return null
         val won = (amount * rate).roundToLong()
-        val fee = (won * ABROAD_FEE).roundToLong()
-        return Abroad(won + fee, fee, "임시 원화 · $currency ${"%,.2f".format(amount)} · 수수료 약 ${won(fee)} 포함. 카드 청구서 금액으로 고쳐 주세요")
+        val charge = (won * fee.coerceIn(0.0, MAX_ABROAD_FEE)).roundToLong()
+        val how = if (own != null) "내 환율 ${"%,.2f".format(own)}원" else "대략 환율"
+        return Abroad(won + charge, charge, "임시 원화 · $currency ${"%,.2f".format(amount)} · $how · 수수료 약 ${won(charge)} 포함. 카드 청구서 금액으로 고쳐 주세요")
     }
+
+    /** [LEDX-18] No Korean card charges 5% for using it abroad; more is a slip. */
+    const val MAX_ABROAD_FEE = 0.05
+
+    /** [LEDX-18] What marks a line written down at a rough rate, so fixing its amount teaches the rate. */
+    const val ABROAD_MARK = "임시 원화 · "
+
+    /**
+     * [LEDX-18] The rate a line fixed from the card's bill teaches: [won] billed for [amount] of the currency, the fee
+     * [fee] taken off. Null when the numbers cannot be a rate.
+     */
+    fun learnedRate(amount: Double, won: Long, fee: Double = ABROAD_FEE): Double? {
+        if (amount <= 0 || won <= 0) return null
+        val r = won / (1 + fee.coerceIn(0.0, MAX_ABROAD_FEE)) / amount
+        return r.takeIf { it.isFinite() && it > 0 }?.let { kotlin.math.round(it * 100) / 100 }
+    }
+
+    /** [LEDX-18] The currency and amount of a line written down at a rough rate ("임시 원화 · USD 12.30 · …"), or null. */
+    fun abroadOf(e: MoneyEntry): Pair<String, Double>? {
+        val m = Regex("임시 원화 · ([A-Z]{3}) ([\\d,]+(?:\\.\\d+)?)").find(e.note) ?: return null
+        return m.groupValues[1] to (m.groupValues[2].replace(",", "").toDoubleOrNull() ?: return null)
+    }
+
+    /**
+     * [LEDX-18] The note of a line fixed to the card's bill: "임시 원화 · USD 12.30 · … 고쳐 주세요" becomes
+     * "USD 12.30 · 청구서 금액", so it no longer asks to be fixed.
+     */
+    fun settledAbroad(note: String): String =
+        note.replace(Regex("임시 원화 · ([A-Z]{3} [\\d,]+(?:\\.\\d+)?) · [^·]*· 수수료 약 [\\d,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요"), "$1 · 청구서 금액")
 
     /**
      * [LEDX-08] 원화 결제(DCC): a payment abroad charged in won costs 3~8% more than in the local money. Said when a text
@@ -320,7 +376,8 @@ object LedgerSmarts {
         val spending = entries.filter { it.kind == MoneyKind.EXPENSE && it.date.year == year && it.amount > 0 }
         var credit = 0L; var other = 0L
         for (e in spending) {
-            when (byId[MoneyAccounts.of(e, accounts) ?: -1L]?.type) {
+            // 1.32 [LEDX-19] A card the user has not added goes by what its texts said (체크 / 신용).
+            when (byId[MoneyAccounts.of(e, accounts) ?: -1L]?.type ?: LedgerChecks.cardKind(e, accounts)) {
                 AccountType.CREDIT -> credit += e.amount
                 AccountType.CHECK, AccountType.CASH, AccountType.PAY -> other += e.amount
                 else -> if (e.cardLast4.isNotEmpty()) credit += e.amount else other += e.amount

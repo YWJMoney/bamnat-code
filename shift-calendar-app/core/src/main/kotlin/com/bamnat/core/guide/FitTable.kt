@@ -84,6 +84,8 @@ object FitTable {
         money("pace"), money("subs"), money("card25", setOf(SHIFT, DAY, HOURLY)),
         // F 1.32 [TAXP-04][TAXP-05][TAXP-06][TAXP-10] 근무별 소비 needs a roster; 매출 is the shop's; 3.3% the field's.
         money("cardbill"), money("shiftspend", setOf(SHIFT)), money("salessplit", setOf(SHOP)), money("freelance", setOf(FIELD)),
+        // 1.32 [LEDX-16][LEDX-17][LEDX-19] 확인할 것 and 할부 청구 기준 are for every kind of work.
+        money("ask"), money("install"),
     )
 
     private val byKey: Map<String, FitItem> = all.associateBy { it.key }

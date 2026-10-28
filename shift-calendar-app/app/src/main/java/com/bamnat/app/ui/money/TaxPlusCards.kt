@@ -33,6 +33,7 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.pro.openPro
 import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyKind
@@ -161,6 +162,16 @@ internal fun SalesSplitCard(book: MoneyBook, month: YearMonth) {
             LinearProgressIndicator(progress = { s.share(v) / 100f }, modifier = Modifier.fillMaxWidth())
         }
         Muted("${s.days}일 · 합계 ${Fmt.won(s.total)}. 카드·배달앱 매출은 부가세 발행세액공제(1.3%)를 받아요.")
+        // 1.32 [TAXP-14] 현금 매출 and its 현금영수증, once the user writes them in 하루 마감.
+        val cashDays = remember(book.sales, month) { book.sales.filter { YearMonth.from(it.date) == month && it.cash > 0 } }
+        if (cashDays.any { it.cashReceipt > 0 }) {
+            val cash = cashDays.sumOf { it.cash }
+            val issued = cashDays.sumOf { it.cashReceipt.coerceAtMost(it.cash) }
+            Muted("현금 ${Fmt.won(cash)} 중 현금영수증 ${Fmt.won(issued)}" +
+                if (cash > issued) " · 영수증 없는 현금 ${Fmt.won(cash - issued)}도 신고 매출에 넣어요" else " · 모두 발행했어요")
+        } else if (cashDays.isNotEmpty()) {
+            Muted("하루 마감에 현금영수증 발행 금액을 적으면 신고 때 빠진 현금이 없는지 볼 수 있어요")
+        }
     }
 }
 
@@ -193,7 +204,10 @@ internal fun SetAsideLine(calendarId: String, book: MoneyBook, date: LocalDate, 
 @Composable
 internal fun CardMatchLines(calendarId: String, book: MoneyBook, today: LocalDate, gate: Gate) {
     val c = LocalContext.current.appContainer
-    val matches = remember(book, today) { TaxPlus.cardDeposits(book.sales, book.entries, today) }
+    // 1.32 [TAXP-15] Against what should come in after the fee the user set (가게 돈 설정 › 카드 수수료율).
+    val calendar = remember(calendarId) { c.calendars.get(calendarId) }
+    val feeBp = calendar?.shopMoney?.cardFeeBp ?: 0
+    val matches = remember(book, today, feeBp) { TaxPlus.cardDeposits(book.sales, book.entries, today, feeBp) }
     val found = matches.filter { it.matched }
     val late = matches.filter { it.late }
     if (found.isEmpty() && late.isEmpty()) return
@@ -207,7 +221,10 @@ internal fun CardMatchLines(calendarId: String, book: MoneyBook, today: LocalDat
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${Fmt.shortDate(m.date)} 매출 ${Fmt.won(m.card)} → 입금 ${Fmt.won(m.paid)}", style = MaterialTheme.typography.bodyMedium)
-                Muted("수수료 ${Fmt.won(m.fee)} · " + m.deposits.joinToString(", ") { "${Fmt.shortDate(it.date)} ${it.merchant}" })
+                Muted("수수료 ${Fmt.won(m.fee)}" + (if (feeBp > 0) " (설정 ${"%.2f".format(feeBp / 100.0).trimEnd('0').trimEnd('.')}%면 ${Fmt.won(m.card - m.expected)})" else "") +
+                    " · " + m.deposits.joinToString(", ") { "${Fmt.shortDate(it.date)} ${it.merchant}" })
+                if (m.overFee >= TaxPlus.OVER_FEE_NOTE) Text("설정한 수수료보다 ${Fmt.won(m.overFee)} 더 빠졌어요. 카드사 가맹점 앱에서 수수료율이나 보류를 확인해 보세요.",
+                    style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
             }
             TextButton(onClick = {
                 val day = book.sales.firstOrNull { it.date == m.date } ?: return@TextButton
