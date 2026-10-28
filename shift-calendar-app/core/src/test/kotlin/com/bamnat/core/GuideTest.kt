@@ -35,7 +35,7 @@ class GuideTest {
             assertTrue("${f.id}: a settings place names its row", !f.route.place.isSettings || !f.route.focus.isNullOrBlank())
             assertTrue("${f.id}: a tip comes with its moment", (f.tip == null) == (f.moment == null))
             f.under?.let { assertNotNull("${f.id} is under a feature that exists", FeatureRegistry.get(it)) }
-            assertTrue(f.id, Regex("[A-Z]+-\\d{2}").matches(f.req))
+            assertTrue(f.id, Regex("[A-Z]+\\d*-\\d{2}").matches(f.req))
         }
     }
 

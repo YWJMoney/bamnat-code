@@ -584,6 +584,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
     }
     // U 1.32 [UX132-02] 고치기: 기본급 · 수당 · 근무시간 · 월급날·정산 · 회사 규칙, one tap each.
     if (onFocus != null) {
+        com.bamnat.app.ui.guide.OnceTip(com.bamnat.app.ui.calendar.HintStore.PAY_CHIPS, "고칠 값을 누르면 급여 화면의 그 자리로 바로 가요")
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "급여 고치기" }) {
             com.bamnat.app.ui.pay.PayFocus.CHIPS.forEach { f ->

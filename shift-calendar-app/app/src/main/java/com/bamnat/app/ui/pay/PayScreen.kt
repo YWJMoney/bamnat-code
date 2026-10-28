@@ -410,6 +410,8 @@ private fun PayResult(
 
         top()
         PayTabRow(payTab) { payTab = it }
+        com.bamnat.app.ui.guide.OnceTip(com.bamnat.app.ui.calendar.HintStore.PAY_TABS,
+            "기본급·수당은 ‘내 급여 값’, 가산율·월급날은 ‘회사 규칙’, 만약에·연말정산은 ‘도구’에 있어요")
         // U 1.32 [UX132-03] 결과: the total, what it still needs, its lines and days.
         val noBase = closedSnap == null && !com.bamnat.core.pay.BaseAsk.showsEstimate(profile, result.month)
         if (payTab == PayTab.RESULT) {
