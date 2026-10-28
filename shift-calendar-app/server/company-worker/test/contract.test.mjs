@@ -72,7 +72,7 @@ test("[FLAG-34] /api/config's calendar keeps core's dates for the versions the a
   for (const p of CORE_POLICY) assert.deepEqual(policy.find((x) => x.version === p.version), p);
   const owner = await signIn(call);
   const detail = (await call("GET", "/api/admin/flags/free.MONEY_STATS", undefined, owner)).data;
-  assert.equal(detail.name, CORE_FREE.name.replace(CORE_FREE.slot, "돈 통계"));
+  assert.equal(detail.name, CORE_FREE.name.replace(CORE_FREE.slot, "가계부 통계"));
   // [NXT-03] 1.29 AU: and the name comes from core's table, the one the phone's 진단 uses.
   assert.equal(detail.name, CORE_FREE.name.replace(CORE_FREE.slot, CORE_FEATURES.MONEY_STATS));
 });

@@ -137,10 +137,10 @@ class BDScreenshotTest : ScreenshotBase() {
         plaza.setups = listOf(shared("s1", withPay(mine)))
         report()
         send()
-        assertTrue(shows("이미 같은 규칙이 있어요", exact = true))
+        assertTrue(shows("이미 같은 방식이 있어요! 🎉", exact = true))
         // [FIN130-01] The pay way goes in with the 기본급 on the pay screen, never before it.
         assertTrue(shows("이 규칙의 급여 계산 방식은 급여 화면에서 기본급을 넣으면 같이 들어가요. 그 전에는 내 급여가 그대로예요.", exact = true))
-        assertTrue(shows("이 규칙 쓰기", exact = true))
+        assertTrue(shows("맞았다고 알리고 이 방식 쓰기", exact = true))
         assertTrue(company.reports.isEmpty())
     }
 
@@ -149,7 +149,7 @@ class BDScreenshotTest : ScreenshotBase() {
         plaza.setups = listOf(shared("s1", withPay(mine)))
         report()
         send()
-        tapText("이 규칙 쓰기", exact = true)
+        tapText("맞았다고 알리고 이 방식 쓰기", exact = true)
         reveal("이 규칙을 쓰고 있어요", exact = true)
         // [FIN130-01] No pay yet: the pay screen makes it from the way (its amounts), the way in use once that is saved.
         assertTrue(shows("급여 계산 방식은 급여 화면에서 기본급을 넣으면 들어가요", exact = false))
@@ -171,7 +171,7 @@ class BDScreenshotTest : ScreenshotBase() {
         plaza.setups = listOf(shared("s1", mine))
         report()
         send()
-        reveal("이 규칙 쓰기", exact = true)
+        reveal("맞았다고 알리고 이 방식 쓰기", exact = true)
         // My own work, no pay on either: nothing more to take.
         assertFalse(shows("급여 계산 방식도 같이 넣어요", exact = false))
     }

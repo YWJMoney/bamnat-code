@@ -334,7 +334,39 @@ abstract class ScreenshotBase {
                 scrollDown(350, across)
                 find(text, exact, prefix)?.let { return it }
             }
+            // U 1.32 [UX132-03] The pay screen keeps its parts in four tabs and the rules editor folds its groups: look
+            // there as a person would, by the tabs and by 펼치기.
+            if (!lookingFurther) {
+                lookingFurther = true
+                try { lookInTabsAndFolds(text, exact, prefix, scrolls, across)?.let { return it } } finally { lookingFurther = false }
+            }
             error("화면에서 ‘$text’를 찾지 못했어요(열린 창 ${shownDialogs().size}개). 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
+        }
+
+        private var lookingFurther = false
+
+        private fun lookInTabsAndFolds(text: String, exact: Boolean, prefix: Boolean, scrolls: Int, across: Float): SemanticsNode? {
+            val tabs = listOf("결과", "내 급여 값", "회사 규칙", "도구")
+            if (find(tabs[1], exact = true, prefix = false) != null && find(tabs[3], exact = true, prefix = false) != null) {
+                for (tab in tabs) {
+                    val at = find(tab, exact = true, prefix = false) ?: continue
+                    touch(at.boundsInWindow.center)
+                    repeat(scrolls + 1) { i ->
+                        find(text, exact, prefix)?.let { return it }
+                        if (i < scrolls) scrollUp(350, across)
+                    }
+                    repeat(scrolls + 1) { scrollDown(350, across) }
+                }
+            }
+            run {
+                repeat(scrolls * 4) {
+                    find(text, exact, prefix)?.let { return it }
+                    val fold = find("펼치기", exact = true, prefix = false)
+                    if (fold != null) touch(fold.boundsInWindow.center) else scrollUp(350, across)
+                }
+                find(text, exact, prefix)?.let { return it }
+            }
+            return null
         }
 
         /** Every word on screen, for a failure message that says what was there instead. */

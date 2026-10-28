@@ -253,7 +253,9 @@ class LegalPagesTest {
         assertTrue("buckets, as the app sends them", text.contains("0.1초~15초의 정해진 구간 값"))
         assertFalse("no milliseconds", text.contains("밀리초"))
         assertTrue(text.contains("앱 1.28.0부터: 기능 켜짐 확인"))
-        assertTrue(text.contains("최고 관리자의 휴대폰에서는 숨긴 근무 유형도 ‘${com.bamnat.core.flags.TypeExposure.HIDDEN_MARK}’로 보입니다"))
+        // S 1.32 [SECX-01] Previews are set in the developer app; the phone only shows what it was given, with the mark.
+        assertTrue(text.contains("그 관리자 휴대폰에만 ‘${com.bamnat.core.flags.TypeExposure.HIDDEN_MARK}’로 보이고"))
+        assertFalse("no switch on the phone any more", text.contains("관리자 휴대폰은 기능마다 ‘관리자 미리 보기’를 고를 수 있으며"))
     }
 
     /**

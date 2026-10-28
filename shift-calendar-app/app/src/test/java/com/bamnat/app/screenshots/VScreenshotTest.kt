@@ -61,7 +61,7 @@ class VScreenshotTest : ScreenshotBase() {
     @Test fun holidayAsExtraSaves() = shoot("831_v_holiday_as_extra", FOLDED, holidayCards {
         tapText(HolidayWork.AS_EXTRA.label, exact = true)
         reveal("빨간날 근무 1회 금액", exact = true)
-        assertTrue(shows("빨간날 야간"))
+        reveal("빨간날 야간") // U 1.32: below the fold line on a folded phone now that groups are folded
         tapText("저장", exact = true)
         assertEquals(HolidayWork.AS_EXTRA, saved!!.rules.holidayWork)
         // A night shift on a 빨간날 is one 특근 by the day it starts, its night premium kept.

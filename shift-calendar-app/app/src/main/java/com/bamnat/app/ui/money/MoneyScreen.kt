@@ -945,7 +945,7 @@ internal fun MoneyEditSheet(
             com.bamnat.app.ui.components.EditGroup("위쪽", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
-        middle = "요약·내역·분석 탭",
+        middle = "요약·내역·통계 탭",
         others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> MoneyPart.entries.firstOrNull { it.id == id }?.let { it.label to it.what } },
         onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, surface, id, on) },
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },

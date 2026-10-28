@@ -69,7 +69,9 @@ test("[FIN130-12] a held version takes no votes or talk, and neither keeps the n
   const held = (await send(call, 2, { setup: three() })).data;
   const c = a.company.id;
   const vote = await call("POST", "/api/votes", { device: device(5), company: c, setup: held.setup, ok: true }, from(5));
-  assert.equal(vote.status, 404);
+  // A 1.32 [FIX132-02] The vote says why: held for review (409 held), not "not found".
+  assert.equal(vote.status, 409);
+  assert.equal(vote.data.error, "held");
   assert.equal((await call("GET", `/api/companies/${c}/setups/${held.setup}/posts`, undefined, as(2))).status, 404);
   const post = await call("POST", "/api/posts", { device: device(2), company: c, setup: held.setup, body: "이 판이 맞아요" }, from(2));
   assert.equal(post.status, 404);

@@ -218,10 +218,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         // B 1.32 [CALX-05] Which days the month counts: 1일~말일 or the pay period, when the pay has one.
         payProfile?.period?.takeIf { it.endDay != null && pays }?.let { pp ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.FilterChip(selected = !settings.statsByPayPeriod, onClick = { vm.updateSettings { it.copy(statsByPayPeriod = false) } },
+                com.bamnat.app.ui.components.FilterChip(selected = !settings.statsByPayPeriod, onClick = { vm.updateSettings { it.copy(statsByPayPeriod = false) } },
                     label = { Text("1일~말일") })
                 val f = pp.start(month); val t = pp.end(month)
-                androidx.compose.material3.FilterChip(selected = settings.statsByPayPeriod, onClick = { vm.updateSettings { it.copy(statsByPayPeriod = true) } },
+                com.bamnat.app.ui.components.FilterChip(selected = settings.statsByPayPeriod, onClick = { vm.updateSettings { it.copy(statsByPayPeriod = true) } },
                     label = { Text("급여 기간 ${f.monthValue}.${f.dayOfMonth}~${t.monthValue}.${t.dayOfMonth}") })
             }
         }

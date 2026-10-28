@@ -24,6 +24,9 @@ class FeatureGuideTest {
                 val page = place.settingsPage()
                 assertNotNull(f.id, page)
                 assertTrue("${f.id}: ${f.route.focus} is a row of ${page!!.title}", rows.any { it.page == page && it.row == f.route.focus })
+            } else if (place == Place.PAY && f.route.focus != null) {
+                // U 1.32 [UX132-02] The pay screen opens on the tab (and value) a focus names.
+                assertNotNull("${f.id}: ${f.route.focus}", com.bamnat.app.ui.pay.PayFocus.of(f.route.focus))
             } else if (f.route.focus != null) {
                 assertTrue("${f.id}: ${f.route.focus}", f.route.focus in TOOL_KEYS)
                 assertTrue(f.id, place == Place.STATS || place == Place.MONEY || place == Place.CALENDAR && f.route.focus == "customize")

@@ -202,7 +202,7 @@ object FlagCatalog {
     /**
      * [FLAG-05] AL-D4 `free.<FEATURE>`: off by default with no condition; the server's force on opens that 프로 feature to
      * everyone. The app reads it only for a 프로 feature, so it can never lock a free one.
-     * [NXT-03] 1.29 AU: the feature is named from [ProFeatures] ("무료로 연 프로 기능: 돈 통계"), as the server names it.
+     * [NXT-03] 1.29 AU: the feature is named from [ProFeatures] ("무료로 연 프로 기능: 가계부 통계"), as the server names it.
      */
     fun free(key: String): Flag? {
         if (!key.startsWith(FREE_PREFIX)) return null

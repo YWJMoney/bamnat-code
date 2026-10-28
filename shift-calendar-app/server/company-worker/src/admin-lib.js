@@ -152,6 +152,9 @@ export function adminLib() {
     version: "앱 버전을 다시 확인해 주세요",
     weak_password: "더 다양한 글자로 비밀번호를 만들어 주세요. 메일 주소와 같으면 안 돼요",
     withdrawn: "이미 내린 규칙이에요",
+    // A 1.32 [FIX132-02] A vote on a version no longer open: a newer one took its place, or it waits for review.
+    superseded: "새 판이 나와 이 판에는 더 의견을 받지 않아요",
+    held: "검토 중이라 지금은 의견을 받지 않아요",
     wrong: "비밀번호가 맞지 않아요",
     push: "웹 푸시가 연결되지 않은 서버예요",
     subscription: "알림 구독 정보를 읽지 못했어요. 알림을 껐다 다시 켜 주세요",

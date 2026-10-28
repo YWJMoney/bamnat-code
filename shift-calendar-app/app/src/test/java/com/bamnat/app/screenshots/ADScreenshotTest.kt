@@ -190,7 +190,7 @@ class ADScreenshotTest : ScreenshotBase() {
             // What TalkBack reads out after the move, from the hint's live region.
             assertTrue(nodes().any { n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("메모, 1번째") } })
             tabAction("달력", TAB_BACKWARD_ACTION)
-            tabAction("돈", TAB_SAVE_ACTION)
+            tabAction("가계부", TAB_SAVE_ACTION)
             assertFalse(shows(TAB_EDIT_HINT_TOP))
             assertEquals("memos,money,calendar,stats,settings", saved())
             // Outside the edit a tab offers the long press by name.
@@ -206,15 +206,15 @@ class ADScreenshotTest : ScreenshotBase() {
         open(PHONE_393) {
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)
-            tapText("돈 위로", exact = true)
+            tapText("가계부 위로", exact = true)
             assertEquals("money,calendar,memos,stats,settings", saved())
             // The bar behind the dialog changed at once, and the screen did not move.
             tapText("완료", exact = true)
-            assertEquals(listOf("돈", "달력", "메모", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("가계부", "달력", "메모", "근무·급여", "설정"), barOrder())
             assertEquals("설정", tabNow())
         }
         open(PHONE_393) {
-            assertEquals("돈", tabNow())
+            assertEquals("가계부", tabNow())
             // Settings is still the last tab.
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)

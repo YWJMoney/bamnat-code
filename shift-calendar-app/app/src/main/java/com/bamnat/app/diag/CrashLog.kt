@@ -130,18 +130,20 @@ object CrashLog {
             anrs = recent.count { it.reason == ApplicationExitInfo.REASON_ANR },
             native = recent.count { it.reason == ApplicationExitInfo.REASON_CRASH_NATIVE },
             lowMemory = recent.count { it.reason == ApplicationExitInfo.REASON_LOW_MEMORY },
-            lines = recent.filter { it.reason in BAD }.take(5).map(::line),
+            lines = recent.filter { it.reason in bad() }.take(5).map(::line),
         )
     }
 
     /** C 1.32 [STAB-02] Android's own reasons worth a line (an exit by the user or an update is not). */
-    private val BAD = setOf(ApplicationExitInfo.REASON_CRASH, ApplicationExitInfo.REASON_ANR, ApplicationExitInfo.REASON_CRASH_NATIVE,
+    @androidx.annotation.RequiresApi(30)
+    private fun bad() = setOf(ApplicationExitInfo.REASON_CRASH, ApplicationExitInfo.REASON_ANR, ApplicationExitInfo.REASON_CRASH_NATIVE,
         ApplicationExitInfo.REASON_LOW_MEMORY, ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE, ApplicationExitInfo.REASON_INITIALIZATION_FAILURE)
 
     /**
      * C 1.32 [STAB-02] One exit in words: when, why, how much memory the app held and whether it was on screen. For an ANR,
      * the first frames of the main thread from Android's trace, only the app's and Android's own class names.
      */
+    @androidx.annotation.RequiresApi(30)
     private fun line(e: ApplicationExitInfo): String {
         val at = java.time.Instant.ofEpochMilli(e.timestamp).atZone(Today.zone())
         val why = when (e.reason) {

@@ -1,11 +1,14 @@
 package com.bamnat.app.ui.pay
 
-import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
@@ -36,12 +39,34 @@ enum class PayFocus(val key: String, val label: String, val tab: PayTab) {
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+/**
+ * U 1.32 [UX132-05] Four tabs share the width, so none slides off a narrow phone. When a quarter of the width is too
+ * small for the text size (a 320dp phone at 아주 크게), the four become chips that wrap onto a second row instead.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun PayTabRow(tab: PayTab, onTab: (PayTab) -> Unit) {
-    PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 0.dp, modifier = Modifier) {
-        PayTab.entries.forEach { t ->
-            Tab(selected = t == tab, onClick = { onTab(t) }, text = { Text(t.label, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+    androidx.compose.foundation.layout.BoxWithConstraints {
+        val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+        if (maxWidth / 4 < 64.dp * scale) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                PayTab.entries.forEach { t ->
+                    com.bamnat.app.ui.components.FilterChip(selected = t == tab, onClick = { onTab(t) }, label = { Text(t.label) })
+                }
+            }
+        } else {
+            PrimaryTabRow(selectedTabIndex = tab.ordinal) {
+                PayTab.entries.forEach { t ->
+                    // The content form of Tab grows with its text (the text form is a fixed 48dp and cuts a second line).
+                    Tab(selected = t == tab, onClick = { onTab(t) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(t.label, textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 10.dp))
+                    }
+                }
+            }
         }
     }
 }
