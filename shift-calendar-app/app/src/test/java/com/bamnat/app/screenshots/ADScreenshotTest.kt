@@ -200,7 +200,7 @@ class ADScreenshotTest : ScreenshotBase() {
         open(PHONE_393) { assertEquals("메모", tabNow()) }
     }
 
-    // ---- 421 [NAV-07]: 설정 › 달력 화면 › 첫 화면·메뉴 순서 ----
+    // ---- 421 [NAV-07]: 설정 › 화면과 글자 › 첫 화면·메뉴 순서 ----
 
     @Test fun settingsMovesTheTabsAndPutsThemBack() {
         open(PHONE_393) {

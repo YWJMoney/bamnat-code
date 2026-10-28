@@ -206,7 +206,8 @@ fun SectionCard(
         shadowElevation = 0.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     ) {
-        Column(Modifier.padding(16.dp)) {
+        // U 1.32 [UX132-06] 촘촘하게 (기본) trims the card's top and bottom; the sides stay 16dp for the finger.
+        Column(Modifier.padding(horizontal = 16.dp, vertical = com.bamnat.app.ui.theme.LocalSpacing.current.inner)) {
             if (title != null || trailing != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (title != null) {

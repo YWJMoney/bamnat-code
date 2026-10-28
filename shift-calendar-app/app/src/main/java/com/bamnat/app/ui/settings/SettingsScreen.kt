@@ -153,7 +153,7 @@ enum class SettingsPage(
     ALARM("알람", Icons.Outlined.Alarm, com.bamnat.app.ui.theme.SettingsKind.ALERT),
     NOTICES("알림과 잠", Icons.Outlined.Notifications, com.bamnat.app.ui.theme.SettingsKind.ALERT),
     PAY("급여와 연차", Icons.Outlined.Payments, com.bamnat.app.ui.theme.SettingsKind.WORK),
-    CALENDAR("달력 화면", Icons.Outlined.CalendarMonth, com.bamnat.app.ui.theme.SettingsKind.SCREEN),
+    CALENDAR("화면과 글자", Icons.Outlined.CalendarMonth, com.bamnat.app.ui.theme.SettingsKind.SCREEN),
     DATA("데이터", Icons.Outlined.SettingsBackupRestore, com.bamnat.app.ui.theme.SettingsKind.DATA),
     PRIVACY("개인정보·앱 정보", Icons.Outlined.PrivacyTip, com.bamnat.app.ui.theme.SettingsKind.DATA),
 }
@@ -652,7 +652,7 @@ private val HUB_MAX_WIDTH = 360.dp
 private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {

@@ -468,6 +468,16 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }
         // [SET-02] 근무표 공유 and 동료 근무표 받기 live in the calendar's 도구 only; settings search still finds them.
     }
+    // U 1.32 [UX132-05][UX132-06] G [WTYP-07]: 글자 크기, 촘촘하게, 오전/오후 — first, as most people come here for them.
+    SectionCard(title = "글자와 배치") {
+        TextSizeRow(settings.textStep) { step -> vm.update { it.copy(textStep = step) } }
+        HorizontalDivider()
+        SwitchRow("촘촘하게", if (settings.compact) "카드 사이를 줄여 한 화면에 더 많이 보여요" else "카드 사이를 넉넉히 띄워요",
+            settings.compact) { on -> vm.update { it.copy(compact = on) } }
+        HorizontalDivider()
+        SwitchRow("오전/오후로 보기", if (settings.clock12) "시각을 '오후 3:05'처럼 보여요" else "시각을 '15:05'처럼 24시간으로 보여요",
+            settings.clock12) { on -> vm.update { it.copy(clock12 = on) } }
+    }
     SectionCard(title = "모양") {
         // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
         ChoiceRow("테마", if (settings.themeMode == ThemeMode.NIGHT_SHIFT) "22~06시에 걸친 근무 중에는 어둡게, 그 밖에는 휴대폰 따라" else null,

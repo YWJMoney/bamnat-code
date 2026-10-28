@@ -330,7 +330,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val context = LocalContext.current
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
+                    val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" },
+                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }
                 val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)

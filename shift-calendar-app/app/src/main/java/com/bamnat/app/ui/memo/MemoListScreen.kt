@@ -215,7 +215,7 @@ fun MemoListScreen(
             Column(
                 Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
             ) {
                 // On the calendar tab a new memo starts on today so it lands in that list.
                 val date = if (state.tab == MemoTab.CALENDAR) today else null

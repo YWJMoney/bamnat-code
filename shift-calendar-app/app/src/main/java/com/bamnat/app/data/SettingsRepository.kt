@@ -146,6 +146,14 @@ data class AppSettings(
     val showDayCard: Boolean = false,
     /** B 1.32 [CALX-03] 한 번 눌러 고르기: the first tap only picks the day (marked); a second tap on it opens the day. */
     val tapSelectFirst: Boolean = false,
+    /** U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골랐어요. */
+    val textAsked: Boolean = false,
+    /** U 1.32 [UX132-06] 촘촘하게: 카드 사이를 줄여 한 화면에 더 많이 보여요 (기본 켬). */
+    val compact: Boolean = true,
+    /** U 1.32 [UX132-05] 글자 크기 5단계 (0 작게 0.9, 1 보통 1.0, 2 크게 1.15, 3 더 크게 1.3, 4 아주 크게 1.5); 휴대폰 글자 크기와 곱해요. */
+    val textStep: Int = 1,
+    /** G 1.32 [WTYP-07] 609 시각을 오전/오후 12시간으로 보여요 (기본 24시간). */
+    val clock12: Boolean = false,
     /** E 1.32 [LEDX-07] Each day's spending under the date in the calendar. */
     val spendInCells: Boolean = false,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
@@ -312,6 +320,10 @@ class SettingsRepository(context: Context) {
                 .getOrDefault(d.phoneDayView).let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
             showDayCard = prefs.getBoolean(K_DAY_CARD, d.showDayCard),
             tapSelectFirst = prefs.getBoolean(K_TAP_FIRST, d.tapSelectFirst),
+            textAsked = prefs.getBoolean(K_TEXT_ASKED, d.textAsked),
+            compact = prefs.getBoolean(K_COMPACT, d.compact),
+            textStep = prefs.getInt(K_TEXT_STEP, d.textStep),
+            clock12 = prefs.getBoolean(K_CLOCK12, d.clock12),
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
@@ -396,6 +408,10 @@ class SettingsRepository(context: Context) {
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
             .putBoolean(K_DAY_CARD, s.showDayCard)
             .putBoolean(K_TAP_FIRST, s.tapSelectFirst)
+            .putBoolean(K_TEXT_ASKED, s.textAsked)
+            .putBoolean(K_COMPACT, s.compact)
+            .putInt(K_TEXT_STEP, s.textStep)
+            .putBoolean(K_CLOCK12, s.clock12)
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
@@ -430,6 +446,10 @@ class SettingsRepository(context: Context) {
         const val K_PHONE_DAY_VIEW = "phone_day_view"
         const val K_DAY_CARD = "day_card"
         const val K_TAP_FIRST = "tap_select_first"
+        const val K_TEXT_ASKED = "text_asked"
+        const val K_COMPACT = "compact_layout"
+        const val K_TEXT_STEP = "text_step"
+        const val K_CLOCK12 = "clock_12h"
         const val K_SPEND_IN_CELLS = "spend_in_cells"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_CAL_ONLY = "calendar_only"

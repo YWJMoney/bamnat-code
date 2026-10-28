@@ -219,6 +219,10 @@ val NumberStyle = TextStyle(fontFeatureSettings = "tnum")
 fun BamnatTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = false,
+    /** U 1.32 [UX132-05] 글자 크기 단계 ([TextSize]). */
+    textStep: Int = TextSize.DEFAULT,
+    /** U 1.32 [UX132-06] 촘촘하게. */
+    compact: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -236,9 +240,37 @@ fun BamnatTheme(
         else -> LightColors
     }
     CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
-        MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = AppShapes, content = content)
+        // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
+        // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
+        val base = androidx.compose.ui.platform.LocalDensity.current
+        val scaled = androidx.compose.ui.unit.Density(base.density, TextSize.scale(base.fontScale, textStep))
+        CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalDensity provides scaled,
+            LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
+        ) {
+            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = AppShapes, content = content)
+        }
     }
 }
+
+/** U 1.32 [UX132-05] 설정 › 화면과 글자 › 글자 크기: five steps, times the phone's own 글꼴 크기. */
+object TextSize {
+    val STEPS = listOf(0.9f, 1.0f, 1.15f, 1.3f, 1.5f)
+    val LABELS = listOf("작게", "보통", "크게", "더 크게", "아주 크게")
+    const val DEFAULT = 1
+    const val MAX_SCALE = 2.0f
+    fun scale(system: Float, step: Int): Float = (system * STEPS[step.coerceIn(0, STEPS.lastIndex)]).coerceAtMost(MAX_SCALE.coerceAtLeast(system))
+}
+
+/** U 1.32 [UX132-06] The gaps between a screen's cards: 촘촘하게 (기본) or 넉넉하게. */
+data class Spacing(val card: androidx.compose.ui.unit.Dp, val inner: androidx.compose.ui.unit.Dp, val page: androidx.compose.ui.unit.Dp) {
+    companion object {
+        val COMPACT = Spacing(card = 8.dp, inner = 12.dp, page = 12.dp)
+        val ROOMY = Spacing(card = 12.dp, inner = 16.dp, page = 16.dp)
+    }
+}
+
+val LocalSpacing = androidx.compose.runtime.staticCompositionLocalOf { Spacing.COMPACT }
 
 /** Palette offered for shift types. [A11Y-03] Every colour carries its letters at 4.45:1 or more (ContrastTest). */
 val ShiftPalette: List<Long> = listOf(

@@ -83,10 +83,12 @@ internal fun WorkTypeFirstCard(
     columns: Int,
     /** [PAYX-25] The month's 비과세 when it needs the month's pay (생산직); null works it out from the setup. */
     nonTaxable: Long? = null,
+    /** G 1.32 [WTYP-07] The days the month counts (the pay period when chosen). */
+    range: Pair<LocalDate, LocalDate>? = null,
 ) {
     when {
         // [GUIDE-05] Each card can be turned off for its calendar.
-        style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal) }
+        style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal, range) }
         style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable) }
     }
 }
@@ -117,7 +119,16 @@ internal fun WorkTypeMoreCards(
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
     if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot, calendarId) }
-    if (style == WorkStyle.DAY) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
+    // G 1.32 [WTYP-07] 609 공무원·경찰·소방 (교대 포함) start at 월 57시간 without setting it.
+    if (style == WorkStyle.DAY || profile?.publicGrade != null) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary, profile) }
+    // G 1.32 [WTYP-07] 609 포괄임금: the fixed overtime hours against this month's.
+    com.bamnat.core.work.WorkTypeChecks.cover(profile, summary.extraMinutes)?.let { c ->
+        FeatureCard("pay.coverHours", calendarId) { CoverHoursCard(c) }
+    }
+    // G 1.32 [WTYP-07] 609 근속 and the year for 퇴직금, from 입사일.
+    if (style?.usesPayEngine != false) com.bamnat.core.work.WorkTypeChecks.tenure(profile?.hireDate, Today.date())?.let { t ->
+        FeatureCard("pay.tenure", calendarId) { TenureCard(t) }
+    }
     // [LEAVE-04] 징검다리 for every kind of work that takes leave.
     if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {
         FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot, style) }
@@ -127,8 +138,10 @@ internal fun WorkTypeMoreCards(
 /** [SHFT-02] Each code's count this month, the night shifts and the expected pay. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTotal: Long?) {
-    val tally = remember(snapshot, month) { ShiftMonth.of(month, snapshot.shiftTypes, snapshot.resolver::resolve) }
+private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTotal: Long?, range: Pair<LocalDate, LocalDate>? = null) {
+    val tally = remember(snapshot, month, range) {
+        ShiftMonth.of(month, snapshot.shiftTypes, snapshot.resolver::resolve, range?.first ?: month.atDay(1), range?.second ?: month.atEndOfMonth())
+    }
     if (tally.counts.isEmpty()) return
     SectionCard(title = "${month.monthValue}월 근무") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -416,10 +429,10 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
 /** [DAYW-05] This month's extra hours against the monthly 시간외 상한, set here. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
+private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: PayProfile? = null) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
-    val capHours = choices[calendarId]?.overtimeCapHours
+    val capHours = com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)
     var editing by remember { mutableStateOf(false) }
     val cal = LocalCalendarColors.current
     SectionCard(title = "시간외 상한", trailing = { TextButton(onClick = { editing = true }) { Text(if (capHours == null) "정하기" else "바꾸기") } }) {
@@ -507,3 +520,38 @@ private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
 
 /** [INPUT-02] The caps people set most: 주 12시간 × 4주 ≈ 52시간, the app's own 57 and rounder company limits. */
 private val CAP_CHOICES = listOf(40, 52, DayWork.DEFAULT_CAP_HOURS, 60)
+
+/** G 1.32 [WTYP-07] 609 포괄임금: 고정 연장수당이 덮는 시간과 이번 달 실제 연장. 넘은 시간은 따로 받을 수 있어요. */
+@Composable
+private fun CoverHoursCard(c: com.bamnat.core.work.WorkTypeChecks.Cover) {
+    val cal = LocalCalendarColors.current
+    SectionCard(title = "포괄 연장 시간") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${HoursFormat.korean(c.usedMinutes)} / ${HoursFormat.korean(c.coveredMinutes)}", style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
+                modifier = Modifier.weight(1f))
+            Text(if (c.over) "${HoursFormat.korean(c.overMinutes)} 넘음" else "${HoursFormat.korean(c.leftMinutes)} 남음",
+                style = MaterialTheme.typography.titleSmall.merge(NumberStyle), color = if (c.over) cal.warning else MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(progress = { c.share.toFloat().coerceIn(0f, 1f) }, color = if (c.over) cal.warning else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        Text(if (c.over) "고정 연장수당이 정한 시간보다 더 일했어요. 넘은 시간의 연장수당은 따로 받을 수 있어요 (근로기준법 제56조)."
+            else "고정 연장수당에 들어 있는 시간이에요. 이 시간을 넘으면 알려 드려요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** G 1.32 [WTYP-07] 609 근속 기간, 다음 해까지, 퇴직금 1년. */
+@Composable
+private fun TenureCard(t: com.bamnat.core.work.WorkTypeChecks.Tenure) {
+    SectionCard(title = "근속") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t.text, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), modifier = Modifier.weight(1f))
+            Text("입사 ${t.hire.year}.${t.hire.monthValue}.${t.hire.dayOfMonth}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(t.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

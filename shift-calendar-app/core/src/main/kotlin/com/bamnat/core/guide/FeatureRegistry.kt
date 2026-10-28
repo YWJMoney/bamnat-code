@@ -176,7 +176,7 @@ object FeatureRegistry {
             off = Off.CALENDAR, moment = Moment.AFTER_NIGHT,
             tip = "야간 근무 수고했어요. ‘연간 건강 지표’에서 야간 비율과 쉰 시간을 볼 수 있어요"),
         f("shift.nightDark", "SHFT-05", "야간 근무 중 어둡게", "야간 근무 시간에는 화면을 저절로 어둡게 바꿔요",
-            setOf(SHIFT), "설정 › 달력 화면 › 테마", at(Place.SETTINGS_CALENDAR, "테마"), "다크 모드", "어둡게", "야간 모드", "눈부심"),
+            setOf(SHIFT), "설정 › 화면과 글자 › 테마", at(Place.SETTINGS_CALENDAR, "테마"), "다크 모드", "어둡게", "야간 모드", "눈부심"),
         f("sleep.log", "SLP-16", "수면 기록", "잠든 시간과 깬 시간을 적고 근무별 평균을 봐요",
             setOf(SHIFT), "달력 › 오늘의 흐름 › 수면 기록", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
         f("today.flow", "SLP-14", "오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요",
@@ -401,7 +401,7 @@ object FeatureRegistry {
         f("stats.all", "COMN-03", "통계 전체 보기", "모든 달력의 총수입·총지출·순저축을 한 번에 봐요",
             ALL, "통계 탭 › 전체", at(Place.STATS), "전체", "모든 달력 통계", "총수입"),
         f("memo.sharing", "MEMO-02", "메모 공유", "메모를 달력마다 따로 두거나, 몇 달력끼리 함께 봐요",
-            ALL, "설정 › 달력 화면 › 메모 공유", at(Place.SETTINGS_CALENDAR, "메모 공유"), "공용 메모장", "메모 같이", "달력별 메모"),
+            ALL, "설정 › 화면과 글자 › 메모 공유", at(Place.SETTINGS_CALENDAR, "메모 공유"), "공용 메모장", "메모 같이", "달력별 메모"),
         f("memo.repeat", "NOTE-05", "반복 메모", "매달 25일, 매주 화요일처럼 돌아오는 메모를 적어요",
             ALL, "메모 › 메모 쓰기 › 반복", at(Place.MEMOS), "반복", "매달", "매주", "정기"),
         f("trash.records", "UNDO-01", "최근 지운 기록", "일하는 방식을 바꾸거나 지운 기록·달력을 7일 동안 되돌려요",
@@ -427,7 +427,7 @@ object FeatureRegistry {
             setOf(DAY, HOURLY, FIELD), "홈 화면 › 밤낮 오늘 위젯", at(Place.FEATURES), "위젯", "홈 화면", off = Off.APP),
         // 1.22 묶음 E: on by default (S10); each says where it turns off.
         f("widget.memo", "DAILY-01", "위젯에 메모 줄", "오늘·이번 주 위젯에 그날 메모 첫 줄이 보여요. 날짜를 누르면 그날이 열려요",
-            ALL, "설정 › 달력 화면 › 위젯에 메모 보이기", at(Place.SETTINGS_CALENDAR, "위젯에 메모 보이기"), "위젯", "메모", "홈 화면", "끄기"),
+            ALL, "설정 › 화면과 글자 › 위젯에 메모 보이기", at(Place.SETTINGS_CALENDAR, "위젯에 메모 보이기"), "위젯", "메모", "홈 화면", "끄기"),
         f("widget.teams", "DAILY-03", "오늘 모든 조 위젯", "홈 화면에서 조마다 오늘·내일 근무를 봐요. 내 조는 굵게 보여요",
             setOf(SHIFT), "홈 화면 › 위젯 › 밤낮 오늘 모든 조", at(Place.TEAMS), "위젯", "모든 조", "조별 근무", "홈 화면"),
         f("money.receiptScan", "LEDG-25", "영수증 사진 읽기", "영수증을 찍으면 금액·날짜·시간·가게를 채워요. 휴대폰 안에서만 읽고 저장 전에 확인해요",
@@ -530,7 +530,7 @@ object FeatureRegistry {
             under = "data.backup"),
         // ---- 1.26 묶음 AD (계획/1.26-AD-개발계획.md 419~421) ----
         f("nav.tabOrder", "NAV-05", "첫 화면·메뉴 순서", "아래 메뉴를 길게 눌러 끌면 순서가 바뀌고, 맨 앞 메뉴가 앱을 켤 때 처음 보이는 화면이 돼요. 설정에서 위·아래로도 바꿔요",
-            ALL, "설정 › 달력 화면 › 첫 화면·메뉴 순서", at(Place.SETTINGS_CALENDAR, "첫 화면·메뉴 순서"), "첫 화면", "시작 화면", "메인 화면", "메뉴 순서",
+            ALL, "설정 › 화면과 글자 › 첫 화면·메뉴 순서", at(Place.SETTINGS_CALENDAR, "첫 화면·메뉴 순서"), "첫 화면", "시작 화면", "메인 화면", "메뉴 순서",
             "탭 순서", "길게 누르기"),
         // ---- 1.26 묶음 AC (계획/1.26-AC-개발계획.md 414·417) ----
         f("plaza.cycles", "SPAT-02", "회사 근무주기 찾기", "회사 이름·초성·업종·근무형태로 공개 자료의 근무주기를 찾아 순서와 오늘 날짜만 맞추면 달력에 넣어요. 없으면 처음으로 넣어 광장에 올려요",

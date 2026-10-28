@@ -56,6 +56,8 @@ class WidgetData(
     val nextChange: LocalDateTime? = null,
     /** [WIDG-05] The countdown widget's line; null with nothing booked in the coming week. */
     val countdown: String? = null,
+    /** G 1.32 [WTYP-05] 607 "다음 오프까지" under the countdown; null without a pattern. */
+    val nextOff: String? = null,
     /** [WIDG-05] I 리뷰 N6(b): the teams that could take my shift today, as 대근 찾기 says; null on a day off. */
     val coverTeams: List<String>? = null,
     /** [WIDG-02] Days with a memo on 내 달력 around this month, while 위젯에 메모 보이기 is on. */
@@ -119,6 +121,7 @@ class WidgetData(
             } else null
             // [WIDG-01][WIDG-05] Yesterday's night to a week ahead: what is going on now and what comes next.
             val soon = snapshot.resolver.resolveRange(today.minusDays(1), today.plusDays(7))
+            com.bamnat.app.ui.Fmt.clock12 = settings.clock12 // G 1.32 [WTYP-07]
             return WidgetData(
                 today = now.toLocalDate(),
                 weekStart = settings.weekStart,
@@ -138,6 +141,7 @@ class WidgetData(
                 teams = teamsToday(container, snapshot, today),
                 nextChange = com.bamnat.core.schedule.ShiftEvents.nextChange(soon, now),
                 countdown = com.bamnat.core.schedule.ShiftEvents.countdown(soon, now),
+                nextOff = if (snapshot.isEmpty) null else com.bamnat.core.schedule.ShiftEvents.nextOff(soon, today),
                 coverTeams = coverToday(container, snapshot, today, settings),
                 memoDays = if (settings.widgetMemo) memoDays(container, today) else emptySet(),
             )

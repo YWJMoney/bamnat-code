@@ -182,7 +182,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [CAL-21] A phone (or large text) puts the title on a line of its own, so it never wraps beside the month.
         val narrow = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 420 }
@@ -256,7 +256,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             }
         }.value
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
-        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree)
+        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree,
+            range = period?.let { it.start(month) to it.end(month) })
 
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
