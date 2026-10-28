@@ -92,6 +92,11 @@ android {
             isShrinkResources = true
             signingConfigs.findByName("upload")?.let { signingConfig = it }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // [QA130-02] 1.30 AY: native code (.so) that has debug symbols takes them into the bundle (BUNDLE-METADATA, not
+            // in what phones download) for Play Console's native crash reports. Measured 1.30: the only .so today is
+            // Compose's libandroidx.graphics.path.so, which Google ships already stripped, so nothing is added (AAB the
+            // same 23.16 MB) and Play may still say symbols are missing for it; that line can be ignored. With the NDK.
+            ndk { debugSymbolLevel = "FULL" }
         }
         // [PERF-03][PERF-13] The build :benchmark measures is now the baselineprofile plugin's benchmarkRelease
         // (release code, shrunk the same way, debug key, profileable: src/benchmarkRelease). Never uploaded.

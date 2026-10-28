@@ -157,8 +157,8 @@ internal fun InviteCard(
             Text(
                 when {
                     draft.fix -> "맞게 고친 설정을 보내 주시면 ${draft.company} 설정이 바로잡혀요. 금액은 보내지 않아요."
-                    named -> "직접 맞춘 설정을 금액 없이 나눠 주시면, 같은 회사 분들은 1분이면 설정이 끝나요."
-                    else -> "회사 이름만 적어 금액 없이 나눠 주시면, 같은 회사 분들은 회사를 고르기만 하면 설정이 끝나요. 많은 분이 참여할수록 밤낮이 더 정확해져요."
+                    named -> "직접 맞춘 설정을 내 급여 금액 없이 나눠 주시면, 같은 회사 분들은 1분이면 설정이 끝나요."
+                    else -> "회사 이름만 적어 내 급여 금액 없이 나눠 주시면, 같은 회사 분들은 회사를 고르기만 하면 설정이 끝나요. 많은 분이 참여할수록 밤낮이 더 정확해져요."
                 },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 12.dp),
@@ -190,7 +190,9 @@ internal fun InviteCard(
 /** [PLAZA-04] The invitation on the calendar, right after a setup made by hand; draws nothing when it is not due. */
 @Composable
 fun ShareInviteNotice(modifier: Modifier = Modifier) {
-    val vm = com.bamnat.app.ui.appViewModel { CompanyNudgeViewModel(it) }
+    // [CALI-04] The calendar on screen's own invitation.
+    val calendar = LocalCompanyCalendar.current
+    val vm = com.bamnat.app.ui.appViewModel(key = "company-nudges-$calendar") { CompanyNudgeViewModel(it, calendar) }
     if (!vm.enabled) return
     val draft = vm.invite.collectAsStateWithLifecycle().value ?: return
     val terms by vm.terms.collectAsStateWithLifecycle()
@@ -357,7 +359,7 @@ fun InviteSheet(vm: CompanyNudgeViewModel, onShare: () -> Unit, onDismiss: () ->
             Text("🧭", style = MaterialTheme.typography.displaySmall, modifier = Modifier.align(Alignment.CenterHorizontally))
             Text("설정 끝! ${d.company}의 첫 번째 길잡이가 되어 주실래요?", style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            Text("방금 맞춘 근무표와 계산 방식을 금액 없이 나눠 주시면, 같은 회사 분들은 회사 이름만 찾으면 1분이면 끝나요.",
+            Text("방금 맞춘 근무표와 계산 방식을 내 급여 금액 없이 나눠 주시면, 같은 회사 분들은 회사 이름만 찾으면 1분이면 끝나요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             HowAdopted(terms?.threshold ?: 3, rewardLine(terms))
@@ -412,7 +414,7 @@ fun AskDeveloperDialog(
                         minLines = 2, modifier = Modifier.fillMaxWidth())
                     if (setup != null) {
                         TextButton(onClick = { showSetup = !showSetup }) {
-                            Text(if (showSetup) "함께 보내는 설정 접기" else "함께 보내는 설정 보기 (금액 없이)")
+                            Text(if (showSetup) "함께 보내는 설정 접기" else "함께 보내는 설정 보기 (내 급여 금액 없이)")
                         }
                         if (showSetup) {
                             Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
@@ -478,7 +480,7 @@ fun ColumnScope.CompanySettingsRows(
     com.bamnat.app.ui.settings.NavRow("회사 찾기", "같은 회사 분들이 맞춘 근무표와 계산 방식을 가져와요", onFind)
     // [COMM-07]
     com.bamnat.app.ui.settings.NavRow("회사 규칙 광장", "여러 회사가 올린 근무표·급여 규칙을 보고, 맞는지 투표하고 토론해요", onBoard)
-    com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "금액 없이 보내요. 채택되면 보상을 드려요", onShare)
+    com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "내 급여 금액 없이 보내요. 채택되면 보상을 드려요", onShare)
     com.bamnat.app.ui.settings.NavRow("내가 보낸 정보", "보낸 설정이 어떻게 됐는지, 개발자의 답, 거두기", onSent)
 }
 

@@ -100,6 +100,8 @@ fun CompanyBoardScreen(
     onRates: (() -> Unit)? = null,
     /** [PLAZA-32] 1.27 AI: 회사 찾기, for a phone in no company yet: choosing one opens its 정보 광장. */
     onFind: (() -> Unit)? = null,
+    /** [CALI-08] 1.30 BB: which calendar's 광장 this is (the calendar chips), when the phone has two or more. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     val adopted by vm.adopted.collectAsStateWithLifecycle()
     val voting by vm.voting.collectAsStateWithLifecycle()
@@ -146,6 +148,7 @@ fun CompanyBoardScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (header != null) item(key = "calendars") { header() }
                 // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
                 if (onFind != null) item {
                     SoftCard(highlighted = true) {
@@ -161,6 +164,10 @@ fun CompanyBoardScreen(
                         Tab(selected = !adopted, onClick = { vm.pick(false) }, text = { Text("투표 중") })
                         Tab(selected = adopted, onClick = { vm.pick(true) }, text = { Text("채택됨") })
                     }
+                }
+                // [SPD-13] 1.30 AP1: the first page kept on the phone is on screen while it is read again.
+                if (tab.items.isNotEmpty() && ((tab.fromCache && tab.loading) || tab.stale)) item(key = "refresh") {
+                    RefreshLine(tab.fromCache && tab.loading, tab.stale, onRetry = vm::refresh)
                 }
                 item {
                     // [COMM-07] Any company's rules by name, adopted or still being voted on.
@@ -199,7 +206,8 @@ fun CompanyBoardScreen(
                 }
                 item {
                     when {
-                        tab.loading -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                        tab.loading && !tab.fromCache -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                        tab.loading -> Unit
                         tab.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(24.dp)) {
                             Text(tab.error, style = MaterialTheme.typography.bodyMedium)
                             OutlinedButton(onClick = vm::refresh, modifier = Modifier.padding(top = 8.dp)) { Text("다시 불러오기") }
@@ -368,6 +376,8 @@ fun TalkSheet(holder: TalkHolder) {
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val talk = o.talk
+                // [SPD-13] The talk kept on the phone is on screen while it is read again.
+                if (talk != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::reload)
                 when {
                     talk == null && o.error != null -> Text(o.error, style = MaterialTheme.typography.bodyMedium)
                     talk == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
@@ -378,7 +388,8 @@ fun TalkSheet(holder: TalkHolder) {
                         val tops = talk.posts.filter { it.parent == null || talk.posts.none { t -> t.id == it.parent } }
                         tops.forEach { p ->
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
-                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }))
+                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                company = o.company, setup = o.setup)
                             talk.posts.filter { it.parent == p.id }.forEach { r ->
                                 Row {
                                     Spacer(Modifier.width(20.dp))
@@ -499,7 +510,11 @@ fun TalkSheet(holder: TalkHolder) {
 }
 
 @Composable
-private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null) {
+private fun PostRow(
+    p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null,
+    /** [PROP-02] The talk's company and version, for 이 제안으로 내 월급 계산해 보기 on a proposal. */
+    company: String = "", setup: String = "",
+) {
     var menu by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
@@ -560,6 +575,10 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHid
                     p.proposal?.let { r ->
                         Text(if (r.adopted) "이 제안대로 규칙이 바뀌었어요" else "이 제안에 공감 ${r.persons}명 · 모이면 규칙이 바뀌어요",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        // [PROP-02] 1.30 BC: before it is adopted, anyone of the company can try it on their own month.
+                        r.text?.takeIf { !r.adopted && company.isNotEmpty() && p.hidden == null }?.let { text ->
+                            ProposalTrialButton(company, setup, text, onVote = { ok -> if (!p.mine) onVote(ok) })
+                        }
                     }
                 }
             }

@@ -45,8 +45,9 @@ object PlazaEntry {
     internal fun takeQuery(): String = query.orEmpty().also { query = null }
 
     /** The name the user gave in the first setup, while no coworker's setup is in use; null otherwise. */
-    fun knownCompany(c: AppContainer): String? =
-        c.companyStore.draft.value?.company?.trim()?.takeIf { it.length >= 2 && c.companyStore.applied.value == null }
+    fun knownCompany(c: AppContainer, calendar: String = PersonalCalendar.MAIN): String? = c.companyOf(calendar).store.let { s ->
+        s.draft.value?.company?.trim()?.takeIf { it.length >= 2 && s.applied.value == null }
+    }
 }
 
 /**
@@ -55,10 +56,12 @@ object PlazaEntry {
  */
 @Composable
 fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifier: Modifier = Modifier, today: LocalDate = com.bamnat.core.time.Today.date()) {
-    if (!c.companyApi.enabled || calendar != PersonalCalendar.MAIN) return
-    val draft by c.companyStore.draft.collectAsStateWithLifecycle()
-    val applied by c.companyStore.applied.collectAsStateWithLifecycle()
-    val closed by c.companyStore.plazaEntryClosed.collectAsStateWithLifecycle()
+    if (!c.companyApi.enabled) return
+    // [CALI-04] 1.30 BB: every calendar's pay, with that calendar's company (1.29: the main calendar's only).
+    val store = c.companyOf(calendar).store
+    val draft by store.draft.collectAsStateWithLifecycle()
+    val applied by store.applied.collectAsStateWithLifecycle()
+    val closed by store.plazaEntryClosed.collectAsStateWithLifecycle()
     val asks by c.asks.states.collectAsStateWithLifecycle()
     val company = draft?.company?.trim()?.takeIf { it.length >= 2 && applied == null } ?: return
     if (closed == company || !AskScheduler.tipAllowed(asks[calendar] ?: c.asks.of(calendar), today)) return
@@ -73,7 +76,7 @@ fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifi
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = { PlazaEntry.open(company); onOpen() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("같은 회사 분들 규칙 보기") }
-                TextButton(onClick = { c.companyStore.closePlazaEntry(company) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("괜찮아요") }
+                TextButton(onClick = { store.closePlazaEntry(company) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("괜찮아요") }
             }
         }
     }
@@ -84,7 +87,8 @@ fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifi
 fun PlazaRoomLine(modifier: Modifier = Modifier, onOpen: () -> Unit) {
     // [PLAZA-32] 1.27 AI: the calendar's line into a joined company's 정보 광장; nothing before joining.
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
-    if (!c.companyApi.enabled || c.companyStore.member.collectAsStateWithLifecycle().value == null) return
+    // [CALI-04] The calendar on screen's company ([LocalCompanyCalendar]).
+    if (!c.companyApi.enabled || companyScope(c).store.member.collectAsStateWithLifecycle().value == null) return
     PlazaEntryLine(c, onOpen, modifier)
 }
 
@@ -92,10 +96,12 @@ fun PlazaRoomLine(modifier: Modifier = Modifier, onOpen: () -> Unit) {
 @Composable
 fun PlazaEntryLine(c: AppContainer, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     if (!c.companyApi.enabled) return
-    val draft by c.companyStore.draft.collectAsStateWithLifecycle()
-    val applied by c.companyStore.applied.collectAsStateWithLifecycle()
+    // [CALI-04] The calendar on screen's company ([LocalCompanyCalendar]).
+    val store = companyScope(c).store
+    val draft by store.draft.collectAsStateWithLifecycle()
+    val applied by store.applied.collectAsStateWithLifecycle()
     // [PLAZA-32] 1.27 AI: a joined company's room is where 광장 opens; the line says so.
-    val member by c.companyStore.member.collectAsStateWithLifecycle()
+    val member by store.member.collectAsStateWithLifecycle()
     member?.takeIf { it.second.isNotBlank() }?.let { m ->
         Row(
             modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onOpen)

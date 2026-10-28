@@ -21,6 +21,8 @@ object FlagCatalog {
     const val STATS_MORE = "stats.more"
     /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts (날짜·화면·이유·횟수) sent to the server, once 처리방침 3.3 names them. */
     const val PHOTO_WRONG = "photo.wrong"
+    /** [ITEM-03] 1.30 BC (결정 D102): a company's one allowance amount (회사 공통 정액) goes with the setup to the 광장. */
+    const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -147,6 +149,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.29.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * [ITEM-03] 1.30 BC: 결정 D102 (사용자 2026-10-27 "회사 공통 정액만 광장에 공유"). On from 처리방침 3.4's date; off sends 회사 공통 수당 without
+     * its amount, so everyone types it as before. A person's own amount (사람마다) never goes, on or off.
+     */
+    val PLAZA_FIXED_AMOUNT_FLAG = Flag(
+        PLAZA_FIXED_AMOUNT, "회사 공통 수당 금액 나누기",
+        what = "회사 설정을 광장에 올리거나 고치자고 제안할 때, 작성자가 ‘회사 공통 금액’으로 정한 수당(식대·교통비 정액 같은)의 금액을 함께 올려요. 쓰는 분은 그 금액을 다시 적지 않아요. 사람마다 다른 수당의 금액은 보내지 않아요.",
+        whyOff = "처리방침 3.4(1-2항)가 시행된 뒤에만 금액을 함께 올려요. 그 전이나 끄면 회사 공통 수당도 금액 없이 올라가고, 쓰는 분이 각자 적어요(1.29와 같음). 이미 올라간 금액은 그대로예요.",
+        basis = Basis(policy = "3.4 1-2항", decision = "D102", requirement = "ITEM-03", note = "1.30 BC 수당 종류(회사 공통·사람마다·%)"),
+        // 1.30 통합: 1-2항 said "수당 금액은 보내지 않습니다" until 3.4, so the amount waits for 3.4's date like photo.wrong does for 3.3.
+        conditions = listOf(Condition.Date(policy = "3.4")),
+        default = false, risk = Risk.LEGAL, since = "1.30.0", group = FlagGroup.LAW,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -158,7 +174,8 @@ object FlagCatalog {
         )
     }
 
-    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG) + SWITCHES
+    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG) +
+        SWITCHES
 
     private val byKey = ALL.associateBy { it.key }
 

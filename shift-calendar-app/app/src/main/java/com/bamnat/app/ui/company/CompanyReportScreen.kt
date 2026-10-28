@@ -89,6 +89,8 @@ fun CompanyReportScreen(
     onOpenCompany: (String) -> Unit = {},
     /** [PLAZA-30] 1.27 AI: the main pay screen with 명세서로 맞춰 보기 open; null leaves the shortcut out. */
     onMatch: (() -> Unit)? = null,
+    /** [FIN130-01] The calendar's pay screen, where a pay way taken with 이 규칙 쓰기 asks its 기본급. */
+    onOpenPay: (() -> Unit)? = null,
 ) {
     val sending by vm.sending.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
@@ -119,7 +121,8 @@ fun CompanyReportScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             AnimatedContent(
-                targetState = sending is CompanyReportViewModel.Sending.Sent,
+                targetState = sending.let { it is CompanyReportViewModel.Sending.Sent || it is CompanyReportViewModel.Sending.Used ||
+                    it is CompanyReportViewModel.Sending.Proposed },
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 label = "report-sent",
             ) { sent ->
@@ -128,6 +131,9 @@ fun CompanyReportScreen(
                     SentPanel(s.status, onDone = onDone, onOpenSent = onOpenSent,
                         // [PLAZA-30] 1.27 AI (442): every company report opens its plaza page, not only one from a public row.
                         onOpenCompany = if (!topic && s.status.companyId.isNotEmpty()) ({ onOpenCompany(s.status.companyId) }) else null)
+                } else if (sent) {
+                    // [PLZD-01][PLZD-03] 1.30 BD: the plaza's same rule is in use, or the difference went as a proposal.
+                    GuardDonePanel(s, onDone = onDone, onOpenCompany = onOpenCompany, onOpenPay = onOpenPay)
                 } else {
                     Column(
                         Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -140,7 +146,7 @@ fun CompanyReportScreen(
                         if (public != null) PublicReportHead(public, cycleOnly, vm.hasPay, rewardShort(terms), onCycleOnly = vm::setCycleOnly)
                         Text(
                             if (fix) "고친 설정을 보내 주시면, 같은 회사 분들이 확인한 뒤 회사 찾기의 설정이 바로잡혀요."
-                            else "내 근무표와 급여 계산 방식을 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",
+                            else "내 근무표와 급여 계산 방식을 내 급여 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         // [PLZ-12][PLZ-13] Which plaza it goes to, and where; a hospital is a place like a company.
@@ -203,6 +209,19 @@ fun CompanyReportScreen(
                 }
             }
         }
+    }
+    // [PLZD-01][PLZD-02][PLZD-03][PLZD-05] 1.30 BD: what the plaza already has, asked before anything goes.
+    var proposing by remember { mutableStateOf<com.bamnat.app.company.SendGuard.Differ?>(null) }
+    (sending as? CompanyReportViewModel.Sending.Guarded)?.takeIf { proposing == null }?.let { held ->
+        SendGuardAsk(held,
+            onUse = { vm.useSame(it, verified) },
+            onSend = { d -> dept = d; vm.sendAnyway(held.form, d) },
+            onPropose = { proposing = it },
+            onOpenCompany = { id -> vm.resetSending(); onOpenCompany(id) },
+            onDismiss = vm::resetSending)
+    }
+    proposing?.let { v ->
+        GuardProposalSheet(v, vm.calendar, onSent = { proposing = null; vm.proposed(v) }, onDismiss = { proposing = null })
     }
 }
 
@@ -276,10 +295,19 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
         androidx.compose.animation.AnimatedVisibility(shown, enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn()) {
             Text("🎉", style = MaterialTheme.typography.displayMedium)
         }
-        Text(if (status.again) "이미 보낸 설정이에요" else "보냈어요! 고마워요", style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center)
+        // [PLZD-01][PLZD-04] 1.30 BD: the rule in use sent again counts as 맞아요; another shape waits for the developer.
+        val held = status.reasonCode == "shape" && status.status == "pending"
+        val same = status.same && !status.again
+        Text(when {
+            status.again -> "이미 보낸 설정이에요"
+            held -> "보냈어요. 개발자가 먼저 볼게요"
+            same -> "이미 쓰는 규칙이라 맞아요로 셌어요"
+            else -> "보냈어요! 고마워요"
+        }, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
             if (status.again) "같은 휴대폰에서 같은 설정은 한 번만 세요. 지금 상태를 보여 드릴게요."
+            else if (held) "근무 모양이 이 부서 대표 판과 달라서 바로 보이지 않아요. 다른 부서라면 부서 이름을 넣어 다시 보내 주세요."
+            else if (same) "${status.company}${status.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}에서 이미 쓰는 규칙과 같아요. 새 판은 만들지 않았어요."
             else "${status.company}${status.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""} 분들이 다음부터 훨씬 쉽게 설정해요.",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
         )

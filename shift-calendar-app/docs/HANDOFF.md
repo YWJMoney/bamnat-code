@@ -1,11 +1,28 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-27, 앱 1.29.0(versionCode 40, 워치 100040) 기준이에요. 맨 위 0-new항이 지금 판(1.29.0), 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-28, 앱 1.30.0(versionCode 41, 워치 100041) 기준이에요. 맨 위 0-new항이 지금 판(1.30.0), 0-a2항이 1.29.0, 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0-new. 지금 판: 1.29.0 급여 흐름·사진 정확도·투자 캡처·검색 속도·관리자 복사 (2026-10-27)
+## 0-new. 지금 판: 1.30.0 달력 독립·급여 적용 한 번에·수당 종류·광장 중복 정리·조회 속도·사진 견고화·관리자 혁신 (2026-10-28)
+
+사용자 지시(2026-10-27 14:24Z): 11월 3일 프로덕션 신청 전 "모든 흐름이 간편하고 정확하고 빠르게, 적은 조작으로 최대 활용". 통합 브랜치 `claude/project-thread-fn252f`(main b535d1b = 1.29.0에서). Fable 점검 3명 → Opus 1차 6묶음(BB·SP1·AV·AX·AY·BC) → 2차 4묶음(BA·BD·AP1·AW) → 통합 → Fable 최종 점검 2명 → Opus FIX(FIN130). 전체 정리는 `docs/plans/1.30-통합계획.md`, 묶음마다 `docs/plans/1.30-<묶음>-개발계획.md`.
+
+- **달력 독립(BB, CALI)**: 회사·급여 방식·자동 나누기는 `c.companyOf(달력)`/`companyScope(c)`(Compose는 `LocalCompanyCalendar`)로만. `c.companyStore`·`c.payWays`·`c.companyShare`·`c.autoShare`는 본 달력 별칭이라 새 코드에서 직접 쓰지 않아요. 보조 달력 파일은 `files/calendars/<id>/company.json`·`pay_way.json`(백업 `calendarCompany`).
+- **급여 적용 한 번에(BA, PAYG)**: 회사 급여 방식은 `PendingWay`(메모리, 달력별)로 기다렸다가 기본급과 함께 `CompanyScope.commit`. 닫으면 취소. 회사 방식을 넣는 새 길을 만들면 반드시 PendingWay로(FIN130-01·07이 그 실수를 고친 것).
+- **수당 종류(BC, ITEM·PROP)**: `PayItem.share`(FIXED·PERSONAL·PERCENT)·`percent`·`percentOf`·`fixedAmount`·`mine`, 회사 파일 v4, 서버 `SETUP_VERSION=4`. 회사 공통 금액은 플래그 `plaza.fixed_amount`(LEGAL, 처리방침 3.4 날짜)와 서버(3.4 시행 전 빼기) 두 겹. PERSONAL 금액은 절대 안 보냄.
+- **광장 중복·변별(BD, PLZD)**: 앱 `SendGuard`, 서버 `src/plaza-guard.js`(reports.reason='shape' 보류, `pgShown()`을 모든 공개 읽기에). 새 공개 읽기를 만들면 `pgShown()`을 꼭.
+- **조회 속도(SP1·AP1, SPD)**: 서버 `src/read-fast.js`(D1 Sessions·bookmark·ETag·메모), `statesFor` 묶음 읽기, `test/perf-rounds.test.mjs` 왕복 예산. 앱 `company/PageCache.kt`(cacheDir, 14일, LRU)·`NetTimings.kt`·`RoundTripBudgetTest`. 쓰기 뒤에는 `companySearch.forgetPage`.
+- **사진(AV·AW, PHOTO·RULE-ED·HOURLY)**: core `SlipTable`·`SlipVote`·`SlipTemplate`·`SlipHourly`, 시험 `PlantSampleGridTest`(486가지 흔들기), `pay/RuleSheet.kt`, 앱 `ui/pay/rulesheet/`·`PhotoResultScreen.kt`·`ScanButtons.kt`. 통상시급·기준 시간에 `HourlySource`(명세서·회사 규칙·광장·직접).
+- **관리자 앱(AX, ADMX)**: `src/plaza-diff.js`(diffFacts, 판 차이의 정본), `src/admin-insight.js`, `src/admin/style.js`·`admin/views/*`(번들러가 하위 폴더를 따라감).
+- **메모(AY)**: `ui/components/SelectionEdgeScroll.kt`(`LongTextField`·`rememberEdgeScroll`). 긴 글 칸은 이걸로. `diag/TestLab.kt`: Test Lab 기기는 서버에 쓰지 않음.
+- **처리방침 3.4**(게시 10-28, 시행 11-27, 3.2·3.3과 같은 날): 1-2항 회사 공통 수당 금액, 1-13항 이유 두 개. 늦게 합치면 관리자 앱 일정에서 날짜를 옮겨요.
+- **빌드**: release `ndk.debugSymbolLevel=FULL`(NDK 27.0.12077973 필요). 크기 예산은 AAB를 `BUNDLE-METADATA/` 없이 재요(1.30.0 서명본 APK 9.22MB/9.5, AAB 23.70MB 중 휴대폰 몫 9.31MB/11). Gradle 데몬이 메모리 부족이면 `-Dorg.gradle.jvmargs=-Xmx3g`. 서버는 **앱보다 먼저** 배포(옛 서버는 v4 설정을 거절).
+- **마지막 시험(통합 브랜치 끝)**: core 1213, unit 693(1 건너뜀), shots-a 263, shots-b 868, api, wear 6, lint, 서버 npm 377, 관리자 UI 51, 실패 0. 추적표 1153줄.
+- 사용자 몫: 회사 서버 배포 + Cloudflare 대시보드(D1 지역 확인·Smart Placement·읽기 복제·RATE_SALT 확인), PR 합치기 = 3.4 게시, 휴대폰 확인, Play 업로드. `release/1.30.0/사용자가-해야-할-일.md`.
+
+## 0-a2. 앞 판: 1.29.0 급여 흐름·사진 정확도·투자 캡처·검색 속도·관리자 복사 (2026-10-27)
 
 사용자 지시(2026-10-27 04:10Z): Phase 0~2 남은 일 마무리와 요청 아홉 가지. 통합 브랜치 `claude/project-thread-fn252f`(main 6733f2d에서). 오케스트레이터-워커로 여섯 묶음을 나눠 만들고 통합 브랜치에 합쳤어요. 전체 정리는 `docs/plans/1.29-통합계획.md`.
 
@@ -261,7 +278,7 @@ python3 tools/check_tracker.py                             # 추적표 검사
   - 시작 작업: `AppContainer.start()`의 이름 붙은 작업은 **21개까지(새 작업 0)**, 달력이 첫 달을 그리기 전에는 **7개 이하**예요. 나머지는 `afterFirstFrame()`에서 돌아요(`perf/StartupBudgetTest`).
   - 화면 사진 시험: 묶음마다 `screenshots/<묶음>ScreenshotTest.kt`에 `class XScreenshotTest : ScreenshotBase()`를 만들고, `@RunWith(AndroidJUnit4::class) @GraphicsMode(NATIVE) @Config(sdk = [35])`를 붙여요. 번호대는 묶음끼리 겹치지 않게 정해요. 기다림은 `settle()`(조건 대기, 1초 상한)과 `reach()`(글자를 찾을 때까지 5초)에 맡기고 `Thread.sleep`을 새로 쓰지 않아요.
   - 나눠 돌리기: `-Pbamnat.testSet=unit|shots-a|shots-b|api`(CI 네 조각). 안드로이드 8·11·13·15에서 도는 `rules/ApiLevelSmokeTest`·`AlarmMatrixTest`는 `api`에서만 돌아요(여러 판 샌드박스가 한 JVM에 섞이면 다른 시험의 SQLite가 죽어요). 아무 값 없이 돌리면 빠져요, `-Pbamnat.testForks=N`(기본은 코어 절반, 1~3). 느린 시험 표는 `python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest`로 봐요.
-  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 23.5MB이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
+  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 11MB(1.30.0부터 Play만 보관하는 `BUNDLE-METADATA/` 이름 지도는 빼고 셈, 그 지도만 14MB)이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
   - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
   - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
 - **품질 규칙 (1.24 통합 직접 테스트)**

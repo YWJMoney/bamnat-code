@@ -211,15 +211,15 @@ fun CompanyRulesEditor(
                 }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        // [PAYX-34] 180시간 too: the payslip match already tries it (PayslipMatcher.SNAP_HOURS).
-                        Unknowns.MONTHLY_HOURS_CHIPS.forEach { h ->
-                            FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) },
-                                label = { Text("${h}시간") })
-                        }
+                    // [ITEM-07] 1.30 BC: the company's hours first, and a different value can go back as a proposal. [FIN130-09] One set
+                    // of chips (묶음 BA's), 180시간 too: the payslip match already tries it ([PAYX-34], PayslipMatcher.SNAP_HOURS).
+                    val companyWay = com.bamnat.app.ui.company.rememberCompanyWayText()
+                    com.bamnat.app.ui.company.CompanyHoursLine(companyWay, draft.monthlyHours, Unknowns.MONTHLY_HOURS_CHIPS) { h ->
+                        val source = if (h == companyWay?.hours) com.bamnat.core.pay.HourlySource.PLAZA else com.bamnat.core.pay.HourlySource.TYPED
+                        draft = draft.copy(monthlyHours = h, hoursSource = source).settled(Unknowns.MONTHLY_HOURS)
                     }
                     // [PAYX-23][INPUT-02] The company's own number, e.g. 182 (주 35시간), stepped.
-                    MonthlyHoursStepper(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) })
+                    MonthlyHoursStepper(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) })
                     Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요. 명세서나 계약서에 다른 숫자가 있으면 그대로 넣어요.")
                     // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
                     val weekly = remember(snapshot, month) { StandardHours.averageWeekly(month.atDay(1), resolve = snapshot.resolver::resolve) }
@@ -231,7 +231,7 @@ fun CompanyRulesEditor(
                                 Text("1년 평균 주 ${HoursFormat.korean(weekly)} 소정근로 + 주휴. 계약서에 적힌 시간이 있으면 그것을 쓰세요.",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster).settled(Unknowns.MONTHLY_HOURS) }) { Text("적용") }
+                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster, hoursSource = com.bamnat.core.pay.HourlySource.TYPED).settled(Unknowns.MONTHLY_HOURS) }) { Text("적용") }
                         }
                     }
                 }
@@ -408,17 +408,34 @@ fun CompanyRulesEditor(
             }
 
             // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.
-            SectionCard(title = "회사만의 규칙") {
-                Hint("위에 없는 방식은 아래에서 골라 담아요. 담기지 않는 것(‘19~23시 25% 가산’ 같은)은 글로 적거나 취업규칙 사진으로 읽어요. " +
-                    "가산율이나 대근 방식처럼 위에 있는 것도 담으면 알아서 맞춰 넣어요.")
-                if (draft.customRules.isNotEmpty()) {
-                    CustomRuleList(
-                        draft.customRules,
-                        shiftNames = snapshot.shiftTypes.associate { it.id to it.name },
-                        extraNames = kinds.names,
-                        onChange = { draft = draft.copy(customRules = it) },
-                    )
+            // [RULE-ED-05] 1.30 AW (사용자 "사진 촬영 금지 회사… 칸 추가 방식으로"): the company's own allowances and rules as the same 칸 as
+            // the photo's result, each opened where it is; '칸 더하기' starts from the usual allowances. Words and photos stay under it.
+            SectionCard(title = "우리 회사 항목") {
+                Hint("수당·더 받는 근무·빠지는 돈을 칸으로 하나씩 더해요. 사진이 없어도 돼요. 위에 있는 가산율이나 대근 방식도 칸으로 담으면 알아서 맞춰 넣어요.")
+                val shiftNames = remember(snapshot.shiftTypes) { snapshot.shiftTypes.associate { it.id to it.name } }
+                val own = remember(draft.items, draft.customRules, shiftNames) { com.bamnat.core.pay.RuleSheet.of(draft, shiftNames) }
+                val host = remember(draft, snapshot, month) {
+                    com.bamnat.app.ui.pay.rulesheet.RuleSheetHost(draft, snapshot, month, { change ->
+                        val made = when (change) {
+                            is com.bamnat.core.pay.RuleChange.Item -> MadeItem.Item(change.item)
+                            is com.bamnat.core.pay.RuleChange.Custom -> MadeItem.Rule(change.rule)
+                            else -> null
+                        }
+                        made?.let { vm.effectOf(draft, snapshot, month, it) }?.let { com.bamnat.app.ui.pay.rulesheet.CellEffect(it.amount, it.times) }
+                    })
                 }
+                com.bamnat.app.ui.pay.rulesheet.RuleCellList(
+                    cells = own.cells, unread = emptyList(), host = host,
+                    onToggle = { cell -> draft = com.bamnat.core.pay.RuleSheet.setOn(draft, cell, !cell.on) },
+                    ticks = { it.change is com.bamnat.core.pay.RuleChange.Custom },
+                    onPut = { cell -> draft = com.bamnat.core.pay.RuleSheet.put(draft, cell, month) },
+                    onRemove = { cell -> draft = com.bamnat.core.pay.RuleSheet.remove(draft, cell) },
+                    onUnreadDone = {},
+                    onAdd = { change, source ->
+                        draft = com.bamnat.core.pay.RuleSheet.put(draft, com.bamnat.core.pay.RuleCell.of(change, source = source, shiftNames = shiftNames), month)
+                    },
+                    empty = "아직 칸이 없어요. 아래 ‘칸 더하기’에서 자주 쓰는 수당을 고르면 금액만 넣으면 돼요.",
+                )
                 RuleSentenceBox(kinds.kinds, snapshot.shiftTypes, draft.fiveOrMoreEmployees) { changes ->
                     draft = com.bamnat.core.pay.RuleText.apply(draft, changes, month)
                 }
@@ -473,13 +490,15 @@ fun CompanyRulesEditor(
                     com.bamnat.core.pay.WonRounding.AT_END -> "시급을 소수점까지 그대로 들고 가서 줄마다 반올림해요. 명세서와 몇 원 다를 때 바꿔 보세요."
                     // [PHOTO-11] 1.29
                     com.bamnat.core.pay.WonRounding.AT_END_UP -> "시급을 소수점까지 그대로 들고 가서 줄마다 원 미만을 올려요. 명세서 수당이 1원씩 많으면 이 방식이에요."
+                    // [HOURLY-03] 1.30
+                    com.bamnat.core.pay.WonRounding.AT_END_DOWN -> "시급을 소수점까지 그대로 들고 가서 줄마다 원 미만을 버려요. 명세서 수당이 1원씩 적으면 이 방식이에요."
                     else -> "시급을 먼저 원 단위로 반올림하고 곱해요. 법 기준은 없어 회사마다 달라요."
                 })
                 // [PHOTO-11] 1.29: the 통상시급 taken from a payslip, shown so it can be let go.
                 draft.ordinaryHourly?.let { h ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("명세서로 맞춘 통상시급 ${"%,.2f".format(h)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { draft = draft.copy(ordinaryHourly = null) }) { Text("지우기") }
+                        TextButton(onClick = { draft = draft.copy(ordinaryHourly = null, ordinarySource = null) }) { Text("지우기") }
                     }
                     Hint("가산수당을 이 시급으로 계산해요. 지우면 기본급과 통상임금 수당으로 다시 계산해요.")
                 }

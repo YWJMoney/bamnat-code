@@ -6,6 +6,12 @@
 // worker.js for the dashboard.
 
 import { adminLib } from "./admin-lib.js";
+// AX 1.30 [ADMX-12] The stylesheet and three groups of screens live in src/admin/; each screen group is a function sent
+// to the browser as its own text next to the app, like admin-lib.
+import { ADMIN_CSS } from "./admin/style.js";
+import { todayViews } from "./admin/views/today.js";
+import { plazaViews } from "./admin/views/plaza.js";
+import { insightViews } from "./admin/views/insight.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -57,9 +63,12 @@ export function adminPrebuilt() {
 
 /** [ADMUX-08] A name for this build of the app's files; /api/admin/badges sends it as build (AT 1.29: so does the 410 of the old /overview). */
 export function adminBuild() {
-  builtVersion ??= hashText(String(adminApp) + String(adminLib) + String(adminWorker) + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
+  builtVersion ??= hashText(String(adminApp) + String(adminLib) + adminViewsText() + String(adminWorker) + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
   return builtVersion;
 }
+
+/** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -92,7 +101,7 @@ function adminFiles() {
   if (builtFiles) return builtFiles;
   const version = adminBuild();
   // [ADMUX-08] The app knows its own build, so it can say when the server has a newer one.
-  const app = slimJs(`(${adminApp})((${adminLib})(), ${JSON.stringify(version)});`);
+  const app = slimJs(`(${adminApp})((${adminLib})(), ${JSON.stringify(version)}, ${adminViewsText()});`);
   const list = {
     "/admin/app.js": [app, "text/javascript; charset=utf-8"],
     "/admin/sw.js": [slimJs(`(${adminWorker})(${JSON.stringify(version)});`), "text/javascript; charset=utf-8"],
@@ -167,551 +176,9 @@ const ADMIN_HTML = `<!doctype html>
 // Sizes are in rem so the phone's text size setting scales everything together; layouts reflow instead of clipping.
 // [ADMUX-03] The layout steps are in px (rail from 600, sidebar from 1024) so a folded Fold (345) is a phone and
 // an unfolded one (673) has the rail whatever the text size.
-const ADMIN_CSS = `
-.photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.photos img{width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid var(--line)}
-.bars{list-style:none;display:flex;align-items:flex-end;gap:2px;height:96px;padding:0;margin:8px 0}.bars li{flex:1;height:100%;display:flex;align-items:flex-end}
-.bars span{display:block;width:100%;min-height:2px;border-radius:3px 3px 0 0;background:var(--gold, #C2A36B)}
-:root{--bg:#F5F3EE;--surface:#fff;--raised:#fff;--fg:#14182A;--muted:#5B6075;--faint:#62677A;--line:#E3DFD6;--line-strong:#D2CCBF;
---soft:#EFEBE3;--hover:#F2EFE8;--accent:#2B57E0;--accent-soft:#E6ECFD;--on-accent:#fff;--gold:#B8955A;--gold-soft:#F4EBDC;--nav:#15192B;
---nav-fg:#C9CCDA;--nav-on:#fff;--nav-hi:rgba(255,255,255,.08);--ok:#17784A;--ok-bg:#E1F2E8;--warn:#8A5300;--warn-bg:#FBEED5;--bad:#BE3326;
---bad-bg:#FBE5E2;--info:#2B57E0;--info-bg:#E6ECFD;--shadow:0 1px 2px rgba(20,24,42,.05),0 4px 16px rgba(20,24,42,.05);
---shadow-lg:0 20px 60px rgba(10,12,22,.28);--r:16px;--r-sm:12px;--r-lg:22px;--focus:0 0 0 3px color-mix(in srgb,var(--accent) 40%,transparent)}
-/* [ADMUX-05] Light, dark or as the system: 설정 › 이 기기 sets data-theme; without it the system decides. */
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E111C;--surface:#161A28;--raised:#1C2131;--fg:#EEEAE2;--muted:#A3A7B8;--faint:#9095AB;--line:#272D40;
---line-strong:#343B52;--soft:#1F2435;--hover:#20263A;--accent:#8EA8FF;--accent-soft:#1E2747;--on-accent:#0B1022;--gold:#D2B47A;--gold-soft:#2C2618;
---nav:#0A0D17;--nav-hi:rgba(255,255,255,.06);--ok:#7DD3A3;--ok-bg:#12302A;--warn:#F0C272;--warn-bg:#352A12;--bad:#FF8F84;--bad-bg:#3A1C1B;
---info:#8EA8FF;--info-bg:#1E2747;--shadow:none;--shadow-lg:0 20px 60px rgba(0,0,0,.6);color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#0E111C;--surface:#161A28;--raised:#1C2131;--fg:#EEEAE2;--muted:#A3A7B8;--faint:#9095AB;--line:#272D40;
---line-strong:#343B52;--soft:#1F2435;--hover:#20263A;--accent:#8EA8FF;--accent-soft:#1E2747;--on-accent:#0B1022;--gold:#D2B47A;--gold-soft:#2C2618;
---nav:#0A0D17;--nav-hi:rgba(255,255,255,.06);--ok:#7DD3A3;--ok-bg:#12302A;--warn:#F0C272;--warn-bg:#352A12;--bad:#FF8F84;--bad-bg:#3A1C1B;
---info:#8EA8FF;--info-bg:#1E2747;--shadow:none;--shadow-lg:0 20px 60px rgba(0,0,0,.6);color-scheme:dark}
-:root[data-theme="light"]{color-scheme:light}
-/* [ADMUX-05] 글자 크기: everything is in rem, so one root size scales the app. */
-:root[data-size="small"]{font-size:93.75%}:root[data-size="large"]{font-size:112.5%}:root[data-size="xlarge"]{font-size:125%}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;color-scheme:light dark;scroll-padding-top:5rem}
-:root[data-theme]{color-scheme:light}
-body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--fg);
-font:1rem/1.55 system-ui,-apple-system,"Pretendard","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
--webkit-tap-highlight-color:transparent;word-break:keep-all;overflow-wrap:anywhere;font-feature-settings:"tnum" 1}
-button,input,textarea,select{font:inherit;color:inherit}
-h1,h2,h3{margin:0;line-height:1.3;letter-spacing:-.01em}
-a{color:var(--accent)}
-svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-:focus-visible{outline:none;box-shadow:var(--focus);border-radius:var(--r-sm)}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.skip{position:fixed;left:.5rem;top:-4rem;z-index:50;padding:.6rem 1rem;border-radius:var(--r-sm);background:var(--accent);color:var(--on-accent);font-weight:800}
-.skip:focus{top:.5rem}
-
-/* ---- layout: phone (bottom bar), Fold unfolded and tablets (rail), computers (sidebar) ---- */
-.shell{min-height:100vh;min-height:100dvh}
-.side{display:none}
-.content{min-width:0}
-.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:saturate(1.4) blur(14px);
--webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
-.bar{display:flex;align-items:center;gap:.5rem;max-width:72rem;margin:0 auto;padding:.5rem .75rem;min-height:3.75rem}
-.bar h1{flex:1;min-width:0;font-size:1.2rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bar .sub{display:block;font-size:.78rem;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mark{width:2.1rem;height:2.1rem;margin:0 .35rem;border-radius:.65rem;flex:none}
-.progress{height:2px;overflow:hidden}
-.progress.on{background:linear-gradient(90deg,transparent,var(--accent),transparent) no-repeat;background-size:50% 100%;animation:slide 1s linear infinite}
-@keyframes slide{from{background-position:-50% 0}to{background-position:150% 0}}
-.main{max-width:72rem;margin:0 auto;padding:1rem 1rem calc(6.5rem + env(safe-area-inset-bottom))}
-.main:focus{box-shadow:none}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;justify-content:center;background:color-mix(in srgb,var(--surface) 94%,transparent);
-backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:.35rem .35rem calc(.35rem + env(safe-area-inset-bottom))}
-.tab{position:relative;flex:1;max-width:9rem;display:flex;flex-direction:column;align-items:center;gap:.1rem;padding:.25rem;border:0;background:none;
-color:var(--muted);font-size:.8rem;font-weight:700;cursor:pointer;text-decoration:none;min-height:3.4rem;justify-content:center}
-.tab{min-width:0}
-.tab .nav-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tab svg{width:1.45rem;height:1.45rem;padding:.25rem min(1.1rem,3vw);box-sizing:content-box;border-radius:999px;transition:background .2s,color .2s}
-.tab[aria-current=page]{color:var(--fg)}
-.tab[aria-current=page] svg{background:var(--accent-soft);color:var(--accent)}
-.badge{min-width:1.25rem;height:1.25rem;padding:0 .4rem;border-radius:.65rem;background:var(--bad);color:#fff;font-size:.7rem;font-weight:800;
-line-height:1.25rem;text-align:center;font-style:normal}
-.tab .badge{position:absolute;top:.1rem;left:calc(50% + .55rem)}
-.badge:empty{display:none}
-@media (min-width:600px){
-  .shell{display:grid;grid-template-columns:5.5rem 1fr}
-  .tabs{display:none}
-  .side{display:flex;flex-direction:column;position:sticky;top:0;height:100vh;height:100dvh;background:var(--nav);color:var(--nav-fg);
-  padding:calc(.75rem + env(safe-area-inset-top)) .5rem .75rem;overflow-y:auto;overscroll-behavior:contain}
-  .side .brand-row{display:flex;justify-content:center;padding:.25rem 0 1rem}
-  .side .brand-row img{width:2.4rem;height:2.4rem;border-radius:.75rem}
-  .side .brand-row b,.side .who,.side .group{display:none}
-  .nav{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
-  .nav a{position:relative;display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.55rem .25rem;border-radius:var(--r-sm);
-  color:var(--nav-fg);text-decoration:none;font-size:.72rem;font-weight:700;text-align:center}
-  .nav a:hover{background:var(--nav-hi);color:var(--nav-on)}
-  .nav a[aria-current=page]{background:rgba(255,255,255,.12);color:var(--nav-on)}
-  .nav svg{width:1.4rem;height:1.4rem}
-  .nav .badge{position:absolute;top:.2rem;right:.35rem}
-  .side .foot{margin-top:auto;display:grid;gap:.25rem;padding-top:.75rem}
-  .main{padding:1.25rem 1.5rem 3rem}
-  .bar{padding:.5rem 1.5rem}
-  .bar .mark{display:none}
-  .hubtabs{padding:0 1.5rem .5rem}
-  .toast{bottom:1.5rem}
-}
-@media (min-width:1024px){
-  .shell{grid-template-columns:15.5rem 1fr}
-  .side{padding:calc(1rem + env(safe-area-inset-top)) .75rem 1rem}
-  .side .brand-row{justify-content:flex-start;align-items:center;gap:.65rem;padding:.25rem .5rem 1.25rem}
-  .side .brand-row b{display:block;color:var(--nav-on);font-size:1.05rem}
-  .side .group{display:block;margin:1rem .75rem .35rem;font-size:.72rem;font-weight:800;letter-spacing:.04em;color:color-mix(in srgb,var(--nav-fg) 70%,transparent)}
-  .nav a{flex-direction:row;gap:.75rem;padding:.6rem .75rem;font-size:.92rem;text-align:left}
-  .nav .badge{position:static;margin-left:auto}
-  .nav li.open .subnav{display:grid}
-  .nav .subnav a{padding:.45rem .75rem;font-size:.86rem;font-weight:700;color:var(--nav-fg)}
-  .nav .subnav a[aria-current=page]{background:var(--nav-hi);color:var(--nav-on);box-shadow:inset 3px 0 0 var(--gold)}
-  .side .who{display:flex;align-items:center;gap:.6rem;padding:.6rem .75rem;border-radius:var(--r-sm);color:var(--nav-on);text-decoration:none}
-  .side .who:hover{background:var(--nav-hi)}
-  .side .who small{display:block;color:var(--nav-fg);font-size:.75rem;font-weight:600}
-  .side .compact-only{display:none}
-  .avatar{flex:none;display:inline-grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--gold);color:#15192B;font-weight:900}
-}
-
-/* ---- AN 1.28 [ADMUX-30][ADMUX-31][ADMUX-33] hubs: the tabs under the title, the sidebar's open hub, what waits ---- */
-.hubtabs{display:flex;gap:.25rem;max-width:72rem;margin:0 auto;padding:0 .75rem .45rem;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain}
-.hubtabs[hidden]{display:none}
-.hubtabs::-webkit-scrollbar{display:none}
-.hubtabs a{flex:none;display:inline-flex;align-items:center;gap:.35rem;min-height:2.75rem;padding:0 .95rem;border-radius:999px;color:var(--muted);
-font-weight:800;font-size:.9rem;text-decoration:none;white-space:nowrap}
-.hubtabs a:hover{background:var(--hover);color:var(--fg)}
-.hubtabs a[aria-current=page]{background:var(--accent-soft);color:var(--accent)}
-.subnav{display:none;list-style:none;margin:.1rem 0 .35rem;padding:0 0 0 2.15rem;gap:.05rem}
-.waiting{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:0 .25rem .85rem;font-size:.88rem;color:var(--muted)}
-.waiting b{color:var(--fg);font-weight:800;margin-right:.2rem}
-.waiting a{display:inline-flex;align-items:center;gap:.35rem;min-height:2.5rem;padding:0 .8rem;border-radius:999px;background:var(--soft);color:var(--fg);
-font-weight:700;text-decoration:none}
-.waiting a:hover{background:var(--hover)}
-.waiting a .n{color:var(--bad);font-weight:900}
-.waiting .dot{display:none}
-.todo-card .waiting{margin:0 0 .75rem}
-.todo-card .rows{box-shadow:none;margin-bottom:.5rem}
-.rows.inbox>li>details.quick{margin:0 1rem .75rem;border-top:0;padding-top:0}
-.quick form{display:grid;gap:.5rem}
-.quick textarea{min-height:5.5rem}
-.section svg{width:1.15rem;height:1.15rem}
-
-/* ---- buttons and fields ---- */
-.icon-btn{display:inline-grid;place-items:center;width:2.75rem;height:2.75rem;border:0;border-radius:var(--r-sm);background:none;cursor:pointer;flex:none;color:inherit}
-.icon-btn:hover{background:var(--hover)}
-.icon-btn svg{width:1.4rem;height:1.4rem}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:2.75rem;padding:0 1.05rem;border-radius:var(--r-sm);
-border:1px solid var(--line-strong);background:var(--surface);font-weight:800;font-size:.94rem;cursor:pointer;text-decoration:none;color:var(--fg);
-transition:transform .1s,background .15s,border-color .15s;white-space:nowrap}
-.btn:hover{background:var(--hover)}
-.btn svg{width:1.15rem;height:1.15rem}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-.btn.primary:hover{background:color-mix(in srgb,var(--accent) 88%,#000)}
-.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
-.btn.ghost{border-color:transparent;background:none}
-.btn.small{min-height:2.25rem;padding:0 .75rem;font-size:.85rem}
-.btn.wide{width:100%}
-.btn:disabled{opacity:.45;cursor:default;transform:none}
-.btn:active:not(:disabled),.icon-btn:active,.row:active,.tile:active{transform:scale(.98)}
-.link{border:0;background:none;padding:0;color:var(--accent);font-weight:800;cursor:pointer;text-decoration:underline}
-input:not([type]),input[type=search],input[type=text],input[type=email],input[type=password],input[type=url],input[type=date],input[type=number],textarea,select{width:100%;min-height:3rem;
-padding:.6rem .9rem;border-radius:var(--r-sm);border:1px solid var(--line-strong);background:var(--surface);outline:none;transition:border-color .15s}
-input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:var(--focus)}
-input[readonly]{background:var(--soft)}
-textarea{resize:vertical;min-height:7rem;line-height:1.55}
-label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
-.help{display:block;margin:.35rem 0 0;font-size:.82rem;color:var(--muted);font-weight:500}
-.fieldset{margin:0 0 1rem}
-.field{display:flex;gap:.5rem}
-.field input{flex:1;min-width:0}
-.searchbar{display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap}
-.searchbar input{flex:1 1 12rem;min-width:0}
-
-/* ---- surfaces ---- */
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:1rem 1.1rem;margin:0 0 .75rem;box-shadow:var(--shadow)}
-/* [ADMUX-05] One step per level: screen title 1.2, card 1.06, item .98, text .94. */
-.card>h2,.card-head h2{font-size:1.06rem;font-weight:800}
-.card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .6rem}
-.card h3{font-size:.98rem}
-.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
-@media (min-width:600px){.grid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.grid.two>.card{margin:0}}
-@media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
-.head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem}
-.head>:first-child{flex:1;min-width:0}
-.dept{font-weight:500;color:var(--muted);font-size:.94rem}
-.ver{font-size:.8rem;color:var(--muted);font-weight:800}
-.meta{margin:.15rem 0 0;font-size:.82rem;color:var(--muted)}
-.gist{margin:.6rem 0 0;font-size:.9rem}
-.hint{margin:.1rem 0 .75rem;font-size:.88rem;color:var(--muted)}
-.section{display:flex;align-items:center;gap:.5rem;font-size:.92rem;margin:1.5rem .25rem .6rem;color:var(--muted);font-weight:800}
-.section .count{font-size:.75rem;background:var(--soft);padding:.05rem .5rem;border-radius:99px}
-.pill{flex:none;display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;border-radius:999px;background:var(--soft);color:var(--muted);
-font-size:.8rem;font-weight:800;white-space:nowrap;line-height:1.5}
-.pill.warn{background:var(--warn-bg);color:var(--warn)}
-.pill.ok{background:var(--ok-bg);color:var(--ok)}
-.code-big{font-size:2.2rem;font-weight:700;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums;margin:.6rem 0}
-.pill.bad{background:var(--bad-bg);color:var(--bad)}
-.pill.info{background:var(--info-bg);color:var(--info)}
-.pill.gold{background:var(--gold-soft);color:var(--gold)}
-.score{display:flex;align-items:center;gap:.6rem;margin:.85rem 0 .25rem}
-.score b{font-size:.85rem;white-space:nowrap}
-meter{flex:1;width:100%;height:.6rem;-webkit-appearance:none;appearance:none;border:0;border-radius:99px;background:var(--soft);overflow:hidden}
-meter::-webkit-meter-bar{height:.6rem;border:0;border-radius:99px;background:var(--soft)}
-meter::-webkit-meter-optimum-value,meter::-webkit-meter-suboptimum-value,meter::-webkit-meter-even-less-good-value{background:var(--gold);border-radius:99px}
-meter::-moz-meter-bar{background:var(--gold);border-radius:99px}
-meter.strength::-webkit-meter-even-less-good-value{background:var(--bad)}
-meter.strength::-webkit-meter-suboptimum-value{background:var(--gold)}
-meter.strength::-webkit-meter-optimum-value{background:var(--ok)}
-details{margin:.75rem 0 0;border-top:1px solid var(--line);padding-top:.5rem}
-summary{cursor:pointer;font-size:.88rem;font-weight:800;color:var(--accent);padding:.35rem 0;list-style:none}
-summary::-webkit-details-marker{display:none}
-summary::after{content:" ▾"}
-details[open]>summary::after{content:" ▴"}
-.lines{margin:.4rem 0 0;display:grid;gap:.4rem}
-.lines div{display:grid;grid-template-columns:minmax(5.5rem,30%) 1fr;gap:.6rem;font-size:.88rem}
-.lines dt{color:var(--muted)}
-.lines dd{margin:0}
-.diff{margin:.75rem 0 0;padding:.6rem .75rem;border-radius:var(--r-sm);background:var(--soft)}
-.diff-title{margin:0 0 .4rem;font-size:.8rem;font-weight:800;color:var(--muted)}
-.diff ul{margin:0;padding:0;list-style:none;display:grid;gap:.25rem}
-.diff li{display:flex;gap:.4rem;font-size:.88rem}
-.diff .sign{flex:none;width:1rem;text-align:center;font-weight:900}
-.diff .add .sign{color:var(--ok)}
-.diff .del{color:var(--muted)}
-.diff .del .sign{color:var(--bad)}
-blockquote{margin:.75rem 0 0;padding:.6rem .75rem;border-left:3px solid var(--gold);background:var(--soft);border-radius:4px var(--r-sm) var(--r-sm) 4px;
-font-size:.9rem;white-space:pre-wrap}
-cite{display:block;margin-top:.25rem;font-style:normal;font-size:.75rem;color:var(--muted)}
-.note{margin:.75rem 0 0;font-size:.82rem;padding:.5rem .65rem;border-radius:var(--r-sm);background:var(--soft)}
-.note.warn{background:var(--warn-bg);color:var(--warn)}
-.notice-preview{margin:0 0 .75rem}.np{display:grid;gap:.2rem;padding:.65rem .8rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);font-size:.88rem}.np span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--muted)}.np.important{background:var(--warn-bg)}.np.important b{color:var(--warn)}
-.note.bad{background:var(--bad-bg);color:var(--bad)}
-.note.ok{background:var(--ok-bg);color:var(--ok)}
-.note.info{background:var(--info-bg);color:var(--info)}
-.actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.9rem;flex-wrap:wrap}
-.actions.start{justify-content:flex-start}
-#admins-top{margin:0 0 .75rem}
-details.card{margin-top:0;padding-top:.6rem}
-details.card>summary{color:var(--fg)}
-details.card .steps{margin-top:.6rem}
-
-/* ---- lists ---- */
-.rows{list-style:none;margin:0 0 .75rem;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--shadow)}
-.rows>li+li{border-top:1px solid var(--line)}
-.row{display:flex;align-items:center;gap:.65rem;width:100%;min-height:4rem;padding:.75rem 1rem;border:0;background:none;text-align:left;cursor:pointer;color:inherit;text-decoration:none}
-.row:hover{background:var(--hover)}
-.row>svg{flex:none;width:1.25rem;height:1.25rem;color:var(--faint)}
-.row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.05rem}
-.row-main b{font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row-main b.wrap{white-space:normal;overflow-wrap:anywhere}
-.row-main small{font-size:.8rem;color:var(--muted)}
-.row-main .preview{font-size:.9rem;color:var(--fg);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.row.unread .row-main b::before{content:"";display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent);margin-right:.4rem;vertical-align:middle}
-.row-side{display:flex;flex-direction:column;align-items:flex-end;gap:.3rem;flex:none;font-size:.75rem;color:var(--muted)}
-.item{display:flex;align-items:center;gap:.75rem;padding:.85rem 1rem;flex-wrap:wrap}
-.item .row-main{flex:1 1 14rem}
-.item .actions{margin:0 0 0 auto}
-.memo{font-style:italic}
-.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 .75rem}
-.chip{display:inline-flex;align-items:center;gap:.15rem;padding:.25rem .25rem .25rem .75rem;border-radius:999px;background:var(--soft);font-size:.88rem;font-weight:700}
-.chip button{width:1.9rem;height:1.9rem;border:0;border-radius:50%;background:none;cursor:pointer;font-size:1.1rem;line-height:1;color:var(--muted)}
-.chip.pick{padding:.35rem .8rem;border:1px solid var(--line-strong);background:var(--surface);cursor:pointer}
-.chip.pick:hover{background:var(--hover)}
-.chip svg{width:1rem;height:1rem}
-.chip.pick[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-
-/* ---- home ---- */
-.hello{margin:.25rem .25rem 1rem}
-.hello h2{font-size:1.35rem;font-weight:900}
-.hello p{margin:.2rem 0 0;color:var(--muted);font-size:.92rem}
-.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,10.5rem),1fr));gap:.65rem;margin:0 0 1rem}
-.tile{display:flex;flex-direction:column;gap:.35rem;padding:.9rem 1rem;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line);
-box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;transition:border-color .15s,transform .1s}
-a.tile:hover{border-color:var(--accent)}
-.tile .k{font-size:.8rem;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:.4rem}
-.tile .k svg{width:1.05rem;height:1.05rem}
-.tile .v{font-size:1.9rem;font-weight:900;line-height:1.1;letter-spacing:-.02em}
-.tile .d{font-size:.78rem;color:var(--muted);margin-top:auto}
-@media (max-width:599.98px){.tile{min-height:0;padding:.7rem .85rem;gap:.15rem}.tile .v{font-size:1.5rem}.tile .d{display:none}}
-/* The phone lists what waits; wider screens show the counts as tiles, with the activity beside. [ADMUX-06] The
-   queue of what to answer first shows on both. */
-@media (max-width:599.98px){.tiles{display:none}}
-.stats{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;margin:0 .25rem 1rem;font-size:.86rem;color:var(--muted)}
-.stats b{color:var(--fg);font-size:1rem;margin-left:.3rem}
-.tile.hot{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
-.tile.hot .v{color:var(--bad)}
-.todo{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
-.todo a{display:flex;align-items:center;gap:.65rem;padding:.6rem .5rem;border-radius:var(--r-sm);text-decoration:none;color:inherit;font-weight:700;font-size:.94rem}
-.todo a:hover{background:var(--hover)}
-.todo .dot{flex:none;width:.55rem;height:.55rem;border-radius:50%;background:var(--accent)}
-.todo .dot.bad{background:var(--bad)}
-.todo .dot.warn{background:var(--gold)}
-.todo small{margin-left:auto;color:var(--muted);font-weight:600;white-space:nowrap}
-.feed{list-style:none;margin:0;padding:0}
-.feed li{display:grid;grid-template-columns:auto 1fr;gap:.15rem .65rem;padding:.55rem 0;border-top:1px solid var(--line);font-size:.88rem}
-.feed li:first-child{border-top:0}
-.feed .when{grid-row:span 2;color:var(--muted);font-size:.75rem;min-width:3.4rem;padding-top:.1rem}
-.feed .who{color:var(--muted);font-size:.78rem}
-.day-head{margin:1rem .25rem .4rem;font-size:.8rem;font-weight:800;color:var(--muted)}
-
-/* ---- conversation ---- */
-.thread{display:flex;flex-direction:column;gap:.6rem;margin:.25rem 0 .75rem}
-.bubble{max-width:min(85%,36rem);padding:.65rem .85rem;border-radius:1.1rem;white-space:pre-wrap;font-size:.94rem;line-height:1.55}
-.bubble.user{align-self:flex-start;background:var(--soft);border-bottom-left-radius:.35rem}
-.bubble.admin{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:.35rem}
-.bubble-meta{font-size:.72rem;color:var(--muted);margin:-.3rem .35rem 0}
-.bubble-meta.admin{align-self:flex-end}
-.composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
-padding:.75rem;box-shadow:var(--shadow)}
-@media (min-width:600px){.composer{bottom:1rem}}
-.composer textarea{min-height:5.5rem;border:0;padding:.25rem;box-shadow:none;background:none}
-.composer .actions{margin-top:.5rem;align-items:center}
-.composer .count{margin-right:auto;font-size:.75rem;color:var(--muted)}
-
-/* ---- permissions ---- */
-.perm-table{display:grid;gap:.4rem;margin:.25rem 0 .75rem}
-.perm{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:.5rem .1rem;border-top:1px solid var(--line)}
-.perm:first-child{border-top:0}
-.perm b{font-size:.92rem}
-.levels{display:inline-flex;padding:.2rem;border-radius:var(--r-sm);background:var(--soft);gap:.15rem}
-.levels button{min-height:2.25rem;min-width:3.6rem;padding:0 .6rem;border:0;border-radius:.6rem;background:none;font-weight:800;font-size:.82rem;color:var(--muted);cursor:pointer}
-.levels button[aria-pressed=true]{background:var(--surface);color:var(--fg);box-shadow:var(--shadow)}
-.levels button[aria-pressed=true][data-level=edit]{color:var(--accent)}
-.levels button:disabled{opacity:.35;cursor:default}
-.perm-sum{display:flex;flex-wrap:wrap;gap:.3rem;margin:.35rem 0 0}
-.steps{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.6rem;counter-reset:s}
-.steps li{display:grid;grid-template-columns:1.8rem 1fr;gap:.6rem;font-size:.9rem;counter-increment:s}
-.steps li::before{content:counter(s);display:inline-grid;place-items:center;width:1.8rem;height:1.8rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:900;font-size:.85rem}
-.steps li.done::before{content:"✓";background:var(--ok-bg);color:var(--ok)}
-
-/* ---- toggles, segments, steppers ---- */
-.switch{position:relative;display:flex;align-items:center;gap:.75rem;margin:.75rem 0 0;font-size:.94rem;font-weight:700;cursor:pointer}
-.switch input{position:absolute;opacity:0;width:1px;height:1px}
-.track{position:relative;flex:none;width:3.1rem;height:1.85rem;border-radius:99px;background:var(--line-strong);transition:background .2s}
-.track::after{content:"";position:absolute;top:.2rem;left:.2rem;width:1.45rem;height:1.45rem;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
-.switch input:checked+.track{background:var(--accent)}
-.switch input:checked+.track::after{transform:translateX(1.25rem)}
-.switch input:focus-visible+.track{box-shadow:var(--focus)}
-.rule{padding:.75rem 0;border-top:1px solid var(--line)}
-.rule:first-of-type{border-top:0;padding-top:.25rem}
-.rule.dim{opacity:.72}
-.segmented{display:flex;gap:.25rem;padding:.25rem;border-radius:var(--r);background:var(--soft);margin-bottom:.75rem;overflow-x:auto;scrollbar-width:none}
-.seg{flex:1 0 auto;min-height:2.6rem;padding:0 .8rem;border:0;border-radius:.75rem;background:none;font-weight:800;font-size:.86rem;color:var(--muted);cursor:pointer;white-space:nowrap}
-.seg[aria-pressed=true]{background:var(--surface);color:var(--fg);box-shadow:var(--shadow)}
-.seg .n{margin-left:.3rem;font-size:.75rem;color:var(--faint)}
-.stepper{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:.6rem 0 .1rem;flex-wrap:wrap}
-.stepper>span{font-weight:800}
-.stepper-ctl{display:flex;align-items:center;gap:.1rem;background:var(--soft);border-radius:var(--r);padding:.1rem}
-.stepper output{min-width:4.2rem;text-align:center;font-weight:900;font-size:1.05rem}
-.checks{list-style:none;margin:0 0 .4rem;padding:0;display:grid;gap:.6rem}
-.checks li{display:flex;gap:.6rem;font-size:.88rem;align-items:flex-start}
-.checks span{flex:none;display:inline-grid;place-items:center;width:1.4rem;height:1.4rem;border-radius:50%;font-size:.8rem;font-weight:900}
-.checks .ok span{background:var(--ok-bg);color:var(--ok)}
-.checks .todo span{background:var(--warn-bg);color:var(--warn)}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
-.kv dt{color:var(--muted)}
-.kv dd{margin:0;font-weight:600}
-
-/* ---- states ---- */
-.empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
-.empty svg{width:3.25rem;height:3.25rem;color:var(--gold);stroke-width:1.5}
-.empty h2{color:var(--fg);font-size:1.06rem;margin:.75rem 0 .25rem}
-.empty p{margin:0 auto;font-size:.88rem;max-width:26rem}
-.empty .btn{margin-top:1rem}
-.skeleton{height:9rem;border-color:transparent;background:linear-gradient(90deg,var(--surface),var(--soft),var(--surface));background-size:200% 100%;animation:shine 1.2s ease-in-out infinite}
-.skeleton.short{height:4.5rem}
-@keyframes shine{from{background-position:100% 0}to{background-position:-100% 0}}
-.center{min-height:100vh;min-height:100dvh;display:grid;place-items:center}
-.spinner{width:2rem;height:2rem;border-radius:50%;border:3px solid var(--line);border-top-color:var(--gold);animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.offline{position:sticky;top:0;z-index:7;background:var(--warn-bg);color:var(--warn);text-align:center;font-size:.85rem;font-weight:800;padding:.4rem 1rem}
-
-/* ---- sign-in, invite and install pages ---- */
-.gate{max-width:28rem;margin:0 auto;padding:calc(2.5rem + env(safe-area-inset-top)) 1rem 2rem}
-.brand{text-align:center;margin-bottom:1.5rem}
-.brand img{border-radius:1.35rem;box-shadow:var(--shadow)}
-.brand h1{font-size:1.5rem;margin:.85rem 0 .25rem}
-.brand p{margin:0;color:var(--muted)}
-.error{min-height:1.4em;margin:.5rem 0;color:var(--bad);font-size:.88rem;font-weight:600}
-.alt{text-align:center;margin:1rem 0 0;font-size:.88rem;color:var(--muted)}
-.toast{position:fixed;left:50%;bottom:calc(5.25rem + env(safe-area-inset-bottom));transform:translate(-50%,1rem);max-width:min(92vw,32rem);padding:.75rem 1.1rem;
-border-radius:var(--r);background:var(--fg);color:var(--bg);font-size:.88rem;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
-z-index:60;text-align:center;box-shadow:var(--shadow-lg)}
-.toast.show{opacity:1;transform:translate(-50%,0)}
-dialog{border:0;padding:0;border-radius:var(--r-lg);background:var(--raised);color:var(--fg);width:min(94vw,30rem);max-height:min(92vh,48rem);box-shadow:var(--shadow-lg)}
-dialog.wide{width:min(94vw,40rem)}
-dialog::backdrop{background:rgba(8,10,20,.55);backdrop-filter:blur(2px)}
-dialog[open]{animation:pop .18s ease-out}
-@keyframes pop{from{opacity:0;transform:translateY(.6rem) scale(.98)}to{opacity:1;transform:none}}
-dialog form,dialog .box{padding:1.35rem 1.25rem 1.1rem}
-dialog h2{font-size:1.15rem;margin-bottom:.35rem}
-dialog p{margin:0 0 .75rem;color:var(--muted);font-size:.88rem}
-dialog .actions:last-child{position:sticky;bottom:0;margin:1rem -1.25rem -1.1rem;padding:.75rem 1.25rem calc(.9rem + env(safe-area-inset-bottom));
-background:var(--raised);border-top:1px solid var(--line)}
-@media (max-width:599.98px){dialog{margin:auto 0 0;width:100vw;max-width:100vw;border-radius:var(--r-lg) var(--r-lg) 0 0;padding-bottom:env(safe-area-inset-bottom)}
-@keyframes pop{from{transform:translateY(100%)}to{transform:none}}
-/* AT 1.29: a wide box (복사, 개발사항에 추가) is a whole-width sheet on a phone too; dialog.wide's 94vw left a gap at the side. */
-dialog.wide{width:100vw}}
-.radios{display:grid;gap:.5rem;margin:.4rem 0}
-.radio{display:flex;align-items:center;gap:.6rem;margin:0;padding:.75rem;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-weight:600;cursor:pointer;font-size:.92rem}
-.radio input{flex:none;width:1.25rem;height:1.25rem;accent-color:var(--accent)}
-.radio:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
-/* ---- 개발사항 [ADMIN-10] ---- */
-.row .check{flex:none;width:1.35rem;height:1.35rem;margin:0;accent-color:var(--accent)}
-.row.picked{background:var(--accent-soft)}
-.bulkbar{position:sticky;bottom:calc(4.6rem + env(safe-area-inset-bottom));z-index:4;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;
-margin:.75rem 0 0;padding:.6rem .75rem;background:var(--raised);border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:var(--shadow-lg)}
-.bulkbar b{margin-right:auto;font-size:.9rem}
-.toolbar.end{justify-content:flex-end}
-.card.picked{outline:2px solid var(--accent)}
-.versions{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr))}
-.version{border:1px solid var(--line);border-radius:12px;padding:.75rem;min-width:0}
-.version.best{border-color:var(--gold)}
-.version p{margin:0 0 .4rem}
-.rows.inbox .row-side{flex-wrap:wrap;justify-content:flex-end}
-.rows.inbox .row-main a{color:inherit;text-decoration:none}
-.rows.inbox .row-main a:hover{text-decoration:underline}
-@media (min-width:600px){.bulkbar{bottom:1rem}.rows.inbox .row-side{flex-direction:row;align-items:center}}
-/* ---- AT 1.29 문의 복사 [ADMCP-01]~[ADMCP-05]: a copy button beside a row's link, the strip of new reports, the copy box ---- */
-.rows>li.has-tool{display:flex;align-items:center}
-.rows>li.has-tool>.row{flex:1;min-width:0}
-.row-tool{flex:none;display:inline-grid;place-items:center;width:2.75rem;height:2.75rem;margin:0 .4rem 0 -.4rem;border:0;border-radius:var(--r-sm);background:none;color:var(--muted);cursor:pointer}
-.row-tool:hover,.row-tool:focus-visible{background:var(--hover);color:var(--fg)}
-.row-tool svg{width:1.15rem;height:1.15rem}
-.fresh{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 .75rem;padding:.6rem .8rem;border-radius:var(--r-sm);background:var(--info-bg);font-size:.9rem}
-.fresh span{flex:1 1 12rem;min-width:0}
-.copy-text{display:block;width:100%;min-height:14rem;max-height:45vh;margin:.5rem 0;font:inherit;font-size:.82rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;resize:vertical}
-.copybox .after{margin:.75rem 0 0;padding:.6rem .75rem;border:1px solid var(--line);border-radius:var(--r-sm)}
-.copybox .after legend{padding:0 .3rem;font-size:.85rem;font-weight:800}
-/* On a phone the bar keeps to 복사 and 다른 일, so it does not cover the list it picks from; wider, everything shows. */
-.bulkbar .more-acts{display:contents}
-@media (max-width:599.98px){.bulkbar:not(.open) .more-acts{display:none}}
-@media (min-width:600px){.bulkbar .more-toggle{display:none}}
-.dev-body{margin:.6rem 0 0;white-space:pre-wrap;font-size:.94rem}
-.history{list-style:none;margin:0;padding:0}
-.history li{padding:.6rem 0;border-top:1px solid var(--line);font-size:.88rem}
-.history li:first-child{border-top:0}
-.history .who{font-weight:800}
-.history .when{color:var(--muted);font-size:.75rem;margin-left:.35rem}
-.history .what{display:block;margin-top:.1rem}
-.history .was{color:var(--muted);text-decoration:line-through}
-.notes{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.5rem}
-.notes li{padding:.5rem .65rem;border-radius:var(--r-sm);background:var(--gold-soft);font-size:.88rem;white-space:pre-wrap}
-.notes cite{margin:0 0 .15rem}
-.mini textarea{min-height:3.5rem}
-.item a.row-main{color:inherit;text-decoration:none}
-.item a.row-main:hover b{text-decoration:underline}
-.kbd{display:inline-block;min-width:1.6rem;padding:.05rem .4rem;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:.4rem;font-size:.8rem;
-font-weight:800;text-align:center;background:var(--surface)}
-.keys{display:grid;grid-template-columns:auto 1fr;gap:.5rem .9rem;align-items:center;font-size:.9rem;margin:0 0 .5rem}
-/* ---- 1.23 [ADMUX-01]~[ADMUX-08] ---- */
-/* Touch: on a finger, every small control is still 44 px. */
-@media (pointer:coarse){.btn.small,.seg,.levels button{min-height:2.75rem}.chip button{width:2.75rem;height:2.75rem}.chip.pick{min-height:2.75rem}.icon-btn{width:2.75rem;height:2.75rem}}
-.btn[aria-busy=true]{opacity:.7;cursor:progress}
-.row.static{cursor:default}.row.static:hover{background:none}.row.static:active{transform:none}
-.rows .row.selected,.rows .item.selected{box-shadow:inset 3px 0 0 var(--accent);background:var(--hover)}
-.row-icons{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
-.row-icons .pill{font-size:.8rem}
-.more{display:flex;justify-content:center;margin:0 0 1rem}
-.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:0 0 .75rem}
-.toolbar input[type=search]{flex:1 1 12rem;min-width:0}
-.toolbar select,.toolbar input[type=date]{width:auto;min-height:2.75rem;flex:0 1 auto}
-select{appearance:auto}
-.banner{position:sticky;top:0;z-index:7;display:flex;align-items:center;justify-content:center;gap:.75rem;flex-wrap:wrap;padding:.45rem 1rem;
-background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;text-align:center}
-.banner.warn{background:var(--warn-bg);color:var(--warn)}
-.banner .btn{min-height:2.25rem}
-.failed{text-align:center;padding:2.5rem 1rem;color:var(--muted)}
-.failed h2{color:var(--fg);font-size:1.06rem;margin:.5rem 0 .25rem}
-.toast .undo{margin-left:.75rem;border:0;background:none;color:var(--accent-soft);font-weight:900;text-decoration:underline;cursor:pointer;pointer-events:auto;min-height:2rem}
-.toast.show.has-undo{pointer-events:auto}
-/* Two panes: on a wide screen the list stays beside the open item. */
-@media (min-width:1024px){.split{display:grid;grid-template-columns:minmax(17rem,24rem) minmax(0,1fr);gap:1rem;align-items:start}
-.split>.pane-list{position:sticky;top:4.75rem;max-height:calc(100vh - 6rem);max-height:calc(100dvh - 6rem);overflow:auto;border-radius:var(--r-lg)}
-.split>.pane-list .rows{margin:0}.split .row[aria-current=true]{background:var(--accent-soft)}}
-@media (max-width:1023.98px){.split>.pane-list{display:none}}
-@media (min-width:1024px) and (max-width:1439.98px){.split .cols{display:block}}
-/* Charts: drawn as SVG, coloured here (the CSP allows no style attributes). */
-.chart{display:block;width:100%;height:auto;margin:.5rem 0}
-.chart .bar{fill:var(--accent);stroke:none}
-.chart .bar:hover{fill:color-mix(in srgb,var(--accent) 75%,var(--fg))}
-.chart .grid{stroke:var(--line);stroke-width:1}
-.chart .axis{fill:var(--muted);stroke:none;font-size:11px;font-family:inherit}
-.chart .before{stroke:var(--gold);stroke-width:2;stroke-dasharray:5 4}
-.legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.8rem;color:var(--muted)}
-.legend .sw{display:inline-block;width:.9rem;height:.5rem;border-radius:2px;background:var(--accent);margin-right:.35rem;vertical-align:middle}
-.legend .sw.before{background:none;border-top:2px dashed var(--gold);height:0}
-ins{background:var(--ok-bg);color:var(--ok);text-decoration:none;border-radius:3px}
-del{background:var(--bad-bg);color:var(--bad);border-radius:3px}
-.wdiff{white-space:pre-wrap;overflow-wrap:anywhere}
-.diffbox{white-space:pre-wrap;font-size:.9rem;padding:.6rem .75rem;background:var(--soft);border-radius:var(--r-sm);margin:.5rem 0 0}
-/* The home queue and the dashboard numbers. */
-.queue-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:.1rem}
-.queue-list li{display:flex;align-items:center;gap:.6rem;padding:.55rem .25rem;border-top:1px solid var(--line);flex-wrap:wrap}
-.queue-list li:first-child{border-top:0}
-.queue-list .q-main{flex:1 1 12rem;min-width:0}
-.queue-list .q-main b{display:block;font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.queue-list .q-main a{color:inherit;text-decoration:none}.queue-list .q-main a:hover{text-decoration:underline}
-.queue-list .q-main small{color:var(--muted);font-size:.8rem}
-.delta{font-size:.8rem;font-weight:800;margin-left:.35rem}
-.delta.up{color:var(--bad)}.delta.down{color:var(--ok)}
-.people{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.4rem}
-.people li{padding:.3rem .7rem;border-radius:99px;background:var(--soft);font-size:.86rem;font-weight:700}
-/* The timeline of a question. */
-.timeline{list-style:none;margin:0;padding:0 0 0 .9rem;border-left:2px solid var(--line)}
-.timeline li{position:relative;padding:.35rem 0 .35rem .6rem;font-size:.86rem}
-.timeline li::before{content:"";position:absolute;left:-1.28rem;top:.75rem;width:.6rem;height:.6rem;border-radius:50%;background:var(--line-strong)}
-.timeline li.user::before{background:var(--gold)}.timeline li.admin::before{background:var(--accent)}.timeline li.note::before{background:var(--warn)}
-.timeline .when{color:var(--muted);font-size:.75rem;margin-left:.35rem}
-.typing{font-size:.82rem;color:var(--accent);font-weight:700;margin:.25rem 0}
-.typing::before{content:"✎ "}
-.stepnav{display:flex;gap:.5rem;justify-content:space-between;align-items:center;margin:0 0 .75rem}
-.queue-bar{position:sticky;top:4rem;z-index:4;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.5rem .75rem;margin:0 0 .75rem;
-background:var(--accent-soft);color:var(--accent);border-radius:var(--r);font-weight:800;font-size:.88rem}
-.queue-bar b{margin-right:auto}
-/* The command palette. */
-dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
-@media (max-width:599.98px){dialog.palette{margin:0;width:100vw;max-width:100vw;max-height:100dvh;height:100dvh;border-radius:0}}
-.palette .box{padding:.75rem}
-.palette input{font-size:1.05rem}
-.palette .rows{margin:.5rem 0 0;max-height:60vh;overflow:auto}
-.palette .row{min-height:3rem}
-.palette .row[aria-selected=true]{background:var(--accent-soft)}
-.palette small.kind{color:var(--muted);font-size:.75rem;margin-left:auto;flex:none}
-.pw{position:relative}.pw input{padding-right:5.5rem}
-.pw .show{position:absolute;right:.35rem;top:50%;transform:translateY(-50%);min-height:2.25rem}
-.saved{font-size:.75rem;color:var(--muted)}
-.prefs .field select{flex:1}
-.check-row{display:flex;align-items:center;gap:.5rem;margin:.4rem 0;font-weight:600;font-size:.92rem}
-.check-row input{width:1.2rem;height:1.2rem;accent-color:var(--accent)}
-.who.link{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:2px}
-.btn.disabled{opacity:.45;pointer-events:none}
-.pane-main{min-width:0}
-.toolbar .btn{flex:none}
-/* AM 1.28 기능 관리 [ADMUX-21]~[ADMUX-27] */
-.lead{margin:.2rem 0 .5rem;font-size:1rem;font-weight:600;line-height:1.5}
-.pills{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center;justify-content:flex-end}
-.row-side.pills{flex-direction:row;max-width:45%}
-@media (max-width:599.98px){.row-side.pills{max-width:55%}}
-.checklist{list-style:none;margin:0;padding:0;display:grid;gap:.55rem}
-.checklist li{display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;font-size:.92rem}
-.checklist .mark{flex:none;width:1.6rem;height:1.6rem;border-radius:50%;display:inline-grid;place-items:center;font-weight:800;background:var(--soft);color:var(--muted)}
-.checklist .met .mark{background:var(--ok-bg);color:var(--ok)}
-.checklist .unmet .mark{background:var(--warn-bg);color:var(--warn)}
-.checklist .phone .mark{background:var(--info-bg);color:var(--info)}
-.checklist .c-main{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
-.checklist small{display:block;color:var(--muted);font-size:.8rem}
-.card.flag-alert{border-color:var(--bad);background:var(--bad-bg)}
-.agenda .date{flex:none;width:4.5rem;display:flex;flex-direction:column;font-weight:800;font-size:.9rem}
-.agenda .date small{font-weight:600;color:var(--muted);font-size:.75rem}
-.cond-out{margin:.5rem 0 0;font-size:.88rem}
-.cond-out .lines{padding-left:1.2rem}
-#flag-cond{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9rem}
-.sim-grid{display:grid;gap:.25rem .75rem;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-@media (forced-colors:active){.btn,.seg,.tab,.card{border:1px solid CanvasText}}
-`;
 
 /** The app in the browser. Serialized into /admin/app.js, so it uses nothing from this module. */
-function adminApp(L, BUILD) {
+function adminApp(L, BUILD, M) {
   const app = document.getElementById("app");
   const toastBox = document.getElementById("toast");
   const dialog = document.getElementById("dialog");
@@ -786,37 +253,8 @@ function adminApp(L, BUILD) {
   /** [INQ-04] How long the asker has waited: red past a day, so nothing is missed. */
   const waitPill = (q) => q.waitingHours === null || q.waitingHours === undefined || q.status !== "open" ? ""
     : `<span class="pill ${q.waitingHours >= 24 ? "bad" : q.waitingHours >= 8 ? "warn" : ""}">${L.waited(q.waitingHours)}</span>`;
-  const ACTION_NAMES = {
-    login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
-    invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
-    adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
-    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
-    post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
-    reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음",
-    inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
-    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음",
-    dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
-    dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
-    dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
-    // [MON-08][MON-09][MON-10]
-    launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
-    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음",
-    pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
-    // [SRV-04][SRV-05][ADMIN-14]
-    notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
-    ops_done: "이달 할 일 마침", ops_undo: "이달 할 일 되돌림", share_remove: "공유 링크 내림",
-    // [ADMIN-16][ADMIN-17][ADMUX-06]
-    inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
-    inquiry_copy: "문의 개발로 복사함", // AT 1.29 [ADMCP-03]
-    rate_set: "임금표 처리",
-    // AM 1.28 [FLAG-21][FLAG-25][FLAG-32]
-    flag_force_off: "기능 강제로 끔", flag_force_on: "기능 강제로 켬", flag_clear: "기능 강제 풀기", flag_conditions: "기능 조건 바꿈", flag_range: "기능 앱 판 범위 바꿈",
-    flag_check: "확인했어요", flag_uncheck: "확인 취소", flag_auto_on: "기능이 조건대로 켜짐", flag_auto_off: "기능이 조건대로 꺼짐",
-    flag_expire: "강제 기한이 끝남", flag_migrate: "1.27 스위치를 기능 관리로 옮김", policy_edit: "처리방침 일정 고침",
-    launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
-    auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
-  };
+  // AX 1.30 [ADMX-01] Every activity code's words live in admin-lib now (L.actionName for a code nobody named yet).
+  const ACTION_NAMES = L.ACTION_NAMES;
   /** [ADMIN-17] The activity screen's 종류 filter, as the server names them. */
   const AUDIT_KIND_NAMES = { login: "로그인", admins: "관리자", review: "검토", companies: "회사·규칙", rewards: "보상", community: "토론·임금표",
     inquiries: "문의", dev: "개발사항", ops: "운영", settings: "설정", flags: "기능 관리" };
@@ -928,6 +366,8 @@ function adminApp(L, BUILD) {
     flagShow: "all", flagQuery: "", flagView: "", flagSim: null,
     // AT 1.29 [ADMCP-02][ADMCP-06] 문의 종류·복사 전만·같은 기기 거르기, the copy box open now, the row a Shift range starts at.
     inquiryKind: "", inquiryCopied: "", inquirySender: "", copy: null, pickAnchor: null, bulkMore: false,
+    // AX 1.30 [ADMX-06][ADMX-09][ADMX-03][ADMX-08] 회사 순서·여러 개, 검토 여러 개, 여러 판 같은 항목도 보기, 찾기·이동의 서버 찾기, 주의 필요 수.
+    companySort: "", companyPick: null, reviewPick: null, cmpAll: null, alertsN: 0,
   };
 
   const esc = L.esc;
@@ -966,7 +406,7 @@ function adminApp(L, BUILD) {
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
     rewards: { status: "rewardTab", q: "rewardQuery" },
-    companies: { q: "query" },
+    companies: { q: "query", sort: "companySort" /* AX 1.30 [ADMX-06] */ },
     metrics: { days: "metricDays", from: "metricFrom", to: "metricTo" },
     // AN 1.28 [ADMUX-33][ADMUX-35] 오늘 › 할 일 keeps 받은함's 보기, 이달 할 일 keeps 운영's month.
     chores: { month: "opsMonth" },
@@ -1165,7 +605,7 @@ function adminApp(L, BUILD) {
     refreshBadges();
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
-      if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; })));
+      if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
@@ -1175,7 +615,7 @@ function adminApp(L, BUILD) {
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
-      if (name === "companies" && !id) jobs.push(api(`/companies?q=${encodeURIComponent(S.query)}`).then(keep((d) => { S.data.list = d; })));
+      if (name === "companies" && !id) jobs.push(api(companiesPath()).then(keep((d) => { S.data.list = d; })));
       if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then(keep((d) => { S.data.company = d; })));
       if (name === "community") {
         // An id is one talk: company.setup, opened from the review screen.
@@ -1226,6 +666,9 @@ function adminApp(L, BUILD) {
     // A screen left while it loaded does not repaint over the new one.
     if (seq.current("load", n) && routeKey() === key && S.phase === "app") render({ keepScroll: true });
   }
+
+  /** AX 1.30 [ADMX-06] The companies list as the server sorts it. */
+  const companiesPath = () => `/companies?q=${encodeURIComponent(S.query)}${S.companySort ? `&sort=${S.companySort}` : ""}`;
 
   /** [ADMIN-16] The questions list: one page, or the next page added to the one shown ([more]). */
   async function loadInquiries(n, more = false) {
@@ -1383,7 +826,8 @@ function adminApp(L, BUILD) {
     }
     updateBadges(list, bottom);
     const left = (S.overview?.inquiries ?? 0) + (S.overview?.pending ?? 0);
-    document.title = left ? `(${left}) 밤낮 관리자` : "밤낮 관리자";
+    // [ADMX-11] A dot in the tab's title while something needs a look.
+    document.title = `${S.alertsN ? "● " : ""}${left ? `(${left}) ` : ""}밤낮 관리자`;
   }
   // AN 1.28 끝
 
@@ -1457,7 +901,8 @@ function adminApp(L, BUILD) {
     const rest = list.filter((h) => !bottom.tabs.includes(h.key)).reduce((n, h) => n + L.hubBadge(h, o, S.me), 0);
     for (const el of document.querySelectorAll("[data-badge]")) {
       const [kind, key] = el.dataset.badge.split(":");
-      const n = kind === "hub" ? (key === "more" ? rest : L.hubBadge(key, o, S.me)) : kind === "tab" ? L.tabBadge(key, o, S.me) : 0;
+      // AX 1.30 [ADMX-11] 오늘's number is how many things 주의 필요 lists (as of the last time 오늘 was opened).
+      const n = kind === "hub" ? (key === "more" ? rest : key === "today" ? S.alertsN : L.hubBadge(key, o, S.me)) : kind === "tab" ? L.tabBadge(key, o, S.me) : 0;
       el.textContent = n || "";
     }
     const strip = document.getElementById("waiting");
@@ -1524,23 +969,23 @@ function adminApp(L, BUILD) {
    * 기능별 효과 (effectsView) reads AM's flag numbers through /effects (1.28 통합).
    */
   const VIEWS = {
-    home: () => homeView(),
+    home: () => V.homeView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
     templates: () => templatesView(),
     sla: () => slaView(),
-    review: () => reviewView(),
-    versions: () => versionsView(),
+    review: () => V.reviewView(),
+    versions: () => V.versionsView(),
     community: () => communityView(),
-    companies: (id) => (id ? companyView(S.data.company) : companiesView()),
+    companies: (id) => (id ? companyView(S.data.company) : V.companiesView()),
     shares: () => sharesView(),
     adopt: () => adoptView(),
     flags: (id) => (id ? flagView() : flagsView()),
     types: () => typesView(),
     notices: () => noticesView(),
     chores: () => choresView(),
-    gates: () => gatesView(),
-    metrics: () => metricsView(),
+    gates: () => V.gatesView(),
+    metrics: () => V.metricsView(),
     effects: () => effectsView(),
     audit: () => auditView(),
     admins: () => adminsView(),
@@ -1581,214 +1026,10 @@ function adminApp(L, BUILD) {
   /** [ADMIN-16] 더 보기 under a paged list. */
   const moreButton = (next, act, total, shown) => (next ? `<div class="more"><button class="btn" data-act="${act}">더 보기${total ? ` <span class="meta">${shown}/${total}</span>` : ""}</button></div>` : "");
 
-  // ---- 오늘 [ADMUX-06] AN 1.28 [ADMUX-33] ----
-
-  /**
-   * [ADMUX-33] 오늘: the one 할 일 list (what 1.27 had as 지금 할 일 and 받은함), nearest deadline first, filtered by
-   * 오늘까지·이번 주·내 것·모두 (in the address), with 맡기, 바로 답하기 and 내일 볼게요 in place. Below it the
-   * numbers and how they moved, who holds how many and the recent activity. [ADMUX-40] AM's 기능 알림 on top.
-   */
-  function homeView() {
-    const t = S.data.today;
-    const top = flagAlertCard();
-    if (!t) return top + skeleton(3);
-    const o = { ...(S.overview ?? {}), ...t };
-    const hour = new Date().getHours();
-    const hi = hour < 6 ? "늦은 밤이에요" : hour < 12 ? "좋은 아침이에요" : hour < 18 ? "좋은 오후예요" : "좋은 저녁이에요";
-    const tiles = [];
-    const tile = (k, v, d, to, hot, extra = "") => tiles.push(`<a class="tile${hot && v ? " hot" : ""}" href="${to}"><span class="k">${esc(k)}</span>
-      <span class="v">${v ?? 0}${extra}</span><span class="d">${esc(d)}</span></a>`);
-    const inq = (params) => L.routeHash("inquiries", null, params);
-    if (can("inquiries")) {
-      const diff = (o.inquiriesToday ?? 0) - (o.inquiriesYesterday ?? 0);
-      tile("오늘 새 문의", o.inquiriesToday, `어제 ${o.inquiriesYesterday ?? 0}건`, inq({ status: "open", sort: "newest" }), false,
-        diff ? `<span class="delta ${diff > 0 ? "up" : "down"}">${diff > 0 ? "▲" : "▼"}${Math.abs(diff)}</span>` : "");
-      tile("답 대기", o.inquiries, "답을 기다리는 문의", inq({ status: "open", sort: "sla" }), true);
-      tile("오늘 목표 넘김", o.slaLateToday, "오늘 안에 답 목표를 넘겨요", inq({ status: "open", sort: "sla" }), true);
-      tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), true);
-      // AT 1.29 [ADMCP-04] New problem reports nobody copied for development yet, one tap from the list that copies them.
-      tile("복사 전 문제 신고", o.bugsUncopied, "개발에 넘기기 전이에요", inq({ status: "all", kind: "bug", copied: "no" }), true);
-    }
-    if (can("review")) {
-      // [ADMUX-10] The menu badge's number, with what it is made of.
-      tile("검토 대기", L.reviewCount(o), `제보 ${o.pending ?? 0} · 앱에 없는 방식 ${o.asks ?? 0} · 달라요 ${o.flagged ?? 0}`, href("review"), true);
-    }
-    if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", L.routeHash("dev", null, { status: "todo" }), can("devStatus", "edit"));
-    if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", L.routeHash("community", null, { show: "flagged" }), true);
-    if (can("rewards")) tile("보상 대기", o.owed, "드릴 프로 기간", href("rewards"), false);
-    if (S.me.owner) tile("승인 대기 관리자", o.admins?.waiting, "가입한 관리자", href("admins"), true);
-    // [ADMIN-14] 이달 할 일 in place of reminder mail (결정 D1), now 출시 › 이달 할 일.
-    if (can("ops")) tile("이달 할 일", o.opsLeft, "요율·공휴일·처리방침 점검", href("chores"), false);
-    const stats = [];
-    if (can("companies")) stats.push(["회사", o.companies], ["쓰는 규칙", o.rules]);
-    if (can("review")) stats.push(["모든 제보", o.reports]);
-    if (can("community")) stats.push(["토론 글", o.posts]);
-    const feed = o.recent ?? null;
-    const people = (o.assigned ?? []).length ? `<section class="card"><h2>누가 몇 건 맡았나</h2><ul class="people">${o.assigned.map((a) =>
-      `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul></section>` : "";
-    const views = S.prefs.views.filter((v) => String(v.hash).startsWith("#/"));
-    return `${top}<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
-        <p>${o.doneToday ? `오늘 ${o.doneToday}건 처리했어요. ` : ""}${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, toggles()))}`}</p></div>
-      ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
-      ${todoCard(t.todo)}
-      <div class="tiles">${tiles.join("")}</div>
-      ${stats.length ? `<p class="stats">${stats.map(([k, v]) => `<span>${esc(k)}<b>${v ?? 0}</b></span>`).join("")}</p>` : ""}
-      <div class="cols">${people}
-        ${can("audit") ? `<section class="card"><div class="card-head"><h2>최근 활동</h2><a class="btn small ghost" href="${href("audit")}">모두 보기</a></div>
-          ${feed === null ? '<div class="card skeleton short"></div>' : feed.length ? `<ul class="feed">${feed.map(feedItem).join("")}</ul>` : '<p class="hint">아직 활동이 없어요.</p>'}</section>` : ""}
-      </div>`;
-  }
-
-  /**
-   * [ADMUX-33] 할 일: everything waiting on this admin's areas in one list. 받은함's rules: a question's deadline is
-   * its answer target, a post the flags hid 30 days, a setup or 임금표 entry a week, the month's chores its end.
-   */
-  function todoCard(d) {
-    const c = d?.counts ?? {};
-    const editInq = can("inquiries", "edit");
-    const head = `<div class="card-head"><h2>할 일</h2>${S.queue ? "" : editInq && (S.overview?.inquiries ?? 0) ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
-      <p class="waiting" id="waiting" data-hub="today">${waitingItems("today")}</p>
-      <div class="segmented" role="group" aria-label="할 일 보기">${seg("inbox-view", "today", S.inboxView, "오늘까지", c.today)}${seg("inbox-view", "week", S.inboxView, "이번 주", c.week)}
-        ${seg("inbox-view", "mine", S.inboxView, "내 것", c.mine)}${seg("inbox-view", "all", S.inboxView, "모두", c.all)}</div>`;
-    const now = Date.parse(d.now);
-    const kst = new Date(now + 9 * 3600e3);
-    const todayEnd = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 3600e3;
-    const hide = snoozed();
-    const list = d.items.filter((x) => !hide[`${x.type}:${x.id}`]).filter((x) => (S.inboxView === "all" ? true : S.inboxView === "mine" ? x.mine
-      : x.due && Date.parse(x.due) < (S.inboxView === "today" ? todayEnd : todayEnd + 6 * 864e5)));
-    const hidden = Object.keys(hide).length;
-    const again = hidden ? `<p class="meta">내일로 미룬 ${hidden}개는 숨겼어요. <button class="btn small ghost" data-act="inbox-unsnooze">다시 보기</button></p>` : "";
-    if (!list.length) {
-      return `<section class="card todo-card">${head}<p class="hint">${S.inboxView === "all" ? "기다리는 일이 없어요." : "이 보기에는 기다리는 일이 없어요."} 새로 오면 여기와 메뉴에 숫자로 보여요.</p>${again}</section>`;
-    }
-    const flagged = (x) => x.type === "flagged_post" || x.type === "hidden_post";
-    return `<section class="card todo-card">${head}
-      <p class="hint">내 권한 안에서 기다리는 일을 기한이 가까운 것부터 모았어요. '내일 볼게요'는 이 기기에서만 내일 아침까지 숨겨요.</p>
-      <ul class="rows inbox">${list.map((x) => {
-        const answer = x.type === "inquiry" && editInq && (!x.assignee || x.mine) ? `<details class="quick" data-key="qr:${esc(x.id)}"><summary>바로 답하기</summary>
-          <form data-form="quick-reply" data-id="${esc(x.id)}"><label class="sr" for="qr-${esc(x.id)}">답</label>
-            <textarea id="qr-${esc(x.id)}" name="text" maxlength="4000" required placeholder="보낸 분 앱에 보일 답을 적어요"></textarea>
-            <div class="actions"><button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">보내기</button></div></form></details>` : "";
-        return `<li><div class="row">
-        <span class="row-main"><b class="wrap"><a href="${inboxLink(x)}">${esc(INBOX_NAMES[x.type] ?? x.type)} · ${esc(x.title)}</a></b>
-          <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>
-        <span class="row-side">${dueText(x, Date.now())}
-          ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
-          <a class="btn small${x.type === "inquiry" ? "" : " primary"}" href="${inboxLink(x)}">${x.type === "inquiry" ? "열기" : "보기"}</a>
-          <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}">내일 볼게요</button></span></div>${answer}</li>`;
-      }).join("")}</ul>${again}</section>`;
-  }
-
-  function feedItem(e) {
-    const about = e.label ? (e.link ? ` <a class="meta" href="${esc(e.link)}">${esc(e.label)}</a>` : ` <span class="meta">${esc(e.label)}</span>`)
-      : e.target ? ` <span class="meta">${esc(e.target)}</span>` : "";
-    return `<li><span class="when">${esc(ago(e.at))}</span><span>${esc(ACTION_NAMES[e.action] ?? e.action)}${about}</span>
-      <span class="who">${esc(e.actor || "앱 사용자")}</span></li>`;
-  }
-
   function permPills(perms, areas) {
     const on = Object.entries(perms ?? {}).filter(([, l]) => l !== "none");
     if (!on.length) return '<span class="pill">권한 없음</span>';
     return on.map(([a, l]) => `<span class="pill ${l === "edit" ? "info" : ""}">${esc(areas[a] ?? a)}${toggles().includes(a) ? "" : ` ${LEVEL_NAMES[l]}`}</span>`).join("");
-  }
-
-  // ---- review ----
-
-  function reviewView() {
-    const q = S.data.queue;
-    const points = S.overview?.settings?.adoptPoints ?? 3;
-    const editable = can("review", "edit");
-    const counts = q ? { all: q.groups.length + q.asks.length + q.flagged.length, groups: q.groups.length, asks: q.asks.length, flagged: q.flagged.length } : {};
-    const head = `<div class="segmented" role="group" aria-label="보기">
-        ${seg("review-filter", "all", S.reviewFilter, "전체", counts.all)}${seg("review-filter", "groups", S.reviewFilter, "제보", counts.groups)}
-        ${seg("review-filter", "asks", S.reviewFilter, "앱에 없는 방식", counts.asks)}${seg("review-filter", "flagged", S.reviewFilter, "달라요 달린 규칙", counts.flagged)}</div>
-      <p class="hint">같은 규칙을 서로 다른 ${S.overview?.settings?.adoptPersons ?? 3}명 이상이 보내 ${points}점이 되고, 투표한 분의 ${S.overview?.settings?.adoptAgree ?? 75}% 이상이 맞았어요라고 하면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.${editable ? "" : " 보기 권한이라 채택·거절은 할 수 없어요."}</p>`;
-    if (!q) return head + skeleton();
-    const f = S.reviewFilter;
-    const parts = [];
-    if ((f === "all" || f === "groups") && q.groups.length) {
-      parts.push((f === "all" ? `<h2 class="section">채택을 기다리는 제보<span class="count">${q.groups.length}</span></h2>` : "") +
-        q.groups.map((g) => groupCard(g, !g.changes && q.groups.length <= 2, editable)).join(""));
-    }
-    if ((f === "all" || f === "asks") && q.asks.length) {
-      parts.push(`<h2 class="section">앱에 없는 방식<span class="count">${q.asks.length}</span></h2><p class="hint">앱으로 설정하지 못한 방식이에요. 답을 고르면 보낸 분 앱에 보여요.</p>` +
-        q.asks.map((a) => askCard(a, editable)).join(""));
-    }
-    if ((f === "all" || f === "flagged") && q.flagged.length) {
-      parts.push(`<h2 class="section">달라요가 있는 규칙<span class="count">${q.flagged.length}</span></h2>${q.flagged.map((x) => flagCard(x, editable)).join("")}`);
-    }
-    if (!parts.length) {
-      return head + empty("검토할 것이 없어요", "새 제보가 오면 여기와 메뉴에 숫자로 보여요.",
-        can("community") && S.overview?.flaggedPosts ? `<a class="btn" href="${L.routeHash("community", null, {})}">신고된 글 ${S.overview.flaggedPosts}개 보기</a>` : "");
-    }
-    return head + `<div class="grid">${parts.join("")}</div>`;
-  }
-
-  function askCard(a, editable) {
-    return `<article class="card">
-      <div class="head"><h3>${esc(a.company.name)}${a.dept ? ` <span class="dept">${esc(a.dept)}</span>` : ""}</h3><span class="pill warn">앱에 없는 방식</span></div>
-      <p class="meta">${a.verified ? "명세서 확인 · " : ""}${moment(a.at)}</p>
-      <blockquote>${esc(a.note)}</blockquote>
-      <details><summary>보낸 분이 맞춰 둔 설정</summary>${lines(a.lines)}</details>
-      ${editable ? `<div class="actions"><button class="btn primary" data-act="answer" data-id="${a.id}">답하기</button></div>` : ""}
-    </article>`;
-  }
-
-  function groupCard(g, open, editable) {
-    const verified = g.reports.filter((r) => r.verified).length;
-    // AI 1.27 [PLAZA-30] Ticks from older apps with no matched month behind them.
-    const claims = g.reports.filter((r) => r.claim).length;
-    const kind = g.blocked && g.replaces ? '<span class="pill warn">새 버전 후보</span>'
-      : g.replaces ? `<span class="pill">지금 v${g.replaces.version}와 달라요</span>` : '<span class="pill info">새 규칙</span>';
-    const gist = g.changes ? "" : g.lines.find(([label]) => label === "근무")?.[1];
-    // [ADMUX-05] Opened or closed by the admin stays so across refreshes and screens (this visit).
-    const key = `g:${g.company.id}.${g.setup}`;
-    const siblings = (S.data.queue?.groups ?? []).filter((x) => x.company.id === g.company.id && x !== g && (x.dept ?? "") !== (g.dept ?? "")).length;
-    // [ADMUX-09] Another group of the same company and department: this one's name and what only it has.
-    const twin = L.setupDiff(S.data.queue?.groups ?? []).get(g);
-    const why = L.waitReason(g, S.overview?.settings?.adoptAgree ?? 75);
-    return `<article class="card">
-      <div class="head"><h3>${esc(g.company.name)}${g.dept ? ` <span class="dept">${esc(g.dept)}</span>` : ""}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</h3>${kind}</div>
-      ${twin?.diff ? `<p class="gist twin"><b>${esc(twin.diff)}</b></p>` : ""}
-      <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""}${claims ? ` · 명세서 확인(근거 없음) ${claims}건` : ""} · ${day(g.reports[0].at)}</p>
-      ${gist ? `<p class="gist">${esc(gist)}</p>` : ""}
-      <div class="score"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}점</b></div>
-      ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
-      <p class="meta">신뢰도 ${g.trust ?? 0} · 맞았어요 ${g.agree ?? 0}%${g.posts ? ` · 토론 ${g.posts}개` : ""}</p>
-      ${g.company.hidden ? '<p class="note warn">숨긴 회사예요. 채택해도 회사 찾기에 나오지 않아요.</p>' : ""}
-      ${g.turnedDown ? `<p class="note warn">${g.turnedDown === "withdrawn" ? "전에 내린 규칙과 같은 설정이에요" : "전에 거절한 설정이에요"}. 자동으로 채택되지 않아요.</p>`
-        : g.persons >= 2 && g.networks < 2 ? '<p class="note warn">모두 1시간 안에 같은 네트워크에서 보냈어요. 한 분이 여러 번 보냈을 수도 있어서 자동으로 채택하지 않았어요.</p>'
-        : g.doubted && g.bad ? `<p class="note warn">달라요가 많아 자동으로 채택하지 않아요. 토론을 읽고 정해 주세요.</p>` : ""}
-      ${g.changes ? changes(g.changes) : ""}
-      ${siblings ? `<p class="meta">같은 회사 다른 부서 제보 ${siblings}건도 기다려요</p>` : ""}
-      <details data-key="${key}"${S.opened.get(key) ?? open ? " open" : ""}><summary>보낸 설정</summary>${lines(g.lines)}</details>
-      ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : r.claim ? "명세서 확인(근거 없음) · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
-      ${g.bad ? `<p class="note bad">달라요 ${g.bad}명</p>` : ""}
-      <div class="actions">
-        ${can("community") && g.posts ? `<a class="btn ghost" href="${href("community", `${g.company.id}.${g.setup}`)}">토론 ${g.posts}개 읽기</a>` : ""}
-        ${can("companies") ? `<a class="btn ghost" href="${href("companies", g.company.id)}">회사 열기</a>` : ""}
-        ${editable ? `<button class="btn" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}">거절</button>
-        <button class="btn primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button>` : ""}
-      </div>
-    </article>`;
-  }
-
-  function changes(c) {
-    const items = [...c.removed.map((l) => ["del", l]), ...c.added.map((l) => ["add", l])];
-    if (!items.length) return '<p class="note">지금 쓰는 규칙과 내용이 같아요.</p>';
-    return `<div class="diff"><p class="diff-title">지금 쓰는 규칙과 다른 점</p><ul>${items.map(([k, [label, text]]) =>
-      `<li class="${k}"><span class="sign" aria-label="${k === "add" ? "새 값" : "지금 값"}">${k === "add" ? "+" : "−"}</span><span><b>${esc(label)}</b> ${esc(text)}</span></li>`).join("")}</ul></div>`;
-  }
-
-  function flagCard(f, editable) {
-    return `<article class="card">
-      <div class="head"><h3>${esc(f.company.name)}${f.dept ? ` <span class="dept">${esc(f.dept)}</span>` : ""} <span class="ver">v${f.version}</span></h3>
-        <span class="pill bad">달라요 ${f.bad}</span></div>
-      <p class="meta">맞았어요 ${f.good}명 · 달라요 ${f.bad}명${f.names ? ` · 이름이 이상해요 ${f.names}` : ""}${f.old ? ` · 예전 정보 ${f.old}` : ""}</p>
-      <details><summary>규칙 내용</summary>${lines(f.lines)}</details>
-      <div class="actions">${can("companies") ? `<a class="btn ghost" href="${href("companies", f.company.id)}">회사 열기</a>` : ""}
-        ${can("takedown", "edit") ? `<button class="btn danger" data-act="withdraw-rule" data-id="${f.rule}">규칙 내리기</button>` : ""}</div>
-    </article>`;
   }
 
   // ---- the talk on rule sets [COMM-06] ----
@@ -1957,8 +1198,8 @@ function adminApp(L, BUILD) {
         <button class="btn" data-act="inquiry-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>
         ${picking ? "" : csvButton("inquiries", S.data.inquiries?.inquiries)}
         ${edit && S.inquiryStatus === "open" ? '<button class="btn primary" data-act="queue-start">큐 모드</button>' : ""}</div>
-      <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
-        `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}`;
+      <div class="filterbar"><div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
+        `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}</div>`;
     if (!d) return head + skeleton();
     const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender;
     if (!d.inquiries.length) {
@@ -2415,25 +1656,6 @@ function adminApp(L, BUILD) {
 
   // ---- companies ----
 
-  function companiesView() {
-    return `<div class="searchbar"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
-        enterkeyhint="search" aria-label="회사 찾기">${can("companies", "edit") ? `<button class="btn primary" data-act="new-company">${icon(P.plus)}회사 만들기</button>` : ""}</div>
-      <div id="company-list">${companyRows()}</div>`;
-  }
-
-  function companyRows() {
-    const list = S.data.list?.companies;
-    if (!list) return skeleton();
-    if (!list.length) {
-      return empty(S.query ? "찾는 회사가 없어요" : "아직 회사가 없어요", S.query ? "회사 만들기로 직접 만들 수 있어요." : "제보가 오면 회사가 저절로 생겨요.");
-    }
-    return `<ul class="rows">${list.map((c) => `<li><a class="row" href="${href("companies", c.id)}">
-      <span class="row-main"><b>${esc(c.name)}</b><small>${[c.rules ? `규칙 ${c.rules}` : "규칙 없음", c.pending ? `대기 ${c.pending}` : "", `제보 ${c.reports}`,
-        // [PLAZA-13] Phones that joined the company (결정 D79).
-        c.members ? `참여 ${c.members}` : "", c.aliases ? `다른 이름 ${c.aliases}` : ""].filter(Boolean).join(" · ")}</small></span>
-      ${c.mergedInto ? '<span class="pill">합쳐짐</span>' : c.hidden ? '<span class="pill">숨김</span>' : c.pending ? '<span class="pill warn">대기</span>' : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>`;
-  }
-
   function companyView(c) {
     if (!c || c.id !== S.route.id) return skeleton(3);
     if (c.mergedInto) {
@@ -2485,6 +1707,8 @@ function adminApp(L, BUILD) {
       <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
         <p class="meta">${r.source === "auto" ? "자동 채택" : r.source === "rival" ? "더 믿을 판으로 바뀜" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}${whyLine(r.why)}</p></div>
         <span class="pill ${tone}">${label}</span>${r.doubted ? '<span class="pill warn" title="달라요가 많아 앱에서 대표 주기로 보이지 않아요">대표에서 빠짐</span>' : ""}${r.stable ? '<span class="pill ok" title="3대 이상이 같은 값을 쓰고 30일 동안 고친 사람이 없어요">안정</span>' : ""}</div>
+      ${r.changesFromPrevious?.summary ? `<p class="meta change-line">v${r.changesFromPrevious.version}와 다른 점: <b>${esc(r.changesFromPrevious.summary)}</b></p>` : ""}
+      ${r.changesFromPrevious?.facts && !r.withdrawn ? `<details data-key="rc:${r.id}"><summary>이전 판과 다른 점 자세히</summary>${V.changes(r.changesFromPrevious, `v${r.changesFromPrevious.version}와 다른 점`)}</details>` : ""}
       <details><summary>내용</summary>${lines(r.lines)}</details>
       ${action ? `<div class="actions">${action}</div>` : ""}
     </div>`;
@@ -2777,183 +2001,6 @@ function adminApp(L, BUILD) {
     return `<div class="np${level === "important" ? " important" : ""}"><b>${esc(title.trim() || "제목")}</b><span>${esc(body.trim() || "내용이 여기에 보여요")}</span></div>`;
   }
 
-  // ---- [ADMIN-13][STAT-03][STAT-04] 지표 ----
-
-  const GATE_STATE = { pass: ["ok", "통과"], fail: ["bad", "못 미침"], few: ["warn", "데이터 부족"], play: ["", "Play Console에서 확인"],
-    // [ADMUX-16] The service account is set but Play has not given it 앱 정보 보기 yet.
-    denied: ["warn", "Play 권한 필요"] };
-
-  function metricsView() {
-    const d = S.data.metrics;
-    // [ADMUX-13] 7·28·90일, or two dates (180 days at most, up to yesterday).
-    const custom = Boolean(S.metricFrom && S.metricTo);
-    const head = `<div class="toolbar"><div class="segmented" role="group" aria-label="기간">${[7, 28, 90].map((n) => seg("metric-days", String(n), custom ? "" : String(S.metricDays), `${n}일`)).join("")}</div>
-      <label class="sr" for="mt-from">시작 날짜</label><input id="mt-from" type="date" value="${esc(S.metricFrom || d?.from || "")}" data-change="metric-from" aria-label="이날부터">
-      <label class="sr" for="mt-to">끝 날짜</label><input id="mt-to" type="date" value="${esc(S.metricTo || d?.to || "")}" data-change="metric-to" aria-label="이날까지">
-      ${custom ? '<button class="btn small ghost" data-act="metric-clear">날짜 지우기</button>' : ""}</div>
-      ${d ? `<p class="meta">${esc(d.from)} ~ ${esc(d.to)} (${d.days}일)</p>` : ""}`;
-    if (!d) return head + skeleton(3);
-    const pct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
-    const gates = gatesCard(d);
-    const f = d.funnel;
-    const funnel = `<section class="card"><h2>프로 전환</h2>
-      <dl class="kv"><dt>프로 화면을 본 휴대폰(날 합)</dt><dd>${f.paywall}</dd><dt>무료 체험 시작</dt><dd>${f.trial}</dd><dt>구독 시작</dt><dd>${f.subscribe}</dd>
-        <dt>지금 체험 중(서버 확인)</dt><dd>${f.trials}</dd><dt>지금 유료 구독(서버 확인)</dt><dd>${f.paid}</dd><dt>자동 갱신 끈 구독</dt><dd>${f.ending}</dd></dl>
-      <p class="hint">위 셋은 사용 통계, 아래 셋은 Play 구매 확인으로 센 숫자라 서로 다를 수 있어요.</p></section>`;
-    // [ADMUX-07] An SVG chart (the CSP allows no style attributes), with the period before as a dashed line.
-    const before = Array.isArray(d.before) && d.before.length === d.series.length ? d.before : null;
-    const sum = (list) => list.reduce((n, v) => n + v, 0);
-    const now = sum(d.series.map((x) => x.phones));
-    const was = before ? sum(before) : 0;
-    const change = before && was ? Math.round(((now - was) / was) * 100) : null;
-    const series = `<section class="card"><div class="card-head"><h2>날마다 보낸 휴대폰</h2>${change === null ? "" : `<span class="pill ${change >= 0 ? "ok" : "warn"}">이전 ${d.days}일보다 ${change >= 0 ? "+" : ""}${change}%</span>`}</div>
-      ${d.series.length ? `${L.barChart(d.series.map((x) => x.phones), { labels: d.series.map((x) => x.day.slice(5).replace("-", "/")), before, name: "날마다 보낸 휴대폰 수" })}
-        <p class="legend"><span><i class="sw" aria-hidden="true"></i>이 기간</span>${before ? '<span><i class="sw before" aria-hidden="true"></i>이전 기간</span>' : ""}</p>
-        <p class="meta">${esc(d.from)} ~ ${esc(d.to)} · 휴대폰-날 ${d.phoneDays}</p>` : '<p class="meta">아직 받은 통계가 없어요.</p>'}</section>`;
-    const events = `<section class="card"><h2>기능별</h2><p class="hint">비율은 최근 28일 안에 한 번이라도 한 휴대폰의 비율이에요.</p>
-      <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
-        <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></section>`;
-    const sh = d.shares;
-    // [STAT-04] The share server counts views roughly (approximate), so the numbers say 대략.
-    const about = (v) => (sh?.approximate !== false ? `대략 ${v}` : v);
-    const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
-        <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
-      : '<p class="meta">공유 서버가 연결되지 않았어요. 관리 › 서버 상태를 봐 주세요.</p>'}</section>`;
-    return head + `<div class="grid two">${gates}${activeCard(d)}${series}${plazaCard(d)}${inquiryCard(d)}${errorCard(d)}${remoteCard()}${startupCard(d) /* AO 1.28 */}${photoWrongCard(d) /* AQ 1.29 */}${funnel}${shares}${events}</div>`;
-  }
-
-  /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
-  function gatesCard(d) {
-    const pct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
-    return `<section class="card"><h2>출시 관문</h2>
-      <p class="hint">사용 통계 보내기에 동의한 분들만 세요(첫 실행에서 묻고, 언제든 끌 수 있어요). 하루 평균 30대 미만이면 숫자가 흔들려서 "데이터 부족"으로 보여요. 지금 하루 평균 ${d.daily}대예요.</p>
-      <ul class="rows">${d.gates.map((g) => {
-        const [tone, label] = GATE_STATE[g.status] ?? ["", g.status];
-        return `<li><div class="row"><span class="row-main"><b>${esc(g.gate)} · ${esc(g.name)}</b><small>기준 ${esc(g.rule)}</small></span>
-          <span class="row-side"><b>${g.value === null ? "" : pct(g.value)}</b><span class="pill ${tone}">${label}</span></span></div></li>`;
-      }).join("")}</ul></section>`;
-  }
-
-  /** AN 1.28 [ADMUX-32] 출시 › 출시 관문: the gates over the last 28 days and the remote files, also on 지표. */
-  function gatesView() {
-    const d = S.data.gates;
-    if (!d) return skeleton(2);
-    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">분석 › 지표</a>로 가요.</p>
-      <div class="grid two">${gatesCard(d)}${remoteCard()}</div>`;
-  }
-
-  // ---- [ADMUX-13]~[ADMUX-16] 1.25 지표 ----
-
-  const dayLabels = (d) => (d.dayList ?? []).map((x) => x.slice(5).replace("-", "/"));
-  const mins = (m) => (m === null || m === undefined ? "–" : m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.round(m / 6) / 10}시간` : `${Math.round(m / 144) / 10}일`);
-
-  // AO 1.28 시작 [PERF-18] 앱 시작 시간: what consenting phones (사용 통계 + 처리방침 3.2) sent, per app version.
-  const startupSec = (ms) => (ms >= 20000 ? "15초 넘음" : `${Math.round(ms / 100) / 10}초`);
-  function startupCard(d) {
-    const st = d.startup;
-    if (!st) return "";
-    const line = (label, part) => (part ? `${label} ${part.phones}대 · 가운데 ${startupSec(part.p50)} · 90% ${startupSec(part.p90)}` : "");
-    const rows = st.versions.map((v) => {
-      const month = v.cold?.firstMonth;
-      const few = !month || month.phones < st.few;
-      const small = [line("준비 기다림", v.cold?.container), line("화면까지", v.cold?.activity), line("다시 열기 첫 달", v.warm?.firstMonth)].filter(Boolean).join(" · ");
-      return `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${esc(small || "새로 열기 값 없음")}</small></span>
-        <span class="row-side"><b>${month ? `${startupSec(month.p50)} · 90% ${startupSec(month.p90)}` : "–"}</b>${few ? '<span class="pill">데이터 부족</span>' : ""}<span class="meta">${month ? `${month.phones}대` : ""}</span></span></div></li>`;
-    }).join("");
-    return `<section class="card" id="startup-card"><h2>앱 시작 시간</h2>
-      <p class="hint">새로 열었을 때 달력의 첫 달이 보이기까지 걸린 시간이에요(가운데 값 · 10대 중 9대가 그 안). 사용 통계와 처리방침 3.2에 동의한 휴대폰만, 휴대폰을 구별하지 않고 구간으로만 받아요. 판마다 ${st.few}대 미만이면 숫자가 흔들려요. Play Console › Android vitals의 시작 시간과 같이 보세요.</p>
-      ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 시작 시간이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}</section>`;
-  }
-  // AO 1.28 끝
-
-  // AQ 1.29 시작 [PHOTO-10] 사진이 달라요: how often people said a photo was read wrong, per day and per screen, with the reasons.
-  function photoWrongCard(d) {
-    const pw = d.photoWrong;
-    if (!pw) return "";
-    const reasons = pw.reasons ?? {};
-    const rows = pw.screens.map((s) => {
-      const why = Object.entries(s.reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${reasons[k] ?? k} ${n}`).join(" · ");
-      return `<li><div class="row"><span class="row-main"><b>${esc(s.label)}</b><small>${esc(why)}</small></span>
-        <span class="row-side"><b>${s.total}번</b></span></div></li>`;
-    }).join("");
-    const chart = pw.days.length > 1
-      ? L.barChart(pw.days.map((x) => x.total), { labels: pw.days.map((x) => x.day.slice(5).replace("-", "/")), name: "날마다 사진이 달라요 횟수" }) : "";
-    return `<section class="card" id="photo-wrong-card"><div class="card-head"><h2>사진이 달라요</h2><span class="pill">${pw.total}번</span></div>
-      <p class="hint">사진을 읽은 결과가 사진과 다르다고 누른 횟수예요. 날짜·화면·고른 이유·앱 버전만 받고 사진과 글은 받지 않아요. 처리방침 3.3이 시행된 뒤부터 와요.</p>
-      ${pw.total ? `${chart}<ul class="rows">${rows}</ul>${pw.apps.length ? `<p class="meta">${pw.apps.map((a) => `${esc(a.app)} ${a.total}번`).join(" · ")}</p>` : ""}`
-        : '<p class="meta">이 기간에 받은 횟수가 없어요.</p>'}</section>`;
-  }
-  // AQ 1.29 끝
-
-  function activeCard(d) {
-    const a = d.active;
-    if (!a) return "";
-    return `<section class="card"><h2>활성 휴대폰</h2>
-      <dl class="kv"><dt>하루 평균</dt><dd>${a.daily}대</dd><dt>마지막 7일 하루 평균</dt><dd>${a.week}대</dd>
-        <dt>가장 많은 날</dt><dd>${a.most ? `${esc(a.most.day)} · ${a.most.phones}대` : "–"}</dd></dl>
-      <p class="hint">사용 통계에 동의한 휴대폰이 보낸 날을 세요. 같은 휴대폰을 구별하지 않아서 '주 활성'은 7일 하루 평균으로 봐요. 설치·삭제 수는 Play Console › 통계에 있어요.</p>
-      ${a.versions.length ? `<h3 class="section">앱 판(마지막 7일)</h3><ul class="rows">${a.versions.map((v) => `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b>
-        <small>${v.code ? `번호 ${v.code}` : "번호 모름"}</small></span><span class="row-side"><b>${v.share}%</b><span class="meta">${v.phones}</span></span></div></li>`).join("")}</ul>` : ""}</section>`;
-  }
-
-  function plazaCard(d) {
-    const p = d.plaza;
-    if (!p) return "";
-    return `<section class="card"><h2>광장</h2>
-      <dl class="kv"><dt>받은 제보</dt><dd>${p.reports}건 · ${p.people}명</dd><dt>채택된 규칙</dt><dd>${p.adopted}</dd><dt>규칙을 내 달력에 적용</dt><dd>${p.applied}</dd>
-        <dt>토론 글</dt><dd>${p.posts}</dd><dt>신고</dt><dd>${p.flags}</dd><dt>신고로 가려진 글</dt><dd>${p.hidden}</dd><dt>임금표 시세</dt><dd>${p.rates}(채택 ${p.ratesAdopted})</dd></dl>
-      ${L.barChart(p.series.reports.map((v, i) => v + p.series.posts[i]), { labels: dayLabels(d), before: p.series.applied, beforeName: "규칙 적용", name: "날마다 받은 제보·토론 글과 규칙 적용" })}
-      <p class="legend"><span><i class="sw" aria-hidden="true"></i>제보 + 토론 글</span><span><i class="sw before" aria-hidden="true"></i>규칙 적용</span></p></section>`;
-  }
-
-  function inquiryCard(d) {
-    const q = d.inquiries;
-    if (!q) return "";
-    return `<section class="card"><h2>문의 처리</h2>
-      <dl class="kv"><dt>받은 문의</dt><dd>${q.received}건</dd><dt>첫 답을 한 문의</dt><dd>${q.answered}건</dd>
-        <dt>첫 답까지(가운데 값)</dt><dd>${mins(q.median)}</dd><dt>첫 답까지(10건 중 9건 안)</dt><dd>${mins(q.p90)}</dd>
-        <dt>답 목표 지킴</dt><dd>${q.kept === null ? "–" : `${q.kept}%`}${q.due ? ` <span class="meta">${q.due}건 중</span>` : ""}</dd>
-        <dt>도움 됐어요</dt><dd>${q.rated === null ? "–" : `${q.rated}%`} <span class="meta">좋아요 ${q.good} · 아쉬워요 ${q.bad}</span></dd></dl>
-      ${q.kinds.length ? `<ul class="rows">${q.kinds.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(KIND_NAMES[k.kind] ?? k.kind)}</b>
-        <small>${k.n}건 · 답 ${k.answered}건 · 목표 ${k.target}시간</small></span><span class="row-side"><b>${mins(k.median)}</b></span></div></li>`).join("")}</ul>` : ""}
-      ${L.barChart(q.series.received, { labels: dayLabels(d), before: q.series.answered, beforeName: "첫 답", name: "날마다 받은 문의와 첫 답" })}
-      <p class="legend"><span><i class="sw" aria-hidden="true"></i>받은 문의</span><span><i class="sw before" aria-hidden="true"></i>첫 답</span></p></section>`;
-  }
-
-  function errorCard(d) {
-    const e = d.errors;
-    if (!e) return "";
-    const play = e.play;
-    const playLine = !play ? "Play 비정상 종료·ANR 비율은 서버에 PLAY_SERVICE_ACCOUNT가 있으면 위 출시 관문에 바로 보여요."
-      : play.error === "denied" ? "Play가 아직 통계를 주지 않아요. Play Console › 사용자 및 권한에서 서비스 계정에 '앱 정보 보기'를 주고, Google Cloud에서 Play Developer Reporting API를 켜 주세요."
-        : play.error ? "Play 통계에 닿지 못했어요. 한 시간 뒤 다시 물어요."
-          : `Play 기준 ${esc(play.day ?? "")}까지 28일, 사용자 ${play.users ?? 0}명이에요(Play는 하루이틀 늦게 세요).`;
-    return `<section class="card"><h2>오류</h2>
-      <dl class="kv"><dt>서버가 답하지 못한 요청</dt><dd>${e.serverTotal}번</dd></dl>
-      ${e.serverTotal ? L.barChart(e.server, { labels: dayLabels(d), name: "날마다 서버 오류" }) : ""}
-      <p class="hint">${playLine}</p>
-      <h3 class="section">앱 판별 문제 신고</h3>
-      ${e.bugs.length ? `<ul class="rows">${e.bugs.map((b) => `<li><div class="row"><span class="row-main"><b>${esc(b.app)}</b></span><span class="row-side"><b>${b.n}건</b>
-        <a class="btn small ghost" href="${L.routeHash("inquiries", null, { status: "all", q: b.app === "모름" ? "" : b.app.split(" ")[0] })}">보기</a></span></div></li>`).join("")}</ul>`
-        : '<p class="meta">이 기간에 문제 신고가 없어요.</p>'}</section>`;
-  }
-
-  const REMOTE_NAMES = { presets: "직군 프리셋", rates: "최저임금·4대 보험 요율", wages: "시중노임단가", taxtable: "간이세액표", publicpay: "공무원 보수",
-    holidays: "공휴일", taxes: "세금", "alarm-guide": "알람 기종별 안내", cycles: "회사 근무주기" };
-
-  function remoteCard() {
-    const r = S.data.remote;
-    if (!r) return '<section class="card"><h2>원격 갱신</h2><div class="card skeleton short"></div></section>';
-    const ok = r.files.filter((f) => f.found && f.valid).length;
-    return `<section class="card"><div class="card-head"><h2>원격 갱신</h2><button class="btn small ghost" data-act="remote-refresh">${icon(P.refresh)}다시 읽기</button></div>
-      <p class="hint">앱이 하루에 한 번 받는 서명된 계산 자료예요. ${ok}/${r.files.length}개 서명 확인. '받을 수 있는 휴대폰'은 마지막 7일 앱 판 가운데 최소 앱 번호 이상의 비율이에요(앱은 어느 판을 쓰는지 보내지 않아요).</p>
-      <ul class="rows">${r.files.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(REMOTE_NAMES[f.kind] ?? f.kind)}</b>
-        <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터${f.valid && f.oldApps === false ? " · 1.26 이하 앱은 앱 안 값" : ""}` : "사이트에 없어요"}</small></span>
-        <span class="row-side">${f.found ? `<span class="pill ${f.valid ? "ok" : "bad"}">${f.valid ? "서명 맞음" : f.signed ? "서명 틀림" : "서명 없음"}</span>
-          <b title="받을 수 있는 휴대폰">${f.reach === null ? "–" : `${f.reach}%`}</b>` : '<span class="pill bad">없음</span>'}</span></div></li>`).join("")}</ul>
-      <p class="meta">${esc(r.base)} · ${esc(ago(r.at))} 읽음</p></section>`;
-  }
-
   // ---- [ADMUX-17] 받은함: AN 1.28 [ADMUX-33] now 오늘's 할 일 ----
 
   const INBOX_NAMES = { inquiry: "문의", group: "제보", ask: "앱에 없는 방식", doubted: "달라요 달린 규칙", hidden_post: "신고로 가려진 글", flagged_post: "신고된 글",
@@ -2991,37 +2038,6 @@ function adminApp(L, BUILD) {
     const t = L.slaText(left);
     return `<span class="pill ${t.tone}">${esc(left < 0 ? t.text.replace("목표", "기한") : `기한 ${t.text}`)}</span>`;
   }
-
-  // ---- [ADMUX-18] 같은 회사 여러 판 ----
-
-  const VERSION_STATE = { active: ["ok", "쓰는 판"], pending: ["info", "기다리는 판"], previous: ["", "이전 판"] };
-
-  function versionsView() {
-    const d = S.data.versions;
-    const editRules = can("takedown", "edit");
-    const editReview = can("review", "edit");
-    const head = `<div class="segmented" role="group" aria-label="보기">${seg("versions-show", "conflict", S.versionShow, "정할 것", d?.conflicts)}${seg("versions-show", "history", S.versionShow, "이전 판까지")}</div>
-      <p class="hint">한 부서에 쓰는 판과 새로 온 판이 같이 있거나, 기다리는 판이 둘 이상이면 여기 모여요. 적용한 휴대폰·맞았어요가 많고 신뢰가 높은 판이 '추천'이에요. 신뢰 하한은 투표가 적을 때 비율이 튀지 않게 본 값(윌슨 95%)이에요. 이전 판은 지우지 않고 다시 대표로 올릴 수 있어요.</p>`;
-    if (!d) return head + skeleton(2);
-    if (!d.items.length) return head + empty(S.versionShow === "history" ? "판이 여럿인 부서가 없어요" : "정할 판이 없어요", "같은 회사 부서에 판이 둘 이상 생기면 여기와 메뉴에 숫자로 보여요.");
-    return head + `<div class="grid">${d.items.map((v) => `<article class="card">
-      <div class="head"><h3>${can("companies") ? `<a href="${href("companies", v.company.id)}">${esc(v.company.name)}</a>` : esc(v.company.name)}${v.dept ? ` <span class="dept">${esc(v.dept)}</span>` : ""}</h3>
-        ${v.conflict ? '<span class="pill warn">정할 것</span>' : ""}</div>
-      <div class="versions">${v.candidates.map((c) => {
-        const [tone, label] = VERSION_STATE[c.state];
-        const key = `v:${v.company.id}.${c.setup}.${c.version ?? "p"}`;
-        return `<section class="version${c.recommended ? " best" : ""}"><p><span class="pill ${tone}">${label}${c.version ? ` v${c.version}` : ""}</span>${c.recommended ? ' <span class="pill gold">추천</span>' : ""}
-          <span class="meta">${esc(day(c.at))}${c.source === "promote" ? " · 이전 판에서 되돌림" : ""}</span></p>
-          <dl class="kv"><dt>적용한 휴대폰</dt><dd>${c.uses}</dd><dt>맞았어요·달라요</dt><dd>${c.ok} · ${c.bad}</dd><dt>신뢰</dt><dd>${c.trust} <span class="meta">하한 ${c.wilson}%</span></dd>
-            ${c.state === "pending" ? `<dt>제보</dt><dd>${c.reports}건${c.verified ? ` · 명세서 ${c.verified}` : ""}</dd>` : ""}${c.posts ? `<dt>토론</dt><dd>${c.posts}개</dd>` : ""}</dl>
-          ${c.changes ? changes(c.changes) : ""}
-          <details data-key="${key}"${S.opened.get(key) ? " open" : ""}><summary>설정 보기</summary>${lines(c.lines)}</details>
-          <div class="actions">${c.state === "pending" && editReview ? `<button class="btn primary" data-act="adopt" data-company="${v.company.id}" data-setup="${c.setup}">이 판으로 채택</button>` : ""}
-            ${c.state === "previous" && editRules ? `<button class="btn" data-act="version-promote" data-id="${c.rule}" data-version="${c.version}">다시 대표로</button>` : ""}
-            ${c.state === "active" && editRules ? `<button class="btn danger" data-act="withdraw-rule" data-id="${c.rule}">내리기</button>` : ""}</div></section>`;
-      }).join("")}</div></article>`).join("")}</div>`;
-  }
-
 
   // ---- [SRV-05] 공유 링크 신고 ----
 
@@ -3453,11 +2469,26 @@ function adminApp(L, BUILD) {
   function paintPalette() {
     const box = document.getElementById("pal-list");
     if (!box || !S.palette) return;
-    const list = L.paletteFilter(paletteEntries(), S.palette.q, 12);
+    // AX 1.30 [ADMX-08] What this screen knows first, then the server's answer for the same words, a heading per kind.
+    const local = L.paletteFilter(paletteEntries(), S.palette.q, S.palette.server?.q === S.palette.q ? 8 : 12);
+    const seen = new Set(local.map((e) => e.to).filter(Boolean));
+    const server = [];
+    if (S.palette.server?.q === S.palette.q) {
+      for (const g of S.palette.server.groups) {
+        const items = g.items.filter((x) => !seen.has(x.to));
+        if (!items.length) continue;
+        items.forEach((x, j) => server.push({ label: x.label, hint: x.hint, kind: g.label, to: x.to, head: j === 0 ? `${g.label} ${g.total}` : "" }));
+        if (g.total > g.items.length && g.more) server.push({ label: `${g.label} ${g.total}개 모두 보기`, kind: g.label, to: g.more });
+      }
+    }
+    const list = [...local, ...server];
     S.palette.list = list;
     S.palette.at = Math.min(S.palette.at, Math.max(0, list.length - 1));
-    box.innerHTML = list.length ? list.map((e, i) => `<li><button class="row" type="button" role="option" id="pal-${i}" data-act="palette-go" data-i="${i}" aria-selected="${i === S.palette.at}">
-      <span class="row-main"><b>${esc(e.label)}</b></span><small class="kind">${esc(e.kind)}</small></button></li>`).join("") : '<li class="meta">찾는 것이 없어요.</li>';
+    const waiting = S.palette.q.trim().length >= 2 && S.palette.server?.q !== S.palette.q;
+    box.innerHTML = list.length ? list.map((e, i) => `${e.head ? `<li class="group-head" role="presentation">${esc(e.head)}</li>` : ""}<li><button class="row" type="button" role="option" id="pal-${i}" data-act="palette-go" data-i="${i}" aria-selected="${i === S.palette.at}">
+      <span class="row-main"><b>${esc(e.label)}</b>${e.head !== undefined && e.hint ? `<small class="hint2">${esc(e.hint)}</small>` : ""}</span><small class="kind">${esc(e.kind)}</small></button></li>`).join("")
+      + (waiting ? '<li class="meta" role="presentation">서버에서 더 찾는 중이에요…</li>' : "")
+      : waiting ? '<li class="meta">찾는 중이에요…</li>' : '<li class="meta">찾는 것이 없어요.</li>';
     document.getElementById("pal")?.setAttribute("aria-activedescendant", list.length ? `pal-${S.palette.at}` : "");
   }
 
@@ -5564,13 +4595,25 @@ function adminApp(L, BUILD) {
   /** [ADMIN-16] Words typed in a list's search box: the list comes again a quarter second after the last key. */
   const SEARCH = {
     dev: () => ["devQuery", "devList", () => loadDev()],
-    companies: () => ["query", "list", async () => { S.data.list = await api(`/companies?q=${encodeURIComponent(S.query)}`); }],
+    companies: () => ["query", "list", async () => { S.data.list = await api(companiesPath()); }],
     inquiries: () => ["inquiryQuery", "inquiries", () => loadInquiries()],
     community: () => ["postQuery", S.postFilter === "rates" ? "rates" : "posts", () => load({ quiet: true })],
     rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
     // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
     flags: () => ["flagQuery", "flags", async () => {}],
   };
+
+  /**
+   * AX 1.30 [ADMX-12] The screens that live in src/admin/views/: each group gets what the app shares (A) and gives
+   * back its screens, and its own buttons and forms, which join ACTIONS and FORMS.
+   */
+  const A = {
+    S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
+    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
+  };
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A) };
+  Object.assign(ACTIONS, V.actions ?? {});
+  Object.assign(FORMS, V.forms ?? {});
 
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
@@ -5582,18 +4625,23 @@ function adminApp(L, BUILD) {
    * card. 채택 still asks first.
    */
   function reviewKey(act) {
-    if (!can("review", "edit")) return;
-    const cards = [...document.querySelectorAll("#main article.card")].filter((c) => c.querySelector('[data-act="adopt"],[data-act="reject"]'));
-    const at = cards.indexOf(document.activeElement?.closest?.("article.card"));
-    const card = act ? cards[Math.max(at, 0)] : cards[at + 1] ?? cards[0];
-    if (!card) return;
+    // AX 1.30 [ADMX-04] The line j/k is on, else the one in focus, else the first; s goes to the next line.
+    const items = [...document.querySelectorAll("#main [data-review]")];
+    const cursorItem = rowsOnScreen()[S.cursor]?.closest?.("[data-review]");
+    const focused = document.activeElement?.closest?.("[data-review]");
+    const at = items.indexOf(cursorItem ?? focused);
     if (!act) {
-      card.tabIndex = -1;
-      card.focus();
-      card.scrollIntoView?.({ block: "nearest" });
+      const next = items[at + 1] ?? items[0];
+      if (!next) return;
+      const rows = rowsOnScreen();
+      S.cursor = rows.indexOf(next.querySelector("summary"));
+      markCursor();
+      next.querySelector("summary")?.focus();
       return;
     }
-    card.querySelector(`[data-act="${act}"]`)?.click();
+    if (!can("review", "edit")) return;
+    const item = items[Math.max(at, 0)];
+    item?.querySelector(`[data-act="${act}"]`)?.click();
   }
 
   document.addEventListener("input", (e) => {
@@ -5625,6 +4673,21 @@ function adminApp(L, BUILD) {
     if (t.id === "pal" && S.palette) {
       S.palette.q = t.value;
       S.palette.at = 0;
+      // AX 1.30 [ADMX-08] Two letters or more also ask the server (회사·문의·개발사항·관리자), a quarter second after the last key.
+      clearTimeout(searchTimer);
+      const q = t.value;
+      if (q.trim().length >= 2) {
+        searchTimer = setTimeout(() => {
+          api(`/search?q=${encodeURIComponent(q.trim())}`).then((d) => {
+            if (!S.palette || S.palette.q !== q) return;
+            S.palette.server = { q, groups: d.groups ?? [] };
+            paintPalette();
+          }).catch(() => {
+            if (S.palette?.q === q) S.palette.server = { q, groups: [] };
+            paintPalette();
+          });
+        }, 250);
+      }
       return paintPalette();
     }
     if (t.id === "dev-find") return showCandidates(t.value);
@@ -5645,7 +4708,8 @@ function adminApp(L, BUILD) {
   // ---- [ADMUX-04] keys ----
 
   /** The rows a list shows, for j and k. */
-  const rowsOnScreen = () => [...document.querySelectorAll("#main .rows > li > .row, #main .rows > li.item, #main .queue-list > li")];
+  // AX 1.30 [ADMX-04] 검토's lines are the <summary> of a row that opens in place.
+  const rowsOnScreen = () => [...document.querySelectorAll("#main .rows > li > .row, #main .rows > li.item, #main .queue-list > li, #main .rows > li > details > summary.row")];
 
   function markCursor() {
     const rows = rowsOnScreen();
@@ -5663,8 +4727,28 @@ function adminApp(L, BUILD) {
 
   function openCursor() {
     const el = rowsOnScreen()[S.cursor];
+    // [ADMX-04] Enter on a 검토 line opens it in place (and shuts it again).
+    if (el?.matches?.("summary")) {
+      el.parentElement.open = !el.parentElement.open;
+      return;
+    }
     const link = el?.matches("a,button") ? el : el?.querySelector("a,button");
     link?.click();
+  }
+
+  /**
+   * AX 1.30 [ADMX-05] The next question that waits for an answer after the one open (or the line in focus), from the
+   * list on screen; with no list yet, the list of waiting questions, the oldest deadline first.
+   */
+  function nextWaiting() {
+    const list = (S.data.inquiries?.inquiries ?? []).filter((q) => q.status === "open");
+    const here = S.route.name === "inquiries" && S.route.id ? S.route.id
+      : rowsOnScreen()[S.cursor]?.querySelector?.("[data-row],[data-pick-row]")?.dataset?.row ?? null;
+    const at = list.findIndex((q) => q.id === here);
+    const next = list.slice(at + 1).find((q) => q.id !== here) ?? list.find((q) => q.id !== here);
+    if (next) return go("inquiries", next.id);
+    if (S.route.name === "inquiries" && !S.route.id) return toast("답을 기다리는 문의가 없어요");
+    location.hash = L.routeHash("inquiries", null, { status: "open", sort: "sla" });
   }
 
   /** What a key does on the screen it was pressed on. */
@@ -5782,6 +4866,10 @@ function adminApp(L, BUILD) {
         if (S.route.name === "review") return reviewKey("reject");
         if (detail && S.queue) return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
+      // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
+      case "next":
+        stop();
+        return nextWaiting();
       case "skip":
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);

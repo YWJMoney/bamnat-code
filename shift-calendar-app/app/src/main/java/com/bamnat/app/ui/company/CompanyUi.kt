@@ -58,6 +58,8 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "member_wait" -> "달력 하나는 회사 하나만 쓸 수 있어요. 회사를 바꾼 지 30일이 지나면 다른 회사에 참여할 수 있어요"
     "member_limit" -> "휴대폰 하나로 회사 두 곳까지 참여할 수 있어요"
     "member" -> "이 회사에 참여한 휴대폰만 볼 수 있어요. 이 회사 설정을 쓰면 참여돼요"
+    // [PLZD-01] 1.30 BD: 이 규칙 쓰기 could not put the plaza's rule into the calendar.
+    "apply" -> "이 규칙을 넣지 못했어요. 회사 광장에서 다시 해 주세요"
     else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
 }
 
@@ -176,6 +178,8 @@ fun ReportStatus.label(): Pair<String, Tone> = when {
     status == "withdrawn" -> "내려졌어요" to Tone.QUIET
     status == "rejected" -> "채택되지 않았어요" to Tone.BAD
     status == "replaced" -> "새로 보낸 것으로 바뀜" to Tone.QUIET
+    // [PLZD-04] 1.30 BD: another shape than the department's; shown once the developer places it.
+    reasonCode == "shape" && status == "pending" -> "모양이 달라 확인 중" to Tone.WAIT
     review -> "개발자 확인 중" to Tone.WAIT
     else -> "모으는 중 ${points.coerceAtMost(threshold)}/${threshold}점" to Tone.WAIT
 }
@@ -192,6 +196,7 @@ fun ReportStatus.detail(): String = when {
     status == "withdrawn" -> "회사 찾기에서 내려졌어요. 같은 회사 분들이 새로 알려 주면 다시 올라와요."
     status == "rejected" -> reason?.let { "이유: $it" } ?: "이번에는 채택되지 않았어요."
     status == "replaced" -> "같은 곳에 나중에 보낸 설정으로 바뀌었어요."
+    reasonCode == "shape" && status == "pending" -> reason ?: "근무 모양이 이 부서 대표 판과 달라요. 개발자가 확인한 뒤 보여요."
     review -> "같은 회사 분들이 충분히 모였어요. 개발자가 확인하면 채택돼요."
     persons <= 1 -> "같은 회사 분이 같은 설정을 보내거나 ‘맞았어요’를 누르면 점수가 쌓여요."
     else -> "같은 회사 ${persons}명이 모였어요. ${(threshold - points).coerceAtLeast(1)}점만 더 모이면 채택돼요."

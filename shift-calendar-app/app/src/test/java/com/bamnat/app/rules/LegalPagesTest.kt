@@ -273,4 +273,24 @@ class LegalPagesTest {
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG)!!
         assertTrue(flag.basis.policy.orEmpty().startsWith("3.3 1-13항"))
     }
+
+    /**
+     * [ITEM-03] 3.4 for 1.30.0 (결정 D102): the `plaza.fixed_amount` flag waits for 3.4's date, and the page says which amount
+     * goes (회사 공통 금액 only) and which never does, and lists the two new 사진이 달라요 reasons.
+     */
+    @Test fun policy34NamesCompanyFixedAmountsAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.4")!!
+        val v32 = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 28) && v.effective == v32.effective && v.heldUntil == null)
+        assertTrue(text.contains("처리방침 3.4 · 앱 버전 1.30.0 기준 · 게시일 2026년 10월 28일 · 시행일 2026년 11월 27일"))
+        assertTrue("3.4 is the newest version line", text.indexOf("처리방침 3.4 ·") < text.indexOf("처리방침 3.3 ·"))
+        assertTrue(text.contains("‘회사 공통 금액’으로 정한 수당의 금액"))
+        assertTrue(text.contains("사람마다 다른 수당의 금액"))
+        val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT)!!
+        assertTrue(flag.basis.policy.orEmpty().startsWith("3.4 1-2항"))
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.4" })
+    }
 }

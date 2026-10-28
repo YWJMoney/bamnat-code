@@ -181,7 +181,8 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
             FactKey.PREVIOUS_YEAR_PAY to p({ it.previousYearPay }),
             FactKey.SLEEP_TARGET to Read(settings.sleepTargetMinutes, AppSettings().sleepTargetMinutes),
             FactKey.COMMUTE to Read(settings.commuteMinutes, AppSettings().commuteMinutes),
-            FactKey.COMPANY to Read(if (scope.isMain) c.companyStore.applied.value?.companyId ?: c.companyStore.draft.value?.company else null),
+            // [CALI-04] 1.30 BB: each calendar's own company (1.29: the main calendar's only).
+            FactKey.COMPANY to c.companyOf(scope.id).store.let { s -> Read(s.applied.value?.companyId ?: s.draft.value?.company) },
             FactKey.SHOP_RULES to Read(cal?.shop),
             FactKey.SHOP_MONEY to Read(cal?.shopMoney),
             FactKey.FIELD_RULES to Read(cal?.field),

@@ -81,12 +81,52 @@ object PayFindRows {
         return (fromServer + local.filter { PublicCycles.norm(it.name) !in taken }).take(limit)
     }
 
+    /**
+     * [PAYG-06] 1.30 묶음 BA (사용자 2026-10-27 "급여 적용 부분에서는 근무주기 적용한 회사가 있으면 뜨고, 없으면 검색, 검색에도
+     * 없으면 직접 설정하는 흐름"): where 급여 방식 찾기 opens.
+     */
+    enum class Start {
+        /** The pay already uses this company's way: said so, with 자세히 고치기 and 다른 회사 찾기. */
+        USING,
+        /** The company the user works for has a pay way coworkers made: "‘현대제철’ 급여 방식을 쓸까요?" at once. */
+        CONFIRM,
+        /** The company the user works for, with no pay way yet (or none on the 광장 at all): 직접 만들기 is the main button. */
+        BY_HAND,
+        /** Nothing known yet, or the server not answered: the box, as before. */
+        SEARCH,
+    }
+
+    /**
+     * [PAYG-06] The row of [rows] that is the company the user already works for ([known], as named on the phone), by its name
+     * or alias as the server spells it; null when none is.
+     */
+    fun knownRow(known: String, rows: List<Row>): Row? {
+        val k = PublicCycles.norm(known.trim())
+        if (k.length < 2) return null
+        return rows.firstOrNull { PublicCycles.norm(it.name) == k } ?: rows.firstOrNull { it.known && it.onServer }
+    }
+
+    /**
+     * [PAYG-06] Where the box opens: [using] (the pay uses a company way now) first, then the user's own company as the server
+     * answered it ([known]; null while it has not answered, or with no company known). A way with many 달라요 is not offered by
+     * itself: the box shows it with its warning instead. [answered] false keeps the box while the answer is still coming.
+     */
+    fun startStep(known: Row?, using: Boolean = false, answered: Boolean = known != null): Start = when {
+        using -> Start.USING
+        known == null || !answered -> Start.SEARCH
+        known.pay && !known.doubted -> Start.CONFIRM
+        known.pay -> Start.SEARCH
+        else -> Start.BY_HAND
+    }
+
     /** "급여 방식 있음 · 맞아요 4명", the only thing said of a pay way before it is used (결정 D79). */
     fun payLine(r: Row): String = when {
         r.pay && r.doubted -> "급여 방식 있음 · 달라요가 많아요"
         r.pay -> "급여 방식 있음 · 맞아요 ${r.ok}명"
         r.onServer -> "급여 방식은 아직 없어요"
         r.publicId != null -> "근무주기 공개 자료만 있어요 · 급여 방식은 아직 없어요"
+        // [PAYG-06] The user's own company the 광장 does not have at all, told apart from one with no pay way (R1 2장).
+        r.known -> "광장에 아직 없는 회사예요 · 첫 급여 방식을 만들어 주세요"
         else -> "급여 방식은 아직 없어요"
     }
 }

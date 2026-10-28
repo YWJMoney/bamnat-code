@@ -692,6 +692,10 @@ class SetupViewModel(
         }
         repo.ensureDefaults()
         repo.applySetup(marked, today)
+        // [CALI-05] 1.30 BB: the company chosen in this setup is this calendar's (its rules into its own pay, its 이 설정 쓰기,
+        // its pay way), as the first setup does for 내 달력. 1.29 kept nothing, so the pay asked the same company again.
+        runCatching { com.bamnat.app.data.FirstSetup.keepCompany(c.companyOf(id), marked, c::companySetupUsed) }
+            .onFailure { android.util.Log.w("SetupViewModel", "company of $id", it) }
         c.calendars.finishSetup(id, style)
         store.clear()
         _done.value = true

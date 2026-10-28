@@ -145,14 +145,19 @@ fun PlazaFilterBar(
  * [PLZ-10] 내 월급으로 시험: this month worked out with my own setup and with the shared rules, side by
  * side, line by line. All on the phone; then 맞아요 or 달라요 with what my pay slip says.
  */
+/**
+ * [PROP-02] 1.30 BC: the same sheet for a proposal ([proposal] true): "이 제안이면", and its 맞아요·달라요 are the proposal post's
+ * 공감·비공감, which adopt it. [slip]: the month matched with a payslip, so each total says how far it is from what was paid.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrialSheet(trial: Trial?, onClose: () -> Unit, onVote: (Boolean) -> Unit) {
+fun TrialSheet(trial: Trial?, onClose: () -> Unit, onVote: (Boolean) -> Unit, proposal: Boolean = false, slip: com.bamnat.core.pay.PayslipCheck? = null) {
     val t = trial ?: return
+    val what = if (proposal) "이 제안" else "이 규칙"
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("내 월급으로 시험", style = MaterialTheme.typography.titleLarge)
-            Text("${t.month.monthValue}월 내 근무를 지금 내 설정과 이 규칙으로 각각 계산했어요. 기본급과 수당 금액은 내 것 그대로예요. 계산은 휴대폰 안에서만 해요.",
+            Text(if (proposal) "이 제안으로 내 월급 계산" else "내 월급으로 시험", style = MaterialTheme.typography.titleLarge)
+            Text("${t.month.monthValue}월 내 근무를 지금 내 설정과 ${what}으로 각각 계산했어요. 기본급과 사람마다 다른 수당 금액은 내 것 그대로예요. 계산은 휴대폰 안에서만 해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             when {
                 t.loading -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
@@ -160,17 +165,31 @@ fun TrialSheet(trial: Trial?, onClose: () -> Unit, onVote: (Boolean) -> Unit) {
                 else -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         TotalBox("지금 내 설정", t.now, Modifier.weight(1f))
-                        TotalBox("이 규칙이면", t.then, Modifier.weight(1f))
+                        TotalBox("${what}이면", t.then, Modifier.weight(1f))
                     }
                     val d = t.diff
                     Text(
                         when {
                             d == 0L -> "이 달은 똑같아요."
-                            d > 0 -> "이 규칙이 ${won(d)} 더 많아요."
-                            else -> "이 규칙이 ${won(-d)} 적어요."
+                            d > 0 -> "${what}이 ${won(d)} 더 많아요."
+                            else -> "${what}이 ${won(-d)} 적어요."
                         },
                         style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
                     )
+                    // [PROP-02] Checked against a payslip: the one closer to what was paid is the one to trust.
+                    slip?.takeIf { it.month == t.month && it.gross > 0 }?.let { s ->
+                        val nowGap = t.now - s.gross
+                        val thenGap = t.then - s.gross
+                        Text(
+                            "명세서 ${s.month.monthValue}월 ${won(s.gross)}과 차이 · 지금 설정 ${signedWon(nowGap)} · ${what} ${signedWon(thenGap)}" +
+                                when {
+                                    kotlin.math.abs(thenGap) < kotlin.math.abs(nowGap) -> ". ${what}이 명세서에 더 가까워요."
+                                    kotlin.math.abs(thenGap) > kotlin.math.abs(nowGap) -> ". 지금 설정이 명세서에 더 가까워요."
+                                    else -> ""
+                                },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                     val changed = t.lines.filter { it.now != it.then }
                     if (changed.isNotEmpty()) {
                         Text("달라지는 항목", style = MaterialTheme.typography.labelLarge)
@@ -182,7 +201,8 @@ fun TrialSheet(trial: Trial?, onClose: () -> Unit, onVote: (Boolean) -> Unit) {
                         }
                     }
                     HorizontalDivider()
-                    Text("명세서와 비교해 보고, 이 규칙이 우리 회사와 맞는지 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
+                    Text(if (proposal) "명세서와 비교해 보고, 이 제안이 맞는지 알려 주세요. 맞아요가 모이면 규칙이 이 제안대로 바뀌어요."
+                        else "명세서와 비교해 보고, 이 규칙이 우리 회사와 맞는지 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onVote(true); onClose() }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Outlined.ThumbUp, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("맞아요")
@@ -196,6 +216,8 @@ fun TrialSheet(trial: Trial?, onClose: () -> Unit, onVote: (Boolean) -> Unit) {
         }
     }
 }
+
+private fun signedWon(v: Long): String = if (v == 0L) "0원" else (if (v > 0) "+" else "−") + won(kotlin.math.abs(v))
 
 @Composable
 private fun TotalBox(label: String, amount: Long, modifier: Modifier) {
@@ -253,8 +275,13 @@ private fun VersionRow(v: RuleVersion, onCompare: (() -> Unit)? = null) {
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            v.removed.forEach { Text("− $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            v.added.forEach { Text("+ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+            // [PLZD-07] 1.30 BD: the words that changed, as the server marks them; whole lines from an older server.
+            val ch = v.changes?.takeIf { it.changed.isNotEmpty() }
+            if (ch != null) ChangesView(ch)
+            else {
+                v.removed.forEach { Text("− $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                v.added.forEach { Text("+ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+            }
             if (v.version == 1 && v.added.isEmpty()) Text("처음 채택된 규칙이에요", style = MaterialTheme.typography.bodySmall)
             onCompare?.let { TextButton(onClick = it) { Text("지금 판과 비교 · 되돌리기") } }
         }
@@ -271,18 +298,20 @@ fun ActivitySheet(holder: ActivityHolder) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("내 활동", style = MaterialTheme.typography.titleLarge)
+            // [SPD-13] 1.30 AP1: 내 활동 kept on the phone is on screen while it is read again.
+            if (o.activity != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::show)
             val a = o.activity
             when {
                 o.error != null -> Text(o.error)
                 a == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
-                else -> ActivityBody(a, holder)
+                else -> ActivityBody(a, holder, o.calendarName, o.elsewhere)
             }
         }
     }
 }
 
 @Composable
-private fun ActivityBody(a: Activity, holder: ActivityHolder) {
+private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: String? = null, elsewhere: List<Pair<String, Int>> = emptyList()) {
     var nick by rememberSaveable { mutableStateOf(a.nick.orEmpty()) }
     var msg by remember { mutableStateOf<String?>(null) }
     Text("광장 별명", style = MaterialTheme.typography.titleSmall)
@@ -298,7 +327,8 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder) {
     HorizontalDivider()
     PlazaPhoneSettings()
     HorizontalDivider()
-    Text("보낸 규칙 ${a.reports.size}", style = MaterialTheme.typography.titleSmall)
+    // [CALI-08] 1.30 BB: with two calendars or more, the rules this calendar sent; the others' are on their own 광장.
+    Text((calendarName?.let { "‘$it’에서 " } ?: "") + "보낸 규칙 ${a.reports.size}", style = MaterialTheme.typography.titleSmall)
     if (a.reports.isEmpty()) Text("아직 없어요", style = MaterialTheme.typography.bodySmall)
     a.reports.forEach { r ->
         Text("${r.company} · ${r.dept.ifEmpty { "회사 전체" }} — " + when (r.status) {
@@ -308,6 +338,10 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder) {
             "withdrawn" -> "내려감"
             else -> r.status
         }, style = MaterialTheme.typography.bodyMedium)
+    }
+    elsewhere.forEach { (name, n) ->
+        Text("‘$name’에서 보낸 규칙 ${n}개는 그 달력의 광장에서 보여요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (a.proposals.isNotEmpty()) {
         Text("고치자는 제안 ${a.proposals.size}", style = MaterialTheme.typography.titleSmall)

@@ -32,14 +32,40 @@ object OcrRows {
         return lines.filter { kotlin.math.abs(it.angle - page) <= 8.0 }
     }
 
+    /**
+     * [PHOTO-25] 1.30 AV: the photo was read on its side (a monitor taken across, picked from a gallery that dropped the photo's
+     * turn): ML Kit reads Korean only upright and gives a few letters in boxes taller than wide, or lines it says stand at
+     * about 90°. Worth turning a quarter and reading again.
+     */
+    fun sideways(lines: List<OcrLine>): Boolean {
+        val words = lines.filter { it.text.count { c -> !c.isWhitespace() } >= 2 }
+        if (words.isEmpty()) return lines.isNotEmpty()
+        val upright = words.count { kotlin.math.abs(it.angle) in 70.0..110.0 }
+        val tall = words.count { it.bottom - it.top > 1.5 * (it.right - it.left) }
+        return upright * 2 > words.size || words.size < 8 && tall * 2 > words.size || words.size >= 8 && tall * 3 > words.size * 2
+    }
+
+    /**
+     * [PHOTO-20] 1.30 AV: how a photo leans, for [com.bamnat.core.imports.PhotoQuality]: the tilt of its rows in the middle, and
+     * how many degrees its top rows and bottom rows slant apart (taken from one side). (0, 0) when the reader gave no slopes.
+     */
+    fun lean(lines: List<OcrLine>): Pair<Double, Double> {
+        val words = unmarked(lines).map { com.bamnat.core.imports.RosterWord(it.text, it.left, it.top, it.right, it.bottom, angle = it.angle) }
+        val slant = com.bamnat.core.imports.RosterGeometry.slant(words) ?: return 0.0 to 0.0
+        val top = words.minOf { it.top }.toDouble()
+        val bottom = words.maxOf { it.bottom }.toDouble()
+        return slant.at((top + bottom) / 2) to kotlin.math.abs(slant.b * (bottom - top))
+    }
+
     fun join(lines: List<OcrLine>): String {
         val words = unmarked(lines).filter { it.text.isNotBlank() }.map { com.bamnat.core.imports.RosterWord(it.text, it.left, it.top, it.right, it.bottom, angle = it.angle) }
         if (words.isEmpty()) return ""
         val geo = com.bamnat.core.imports.RosterGeometry
         // Long lines' own slopes, when the text recognition gave them; else how the lines stack best.
-        val slopes = words.filter { it.angle != 0f && it.right - it.left > 3 * it.height }.map { it.angle.toDouble() }
-        val tilt = if (slopes.size >= 3) geo.median(slopes) else geo.tilt(words)
-        return sideBySide(geo.lines(geo.level(words, tilt))).joinToString("\n") { row -> row.joinToString("  ") { it.text.trim() } }
+        // [PHOTO-21] 1.30: each row by its own slant when the page was taken from one side.
+        val slant = geo.slant(words)
+        val placed = if (slant != null) geo.level(words, slant) else geo.level(words, geo.tilt(words))
+        return sideBySide(geo.lines(placed)).joinToString("\n") { row -> row.joinToString("  ") { it.text.trim() } }
     }
 
     /**

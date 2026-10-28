@@ -155,6 +155,8 @@ class SScreenshotTest : ScreenshotBase() {
         company.twins = true
         val vm = CompanyDetailViewModel(companyOn(), "c1")
         content { CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
+        // [PLZD-06] 1.30 BD: the department's other versions fold under the 대표 until asked for.
+        tapText("같은 부서 다른 판 2개 보기", exact = true)
         reveal("다른 점:")
     }
     @Test fun phaseSheetRowsSayTheirDays() = shoot("796_s_phase_sheet", FOLDED) {

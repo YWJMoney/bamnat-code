@@ -100,6 +100,11 @@ fun PayQuickSetup(
      * question itself, with the box to type the company in (1.27 had a button among the forms that few saw).
      */
     companyFind: Boolean = false,
+    /**
+     * [PAYG-01] 1.30 BA: a company's way went in with its 기본급 from the first question: the pay is kept already (the way and
+     * the base at once), the setup only closes.
+     */
+    onApplied: () -> Unit = {},
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
@@ -108,11 +113,14 @@ fun PayQuickSetup(
     // [PAYF-01] A public row picked in 급여 방식 찾기 with no pay way of its own starts the setup like a cycle put in from it.
     var foundCycle by remember { mutableStateOf<PublicCycle?>(null) }
     val cycleStart = fromCycle?.takeIf { initial == null } ?: foundCycle?.takeIf { initial == null }?.let { it to it.codes }
+    // [PAYG-12] 1.30 BA: 설정 고치기 too takes the form of a public row picked (only the form; the values the setup has stay).
+    val cycleForm = cycleStart ?: foundCycle?.let { it to it.codes }
     var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: initial?.let { guessed }) }
     var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
     // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
     var hours by remember { mutableStateOf<Int?>(null) }
-    val payFind = com.bamnat.app.ui.company.rememberPayFindState()
+    // [PAYG-06] Opens on the company the user works for: "쓰고 있어요", its way at once, or 직접 만들기 when it has none.
+    val payFind = com.bamnat.app.ui.company.rememberPayFindState(usingStep = initial != null)
     var holiday by remember { mutableStateOf(initial?.rules?.holidayWork) }
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
     var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
@@ -123,13 +131,14 @@ fun PayQuickSetup(
     val index = steps.indexOf(step).coerceAtLeast(0)
     val scope = rememberCoroutineScope()
     val container = LocalContext.current.appContainer
+    val companyFinder = com.bamnat.app.ui.company.companyScope(container).find
 
     val since = if (initial != null) thisMonth.atDay(1) else thisMonth.minusMonths(12).atDay(1)
     fun draftOf(f: WorkForm?, a: Long?, h: HolidayWork?): PayProfile? {
         fromSlip?.let { return it }
         val chosen = f ?: return initial
         val p = WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
-            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it)) } ?: p }
+            .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
     val draft = draftOf(form, amount, holiday)
@@ -137,6 +146,7 @@ fun PayQuickSetup(
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
 
     var slipOpen by remember { mutableStateOf(false) }
+    var slipByHand by remember { mutableStateOf(false) }
     if (slipOpen) SlipRulesDialog(
         infer = { read, rules ->
             val f = form ?: guessed ?: WorkForm.OFFICE
@@ -144,13 +154,15 @@ fun PayQuickSetup(
         },
         shiftTypes = snapshot.shiftTypes,
         fiveOrMore = initial?.fiveOrMoreEmployees ?: true,
-        onDismiss = { slipOpen = false },
+        byHand = slipByHand,
+        onDismiss = { slipOpen = false; slipByHand = false },
         onApply = { r ->
             fromSlip = r.profile
             if (form == null) form = guessed ?: WorkForm.OFFICE
             amount = r.profile.base.on(thisMonth).value
             holiday = r.profile.rules.holidayWork
             slipOpen = false
+            slipByHand = false
             step = CONFIRM
         },
     )
@@ -171,32 +183,41 @@ fun PayQuickSetup(
         ) {
             when (step) {
                 // [PAYF-01] 1.29 AP: 우리 회사 급여 방식 찾기 is the first question, the box on it; 직접 만들게요 goes on to the forms.
-                COMPANY -> com.bamnat.app.ui.company.PayFindFlow(
-                    payFind,
-                    onByHand = { _, publicId ->
-                        com.bamnat.core.plaza.PublicCycles.byId(publicId)?.takeIf { initial == null && fromCycle == null }?.let { row ->
-                            foundCycle = row
-                            if (form == null) form = PublicPay.form(row, row.codes)
+                COMPANY -> {
+                    com.bamnat.app.ui.company.PayFindFlow(
+                        payFind,
+                        onByHand = { _, publicId ->
+                            com.bamnat.core.plaza.PublicCycles.byId(publicId)?.takeIf { fromCycle == null }?.let { row ->
+                                foundCycle = row
+                                // [PAYG-12] A new setup starts on the row's form; 설정 고치기 is offered it first (FORM below).
+                                form = PublicPay.form(row, row.codes)
+                            }
+                            payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME
+                            next()
+                        },
+                        // [PAYG-01] The way went in with its 기본급, all at once: the pay is kept already, the setup closes.
+                        onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME; onApplied() },
+                        byHandHere = false,
+                        onDetailed = { onDetailed(initial) },
+                    )
+                    // [PAYG-05] 1.30 BA (사용자 "자세히 고치기 자체가 보이지 않고 들어가 보질 못함"): one tap from the first question.
+                    if (initial != null && payFind.step == com.bamnat.app.ui.company.PayFindStep.NAME) {
+                        TextButton(onClick = { onDetailed(initial) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text("지금 설정을 하나씩 고치려면 자세히 고치기")
                         }
-                        payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME
-                        next()
-                    },
-                    onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME },
-                    // A pay that had amounts: the way went onto it and its 기본급 was checked there; that is the setup now.
-                    onSaved = { p -> onDone(p, false) },
-                    byHandHere = false,
-                )
+                    }
+                }
                 FORM -> {
                     StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
-                    SlipEntry { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }) { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
-                    val first = cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed
+                    val first = cycleForm?.let { PublicPay.form(it.first, it.second) } ?: guessed
                     val ordered = listOfNotNull(first) + WorkForm.entries.filter { it != first }
                     ordered.forEach { f ->
                         val why = when {
                             f != first -> ""
-                            cycleStart != null -> " · 회사 근무주기에서 골랐어요"
+                            cycleForm != null -> " · 회사 근무주기에서 골랐어요"
                             else -> " · 달력을 보면 이것 같아요"
                         }
                         AnswerCard(f.label + why, f.detail, form == f) { pick { form = f } }
@@ -215,7 +236,7 @@ fun PayQuickSetup(
                     // [PAYF-06] The base, and folded under it the 통상시급's hours when the user knows them.
                     BaseFields(wage, amount, onBase = { fromSlip = null; amount = it }, hours = hours, onHours = { fromSlip = null; hours = it },
                         profile = draft ?: initial, month = thisMonth)
-                    SlipEntry { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }) { slipOpen = true }
                 }
                 HOLIDAY -> {
                     StepTitle("빨간날(공휴일)에 일하면 어떻게 받나요?", "회사마다 달라요. 모르면 ‘법대로’로 두고 명세서 사진으로 맞춰요.")
@@ -231,16 +252,14 @@ fun PayQuickSetup(
                 }
                 CONFIRM -> draft?.let { p ->
                     // [PAYF-06] 1.29: a payslip read for its rules only came with no base, and 1.27 saved it as 0원. The base is
-                    // asked right here instead, on the page that shows what the month comes to.
+                    // asked right here instead, on the page that shows what the month comes to. [PAYG-04] 1.30: the same card
+                    // as the pay screen's.
                     if (!com.bamnat.core.pay.BaseAsk.showsEstimate(p, thisMonth)) {
-                        StepTitle("기본급만 넣으면 끝나요", "회사 방식은 기본급으로 계산해요. 넣으면 이번 달 예상 급여가 바로 보여요.")
-                        var typed by remember { mutableStateOf<Long?>(null) }
-                        BaseFields(p.wageType, typed, onBase = { typed = it }, hours = hours, onHours = { hours = it }, profile = p, month = thisMonth)
-                        Button(onClick = {
-                            val b = typed ?: return@Button
+                        BaseNeededCard(p, thisMonth, onSave = { b, h ->
+                            if (h != null) hours = h
                             amount = b
-                            fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, hours) }
-                        }, enabled = (typed ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("예상 급여 보기") }
+                            fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, h) }
+                        })
                     } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
                         onDetailed = { onDetailed(p) })
                 }
@@ -265,8 +284,9 @@ fun PayQuickSetup(
                 }
                 if (step == COMPANY) {
                     // The box's own way on: no company of ours there, or no wish to look.
+                    // [PAYG-10] The calendar on screen's company (1.29 wrote the name into 내 달력's whatever the calendar).
                     if (!finding) Button(onClick = {
-                        payFind.name.trim().takeIf { com.bamnat.core.plaza.PayFindRows.ready(it) }?.let { com.bamnat.app.company.PayFind(container).none(it) }
+                        companyFinder.none(payFind.name)
                         next()
                     }) { Text("직접 만들게요") }
                 } else Button(
@@ -294,11 +314,13 @@ private fun FromCycleNote(cycle: PublicCycle, codes: String) {
 
 /** 명세서 사진으로 한 번에: the way for a user who does not know the amounts or the company's rules. */
 @Composable
-private fun SlipEntry(onClick: () -> Unit) {
+private fun SlipEntry(onByHand: (() -> Unit)? = null, onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Icon(Icons.Filled.ReceiptLong, null, Modifier.size(18.dp))
         Text("  모르겠으면 명세서 사진으로 맞추기")
     }
+    // [RULE-ED-01] 1.30 통합: 촬영이 안 되는 회사 — the same 칸 without a photo, one tap from where the photo is offered.
+    onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 회사 규칙을 칸으로 적기") } }
 }
 
 /** [PAYS-12] 이렇게 계산해요: the setup in sentences and this month's estimate, with the ways to change it. */
@@ -345,9 +367,11 @@ private fun ConfirmPage(
 
 /**
  * [PAYS-14] 명세서 + 회사 계산 방법, two photos read on the phone (사용자 2026-10-25, D68), worked out into the company's rules.
- * The photos go through 묶음 U's [PayslipFillDialog] (READ-08: either photo in either slot, the rules found ticked); the
- * payslip and the ticked rules then go to [infer] with the month's work, and this shows what changes in words and the
- * payslip's total against the app's before 적용.
+ * The photos go through 묶음 U's [PayslipFillDialog] (READ-08: either photo in either slot); the payslip and the rules then go
+ * to [infer] with the month's work.
+ * [PHOTO-34] 1.30 AW (사용자 "인식은 되지만 그 이후 입력 방식이 불편함"): no second window "이렇게 바꿀게요" any more. The result's
+ * screen shows under the 칸, as they are changed, the payslip's total against the app's and what changes ([infer] a moment after
+ * each change, off the main thread); its button applies. [byHand] opens on the 칸 with no photo (촬영이 안 되는 회사).
  */
 @Composable
 internal fun SlipRulesDialog(
@@ -357,63 +381,64 @@ internal fun SlipRulesDialog(
     onDismiss: () -> Unit,
     onApply: (SlipRulesResult) -> Unit,
     kinds: List<com.bamnat.core.model.ExtraKind> = emptyList(),
+    /** [RULE-ED-06] The setup and calendar a 칸's own amount is worked out on ("+80,000원 · 4번"); null shows the month's change. */
+    profile: PayProfile? = null,
+    snapshot: ScheduleSnapshot? = null,
+    effectOf: (suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?)? = null,
+    /** [RULE-ED-01] Opens on the 칸 with no photo. */
+    byHand: Boolean = false,
 ) {
     var ticked by remember { mutableStateOf(emptyList<RuleChange>()) }
-    var read by remember { mutableStateOf<PayslipRead?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<SlipRulesResult?>(null) }
-    var failed by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf<PayslipRead?>(null) }
     val scope = rememberCoroutineScope()
+    val plaza = com.bamnat.app.ui.company.rememberCompanyWayText()
 
-    fun analyse(r: PayslipRead) {
-        read = r
+    fun apply(r: PayslipRead) {
         busy = true
-        failed = false
         scope.launch {
-            try {
-                result = infer(r, ticked)
-                failed = result == null
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                failed = true
-            } finally {
-                busy = false
-            }
+            val res = try { infer(r, ticked) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            busy = false
+            if (res != null) onApply(res) else failed = r
         }
     }
 
-    if (read == null) {
-        // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
-        PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
-            rules = RuleTarget(kinds, shiftTypes, fiveOrMore) { changes, _ -> ticked = changes }) { r -> analyse(r) }
-        return
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (result != null) "이렇게 바꿀게요" else "회사 계산 방식 찾기") },
+    // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
+    PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
+        rules = RuleTarget(kinds, shiftTypes, fiveOrMore, profile, snapshot, effectOf) { changes, _ -> ticked = changes },
+        preview = { r, changes -> infer(r, changes)?.let(::sheetPreviewOf) },
+        plaza = plaza, startByHand = byHand,
+    ) { r -> apply(r) }
+    if (busy) AlertDialog(
+        onDismissRequest = {},
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val res = result
-                when {
-                    res != null -> SlipRulesSummary(res)
-                    busy -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
-                    }
-                    failed -> Text(if (read?.lines.isNullOrEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍어 주세요."
-                        else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Text("  근무표와 맞춰 보고 있어요", style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = {
-            val res = result
-            if (res != null) Button(onClick = { onApply(res) }) { Text("이대로 적용") }
-        },
-        dismissButton = { TextButton(onClick = { read = null; result = null; ticked = emptyList() }) { Text("다시 하기") } },
+        confirmButton = {},
     )
+    failed?.let { r ->
+        AlertDialog(
+            onDismissRequest = { failed = null },
+            title = { Text("회사 계산 방식 찾기") },
+            text = {
+                Text(if (r.lines.isEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍거나 ‘칸 더하기’로 넣어 주세요."
+                    else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            },
+            confirmButton = { TextButton(onClick = { failed = null }) { Text("확인") } },
+        )
+    }
 }
+
+/** [PHOTO-34] What [SlipRulesResult] says, for the bar under the result. */
+internal fun sheetPreviewOf(res: SlipRulesResult) = com.bamnat.app.ui.pay.rulesheet.SheetPreview(
+    month = res.month, total = res.total,
+    hourly = com.bamnat.core.pay.HourlyFacts.of(res.profile, res.month)?.hourly,
+    gross = res.gross.takeIf { res.withSlip }, changes = res.changes, hints = res.hints, close = res.close, profile = res.profile,
+)
 
 /** What a payslip changed, and how close the month now comes to it. */
 @Composable

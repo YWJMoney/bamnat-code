@@ -234,14 +234,20 @@ test("a new version of a rule in use waits for the developer, with what changed"
   assert.equal(g.blocked, true);
   assert.equal(g.turnedDown, null);
   assert.equal(g.replaces.version, 1);
-  assert.deepEqual(g.changes, {
-    added: [["대근", "8시간에 기본급 12% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%"]],
-    removed: [["대근", "8시간에 기본급 10% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%"]],
-  });
+  assert.deepEqual([g.changes.added, g.changes.removed], [
+    [["대근", "8시간에 기본급 12% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%"]],
+    [["대근", "8시간에 기본급 10% + 연장 가산 50% (8시간 넘게) + 야간 가산 50%"]],
+  ]);
+  // AX 1.30 [ADMX-02] and what changed in it, in one line and word by word.
+  assert.equal(g.changes.summary, "대근 10%→12%");
+  assert.deepEqual(g.changes.facts.changed[0].tokens.filter((t) => t.kind !== "same"), [{ t: "10%", kind: "del" }, { t: "12%", kind: "add" }]);
 
   await call("POST", `/api/admin/groups/${company}/${d.data.setup}/adopt`, {}, h);
   const info = (await call("GET", `/api/admin/companies/${company}`, undefined, h)).data;
   assert.deepEqual(info.rules.map((r) => [r.version, r.source, r.superseded]), [[2, "admin", false], [1, "auto", true]]);
+  // AX 1.30 [ADMX-02] The company page says what v2 changed from v1 (v1 has nothing before it).
+  assert.deepEqual([info.rules[0].changesFromPrevious.version, info.rules[0].changesFromPrevious.summary], [1, "대근 10%→12%"]);
+  assert.equal(info.rules[1].changesFromPrevious, undefined);
   // [PLAZA-08] Its pay is for phones that joined the company: one that sent a version did.
   const pub = (await call("GET", `/api/companies/${company}`, undefined, { "x-device": device(3) })).data;
   assert.deepEqual(pub.setups.map((s) => [s.status, s.version]), [["adopted", 2]]);

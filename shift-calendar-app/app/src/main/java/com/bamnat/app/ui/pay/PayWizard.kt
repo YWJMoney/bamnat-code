@@ -435,7 +435,8 @@ fun PayWizard(
         PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
     }
     val scope = rememberCoroutineScope()
-    val payFind = if (companyFind) com.bamnat.app.ui.company.rememberPayFindState() else null
+    // [PAYG-05] 1.30 BA: 자세히 고치기 on a pay that is there opens on its questions, never jumping to a company's way.
+    val payFind = if (companyFind) com.bamnat.app.ui.company.rememberPayFindState(autoStart = initial == null) else null
     val rosterHours = remember(snapshot) {
         snapshot?.let { snap ->
             StandardHours.averageWeekly(today.withDayOfMonth(1), resolve = snap.resolver::resolve).takeIf { it > 0 }?.let(StandardHours::monthly)

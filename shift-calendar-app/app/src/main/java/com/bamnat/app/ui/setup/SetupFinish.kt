@@ -48,6 +48,12 @@ import com.bamnat.core.setup.SetupDraft
 import com.bamnat.core.setup.SetupSource
 import com.bamnat.core.setup.SetupStep
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.bamnat.app.appContainer
+import com.bamnat.app.company.PendingWay
+import com.bamnat.app.company.pendingWays
+import com.bamnat.app.ui.company.PendingDone
 
 // ---- 7. alarms ----
 
@@ -249,8 +255,44 @@ private fun alarmLine(d: SetupDraft): String {
 /** [SETUP-01] Once, right after the first setup: the expected pay is offered next, never forced. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupPaySheet(companyPay: Boolean, onNow: () -> Unit, onLater: () -> Unit) {
+fun SetupPaySheet(
+    companyPay: Boolean,
+    onNow: () -> Unit,
+    onLater: () -> Unit,
+    /** [PAYG-07] The calendar just set up, whose coworkers' setup may carry its pay. */
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // [PAYG-07] 1.30 BA (사용자 "회사를 광장에 있는 것으로 선택하면 '급여 계산도 적용되어 있어요, 사용할까요?'를 물어 바로 적용"):
+    // the setup came with the company's pay, so the sheet asks to use it and its 기본급 at once; 이대로 계산 puts both in.
+    val c = LocalContext.current.appContainer
+    val company = remember(calendar) { c.companyOf(calendar) }
+    val way = remember(company, companyPay) {
+        val text = company.store.pendingPay
+        val a = company.store.applied.value
+        if (!companyPay || text == null || a == null) null
+        else PendingWay(a.companyId, a.company, a.dept, a.setup, text, PendingWay.Source.FIRST_SETUP)
+    }
+    if (way != null) {
+        androidx.compose.runtime.LaunchedEffect(way) { company.pendingWays.offer(way) }
+        ModalBottomSheet(onDismissRequest = onLater, sheetState = state) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                PendingDone(c, company, way, onDone = onNow, onSaved = null,
+                    intro = "달력을 채웠어요. ‘${way.title}’ 급여 계산도 들어 있어요. 쓸까요?",
+                    onSkip = {
+                        // Not this company's pay: nothing of it stays to be asked again; the pay is made by hand later.
+                        company.store.pendingPay = null
+                        company.payWays.use(null)
+                        onLater()
+                    })
+                TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나중에") }
+            }
+        }
+        return
+    }
     ModalBottomSheet(onDismissRequest = onLater, sheetState = state) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp),

@@ -40,6 +40,38 @@ object DocScanner {
 
     const val UNAVAILABLE = "이 휴대폰에서는 스캐너를 쓸 수 없어요. ‘사진 찍기’나 ‘사진 고르기’로 해 주세요."
 
+    /** [PHOTO-20] The scanner failed to start on this phone once: the plain camera takes its place until the app restarts. */
+    @Volatile
+    var failed: Boolean = false
+
+    /** [PHOTO-20] Tests set it to show either phone's buttons; null asks the phone. */
+    @androidx.annotation.VisibleForTesting
+    var forceAvailable: Boolean? = null
+
+    /**
+     * [PHOTO-20] 1.30 AV: whether this phone can likely run the scanner, without starting it: Google Play services present
+     * and the 1.7 GB of memory the scanner asks for (developers.google.com/ml-kit/vision/doc-scanner/android). A phone that
+     * then fails is remembered ([failed]). A quick look, no disk and no network.
+     */
+    fun available(context: Context): Boolean {
+        forceAvailable?.let { return it }
+        if (failed || activity(context) == null) return false
+        val play = runCatching {
+            com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) ==
+                com.google.android.gms.common.ConnectionResult.SUCCESS
+        }.getOrDefault(false)
+        if (!play) return false
+        val memory = runCatching {
+            val info = android.app.ActivityManager.MemoryInfo()
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(info)
+            info.totalMem
+        }.getOrDefault(0L)
+        return memory == 0L || memory >= MIN_MEMORY
+    }
+
+    /** What the scanner asks of a phone's memory (1.7 GB). */
+    private const val MIN_MEMORY = 1_700L * 1024 * 1024
+
     fun activity(context: Context): Activity? {
         var c: Context? = context
         while (c is ContextWrapper) {
@@ -50,27 +82,38 @@ object DocScanner {
     }
 }
 
-/** [READ-15] The scanner's button: the straightened page to [onImage], or why it could not run to [onError]. */
+/**
+ * [PHOTO-20] 1.30 AV: the scanner, started by the returned call: the straightened page to [onImage], or why it could not
+ * run to [onError] (and the phone remembered as one that cannot, [DocScanner.failed]). Cancelling says nothing.
+ */
 @Composable
-fun ScannerButton(onImage: (Uri) -> Unit, onError: (String) -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier) {
+fun rememberScanner(onImage: (Uri) -> Unit, onError: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
         if (r.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
         val page = runCatching { GmsDocumentScanningResult.fromActivityResultIntent(r.data)?.pages?.firstOrNull()?.imageUri }.getOrNull()
         if (page != null) onImage(page) else onError(DocScanner.UNAVAILABLE)
     }
+    fun cannot() { DocScanner.failed = true; onError(DocScanner.UNAVAILABLE) }
+    return {
+        val activity = DocScanner.activity(context)
+        if (activity == null) cannot()
+        else runCatching {
+            // [NXT-01] 1.29 AU: ML Kit starts on the first scan, not at every app start.
+            com.bamnat.app.MlKitStart.ensure(context)
+            GmsDocumentScanning.getClient(DocScanner.options).getStartScanIntent(activity)
+                .addOnSuccessListener { sender -> launcher.launch(IntentSenderRequest.Builder(sender).build()) }
+                .addOnFailureListener { cannot() }
+        }.onFailure { cannot() }
+    }
+}
+
+/** [READ-15] The scanner's button: the straightened page to [onImage], or why it could not run to [onError]. */
+@Composable
+fun ScannerButton(onImage: (Uri) -> Unit, onError: (String) -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier) {
+    val scan = rememberScanner(onImage, onError)
     TextButton(
-        onClick = {
-            val activity = DocScanner.activity(context)
-            if (activity == null) onError(DocScanner.UNAVAILABLE)
-            else runCatching {
-                // [NXT-01] 1.29 AU: ML Kit starts on the first scan, not at every app start.
-                com.bamnat.app.MlKitStart.ensure(context)
-                GmsDocumentScanning.getClient(DocScanner.options).getStartScanIntent(activity)
-                    .addOnSuccessListener { sender -> launcher.launch(IntentSenderRequest.Builder(sender).build()) }
-                    .addOnFailureListener { onError(DocScanner.UNAVAILABLE) }
-            }.onFailure { onError(DocScanner.UNAVAILABLE) }
-        },
+        onClick = scan,
         enabled = enabled,
         modifier = modifier.heightIn(min = 48.dp),
     ) {

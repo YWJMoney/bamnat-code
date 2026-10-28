@@ -42,6 +42,9 @@
 //                                 makes the code, /use reports the code this phone came by, /seen once a day it is opened
 //                                 [INVITE-02][INVITE-03]; GET /api/invites/rules the rules, with no install [INVITE-08]
 // GET/POST /api/admin/settings/invite [INVITE-08] the developer app's 친구 초대 rules
+// GET    /api/companies/all       SP1 1.30 [SPD-06] every company with its 대표 주기 line, ETag (If-None-Match → 304)
+//                                 SP1 1.30 [SPD-05] GET /api/companies/:id?with=room,talk adds a member's room and room talk;
+//                                 [SPD-08] POST /api/members?with=page adds the page; [SPD-02] header x-d1-bookmark both ways
 // GET    /i/:code                 [INVITE-02] the invite link: on to the Play listing with the code as install referrer
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
@@ -53,8 +56,18 @@
 import { adminFile, adminBuild } from "./admin-app.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
+// AX 1.30 [ADMX-02] 판 차이 (src/plaza-diff.js) and [ADMX-01][ADMX-06][ADMX-07][ADMX-08][ADMX-10] the developer app's
+// trends, alerts, company table, search and alert pushes (src/admin-insight.js).
+import { lineChanges, factsOf } from "./plaza-diff.js";
+import { trendQueries, trendFrom, alertsFrom, adminSearch, metricExtras } from "./admin-insight.js";
 // 1.28 통합 [FLAG-34] the flag book, made from the app's core FlagCatalog (never edited by hand).
 import { CORE_FEATURES, CORE_FLAGS, CORE_FREE, CORE_POLICY } from "./flag-catalog.js";
+// SP1 1.30 [SPD-01][SPD-02][SPD-04][SPD-06] what the plaza's fast reads share.
+import { spDbKey, spSession, spBookmarked, spNoCache, spKept, spPairChunks, spInMarks, spEtag, spNotModified } from "./read-fast.js";
+// BC 1.30 [ITEM-04][PROP-01]
+import { readItemShare, itemShareCanon, itemShareText, withProposalTexts, withoutFixedAmounts, ITEM_FIXED_POLICY } from "./plaza-items.js";
+// BD 1.30 [PLZD-04][PLZD-05][PLZD-07] 광장 중복·변별: a version of another shape held, a day's versions from one phone, what folded versions change.
+import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -100,7 +113,8 @@ const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
-const SETUP_VERSION = 3;
+// BC 1.30 [ITEM-04] 4 carries who sets each allowance's amount (회사 공통 · 사람마다 · %) and a company's one amount (결정 D102).
+const SETUP_VERSION = 4;
 
 /** Why a report was not adopted, as the sender's app shows it. */
 const REASONS = {
@@ -194,7 +208,7 @@ export default {
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
       .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
       // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
-      .then(() => flagTick(env, Date.now())).finally(badgesChanged));
+      .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
 
@@ -293,11 +307,16 @@ async function route(request, env, ctx) {
   if (method !== "GET") publicRows.delete(env.DB ?? env);
   // AS 1.29 [SRCH-01] and may add a name whose 초성 and reading are not there yet.
   if (method !== "GET") namesFilled.delete(env.DB ?? env);
+  // SP1 1.30 [SPD-04] and may change any public list this Worker keeps a short copy of.
+  if (method !== "GET") spLists.delete(env.DB ?? env);
+  // SP1 1.30 [SPD-02] The plaza's reads and writes go through a D1 session: the nearest copy, as fresh as the app's bookmark.
+  const s = spSession(env, request, path);
+  if (s) env = s.env;
   if (path.startsWith("/api/") && !path.startsWith("/api/admin") && method === "POST" && env.DB && request.headers.get("x-request-id")) {
     await ready(env);
-    return once(request, env, path, () => routeOnce(request, env, url, ctx));
+    return spBookmarked(await once(request, env, path, () => routeOnce(request, env, url, ctx)), s);
   }
-  return routeOnce(request, env, url, ctx);
+  return spBookmarked(await routeOnce(request, env, url, ctx), s);
 }
 
 /**
@@ -310,6 +329,8 @@ const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, 
   /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/,
   // AS 1.29 [SRCH-04]
   /^\/api\/companies\/top$/,
+  // SP1 1.30 [SPD-06]
+  /^\/api\/companies\/all$/,
   // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
   /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
 const publicReads = new Map();
@@ -344,9 +365,18 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
   if (path === "/api/companies/top" && method === "GET") return edgeCached(request, ctx, TOP_EDGE_SECONDS, () => topCompanies(env, url));
   // AS 1.29 끝
-  if (path === "/api/terms" && method === "GET") return json(await terms(env));
+  // SP1 1.30 시작 [SPD-06] Every company in one list with an ETag (304 when the app has it); [SPD-04] the same public answers
+  // kept a short while at the edge and in this Worker; [SPD-05] ?with=room,talk: a member's page, room and room talk at once.
+  if (path === "/api/companies/all" && method === "GET") {
+    return spNotModified(request, await edgeCached(request, ctx, ALL_EDGE_SECONDS, () => allCompanies(env)));
+  }
+  if (path === "/api/terms" && method === "GET") {
+    // One read, not kept in memory (the developer's new settings show at once); the edge keeps it ten minutes where it can.
+    return edgeCached(request, ctx, TERMS_EDGE_SECONDS, async () => json(await terms(env), 200, TERMS_CACHE));
+  }
   let m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})$/);
-  if (m && method === "GET") return company(env, m[1], request);
+  if (m && method === "GET") return company(env, m[1], request, url);
+  // SP1 1.30 끝
   // [PLAZA-07][PLAZA-09] 회사 참여 and the company's room.
   if (path === "/api/members") return members(request, env);
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/room$/);
@@ -357,7 +387,11 @@ async function routeOnce(request, env, url, ctx) {
   if (m && method === "DELETE") return takeBack(request, env, m[1]);
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
-  if (path === "/api/board" && method === "GET") return json(await board(env, url));
+  // SP1 1.30 [SPD-04] the same list for everyone (no X-Device), kept a short while.
+  if (path === "/api/board" && method === "GET") {
+    return edgeCached(request, ctx, BOARD_EDGE_SECONDS, async () => json(await listKept(env, request, `board?${sortedQuery(url)}`, BOARD_MEMO_MS,
+      () => board(env, url)), 200, BOARD_CACHE));
+  }
   // AI 1.27 [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work: the same talk, grp 'room'.
   m = path.match(ROOM_PATH);
   if (m && method === "GET") return talk(request, env, m[1], ROOM);
@@ -371,7 +405,10 @@ async function routeOnce(request, env, url, ctx) {
   if (m && method === "POST") return postVote(request, env, m[1]);
   if (path === "/api/uses" && (method === "POST" || method === "DELETE")) return useRule(request, env, method === "POST");
   if (path === "/api/nick" && method === "POST") return setNick(request, env);
-  if (path === "/api/plazas" && method === "GET") return json(await plazas(env));
+  if (path === "/api/plazas" && method === "GET") {
+    return edgeCached(request, ctx, PLAZAS_EDGE_SECONDS, async () => json(await listKept(env, request, "plazas", PLAZAS_EDGE_SECONDS * 1000,
+      () => plazas(env)), 200, PLAZAS_CACHE));
+  }
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/history$/);
   if (m && method === "GET") return history(env, m[1], url, request);
   if (path === "/api/rates" && method === "GET") return rates(request, env, url);
@@ -672,6 +709,12 @@ const LATE_INDEXES = [
   `CREATE TABLE IF NOT EXISTS photo_wrong (day TEXT NOT NULL, app TEXT NOT NULL, screen TEXT NOT NULL, reason TEXT NOT NULL,
     total INTEGER NOT NULL, PRIMARY KEY (day, app, screen, reason))`,
   // AQ 1.29 끝
+  // SP1 1.30 시작 [SPD-03] A version's senders and its proposed post (history), and the proposals of a talk: reports by the rule
+  // they made and posts by the report they carry. votes, uses and members need none: their primary keys start with the columns
+  // the plaza reads by (company_id, grp / device).
+  "CREATE INDEX IF NOT EXISTS reports_rule ON reports (rule_id) WHERE rule_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS posts_report ON posts (report_id) WHERE report_id IS NOT NULL",
+  // SP1 1.30 끝
 ];
 
 const schemas = new WeakMap();
@@ -689,7 +732,9 @@ const SCHEMA_VERSION = (() => {
  * only reads one setting instead of going over every table again.
  */
 function ready(env) {
-  let done = schemas.get(env.DB);
+  // SP1 1.30 [SPD-02] once per database, also when this request reads it through a session.
+  const key = spDbKey(env);
+  let done = schemas.get(key);
   if (!done) {
     done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
       if (made === SCHEMA_VERSION) return;
@@ -705,10 +750,10 @@ function ready(env) {
       await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
     // AM 1.28 [FLAG-23] the 1.27 switches become flag overrides, once per database.
     }).then(() => migrateFlags(env)).catch((e) => {
-      schemas.delete(env.DB);
+      schemas.delete(key);
       throw e;
     });
-    schemas.set(env.DB, done);
+    schemas.set(key, done);
   }
   return done;
 }
@@ -734,9 +779,10 @@ const METER_FLUSH_MS = 5 * 60 * 1000;
 
 function meterAdd(env, r, n = Number(r?.meta?.rows_written ?? r?.meta?.changes ?? 0) || 0) {
   if (!env?.DB || !n) return r;
-  const m = meters.get(env.DB) ?? { n: 0, at: Date.now() };
+  // SP1 1.30 [SPD-02] counted for the database, not the request's session.
+  const m = meters.get(spDbKey(env)) ?? { n: 0, at: Date.now() };
   m.n += n;
-  meters.set(env.DB, m);
+  meters.set(spDbKey(env), m);
   return r;
 }
 
@@ -744,7 +790,7 @@ const meterDay = (now) => new Date(now).toISOString().slice(0, 10);
 
 /** Adds what was counted here to the day's meter; [force] does it now (the hourly job). */
 export async function flushMeter(env, now, force = false) {
-  const m = meters.get(env.DB);
+  const m = meters.get(spDbKey(env));
   if (!m || !m.n || (!force && now - m.at < METER_FLUSH_MS)) return;
   const n = m.n;
   m.n = 0;
@@ -775,11 +821,26 @@ function readSettings(rows) {
     firstMonths: read("first_months", DEFAULTS.firstMonths), firstCapYear: read("first_cap_year", DEFAULTS.firstCapYear) };
 }
 
+// SP1 1.30 [SPD-03] The server's own salt, read once per Worker: before 1.30 every public read without RATE_SALT wrote it again
+// (INSERT OR IGNORE) and read it back, two D1 calls and a write before the answer.
+const salts = new WeakMap();
+
 async function salt(env) {
   if (typeof env.RATE_SALT === "string" && env.RATE_SALT) return env.RATE_SALT;
   // Until the secret is set the server keeps a salt of its own; the developer app asks for RATE_SALT.
-  await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('salt', ?)", randomId(32));
-  return (await one(env, "SELECT value FROM settings WHERE key = 'salt'")).value;
+  const key = spDbKey(env);
+  let kept = salts.get(key);
+  if (!kept) {
+    kept = (async () => {
+      const had = await one(env, "SELECT value FROM settings WHERE key = 'salt'");
+      if (had) return had.value;
+      await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('salt', ?)", randomId(32));
+      return (await one(env, "SELECT value FROM settings WHERE key = 'salt'")).value;
+    })();
+    kept.catch(() => salts.delete(key));
+    salts.set(key, kept);
+  }
+  return kept;
 }
 
 /** Salted hashes of the caller's address: this hour's, last hour's, the day's and one for logins. */
@@ -1004,7 +1065,8 @@ export function cleanSetup(raw, texts = []) {
     setup.pay = pay;
   }
   // [PAYS-03] Only a setup that uses the newer choices is 3, so apps before them can still read the rest.
-  setup.v = usesNewer(setup.pay) ? 3 : Math.min(setup.v, 2);
+  // BC 1.30 [ITEM-04] Only one that says who sets an amount (회사 공통 · %) is 4: 1.29 asks to update rather than read it as 사람마다.
+  setup.v = setup.pay?.items.some((i) => i.share) ? 4 : usesNewer(setup.pay) ? 3 : Math.min(setup.v, 2);
   return setup;
 }
 
@@ -1150,6 +1212,8 @@ function item(raw, names, say) {
   };
   // Left out when there is none: the app reads a present value as a number.
   if (given(i.percentOfBase)) out.percentOfBase = real(i.percentOfBase, 0, 50, "items");
+  // BC 1.30 [ITEM-04] 회사 공통 · 사람마다 · % and the company's one amount, only with FIXED (결정 D102).
+  readItemShare(i, out, (code) => refuse(code, "items"));
   // [PAYS-03] The premiums it is paid instead of; kept only when not what the app assumes anyway
   // (a 고정 연장수당 stands in for 연장, any other allowance for none).
   if (given(i.covers)) {
@@ -1278,6 +1342,8 @@ function canonical(setup) {
         types: i.types.map(sig).sort(),
         // Only when set, so allowances from before version 3 keep their fingerprint.
         ...(i.covers ? { covers: i.covers } : {}),
+        // BC 1.30 [ITEM-04] Only when not 사람마다, so allowances from before version 4 keep theirs too.
+        ...itemShareCanon(i),
       })).sort((a, b) => cmp(stable(a), stable(b))),
     } : null,
   };
@@ -1409,15 +1475,16 @@ function itemText(i) {
     BONUS: i.months.length ? `${i.months.join("·")}월` : "정한 달",
   }[i.cadence];
   const covers = i.covers ? (i.covers.length ? `${i.covers.map((k) => ({ OVERTIME: "연장", NIGHT: "야간", HOLIDAY: "휴일" })[k]).join("·")} 가산 대신` : "가산과 따로") : "";
-  const parts = [how, given(i.percentOfBase) ? `기본급 ${pct(i.percentOfBase)}` : "", i.festivals.map((f) => (f === "SEOLLAL" ? "설" : "추석")).join("·"), covers];
+  // BC 1.30 [ITEM-04] 회사 공통 · % and 통상임금, the app's SetupFacts.shareText words.
+  const parts = [how, given(i.percentOfBase) ? `기본급 ${pct(i.percentOfBase)}` : "", i.festivals.map((f) => (f === "SEOLLAL" ? "설" : "추석")).join("·"), covers,
+    itemShareText(i)];
   return `${i.name}(${parts.filter(Boolean).join(" ")})`;
 }
 
+// AX 1.30 [ADMX-02] The whole lines as before (added, removed) and, from src/plaza-diff.js, the one-line summary and the
+// field-by-field facts with their word tokens: every caller (검토, 여러 판, 광장 others·history) gets them.
 function diffLines(before, after) {
-  const key = ([label, text]) => `${label}\u0001${text}`;
-  const was = new Set(before.map(key));
-  const now = new Set(after.map(key));
-  return { added: after.filter((l) => !was.has(key(l))), removed: before.filter((l) => !now.has(key(l))) };
+  return lineChanges(before, after);
 }
 
 // ---- what everyone can read and send ----
@@ -1446,7 +1513,7 @@ async function search(env, url) {
         ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
       EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm = ?2) AS alias_exact,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM companies c
     WHERE c.hidden = 0 AND c.merged_into IS NULL
       AND (c.norm LIKE ?1 ESCAPE '\\' OR c.said LIKE ?3 ESCAPE '\\'
@@ -1501,7 +1568,7 @@ export function isChoseong(q) {
  */
 async function fillNames(env) {
   // AS 1.29 [SRCH-01] Once a look found nothing to fill, this Worker does not look again for a while (a write here looks at once).
-  const key = env.DB ?? env;
+  const key = spDbKey(env);
   if (Date.now() - (namesFilled.get(key) ?? 0) < NAMES_FILLED_MS) return;
   const [cs, as] = await Promise.all([
     all(env, "SELECT id, name, norm, cho, said FROM companies WHERE cho = '' OR said = '' LIMIT 500"),
@@ -1524,7 +1591,7 @@ async function searchChoseong(env, q) {
     SELECT c.id, c.name, c.cho,
       (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1 LIMIT 1) AS alias,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM companies c
     WHERE c.hidden = 0 AND c.merged_into IS NULL
       AND (c.cho LIKE ?1 OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.cho LIKE ?1))
@@ -1541,37 +1608,69 @@ async function searchChoseong(env, q) {
   return out;
 }
 
-async function company(env, id, request) {
-  const c = await one(env, "SELECT * FROM companies WHERE id = ?", id);
-  if (!c || c.hidden) return json({ error: "not_found" }, 404);
-  if (c.merged_into) return json({ mergedInto: c.merged_into });
-  // [PLAZA-08] Pay only for a phone that joined this company; anyone else (an app before 1.26 too) gets the shifts.
-  const who = await viewer(request, env, c.id);
+async function company(env, id, request, url = null) {
+  const r = await companyData(env, id, request, readWith(url));
+  return json(r.body, r.status);
+}
+
+/** SP1 1.30 [SPD-05] What `?with=` asks for besides the page: room, talk (a member's only). */
+const readWith = (url) => new Set(String(url?.searchParams.get("with") ?? "").split(",").map((w) => w.trim()).filter(Boolean));
+
+/**
+ * A company's page as {status, body}. SP1 1.30 [SPD-01] Two rounds of reads whatever the number of versions: the company, who
+ * asks and its lists together, then every version's state, 대표 report, opinions and pay marks together (before 1.30 eight or
+ * nine rounds, 33 statements for a company with three versions). [known] is who asks when the caller already knows (a join).
+ * [SPD-05] [parts] room and talk start beside the second round, for a member.
+ */
+async function companyData(env, id, request, parts = new Set(), known = null) {
+  const now = Date.now();
+  // AS 1.29 [SRCH-05] The page's reads go together, not one setup after another (the same answer, in the same order).
+  const [c, who, { adoptPoints }, aliasRows, rules, groups, downRows, stable] = await Promise.all([
+    one(env, "SELECT * FROM companies WHERE id = ?", id),
+    // [PLAZA-08] Pay only for a phone that joined this company; anyone else (an app before 1.26 too) gets the shifts.
+    known ?? viewer(request, env, id),
+    settings(env),
+    all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
+    all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", id),
+    all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending' AND ${pgShown()}
+      GROUP BY grp ORDER BY last DESC LIMIT 30`, id),
+    // What the developer took down or turned down (blocker()'s withdrawn and rejected), for every version at once.
+    all(env, "SELECT grp FROM rules WHERE company_id = ?1 AND withdrawn = 1 UNION SELECT grp FROM reports WHERE company_id = ?1 AND status = 'rejected'", id),
+    stableFacts(env, id),
+  ]);
+  if (!c || c.hidden) return { status: 404, body: { error: "not_found" } };
+  if (c.merged_into) return { status: 200, body: { mergedInto: c.merged_into } };
   const view = (text) => (who.member ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
   const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
-  const now = Date.now();
-  // AS 1.29 [SRCH-05] The page's reads go together, not one setup after another (the same answer, in the same order): a
-  // company with three versions took about 30 reads in a row before its 대표판 showed.
-  const [{ adoptPoints }, aliasRows, rules, groups] = await Promise.all([
-    settings(env),
-    all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", c.id),
-    all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id),
-    all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
-      GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id),
-  ]);
-  const aliases = aliasRows.map((a) => a.name);
-  const setups = await Promise.all(rules.map(async (r) => {
-    const [s, mark] = await Promise.all([state(env, c.id, r.grp, adoptPoints, true), payMark(env, c.id, r.dept_norm, r.grp, r.setup, who, now)]);
-    return { ...s, dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at), setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...mark };
-  }));
-  const waiting = await Promise.all(groups.filter((g) => !rules.some((r) => r.grp === g.grp)).map(async (g) => {
-    const [s, rep] = await Promise.all([state(env, c.id, g.grp, adoptPoints, false), representative(env, c.id, g.grp)]);
-    if (s.persons === 0 || !rep) return null;
-    // What the developer turned down is not offered to coworkers again.
-    const why = await blocker(env, c.id, g.grp, rep.dept_norm);
-    return why === "withdrawn" || why === "rejected" ? null : { s, rep };
-  }));
-  const pending = waiting.filter(Boolean);
+  const waitingGroups = groups.filter((g) => !rules.some((r) => r.grp === g.grp));
+  const pair = (grp) => ({ company: c.id, grp });
+  const extra = who.member && (parts.has("room") || parts.has("talk")) ? Promise.all([
+    parts.has("room") ? roomData(env, c, who, now) : null,
+    parts.has("talk") ? talkData(request, env, c.id, ROOM, { c, who }) : null,
+  ]) : null;
+  // Its failure is the answer's, below; not a second one if the page's own reads fail first.
+  extra?.catch(() => {});
+  const [facts, reps] = await Promise.all([readStates(env, [...rules, ...waitingGroups].map((r) => pair(r.grp))),
+    representatives(env, waitingGroups.map((g) => pair(g.grp)))]);
+  // What a setup tells about its pay: whether it has one, for a non-member that it is hidden, and [stable] once it settled
+  // (결정 D79: three phones on it and no other version for 30 days).
+  const mark = (deptNorm, grp, text) => {
+    const has = JSON.parse(text).pay !== undefined;
+    const st = stable(deptNorm, grp, facts.uses(c.id, grp), now);
+    return { pay: has, ...(has && !who.member ? { payHidden: true } : {}), ...(st.stable ? { stable: true } : {}) };
+  };
+  const setups = rules.map((r) => ({ ...facts.state(c.id, r.grp, adoptPoints, true), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at),
+    setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...mark(r.dept_norm, r.grp, r.setup) }));
+  const down = new Set(downRows.map((r) => r.grp));
+  const pending = [];
+  for (const g of waitingGroups) {
+    const s = facts.state(c.id, g.grp, adoptPoints, false);
+    const rep = reps.get(pairKey(c.id, g.grp));
+    if (s.persons === 0 || !rep) continue;
+    // What the developer turned down is not offered to coworkers again (a department with a rule in use waits for it anyway).
+    if (!rules.some((r) => r.dept_norm === rep.dept_norm) && down.has(g.grp)) continue;
+    pending.push({ s, rep });
+  }
   // The likeliest first, and a few for each department are enough.
   pending.sort((a, b) => b.s.points - a.s.points);
   const shown = new Map();
@@ -1582,12 +1681,44 @@ async function company(env, id, request) {
     shown.set(rep.dept_norm, n + 1);
     picked.push({ s, rep });
   }
-  setups.push(...await Promise.all(picked.map(async ({ s, rep }) => ({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
-    ...(await payMark(env, c.id, rep.dept_norm, rep.grp, rep.setup, who, now)) }))));
+  setups.push(...picked.map(({ s, rep }) => ({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
+    ...mark(rep.dept_norm, rep.grp, rep.setup) })));
   // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
-  await markLeads(env, c.id, setups, who.dev);
-  return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups,
-    member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } });
+  markLeads(setups, (grp) => facts.opinions(c.id, grp, who.dev));
+  // BD 1.30 [PLZD-07] What each folded version says against its department's 대표.
+  pgChanges(setups, normName);
+  const body = { id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases: aliasRows.map((a) => a.name),
+    setups, member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
+  // SP1 1.30 [SPD-05] The room (as /room answers it) and the room's talk (as /setups/room/posts does), keys an older app never reads.
+  if (extra) {
+    const [roomR, talkR] = await extra;
+    if (roomR?.status === 200) body.room = roomR.body;
+    if (talkR?.status === 200) body.talk = talkR.body;
+  }
+  return { status: 200, body };
+}
+
+/**
+ * SP1 1.30 [SPD-01] stableOf() for every version of one company from two reads: when each version came and the department's
+ * last other version and adoption. stable(deptNorm, grp, uses, now) then answers as stableOf does.
+ */
+async function stableFacts(env, companyId) {
+  // [FIN130-12] A version held for its shape is no change of its department (stableOf reads the same).
+  const [sent, ruled] = await Promise.all([
+    all(env, `SELECT grp, dept_norm, MIN(created_at) AS born, MAX(CASE WHEN status IN ('pending', 'adopted', 'replaced') AND ${pgShown()} THEN created_at END) AS last
+      FROM reports WHERE company_id = ? GROUP BY grp, dept_norm`, companyId),
+    all(env, "SELECT dept_norm, MAX(adopted_at) AS at FROM rules WHERE company_id = ? GROUP BY dept_norm", companyId),
+  ]);
+  return (deptNorm, grp, uses, now) => {
+    let born = null;
+    let other = null;
+    for (const r of sent) {
+      if (r.grp === grp && (born === null || r.born < born)) born = r.born;
+      if (r.dept_norm === deptNorm && r.grp !== grp && r.last !== null && (other === null || r.last > other)) other = r.last;
+    }
+    const since = Math.max(born ?? 0, other ?? 0, ruled.find((r) => r.dept_norm === deptNorm)?.at ?? 0);
+    return { stable: uses >= MEMBER.stablePhones && since > 0 && now - since >= MEMBER.stableDays * DAY, uses, since };
+  };
 }
 
 const shared = (text, name) => ({ ...JSON.parse(text), company: name });
@@ -1628,22 +1759,17 @@ async function viewer(request, env, companyId) {
   const dev = await deviceHash(id);
   const row = await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0 LIMIT 1", dev, companyId);
   if (!row) return { dev, member: false };
+  return memberRead(dev);
+}
+
+/** A member's read of pay, counted in memory: past [MEMBER.readsPerDay] a day it reads as anyone else ([limited]). */
+function memberRead(dev) {
   const day = Math.floor(Date.now() / DAY);
   const key = `${dev}|${day}`;
   const n = (memberReads.get(key) ?? 0) + 1;
   memberReads.set(key, n);
   if (memberReads.size > 20000) for (const k of memberReads.keys()) if (!k.endsWith(`|${day}`)) memberReads.delete(k);
   return n > MEMBER.readsPerDay ? { dev, member: false, limited: true } : { dev, member: true };
-}
-
-/**
- * What a setup tells about its pay: whether it has one, and for a non-member that it is hidden; [stable] once it settled
- * (결정 D79: three phones on it and no other version for 30 days).
- */
-async function payMark(env, companyId, deptNorm, grp, text, who, now) {
-  const has = JSON.parse(text).pay !== undefined;
-  const st = await stableOf(env, companyId, deptNorm, grp, now);
-  return { pay: has, ...(has && !who.member ? { payHidden: true } : {}), ...(st.stable ? { stable: true } : {}) };
 }
 
 /**
@@ -1654,7 +1780,8 @@ async function stableOf(env, companyId, deptNorm, grp, now) {
   const row = await one(env, `SELECT
       (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?3) AS uses,
       (SELECT MIN(created_at) FROM reports WHERE company_id = ?1 AND grp = ?3) AS born,
-      (SELECT MAX(created_at) FROM reports WHERE company_id = ?1 AND dept_norm = ?2 AND grp != ?3 AND status IN ('pending', 'adopted', 'replaced')) AS other,
+      (SELECT MAX(created_at) FROM reports WHERE company_id = ?1 AND dept_norm = ?2 AND grp != ?3 AND status IN ('pending', 'adopted', 'replaced')
+        AND ${pgShown()}) AS other,
       (SELECT MAX(adopted_at) FROM rules WHERE company_id = ?1 AND dept_norm = ?2) AS adopted`, companyId, deptNorm, grp);
   const since = Math.max(row.born ?? 0, row.other ?? 0, row.adopted ?? 0);
   return { stable: row.uses >= MEMBER.stablePhones && since > 0 && now - since >= MEMBER.stableDays * DAY, uses: row.uses, since };
@@ -1706,6 +1833,12 @@ async function members(request, env) {
   const net = await network(request, env, now);
   if (!(await allow(env, `join|${net.day}`, MEMBER.joinsPerNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
   const r = await joinCompany(env, dev, c.id, calOf(body.cal), now);
+  // SP1 1.30 [SPD-08] With ?with=page (or "with": "page"), the company's page as the member now reads it: 이 설정 쓰기 and 이 급여
+  // 방식 쓰기 go on without asking for the page again. An app before 1.30 asks for neither and gets the answer as before.
+  const asked = new URL(request.url).searchParams.get("with") ?? body.with;
+  if (r.joined && typeof asked === "string" && asked.split(",").includes("page")) {
+    r.page = (await companyData(env, c.id, request, new Set(), memberRead(dev))).body;
+  }
   return json(r, r.joined ? 200 : 409);
 }
 
@@ -1715,41 +1848,51 @@ async function members(request, env) {
  * 고친 점 cards from the files, so only members ever get them.
  */
 async function room(request, env, companyId) {
-  const c = await follow(env, companyId);
+  // SP1 1.30 [SPD-01] Where and who together; then the room's reads in two rounds (roomData).
+  const [c, asked] = await Promise.all([follow(env, companyId), viewer(request, env, companyId)]);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
-  const who = await viewer(request, env, c.id);
+  const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   if (!who.dev) refuse("device", "device");
   if (!who.member) return json({ error: who.limited ? "rate_limited" : "member" }, who.limited ? 429 : 403);
-  const now = Date.now();
-  const { adoptPoints } = await settings(env);
-  const live = await all(env, `SELECT grp, dept, dept_norm, setup, version, 'adopted' AS status, adopted_at AS at FROM rules
+  const r = await roomData(env, c, who, Date.now());
+  return json(r.body, r.status);
+}
+
+/** [PLAZA-09] The room of [c] for a member [who], as {status, body}: its lists together, then every version's state together. */
+async function roomData(env, c, who, now) {
+  const [{ adoptPoints }, live, mine, stable] = await Promise.all([
+    settings(env),
+    all(env, `SELECT grp, dept, dept_norm, setup, version, 'adopted' AS status, adopted_at AS at FROM rules
       WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
     UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, NULL, 'pending', MAX(r.created_at) FROM reports r
-      WHERE r.company_id = ?1 AND r.status = 'pending'
+      WHERE r.company_id = ?1 AND r.status = 'pending' AND ${pgShown("r")}
         AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
         AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp AND (w.withdrawn = 1 OR w.superseded = 0))
-      GROUP BY r.grp`, c.id);
-  if (!live.length) return json({ company: { id: c.id, name: c.name }, member: true, base: null, others: [], stable: false });
-  const mine = await one(env, `SELECT grp FROM uses WHERE company_id = ?1 AND device = ?2
-    UNION ALL SELECT grp FROM reports WHERE company_id = ?1 AND device = ?2 AND status IN ('pending', 'adopted') LIMIT 1`, c.id, who.dev);
-  const states = new Map();
-  for (const v of live) states.set(v.grp, await state(env, c.id, v.grp, adoptPoints, v.status === "adopted"));
+      GROUP BY r.grp`, c.id),
+    one(env, `SELECT grp FROM uses WHERE company_id = ?1 AND device = ?2
+    UNION ALL SELECT grp FROM reports WHERE company_id = ?1 AND device = ?2 AND status IN ('pending', 'adopted') LIMIT 1`, c.id, who.dev),
+    stableFacts(env, c.id),
+  ]);
+  if (!live.length) return { status: 200, body: { company: { id: c.id, name: c.name }, member: true, base: null, others: [], stable: false } };
+  // Before 1.30 one version after another (for … await state): nine rounds for a room of four versions.
+  const facts = await readStates(env, live.map((v) => ({ company: c.id, grp: v.grp })));
+  const states = new Map(live.map((v) => [v.grp, facts.state(c.id, v.grp, adoptPoints, v.status === "adopted")]));
   const best = [...live].sort((a, b) => (b.status === "adopted") - (a.status === "adopted") || states.get(b.grp).support - states.get(a.grp).support)[0];
   const base = live.find((v) => v.grp === mine?.grp) ?? best;
   const baseSetup = JSON.parse(base.setup);
-  const st = await stableOf(env, c.id, base.dept_norm, base.grp, now);
+  const st = stable(base.dept_norm, base.grp, facts.uses(c.id, base.grp), now);
   const view = (v) => ({ ...states.get(v.grp), dept: v.dept, version: v.version, at: iso(v.at), setup: shared(v.setup, c.name) });
   const others = live.filter((v) => v.grp !== base.grp && v.dept_norm === base.dept_norm).map((v) => ({
     ...view(v), changes: diffLines(describe(baseSetup), describe(JSON.parse(v.setup))),
   })).sort((a, b) => b.persons - a.persons || b.support - a.support);
-  return json({
+  return { status: 200, body: {
     company: { id: c.id, name: c.name },
     member: true,
     base: { ...view(base), mine: mine?.grp === base.grp, first: base.status === "pending" && states.get(base.grp).senders <= 1 },
     others,
     stable: st.stable,
     stableRule: { phones: MEMBER.stablePhones, days: MEMBER.stableDays, uses: st.uses, since: st.since ? iso(st.since) : null },
-  });
+  } };
 }
 
 /**
@@ -1946,13 +2089,14 @@ async function opinions(env, companyId, grp, dev) {
   return { ok, bad, why, ...(mine ? { mine } : {}) };
 }
 
-/** [PLAZA-14][PLAZA-15] company()'s setups marked: each with its opinions, doubted ones, and each department's lead. */
-async function markLeads(env, companyId, setups, dev) {
+/**
+ * [PLAZA-14][PLAZA-15] company()'s setups marked: each with its opinions, doubted ones, and each department's lead.
+ * SP1 1.30 [SPD-01] [opinionOf] answers from the votes company() already read for its states (opinions() read them again).
+ */
+function markLeads(setups, opinionOf) {
   const byDept = new Map();
-  // AS 1.29 [SRCH-05] read together.
-  const said = await Promise.all(setups.map((s) => opinions(env, companyId, s.id, dev)));
-  for (const [i, s] of setups.entries()) {
-    s.opinion = said[i];
+  for (const s of setups) {
+    s.opinion = opinionOf(s.id);
     if (doubted(s)) {
       s.doubted = true;
       // A version people say is wrong has not settled, whatever its age.
@@ -1973,7 +2117,7 @@ async function markLeads(env, companyId, setups, dev) {
  */
 async function leads(env, companyId) {
   const rows = await all(env, `SELECT grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id = ?1 AND withdrawn = 0 AND superseded = 0
-    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id = ?1 AND r.status = 'pending'
+    UNION ALL SELECT r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id = ?1 AND r.status = 'pending' AND ${pgShown("r")}
       AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
       AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
     GROUP BY r.grp`, companyId);
@@ -2093,21 +2237,24 @@ async function withLeads(env, companies) {
  * them and the company's users, five reads sent together whatever the number of companies or versions. The same answer as
  * searchLead (a test holds them together); leadOf, doubted, support and tally decide as before.
  */
-export async function searchLeads(env, ids) {
+export async function searchLeads(env, ids, every = false) {
   const out = new Map();
   if (!ids.length) return out;
   const marks = ids.map((_, i) => `?${i + 1}`).join(", ");
+  // SP1 1.30 [SPD-06] [every]: the whole list (/api/companies/all) reads every company's rows at once, not 1,000 marks (D1 binds 100).
+  const of = (column) => (every ? "1 = 1" : `${column} IN (${marks})`);
+  const values = every ? [] : ids;
   const [rows, sent, votes, used, users] = await Promise.all([
-    all(env, `SELECT company_id, grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE company_id IN (${marks}) AND withdrawn = 0 AND superseded = 0
-      UNION ALL SELECT r.company_id, r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE r.company_id IN (${marks}) AND r.status = 'pending'
+    all(env, `SELECT company_id, grp, dept, dept_norm, setup, 1 AS adopted FROM rules WHERE ${of("company_id")} AND withdrawn = 0 AND superseded = 0
+      UNION ALL SELECT r.company_id, r.grp, r.dept, r.dept_norm, r.setup, 0 FROM reports r WHERE ${of("r.company_id")} AND r.status = 'pending' AND ${pgShown("r")}
         AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
         AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = r.company_id AND w.grp = r.grp)
-      GROUP BY r.company_id, r.grp`, ...ids),
-    all(env, `SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE company_id IN (${marks}) AND status IN ('pending', 'adopted')`, ...ids),
-    all(env, `SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id IN (${marks})`, ...ids),
-    all(env, `SELECT company_id, grp, COUNT(*) AS n FROM uses WHERE company_id IN (${marks}) GROUP BY company_id, grp`, ...ids),
-    all(env, `SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses WHERE company_id IN (${marks})
-      UNION SELECT company_id, device FROM reports WHERE company_id IN (${marks}) AND status IN ('pending', 'adopted')) GROUP BY company_id`, ...ids),
+      GROUP BY r.company_id, r.grp`, ...values),
+    all(env, `SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE ${of("company_id")} AND status IN ('pending', 'adopted')`, ...values),
+    all(env, `SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE ${of("company_id")}`, ...values),
+    all(env, `SELECT company_id, grp, COUNT(*) AS n FROM uses WHERE ${of("company_id")} GROUP BY company_id, grp`, ...values),
+    all(env, `SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses WHERE ${of("company_id")}
+      UNION SELECT company_id, device FROM reports WHERE ${of("company_id")} AND status IN ('pending', 'adopted')) GROUP BY company_id`, ...values),
   ]);
   const at = (c, g) => `${c}\u0001${g}`;
   const backing = new Map();
@@ -2174,12 +2321,12 @@ const topMemo = new WeakMap();
  */
 async function topCompanies(env, url) {
   const n = Math.min(TOP_MAX, Math.max(1, Number.parseInt(url.searchParams.get("n") ?? `${TOP_MAX}`, 10) || TOP_MAX));
-  const key = env.DB ?? env;
+  const key = spDbKey(env);
   const kept = topMemo.get(key);
   if (kept && Date.now() - kept.at < TOP_EDGE_SECONDS * 1000) return json({ ...kept.body, companies: kept.body.companies.slice(0, n) }, 200, TOP_CACHE);
   const rows = await all(env, `SELECT c.id, c.name, u.n,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending
+      (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM (SELECT company_id, COUNT(*) AS n FROM (SELECT company_id, device FROM uses
       UNION SELECT company_id, device FROM reports WHERE status IN ('pending', 'adopted')) GROUP BY company_id ORDER BY n DESC LIMIT ?) u
     JOIN companies c ON c.id = u.company_id
@@ -2208,7 +2355,8 @@ async function edgeCached(request, ctx, seconds, make) {
   url.searchParams.sort();
   const key = new Request(url.toString(), { method: "GET" });
   try {
-    const hit = await cache.match(key);
+    // SP1 1.30 [SPD-04] After its own write the app asks past the copy (Cache-Control: no-cache); the fresh answer is kept again.
+    const hit = spNoCache(request) ? null : await cache.match(key);
     if (hit) return hit;
   } catch {
     // Read afresh.
@@ -2252,6 +2400,174 @@ async function state(env, companyId, grp, threshold, adopted) {
     ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
 }
 
+// SP1 1.30 시작
+// [SPD-01] 1.30 묶음 SP1: state() for many versions at once. The plaza's lists asked state() one version after another (규칙 광장
+// 투표 중: 20 versions × (대표 report + five reads) = 142 statements in 45 rounds, 1.5 to 7 seconds with D1 one region away).
+// readStates reads the same rows for every (company, grp) pair in four statements sent together and answers as state(),
+// opinions() and stableOf()'s uses do (a test holds them to the same answers).
+
+const pairKey = (companyId, grp) => `${companyId}\u0001${grp}`;
+
+/**
+ * [SPD-01] What state() reads, for every pair in [pairs] ({company, grp}) at once: the reports behind each version (with the
+ * names their senders chose), its votes, its shown posts and its users. Returns state(), opinions() and uses() over those rows.
+ */
+async function readStates(env, pairs) {
+  const read = await Promise.all(spPairChunks(pairs).map((chunk) => {
+    const { cs, gs, values } = spInMarks(chunk);
+    const where = `company_id IN (${cs}) AND grp IN (${gs})`;
+    return Promise.all([
+      all(env, `SELECT r.company_id, r.grp, r.device, r.points, r.cluster, r.verified, r.created_at, n.nick FROM reports r
+          LEFT JOIN nicks n ON n.device = r.device
+        WHERE r.company_id IN (${cs}) AND r.grp IN (${gs}) AND r.status IN ('pending', 'adopted') ORDER BY r.created_at, r.rowid`, ...values),
+      all(env, `SELECT company_id, grp, device, ok, verified, why, cluster, at FROM votes WHERE ${where}`, ...values),
+      all(env, `SELECT company_id, grp, COUNT(*) AS n FROM posts WHERE ${where} AND status = 'shown' GROUP BY company_id, grp`, ...values),
+      all(env, `SELECT company_id, grp, COUNT(*) AS n FROM uses WHERE ${where} GROUP BY company_id, grp`, ...values),
+    ]);
+  }));
+  const sent = new Map();
+  const voted = new Map();
+  const posts = new Map();
+  const uses = new Map();
+  const add = (m, k, v) => (m.has(k) ? m.get(k).push(v) : m.set(k, [v]));
+  for (const [r, v, p, u] of read) {
+    for (const x of r) add(sent, pairKey(x.company_id, x.grp), x);
+    for (const x of v) add(voted, pairKey(x.company_id, x.grp), x);
+    for (const x of p) posts.set(pairKey(x.company_id, x.grp), x.n);
+    for (const x of u) uses.set(pairKey(x.company_id, x.grp), x.n);
+  }
+  return {
+    uses: (companyId, grp) => uses.get(pairKey(companyId, grp)) ?? 0,
+    /** As opinions(): the 맞아요·달라요 on one version, 달라요 by where, and [dev]'s own. */
+    opinions(companyId, grp, dev) {
+      const why = { order: 0, time: 0, pay: 0, other: 0 };
+      let ok = 0;
+      let bad = 0;
+      let mine = null;
+      for (const r of voted.get(pairKey(companyId, grp)) ?? []) {
+        if (r.ok) ok++;
+        else {
+          bad++;
+          why[WHY_PARTS.includes(r.why) ? r.why : "other"]++;
+        }
+        if (dev && r.device === dev) mine = r.ok ? "ok" : (r.why ?? "wrong");
+      }
+      return { ok, bad, why, ...(mine ? { mine } : {}) };
+    },
+    /** As state(env, companyId, grp, threshold, adopted). */
+    state(companyId, grp, threshold, adopted) {
+      const k = pairKey(companyId, grp);
+      const reports = sent.get(k) ?? [];
+      const votes = voted.get(k) ?? [];
+      const backing = votes.filter((v) => v.ok === 1);
+      const s = tally([...reports.map((r) => ({ device: r.device, points: r.points, cluster: r.cluster })),
+        ...backing.map((v) => ({ device: v.device, points: v.verified === 1 ? 2 : 1, cluster: v.cluster }))],
+      votes.filter((v) => v.ok === 0).map((v) => v.device));
+      const n = uses.get(k) ?? 0;
+      const sentChecked = reports.filter((r) => r.verified === 1).length;
+      // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
+      const proofs = [...reports.filter((r) => r.verified === 1).map((r) => [r.cluster, r.created_at]),
+        ...backing.filter((v) => v.verified === 1).map((v) => [v.cluster, v.at])];
+      const nets = new Set(proofs.map(([cluster]) => cluster)).size;
+      const months = new Set(proofs.map(([, at]) => new Date(Math.floor(at / 1000) * 1000).toISOString().slice(0, 7))).size;
+      return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
+        ...trust(s, threshold), posts: posts.get(k) ?? 0, uses: n, senders: reports.length,
+        checked: sentChecked + backing.filter((v) => v.verified === 1).length,
+        by: reports.filter((r) => r.nick !== null && r.nick !== undefined).slice(0, 5).map((r) => r.nick),
+        support: support({ uses: n, ok: s.persons, bad: s.bad, verified: sentChecked }),
+        ...(nets >= 2 && months >= 2 ? { checkedLong: true } : {}) };
+    },
+  };
+}
+
+/** [SPD-01] representative() for every pair at once: the report each version is shown from (a checked one, else the newest). */
+async function representatives(env, pairs) {
+  const out = new Map();
+  const read = await Promise.all(spPairChunks(pairs).map((chunk) => {
+    const { cs, gs, values } = spInMarks(chunk);
+    return all(env, `SELECT * FROM (SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.company_id, r.grp
+        ORDER BY r.verified DESC, r.created_at DESC, r.rowid) AS sp_rank
+      FROM reports r WHERE r.company_id IN (${cs}) AND r.grp IN (${gs}) AND r.status IN ('pending', 'adopted')) WHERE sp_rank = 1`, ...values);
+  }));
+  for (const rows of read) for (const r of rows) out.set(pairKey(r.company_id, r.grp), r);
+  return out;
+}
+
+/**
+ * [SPD-01] state() for many versions in one round: [pairs] {company, grp, adopted}; a Map by `company\u0001grp`. For the plaza's
+ * lists and the developer app's screens of many versions.
+ */
+export async function statesFor(env, pairs, threshold) {
+  const facts = await readStates(env, pairs);
+  return new Map(pairs.map((p) => [pairKey(p.company, p.grp), facts.state(p.company, p.grp, threshold, Boolean(p.adopted))]));
+}
+
+/** [SPD-01] The one-version reads statesFor replaced, kept for the test that holds them to the same answers. */
+export const stateOne = (env, companyId, grp, threshold, adopted) => state(env, companyId, grp, threshold, adopted);
+export const opinionsOne = (env, companyId, grp, dev) => opinions(env, companyId, grp, dev);
+export const stableOne = (env, companyId, deptNorm, grp, now) => stableOf(env, companyId, deptNorm, grp, now);
+export const representativeOne = (env, companyId, grp) => representative(env, companyId, grp);
+export { readStates, representatives, stableFacts };
+
+// [SPD-04] The public lists that are the same for everyone: kept at the edge (Cache API, where the Worker has one: a custom
+// domain) and, as workers.dev keeps nothing there, a short while in this Worker's memory. A write through this Worker forgets
+// its copies (route()); the app asks past them after its own write (Cache-Control: no-cache).
+export const BOARD_EDGE_SECONDS = 20;
+export const PLAZAS_EDGE_SECONDS = 300;
+export const TERMS_EDGE_SECONDS = 600;
+const BOARD_MEMO_MS = 15 * 1000;
+const BOARD_CACHE = { "cache-control": `public, max-age=${BOARD_EDGE_SECONDS}, stale-while-revalidate=120` };
+const PLAZAS_CACHE = { "cache-control": `public, max-age=${PLAZAS_EDGE_SECONDS}, stale-while-revalidate=3600` };
+const TERMS_CACHE = { "cache-control": `public, max-age=${TERMS_EDGE_SECONDS}, stale-while-revalidate=3600` };
+const spLists = new WeakMap();
+
+function listKept(env, request, key, ms, make) {
+  const db = spDbKey(env);
+  if (!spLists.has(db)) spLists.set(db, new Map());
+  return spKept(spLists.get(db), key, ms, make, spNoCache(request));
+}
+
+const sortedQuery = (url) => {
+  const q = new URLSearchParams(url.searchParams);
+  q.sort();
+  return q.toString();
+};
+
+// [SPD-06] Every company the app can find, with its 대표 주기 line as the search gives it: the app keeps it and finds a company
+// as the user types without asking (0 requests). Public information only, as /top: names, other names, how they are said, counts.
+export const ALL_EDGE_SECONDS = 300;
+const ALL_CACHE = { "cache-control": `public, max-age=${ALL_EDGE_SECONDS}, stale-while-revalidate=3600` };
+const allMemo = new WeakMap();
+
+async function allCompanies(env) {
+  const key = spDbKey(env);
+  let kept = allMemo.get(key);
+  // Not made afresh for no-cache: reading every company is the one costly read here, and five minutes old is fresh enough.
+  if (!kept || Date.now() - kept.at >= ALL_EDGE_SECONDS * 1000) {
+    const [rows, aliasRows] = await Promise.all([
+      all(env, `SELECT c.id, c.name, c.norm, c.said, c.cho,
+          (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+          (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
+        FROM companies c WHERE c.hidden = 0 AND c.merged_into IS NULL AND c.kind != 'topic'`),
+      all(env, `SELECT a.company_id, a.name FROM aliases a JOIN companies c ON c.id = a.company_id
+        WHERE c.hidden = 0 AND c.merged_into IS NULL ORDER BY a.name`),
+      fillNames(env),
+    ]);
+    const named = (v, made) => (v && v !== "-" ? v : made);
+    const companies = rows.filter((c) => c.adopted > 0 || c.pending > 0).map((c) => ({ id: c.id, name: c.name,
+      aliases: aliasRows.filter((a) => a.company_id === c.id).map((a) => a.name),
+      said: named(c.said, spoken(c.name)), cho: named(c.cho, choseong(c.norm)),
+      adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
+    const lines = await searchLeads(env, companies.map((c) => c.id), true);
+    for (const c of companies) Object.assign(c, lines.get(c.id) ?? { users: 0 });
+    companies.sort((a, b) => b.users - a.users || a.name.localeCompare(b.name, "ko"));
+    kept = { at: Date.now(), companies, etag: await spEtag(JSON.stringify(companies)) };
+    allMemo.set(key, kept);
+  }
+  return json({ companies: kept.companies, n: kept.companies.length, at: iso(kept.at) }, 200, { ...ALL_CACHE, etag: kept.etag });
+}
+// SP1 1.30 끝
+
 /**
  * [PLAZA-05] 지지 (결정 D74, X-D3), the one score for which 판 of a department should be its 대표 판: phones that use it,
  * people who sent or backed it ([ok]) and pay-slip checks of a waiting one ([verified]), weighed by the Wilson share of
@@ -2288,6 +2604,8 @@ async function report(request, env) {
   if (!device) refuse("device", "device");
   const r = readReport(body);
   const now = Date.now();
+  // [FIN130-15] No company amount before 처리방침 3.4 is in force (the server's own policy calendar).
+  if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(r.setup);
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   if (!(await allow(env, `report|${dev}`, LIMITS.reportsPerDay, DAY, now)) ||
@@ -2303,30 +2621,37 @@ async function report(request, env) {
   // [PLAZA-07] Who sends a company's setup joins it (결정 D79), the same again or not.
   const member = c.kind === "topic" ? null : await joinCompany(env, dev, c.id, calOf(body.cal), now);
   if (again) return json({ ...(await reportView(env, again.id)), again: true, first: false, newInfo: false, ...(member ? { member } : {}) });
+  // BD 1.30 [PLZD-04][PLZD-05] Another shape than the department's waits for the developer; a day's other versions are replaced.
+  const guard = c.kind === "topic" ? { held: false, replaced: [] } : await pgGuard({ one, all, doubted: async (g) => doubted(await score(env, c.id, g)) },
+    env, c.id, r, dev, grp, now);
   const cluster = await clusterFor(env, c.id, net);
   const active = await activeRule(env, c.id, r.deptNorm);
   const adopted = active?.grp === grp;
   // [PLAZA-10] The first version of this company's department from anyone: shown at once as 제보 1 · 확인 중.
+  // [FIN130-12] A version held for its shape is no one's first: the next one people see still is.
   const first = !active && !(await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND dept_norm = ? AND device != ?
-    AND status IN ('pending', 'adopted') LIMIT 1`, c.id, r.deptNorm, dev));
+    AND status IN ('pending', 'adopted') AND ${pgShown()} LIMIT 1`, c.id, r.deptNorm, dev));
   const id = randomId(22);
   await batch(env, [
     // A newer setup from the same sender for the same place takes the place of the older one.
-    stmt(env, "UPDATE reports SET status = 'replaced', decided_at = ? WHERE company_id = ? AND dept_norm = ? AND device = ? AND status = 'pending'",
-      now, c.id, r.deptNorm, dev),
+    stmt(env, `UPDATE reports SET status = 'replaced', decided_at = ?1 WHERE company_id = ?2 AND device = ?4 AND status = 'pending'
+      AND (dept_norm = ?3 OR id IN (SELECT value FROM json_each(?5)))`, now, c.id, r.deptNorm, dev, JSON.stringify(guard.replaced.map((x) => x.id))),
     stmt(env, `INSERT INTO reports (id, company_id, dept, dept_norm, grp, setup, verified, note, device, net, cluster, points, status,
-      rule_id, reason, created_at, decided_at, amends) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+      rule_id, reason, created_at, decided_at, amends) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, c.id, r.dept, r.deptNorm, grp, JSON.stringify(r.setup), r.verified ? 1 : 0, r.note, dev, net.now, cluster, r.verified ? 2 : 1,
-      adopted ? "adopted" : "pending", adopted ? active.id : null, now, adopted ? now : null,
+      adopted ? "adopted" : "pending", adopted ? active.id : null, guard.held ? PG_HELD : null, now, adopted ? now : null,
       // [PLZ-02] Only a change of the rule in use counts as one.
       !adopted && active && r.amends === active.id ? active.id : null),
   ]);
   // AI 1.27 [PLAZA-30] What the 명세서 tick rested on: the month and whether it matched, or an older app's bare claim.
   if (r.proof || r.claim) await run(env, "UPDATE reports SET proof = ?, claim = ? WHERE id = ?", proofText(r.proof), r.claim ? 1 : 0, id);
-  if (!adopted) await settle(env, c.id, grp, now);
-  const reward = await newInfo(env, c, r, id, dev, now);
+  if (!adopted && !guard.held) await settle(env, c.id, grp, now);
+  const reward = guard.held ? null : await newInfo(env, c, r, id, dev, now);
   const view = await reportView(env, id);
-  return json({ ...view, first, newInfo: reward !== null, ...(reward ? { reward } : {}), ...(member ? { member } : {}) }, 201);
+  // BD 1.30 [PLZD-01] [same]: another phone had sent this very rule and it is in use; this one counts as one more 맞아요.
+  return json({ ...view, first: first && !guard.held, newInfo: reward !== null, ...(reward ? { reward } : {}), ...(member ? { member } : {}),
+    ...(adopted ? { same: true } : {}), ...(guard.held ? { held: PG_HELD, shape: { lead: guard.lead, mine: guard.mine } } : {}),
+    ...(guard.replaced.length ? { replaced: guard.replaced } : {}) }, 201);
 }
 
 /**
@@ -2437,7 +2762,10 @@ async function settle(env, companyId, grp, now) {
   // [COMM-07] Too many 달라요 for the 맞았어요: the developer decides, however many points it has.
   if (s.persons * 100 < adoptAgree * (s.persons + s.bad)) return;
   const rep = await representative(env, companyId, grp);
-  if (!rep) return;
+  // BD 1.30 [PLZD-04] A version of another shape is the developer's to place, however many agree. [FIN130-17] Held means no
+  // report of it is shown: one shown report of the same setup makes it a version like any other, whichever is the representative.
+  if (!rep || !(await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted') AND ${pgShown()} LIMIT 1`,
+    companyId, grp))) return;
   const why = await blocker(env, companyId, grp, rep.dept_norm);
   if (!why) {
     // [PLZ-03] At least this many different people (결정 D32).
@@ -2491,8 +2819,9 @@ async function adopt(env, companyId, grp, source, now) {
     stmt(env, "UPDATE rules SET superseded = 1 WHERE company_id = ? AND dept_norm = ? AND superseded = 0", companyId, rep.dept_norm),
     stmt(env, `INSERT INTO rules (id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`, ruleId, companyId, rep.dept, rep.dept_norm, grp, (last?.v ?? 0) + 1, rep.setup, source, now),
-    stmt(env, "UPDATE reports SET status = 'adopted', rule_id = ?, decided_at = ? WHERE company_id = ? AND grp = ? AND status = 'pending'",
-      ruleId, now, companyId, grp),
+    // [FIN130-14] Adopted (by the developer) is placed: the 'held for its shape' note goes, so its senders no longer read it.
+    stmt(env, `UPDATE reports SET status = 'adopted', rule_id = ?, decided_at = ?, reason = CASE WHEN reason = '${PG_HELD}' THEN NULL ELSE reason END
+      WHERE company_id = ? AND grp = ? AND status = 'pending'`, ruleId, now, companyId, grp),
   ];
   if (rewardMonths > 0) {
     stmts.push(stmt(env, `
@@ -2567,7 +2896,7 @@ async function reportView(env, id) {
     review: r.status === "pending" && s.persons >= 2 && s.points >= adoptPoints,
     createdAt: iso(r.created_at),
     decidedAt: r.decided_at ? iso(r.decided_at) : null,
-    reason: r.reason ? { code: r.reason, text: (ask ? ANSWERS : REASONS)[r.reason] ?? "" } : null,
+    reason: r.reason ? { code: r.reason, text: (ask ? ANSWERS : REASONS)[r.reason] ?? PG_REASONS[r.reason] ?? "" } : null,
     reward: reward ? { months: reward.months, status: reward.status } : null,
     rewardMonths,
   };
@@ -2667,7 +2996,8 @@ async function vote(request, env) {
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   const grp = body.setup;
   const rule = await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp);
-  const pending = rule ? null : await one(env, "SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' LIMIT 1", c.id, grp);
+  // [FIN130-12] A version held for its shape is not on the plaza: nothing to vote on until the developer places it.
+  const pending = rule ? null : await one(env, `SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND ${pgShown()} LIMIT 1`, c.id, grp);
   if (!rule && !pending) return json({ error: "not_found" }, 404);
   const dev = await deviceHash(device);
   await forgetNetworks(env, now);
@@ -2715,7 +3045,6 @@ async function board(env, url) {
   const tab = url.searchParams.get("tab") === "adopted" ? "adopted" : "voting";
   const offset = Math.min(600, Math.max(0, Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0));
   const size = 20;
-  const { adoptPoints } = await settings(env);
   // A company's name or another name for it, written any way 회사 찾기 accepts; one letter narrows nothing.
   const q = normName(url.searchParams.get("q")).slice(0, 40);
   const like = q.length < 2 ? "" : `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -2726,26 +3055,31 @@ async function board(env, url) {
   const region = Object.hasOwn(REGIONS, url.searchParams.get("region") ?? "") ? url.searchParams.get("region") : "";
   // [PLZ-05] Newest first, or the most trusted, or the most used.
   const sort = ["trust", "used"].includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "recent";
-  const rows = tab === "adopted"
-    ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name, c.kind, c.job, c.region
+  // SP1 1.30 [SPD-01] The settings beside the list, then every listed version's state and 대표 report together: two rounds
+  // (before 1.30 a page of 20 waited for each version in turn, 142 statements in 45 rounds).
+  const [{ adoptPoints }, rows] = await Promise.all([settings(env), tab === "adopted"
+    ? all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name, c.kind, c.job, c.region
         FROM rules r JOIN companies c ON c.id = r.company_id
         WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
         ORDER BY ${sort === "used" ? "(SELECT COUNT(*) FROM uses u WHERE u.company_id = r.company_id AND u.grp = r.grp) DESC," : ""} r.adopted_at DESC
         LIMIT ?1 OFFSET ?2`, size + 1, offset, like, job, region)
-    : await all(env, `SELECT p.company_id, p.grp, c.name, c.kind, c.job, c.region,
+    : all(env, `SELECT p.company_id, p.grp, c.name, c.kind, c.job, c.region,
           MAX(MAX(p.created_at),
             COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
             COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
         FROM reports p JOIN companies c ON c.id = p.company_id
-        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
+        WHERE p.status = 'pending' AND ${pgShown("p")} AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
           AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
           AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
-        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like, job, region);
+        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like, job, region)]);
+  const page = rows.slice(0, size);
+  const pairs = page.map((r) => ({ company: r.company_id, grp: r.grp }));
+  const [facts, reps] = await Promise.all([readStates(env, pairs), tab === "adopted" ? null : representatives(env, pairs)]);
   const items = [];
-  for (const r of rows.slice(0, size)) {
-    const rep = tab === "adopted" ? r : await representative(env, r.company_id, r.grp);
+  for (const r of page) {
+    const rep = tab === "adopted" ? r : reps.get(pairKey(r.company_id, r.grp));
     if (!rep) continue;
-    const s = await state(env, r.company_id, r.grp, adoptPoints, tab === "adopted");
+    const s = facts.state(r.company_id, r.grp, adoptPoints, tab === "adopted");
     if (s.persons === 0 && tab === "voting") continue;
     const lines = describe(JSON.parse(rep.setup));
     items.push({
@@ -2770,13 +3104,14 @@ async function board(env, url) {
  * older version a newer one replaced, whose talk stays readable as part of the rule's history ([PLZ-04]).
  */
 async function talkable(env, companyId, grp, past = false) {
+  // [FIN130-12] A version held for its shape has no talk (talkData's openOf reads the same).
   // AI 1.27 [PLAZA-32] A room is there as long as its company (or kind of work) is.
   if (grp === ROOM) return roomPlace(env, companyId);
   const c = await follow(env, companyId);
   if (!c || c.hidden) return null;
   const live = await one(env, `SELECT
       EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND (superseded = 0 OR ?3)) AS rule,
-      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, c.id, grp, past ? 1 : 0);
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending' AND ${pgShown()}) AS pending`, c.id, grp, past ? 1 : 0);
   return live.rule || live.pending ? c : null;
 }
 
@@ -2786,46 +3121,82 @@ async function talkable(env, companyId, grp, past = false) {
  * posts are marked, and their own hidden ones show with why.
  */
 async function talk(request, env, companyId, grp) {
-  const c = await talkable(env, companyId, grp, true);
-  if (!c) return json({ error: "not_found" }, 404);
-  const device = deviceId(request.headers.get("x-device"));
-  const me = device ? await deviceHash(device) : null;
-  // [PLAZA-08] A proposal's lines about pay are for the company's members (결정 D79, AF-D6); its shift lines are for all.
-  // AI 1.27 [PLAZA-32] A company's room is only for its members; a kind's plaza for any phone with the app (AI-D6·D7).
+  const r = await talkData(request, env, companyId, grp);
+  return json(r.body, r.status);
+}
+
+/**
+ * The talk as {status, body}. SP1 1.30 [SPD-01] Three rounds whatever the number of posts: where the talk is, who asks and
+ * whether it is open; then its posts with everything said about their writers; then the states of the proposals among them
+ * (before 1.30 sixteen reads one after another). [known] {c, who}: a company's room for a member the caller already knows.
+ */
+async function talkData(request, env, companyId, grp, known = null) {
   const room = grp === ROOM;
-  const who = room ? await roomViewer(request, env, c) : await viewer(request, env, c.id);
-  if (room && !who.member) return json({ error: who.limited ? "rate_limited" : who.dev ? "member" : "device" }, who.limited ? 429 : who.dev ? 403 : 400);
+  const device = deviceId(request.headers.get("x-device"));
+  const openOf = (id) => one(env, `SELECT
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0) AS rule,
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND superseded = 0) AS current,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending' AND ${pgShown()}) AS pending`, id, grp);
+  // AI 1.27 [PLAZA-32] A company's room is only for its members; a kind's plaza for any phone with the app (AI-D6·D7).
+  const style = room && Object.hasOwn(STYLE_ROOMS, companyId);
+  let [c, who, live] = known ? [known.c, known.who, null] : await Promise.all([
+    // AI 1.27 [PLAZA-32] A room is there as long as its company (or kind of work) is.
+    room ? roomPlace(env, companyId) : follow(env, companyId),
+    // [PLAZA-08] A proposal's lines about pay are for the company's members (결정 D79, AF-D6); its shift lines are for all.
+    style ? roomViewer(request, env, { style: true }) : viewer(request, env, companyId),
+    // A rule set people may talk about (talkable): adopted and in use, still gathering votes, or [PLZ-04] an older version.
+    room ? null : openOf(companyId),
+  ]);
+  if (!c || c.hidden) return { status: 404, body: { error: "not_found" } };
+  if (!style && c.id !== companyId) [who, live] = await Promise.all([viewer(request, env, c.id), room ? null : openOf(c.id)]);
+  if (!room && !(live.rule || live.pending)) return { status: 404, body: { error: "not_found" } };
+  if (room && !who.member) {
+    return { status: who.limited ? 429 : who.dev ? 403 : 400, body: { error: who.limited ? "rate_limited" : who.dev ? "member" : "device" } };
+  }
+  const me = device ? (who.dev ?? await deviceHash(device)) : null;
   const member = who.member;
   const lines = (change) => (member ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
-  const rows = room
-    ? await all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
-        ORDER BY created_at, r`, c.id, grp)
-    : await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
+  const now = Date.now();
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
-  const key = await authorKey(env);
-  const hidden = await hiddenAuthors(key, request.headers.get("x-hide"));
+  const sealed = authorKey(env).then(async (key) => ({ key, hidden: await hiddenAuthors(key, request.headers.get("x-hide")) }));
+  const [rows, sentRows, voteRows, checkedRows, myVoteRows, nickRows, { adoptPoints }, reviewRows, proposalRows, muted, used, { key, hidden }] = await Promise.all([
+    room
+      ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
+          ORDER BY created_at, r`, c.id, grp)
+      : all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp),
+    all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`, c.id, grp),
+    all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp),
+    all(env, "SELECT device FROM reports WHERE company_id = ? AND grp = ? AND verified = 1", c.id, grp),
+    // [PLZ-01][PLZ-08] My votes on these posts, and the names writers chose to be shown by.
+    me ? all(env, `SELECT v.post_id, v.ok FROM post_votes v JOIN posts p ON p.id = v.post_id
+      WHERE v.device = ? AND p.company_id = ? AND p.grp = ?`, me, c.id, grp) : [],
+    all(env, `SELECT n.device, n.nick FROM nicks n WHERE n.device IN
+      (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp),
+    settings(env),
+    // [COMM-11] A post someone flagged as 개인 정보 shows dimmed with 확인 중 until the developer looks.
+    all(env, `SELECT DISTINCT f.post_id FROM post_flags f JOIN posts p ON p.id = f.post_id
+      WHERE p.company_id = ? AND p.grp = ? AND p.kept = 0 AND f.reason = 'personal'`, c.id, grp),
+    // [SRV-08] The proposals' setups in one read, not one per post.
+    all(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
+      (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp),
+    me ? one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, now) : null,
+    // [COMM-11] How many more posts today, so the app can say so before a refusal.
+    me ? one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${room ? "room" : "post"}|${me}`, now) : null,
+    sealed,
+  ]);
   const dropped = new Set();
   let hiddenByYou = 0;
-  const senders = new Set((await all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`,
-    c.id, grp)).map((r) => r.device));
-  const votes = new Map((await all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp))
-    .map((v) => [v.device, v]));
-  const verified = new Set((await all(env, "SELECT device FROM reports WHERE company_id = ? AND grp = ? AND verified = 1", c.id, grp))
-    .map((r) => r.device));
+  const senders = new Set(sentRows.map((r) => r.device));
+  const votes = new Map(voteRows.map((v) => [v.device, v]));
+  const verified = new Set(checkedRows.map((r) => r.device));
   const numbers = new Map();
   const posts = [];
-  // [PLZ-01][PLZ-08] My votes on these posts, and the names writers chose to be shown by.
-  const myVotes = me ? new Map((await all(env, `SELECT v.post_id, v.ok FROM post_votes v JOIN posts p ON p.id = v.post_id
-    WHERE v.device = ? AND p.company_id = ? AND p.grp = ?`, me, c.id, grp)).map((v) => [v.post_id, v.ok === 1])) : new Map();
-  const nicks = new Map((await all(env, `SELECT n.device, n.nick FROM nicks n WHERE n.device IN
-    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp)).map((n) => [n.device, n.nick]));
-  const { adoptPoints } = await settings(env);
-  // [COMM-11] A post someone flagged as 개인 정보 shows dimmed with 확인 중 until the developer looks.
-  const review = new Set((await all(env, `SELECT DISTINCT f.post_id FROM post_flags f JOIN posts p ON p.id = f.post_id
-    WHERE p.company_id = ? AND p.grp = ? AND p.kept = 0 AND f.reason = 'personal'`, c.id, grp)).map((r) => r.post_id));
-  // [SRV-08] The proposals' setups in one read, not one per post.
-  const proposals = new Map((await all(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
-    (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp)).map((r) => [r.id, r]));
+  const myVotes = new Map(myVoteRows.map((v) => [v.post_id, v.ok === 1]));
+  const nicks = new Map(nickRows.map((n) => [n.device, n.nick]));
+  const review = new Set(reviewRows.map((r) => r.post_id));
+  const proposals = new Map(proposalRows.map((r) => [r.id, r]));
+  // [PLZ-02] Where each proposal's setup stands, every one in one round.
+  const facts = proposals.size ? await readStates(env, [...proposals.values()].map((r) => ({ company: c.id, grp: r.grp }))) : null;
   const states = new Map();
   for (const p of rows) {
     if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
@@ -2844,7 +3215,7 @@ async function talk(request, env, companyId, grp) {
       const r = proposals.get(p.report_id);
       if (r) {
         const key = `${r.grp}|${r.status === "adopted"}`;
-        if (!states.has(key)) states.set(key, await state(env, c.id, r.grp, adoptPoints, r.status === "adopted"));
+        if (!states.has(key)) states.set(key, facts.state(c.id, r.grp, adoptPoints, r.status === "adopted"));
         proposal = { setup: r.grp, ...states.get(key), lines: [] };
       }
     }
@@ -2872,15 +3243,13 @@ async function talk(request, env, companyId, grp) {
       ...(p.status === "shown" && review.has(p.id) ? { review: true } : {}),
     });
   }
-  const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
-  // [COMM-11] How many more posts today, so the app can say so before a refusal.
-  const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${room ? "room" : "post"}|${me}`, Date.now()) : null;
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
-  const past = !room && !(await talkable(env, c.id, grp));
+  if (member && !room) await withProposalTexts(all, env, c, posts); // BC 1.30 [PROP-01]
+  const past = !room && !(live.current || live.pending);
   const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
-  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
+  return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, perDay - (used?.count ?? 0)) } } : {}) });
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, perDay - (used?.count ?? 0)) } } : {}) } };
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
@@ -2930,6 +3299,8 @@ async function post(request, env) {
       const why = personal(t);
       if (why) refuse(why, field);
     }
+    // [FIN130-15] As a report: no company amount before 처리방침 3.4 is in force.
+    if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(setup);
     const base = await one(env, `SELECT dept, dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
       UNION ALL SELECT dept, dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
     const grp = (await sha256(`${base.dept_norm}|${await fingerprint(setup)}`)).slice(0, 16);
@@ -2955,9 +3326,10 @@ async function post(request, env) {
  * up to six lines of what (one of CHANGE_FIELDS), how it is now, how it should be, and why. No amounts
  * (the same rule as everything else sent here), so 기본급의 10% rather than a sum.
  */
+// BC 1.30 [ITEM-08] hours: 통상시급 기준 시간 (월 소정근로시간), as a proposal from the 기본급 screen says it.
 const CHANGE_FIELDS = {
   shift: "근무 시간", order: "근무 순서", break: "휴게", overtime: "연장 근무", night: "야간", holiday: "휴일 근무",
-  allowance: "수당", bonus: "상여", leave: "연차·휴가", other: "그 밖의 것",
+  allowance: "수당", bonus: "상여", leave: "연차·휴가", hours: "통상시급 기준 시간", other: "그 밖의 것",
 };
 
 function readChange(raw) {
@@ -3086,13 +3458,17 @@ async function setNick(request, env) {
 
 /** [PLZ-12] The plazas and how much is in each: adopted rule sets and ones being voted on, per job. */
 async function plazas(env) {
-  const rows = await all(env, `SELECT c.job,
+  // SP1 1.30 [SPD-09] Its three counts together.
+  const [rows, voting, rates] = await Promise.all([
+    all(env, `SELECT c.job,
       COUNT(DISTINCT CASE WHEN r.id IS NOT NULL THEN r.id END) AS adopted
     FROM companies c LEFT JOIN rules r ON r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0
-    WHERE c.hidden = 0 AND c.merged_into IS NULL GROUP BY c.job`);
-  const voting = await all(env, `SELECT c.job, COUNT(DISTINCT p.company_id || p.grp) AS n FROM reports p JOIN companies c ON c.id = p.company_id
-    WHERE p.status = 'pending' AND c.hidden = 0 GROUP BY c.job`);
-  const rates = await all(env, "SELECT job, COUNT(*) AS n FROM rates WHERE status = 'adopted' GROUP BY job");
+    WHERE c.hidden = 0 AND c.merged_into IS NULL GROUP BY c.job`),
+    // [FIN130-13] 투표 중 counts what the board lists: a version held for its shape is not on it.
+    all(env, `SELECT c.job, COUNT(DISTINCT p.company_id || p.grp) AS n FROM reports p JOIN companies c ON c.id = p.company_id
+    WHERE p.status = 'pending' AND ${pgShown("p")} AND c.hidden = 0 GROUP BY c.job`),
+    all(env, "SELECT job, COUNT(*) AS n FROM rates WHERE status = 'adopted' GROUP BY job"),
+  ]);
   const count = (list, job, key = "n") => list.find((r) => r.job === job)?.[key] ?? 0;
   return {
     jobs: Object.entries(JOBS).map(([key, name]) => ({ key, name, adopted: count(rows, key, "adopted"), voting: count(voting, key), rates: count(rates, key) })),
@@ -3108,26 +3484,29 @@ async function plazas(env) {
  * taken down. Adopted versions never disappear; this is how the rule grew.
  */
 async function history(env, companyId, url, request) {
-  const c = await follow(env, companyId);
+  // SP1 1.30 [SPD-09] Where and who together, then the department and its versions (with each one's senders and proposed post)
+  // together: two rounds, not two per version.
+  const grp = url.searchParams.get("setup") ?? "";
+  const [c, asked] = await Promise.all([follow(env, companyId), viewer(request, env, companyId)]);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   // [PLAZA-08] What each version paid, only for a phone that joined the company.
-  const who = await viewer(request, env, c.id);
+  const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
-  const grp = url.searchParams.get("setup") ?? "";
-  const dept = await one(env, `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
-    UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, grp);
+  const deptOf = `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
+    UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`;
+  const [dept, rules] = await Promise.all([one(env, deptOf, c.id, grp), all(env, `SELECT r.*,
+      (SELECT p.post_id FROM reports p WHERE p.rule_id = r.id AND p.post_id IS NOT NULL LIMIT 1) AS sp_post,
+      (SELECT COUNT(*) FROM reports s WHERE s.rule_id = r.id) AS sp_senders
+    FROM rules r WHERE r.company_id = ?1 AND r.dept_norm = (${deptOf}) ORDER BY r.version`, c.id, grp)]);
   if (!dept) return json({ error: "not_found" }, 404);
-  const rules = await all(env, "SELECT * FROM rules WHERE company_id = ? AND dept_norm = ? ORDER BY version", c.id, dept.dept_norm);
   const versions = [];
   let before = null;
   for (const r of rules) {
     const setup = JSON.parse(r.setup);
-    const proposed = await one(env, `SELECT p.post_id FROM reports p WHERE p.rule_id = ? AND p.post_id IS NOT NULL LIMIT 1`, r.id);
-    const senders = await one(env, "SELECT COUNT(*) AS n FROM reports WHERE rule_id = ?", r.id);
     versions.push({
       version: r.version, setup: r.grp, source: r.source, adoptedAt: iso(r.adopted_at),
       state: r.withdrawn ? "withdrawn" : r.superseded ? "superseded" : "active",
-      senders: senders.n, post: proposed?.post_id ?? null,
+      senders: r.sp_senders, post: r.sp_post ?? null,
       // [PLAZA-05] What the version was, so the app can compare it and put it back on a phone.
       body: who.member ? shared(r.setup, c.name) : shiftsOnly(shared(r.setup, c.name)),
       changes: before ? diffLines(words(before), words(setup)) : [],
@@ -3190,18 +3569,22 @@ async function rates(request, env, url) {
   const me = device ? await deviceHash(device) : null;
   const where = `status IN ('pending', 'adopted', 'review') AND (?1 = '' OR job = ?1) AND (?2 = '' OR region = ?2)
     AND (?3 = '' OR unit = ?3) AND (?4 = '' OR trade_norm = ?4)`;
-  const rows = await all(env, `SELECT * FROM rates WHERE ${where} ORDER BY created_at DESC LIMIT 200`, job, region, unit, trade);
-  const adopted = await all(env, `SELECT job, region, trade, trade_norm, unit, year, amount FROM rates WHERE ${where} AND status = 'adopted'
-    ORDER BY amount LIMIT 2000`, job, region, unit, trade);
+  // SP1 1.30 [SPD-09] The four reads together.
+  const [rows, adopted, voteRows, nickRows] = await Promise.all([
+    all(env, `SELECT * FROM rates WHERE ${where} ORDER BY created_at DESC LIMIT 200`, job, region, unit, trade),
+    all(env, `SELECT job, region, trade, trade_norm, unit, year, amount FROM rates WHERE ${where} AND status = 'adopted'
+    ORDER BY amount LIMIT 2000`, job, region, unit, trade),
+    me ? all(env, "SELECT rate_id, ok FROM rate_votes WHERE device = ?", me) : [],
+    all(env, `SELECT device, nick FROM nicks WHERE device IN (SELECT device FROM rates WHERE ${where})`, job, region, unit, trade),
+  ]);
   const kinds = new Map();
   for (const r of adopted) {
     const key = [r.job, r.region, r.trade_norm, r.unit, r.year].join("|");
     if (!kinds.has(key)) kinds.set(key, { job: r.job, region: r.region, trade: r.trade, unit: r.unit, year: r.year, amounts: [] });
     kinds.get(key).amounts.push(r.amount);
   }
-  const myVotes = me ? new Map((await all(env, "SELECT rate_id, ok FROM rate_votes WHERE device = ?", me)).map((v) => [v.rate_id, v.ok === 1])) : new Map();
-  const nicks = new Map((await all(env, `SELECT device, nick FROM nicks WHERE device IN (SELECT device FROM rates WHERE ${where})`,
-    job, region, unit, trade)).map((n) => [n.device, n.nick]));
+  const myVotes = new Map(voteRows.map((v) => [v.rate_id, v.ok === 1]));
+  const nicks = new Map(nickRows.map((n) => [n.device, n.nick]));
   return json({
     ...(job ? { job } : {}), ...(region ? { region } : {}), ...(unit ? { unit } : {}),
     groups: [...kinds.values()].map(({ amounts, ...k }) => ({ ...k, n: amounts.length, low: amounts[0], mid: middle(amounts), high: amounts[amounts.length - 1] }))
@@ -3360,24 +3743,27 @@ async function takeRateBack(request, env, id) {
  */
 async function activity(request, env) {
   const dev = await installOf(request);
-  const { adoptPoints } = await settings(env);
-  const reports = await all(env, `SELECT r.id, r.company_id, r.grp, r.dept, r.status, r.created_at, c.name, u.version, u.withdrawn
+  // SP1 1.30 [SPD-09] Everything of this phone together, then every report's score in one round (before 1.30 two reads per
+  // report one after another: a hundred rounds for someone who sent fifty).
+  const [{ adoptPoints }, reports, posts, mine, rewardRows, nick] = await Promise.all([
+    settings(env),
+    all(env, `SELECT r.id, r.company_id, r.grp, r.dept, r.status, r.created_at, c.name, u.version, u.withdrawn
     FROM reports r JOIN companies c ON c.id = r.company_id LEFT JOIN rules u ON u.id = r.rule_id
-    WHERE r.device = ? ORDER BY r.created_at DESC LIMIT 50`, dev);
-  const sent = [];
-  for (const r of reports) {
-    const s = await score(env, r.company_id, r.grp);
-    const uses = await one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", r.company_id, r.grp);
-    sent.push({ id: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, setup: r.grp,
-      status: r.status === "adopted" && r.withdrawn ? "withdrawn" : r.status, version: r.version ?? null,
-      persons: s.persons, bad: s.bad, threshold: adoptPoints, uses: uses.n, at: iso(r.created_at) });
-  }
-  const posts = await all(env, `SELECT p.id, p.company_id, p.grp, p.kind, p.agree, p.disagree, p.body, p.created_at, c.name
+    WHERE r.device = ? ORDER BY r.created_at DESC LIMIT 50`, dev),
+    all(env, `SELECT p.id, p.company_id, p.grp, p.kind, p.agree, p.disagree, p.body, p.created_at, c.name
     FROM posts p JOIN companies c ON c.id = p.company_id WHERE p.device = ? AND p.status = 'shown' AND p.kind = 'proposal'
-    ORDER BY p.created_at DESC LIMIT 30`, dev);
-  const mine = await all(env, "SELECT * FROM rates WHERE device = ? ORDER BY created_at DESC LIMIT 50", dev);
-  const rewardRows = await all(env, "SELECT months, status, rule_id, created_at, paid_at FROM rewards WHERE device = ? ORDER BY created_at DESC LIMIT 50", dev);
-  const nick = await one(env, "SELECT nick FROM nicks WHERE device = ?", dev);
+    ORDER BY p.created_at DESC LIMIT 30`, dev),
+    all(env, "SELECT * FROM rates WHERE device = ? ORDER BY created_at DESC LIMIT 50", dev),
+    all(env, "SELECT months, status, rule_id, created_at, paid_at FROM rewards WHERE device = ? ORDER BY created_at DESC LIMIT 50", dev),
+    one(env, "SELECT nick FROM nicks WHERE device = ?", dev),
+  ]);
+  const facts = await readStates(env, reports.map((r) => ({ company: r.company_id, grp: r.grp })));
+  const sent = reports.map((r) => {
+    const s = facts.state(r.company_id, r.grp, adoptPoints, false);
+    return { id: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, setup: r.grp,
+      status: r.status === "adopted" && r.withdrawn ? "withdrawn" : r.status, version: r.version ?? null,
+      persons: s.persons, bad: s.bad, threshold: adoptPoints, uses: s.uses, at: iso(r.created_at) };
+  });
   return json({
     nick: nick?.nick ?? null,
     reports: sent,
@@ -4727,6 +5113,8 @@ function areaFor(path) {
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
   // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
   if (path === "/badges" || path === "/today" || path === "/basics") return null;
+  // AX 1.30 [ADMX-08] One search: each part reads only what the admin may see (adminSearch).
+  if (path === "/search") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -4818,6 +5206,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
   if (path === "/today" && method === "GET") return json(await today(env, actor, now));
   if (path === "/basics" && method === "GET") return json(await basics(env));
+  // AX 1.30 [ADMX-08] 찾기·이동: companies, questions, 개발사항 and admins in one ask.
+  if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") return json(serverState(env));
@@ -4892,6 +5282,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
     const m = await metrics(env, url, now);
     m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
     m.photoWrong = await photoWrongMetrics(env, m.from, m.to); // AQ 1.29 [PHOTO-10]
+    Object.assign(m, await metricExtras(env, m.from, m.to)); // AX 1.30 [ADMX-07] releases, compare
     return json(m);
   }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
@@ -5009,10 +5400,40 @@ const PUSH_KINDS = {
   join: { label: "승인을 기다리는 관리자", area: "owner" },
   // AM 1.28 [FLAG-28] 결정 D99: a legal flag the day before it turns on by itself, and once it did.
   flags: { label: "기능 관리(결제·광고 같은 법적 기능이 켜지기 하루 전·켜짐)", area: "flags" },
+  // AX 1.30 [ADMX-10] 오늘's 주의 필요, each at most once a day (alertTick); an area list is any one of them.
+  late: { label: "기한 넘긴 일", area: ["inquiries", "review", "community", "dev"] },
+  versions: { label: "정할 판·모양이 다른 판", area: ["companies", "review"] },
+  doubt: { label: "달라요 급증·달라요 많은 규칙", area: "review" },
+  spike: { label: "문제 신고·서버 오류 급증", area: ["inquiries", "metrics"] },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
-const mayGet = (actor, kind) => (PUSH_KINDS[kind].area === "owner" ? actor.owner : can(actor, PUSH_KINDS[kind].area));
+const mayGet = (actor, kind) => {
+  const area = PUSH_KINDS[kind].area;
+  return area === "owner" ? actor.owner : [area].flat().some((a) => can(actor, a));
+};
+
+/**
+ * AX 1.30 [ADMX-10] Hourly: what 오늘's 주의 필요 shows (as the owner sees it) goes out as web push to the admins who asked
+ * for its kind, each alert once a KST day. Without push keys nothing is read.
+ */
+export async function alertTick(env, now) {
+  if (!pushReady(env)) return;
+  const t = await today(env, OWNER, now);
+  const day = kstDay(now);
+  let sent = {};
+  try {
+    const v = JSON.parse((await one(env, "SELECT value FROM settings WHERE key = 'ax_alerts'"))?.value ?? "{}");
+    if (v.day === day) sent = v.sent ?? {};
+  } catch {
+    sent = {};
+  }
+  const fresh = (t.alerts ?? []).filter((a) => !sent[a.key]);
+  if (!fresh.length) return;
+  for (const a of fresh) await notifyAdmins(env, a.kind, { title: "주의 필요", body: a.title, url: `/admin/${a.to}` }, now);
+  await run(env, "INSERT INTO settings (key, value) VALUES ('ax_alerts', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    JSON.stringify({ day, sent: { ...sent, ...Object.fromEntries(fresh.map((a) => [a.key, 1])) } }));
+}
 
 /** A KST hour of [now] inside quiet hours [from]..[to] (to may be past midnight: 22..7). */
 function quietNow(from, to, now) {
@@ -5510,7 +5931,10 @@ const AUDIT_SELECT = `SELECT a.id, a.at, a.action, a.target, a.detail, a.actor, 
     (SELECT c.name FROM companies c WHERE c.id = substr(CASE WHEN a.action = 'post_autohide' THEN a.detail ELSE a.target END, 1, 12)) AS company_name,
     (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = CASE WHEN a.action IN ('dev_link', 'dev_unlink') THEN a.detail
       WHEN substr(a.action, 1, 8) = 'inquiry_' THEN a.target END ORDER BY m.id LIMIT 1) AS inquiry_first,
-    (SELECT 1 FROM dev_items d WHERE d.id = a.detail) AS dev_kept
+    (SELECT 1 FROM dev_items d WHERE d.id = a.detail) AS dev_kept,
+    -- AX 1.30 [ADMX-01] a reward's company (reward_auto and the others name the reward's id)
+    (SELECT c.name FROM rewards w JOIN reports p ON p.id = w.report_id JOIN companies c ON c.id = p.company_id
+      WHERE substr(a.action, 1, 7) = 'reward_' AND w.id = a.target) AS reward_company
   FROM audit a`;
 
 /** [ADMIN-17] What an entry was about, in words, and where it opens (or null). */
@@ -5520,6 +5944,8 @@ function auditAbout(r) {
     return r.inquiry_first !== null ? { label: `문의 "${words(r.inquiry_first)}"`, link: `#/inquiries/${r.target}` } : { label: "지워진 문의", link: null };
   }
   if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
+  // AX 1.30 [ADMX-01] A reward by the company it was for; its id (a hash) is never the words.
+  if (r.action.startsWith("reward_")) return { label: r.reward_company ? `${r.reward_company} 보상` : "보상", link: "#/rewards" };
   if (r.company_name !== null && r.company_name !== undefined) {
     const review = ["adopt", "reject", "reject_undo", "answer"].includes(r.action);
     const post = r.action.startsWith("post_");
@@ -5542,8 +5968,9 @@ const BADGE_SQL = {
   owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
   flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
   // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
+  // [FIN130-11] A version held for its shape (BD) is counted once, under 모양이 다른 판 (ax_shape), not here as well.
   versionConflicts: ["companies", `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
-      WHERE status = 'pending' GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
+      WHERE status = 'pending' AND ${pgShown()} GROUP BY company_id, dept_norm) p WHERE p.g >= 2 OR EXISTS (SELECT 1 FROM rules r
       WHERE r.company_id = p.company_id AND r.dept_norm = p.dept_norm AND r.withdrawn = 0 AND r.superseded = 0)`],
   waiting: ["owner", "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'"],
   // [MON-09] Admins' phones waiting for the owner's 승인.
@@ -5619,7 +6046,11 @@ async function today(env, actor, now) {
   if (can(actor, "companies")) {
     q.companies = ["SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"];
     q.rules = ["SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"];
+    q.versionConflicts = [BADGE_SQL.versionConflicts[1]]; // AX 1.30 [ADMX-01] 정할 판 for 주의 필요
   }
+  // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
+  Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
+    metrics: can(actor, "metrics") }, start));
   const keys = Object.keys(q);
   const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
   const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
@@ -5636,6 +6067,10 @@ async function today(env, actor, now) {
     out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
       detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
   }
+  // AX 1.30 [ADMX-01][ADMX-07] trend: 7 days per count (today last); alerts: what needs a look now (주의 필요).
+  out.trend = trendFrom(got, start);
+  out.alerts = alertsFrom({ trend: out.trend, todo: out.todo.items, now, versions: got.versionConflicts?.[0]?.n ?? 0, shape: got.ax_shape?.[0]?.n ?? 0 });
+  if (got.versionConflicts) out.versionConflicts = got.versionConflicts[0].n;
   return out;
 }
 
@@ -5759,6 +6194,8 @@ async function queue(env) {
       reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, ...(r.claim === 1 ? { claim: true } : {}), note: r.note, at: iso(r.created_at) })),
       lines,
       changes: active ? diffLines(describe(JSON.parse(active.setup)), lines) : null,
+      // AX 1.30 [ADMX-04] BD 1.30 [PLZD-04] keeps a setup shaped unlike its department's rule as pending with reason 'shape'.
+      ...(mine.some((r) => r.status === "pending" && r.reason === "shape") ? { shape: true } : {}),
     });
   }
   out.sort((a, b) => b.blocked - a.blocked || b.points - a.points || cmp(a.reports[0].at, b.reports[0].at));
@@ -5839,8 +6276,16 @@ function companyLike(q) {
   return n ? `%${n.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : "";
 }
 
+/** AX 1.30 [ADMX-06] The company table's sorts: a column, biggest first (이름 in order), newest company last to break ties. */
+const COMPANY_SORTS = {
+  new: "c.created_at DESC", name: "c.name, c.created_at DESC", rules: "rules DESC, c.created_at DESC", pending: "pending DESC, c.created_at DESC",
+  reports: "reports DESC, c.created_at DESC", members: "members DESC, c.created_at DESC", uses: "uses30 DESC, c.created_at DESC",
+  bad: "(bad * 1.0 / (ok + bad + 1)) DESC, bad DESC, c.created_at DESC",
+};
+
 async function companies(env, query, params = new URLSearchParams()) {
   const pg = page(params);
+  const sort = Object.hasOwn(COMPANY_SORTS, params.get("sort") ?? "") ? params.get("sort") : "new";
   const q = normName(query).slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await all(env, `
@@ -5849,17 +6294,24 @@ async function companies(env, query, params = new URLSearchParams()) {
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS rules,
       (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending') AS pending,
       (SELECT COUNT(*) FROM reports p WHERE p.company_id = c.id) AS reports,
-      (SELECT COUNT(*) FROM members m WHERE m.company_id = c.id AND m.left = 0) AS members
+      (SELECT COUNT(*) FROM members m WHERE m.company_id = c.id AND m.left = 0) AS members,
+      -- AX 1.30 [ADMX-06] the table's other numbers: earlier versions, phones that applied a rule in 30 days, 맞았어요·달라요.
+      (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 1) AS previous,
+      (SELECT COUNT(*) FROM uses u WHERE u.company_id = c.id AND u.at >= ?5) AS uses30,
+      (SELECT COUNT(*) FROM votes v WHERE v.company_id = c.id AND v.ok = 1) AS ok,
+      (SELECT COUNT(*) FROM votes v WHERE v.company_id = c.id AND v.ok = 0) AS bad
     FROM companies c
     WHERE ?1 = '' OR c.norm LIKE ?2 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?2 ESCAPE '\\')
-    ORDER BY c.merged_into IS NOT NULL, c.created_at DESC LIMIT ?3 OFFSET ?4`, q, like, pg.limit + 1, pg.after);
+    ORDER BY c.merged_into IS NOT NULL, ${COMPANY_SORTS[sort]} LIMIT ?3 OFFSET ?4`, q, like, pg.limit + 1, pg.after, Date.now() - 30 * DAY);
   const { items, next } = sqlPage(rows, pg);
   return {
     next,
     companies: items.map((c) => ({
       id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: c.merged_into, aliases: c.aliases, rules: c.rules,
       pending: c.pending, reports: c.reports, createdAt: iso(c.created_at), members: c.members,
+      previous: c.previous, uses30: c.uses30, ok: c.ok, bad: c.bad,
     })),
+    sort,
   };
 }
 
@@ -5881,9 +6333,13 @@ async function companyInfo(env, id) {
   const into = intoRows[0] ?? null;
   const aliases = aliasRows.map((a) => a.name);
   const scores = tallies(reports, votes);
-  const rules = ruleRows.map((r) => {
+  // AX 1.30 [ADMX-02] Each version against the department's version before it (rows are by department, newest first).
+  const earlier = (r, i) => ruleRows.slice(i + 1).find((x) => x.dept_norm === r.dept_norm) ?? null;
+  const rules = ruleRows.map((r, i) => {
     const s = scores.get(`${id}/${r.grp}`) ?? NO_SCORE;
+    const before = earlier(r, i);
     return {
+      ...(before ? { changesFromPrevious: { version: before.version, ...diffLines(describe(JSON.parse(before.setup)), describe(JSON.parse(r.setup))) } } : {}),
       id: r.id, dept: r.dept, version: r.version, source: r.source, adoptedAt: iso(r.adopted_at), withdrawn: r.withdrawn === 1,
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
       // AH 1.27 [PLAZA-15] 달라요 by where (순서·시간·급여 항목·그 밖), and whether too many took it out of the lead.
@@ -7542,7 +7998,9 @@ export const PHOTO_SCREENS = {
 };
 export const PHOTO_REASONS = {
   numbers: "숫자가 틀려요", missing: "빠진 칸이 있어요", extra: "없는 칸이 생겼어요", names: "이름이나 종류가 틀려요",
-  nothing: "거의 읽지 못했어요", other: "다른 점이 있어요",
+  nothing: "거의 읽지 못했어요",
+  hourly: "통상시급이 달라요", hours: "기준 시간이 달라요", // AV 1.30 [PHOTO-28] 명세서로 계산한 통상시급·기준 시간이 틀렸을 때
+  other: "다른 점이 있어요",
 };
 /** Rows a bundle may carry, days a phone keeps them (the app's PhotoWrongBook), presses a row, bundles a network a day. */
 const PHOTO_WRONG = { rows: 60, keepDays: 60, count: 99, perNetworkDay: 30, bytes: 8 * 1024 };
@@ -7995,7 +8453,7 @@ export function wilson(ok, n) {
 async function versions(env, show) {
   const [ruleRows, groupRows, reports, votes, useRows, postRows, companyRows, settingRows] = (await batch(env, [
     env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
-    env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at FROM reports WHERE status = 'pending'
+    env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at, reason FROM reports WHERE status = 'pending'
       ORDER BY verified DESC, created_at DESC`),
     env.DB.prepare("SELECT company_id, grp, device, points, cluster, verified FROM reports WHERE status IN ('pending', 'adopted')"),
     env.DB.prepare("SELECT company_id, grp, device, ok, verified, cluster FROM votes"),
@@ -8033,19 +8491,25 @@ async function versions(env, show) {
     if (seen.has(key)) continue;
     seen.add(key);
     const reportsOf = groupRows.filter((x) => x.company_id === g.company_id && x.grp === g.grp);
+    // [FIN130-11] Held for its shape (every report of it, as pgShown reads them): shown, marked, never live nor recommended.
+    const shape = reportsOf.every((x) => x.reason === PG_HELD);
     at(g.company_id, g.dept_norm, g.dept).list.push(card(g.company_id, g.grp, {
       state: "pending", reports: reportsOf.length,
-      at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup }));
+      at: iso(Math.min(...reportsOf.map((x) => x.created_at))), raw: g.setup, ...(shape ? { shape: true } : {}) }));
   }
   const out = [];
   let conflicts = 0;
   for (const d of depts.values()) {
-    const live = d.list.filter((c) => c.state !== "previous");
+    const live = d.list.filter((c) => c.state !== "previous" && !c.shape);
     const conflict = live.length >= 2;
     if (conflict) conflicts++;
     if (d.list.length < 2 || (!conflict && show !== "history")) continue;
     const active = d.list.find((c) => c.state === "active");
     const base = active ? describe(JSON.parse(active.raw)) : null;
+    // AX 1.30 [ADMX-02][ADMX-03] The rule in use is compared with the version before it (1.29 showed nothing on it and the
+    // difference backwards on that earlier one); a waiting setup with the rule in use; an earlier version says what
+    // 다시 대표로 would change. Each card has its facts for the 비교 표.
+    const prior = d.list.filter((c) => c.state === "previous").sort((a, b) => b.version - a.version)[0] ?? null;
     // The one most people took and trust: phones that use it, people who sent or backed it, over the Wilson share.
     const score = support;
     const best = live.length ? live.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
@@ -8055,7 +8519,10 @@ async function versions(env, show) {
       candidates: d.list.sort((a, b) => order[a.state] - order[b.state] || (b.version ?? 0) - (a.version ?? 0) || b.at.localeCompare(a.at)).map((c) => {
         const lines = describe(JSON.parse(c.raw));
         const { raw, ...rest } = c;
-        return { ...rest, lines, changes: base && c !== active ? diffLines(base, lines) : null, recommended: Boolean(conflict && c === best) };
+        const from = c === active ? prior : active;
+        const changes = !from ? null : c === active ? diffLines(describe(JSON.parse(prior.raw)), lines) : diffLines(base, lines);
+        return { ...rest, lines, facts: factsOf(lines), changes, ...(from ? { against: { state: from.state, version: from.version ?? null } } : {}),
+          recommended: Boolean(conflict && c === best) };
       }),
     });
   }
@@ -8665,6 +9132,16 @@ function readOverride(r) {
     until: r.until ? iso(r.until) : null, reviewAt: r.review_at ?? null, by: r.by_name ?? "", byId: r.by_id ?? "", at: iso(r.at), auto: r.auto === 1,
     // 1.28 통합 [FLAG-36] AL-D3: outside this versionCode range the phone turns the flag off (판단 2단계).
     minApp: r.min_app ?? null, maxApp: r.max_app ?? null };
+}
+
+/**
+ * [FIN130-15] Whether 처리방침 [ITEM_FIXED_POLICY] is in force today (KST), by the calendar as the owner set it in the developer
+ * app: a company's one amount (fixedAmount) is taken only from then. A version not in the calendar is not in force.
+ */
+async function fixedAmountsOpen(env, now = Date.now()) {
+  const raw = (await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value;
+  const p = mergePolicy(raw).find((x) => x.version === ITEM_FIXED_POLICY);
+  return Boolean(p?.effective) && kstDay(now) >= p.effective;
 }
 
 /** [FLAG-33] The calendar with the owner's changes, and versions the owner added. */

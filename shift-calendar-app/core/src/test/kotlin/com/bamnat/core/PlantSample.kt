@@ -2,6 +2,7 @@ package com.bamnat.core
 
 import com.bamnat.core.pay.OcrLine
 import com.bamnat.core.pay.SlipRole
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -120,12 +121,34 @@ object PlantSample {
     private val WATERMARK = "XX Chem abcde 2026-10-25 16:25 10.11.222.33"
     private val MARKS = listOf(30.0 to 525.0, 945.0 to 550.0, 160.0 to 930.0, 940.0 to 1030.0, 260.0 to 460.0, 1080.0 to 920.0)
 
-    data class Noise(val digit: Double = 0.0, val comma: Double = 0.0, val roman: Double = 0.0, val mark: Double = 0.0, val jitter: Int = 0, val lose: Double = 0.0, val angles: Boolean = true) {
+    /**
+     * What a reading of the photo does to it. [PHOTO-27] 1.30 AV: the axes a photo really changes along (R3 A-1, 사용자
+     * 2026-10-27 "사진마다 읽는 부분이 다르다"), on top of 1.29's letters and boxes:
+     * - [tilt]: the whole page turned, degrees (positive: lines go down to the right).
+     * - [perspective]: taken from one side (a keystone): the far side smaller, rows converging, each row at its own slant and
+     *   the rows closer together on the far side. 0.06 is a light angle, 0.12 a strong one.
+     * - [scale]: the letters' size (taken from near or far), ×0.6~1.4.
+     * - [split]: ML Kit's words cut and joined differently at another size ("기본급" "I", "위험예지훈련" "/LMS", "볼링회(", "2,397," "500").
+     * - [cropTop]/[cropBottom]: the photo cut above the 지급내역 heads (the sums at the top gone) or under the 공제계 (근태 gone).
+     * - [headLost]: the 지급내역·공제내역 heads not read (or read as other letters, [headGarbled]).
+     */
+    data class Noise(
+        val digit: Double = 0.0, val comma: Double = 0.0, val roman: Double = 0.0, val mark: Double = 0.0, val jitter: Int = 0, val lose: Double = 0.0,
+        val angles: Boolean = true,
+        val tilt: Double = 0.0, val perspective: Double = 0.0, val scale: Double = 1.0, val split: Double = 0.0,
+        val cropTop: Boolean = false, val cropBottom: Boolean = false, val headLost: Boolean = false, val headGarbled: Boolean = false,
+    ) {
         companion object { val CLEAN = Noise() }
     }
 
     fun payslip(noise: Noise, r: Random, lines: Boolean = false): List<OcrLine> = ocr(SLIP, noise, r, lines)
     fun rules(noise: Noise, r: Random, lines: Boolean = true): List<OcrLine> = ocr(RULES, noise, r, lines)
+
+    /** [PHOTO-27] What a reading with [noise] can still find: the sums at the top cut away take 차감지급액 with them. */
+    fun expected(noise: Noise): List<Item> = if (noise.cropTop) ALL.filter { it.name != "차감지급액" } else ALL
+
+    /** [PHOTO-27] Hours a reading with [noise] can still find: the 근태 table cut away takes them all. */
+    fun expectedHours(noise: Noise): Map<String, Int> = if (noise.cropBottom) emptyMap() else HOURS
 
     private fun charW(c: Char, h: Double) = when {
         c in '가'..'힣' -> h * 1.0
@@ -134,24 +157,56 @@ object PlantSample {
         else -> h * 0.6
     }
 
+    /** [PHOTO-27] Where a point of the 1600-wide copy lands in the photo taken with [n]: keystone, then turned, then sized. */
+    private class Lens(n: Noise) {
+        private val p = n.perspective
+        private val q = n.perspective * 0.5
+        private val t = Math.toRadians(n.tilt)
+        private val k = 2.5 * n.scale
+        fun at(x: Double, y: Double): Pair<Double, Double> {
+            val u = (x - 800.0) / 1600.0
+            val v = (y - 640.0) / 1600.0
+            val d = 1 + p * u + q * v
+            val pu = u / d
+            val pv = v / d
+            val ru = pu * cos(t) - pv * sin(t)
+            val rv = pu * sin(t) + pv * cos(t)
+            return (800.0 + 1600.0 * ru) * k to (640.0 + 1600.0 * rv) * k
+        }
+    }
+
     private fun ocr(cells: List<Cell>, n: Noise, r: Random, lines: Boolean): List<OcrLine> {
         val out = mutableListOf<OcrLine>()
-        val k = 2.5
+        val lens = Lens(n)
         // The page leans: about 0.7° (the right side lower); each line's angle says so, as ML Kit's does.
-        val lean = if (n.angles) 0.7f else 0f
+        val lean = if (n.angles) 0.7 else 0.0
+        fun box(text: String, x0: Double, y0: Double, x1: Double, y1: Double, angle: Double): OcrLine {
+            val corners = listOf(lens.at(x0, y0), lens.at(x1, y0), lens.at(x0, y1), lens.at(x1, y1))
+            // ML Kit's boxes miss by a share of the letters' size: a far photo's by fewer pixels (the same as 1.29 at ×1).
+            val jit = (n.jitter * n.scale).roundToInt()
+            fun j() = if (jit == 0) 0 else r.nextInt(-jit, jit + 1)
+            // The slant ML Kit gives a line: the page's own and what the lens did to the line's course.
+            val (ax, ay) = lens.at(x0, (y0 + y1) / 2)
+            val (bx, by) = lens.at(x1, (y0 + y1) / 2)
+            val turned = if (n.angles) Math.toDegrees(atan2(by - ay, bx - ax)) else 0.0
+            return OcrLine(text, corners.minOf { it.first }.roundToInt() + j(), corners.minOf { it.second }.roundToInt() + j(),
+                corners.maxOf { it.first }.roundToInt() + j(), corners.maxOf { it.second }.roundToInt() + j(), angle = (angle + turned).toFloat())
+        }
         for (c in cells) {
-            val text = garble(c.text, n, r)
+            if (n.cropTop && c.y < 372) continue
+            if (n.cropBottom && c.y > 915) continue
+            if (n.headLost && c.text in HEADS) continue
+            val printed = if (n.headGarbled) HEADS[c.text] ?: c.text else c.text
+            val text = garble(printed, n, r)
             if (text.isBlank()) continue
             if (r.nextDouble() < n.lose && text.none { it.isDigit() }) continue
-            val words = if (lines) listOf(text) else text.split(' ').filter { it.isNotEmpty() }
+            val words = pieces(if (lines) listOf(text) else text.split(' ').filter { it.isNotEmpty() }, n.split, r)
             val full = text.sumOf { charW(it, c.h) }
             var x = c.x - full / 2
-            for (w in words) {
+            for ((w, spaceAfter) in words) {
                 val ww = w.sumOf { charW(it, c.h) }
-                fun j() = if (n.jitter == 0) 0 else r.nextInt(-n.jitter, n.jitter + 1)
-                out += OcrLine(w, ((x) * k).roundToInt() + j(), ((c.y - c.h / 2) * k).roundToInt() + j(),
-                    ((x + ww) * k).roundToInt() + j(), ((c.y + c.h / 2) * k).roundToInt() + j(), angle = lean)
-                x += ww + charW(' ', c.h)
+                out += box(w, x, c.y - c.h / 2, x + ww, c.y + c.h / 2, lean)
+                x += ww + if (spaceAfter) charW(' ', c.h) else 0.0
             }
         }
         // The watermark: words in boxes that stand on their corner, read now and then.
@@ -168,12 +223,42 @@ object PlantSample {
                 val y0 = sy + along * sin(a)
                 val x1 = x0 + len * cos(a)
                 val y1 = y0 + len * sin(a)
-                if (r.nextDouble() < 0.8) out += OcrLine(w, (minOf(x0, x1) * k).roundToInt(), ((minOf(y0, y1) - h / 2) * k).roundToInt(),
-                    (maxOf(x0, x1) * k).roundToInt(), ((maxOf(y0, y1) + h / 2) * k).roundToInt(), angle = -20f)
+                if (r.nextDouble() < 0.8) {
+                    val b = box(w, minOf(x0, x1), minOf(y0, y1) - h / 2, maxOf(x0, x1), maxOf(y0, y1) + h / 2, 0.0)
+                    // Its own slant, -20°, and the lens's turn of the page.
+                    out += b.copy(angle = if (n.angles) -20f + (n.tilt.toFloat()) else -20f)
+                }
                 along += len + charW(' ', h)
             }
         }
         return out.shuffled(r)
+    }
+
+    /** The heads of the two tables, and how a photo misreads them ([Noise.headGarbled]). */
+    private val HEADS = mapOf("지급내역" to "지금내역", "공제내역" to "공제내 역")
+
+    /**
+     * [PHOTO-27] Words as ML Kit's elements cut them at one size and not at another: a word cut in two (at a comma for an
+     * amount), or two words of a cell run together. Each piece says whether a space followed it.
+     */
+    private fun pieces(words: List<String>, split: Double, r: Random): List<Pair<String, Boolean>> {
+        if (split <= 0.0) return words.map { it to true }
+        val out = mutableListOf<Pair<String, Boolean>>()
+        var i = 0
+        while (i < words.size) {
+            var w = words[i]
+            // Two words of one cell read as one ("볼링회" "(" → "볼링회(").
+            if (i + 1 < words.size && r.nextDouble() < split / 2) { w += words[i + 1]; i++ }
+            val at = when {
+                r.nextDouble() >= split -> -1
+                w.any { it.isDigit() } -> w.indices.filter { w[it] == ',' }.let { cs -> if (cs.isEmpty()) -1 else cs[r.nextInt(cs.size)] + if (r.nextBoolean()) 0 else 1 }
+                w.length >= 2 -> 1 + r.nextInt(w.length - 1)
+                else -> -1
+            }
+            if (at in 1 until w.length) { out += w.substring(0, at) to false; out += w.substring(at) to true } else out += w to true
+            i++
+        }
+        return out
     }
 
     private val ROMAN = mapOf("기본급I" to listOf("기본급l", "기본급1", "기본급|"), "기본급II" to listOf("기본급ll", "기본급Il", "기본급11", "기본급||"))

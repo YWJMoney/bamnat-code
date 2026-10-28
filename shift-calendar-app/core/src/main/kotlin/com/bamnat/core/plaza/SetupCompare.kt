@@ -48,7 +48,10 @@ object SetupCompare {
     fun proposalLines(rows: List<CompareRow>): List<ProposalLine> {
         val diff = rows.filter { !it.same }
         val lines = diff.map { r ->
-            ProposalLine(r.field, cut("${r.label}: ${r.before ?: "없음"}"), cut("${r.label}: ${r.after ?: "없음"}"))
+            // [ITEM-04] 1.30 BC: a company's one amount stays in the setup, never in the words (the server takes no amount in them).
+            val now = scrub("${r.label}: ${r.before ?: "없음"}")
+            val want = scrub("${r.label}: ${r.after ?: "없음"}")
+            ProposalLine(r.field, cut(now), cut(if (want == now) "$want (금액 바뀜)" else want))
         }
         if (lines.size <= MAX_LINES) return lines
         val rest = lines.size - (MAX_LINES - 1)
@@ -63,4 +66,33 @@ object SetupCompare {
     }
 
     private fun cut(s: String): String = if (s.length <= MAX_TEXT) s else s.take(MAX_TEXT - 1) + "…"
+
+    private val AMOUNT = Regex("""\s*\d[\d,]*\s*원""")
+
+    /** "식대: 매달 회사 공통 100,000원" → "식대: 매달 회사 공통 정액". */
+    internal fun scrub(s: String): String = s.replace(AMOUNT, " 정액").trim()
+}
+
+/**
+ * [ITEM-08] 1.30 BC (계약): a proposal made ready for the user, who only presses 보내기: the company's version with one thing
+ * changed, the lines it makes and a reason to start from. 묶음 BA's 기본급 screen opens it when the user's 통상시급 hours differ
+ * from the company's (사용자 2026-10-27 "수정한다면 해당 내용을 의견으로 제시해서 사람들이 볼수 있게").
+ */
+data class ProposalDraft(val base: String, val text: String, val lines: List<ProposalLine>, val why: String) {
+    companion object {
+        /**
+         * The company's version [base] with its 통상시급 hours set to [hours]; null when [base] is not a company file with pay, the
+         * hours are outside 100~320, or they are already the same. [from] says where the user's number came from ("명세서").
+         */
+        fun hours(base: String, hours: Int, from: String = "명세서"): ProposalDraft? {
+            val e = SetupEdit.of(base) ?: return null
+            if (!e.hasPay || hours !in SetupEdit.HOURS_MIN..SetupEdit.HOURS_MAX) return null
+            val was = e.monthlyHours
+            if (was == hours) return null
+            val text = e.monthlyHours(hours).text
+            val lines = SetupCompare.proposalLines(SetupCompare.rows(base, text))
+            if (lines.isEmpty()) return null
+            return ProposalDraft(base, text, lines, "${from}에 통상시급 기준 시간이 ${hours}시간으로 나와요" + (was?.let { " (지금 ${it}시간)" } ?: ""))
+        }
+    }
 }

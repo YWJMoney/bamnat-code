@@ -1,13 +1,14 @@
 package com.bamnat.app.company
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 
 /**
- * [PAYF-04] 1.29 묶음 AP: the company pay way the main pay uses ("이 급여 방식 쓰기", or a company setup put in with its pay), so
+ * [PAYF-04] 1.29 묶음 AP: the company pay way a calendar's pay uses ("이 급여 방식 쓰기", or a company setup put in with its pay), so
  * the pay screen can say whose it is and keep 맞아요·달라요 on it. Before 1.29 nothing remembered it: the rules came in and the
  * pay screen could not tell them from the user's own, and the server never counted the phone as using it.
  */
@@ -22,9 +23,12 @@ data class PayWay(
     val why: String? = null,
 )
 
-/** [PAYF-04] Where [PayWay] is kept: its own small preferences file, backed up like the company setup in use. */
-class PayWayStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+/**
+ * [PAYF-04] Where [PayWay] is kept: its own small preferences file, backed up like the company setup in use.
+ * [CALI-01] 1.30 BB: one per calendar ([CompanyScope]); an added calendar's is a file in its own folder ([CompanyScopeStorage]).
+ */
+class PayWayStore internal constructor(private val prefs: SharedPreferences) {
+    constructor(context: Context) : this(context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE))
 
     private val _way = MutableStateFlow(read())
     val way: StateFlow<PayWay?> = _way.asStateFlow()

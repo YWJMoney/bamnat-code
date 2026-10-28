@@ -10,6 +10,21 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.30.0 (docs/plans/1.30-통합계획.md; 통합 folded BA·BB·BC·BD·SP1·AP1·AV·AW·AY into six lines, AX is the developer's app).
+        Release(41, "1.30.0", listOf(
+            // [SPD-01][SPD-11][SPD-13] Bundles SP1·AP1.
+            Line("회사 찾기와 광장이 훨씬 빨라졌어요. 한 번 본 화면은 기다리지 않고 바로 보여요"),
+            // [PAYG-01][PAYG-04][PAYG-05][PAYG-06] Bundle BA.
+            Line("회사 급여 방식은 기본급까지 넣어야 들어가요. 닫으면 아무것도 바뀌지 않고, ‘자세히 고치기’도 급여 화면 위에서 바로 열려요"),
+            // [CALI-01][CALI-08] Bundle BB.
+            Line("달력마다 회사와 급여 방식을 따로 써요. 다른 달력에서 회사를 골라도 내 달력은 그대로예요"),
+            // [ITEM-01][ITEM-09][PROP-02] Bundle BC.
+            Line("수당마다 정액·사람마다 다름·기본급의 %를 정할 수 있고, 광장 제안은 수당을 더하거나 빼서 고치고 내 월급으로 계산해 볼 수 있어요"),
+            // [PLZD-01][PLZD-07] Bundle BD.
+            Line("광장에 같은 규칙이 있으면 바로 적용해 드리고, 회사 화면은 부서마다 대표 하나만 보여 고르기 쉬워요"),
+            // [PHOTO-20][RULE-ED-01][MEMO-SEL-01] Bundles AV·AW·AY.
+            Line("명세서 사진을 어떻게 찍어도 같게 읽고, 사진 없이도 회사 규칙을 칸으로 적어요. 메모를 길게 고를 때 저절로 넘어가요"),
+        )),
         // 1.29.0 (docs/plans/1.29-통합계획.md; 통합 folded AP·AQ·AR·AS·AU into five lines, AT is the developer's app).
         Release(40, "1.29.0", listOf(
             // [PAYF-01][PAYF-04][PAYF-06] Bundle AP.

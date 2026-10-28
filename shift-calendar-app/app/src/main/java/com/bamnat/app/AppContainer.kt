@@ -3,6 +3,7 @@ package com.bamnat.app
 import kotlinx.coroutines.sync.withLock
 import android.content.Context
 import com.bamnat.app.alarm.AlarmScheduler
+import com.bamnat.app.company.warmCompaniesNow
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.MemoRepository
 import com.bamnat.app.data.MoneyRepository
@@ -80,6 +81,7 @@ class AppContainer(context: Context) {
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
+        onDelete = { id, kept -> if (!kept) companyGone(id) },
     )
     /** [MCAL-06] Calendar [id]'s days, money and pay as a screen sees them. */
     fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
@@ -194,8 +196,8 @@ class AppContainer(context: Context) {
         settingsFiles = {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
                 com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
-                companyStore.reload()
-                payWays.reload()
+                // [CALI-07] Every calendar's company connection, the added ones' from their own part of the backup.
+                companyScopes().forEach { it.store.reload(); it.payWays.reload() }
                 rateHints.reload()
                 autoRecordPrefs.reload()
                 shareGroup.reload()
@@ -211,7 +213,9 @@ class AppContainer(context: Context) {
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository,
-        shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } }) }
+        shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
+        // [ITEM-03] 1.30 BC (결정 D102): 회사 공통 정액 goes to the 광장 while the plaza.fixed_amount row is on.
+        fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
@@ -225,9 +229,79 @@ class AppContainer(context: Context) {
     /** [PLAZA-30] 1.27 AI: what a 명세서 tick on the plaza rests on now; null for none. */
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
         com.bamnat.core.pay.SlipProof.of(payStore.profile.value?.verified, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
+    /**
+     * The main calendar's company connection; [CALI-01] 1.30 BB: also the phone's install id and sharing choice for every
+     * calendar. Another calendar's is [companyOf] that calendar.
+     */
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [PAYF-04] 1.29 AP: the company pay way the main pay uses, for 맞아요·달라요 on the pay screen. */
     val payWays by lazy { com.bamnat.app.company.PayWayStore(appContext) }
+
+    /** [CALI-01] The main calendar's company things: the very objects above, over the files they always had. */
+    private val mainCompany by lazy {
+        com.bamnat.app.company.CompanyScope(com.bamnat.app.data.PersonalCalendar.MAIN, companyStore, payWays, { companyShare }, autoShare,
+            { payStore }, { scheduleRepository }) { com.bamnat.app.company.PayFind(this, com.bamnat.app.data.PersonalCalendar.MAIN) }
+    }
+    private val addedCompanies = HashMap<String, com.bamnat.app.company.CompanyScope>()
+
+    /**
+     * [CALI-01] 1.30 BB: calendar [calendarId]'s company connection, pay way, company file and sharing. The main calendar's
+     * (and one that is not, or no longer, there, as [com.bamnat.app.data.CalendarBook.repository] does) is the app's own
+     * [companyStore], [payWays], [companyShare] and [autoShare]; an added calendar's is its own, made the first time asked.
+     */
+    fun companyOf(calendarId: String): com.bamnat.app.company.CompanyScope {
+        if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(calendarId) == null) return mainCompany
+        return synchronized(addedCompanies) { addedCompanies.getOrPut(calendarId) { addedCompany(calendarId) } }
+    }
+
+    /** [CALI-01] The main calendar's and every added one's (not the example's), for what goes over all of them. */
+    fun companyScopes(): List<com.bamnat.app.company.CompanyScope> =
+        listOf(mainCompany) + calendars.calendars.value.filter { !it.isMain && !it.isExample }.map { companyOf(it.id) }.filter { !it.isMain }
+
+    private fun addedCompany(id: String): com.bamnat.app.company.CompanyScope {
+        val files = com.bamnat.app.company.CompanyScopeStorage
+        // Made again only when the calendar's database was opened anew (a restore), as the share works on that one.
+        var made: Triple<com.bamnat.app.data.ScheduleRepository, PayStore, com.bamnat.app.data.CompanyShare>? = null
+        val share = {
+            val schedule = calendars.repository(id)
+            val pay = calendars.pay(id)
+            made?.takeIf { it.first === schedule && it.second === pay }?.third
+                ?: com.bamnat.app.data.CompanyShare(schedule, pay, settingsRepository,
+                    shared = { keys -> keys.forEach { runCatching { profiles.mark(id, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
+                    rosterMonthly = { false },
+                    fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }).also { made = Triple(schedule, pay, it) }
+        }
+        return com.bamnat.app.company.CompanyScope(id,
+            com.bamnat.app.company.CompanyStore(files.prefs(appContext, id, files.COMPANY), companyStore),
+            com.bamnat.app.company.PayWayStore(files.prefs(appContext, id, files.PAY_WAY)),
+            share, com.bamnat.app.company.AutoShare(this, id, autoShare.hub),
+            { calendars.pay(id) }, { calendars.repository(id) }) { com.bamnat.app.company.PayFind(this, id) }
+    }
+
+    /**
+     * [CALI-07] An added calendar went for good: its company files stop, and on the server it no longer uses its setup nor
+     * stays in its company, unless another calendar of this phone is in the same one (the server counts a phone once).
+     */
+    private fun companyGone(id: String) {
+        val scope = synchronized(addedCompanies) { addedCompanies.remove(id) }
+        val files = com.bamnat.app.company.CompanyScopeStorage
+        val store = scope?.store ?: runCatching { com.bamnat.app.company.CompanyStore(files.prefs(appContext, id, files.COMPANY), companyStore) }.getOrNull()
+        val used = store?.applied?.value
+        val joined = store?.member?.value
+        files.forget(appContext, id)
+        com.bamnat.app.company.OutboxJob.cancelShare(appContext, id)
+        if ((used == null && joined == null) || !companyApi.enabled) return
+        appScope.launch {
+            val device = companyStore.device
+            val others = companyScopes().filter { it.calendarId != id }
+            used?.takeIf { u -> others.none { it.store.applied.value?.setup == u.setup } }?.let { u ->
+                runCatching { companyApi.use(device, u.companyId, u.setup, false, files.serverCal(id)) }
+            }
+            joined?.takeIf { j -> others.none { it.store.member.value?.first == j.first || it.store.applied.value?.companyId == j.first } }?.let { j ->
+                runCatching { companyApi.leave(device, j.first) }
+            }
+        }
+    }
     /**
      * [SRCH-07] 1.29 AS: every company search through one place: what the phone already has at once (the last answers, the
      * most used companies), the server's answer added when it comes. Kept in the cache folder (public names only).
@@ -235,6 +309,8 @@ class AppContainer(context: Context) {
     val companySearch by lazy { com.bamnat.app.company.CompanySearch({ companyApi }, java.io.File(appContext.cacheDir, "company_search.json")) }
     /** [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes. */
     val autoShare by lazy { com.bamnat.app.company.AutoShare(this) }
+    /** [CALI-02] 설정 › 광장의 '모두 지우기' went through on the server: every calendar forgets what it sent. */
+    fun forgetSentEverywhere() = companyScopes().forEach { it.store.forgetSent() }
     /** [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle is picked from a company search. */
     val leadShare by lazy { com.bamnat.app.company.LeadShare(this) }
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
@@ -252,8 +328,21 @@ class AppContainer(context: Context) {
     /** [PLAZA-06] 처음 설정 다시 받기: its own draft, so the calendar in use is untouched until it is saved. */
     val againSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "again_setup_draft.json")) }
     val firstSetup by lazy {
-        com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyShare }, { companyStore })
+        com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyOf(com.bamnat.app.data.PersonalCalendar.MAIN) },
+            used = ::companySetupUsed)
     }
+    /**
+     * [CALI-05] A coworkers' setup from the company server went in with a calendar's setup: counted as used by that calendar
+     * (which joins it, as 이 설정 쓰기 does), so the server's "n명 쓰고 있어요" and the calendar's 광장 know it.
+     */
+    fun companySetupUsed(scope: com.bamnat.app.company.CompanyScope, a: com.bamnat.app.company.AppliedSetup) {
+        if (!companyApi.enabled) return
+        appScope.launch {
+            runCatching { companyApi.use(scope.store.device, a.companyId, a.setup, true, scope.serverCal) }
+                .onSuccess { if (scope.store.member.value == null) scope.store.setMember(a.companyId, a.company) }
+        }
+    }
+
     /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
     var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
     /** [MKT-09][SHR-12] The one link this phone made, shared by the sheet, the automatic update and the expiry notice. */
@@ -772,7 +861,10 @@ class AppContainer(context: Context) {
             appScope.launch {
                 // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
                 runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
-                runCatching { companySearch.warm(com.bamnat.app.company.CompanySearch.saveData(appContext), companyStore.applied.value?.companyId) }
+                // [SPD-12] 1.30 AP1: the whole list of companies and this phone's company page with its room, on mobile data too.
+                runCatching { warmCompaniesNow() }
+                // [CALI-01] 1.30 BB: an added calendar's two small company files, read here rather than on its first screen.
+                runCatching { calendars.added().forEach { companyOf(it.id) } }
             }
             // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
             keep("share") { if (shareApi.enabled) shareSync.follow() }

@@ -120,7 +120,7 @@ class PayCalculator(
     private class Premiums(val overtime: Double, val night: Double, val holidayWithin8h: Double, val holidayOver8h: Double, val holidayBase: Double)
 
     fun calculate(
-        profile: PayProfile,
+        given: PayProfile,
         month: YearMonth,
         resolve: (LocalDate) -> ResolvedDay,
         /**
@@ -133,6 +133,8 @@ class PayCalculator(
         /** Paid holidays besides the 주휴일; null uses the built-in 공휴일 when the company counts them. */
         isHoliday: ((LocalDate) -> Boolean)? = null,
     ): MonthPay {
+        // [ITEM-01] 1.30 BC: the company's one amounts and the percent allowances as what they pay this month.
+        val profile = ItemShares.resolve(given, month)
         val rules = profile.rules
         // [PAYS-03] 감시·단속 승인 (제63조 제3호): the rules on hours, breaks and holidays (chapter 4) do not apply.
         val supervisory = rules.supervisoryApproved
@@ -799,9 +801,15 @@ class PayCalculator(
             val cut = item.cadence == Cadence.MONTHLY && proration != null
             val paid = if (cut) prorated(amount.value) else amount.value * count
             allowancePaid[item.id] = paid
+            // [ITEM-01] A percent allowance says what it is a percent of; a company amount says so.
+            val how = when {
+                item.isPercent -> "${item.percentOf.label} ${won(ItemShares.basisOf(given, item, month))} × ${ItemShares.pct(item.percent ?: 0.0)}"
+                given.items.firstOrNull { it.id == item.id }?.isCompanyFixed == true -> "${item.cadence.label} 회사 공통 ${won(amount.value)}"
+                else -> null
+            }
             lines += PayLine(
                 LineKind.ALLOWANCE, item.name, paid,
-                formula = (if (count == 1) "${item.cadence.label} ${won(amount.value)}" else "${won(amount.value)} × ${count}회") +
+                formula = (how ?: if (count == 1) "${item.cadence.label} ${won(amount.value)}" else "${won(amount.value)} × ${count}회") +
                     if (cut) prorationNote else "",
                 // Only a monthly allowance goes into 통상임금 (ordinaryWage); a per-shift one never says it does.
                 basis = listOfNotNull("통상임금에 포함".takeIf { item.ordinary && item.cadence == Cadence.MONTHLY }, prorationBasis.takeIf { cut })
@@ -889,13 +897,15 @@ class PayCalculator(
             WageType.HOURLY -> base.value.toDouble()
             WageType.DAILY -> base.value * 60.0 / dailyMinutes
         }
-        if (rules.wonRounding != WonRounding.HOURLY_FIRST && (exactHourly != hourly.toDouble() || rules.wonRounding == WonRounding.AT_END_UP)) {
+        if (rules.wonRounding != WonRounding.HOURLY_FIRST && (exactHourly != hourly.toDouble() || rules.wonRounding == WonRounding.AT_END_UP ||
+                rules.wonRounding == WonRounding.AT_END_DOWN)) {
             val exactLabel = "%,.2f원".format(exactHourly)
             val up = rules.wonRounding == WonRounding.AT_END_UP
+            val down = rules.wonRounding == WonRounding.AT_END_DOWN
             lines.replaceAll { l ->
                 if (l.hourly != hourly || l.minutes == 0 || l.multiplier == 0.0 || l.amount != (l.minutes / 60.0 * hourly * l.multiplier).roundToLong()) l
-                else l.copy(amount = lineWon(l.minutes, exactHourly, l.multiplier, up),
-                    formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 ${if (up) "올림" else "반올림"})")
+                else l.copy(amount = lineWon(l.minutes, exactHourly, l.multiplier, up, down),
+                    formula = "${l.formula} (시급 $exactLabel 그대로, 줄마다 ${if (up) "올림" else if (down) "내림" else "반올림"})")
             }
         }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
@@ -1275,7 +1285,9 @@ class PayCalculator(
          * the monthly share of regular bonuses. Bonuses count at a year's payments ÷ 12 (시행령 제6조 제2항 제5호)
          * from 2024-12-19 on: the 전원합의체 ruling of that day applies to later pay only.
          */
-        fun ordinaryWage(profile: PayProfile, month: YearMonth): OrdinaryWage {
+        fun ordinaryWage(given: PayProfile, month: YearMonth): OrdinaryWage {
+            // [ITEM-01] A company amount or a percent allowance in 통상임금 counts at what it pays this month.
+            val profile = ItemShares.resolve(given, month)
             val base = profile.base.on(month).value
             val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() }
                 .sumOf { it.amount.on(month).value }
@@ -1288,9 +1300,14 @@ class PayCalculator(
          * [PAYX-27][PHOTO-11] One line's 원: [minutes] × [hourly] × [multiplier], rounded half up or (with [up]) any 원 미만 up. A
          * hair of floating error is not a 원 more: 81시간 × 21,618.04 × 1.5 is 2,626,591.86 → 2,626,592.
          */
-        fun lineWon(minutes: Int, hourly: Double, multiplier: Double, up: Boolean): Long {
+        /** [PHOTO-11] One line's won: rounded, rounded [up], or ([HOURLY-03] 1.30) cut [down]. */
+        fun lineWon(minutes: Int, hourly: Double, multiplier: Double, up: Boolean, down: Boolean = false): Long {
             val v = minutes / 60.0 * hourly * multiplier
-            return if (up) kotlin.math.ceil(v - 1e-6).toLong() else v.roundToLong()
+            return when {
+                up -> kotlin.math.ceil(v - 1e-6).toLong()
+                down -> kotlin.math.floor(v + 1e-6).toLong()
+                else -> v.roundToLong()
+            }
         }
 
         fun hours(minutes: Int): String =

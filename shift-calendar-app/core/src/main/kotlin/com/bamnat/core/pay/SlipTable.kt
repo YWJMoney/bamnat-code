@@ -24,6 +24,8 @@ object SlipLexicon {
         "고정연장수당", "정액급식비", "직급보조비", "봉급", "국민연금", "건강보험", "장기요양보험", "고용보험", "산재보험", "소득세",
         "근로소득세", "지방소득세", "주민세", "노동조합비", "조합비", "연말정산", "기숙사비", "일반기여금", "지급합계", "지급총액",
         "급여총액", "총지급액", "공제합계", "공제총액", "실지급액", "실수령액", "차인지급액", "차감지급액",
+        // [PHOTO-22] 1.30: names of the 화학 공장 명세서 (R3 A-2) a photo reads a stroke off.
+        "향군수당", "사택관리비", "소급분", "휴일연장수당", "야간근무수당", "평일연장수당", "교육수당", "당직수당",
     )
 
     /** A name matched: the name meant, its kind, and how many letters were off (0: read as printed). */
@@ -186,15 +188,33 @@ object SlipTable {
 
     private class Found(val label: Cell, val row: Int) {
         var amount: Long? = null
+        /** [PHOTO-24] The cell the amount was read from. */
+        var at: Cell? = null
         var minutes: Int? = null
         var doubt = false
         var under = false
     }
 
-    /** The payslip read from [words] (ML Kit elements or lines with their boxes), and the indexes of its lines to look at. */
-    fun read(words: List<OcrLine>): SlipVote.Result {
+    /**
+     * [PHOTO-24] Where a line read stood on the photo (levelled pixels): the middle of its name, of its amount (null for a line
+     * of hours only), and its letters' height.
+     */
+    data class Spot(val x: Double, val y: Double, val ax: Double?, val ay: Double?, val h: Double)
+
+    /** [PHOTO-24] A reading and where each of its lines stood ([spots], one per line). */
+    class Laid(val result: SlipVote.Result, val spots: List<Spot?>)
+
+    /**
+     * The payslip read from [words] (ML Kit elements or lines with their boxes), and the indexes of its lines to look at.
+     * [PHOTO-24] 1.30: with the company's [template] (the payslip the user confirmed before), lines the photo lost are looked
+     * for where the template says, and the lines come in its order.
+     */
+    fun read(words: List<OcrLine>, template: SlipTemplate? = null): SlipVote.Result = laid(words, template).result
+
+    /** [read], with where each line stood. */
+    fun laid(words: List<OcrLine>, template: SlipTemplate?): Laid {
         val rows = rows(words)
-        if (rows.isEmpty()) return SlipVote.Result(PayslipRead(emptyList()), emptySet(), "")
+        if (rows.isEmpty()) return Laid(SlipVote.Result(PayslipRead(emptyList()), emptySet(), ""), emptyList())
         val text = rows.joinToString("\n") { r -> r.joinToString("  ") { it.text } }
         classify(rows)
         sections(rows)
@@ -235,7 +255,7 @@ object SlipTable {
                             n.count || col == Col.DAYS || col == Col.RATE || col == Col.NOTE -> Unit
                             formula && !afterEquals -> Unit
                             o.amount == null && (n.money || abs(n.value) >= 100 && n.unit.isEmpty()) -> {
-                                o.amount = n.value; cell.used = true
+                                o.amount = n.value; cell.used = true; o.at = cell
                                 if (n.fixed || !n.money) o.doubt = true
                                 afterEquals = false
                             }
@@ -247,7 +267,9 @@ object SlipTable {
         under(rows, found)
         beside(rows, found)
         totalsByColumn(rows, found)
+        if (template != null) fromTemplate(rows, found, template)
         val lines = mutableListOf<SlipLine>()
+        val spots = mutableListOf<Spot?>()
         val unsure = HashSet<Int>()
         for (f in found) {
             val hit = f.label.hit ?: continue
@@ -255,24 +277,95 @@ object SlipTable {
             val name = if (hit.distance > 0) hit.name else f.label.text
             if (f.doubt || hit.distance > 0 || f.label.guessed || f.under && f.label.text.length <= 1) unsure += lines.size
             lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text })
+            spots += Spot(f.label.x, f.label.y, f.at?.x, f.at?.y, f.label.h)
         }
-        val (merged, keep) = mergeHours(lines, unsure)
-        return SlipVote.Result(PayslipRead(attendance(rows, merged), PayslipReader.monthOf(text)), keep, text)
+        val (merged, keep, kept) = mergeHours(lines, unsure)
+        var out = attendance(rows, merged)
+        var flags = keep
+        var places = kept.map { spots[it] }
+        if (template != null) {
+            val ordered = inOrder(out, template)
+            flags = ordered.indices.filter { ordered[it] in flags }.toSet()
+            places = ordered.map { places[it] }
+            out = ordered.map { out[it] }
+        }
+        return Laid(SlipVote.Result(PayslipRead(out, PayslipReader.monthOf(text)), flags, text), places)
     }
 
-    /** Hours read on a line of their own ("연장근로시간 16") join the amount line of the same kind, as [PayslipReader] does. */
-    private fun mergeHours(lines: List<SlipLine>, unsure: Set<Int>): Pair<List<SlipLine>, Set<Int>> {
+    /**
+     * [PHOTO-24] The lines' indexes in the template's order: a line the template has goes where the template has it; a line it
+     * has not stays after the line it followed on the photo.
+     */
+    internal fun inOrder(lines: List<SlipLine>, template: SlipTemplate): List<Int> {
+        val order = template.lines.map { SlipTemplate.key(it.name) }
+        var last = -1.0
+        val rank = lines.mapIndexed { i, l ->
+            val at = order.indexOf(SlipTemplate.key(l.name))
+            val r = if (at >= 0) at.toDouble() else last + 0.001 * (i + 1)
+            if (at >= 0) last = at.toDouble()
+            r
+        }
+        return lines.indices.sortedWith(compareBy<Int> { rank[it] }.thenBy { it })
+    }
+
+    /**
+     * [PHOTO-24] 1.30 AV: a line the template has and this photo lost. Where the template's lines and this photo's agree, the
+     * template is laid on the photo ([TemplateMap]); at the place of a lost line, a name read there that was no line (other
+     * letters, no list holds it, no head over it) becomes that line, with the amount at the template's amount place (or
+     * beside it as read); with no name read there at all, an unused amount at the template's amount place is that line's.
+     * Always looked at ("지난달 명세서 틀로 찾았어요"): never silently.
+     */
+    private fun fromTemplate(rows: List<List<Cell>>, found: MutableList<Found>, template: SlipTemplate) {
+        val have = found.filter { it.label.hit != null && (it.amount != null || it.minutes != null) }
+        val byKey = have.associateBy { SlipTemplate.key(it.label.hit!!.let { h -> if (h.distance > 0) h.name else it.label.text }) }
+        val pairs = template.lines.mapNotNull { t -> byKey[SlipTemplate.key(t.name)]?.let { t to (it.label.x to it.label.y) } }
+        if (pairs.size < 3) return
+        val map = TemplateMap(pairs)
+        val all = rows.flatten()
+        val h = RosterGeometry.median(all.map { it.h })
+        for (t in template.lines) {
+            if (SlipTemplate.key(t.name) in byKey) continue
+            if (t.ax == null || t.ay == null) continue
+            val (nx, ny) = map.at(t.x, t.y) ?: continue
+            val (ax, ay) = map.at(t.ax, t.ay) ?: continue
+            val near = 1.5 * h
+            val amount = all.filter { c -> c.kind == Kind.NUM && !c.used && c.num?.money == true && c.num?.cut == false && abs(c.x - ax) < 3 * near && abs(c.y - ay) < near }
+                .minByOrNull { abs(it.y - ay) * 3 + abs(it.x - ax) } ?: continue
+            // The name's place: a cell read there that is no line yet (its letters off, or no list holds them).
+            val name = all.firstOrNull { c -> c.kind != Kind.NUM && c.kind != Kind.HEAD && abs(c.x - nx) < max(near, c.w / 2) && abs(c.y - ny) < near &&
+                found.none { it.label === c && (it.amount != null || it.minutes != null) } }
+            // Another line's name nearer the amount than the template's place: the amount is that line's.
+            if (have.any { o -> abs(o.label.y - amount.y) < abs(ny - amount.y) - 0.5 * h && abs(o.label.x - nx) < 3 * near }) continue
+            val label = name ?: Cell(t.name, nx, ny, t.name.length * h, h)
+            label.kind = Kind.LABEL; label.guessed = true
+            label.text = t.name
+            label.hit = SlipLexicon.Hit(t.name, t.role, 0)
+            val row = rows.indexOfFirst { r -> r.any { it === amount } }.coerceAtLeast(0)
+            found.removeAll { it.label === label }
+            found += Found(label, row).also { f ->
+                f.amount = amount.num!!.value; f.at = amount; f.doubt = true
+            }
+            amount.used = true
+        }
+    }
+
+    /**
+     * Hours read on a line of their own ("연장근로시간 16") join the amount line of the same kind, as [PayslipReader] does.
+     * The lines, those to look at, and ([PHOTO-24]) the index each line kept had before.
+     */
+    private fun mergeHours(lines: List<SlipLine>, unsure: Set<Int>): Triple<List<SlipLine>, Set<Int>, List<Int>> {
         val out = lines.toMutableList()
+        val from = lines.indices.toMutableList()
         val flags = lines.indices.map { it in unsure }.toMutableList()
         for (h in lines.filter { it.amount == null && it.minutes != null }) {
             val target = out.indexOfFirst { it.role == h.role && it.amount != null && it.minutes == null }
             val at = out.indexOf(h)
             if (target >= 0 && at >= 0) {
                 out[target] = out[target].copy(minutes = h.minutes)
-                out.removeAt(at); flags.removeAt(at)
+                out.removeAt(at); flags.removeAt(at); from.removeAt(at)
             }
         }
-        return out to flags.indices.filter { flags[it] }.toSet()
+        return Triple(out, flags.indices.filter { flags[it] }.toSet(), from)
     }
 
     /** A name with no amount beside it takes the first number right under it, never past another name or a heading. */
@@ -285,7 +378,7 @@ object SlipTable {
                 if (first.kind != Kind.NUM) break
                 val n = first.num!!
                 if (first.used || !n.money && !(abs(n.value) >= 100 && n.unit.isEmpty())) break
-                f.amount = n.value; f.under = true; first.used = true
+                f.amount = n.value; f.under = true; first.used = true; f.at = first
                 if (n.fixed) f.doubt = true
                 if (ri > f.row + 1) f.doubt = true
                 break
@@ -306,12 +399,17 @@ object SlipTable {
             val l = f.label
             // A head of hours (야간근로시간) holds hours, never money.
             if (l.text.contains("시간") || l.text.contains("시수")) continue
+            // [PHOTO-21] 1.30: how far lower the amount may sit is told by the table's own rows (the names' spacing in this
+            // column), not by the letters' height: a photo taken at an angle spreads the far rows and the amount half a row
+            // lower went past 2.2 letters (R3 A-1 #1).
+            val gap = rowGap(l, labels)
+            val reach = if (gap != null) max(1.2 * l.h, 0.9 * gap) else null
             val pick = all.filter { c ->
                 val n = c.num
                 if (c.kind != Kind.NUM || c.used || n == null || !n.money || n.cut || c.left <= l.right) return@filter false
                 val h = max(l.h, c.h)
                 val dy = c.y - l.y
-                if (dy < -0.5 * h || dy > 2.2 * h) return@filter false
+                if (dy < -0.5 * h || dy > (reach ?: (2.2 * h))) return@filter false
                 // Another name between them, at the name's height or the amount's.
                 val between = labels.any { o -> o !== l && o.x > l.right && o.right < c.left && (abs(o.y - c.y) < h || abs(o.y - l.y) < 0.6 * h) }
                 // The amount right under another name is that name's.
@@ -324,9 +422,22 @@ object SlipTable {
                 !between && !underOther && !across && !ownRow
             }.minWithOrNull(compareBy<Cell> { abs(it.y - l.y) }.thenBy { it.left - l.right }) ?: continue
             val n = pick.num!!
-            f.amount = n.value; pick.used = true
+            f.amount = n.value; pick.used = true; f.at = pick
             if (n.fixed || abs(pick.y - l.y) > 0.9 * max(l.h, pick.h)) f.doubt = true
         }
+    }
+
+    /**
+     * [PHOTO-21] The spacing of the rows around name [l]: the middle step between the names one under another in its
+     * column, near it (its own six neighbours, so a photo spread at the bottom measures the bottom). null with fewer than
+     * two steps.
+     */
+    private fun rowGap(l: Cell, labels: List<Cell>): Double? {
+        val column = labels.filter { o -> o.left < l.right + l.h && o.right > l.left - l.h }.sortedBy { it.y }
+        val near = column.sortedBy { abs(it.y - l.y) }.take(7).sortedBy { it.y }
+        val steps = near.zipWithNext { a, b -> b.y - a.y }.filter { it > 0.8 * l.h && it < 6 * l.h }
+        if (steps.size < 2) return null
+        return RosterGeometry.median(steps)
     }
 
     /**
@@ -344,16 +455,10 @@ object SlipTable {
                 else -> null
             }
         }
-        if (heads.isEmpty()) return
         val totals = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
         fun inColumn(h: Cell, c: Cell) = c.left < h.right + h.h && c.right > h.left - h.h
-        for (c in all) {
-            val role = c.hit?.role
-            val candidate = c.kind == Kind.LABEL && role == SlipRole.ALLOWANCE || c.kind == Kind.TEXT && nameLike(c.text)
-            if (!candidate) continue
-            val (head, deduction) = heads.filter { (h, _) -> h.y < c.y && inColumn(h, c) }.maxByOrNull { it.first.y } ?: continue
-            // Past the column's 계 it is another table.
-            if (all.any { o -> o.kind == Kind.LABEL && o.hit?.role in totals && o.y > head.y && o.y < c.y - 0.5 * c.h && inColumn(head, o) }) continue
+        fun candidate(c: Cell) = c.kind == Kind.LABEL && c.hit?.role == SlipRole.ALLOWANCE || c.kind == Kind.TEXT && nameLike(c.text)
+        fun take(c: Cell, deduction: Boolean) {
             when {
                 c.kind == Kind.TEXT -> {
                     c.kind = Kind.LABEL; c.guessed = true
@@ -362,6 +467,73 @@ object SlipTable {
                 deduction -> { c.hit = c.hit!!.copy(role = SlipRole.DEDUCTION); c.guessed = true }
             }
         }
+        val placed = HashSet<Cell>()
+        for (c in all) {
+            if (!candidate(c)) continue
+            val (head, deduction) = heads.filter { (h, _) -> h.y < c.y && inColumn(h, c) }.maxByOrNull { it.first.y } ?: continue
+            // Past the column's 계 it is another table.
+            if (all.any { o -> o.kind == Kind.LABEL && o.hit?.role in totals && o.y > head.y && o.y < c.y - 0.5 * c.h && inColumn(head, o) }) continue
+            take(c, deduction)
+            placed += c
+        }
+        // [PHOTO-22] 1.30: no head over it (지급내역 not read, or read as other letters): the column of names it stands in says.
+        for ((side, column) in columns(all)) for (c in all) {
+            if (c in placed || !candidate(c) || !column.holds(c)) continue
+            take(c, side)
+        }
+    }
+
+    /**
+     * [PHOTO-22] 1.30 AV: a column of names says what its names are, with no 지급내역·공제내역 head (사용자 2026-10-27 "사진마다 읽는
+     * 부분이 다르다", R3 A-1 #5: the head read as 지금내 역 or not at all, and 위험예지훈련/LMS·볼링회·사택관리비 were gone). Names the
+     * lists know (소득세·건강보험 … or 기본급·자격수당 …) that stand one under another, three or more, are a column; when most of
+     * them are 공제 the column is 공제, when most are 지급 it is 지급 (true: 공제). A name no list holds in that column, between
+     * its first name and its 계, is a line of that side, looked at ([Cell.guessed]).
+     */
+    private fun columns(all: List<Cell>): List<Pair<Boolean, Column>> {
+        val totals = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
+        val known = all.filter { it.kind == Kind.LABEL && !it.guessed && it.hit?.role.let { r -> r != null && r !in totals && r != SlipRole.HOURLY } }
+        if (known.size < 3) return emptyList()
+        // Names one under another: their spans overlap (a letter's height of slack), joined by overlap.
+        val groups = mutableListOf<MutableList<Cell>>()
+        for (c in known.sortedBy { it.y }) {
+            val g = groups.firstOrNull { g -> g.any { o -> c.left < o.right + o.h && c.right > o.left - o.h } }
+            if (g != null) g += c else groups += mutableListOf(c)
+        }
+        // Groups that overlap each other after growing are one column.
+        var merged = true
+        while (merged) {
+            merged = false
+            loop@ for (i in groups.indices) for (j in i + 1 until groups.size) {
+                if (groups[i].any { a -> groups[j].any { b -> a.left < b.right + b.h && a.right > b.left - b.h } }) {
+                    groups[i] += groups[j]; groups.removeAt(j); merged = true; break@loop
+                }
+            }
+        }
+        val out = mutableListOf<Pair<Boolean, Column>>()
+        for (g in groups) {
+            if (g.size < 3) continue
+            val ded = g.count { it.hit?.role == SlipRole.DEDUCTION }
+            val earn = g.count { it.hit?.role in SlipLine.EARNINGS }
+            val side = when {
+                ded >= 2 && ded >= 2 * earn -> true
+                earn >= 2 && earn >= 2 * ded -> false
+                else -> continue
+            }
+            val ys = g.map { it.y }.sorted()
+            val gap = ys.zipWithNext { a, b -> b - a }.filter { it > 0.8 * g.first().h }.let { if (it.isEmpty()) 2.0 * g.first().h else RosterGeometry.median(it) }
+            val top = ys.first() - 1.5 * gap
+            // The column ends at its 계 (지급계·공제계) under its first name, or a row and a half under its last.
+            val foot = all.filter { o -> o.kind == Kind.LABEL && o.hit?.role in totals && o.y > ys.first() && g.any { it.left < o.right + o.h && it.right > o.left - o.h } }
+                .minOfOrNull { it.y } ?: (ys.last() + 1.5 * gap)
+            out += side to Column(g.minOf { it.left }, g.maxOf { it.right }, top, foot, g.first().h)
+        }
+        return out
+    }
+
+    /** [PHOTO-22] Where a column of names stands: its span across, from [top] down to (not past) its [foot]. */
+    private class Column(val left: Double, val right: Double, val top: Double, val foot: Double, val h: Double) {
+        fun holds(c: Cell): Boolean = c.left < right + h && c.right > left - h && c.y > top && c.y < foot - 0.5 * c.h
     }
 
     /** A cell that reads as a name of pay: a few words with two 한글 letters or more, no clock or sentence. */
@@ -430,8 +602,10 @@ object SlipTable {
 
     // ---- placing the words ----
 
+    // [PHOTO-27] 1.30: ",500" (an amount cut at its comma) is one piece, put back with the digits before it ([joinRow]); a
+    // date ("2026-10-25") is one piece too, never 2026 and two minus amounts.
     private val PIECE = Regex(
-        """[(\-−–△▲]?[₩￦]?[\dOoIl|]?\d[\dOoIl|,.]*(?:\s?(?:원|윈|웜|시간|hr|h|H|분|일|회|%|배|개월|년|월|개|명|호봉))?\)?|[^\s\d]+""",
+        """\d{4}[./-]\d{1,2}[./-]\d{1,2}\.?|[(\-−–△▲]?[₩￦]?(?:[,.](?=\d{3}))?[\dOoIl|]?\d[\dOoIl|,.]*(?:\s?(?:원|윈|웜|시간|hr|h|H|분|일|회|%|배|개월|년|월|개|명|호봉))?\)?|[^\s\d]+""",
     )
 
     /** How wide a letter is in a line's box, to place the pieces of a line read as one. */
@@ -463,12 +637,12 @@ object SlipTable {
         }
         if (pieces.isEmpty()) return emptyList()
         val geo = RosterGeometry
-        val slopes = words.filter { it.angle != 0f && it.right - it.left > 3 * it.height }.map { it.angle.toDouble() }
+        // [PHOTO-21] 1.30: each row levelled by its own slant (a page taken from one side), from the slopes the reader gave.
+        val slant = geo.slant(words.map { RosterWord(it.text, it.left, it.top, it.right, it.bottom, angle = it.angle) })
         // [PHOTO-12] With no slopes given, the tilt is found from the names: an amount column sitting half a row lower to the
         // right stacks with the names as well at a slant as level, and the slant was taken (a level screenshot read 2° off).
-        val tilt = if (slopes.size >= 3) geo.median(slopes)
-            else geo.tilt(pieces.filter { SlipNumber.parse(it.text) == null }.takeIf { it.size >= 6 } ?: pieces)
-        val placed = geo.level(pieces, tilt)
+        val placed = if (slant != null) geo.level(pieces, slant)
+            else geo.level(pieces, geo.tilt(pieces.filter { SlipNumber.parse(it.text) == null }.takeIf { it.size >= 6 } ?: pieces))
         val cells = IdentityHashMap<RosterWord, Cell>()
         placed.forEach { p -> cells[p.word] = Cell(p.text, p.x, p.y, p.w, p.h) }
         return geo.lines(placed).map { line -> joinRow(line.map { cells.getValue(it.word) }) }
@@ -493,17 +667,39 @@ object SlipTable {
                 val bracket = gap < 1.4 * h && (c.text == "(" && lastNum == null && last.text.any { it.isLetter() } ||
                     c.text == ")" && last.text.contains('(') && !last.text.contains(')') ||
                     last.text.endsWith("(") && cNum == null && c.text.any { it.isLetter() })
-                if (bracket) {
+                // [PHOTO-27] 1.30: an amount the reader cut at a comma ("2,397," "500", "2,397" ",500"), or read its comma as a
+                // hair of space ("2,397" "500" touching): one amount again.
+                // A 0 read as O ("2,397" ",50O") or a comma lost before the cut ("2397" ",500") is still a piece of the amount.
+                val a = digitish(last.text)
+                val b = digitish(c.text)
+                val amountCut = gap < 0.6 * h && (Regex("""\d{1,7}([,.]\d{3})*[,.]""").matches(a) && Regex("""\d{3}([,.]\d{3})*(원|윈)?""").matches(b) ||
+                    Regex("""\d{1,7}([,.]\d{3})*""").matches(a) && Regex("""[,.]\d{3}([,.]\d{3})*(원|윈)?""").matches(b) ||
+                    gap < 0.35 * h && Regex("""\d{1,3}([,.]\d{3})+""").matches(a) && Regex("""\d{3}(원|윈)?""").matches(b))
+                // [PHOTO-27] One word the reader cut in two that touch ("소급" "분(지급)", "남부_사택관" "리비"): one word, even when a
+                // piece looks like a name of its own; two names printed side by side have a space between them.
+                val touching = bothWords && gap <= 0.15 * h && !(SlipLexicon.of(last.text)?.distance == 0 && SlipLexicon.of(c.text)?.distance == 0 &&
+                    SlipLexicon.of(last.text + c.text) == null)
+                // [PHOTO-27] A piece no name ends like ("소급" "분(지급)", "남부_사택" "관리비" a little apart): the rest of it follows.
+                if (touching || bothWords && gap < 0.6 * h && fragment(last.text) && hangul(c.text)) {
                     val l = min(last.left, c.left)
                     val r = max(last.right, c.right)
                     last.text = last.text + c.text
                     last.x = (l + r) / 2; last.w = r - l
                     continue
                 }
+                if (bracket || amountCut) {
+                    val l = min(last.left, c.left)
+                    val r = max(last.right, c.right)
+                    val glue = if (amountCut && last.text.last().isDigit() && c.text.first().isDigit()) "," else ""
+                    last.text = last.text + glue + c.text
+                    last.x = (l + r) / 2; last.w = r - l
+                    continue
+                }
                 if (bothWords && gap < 1.4 * h && keepTogether(last.text, c.text) || digitsGroup || wonAfter || unitAfter) {
                     val l = min(last.left, c.left)
                     val r = max(last.right, c.right)
-                    last.text = last.text + if (bothWords) " " + c.text else c.text
+                    // [PHOTO-27] Pieces of one word the reader cut ("기본급" "I", "위험예지훈련" "/LMS") touch: no space between.
+                    last.text = last.text + if (bothWords && gap > 0.15 * h) " " + c.text else c.text
                     last.x = (l + r) / 2; last.w = r - l
                     continue
                 }
@@ -525,6 +721,24 @@ object SlipTable {
     }
 
     private fun punct(t: String) = t.isNotEmpty() && t.all { !it.isLetterOrDigit() }
+
+    private fun hangul(t: String) = t.any { it in '가'..'힣' }
+
+    /**
+     * [PHOTO-27] The front of a word the reader cut: 한글, not a name of its own, and not ending as names of three letters or
+     * more end (…수당, …급, …비): "소급", "남부_사택", "국민연" are; "기본급", "식대", "연장수당" are not.
+     */
+    private fun fragment(t: String): Boolean {
+        val c = t.filter { it.isLetter() }
+        if (!hangul(c) || c in SlipLexicon.NAMES || PayslipReader.isHeader(c)) return false
+        return !(c.length >= 3 && NAME_ENDS.any { c.endsWith(it) })
+    }
+
+    private val NAME_ENDS = listOf("수당", "급", "비", "금", "료", "세", "험", "액", "계", "분", "대", "여")
+
+    /** An amount's piece with the letters a reader takes for digits put back (O→0, l·I·|→1), for telling the pieces only. */
+    private fun digitish(t: String): String =
+        if (t.count { it.isDigit() } * 2 >= t.count { it.isLetterOrDigit() }) t.replace('O', '0').replace('o', '0').replace('l', '1').replace('I', '1').replace('|', '1') else t
 
     private fun classify(rows: List<List<Cell>>) {
         for (c in rows.flatten()) {
@@ -627,6 +841,18 @@ object SlipSums {
             val want = amt(grossIdx) - amt(dedTotIdx)
             if (amt(netIdx) != want && want in alternatives(amt(netIdx))) set(netIdx, want)
         }
+        // [PHOTO-27] 1.30: a payslip stating a total twice (공제총액 at the head, 공제계 at the foot) with the two read apart: the
+        // one the items do not add up to is looked at (the foot's "3,220" for 3,220,588 was taken silently).
+        val earnSum = earnIdx.sumOf(::amt)
+        val dedSum = dedIdx.sumOf(::amt)
+        lines.forEachIndexed { i, l ->
+            val a = l.amount ?: return@forEachIndexed
+            if ((l.role == SlipRole.GROSS || l.role == SlipRole.TOTAL) && i != grossIdx && grossIdx >= 0 && a != amt(grossIdx) && a != earnSum && a != dedSum) doubt += i
+            if (l.role == SlipRole.DEDUCTION_TOTAL && i != dedTotIdx && dedTotIdx >= 0 && a != amt(dedTotIdx) && a != dedSum) doubt += i
+        }
+        // A total under the items read is misread (items can be lost from a photo, never added).
+        if (grossIdx >= 0 && amt(grossIdx) < earnSum) doubt += grossIdx
+        if (dedTotIdx >= 0 && amt(dedTotIdx) < dedSum) doubt += dedTotIdx
         val fixed = read.copy(lines = lines)
         // Lines the sums vouch for are not asked about; a line changed here always is.
         val vouched = vouched(fixed)
@@ -637,11 +863,15 @@ object SlipSums {
     fun vouched(read: PayslipRead): Set<Int> {
         val ok = HashSet<Int>()
         val lines = read.lines
-        if (SlipVote.stated(read) && SlipVote.adds(read)) lines.forEachIndexed { i, l -> if (l.isEarning || l.role == SlipRole.GROSS || l.role == SlipRole.TOTAL) ok += i }
+        // [PHOTO-27] 1.30: a total vouched for only when it is the sum (a payslip stating its 공제 합계 twice, at the head and the
+        // foot, had the foot's misread one vouched for by the head's).
+        if (SlipVote.stated(read) && SlipVote.adds(read)) lines.forEachIndexed { i, l ->
+            if (l.isEarning || (l.role == SlipRole.GROSS || l.role == SlipRole.TOTAL) && l.amount == read.earningsSum) ok += i
+        }
         val dedTotal = lines.firstOrNull { it.role == SlipRole.DEDUCTION_TOTAL && it.amount != null }?.amount
         val dedSum = lines.filter { it.role == SlipRole.DEDUCTION && it.amount != null }.sumOf { it.amount!! }
         val dedOk = dedTotal != null && dedTotal == dedSum
-        if (dedOk) lines.forEachIndexed { i, l -> if (l.role == SlipRole.DEDUCTION || l.role == SlipRole.DEDUCTION_TOTAL) ok += i }
+        if (dedOk) lines.forEachIndexed { i, l -> if (l.role == SlipRole.DEDUCTION || l.role == SlipRole.DEDUCTION_TOTAL && l.amount == dedSum) ok += i }
         val g = read.gross
         if (dedOk && g != null && SlipVote.stated(read) && SlipVote.adds(read)) lines.forEachIndexed { i, l -> if (l.role == SlipRole.NET && l.amount == g - dedTotal!!) ok += i }
         return ok
@@ -655,17 +885,51 @@ object SlipSums {
  * payslip's own sums ([SlipSums]). What the app shows and asks about comes from here.
  */
 object SlipReading {
-    /** [readings]: the words of each reading with their boxes (one list per made-over picture). */
-    fun read(readings: List<List<OcrLine>>): SlipVote.Result {
-        val each = readings.filter { it.isNotEmpty() }.map { best(it) }
+    /**
+     * [readings]: the words of each reading with their boxes (one list per made-over picture).
+     * [PHOTO-24] 1.30: [templates], the company's payslips the user confirmed before: the one most like this photo (by the
+     * first reading's names) fills in what this photo lost and orders the lines as before.
+     */
+    fun read(readings: List<List<OcrLine>>, templates: List<SlipTemplate> = emptyList()): SlipVote.Result {
+        val pages = readings.filter { it.isNotEmpty() }
+        val template = if (templates.isEmpty() || pages.isEmpty()) null else SlipTemplate.pick(templates, SlipTable.read(pages.first()).read)
+        val each = pages.map { best(it, template) }
         val voted = SlipVote.mergeResults(each)
         val fixed = SlipSums.repair(voted.read, voted.unsure)
-        return SlipVote.Result(fixed.read, fixed.unsure, voted.text)
+        if (template == null) return SlipVote.Result(fixed.read, fixed.unsure, voted.text)
+        // [PHOTO-24] In the template's order, whichever reading led and whatever the vote added.
+        val order = SlipTable.inOrder(fixed.read.lines, template)
+        val unsure = order.indices.filter { order[it] in fixed.unsure }.toSet()
+        return SlipVote.Result(fixed.read.copy(lines = order.map { fixed.read.lines[it] }), unsure, voted.text)
+    }
+
+    /**
+     * [PHOTO-26] 1.30 AV: a payslip too long for one photo (지급 on one, 공제 on the next), each photo read on its own ([read]),
+     * put together: the lines of every page, a line two pages both show (a total at the foot of one and the head of the
+     * next) once. A line is looked at when the page it came from was unsure of it.
+     */
+    fun pages(results: List<SlipVote.Result>): SlipVote.Result {
+        val read = results.filter { it.read.lines.isNotEmpty() }
+        if (read.size <= 1) return read.firstOrNull() ?: results.firstOrNull() ?: SlipVote.Result(PayslipRead(emptyList()), emptySet(), "")
+        val lines = mutableListOf<SlipLine>()
+        val unsure = HashSet<Int>()
+        for (r in read) r.read.lines.forEachIndexed { i, l ->
+            val same = lines.indexOfFirst { it.role == l.role && it.amount == l.amount && SlipTemplate.key(it.name).take(3) == SlipTemplate.key(l.name).take(3) }
+            if (same >= 0) { if (i !in r.unsure) unsure -= same; return@forEachIndexed }
+            if (i in r.unsure) unsure += lines.size
+            lines += l
+        }
+        // Items before the totals, as one payslip lists them.
+        val order = lines.indices.sortedBy { if (lines[it].role in TOTALS) 1 else 0 }
+        val merged = PayslipRead(order.map { lines[it] }, read.firstNotNullOfOrNull { it.read.month })
+        val flags = order.indices.filter { order[it] in unsure }.toSet()
+        val fixed = SlipSums.repair(merged, flags)
+        return SlipVote.Result(fixed.read, fixed.unsure, read.joinToString("\n") { it.text })
     }
 
     /** The better of the table and the text reading of one picture. */
-    fun best(words: List<OcrLine>): SlipVote.Result {
-        val table = SlipTable.read(words)
+    fun best(words: List<OcrLine>, template: SlipTemplate? = null): SlipVote.Result {
+        val table = SlipTable.read(words, template)
         val text = OcrRows.join(words)
         val asText = PayslipReader.read(text)
         // A name a stroke off (교퉁비) put right, as the table does.
@@ -690,8 +954,10 @@ object SlipReading {
             val a = l.amount
             when {
                 l.role != SlipRole.TOTAL || a == null -> l
-                !gross && earn > 0 && a == earn -> { gross = true; l.copy(role = SlipRole.GROSS) }
-                !dedTotal && ded > 0 && a == ded -> { dedTotal = true; l.copy(role = SlipRole.DEDUCTION_TOTAL) }
+                // [PHOTO-27] 1.30: the sum to the won is that total even when the payslip states it twice ("공제" "총액" at the head,
+                // 공제계 at the foot).
+                earn > 0 && a == earn && a != ded -> { gross = true; l.copy(role = SlipRole.GROSS) }
+                ded > 0 && a == ded && a != earn -> { dedTotal = true; l.copy(role = SlipRole.DEDUCTION_TOTAL) }
                 !gross && earn > 0 && a >= earn -> { gross = true; l.copy(role = SlipRole.GROSS) }
                 !dedTotal && ded > 0 && a < earn -> { dedTotal = true; l.copy(role = SlipRole.DEDUCTION_TOTAL) }
                 else -> l

@@ -13,12 +13,24 @@ import sys
 import zipfile
 
 # Bytes. Measured 2026-10-23 on 1.23 (OCR model no longer bundled, Korean only): APK 7.75 MB, AAB 19.4 MB.
-BUDGETS = {".apk": 9_500_000, ".aab": 23_500_000}
+# 1.30.0: an AAB is measured without BUNDLE-METADATA. That folder is the R8 name map and build notes Play keeps
+# for crash reports; it never reaches a phone, and the map alone grew past the old 23.5 MB budget while the APK
+# stayed inside. Without it the 1.30.0 AAB is 9.31 MB, so its budget is 11 MB.
+BUDGETS = {".apk": 9_500_000, ".aab": 11_000_000}
+NOT_SHIPPED = "BUNDLE-METADATA/"
 
 
 def entries(path):
     with zipfile.ZipFile(path) as z:
         return sorted(((i.compress_size, i.file_size, i.filename) for i in z.infolist()), reverse=True)
+
+
+def counted(path):
+    """The bytes the budget looks at: the whole file, minus what Play keeps to itself in an AAB."""
+    size = os.path.getsize(path)
+    if path.endswith(".aab"):
+        size -= sum(packed for packed, _, name in entries(path) if name.startswith(NOT_SHIPPED))
+    return size
 
 
 def main(argv):
@@ -39,17 +51,18 @@ def main(argv):
         return 2
     over, report = [], {}
     for f in files:
-        size = os.path.getsize(f)
+        size, size_counted = os.path.getsize(f), counted(f)
         budget = BUDGETS.get(os.path.splitext(f)[1])
         report[os.path.basename(f)] = size
-        mark = "" if budget is None or size <= budget else " **over budget**"
-        print(f"### {os.path.basename(f)}: {size / 1e6:.2f} MB" + (f" (budget {budget / 1e6:.1f} MB)" if budget else "") + mark)
+        mark = "" if budget is None or size_counted <= budget else " **over budget**"
+        shipped = f", {size_counted / 1e6:.2f} MB without {NOT_SHIPPED}" if size_counted != size else ""
+        print(f"### {os.path.basename(f)}: {size / 1e6:.2f} MB{shipped}" + (f" (budget {budget / 1e6:.1f} MB)" if budget else "") + mark)
         print("\n| entry | packed KB | raw KB |\n| --- | ---: | ---: |")
         for packed, raw, name in entries(f)[:top]:
             print(f"| {name} | {packed / 1e3:.0f} | {raw / 1e3:.0f} |")
         print()
         if mark:
-            over.append(f"{f} {size} > {budget}")
+            over.append(f"{f} {size_counted} > {budget}")
     if out_json:
         with open(out_json, "w", encoding="utf-8") as out:
             json.dump(report, out, indent=1)

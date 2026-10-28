@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -214,6 +215,22 @@ fun PayScreen(
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") }
                 },
                 actions = {
+                    // [PAYG-05] 1.30 BA (사용자 "설정 > 급여 > 자세히 고치기 — 자세히 고치기 자체가 보이지 않고 들어가 보질 못함"): every
+                    // way to change the setup one tap from the top, 자세히 고치기 first.
+                    if (profile != null && !editingSetup && !editingRules) {
+                        var menu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Tune, "급여 설정 고치기") }
+                            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("자세히 고치기 (하나씩 묻기)") },
+                                    onClick = { menu = false; detailedFrom = DetailedStart(profile); editingSetup = true })
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("처음부터 설정 (회사 급여 방식 찾기)") },
+                                    onClick = { menu = false; detailedFrom = null; editingSetup = true })
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("회사 규칙 (가산율·수당 기준)") },
+                                    onClick = { menu = false; editingRules = true })
+                            }
+                        }
+                    }
                     // [PAYS-10] 계산이 이상해요 and 명세서로 맞춰 보기 sit far down; help is one tap from the top.
                     if (onHelp != null) IconButton(onClick = onHelp) { Icon(Icons.AutoMirrored.Filled.HelpOutline, "급여 도움말과 문의") }
                 },
@@ -244,6 +261,8 @@ fun PayScreen(
                         onCancel = if (profile != null) ({ editingSetup = false }) else null,
                         fromCycle = fromCycle,
                         companyFind = companyFind,
+                        // [PAYG-01] The company's way went in with its 기본급 (kept already): back to the month.
+                        onApplied = { editingSetup = false },
                     ) else PayWizard(
                         initial = detailed.from ?: profile,
                         onCancel = { detailedFrom = null },
@@ -261,6 +280,7 @@ fun PayScreen(
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
                 else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
+                    onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, startMatching = startMatching)
             }
         }
@@ -277,6 +297,8 @@ private fun PayResult(
     onEditSetup: () -> Unit,
     onEditRules: () -> Unit,
     top: @Composable () -> Unit = {},
+    /** [PAYG-05] 자세히 고치기: the question-by-question setup on what the pay has. */
+    onDetailed: () -> Unit = onEditSetup,
     underTotal: @Composable () -> Unit = {},
     onReport: ((String) -> Unit)? = null,
     onShareWay: (() -> Unit)? = null,
@@ -369,10 +391,23 @@ private fun PayResult(
 
         top()
 
-        TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
+        // [PAYG-04] 1.30 BA (사용자 "기본급 없이 닫으면 '기본급만 넣으면 끝나요' — … 동작 안 되고 있음"): with no 기본급 the
+        // month has no figure to show, so instead of 0원 or a total of allowances alone the one card asks it, right here.
+        val noBase = closedSnap == null && !com.bamnat.core.pay.BaseAsk.showsEstimate(profile, result.month)
+        if (noBase) {
+            val companyWay = rememberCompanyWayTextIf(profile.wageType == WageType.MONTHLY)
+            BaseNeededCard(profile, result.month,
+                onSave = { b, h ->
+                    // [HOURLY-04] 1.30 AW: hours said here are the user's own, or the 광장's when they are its chip.
+                    vm.update { com.bamnat.core.pay.BaseAsk.apply(it, b, result.month, h).let { p -> if (h == null) p
+                        else p.copy(hoursSource = if (h == companyWay?.hours) com.bamnat.core.pay.HourlySource.PLAZA else com.bamnat.core.pay.HourlySource.TYPED) } }
+                },
+                companyHours = companyWay?.hours, companyName = companyWay?.way?.company)
+        } else TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
         // [PAYS-17] 이것만 넣으면 정확해져요: each value straight from here, without leaving the month.
-        if (closedSnap == null) RuleNeedsCard(needs, withSlip = profile.verified != null) { n ->
+        val shownNeeds = if (noBase) needs.filter { it.kind != com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE } else needs
+        if (closedSnap == null) RuleNeedsCard(shownNeeds, withSlip = profile.verified != null) { n ->
             when (n.kind) {
                 com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE -> editTarget = ValueTarget.Base
                 com.bamnat.core.pay.RuleOnlyNeeds.Kind.MONTHLY_HOURS -> hoursAsk = true
@@ -386,6 +421,8 @@ private fun PayResult(
         // way from a payslip or its rules page, free).
         SlipMatchCard(profile, gate, onCompare = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
             onFind = { slipRules = true })
+        // [PAYG-04] The figures below all come from the 기본급: shown once it is in.
+        if (!noBase) {
         // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
         val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
         val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
@@ -490,6 +527,7 @@ private fun PayResult(
             Text("근무표와 인상 규칙으로 계산했어요. 근무표를 바꾸면 바로 다시 계산돼요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        } // !noBase
 
         // [JOB-02] 공무원·경찰·소방만: 봉급표에서 계급·호봉으로 채우기.
         if (com.bamnat.core.pay.PublicServantPay.isPublic(profile.occupation)) {
@@ -611,6 +649,8 @@ private fun PayResult(
             com.bamnat.app.ui.guide.EstimatedFacts(vm.calendarId, onFix = onEditSetup, Modifier.padding(top = 8.dp))
             // [PAYS-19] 1.27: 금액 비교하기·계산 방식 찾기 moved up under the total (SlipMatchCard).
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                // [PAYG-05] 1.30 BA: 자세히 고치기 next to 처음부터 설정 (1.29 had it only on the easy setup's last page).
+                TextButton(onClick = onDetailed) { Icon(Icons.Filled.Tune, null); Text(" 자세히 고치기") }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
             }
         }
@@ -639,7 +679,7 @@ private fun PayResult(
         }, fixLabel = if (fix != null) "이 값 고치기" else "계산 방식 고치기") { detail = null }
     }
     if (hoursAsk) MonthlyHoursDialog(profile.monthlyHours, onDismiss = { hoursAsk = false }) { h ->
-        vm.update { com.bamnat.core.pay.RuleOnlyNeeds.settled(it.copy(monthlyHours = h)) }
+        vm.update { com.bamnat.core.pay.RuleOnlyNeeds.settled(it.copy(monthlyHours = h, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) }
         hoursAsk = false
     }
     if (fiveAsk) FiveOrMoreDialog(onDismiss = { fiveAsk = false }) { yes -> vm.update { fiveOrMoreSaid(it, yes) }; fiveAsk = false }
@@ -659,6 +699,8 @@ private fun PayResult(
         shiftTypes = snapshot.shiftTypes,
         fiveOrMore = profile.fiveOrMoreEmployees,
         kinds = slipSettings.extraKinds.kinds,
+        // [RULE-ED-06] 1.30 AW: each 칸's own amount on this setup and calendar.
+        profile = profile, snapshot = snapshot, effectOf = { p, s, m, made -> vm.effectOf(p, s, m, made) },
         onDismiss = { slipRules = false },
         onApply = { r -> vm.applySlipRules(r); slipRules = false; if (onShareWay != null && r.changes.isNotEmpty()) plazaAsk = true },
     )
@@ -1329,3 +1371,8 @@ private fun PayItem.paidWhen(): String = listOfNotNull(
     months.sorted().takeIf { it.isNotEmpty() }?.joinToString("·")?.let { "${it}월" },
     festivals.takeIf { it.isNotEmpty() }?.joinToString("·") { it.label }?.let { "$it ${if (festivalMonthBefore) "전 달" else "있는 달"}" },
 ).joinToString(" · ")
+
+/** [PAYG-04] The company's way (its 통상시급 hours) read only when [read]: a pay by the hour has no hours to ask. */
+@Composable
+private fun rememberCompanyWayTextIf(read: Boolean): com.bamnat.app.ui.company.CompanyWayText? =
+    if (read) com.bamnat.app.ui.company.rememberCompanyWayText() else null

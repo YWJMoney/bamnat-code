@@ -247,8 +247,8 @@ fun PublicApplySheet(
     onShare: () -> Unit,
     /** 첫 설정: the order is handed on instead of written; the setup asks today itself. */
     pick: ((String) -> Unit)? = null,
-    /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). */
-    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). [CALI-03] Else the screen's calendar. */
+    calendar: String = LocalCompanyCalendar.current,
 ) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
@@ -272,7 +272,7 @@ fun PublicApplySheet(
             if (cycle.site.isNotEmpty()) Text(cycle.site, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (cycle.id.isNotEmpty()) PublicSourceLine(cycle) else StatusChip("처음 제공 · ${cycle.formName}", Tone.WAIT)
             if (done) {
-                DonePanel(cycle, codes, onPay = onPay, onShare = onShare, onClose = onDismiss)
+                DonePanel(cycle, codes, onPay = onPay, onShare = onShare, onClose = onDismiss, calendar = calendar)
                 return@Column
             }
             Text("${cycle.formName} · ${shiftsLine(cycle, codes)}", style = MaterialTheme.typography.bodyMedium)
@@ -493,16 +493,17 @@ private fun TodayFinder(codes: String, types: Map<Char, ShiftType>, onPick: (Int
 
 /** After the cycle is in: what comes next, the pay with its usual allowances, or the plaza when the pay is set. */
 @Composable
-private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onShare: () -> Unit, onClose: () -> Unit) {
+private fun DonePanel(cycle: PublicCycle, codes: String, onPay: () -> Unit, onShare: () -> Unit, onClose: () -> Unit, calendar: String) {
     val c = LocalContext.current.appContainer
-    val hasPay = c.payStore.profile.collectAsState().value != null
+    // [CALI-06] The pay of the calendar the cycle went into.
+    val hasPay = remember(calendar) { c.companyOf(calendar).pay }.profile.collectAsState().value != null
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
         Text("달력에 넣었어요" + if (codes.isNotEmpty()) " · ${codes.length}일 순서" else "", style = MaterialTheme.typography.titleMedium)
     }
     // [PAYF-03] 1.29 AP: the same company may have a pay way coworkers set up: offered here, once, before the usual allowances.
-    if (CompanyPayOffer(cycle.company, onPay)) return
+    if (CompanyPayOffer(cycle.company, onPay, calendar)) return
     if (!hasPay) {
         val items = remember(cycle) { PublicPay.usualItems(cycle) }
         Text("다음은 급여예요. ${PublicPay.form(cycle, codes).label} 근무로 골라 두고" +
@@ -528,7 +529,7 @@ internal fun todayMillis(): Long = Today.millis()
  * ([onPay]). True while it shows, so the panel leaves out its own next step.
  */
 @Composable
-internal fun CompanyPayOffer(company: String, onPay: () -> Unit): Boolean {
+internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: String = LocalCompanyCalendar.current): Boolean {
     val c = LocalContext.current.appContainer
     if (!c.companyApi.enabled) return false
     val hit by androidx.compose.runtime.produceState<com.bamnat.app.company.CompanyHit?>(null, company) {
@@ -541,9 +542,15 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit): Boolean {
     var declined by rememberSaveable(company) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // [PAYG-01] 1.30 BA: the way chosen waits for its 기본급 right here, put in only with it (closing leaves the pay as it was).
+    var ready by remember { mutableStateOf<com.bamnat.app.company.PendingWay?>(null) }
     val h = hit ?: return false
     if (declined) return false
     val scope = rememberCoroutineScope()
+    ready?.let { w ->
+        PendingDone(c, c.companyOf(calendar), w, onDone = onPay, onSaved = null, onSkip = { ready = null; declined = true })
+        return true
+    }
     Text("급여 계산 방식도 같이 넣을까요?", style = MaterialTheme.typography.titleSmall)
     StatusChip("급여 방식 있음 · 맞아요 ${h.lead?.payWay?.takeIf { h.lead.pay.not() }?.ok ?: h.lead?.ok ?: 0}명", Tone.GOOD)
     Text("‘${h.name}’ 분들이 맞춘 계산 방식이에요. 넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요.",
@@ -553,10 +560,11 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit): Boolean {
         busy = true
         scope.launch {
             try {
-                when (com.bamnat.app.company.PayFind(c).use(h)) {
+                // [CALI-04] Into the pay of the calendar the cycle went into.
+                val s = c.companyOf(calendar)
+                when (val r = s.find.use(h)) {
                     com.bamnat.app.company.PayFind.Used.Gone -> declined = true
-                    com.bamnat.app.company.PayFind.Used.Applied -> { c.payWays.askBase(true); onPay() }
-                    com.bamnat.app.company.PayFind.Used.Amounts -> onPay()
+                    is com.bamnat.app.company.PayFind.Used.Ready -> ready = r.way
                 }
             } catch (e: com.bamnat.app.company.CompanyException) {
                 error = companyProblem(e.code, e.field)

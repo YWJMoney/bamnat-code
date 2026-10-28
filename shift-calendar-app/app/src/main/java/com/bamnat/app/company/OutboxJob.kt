@@ -26,7 +26,15 @@ class OutboxJob : JobService() {
         val c = applicationContext.appContainer
         running = c.appScope.launch {
             // [PLAZA-07] The daily share has a job of its own (it waits for its day); the rest goes as soon as online.
-            val done = runCatching { if (params.jobId == SHARE_ID) c.autoShare.flush() else send(c) }.getOrDefault(false)
+            // [CALI-02] 1.30 BB: an added calendar's share has a job of its own, its calendar in the extras.
+            val cal = params.extras.getString(CAL)
+            val done = runCatching {
+                when {
+                    params.jobId == SHARE_ID -> c.autoShare.flush()
+                    cal != null -> c.companyOf(cal).takeIf { it.calendarId == cal }?.autoShare?.flush() ?: true
+                    else -> send(c)
+                }
+            }.getOrDefault(false)
             jobFinished(params, !done)
         }
         return true
@@ -41,6 +49,8 @@ class OutboxJob : JobService() {
         private const val ID = 4403
         /** [PLAZA-07] 결정 D79: the setup shared by itself, once a day at most. */
         private const val SHARE_ID = 4404
+        private const val SHARE_BASE = 4_410_000
+        private const val CAL = "cal"
         private val BACKOFF = TimeUnit.MINUTES.toMillis(15)
 
         fun schedule(context: Context) {
@@ -59,24 +69,36 @@ class OutboxJob : JobService() {
          * [PLAZA-07] The work order and pay way to share by themselves, not before [delayMs] (a day after the last). A
          * one-off job like the rest, only while a change waits, so nothing runs at start.
          */
-        fun scheduleShare(context: Context, delayMs: Long) {
+        fun scheduleShare(context: Context, delayMs: Long, cal: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
             val jobs = context.getSystemService(JobScheduler::class.java) ?: return
-            if (jobs.getPendingJob(SHARE_ID) != null) return
+            val main = cal == com.bamnat.app.data.PersonalCalendar.MAIN
+            val id = if (main) SHARE_ID else shareId(cal)
+            if (jobs.getPendingJob(id) != null) return
             jobs.schedule(
-                JobInfo.Builder(SHARE_ID, ComponentName(context, OutboxJob::class.java))
+                JobInfo.Builder(id, ComponentName(context, OutboxJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setMinimumLatency(delayMs.coerceAtLeast(0))
                     .setBackoffCriteria(BACKOFF, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                     .setPersisted(true)
+                    .apply { if (!main) setExtras(android.os.PersistableBundle().apply { putString(CAL, cal) }) }
                     .build(),
             )
+        }
+
+        /** [CALI-02] An added calendar's share job, away from the app's other jobs (4401~4404). */
+        internal fun shareId(cal: String): Int = SHARE_BASE + (cal.hashCode() and 0xFFFF)
+
+        /** [CALI-07] A calendar that went takes its waiting share with it. */
+        fun cancelShare(context: Context, cal: String) {
+            if (cal == com.bamnat.app.data.PersonalCalendar.MAIN) return
+            context.getSystemService(JobScheduler::class.java)?.cancel(shareId(cal))
         }
 
         /** How many things wait to be sent, for 서버 연결 점검. */
         fun waiting(c: AppContainer): Int =
             (if (c.proStore.current.pendingConsent != null) 1 else 0) + c.inquiryStore.outbox.value.size +
                 c.calendars.calendars.value.filterNot { it.isExample }.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.count { c.shareLinksOf(it).unsent.value } +
-                (if (c.autoShare.waiting) 1 else 0) +
+                c.companyScopes().count { it.autoShare.waiting } +
                 (if (c.flags.on(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG)) c.photoWrong.waiting else 0)
 
         /** Sends everything waiting; true when nothing is left. */
@@ -84,7 +106,9 @@ class OutboxJob : JobService() {
             val consent = c.sendConsent()
             val questions = InquiryOutbox.flush(c)
             val links = if (c.shareApi.enabled) c.shareSync.sendUnsent() else true
-            val share = c.autoShare.flush()
+            // [CALI-02] Every calendar's waiting change, each when its day has come.
+            var share = true
+            for (s in c.companyScopes()) share = s.autoShare.flush() && share
             // [PHOTO-09] 1.29 AQ: '사진이 달라요' counts, only with the photo.wrong row on (처리방침 3.3).
             val photos = c.photoWrong.flush(c.flags.on(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG))
             return consent && questions && links && share && photos

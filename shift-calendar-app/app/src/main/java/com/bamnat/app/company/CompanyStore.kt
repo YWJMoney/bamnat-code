@@ -1,6 +1,7 @@
 package com.bamnat.app.company
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,13 +35,18 @@ data class CompanyDraft(val company: String, val dept: String = "", val fix: Boo
 /**
  * [COMM-02] What this phone keeps about sharing company setups: a random install id, what it sent,
  * the shared setup it uses and a company typed during setup. Never an amount.
+ *
+ * [CALI-01] 1.30 BB: one per calendar ([CompanyScope]). The main calendar's is the preferences file it always was; an added
+ * calendar's is a file in its own folder ([CompanyScopeStorage]) and asks [phone] (the main one) for what is the phone's
+ * and not a calendar's: the install id and how sharing by itself was chosen (설정 › 개인정보·앱 정보).
  */
-class CompanyStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("company", Context.MODE_PRIVATE)
+class CompanyStore internal constructor(private val prefs: SharedPreferences, private val phone: CompanyStore?) {
+    constructor(context: Context) : this(context.applicationContext.getSharedPreferences("company", Context.MODE_PRIVATE), null)
 
     /** Random and made here, so the server can count one phone once without knowing whose it is. */
     val device: String
-        get() = prefs.getString("device", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("device", it).apply() }
+        get() = phone?.device
+            ?: prefs.getString("device", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("device", it).apply() }
 
     private val _sent = MutableStateFlow(readSent())
     val sent: StateFlow<List<SentReport>> = _sent.asStateFlow()
@@ -141,11 +147,17 @@ class CompanyStore(context: Context) {
      * [PLAZA-07] 결정 D79: whether the work order and pay way go to the company's plaza by themselves after each change
      * (amounts and names left out). Null until the user answered the one-time ask; false also after 설정 turned it off.
      */
-    private val _autoShare = MutableStateFlow(if (prefs.contains("auto_share")) prefs.getBoolean("auto_share", false) else null)
-    val autoShare: StateFlow<Boolean?> = _autoShare.asStateFlow()
+    private val _autoShare = MutableStateFlow(if (phone == null && prefs.contains("auto_share")) prefs.getBoolean("auto_share", false) else null)
+    /** [CALI-01] The phone's one choice, whichever calendar asks. */
+    val autoShare: StateFlow<Boolean?> = phone?.autoShare ?: _autoShare.asStateFlow()
 
     /** [PLAZA-34] 1.27 AI: null is 바뀔 때마다 묻기 again (the key goes), true 저절로 나누기, false 나누지 않기. */
     fun setAutoShare(on: Boolean?) {
+        if (phone != null) {
+            phone.setAutoShare(on)
+            if (on != true) autoDirty = false
+            return
+        }
         _autoShare.value = on
         prefs.edit().apply {
             if (on == null) remove("auto_share") else putBoolean("auto_share", on)
@@ -170,7 +182,7 @@ class CompanyStore(context: Context) {
         set(v) = prefs.edit().putLong("auto_sent_at", v).apply()
 
     private val _member = MutableStateFlow(readMember())
-    /** [PLAZA-07] The company this phone's main calendar joined, as the server last said: (id, name). */
+    /** [PLAZA-07] The company this calendar joined, as the server last said: (id, name). [CALI-02] Each calendar its own. */
     val member: StateFlow<Pair<String, String>?> = _member.asStateFlow()
 
     private fun readMember(): Pair<String, String>? = prefs.getString("member", null)?.let { s ->

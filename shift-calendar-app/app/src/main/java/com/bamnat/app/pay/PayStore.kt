@@ -211,6 +211,9 @@ object PayCodec {
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
         // [PHOTO-11] 1.29: 명세서로 맞춘 통상시급 (원 아래 두 자리), left out when not set.
         .apply { p.ordinaryHourly?.let { put("ordinaryHourly", it) } }
+        // [HOURLY-01] 1.30: where 통상시급 and 기준 시간 came from, left out when not known.
+        .putOpt("ordinarySource", p.ordinarySource?.name)
+        .putOpt("hoursSource", p.hoursSource?.name)
         .apply { if (p.legalBreaks) put("legalBreaks", true) }
         .putOpt("probationEnd", p.probationEnd?.toString())
         .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
@@ -252,6 +255,8 @@ object PayCodec {
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
         taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
         ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },
+        ordinarySource = o.optString("ordinarySource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
+        hoursSource = o.optString("hoursSource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
         legalBreaks = o.optBoolean("legalBreaks", false),
         probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),
@@ -628,6 +633,13 @@ object PayCodec {
         .putOpt("covers", i.covers?.let { c -> JSONArray(PayItem.COVERABLE.filter { it in c }.map { it.name }) })
         // [PAYX-31] Only when not 기본급.
         .apply { if (i.bonusBasis != BonusBasis.BASE) put("bonusBasis", i.bonusBasis.name) }
+        // [ITEM-02] 1.30 BC: only when not 사람마다 (what every allowance before 1.30 was), so older files stay byte for byte.
+        .apply {
+            if (i.share != com.bamnat.core.pay.ItemShare.PERSONAL) put("share", i.share.name)
+            if (i.share == com.bamnat.core.pay.ItemShare.PERCENT) { putOpt("percent", i.percent); put("percentOf", i.percentOf.name) }
+            if (i.share == com.bamnat.core.pay.ItemShare.FIXED) putOpt("fixedAmount", i.fixedAmount?.takeIf { it > 0 })
+            if (i.mine) put("mine", true)
+        }
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -646,6 +658,12 @@ object PayCodec {
             (0 until a.length()).mapNotNull { n -> PayItem.COVERABLE.firstOrNull { it.name == a.optString(n) } }.toSet()
         },
         bonusBasis = o.optString("bonusBasis").let { n -> BonusBasis.entries.firstOrNull { it.name == n } } ?: BonusBasis.BASE,
+        // [ITEM-02] An allowance from before 1.30, or a kind this version does not know, is 사람마다 as it always was.
+        share = o.optString("share").let { n -> com.bamnat.core.pay.ItemShare.entries.firstOrNull { it.name == n } } ?: com.bamnat.core.pay.ItemShare.PERSONAL,
+        percent = o.optDouble("percent", Double.NaN).takeIf { it.isFinite() && it > 0 && it <= com.bamnat.core.pay.ItemShares.MAX_PERCENT },
+        percentOf = o.optString("percentOf").let { n -> BonusBasis.entries.firstOrNull { it.name == n } } ?: BonusBasis.BASE,
+        fixedAmount = o.optLong("fixedAmount", 0).takeIf { it > 0 },
+        mine = o.optBoolean("mine", false),
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =

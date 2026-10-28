@@ -68,6 +68,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import com.bamnat.app.ui.components.LongTextField
+import com.bamnat.app.ui.components.edgeScrollViewport
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -505,8 +507,11 @@ private fun InquiryForm(
         }
     }
 
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+    // [MEMO-SEL-02] 1.30 AY: a long question's selection handles scroll this page, like a memo's.
+    val formScroll = rememberScrollState()
+    val edge = com.bamnat.app.ui.components.rememberEdgeScroll(formScroll)
+    androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.components.LocalEdgeScroll provides edge) { Column(
+        Modifier.fillMaxWidth().edgeScrollViewport(edge).verticalScroll(formScroll).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (restored) {
@@ -530,7 +535,7 @@ private fun InquiryForm(
         }
 
         StepTitle("2. 무슨 일인지 적어 주세요")
-        OutlinedTextField(
+        LongTextField(
             value = text,
             onValueChange = { text = it.take(InquiryClient.TEXT_MAX + 50) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
@@ -658,7 +663,7 @@ private fun InquiryForm(
         }
         if (!mail) Note("보내기 전까지 쓰던 내용은 이 휴대폰에 남아 있어요.")
         Spacer(Modifier.height(24.dp))
-    }
+    } }
 }
 
 /**

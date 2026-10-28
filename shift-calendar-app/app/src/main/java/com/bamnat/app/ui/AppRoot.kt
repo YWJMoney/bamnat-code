@@ -60,6 +60,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
+import com.bamnat.app.ui.company.companyCalendarOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -220,14 +222,15 @@ private object Routes {
         "memo/$id?date=${date?.toString() ?: ""}&checklist=$checklist&notebook=$notebook"
 
     // [COMM-01][COMM-02] The company rules server: find a company, share a setup, follow what was sent.
-    const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}"
-    const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
-    const val COMPANY_REPORT = "company_report"
+    // [CALI-03] 1.30 BB: each with the calendar it is for ("" = the calendar on screen, [companyCalendarOf]).
+    const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}&calendar={calendar}"
+    const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}&calendar={calendar}"
+    const val COMPANY_REPORT = "company_report?calendar={calendar}"
     /** [PLAZA-06] 처음 설정 다시 받기. */
     const val SETUP_AGAIN = "setup_again"
-    const val COMPANY_SENT = "company_sent"
+    const val COMPANY_SENT = "company_sent?calendar={calendar}"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
-    const val COMPANY_BOARD = "company_board"
+    const val COMPANY_BOARD = "company_board?calendar={calendar}"
     const val PLAZA_RATES = "plaza_rates"
     /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
     const val COMPANY_BOARD_ALL = "company_board_all"
@@ -262,8 +265,13 @@ private object Routes {
     const val PROFILE = "profile"
     const val JOURNAL = "journal"
 
-    fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
-    fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
+    fun companyFind(setup: Boolean = false, weekdays: Boolean = false, calendar: String = "") =
+        "company_find?setup=$setup&weekdays=$weekdays&calendar=$calendar"
+    fun company(id: String, setup: Boolean, weekdays: Boolean, calendar: String = "") =
+        "company/$id?setup=$setup&weekdays=$weekdays&calendar=$calendar"
+    fun companyBoard(calendar: String = "") = "company_board?calendar=$calendar"
+    fun companyReport(calendar: String = "") = "company_report?calendar=$calendar"
+    fun companySent(calendar: String = "") = "company_sent?calendar=$calendar"
 }
 
 @Composable
@@ -436,9 +444,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.companyBoard()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
+            NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay(companyCalendarOf(container, null))) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -818,16 +827,23 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         // (LeadShare), the pay after it is answered, never two sheets over each other.
         val leadAsking by container.leadShare.step.collectAsStateWithLifecycle()
         if (saved.style?.usesPayEngine != true || payProfile != null) {
-            LaunchedEffect(saved) { container.firstSetup.consumeSaved() }
+            LaunchedEffect(saved) {
+                container.firstSetup.consumeSaved()
+                // [FIN130-07] A coworkers' setup with its pay on a pay already set up: its way waits for the 기본급 on the pay
+                // screen, which opens next (the cycle is in already).
+                if (saved.style?.usesPayEngine == true && com.bamnat.app.company.PendingWays.of(container.companyOf(PersonalCalendar.MAIN)).pending.value != null) {
+                    nav.navigate(Routes.pay()) { launchSingleTop = true }
+                }
+            }
         } else if (leadAsking == null) {
             // [PAYF-02][PAYF-05] 1.29 AP: the company named in the setup is asked for while the user reads this, so the pay's
             // first question lists its pay way at once.
             val prefetch = rememberCoroutineScope()
             LaunchedEffect(saved) {
-                com.bamnat.app.ui.company.PayFindSearch.prefetch(container, prefetch, com.bamnat.app.company.PayFind(container).known())
+                com.bamnat.app.ui.company.PayFindSearch.prefetch(container, prefetch, container.companyOf(PersonalCalendar.MAIN).find.known())
             }
             SetupPaySheet(
-                companyPay = container.companyStore.pendingPay != null,
+                companyPay = container.companyOf(PersonalCalendar.MAIN).store.pendingPay != null,
                 onNow = {
                     container.firstSetup.consumeSaved()
                     nav.navigate(Routes.pay()) { launchSingleTop = true }
@@ -941,9 +957,11 @@ private fun AppNavHost(
             LaunchedEffect(done) { if (done && !asksPay) nav.popFrom(Routes.CALENDAR_SETUP) }
             SetupHost(vm)
             if (asksPay) SetupPaySheet(
-                companyPay = false,
+                // [CALI-05] 1.30 BB: a coworkers' setup that came with its pay, for this calendar.
+                companyPay = remember(id) { container.companyOf(id).store.pendingPay != null },
                 onNow = { nav.navigate(Routes.pay(id)) { popUpTo(Routes.CALENDAR_SETUP) { inclusive = true }; launchSingleTop = true } },
                 onLater = { nav.popFrom(Routes.CALENDAR_SETUP) },
+                calendar = id, // [PAYG-07]
             )
         }
         composable(Routes.CALENDARS) {
@@ -1117,14 +1135,14 @@ private fun AppNavHost(
                     CompanySettingsRows(
                         nudges,
                         onFind = { nav.navigate(Routes.companyFind()) { launchSingleTop = true } },
-                        onBoard = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
-                        onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
-                        onSent = { nav.navigate(Routes.COMPANY_SENT) { launchSingleTop = true } },
+                        onBoard = { nav.navigate(Routes.companyBoard()) { launchSingleTop = true } },
+                        onShare = { nav.navigate(Routes.companyReport()) { launchSingleTop = true } },
+                        onSent = { nav.navigate(Routes.companySent()) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) },
                     )
                 }) else null,
                 onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
-                onOpenBoard = if (nudges.enabled) ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }) else null,
+                onOpenBoard = if (nudges.enabled) ({ nav.navigate(Routes.companyBoard()) { launchSingleTop = true } }) else null,
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
@@ -1141,21 +1159,24 @@ private fun AppNavHost(
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "pay_$calendar") { PayViewModel(it, calendar) }
             val profile by vm.profile.collectAsStateWithLifecycle()
-            val pendingPay by container.companyStore.pendingPayFlow.collectAsStateWithLifecycle()
-            // [MCAL-06] A coworker's company setup is for the main job's pay.
-            if (profile == null && pendingPay != null && calendar == PersonalCalendar.MAIN) {
+            // [CALI-04] 1.30 BB: the calendar's own company: its coworkers' setup, pay way, notices and 광장.
+            val company = remember(calendar) { container.companyOf(calendar) }
+            val pendingPay by company.store.pendingPayFlow.collectAsStateWithLifecycle()
+            // [MCAL-06] A coworker's company setup is for the pay of the calendar it went into (1.29: the main one's only).
+            if (profile == null && pendingPay != null) {
                 // [COMM-01] A coworker's setup came with its pay: only the user's own amounts are left.
-                val companyPay = appViewModel(key = "company-pay-${pendingPay.hashCode()}") { CompanyPayViewModel(it) }
-                CompanyPayScreen(companyPay, onBack = { nav.popFrom(Routes.PAY) }, onByHand = { container.companyStore.pendingPay = null })
+                val companyPay = appViewModel(key = "company-pay-$calendar-${pendingPay.hashCode()}") { CompanyPayViewModel(it, calendar) }
+                CompanyPayScreen(companyPay, onBack = { nav.popFrom(Routes.PAY) }, onByHand = { company.store.pendingPay = null })
                 return@composable
             }
-            val nudges = appViewModel { CompanyNudgeViewModel(it) }
-            val publicUse by container.companyStore.publicUse.collectAsStateWithLifecycle()
-            // [PAYF-01][PAYF-07] 1.29 AP: a company's pay way is for the main job's wages only, never a 투자·가게·현장 calendar.
+            val nudges = appViewModel(key = "company-nudges-$calendar") { CompanyNudgeViewModel(it, calendar) }
+            val publicUse by company.store.publicUse.collectAsStateWithLifecycle()
+            // [PAYF-01][PAYF-07] 1.29 AP: a company's pay way is for wages only, never a 투자·가게·현장 calendar.
+            // [CALI-04] 1.30 BB: on every calendar's pay with wages, with that calendar's company.
             val payEngine = remember(calendar) {
                 container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle)?.usesPayEngine != false
             }
-            val companyPay = calendar == PersonalCalendar.MAIN && payEngine
+            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
@@ -1166,6 +1187,7 @@ private fun AppNavHost(
                     if (nudges.invite.value != null) inviting = true
                 }
             }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
@@ -1174,8 +1196,8 @@ private fun AppNavHost(
                     if (profile != null) com.bamnat.app.ui.guide.AskArea(container, calendar,
                         container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle),
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
-                    CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
-                        onFix = { nav.fixCompanySetup(it) })
+                    CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+                        onFix = { nav.fixCompanySetup(it, calendar) })
                     if (companyPay) {
                         // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
                         com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -1184,17 +1206,17 @@ private fun AppNavHost(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                     }
                     // [SPAT-05] A public cycle in use and its pay just set: the plaza, the reward said first.
-                    if (calendar == PersonalCalendar.MAIN && profile != null) com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                        onPay = {}, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
+                    if (profile != null && calendar != PersonalCalendar.EXAMPLE) com.bamnat.app.ui.company.PublicWayNotice(Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        onPay = {}, onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } })
                     // [COMM-12] The company is known and no coworker's rules are in use: the plaza, with its name typed.
-                    com.bamnat.app.ui.company.PlazaEntryCard(container, calendar, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
+                    if (calendar != PersonalCalendar.EXAMPLE) com.bamnat.app.ui.company.PlazaEntryCard(container, calendar, onOpen = { nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true } },
                         Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 },
                 // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
                 underTotal = {
                     com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
                     // [COMM-12] One line into the plaza from the pay; hidden without the company server.
-                    if (calendar == PersonalCalendar.MAIN) com.bamnat.app.ui.company.PlazaEntryLine(container, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } })
+                    if (calendar != PersonalCalendar.EXAMPLE) com.bamnat.app.ui.company.PlazaEntryLine(container, onOpen = { nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true } })
                 },
                 // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
                 onReport = if (container.inquiryApi.enabled) { check ->
@@ -1202,18 +1224,19 @@ private fun AppNavHost(
                     nav.navigate(Routes.INQUIRY) { launchSingleTop = true }
                 } else null,
                 // [PAYS-09] The invitation after a match or an item of the company's own sends to 내 설정 나누기.
-                onShareWay = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                onShareWay = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
                 // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
                 onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) },
-                // [SPAT-04] The public cycle in use, for the first pay setup of the main calendar.
-                fromCycle = publicUse?.takeIf { calendar == PersonalCalendar.MAIN }?.let { u -> u.cycle?.let { it to u.codes } },
+                // [SPAT-04] The public cycle in use, for the first pay setup. [CALI-04] The calendar's own (1.29: the main one's).
+                fromCycle = publicUse?.let { u -> u.cycle?.let { it to u.codes } },
                 // [PLAZA-30] 1.27 AI: the plaza form's 명세서로 맞춰 보기, once.
                 startMatching = remember { container.pendingMatch.also { container.pendingMatch = false } },
                 // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay. [PAYF-01] 1.29: the setup's first question.
                 companyFind = companyPay)
             if (inviting) {
-                InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
+            }
             }
         }
         composable(
@@ -1221,25 +1244,30 @@ private fun AppNavHost(
             arguments = listOf(
                 navArgument("setup") { type = NavType.BoolType; defaultValue = false },
                 navArgument("weekdays") { type = NavType.BoolType; defaultValue = false },
+                navArgument("calendar") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { entry ->
             val setup = entry.arguments?.getBoolean("setup") ?: false
             val weekdays = entry.arguments?.getBoolean("weekdays") ?: false
-            val vm = appViewModel { CompanyFindViewModel(it) }
-            val profile by container.payStore.profile.collectAsStateWithLifecycle()
+            // [CALI-03] 1.30 BB: the company is chosen for this calendar only.
+            val calendar = remember(entry) { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val vm = appViewModel(key = "company-find-$calendar") { CompanyFindViewModel(it, calendar) }
+            val profile by remember(calendar) { container.companyOf(calendar).pay.profile }.collectAsStateWithLifecycle()
             val ready = !setup && profile != null
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             CompanyFindScreen(
                 vm = vm,
                 setup = setup,
                 ready = ready,
                 onBack = { nav.popFrom(Routes.COMPANY_FIND) },
-                onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays)) },
-                onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
-                onBoard = if (setup || !container.companyApi.enabled) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
+                onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays, calendar)) },
+                onByHand = { nav.afterCompanyByHand(setup, weekdays, ready, calendar) },
+                onBoard = if (setup || !container.companyApi.enabled) null else ({ nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true } }),
                 // [SPAT-04][SPAT-05] A public cycle just put in: on to the pay (with its usual allowances), or with pay set, the plaza.
-                onPay = { nav.navigate(Routes.pay()) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
-                onShare = { nav.navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
+                onPay = { nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
+                onShare = { nav.navigate(Routes.companyReport(calendar)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true }; launchSingleTop = true } },
             )
+            }
         }
         composable(
             Routes.COMPANY,
@@ -1247,14 +1275,19 @@ private fun AppNavHost(
                 navArgument("id") { type = NavType.StringType },
                 navArgument("setup") { type = NavType.BoolType; defaultValue = false },
                 navArgument("weekdays") { type = NavType.BoolType; defaultValue = false },
+                navArgument("calendar") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             val setup = entry.arguments?.getBoolean("setup") ?: false
             val weekdays = entry.arguments?.getBoolean("weekdays") ?: false
-            val vm = appViewModel(key = "company-$id") { CompanyDetailViewModel(it, id) }
-            val profile by container.payStore.profile.collectAsStateWithLifecycle()
+            // [CALI-03] 1.30 BB: 이 설정 쓰기 goes into this calendar only; the others keep theirs.
+            val calendar = remember(entry) { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val company = remember(calendar) { container.companyOf(calendar) }
+            val vm = appViewModel(key = "company-$id-$calendar") { CompanyDetailViewModel(it, id, calendar) }
+            val profile by company.pay.profile.collectAsStateWithLifecycle()
             val ready = !setup && profile != null
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             CompanyDetailScreen(
                 vm = vm,
                 setup = setup,
@@ -1262,19 +1295,19 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY) },
                 onApplied = { applied, name ->
                     scope.launch {
-                        val hasPattern = container.scheduleRepository.patterns.first().isNotEmpty()
-                        val pay = container.payStore.profile.value != null
+                        val hasPattern = company.schedule.patterns.first().isNotEmpty()
+                        val pay = company.pay.profile.value != null
                         when {
                             // A setup without a rotation (요일 고정 회사): the days are still to be set.
-                            !hasPattern -> nav.navigate(Routes.pattern(weekdays = weekdays || applied.cycleDays == null, setup = true)) {
+                            !hasPattern -> nav.navigate(Routes.pattern(weekdays = weekdays || applied.cycleDays == null, setup = true, calendar = calendar)) {
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                             }
-                            applied.pendingPay || (setup && !pay) -> nav.navigate(Routes.pay()) {
+                            applied.pendingPay || (setup && !pay) -> nav.navigate(Routes.pay(calendar)) {
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                                 launchSingleTop = true
                             }
                             // [PAYF-03][PAYF-06] 1.29 AP: the pay way went onto a pay with amounts: its 기본급 is checked there next.
-                            applied.rules && container.payWays.askBase.value -> nav.navigate(Routes.pay()) {
+                            applied.rules && company.payWays.askBase.value -> nav.navigate(Routes.pay(calendar)) {
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                                 launchSingleTop = true
                             }
@@ -1283,40 +1316,52 @@ private fun AppNavHost(
                                 if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
                                 val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
                                 // [PLAZA-32] 1.27 AI (443): the company's 정보 광장 opens at once, with one line on what just happened.
-                                if (container.companyApi.enabled && container.companyStore.member.value != null) {
+                                if (container.companyApi.enabled && company.store.member.value != null) {
                                     container.pendingPlazaNote = "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
-                                    nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }
+                                    nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true }
                                 } else snackbar.showSnackbar(done)
                             }
                         }
                     }
                 },
-                onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+                onByHand = { nav.afterCompanyByHand(setup, weekdays, ready, calendar) },
             )
+            }
         }
-        composable(Routes.COMPANY_BOARD) {
+        composable(Routes.COMPANY_BOARD, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
+            // [CALI-08] 1.30 BB: the 광장 of one calendar's company; with two calendars or more, chips above choose which.
+            var calendar by rememberSaveable { mutableStateOf(companyCalendarOf(container, entry.arguments?.getString("calendar"))) }
+            val company = remember(calendar) { container.companyOf(calendar) }
+            val chips: @Composable () -> Unit = {
+                com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
+                    Modifier.padding(horizontal = 16.dp))
+            }
             // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
-            val member by container.companyStore.member.collectAsStateWithLifecycle()
-            val style = remember { container.calendars.styleOf(PersonalCalendar.MAIN, container.settingsRepository.current.workStyle) }
-            val plan = remember(member) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
+            val member by company.store.member.collectAsStateWithLifecycle()
+            val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+            val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             if (container.companyApi.enabled && plan.room != null) {
-                val home = appViewModel(key = "plaza-home-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it) }
+                val home = appViewModel(key = "plaza-home-$calendar-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar) }
                 com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
                     onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
-                    onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
+                    onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
                     onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
-                    onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
-                return@composable
+                    onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+                    header = chips)
+            } else {
+                val vm = appViewModel(key = "company-board-$calendar") { CompanyBoardViewModel(it, calendar) }
+                CompanyBoardScreen(
+                    vm = vm,
+                    onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
+                    onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
+                    onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                    onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
+                    header = chips,
+                )
             }
-            val vm = appViewModel { CompanyBoardViewModel(it) }
-            CompanyBoardScreen(
-                vm = vm,
-                onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
-                onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
-                onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
-                onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
-                onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind()) { launchSingleTop = true } }) else null,
-            )
+            }
         }
         // [PLAZA-32] 1.27 AI: every company's rules, from a company's or a kind of work's plaza.
         composable(Routes.COMPANY_BOARD_ALL) {
@@ -1325,7 +1370,7 @@ private fun AppNavHost(
                 vm = vm,
                 onBack = { nav.popFrom(Routes.COMPANY_BOARD_ALL) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
-                onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                onShare = { nav.navigate(Routes.companyReport()) { launchSingleTop = true } },
                 onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             )
         }
@@ -1333,26 +1378,35 @@ private fun AppNavHost(
             val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
             com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
         }
-        composable(Routes.COMPANY_REPORT) {
-            val vm = appViewModel { CompanyReportViewModel(it) }
+        composable(Routes.COMPANY_REPORT, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
+            // [CALI-02] 1.30 BB: the calendar's own setup, under its own company, kept as sent by it.
+            val calendar = remember(entry) { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val vm = appViewModel(key = "company-report-$calendar") { CompanyReportViewModel(it, calendar) }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             CompanyReportScreen(
                 vm = vm,
                 onBack = { nav.popFrom(Routes.COMPANY_REPORT) },
                 onDone = { nav.popFrom(Routes.COMPANY_REPORT) },
-                onOpenSent = { nav.navigate(Routes.COMPANY_SENT) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
+                onOpenSent = { nav.navigate(Routes.companySent(calendar)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
                 // [SPAT-05] Sent from a public row: that company's plaza page, in place of the form.
-                onOpenCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
-                // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 on the main pay; back comes to this form with the tick open.
-                onMatch = { nav.navigate(Routes.pay(PersonalCalendar.MAIN)) { launchSingleTop = true } },
+                onOpenCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
+                // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 on the calendar's pay; back comes to this form with the tick open.
+                onMatch = { nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } },
+                // [FIN130-01] 이 규칙 쓰기 with its pay way: the pay screen asks the 기본급 and puts the way in.
+                onOpenPay = { nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true }; launchSingleTop = true } },
             )
+            }
         }
-        composable(Routes.COMPANY_SENT) {
-            val vm = appViewModel { CompanyReportViewModel(it) }
+        composable(Routes.COMPANY_SENT, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
+            val calendar = remember(entry) { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val vm = appViewModel(key = "company-report-$calendar") { CompanyReportViewModel(it, calendar) }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             CompanySentScreen(
                 vm = vm,
                 onBack = { nav.popFrom(Routes.COMPANY_SENT) },
-                onShare = { nav.navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_SENT) { inclusive = true } } },
+                onShare = { nav.navigate(Routes.companyReport(calendar)) { popUpTo(Routes.COMPANY_SENT) { inclusive = true } } },
             )
+            }
         }
         // [EXTRA-04] Names, hours and pay of each kind of extra work, from settings, a day or the pay rules.
         composable(Routes.SLEEP) {
@@ -1592,7 +1646,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.CALENDARS -> Routes.CALENDARS
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
     SettingsGo.INQUIRY -> Routes.INQUIRY
-    SettingsGo.BOARD -> Routes.COMPANY_BOARD
+    SettingsGo.BOARD -> Routes.companyBoard()
     SettingsGo.FEATURES -> Routes.FEATURES
     SettingsGo.PRO -> Routes.PRO
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
@@ -1634,21 +1688,21 @@ private fun RingingBanner() {
  * [COMM-02] The company is not there (or not the user's department): during first setup the work is
  * set up by hand; once set up, the user's own setup is shared under the company's name.
  */
-private fun NavHostController.afterCompanyByHand(setup: Boolean, weekdays: Boolean, ready: Boolean) {
+private fun NavHostController.afterCompanyByHand(setup: Boolean, weekdays: Boolean, ready: Boolean, calendar: String = PersonalCalendar.MAIN) {
     when {
-        setup -> navigate(Routes.pattern(weekdays = weekdays, setup = true)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
-        ready -> navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
-        else -> navigate(Routes.pattern(weekdays = weekdays)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
+        setup -> navigate(Routes.pattern(weekdays = weekdays, setup = true, calendar = calendar)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
+        ready -> navigate(Routes.companyReport(calendar)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
+        else -> navigate(Routes.pattern(weekdays = weekdays, calendar = calendar)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
     }
 }
 
 /** [COMM-03] After 달라요: where the setup is corrected before the right one is shared. */
-private fun NavHostController.fixCompanySetup(place: FixPlace) {
+private fun NavHostController.fixCompanySetup(place: FixPlace, calendar: String = PersonalCalendar.MAIN) {
     when (place) {
-        FixPlace.PAY -> navigate(Routes.pay()) { launchSingleTop = true }
-        FixPlace.SHIFT_TYPES -> navigate(Routes.shiftTypes()) { launchSingleTop = true }
-        FixPlace.PATTERN -> navigate(Routes.pattern()) { launchSingleTop = true }
-        FixPlace.NONE -> navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }
+        FixPlace.PAY -> navigate(Routes.pay(calendar)) { launchSingleTop = true }
+        FixPlace.SHIFT_TYPES -> navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true }
+        FixPlace.PATTERN -> navigate(Routes.pattern(calendar = calendar)) { launchSingleTop = true }
+        FixPlace.NONE -> navigate(Routes.companyReport(calendar)) { launchSingleTop = true }
     }
 }
 
