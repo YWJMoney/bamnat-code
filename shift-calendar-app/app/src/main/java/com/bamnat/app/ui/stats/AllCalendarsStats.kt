@@ -91,7 +91,7 @@ private fun YearIncomeCard(month: YearMonth, calendars: List<com.bamnat.app.data
             }
         }
         if (y.manyJobs) Text("두 곳 이상에서 돈이 들어왔어요. 근로소득 말고 사업·기타소득이 있으면 다음 해 5월 종합소득세 신고 대상일 수 있어요 " +
-            "(가계부 › 리포트 › 5월 신고 준비).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "(현장 달력은 장부 › 요약 › 3.3% 합계에서 5월 신고 준비를 만들어요).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp))
     }
 }

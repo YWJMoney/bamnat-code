@@ -662,6 +662,7 @@ fun MoneyScreen(
                 }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
                 Box {
+                    com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "가계부 탭 메뉴") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })

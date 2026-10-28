@@ -279,7 +279,7 @@ object TaxPlus {
                 "교육비" to won(x.education), "보장성보험료" to won(x.insurance), "기부금" to won(x.donation), "월세" to won(x.rent)))
             blocks += ReportDoc.Paragraph("가계부에 적은 것으로 어림했어요. 실제 공제는 홈택스 간소화 자료로 확인해 주세요.", small = true)
         }
-        return ReportDoc("${year}년 돈 리포트", blocks, footer = "밤낮 · ${year}년 돈 리포트")
+        return ReportDoc("${year}년 가계부 리포트", blocks, footer = "밤낮 · ${year}년 가계부 리포트")
     }
 
     // ---- [TAXP-10] 601 프리랜서 3.3%와 5월 신고 ----

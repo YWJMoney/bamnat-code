@@ -33,6 +33,15 @@ class SettingsSearchTest {
         assertEquals("이", SearchText.stem("이"))
     }
 
+    /** U 1.32 [UX132-04][UX132-05] 초성 and the new 화면과 글자 rows. */
+    @Test fun initialsAndTextSize() {
+        assertEquals("ㄱㅂㄱ", SearchText.initials("기본급"))
+        assertTrue(SearchText.isInitials("ㅇㄹ"))
+        assertEquals("알람음", first("ㅇㄹㅇ"))
+        assertEquals("글자 크기", first("글씨 크게"))
+        assertEquals("오전/오후로 보기", first("12시간"))
+    }
+
     @Test fun theTitleItselfComesFirst() {
         assertEquals("진동", first("진동"))
         assertEquals("근무 주기", first("근무 주기"))

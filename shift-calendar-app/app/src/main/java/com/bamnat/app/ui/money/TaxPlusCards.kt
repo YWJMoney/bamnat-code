@@ -226,7 +226,7 @@ internal fun CardMatchLines(calendarId: String, book: MoneyBook, today: LocalDat
 internal fun YearReportCard(book: MoneyBook, year: Int, snapshot: ScheduleSnapshot?, gate: Gate, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    SectionCard(title = "${year}년 돈 리포트") {
+    SectionCard(title = "${year}년 가계부 리포트") {
         Muted("달마다·분류별·결제수단별·근무별 합계와 연말정산에 쓰는 합계를 한 장으로 정리해요. 가게 이름은 표에 넣지 않아요.")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
             OutlinedButton(onClick = {

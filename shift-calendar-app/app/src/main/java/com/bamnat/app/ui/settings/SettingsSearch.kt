@@ -31,9 +31,29 @@ internal object SearchText {
      * How well [query] fits: the whole query in [title] counts most, then each word found in the title,
      * a keyword or [other] text. Half the words, at least one, must be found; 0 means no fit.
      */
+    private const val CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+
+    /** U 1.32 [UX132-04] Each 한글 syllable as its first consonant: "기본급" → "ㄱㅂㄱ". Other letters stay. */
+    fun initials(s: String): String = buildString {
+        for (c in s) append(if (c in '가'..'힣') CHO[(c - '가') / (21 * 28)] else c)
+    }
+
+    /** The query is 초성 only ("ㄱㅂㄱ"). */
+    fun isInitials(q: String): Boolean = q.length >= 2 && q.all { it in CHO }
+
     fun score(query: String, title: String, keywords: List<String>, other: String = ""): Int {
         val q = norm(query)
         if (q.isEmpty()) return 0
+        // U 1.32 [UX132-04] 초성 검색: "ㄱㅂㄱ" finds 기본급, "ㅇㄹ" 알람.
+        if (isInitials(q)) {
+            val t = initials(norm(title))
+            return when {
+                t.startsWith(q) -> 40
+                q in t -> 30
+                keywords.any { q in initials(norm(it)) } -> 20
+                else -> 0
+            }
+        }
         val t = norm(title)
         val keys = keywords.map(::norm).filter { it.isNotEmpty() }
         val o = norm(other)
@@ -188,6 +208,10 @@ internal object SettingsIndex {
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),
         row(C, "날짜 칸 아래", "음력", "근무시간 표시", "날짜 밑"),
         row(C, "메모 보기", "달력 메모", "메모 표시"),
+        // U 1.32 [UX132-05][UX132-06] G [WTYP-07]
+        row(C, "글자 크기", "글씨", "글씨 크게", "크게", "작게", "노안", "안 보여요", "큰 글씨", "글꼴"),
+        row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
+        row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
         row(C, "날짜 밑에 그날 쓴 돈", "지출 표시", "쓴 돈", "달력에 지출", "하루 지출"), // E 1.32 [LEDX-07]
         row(C, "위젯에 메모 보이기", "위젯", "홈 화면", "메모 첫 줄", "위젯 메모"), // [DAILY-01]
         row(C, "메모 공유", "달력별 메모", "메모 함께 보기", "메모 따로", "공용 메모"), // [MEMO-02]

@@ -541,7 +541,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {
-            is SettingsLink.Page -> {
+            is SettingsLink.Page, SettingsLink.Search -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.SETTINGS.route -> Unit
@@ -1619,7 +1619,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.AUTO_RECORD -> NoticeLinks.open(NoticeLinks.Target.AUTO_RECORD)
         Place.MEMOS -> navigateTopLevel(TopLevel.MEMOS.route)
         Place.STATS -> navigateTopLevel(TopLevel.STATS.route)
-        Place.PAY -> screen(Routes.pay(cal))
+        Place.PAY -> screen(Routes.pay(cal, link.focus?.takeIf { com.bamnat.app.ui.pay.PayFocus.of(it) != null }))
         Place.PATTERN -> openPattern(c, cal)
         Place.SHIFT_TYPES -> screen(Routes.shiftTypes(cal))
         Place.EXTRA_KINDS -> screen(Routes.extraKinds(cal))

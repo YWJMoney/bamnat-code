@@ -690,7 +690,7 @@ private fun PayResult(
                     style = MaterialTheme.typography.bodyMedium)
             }
             if (summary.isEmpty()) {
-                Text("나머지는 모두 법정 기준으로 계산하고 있어요. 대근·특근 단가나 가산율이 다르면 ‘설정’에서 바꿔 주세요.",
+                Text("나머지는 모두 법정 기준으로 계산하고 있어요. 대근·특근 단가나 가산율이 다르면 ‘바꾸기’에서 고쳐 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 summary.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }

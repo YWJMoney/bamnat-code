@@ -90,6 +90,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
@@ -553,6 +554,17 @@ fun SettingsScreen(
     var focus by remember { mutableStateOf<SettingsFocus?>(null) }
     val openPage: (SettingsPage) -> Unit = { p -> focus = null; page = p }
     val link by SettingsLinks.target.collectAsStateWithLifecycle()
+    // U 1.32 [UX132-04] 🔍 from another tab: the list with the search field focused.
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var searchAsked by remember { mutableStateOf(0) }
+    LaunchedEffect(link) {
+        if (link == SettingsLink.Search) {
+            SettingsLinks.consume(link!!)
+            page = null; focus = null
+            searchAsked++
+        }
+    }
+    LaunchedEffect(searchAsked) { if (searchAsked > 0) { kotlinx.coroutines.delay(150); runCatching { searchFocus.requestFocus() } } }
     LaunchedEffect(link) {
         val l = link as? SettingsLink.Page ?: return@LaunchedEffect
         SettingsLinks.consume(l)
@@ -602,7 +614,7 @@ fun SettingsScreen(
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
         SettingsHub(vm, settings, refresh, askNotifications, selected, hubScroll, modifier,
             onOpen = openPage, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes, onOpenBoard = onOpenBoard,
-            query = query, onQuery = { query = it }, onFound = found, onOpenInquiry = onOpenInquiry)
+            query = query, onQuery = { query = it }, onFound = found, onOpenInquiry = onOpenInquiry, searchFocus = searchFocus)
     }
 
     if (wide) {
@@ -693,6 +705,7 @@ private fun SettingsHub(
     onQuery: (String) -> Unit = {},
     onFound: (SettingEntry) -> Unit = {},
     onOpenInquiry: () -> Unit = {},
+    searchFocus: androidx.compose.ui.focus.FocusRequester? = null,
 ) {
     val context = LocalContext.current
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -703,7 +716,7 @@ private fun SettingsHub(
     Column(modifier.verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
-        SettingsSearchField(query, onQuery)
+        SettingsSearchField(query, onQuery, searchFocus)
         Spacer(Modifier.size(4.dp))
         if (query.isNotBlank()) {
             val entries = remember(onOpenBoard != null) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn) }
@@ -782,12 +795,12 @@ private fun NewAnswerLine(unread: Int, onOpen: () -> Unit) {
 
 /** [UX-04] The search over every setting, at the top of the list. */
 @Composable
-private fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
+private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusRequester: androidx.compose.ui.focus.FocusRequester? = null) {
     OutlinedTextField(
         value = query,
         onValueChange = { onQuery(it.take(40)) },
         // TalkBack names the field once the example has gone.
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "설정 찾기" },
+        modifier = Modifier.fillMaxWidth().let { m -> focusRequester?.let { m.focusRequester(it) } ?: m }.semantics { contentDescription = "설정 찾기" },
         placeholder = { com.bamnat.app.ui.HintText("설정 찾기 (예: 알람 소리, 백업)", "설정 찾기") },
         leadingIcon = { Icon(Icons.Filled.Search, null) },
         trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,

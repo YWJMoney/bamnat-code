@@ -190,7 +190,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [CAL-21] A phone (or large text) puts the title on a line of its own, so it never wraps beside the month.
-        val narrow = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 420 }
+        // U 1.32 [UX132-05] The app's own 글자 크기 is in LocalDensity, not in the phone's configuration.
+        val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+        val narrow = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp / fontScale < 420 }
         if (narrow) {
             Text(style.words().statsTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 1,
                 modifier = Modifier.semantics { heading() })
@@ -210,6 +212,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             }
             // [CUST-01] 화면 꾸미기: the cards' order and which show.
             IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "화면 꾸미기") }
+            com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
         }
         if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false }, style = style, calendar = vm.calendarId)
         // B 1.32 [CALX-05] Which days the month counts: 1일~말일 or the pay period, when the pay has one.
