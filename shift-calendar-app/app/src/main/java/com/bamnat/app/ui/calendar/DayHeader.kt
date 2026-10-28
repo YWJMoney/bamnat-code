@@ -467,7 +467,8 @@ private fun QuickChips(
     val log by vm.sleepLog.collectAsStateWithLifecycle()
     // [FLD-01][FLD-02] A day-rate field calendar offers 공수 buttons instead of 일감 적기.
     val calendar by vm.activeCalendar.collectAsStateWithLifecycle()
-    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val calendarContainer = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val calendars = calendarContainer.calendars
     val fieldRules = calendar.field ?: com.bamnat.core.money.FieldRules()
     val dayRate = focus == CalendarFocus.JOBS && fieldRules.dayRateMode
     val platform = focus == CalendarFocus.JOBS && fieldRules.platformMode
@@ -497,6 +498,10 @@ private fun QuickChips(
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) hourlyChips(day, today, snapshot, vm, now)
         // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
         if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
+        // 1.32 [WTYP-09] 비번 날 비상소집·동원, one chip (기능 켜고 끄기 `shift.callout`).
+        if (!moneyFirst && !day.isWorkDay && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
+            !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
+        ) item { CalloutChip(day, snapshot, vm) }
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(

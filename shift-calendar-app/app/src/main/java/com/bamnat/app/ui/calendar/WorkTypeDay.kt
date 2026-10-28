@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
@@ -186,4 +187,46 @@ internal object LeaveNowWriter {
             }
             DayWork.LeaveNow.OnTime -> null to null
         }
+}
+
+/**
+ * 1.32 [WTYP-09] 비상소집·동원: the hours called in, as extra work of its own kind (made the first time), with undo. The
+ * company's rule for it is in 설정 › 내 근무 › 추가 근무 종류 › 비상소집 like any other kind.
+ */
+@Composable
+internal fun CalloutChip(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
+    var asking by remember { mutableStateOf(false) }
+    AssistChip(
+        onClick = { asking = true },
+        label = { Text(com.bamnat.core.work.Callout.NAME, maxLines = 1) },
+        leadingIcon = { Icon(Icons.Outlined.Groups, contentDescription = null, Modifier.size(18.dp)) },
+    )
+    if (!asking) return
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val now = rememberMinute().toLocalTime().withSecond(0).withNano(0)
+    var start by remember { mutableStateOf(now.withMinute(now.minute / 10 * 10)) }
+    var end by remember { mutableStateOf(start.plusMinutes(com.bamnat.core.work.Callout.DEFAULT_MINUTES.toLong())) }
+    AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { Text("${Fmt.monthDay(day.date)} 비상소집") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("불려 나간 시간을 추가 근무로 넣어요. 쉬는 날이면 회사 규칙대로 휴일근로로 셈해요.",
+                    style = MaterialTheme.typography.bodyMedium)
+                com.bamnat.app.ui.components.TimeField("시작", start, onChange = { t -> t?.let { start = it } })
+                com.bamnat.app.ui.components.TimeField("끝", end, onChange = { t -> t?.let { end = it } })
+                Text("끝이 시작보다 이르면 다음 날까지 일한 거예요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = start != end, onClick = {
+                asking = false
+                val kind = com.bamnat.core.work.Callout.kind(snapshot.kinds)
+                if (snapshot.kinds.byId(kind.id) != kind) c.settingsRepository.update { it.copy(extraKinds = it.extraKinds.put(kind)) }
+                vm.addExtra(day.date, com.bamnat.core.work.Callout.entry(kind, start, end), kind.name)
+            }) { Text("넣기") }
+        },
+        dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+    )
 }

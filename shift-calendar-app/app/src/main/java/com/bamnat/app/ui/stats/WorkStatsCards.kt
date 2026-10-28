@@ -88,6 +88,25 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
+        // 1.32 [WTYP-28] 실업급여·퇴직공제 신청 때 보여 줄 근무일 증빙 (최근 18개월, 프로).
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+        val locked = gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)
+        androidx.compose.material3.OutlinedButton(onClick = {
+            if (locked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
+            scope.launch {
+                runCatching {
+                    val from = today.minusMonths(18).plusDays(1)
+                    val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        com.bamnat.core.report.FieldDaysProof.doc("", from, today, com.bamnat.core.report.FieldDaysProof.days(book.jobs, from, today), today)
+                    }
+                    com.bamnat.app.report.ReportShare.pdf(context, doc, "bamnat-근무일증빙-$today.pdf")
+                }
+            }
+        }, modifier = Modifier.padding(top = 8.dp)) { Text(if (locked) "근무일 증빙 PDF (프로)" else "근무일 증빙 PDF (최근 18개월)") }
+        Text("실업급여·퇴직공제를 신청할 때 고용센터·공제회에 보여 줄 날짜별 표예요. 신고된 날과 다르면 이 표로 물어볼 수 있어요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -156,10 +175,24 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
             }
         },
         confirmButton = {
-            TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) } }
-                onDismiss()
-            }) { Text("보내기") }
+            Row {
+                // 1.32 [WTYP-20] The same 거래내역서 as a PDF to print or file (프로).
+                val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+                TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
+                    if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
+                    scope.launch {
+                        runCatching {
+                            com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
+                                "bamnat-거래내역서-${statement.month}.pdf")
+                        }
+                    }
+                    onDismiss()
+                }) { Text(if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) "PDF (프로)" else "PDF") }
+                TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
+                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) } }
+                    onDismiss()
+                }) { Text("사진으로 보내기") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
