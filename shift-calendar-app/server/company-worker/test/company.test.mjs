@@ -472,20 +472,25 @@ test("bodies that are not a report are refused", async () => {
   assert.match(robots.text, /Disallow: \//);
 });
 
-test("an install sends at most ten reports a day, a network thirty", async (t) => {
+test("an install sends at most ten reports a day, a network three hundred (R131 1.31 [LIM-01])", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-17T01:00:00Z") });
   const { call } = server();
   for (let i = 0; i < 10; i++) {
     assert.equal((await call("POST", "/api/reports", report(1, { company: `회사${i}번` }), from(1))).status, 201);
   }
-  assert.equal((await call("POST", "/api/reports", report(1, { company: "회사열한번" }), from(1))).status, 429);
+  const own = await call("POST", "/api/reports", report(1, { company: "회사열한번" }), from(1));
+  assert.equal(own.status, 429);
+  assert.equal(own.data.why, "device");
   t.mock.timers.tick(24 * 60 * 60 * 1000);
   assert.equal((await call("POST", "/api/reports", report(1, { company: "회사열한번" }), from(1))).status, 201);
 
-  for (let i = 0; i < 30; i++) {
-    assert.equal((await call("POST", "/api/reports", report(100 + i, { company: `망${i}번` }), from(9))).status, 201);
+  // Thirty-one phones of one plant's Wi-Fi all send (before 1.31 the 31st was refused for the day).
+  for (let i = 0; i < 300; i++) {
+    assert.equal((await call("POST", "/api/reports", report(1000 + i, { company: `망${i}번` }), from(9))).status, 201);
   }
-  assert.equal((await call("POST", "/api/reports", report(200, { company: "망서른한번" }), from(9))).status, 429);
+  const net = await call("POST", "/api/reports", report(5000, { company: "망삼백한번" }), from(9));
+  assert.equal(net.status, 429);
+  assert.equal(net.data.why, "network");
 });
 
 test("without a database the server says so", async () => {

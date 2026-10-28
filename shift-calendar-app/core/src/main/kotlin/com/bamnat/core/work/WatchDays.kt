@@ -54,6 +54,8 @@ data class WatchPayload(
     val clock: Clock = Clock.NONE,
     /** [WEAR-03] Today has an alarm that can be turned off from the tile (I 리뷰 N7 c). */
     val alarmToday: Boolean = false,
+    /** [WEAR-06] 1.31 N2: the phone rings shift alarms on the watch too (워치 진동 알람), so the watch asks for its notices. */
+    val ringOnWatch: Boolean = false,
 ) {
     enum class Clock { NONE, IN, OUT }
 }
@@ -104,7 +106,8 @@ object WatchDays {
     fun encode(p: WatchPayload): String {
         // [WEAR-01][WEAR-03] Fields 6 on are new in 1.23; an older watch reads the first six and ignores them.
         val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString(),
-            p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0")
+            p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0",
+            if (p.ringOnWatch) "1" else "0")
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
@@ -132,7 +135,8 @@ object WatchDays {
             weekMinutes = head.getOrNull(7)?.toIntOrNull() ?: -1,
             weekLimitMinutes = head.getOrNull(8)?.toIntOrNull()?.takeIf { it > 0 } ?: 52 * 60,
             clock = head.getOrNull(9)?.let { c -> WatchPayload.Clock.entries.firstOrNull { it.name == c } } ?: WatchPayload.Clock.NONE,
-            alarmToday = head.getOrNull(10) == "1")
+            alarmToday = head.getOrNull(10) == "1",
+            ringOnWatch = head.getOrNull(11) == "1")
     }
 
     /**
@@ -192,6 +196,15 @@ object WatchDays {
     /** [WEAR-03] Messages the watch sends the phone: turn today's alarm off, and an 알바's 출근·퇴근. */
     const val ALARM_OFF_PATH = "/bamnat/sync/alarm-off"
     const val CLOCK_PATH = "/bamnat/sync/clock"
+    /**
+     * [WEAR-06] 1.31 N2 워치 진동 알람: the phone tells the watch an alarm rings ([RING_PATH], with what it is for) and that it
+     * stopped ([RING_STOP_PATH]); the watch's 끄기 and 다시 울림 go back as [RING_OFF_PATH] and [RING_SNOOZE_PATH]. Phone and
+     * watch only (Data Layer messages), never a server.
+     */
+    const val RING_PATH = "/bamnat/ring"
+    const val RING_STOP_PATH = "/bamnat/ring/stop"
+    const val RING_OFF_PATH = "/bamnat/sync/ring-off"
+    const val RING_SNOOZE_PATH = "/bamnat/sync/ring-snooze"
 
     private val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
 

@@ -29,10 +29,14 @@ import androidx.compose.ui.unit.dp
 import com.bamnat.app.company.CompanyTerms
 import com.bamnat.app.company.ReportStatus
 
+/** [LIM-03] 1.31: [companyProblem] for a refusal, with when it goes again and why when the server said ([RateLimits]). */
+fun companyProblem(e: com.bamnat.app.company.CompanyException): String =
+    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e) else companyProblem(e.code, e.field)
+
 /** What to say for an error word from the company server [COMM-04], with the field it was about. */
 fun companyProblem(code: String, field: String? = null): String = when (code) {
     "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 해 주세요"
-    "rate_limited" -> "오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요"
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text()
     "amount", "phone", "email" -> when (field) {
         "note" -> when (code) {
             "amount" -> "한마디에 금액은 빼 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"

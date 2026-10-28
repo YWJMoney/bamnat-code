@@ -61,6 +61,11 @@ data class AppSettings(
      * null until asked. Only sent with [shareUsageStats] and once the `stats.more` row is on.
      */
     val usageStatsMore: Boolean? = null,
+    /**
+     * [STAT-08] 1.31 N4: [usageStatsMore]'s yes was given on 1.31 or later, whose words name 조회 시간; only then do lookup times
+     * go (처리방침 3.5). A yes from 1.30's words leaves it false until the user turns the row on again.
+     */
+    val usageStatsLookup: Boolean = false,
     /** [COMM-10] 광장 소식: one bundled notice a day about the user's own plaza things. On; off on the plaza screen. */
     val plazaNews: Boolean = true,
     /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
@@ -103,6 +108,12 @@ data class AppSettings(
      */
     /** [FEAT-18] 잠금 화면 오늘 근무: a quiet notice that stays with today's and tomorrow's shift. */
     val todayShiftNotice: Boolean = false,
+    /** [ALRM-16] 1.31 N3: right after a shift alarm is turned off, one quiet notice with the day at a glance. On by default. */
+    val afterAlarmCard: Boolean = true,
+    /** [WEAR-06] 1.31 N2 워치 진동 알람: [WATCH_ALARM_OFF], [WATCH_ALARM_BOTH] (phone and watch) or [WATCH_ALARM_WATCH] (the watch first; the phone rings when no watch answers). */
+    val watchAlarm: String = WATCH_ALARM_OFF,
+    /** [WEAR-04] 1.31: the calendar the watch shows (the main one unless chosen). */
+    val watchCalendar: String = PersonalCalendar.MAIN,
     val briefing: Boolean = false,
     /** [SLP-15] 퇴근길 안전: the one sound when a night or a 24-hour duty ends. Like [briefing]. */
     val commuteNotice: Boolean = false,
@@ -184,6 +195,10 @@ data class AppSettings(
 
     companion object {
         const val SILENT_SOUND = "silent"
+        const val WATCH_ALARM_OFF = "off"
+        const val WATCH_ALARM_BOTH = "both"
+        const val WATCH_ALARM_WATCH = "watch"
+        val WATCH_ALARMS = setOf(WATCH_ALARM_OFF, WATCH_ALARM_BOTH, WATCH_ALARM_WATCH)
     }
 }
 
@@ -255,6 +270,7 @@ class SettingsRepository(context: Context) {
             plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             usageStatsMore = if (prefs.contains(K_STATS_MORE)) prefs.getBoolean(K_STATS_MORE, false) else null,
+            usageStatsLookup = prefs.getBoolean(K_STATS_LOOKUP, d.usageStatsLookup),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
@@ -267,6 +283,9 @@ class SettingsRepository(context: Context) {
             // The sleep notices of 1.10 and before carry over to the briefing and the commute notice.
             briefing = prefs.getBoolean(K_BRIEFING, prefs.getBoolean(K_SLEEP_REMINDERS, d.briefing)),
             todayShiftNotice = prefs.getBoolean(K_TODAY_SHIFT_NOTICE, d.todayShiftNotice),
+            afterAlarmCard = prefs.getBoolean(K_AFTER_ALARM_CARD, d.afterAlarmCard),
+            watchAlarm = prefs.getString(K_WATCH_ALARM, null)?.takeIf { it in AppSettings.WATCH_ALARMS } ?: d.watchAlarm,
+            watchCalendar = prefs.getString(K_WATCH_CALENDAR, null) ?: d.watchCalendar,
             commuteNotice = prefs.getBoolean(K_COMMUTE_NOTICE, prefs.getBoolean(K_SLEEP_REMINDERS, d.commuteNotice)),
             bedtimeNotice = prefs.getBoolean(K_BEDTIME_NOTICE, d.bedtimeNotice),
             sleepingNotice = prefs.getBoolean(K_SLEEPING_NOTICE, d.sleepingNotice),
@@ -332,6 +351,7 @@ class SettingsRepository(context: Context) {
             .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
             .apply { if (s.usageStatsMore == null) remove(K_STATS_MORE) else putBoolean(K_STATS_MORE, s.usageStatsMore) }
+            .putBoolean(K_STATS_LOOKUP, s.usageStatsLookup)
             .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
@@ -344,6 +364,9 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_BRIEFING, s.briefing)
             .putBoolean(K_TODAY_SHIFT_NOTICE, s.todayShiftNotice)
+            .putBoolean(K_AFTER_ALARM_CARD, s.afterAlarmCard)
+            .putString(K_WATCH_ALARM, s.watchAlarm)
+            .putString(K_WATCH_CALENDAR, s.watchCalendar)
             .putBoolean(K_COMMUTE_NOTICE, s.commuteNotice)
             .putBoolean(K_BEDTIME_NOTICE, s.bedtimeNotice)
             .putBoolean(K_SLEEPING_NOTICE, s.sleepingNotice)
@@ -429,6 +452,7 @@ class SettingsRepository(context: Context) {
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"
         const val K_STATS_MORE = "usage_stats_more"
+        const val K_STATS_LOOKUP = "usage_stats_lookup"
         const val K_WORK_STYLE = "work_style"
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"
@@ -442,6 +466,9 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_REMINDERS = "sleep_reminders"
         const val K_BRIEFING = "notice_briefing"
         const val K_TODAY_SHIFT_NOTICE = "notice_today_shift"
+        const val K_AFTER_ALARM_CARD = "notice_after_alarm"
+        const val K_WATCH_ALARM = "watch_alarm"
+        const val K_WATCH_CALENDAR = "watch_calendar"
         const val K_COMMUTE_NOTICE = "notice_commute"
         const val K_BEDTIME_NOTICE = "notice_bedtime"
         const val K_SLEEPING_NOTICE = "notice_sleeping"

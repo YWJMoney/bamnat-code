@@ -388,9 +388,23 @@ fun CalendarScreen(
     LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
 
     val snap = snapshot
+    // [SPD-28] 1.31 N5: the month kept from last time, read off the main thread, drawn while the data is read.
+    val ctx31 = LocalContext.current
+    val firstFrame by androidx.compose.runtime.produceState<FirstFrame.Frame?>(null) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { FirstFrame.load(ctx31) }
+    }
+    val shownMonth by vm.shownMonth.collectAsStateWithLifecycle()
     if (snap == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        val f = firstFrame
+        if (f != null && f.month == YearMonth.from(today) && shownMonth == f.month && viewingReceived == null) FirstFrameGrid(f)
+        else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
+    }
+    // [SPD-28] This month as drawn, kept for the next start.
+    LaunchedEffect(snap, settings.weekStart, viewingReceived) {
+        if (viewingReceived == null && vm.shownMonth.value == YearMonth.from(today)) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            FirstFrame.save(ctx31, snap, YearMonth.from(today), settings.weekStart)
+        }
     }
     val pendingSetup by vm.setupDraft.collectAsStateWithLifecycle()
     // [WEEK-01] Hours always count Monday to Sunday, the week the law means; 한 주의 시작 only moves the grid.
@@ -416,7 +430,6 @@ fun CalendarScreen(
     val startRange: (LocalDate) -> Unit = remember(vm) { vm::startRange }
 
     val baseMonth = BASE_MONTH
-    val shownMonth by vm.shownMonth.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
     // [CAL-06] The month on screen in the kind of work's own figures; pay is worked out off the main thread.
@@ -1006,6 +1019,12 @@ fun CalendarScreen(
             }),
         )
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }
+        // [GUIDE-20] 1.31 P2: the first week's 시작 단계, read again when the settings or the days change.
+        val c31 = LocalContext.current.appContainer
+        var startHidden by remember { mutableStateOf(false) }
+        val startRows = remember(settings.alarmsEnabled, settings.workStyle, snap.isEmpty, startHidden, today) {
+            if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty)
+        }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
@@ -1019,8 +1038,12 @@ fun CalendarScreen(
             if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
             // AG 1.27 [INVITE-12] After the app stopped by itself: one ask to say what happened, once a note.
             if (paint == null && viewingReceived == null) add(Notice("crashAsk", "불편한 점 알려 주기") { com.bamnat.app.ui.grow.CrashAskNotice() })
+            // [GUIDE-20] 1.31 P2: in the first week, the 시작 단계 card in place of the question card.
+            if (paint == null && startRows != null) add(Notice("start", "시작 단계") {
+                com.bamnat.app.ui.guide.StartStepsCard(startRows, onDismiss = { com.bamnat.app.ui.guide.StartStepsState.dismiss(c31); startHidden = true })
+            })
             // [GUIDE-02][GUIDE-03][EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
-            if (guideHere && askOn) add(Notice("ask", "질문 1개") {
+            if (guideHere && askOn && startRows == null) add(Notice("ask", "질문 1개") {
                 com.bamnat.app.ui.guide.AskArea(context.appContainer, activeCalendar.id, settings.workStyle,
                     com.bamnat.core.profile.AskPlace.Home, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), today = today,
                     moments = remember(snap, moneyBook, payProfile, settings.workStyle, today) {

@@ -55,10 +55,12 @@ import com.bamnat.core.schedule.HolidayWork
 import com.bamnat.core.schedule.datesBetween
 import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.asksHolidaysOff
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -478,10 +480,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
-    val datedMemos: StateFlow<List<Memo>> = container.calendars.active.flatMapLatest { memoRepo.memosFor(it) } // [MEMO-01]
-        // [NOTE-05] A repeating memo is on each day it comes back on.
-        .map { list -> com.bamnat.app.data.MemoRepository.repeatWindow().let { (from, to) -> com.bamnat.core.memo.MemoRepeat.expand(list, from, to) } }
-        .map { list -> list.filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis })) }
+    val datedMemos: StateFlow<List<Memo>> = combine(container.calendars.active.flatMapLatest { memoRepo.memosFor(it) }, // [MEMO-01]
+        container.shownMonth.month) { list, month ->
+        // [NOTE-05] A repeating memo is on each day it comes back on. [SPD-25] 1.31 R5: only around the month on screen (the
+        // pager's months either side and one more), not four years, and off the main thread.
+        val (from, to) = com.bamnat.app.data.MemoRepository.shownWindow(month)
+        com.bamnat.core.memo.MemoRepeat.expand(list, from, to)
+            .filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis }))
+    }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun logShare() = container.telemetry.event("share_month_image")

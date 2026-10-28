@@ -20,8 +20,15 @@ import kotlin.concurrent.thread
  * company's page with a member's room and room talk (`?with=room,talk`), the page with a join (`"with": "page"`), and a D1
  * bookmark on every answer; [old] answers as a server before 1.30 (no list, no room or talk in the page, no bookmark). Every
  * request is kept with its headers ([seen]) to check what the app sent.
+ *
+ * [SPD-21] 1.31: with [split], the list as two parts as the 1.31 server sends it: the names (`?part=names`, [namesTag]) and each
+ * company's counts (`/api/companies/counts`, [countsTag]); [usersAdded] changes the counts only.
  */
-class TinyCompanyServer(private val companies: List<String>, @Volatile var latencyMs: Long = 0, @Volatile var old: Boolean = false) : AutoCloseable {
+class TinyCompanyServer(private val companies: List<String>, @Volatile var latencyMs: Long = 0, @Volatile var old: Boolean = false,
+                        @Volatile var split: Boolean = false) : AutoCloseable {
+    @Volatile var usersAdded = 0
+    val namesTag = "\"names1\""
+    val countsTag: String get() = "\"counts$usersAdded\""
     private val socket = ServerSocket(0)
     val connections = AtomicInteger()
     val requests = AtomicInteger()
@@ -114,6 +121,22 @@ class TinyCompanyServer(private val companies: List<String>, @Volatile var laten
         val member = headers["x-device"] == "member"
         val at = path.substringBefore('?')
         val company = Regex("/api/companies/(c\\d{11})").find(at)?.groupValues?.get(1)?.let { c -> companies.indices.firstOrNull { id(it) == c } }
+        if (split && at == "/api/companies/all" && path.contains("part=names")) {
+            if (headers["if-none-match"] == namesTag) return Triple(304, "", mapOf("ETag" to namesTag))
+            val names = companies.withIndex().map { (i, n) ->
+                JSONObject().put("id", id(i)).put("name", n).put("aliases", JSONArray()).put("said", CompanyMatch.spoken(n))
+                    .put("cho", com.bamnat.core.plaza.Choseong.of(CompanyText.norm(n)))
+            }
+            return Triple(200, JSONObject().put("companies", JSONArray(names)).put("n", names.size).put("part", "names").toString(), mapOf("ETag" to namesTag))
+        }
+        if (split && at == "/api/companies/counts") {
+            val tag = countsTag
+            if (headers["if-none-match"] == tag) return Triple(304, "", mapOf("ETag" to tag))
+            val counts = companies.withIndex().map { (i, n) ->
+                hit(i, n).also { h -> h.remove("name"); h.put("users", h.getInt("users") + usersAdded) }
+            }
+            return Triple(200, JSONObject().put("counts", JSONArray(counts)).toString(), mapOf("ETag" to tag))
+        }
         if (at == "/api/companies/all") {
             if (old) return Triple(404, JSONObject().put("error", "not_found").toString(), emptyMap())
             if (headers["if-none-match"] == etag) return Triple(304, "", mapOf("ETag" to etag))

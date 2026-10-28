@@ -312,7 +312,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
 
     private fun failure(e: Throwable): String = when ((e as? CompanyException)?.code) {
         "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 보내 주세요"
-        "rate_limited" -> "오늘은 더 보낼 수 없어요. 내일 다시 보내거나 메일로 보내 주세요"
+        "rate_limited" -> com.bamnat.app.company.RateLimits.of(e as CompanyException, "문의 보내기", "급하면 메일로 보내 주세요.")
         "too_many" -> "이 문의에는 더 쓸 수 없어요. 새 문의로 보내 주세요"
         "email", "phone", "amount" -> personalProblem(e.message ?: "")
         "not_found" -> "이 문의는 지워졌거나 가려졌어요"

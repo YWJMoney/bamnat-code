@@ -10,6 +10,21 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.31.0 (docs/plans/1.31-상세리뷰-반영.md; the 1.30 상세리뷰 except the domain, I1).
+        Release(42, "1.31.0", listOf(
+            // [SPD-21][SPD-22][SPD-25][SPD-26][SPD-27] R1·R4·I2·I3·I4.
+            Line("회사 찾기·회사 화면·광장이 더 빨리 열려요. 빠른 연결을 쓰고, 바뀌지 않은 것은 다시 받지 않아요"),
+            // [SPD-28][GUIDE-20] N5·P2.
+            Line("앱을 열면 지난번 달력이 바로 보이고, 처음 일주일은 알람·근무·회사 세 가지만 차례로 알려 드려요"),
+            // [ALRM-16] N3.
+            Line("근무 알람을 끄면 오늘 근무와 이번 주 시간, 내일 근무를 알림 하나로 보여 드려요(설정 › 알림에서 끌 수 있어요)"),
+            // [WEAR-04][WEAR-05][WEAR-06] N2·watch.
+            Line("워치에 보낼 달력을 고르고, 알람이 울리면 워치도 진동해요. 워치에서 끄면 휴대폰 알람도 꺼져요(설정 › 알람 › 워치)"),
+            // [CREW-08] N1.
+            Line("회사 화면에서 오늘 같이 일하는 사람을 바로 봐요"),
+            // [LIM-01][LIM-02] R2·R3.
+            Line("요청이 많아 잠시 막히면 몇 분 뒤에 되는지와 그동안 할 수 있는 일을 알려 드려요"),
+        )),
         // 1.30.0 (docs/plans/1.30-통합계획.md; 통합 folded BA·BB·BC·BD·SP1·AP1·AV·AW·AY into six lines, AX is the developer's app).
         Release(41, "1.30.0", listOf(
             // [SPD-01][SPD-11][SPD-13] Bundles SP1·AP1.

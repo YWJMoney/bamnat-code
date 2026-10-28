@@ -555,7 +555,9 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
         // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
         if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
-        val conn = URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
+        // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
+        val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
+        var broke = true
         try {
             conn.requestMethod = method
             conn.connectTimeout = 10_000
@@ -568,8 +570,13 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             val code = conn.responseCode
-            if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return Reply(code, JSONObject(), etag)
+            if (code == HttpURLConnection.HTTP_NOT_MODIFIED) {
+                com.bamnat.app.company.drain(conn)
+                broke = false
+                return Reply(code, JSONObject(), etag)
+            }
             val text = (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readCapped() }.orEmpty()
+            broke = false
             // [SRV-05] A link the developer took down (410 removed) is gone like one its sharer cut;
             // [SHR-13] the reason the developer gave comes with it.
             if (code >= 400) {
@@ -580,7 +587,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
-            conn.disconnect()
+            if (broke) conn.disconnect()
         }
     }
 

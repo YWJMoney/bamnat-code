@@ -411,7 +411,14 @@ data class ReportStatus(
 data class VoteResult(val points: Int, val persons: Int, val bad: Int, val threshold: Int, val adopted: Boolean, val trust: Int = 0, val agree: Int = 0)
 
 /** A refusal from the server: [code] is its error word (amount, phone, rate_limited, offline …), [field] what it was about. */
-class CompanyException(val code: String, val field: String? = null) : IOException(code) {
+class CompanyException(
+    val code: String,
+    val field: String? = null,
+    /** [LIM-03] 1.31 I5: with rate_limited, seconds until it goes again (the server's retryAfter or Retry-After) and why. */
+    val retryAfter: Int? = null,
+    /** "device" (this phone did it often), "network" (many phones on the same Wi-Fi) or "reads"; null when not said. */
+    val why: String? = null,
+) : IOException(code) {
     /** [SRV-07] No connection, a busy or broken server, a sign-in page: worth sending again later. */
     val retryable: Boolean get() = code in RETRY || code.startsWith("http_5")
 
@@ -583,24 +590,64 @@ class CompanyClient(
      * [SPD-13] 1.30 AP1: the page, room and room talk in one request (SP1 `?with=room,talk`; the server adds the two for a member
      * only). A server before 1.30 sends the page alone: a member's room and talk are then read beside each other, as before.
      */
-    override suspend fun companyBundle(id: String, device: String?): CompanyBundle = readCall {
-        var o = request("GET", "/api/companies/$id?with=room,talk", device = device)
-        o.optStringOrNull("mergedInto")?.let { o = request("GET", "/api/companies/$it?with=room,talk", device = device) }
+    override suspend fun companyBundle(id: String, device: String?): CompanyBundle {
+        // [SPD-24] 1.31 R7: a read the user did not ask for (the app's start, a list read ahead) is not counted by the server
+        // in the day's reads, so it never brings on the page without pay ways.
+        val ahead = if (kotlin.coroutines.coroutineContext[ReadAheadKey] != null) mapOf(ReadAhead.HEADER to "1") else emptyMap()
+        return readCall { bundleRead(id, device, ahead) }
+    }
+
+    private suspend fun CoroutineScope.bundleRead(id: String, device: String?, ahead: Map<String, String>): CompanyBundle {
+        var o = exchange("GET", "/api/companies/$id?with=room,talk", device = device, headers = ahead).json
+        o.optStringOrNull("mergedInto")?.let { o = exchange("GET", "/api/companies/$it?with=room,talk", device = device, headers = ahead).json }
         val page = companyPage(o)
         if (device == null || !page.member || o.has("room") || o.has("talk")) {
-            return@readCall CompanyBundle(page, o.optJSONObject("room")?.let(::roomPage), o.optJSONObject("talk")?.let(::talkOf))
+            return CompanyBundle(page, o.optJSONObject("room")?.let(::roomPage), o.optJSONObject("talk")?.let(::talkOf))
         }
         val room = async { runCatching { room(device, page.id) }.getOrNull() }
         val talk = async { runCatching { talk(device, page.id, com.bamnat.core.plaza.StylePlaza.ROOM) }.getOrNull() }
-        CompanyBundle(page, room.await(), talk.await())
+        return CompanyBundle(page, room.await(), talk.await())
     }
 
     /** [SPD-11] 1.30 AP1: every company with its ETag; null when [etag] is still the list's (304). */
     override suspend fun allCompanies(etag: String?): CompanyList? = readCall {
-        val a = exchange("GET", "/api/companies/all", headers = etag?.let { mapOf("If-None-Match" to it) }.orEmpty())
-        if (a.code == 304) return@readCall null
-        CompanyList(a.json.optJSONArray("companies").objects().mapNotNull { runCatching { knownCompany(it) }.getOrNull() }, a.etag)
+        // [SPD-21] 1.31 R3: the names (they rarely change) and the counts (they change with every new user) each with its own
+        // ETag, as one "names␟counts" tag: when only the counts changed, only they come. A 1.30 server sends the whole list.
+        val tags = etag?.split(TAG_SEP)?.takeIf { it.size == 2 }
+        val names = namesKept?.takeIf { tags != null && it.first == tags[0] }
+        val namesRead = async {
+            // A tag of the whole list (a 1.30 server's, or kept from before 1.31) is sent as it is: that server answers 304 to it.
+            val tag = names?.first ?: etag?.takeIf { tags == null }
+            exchange("GET", "/api/companies/all?part=names", headers = tag?.let { mapOf("If-None-Match" to it) }.orEmpty())
+        }
+        val countsRead = async {
+            runCatching { exchange("GET", "/api/companies/counts", headers = tags?.takeIf { countsKept != null }?.let { mapOf("If-None-Match" to it[1]) }.orEmpty()) }
+        }
+        val n = namesRead.await()
+        if (n.code == 304 && names == null) {
+            // The whole list's own tag still holds: nothing new.
+            countsRead.cancel()
+            return@readCall null
+        }
+        if (n.code != 304 && n.json.optString("part") != "names") {
+            countsRead.cancel()
+            return@readCall CompanyList(n.json.optJSONArray("companies").objects().mapNotNull { runCatching { knownCompany(it) }.getOrNull() }, n.etag)
+        }
+        val c = countsRead.await().getOrThrow()
+        if (n.code == 304 && c.code == 304) return@readCall null
+        val byId = if (n.code == 304) names!!.second
+        else n.json.optJSONArray("companies").objects().associateBy { it.optString("id") }.also { namesKept = (n.etag ?: "") to it }
+        val counts = if (c.code == 304) countsKept!! else c.json.optJSONArray("counts").objects().also { countsKept = it }
+        val list = counts.mapNotNull { k ->
+            val name = byId[k.optString("id")] ?: return@mapNotNull null
+            runCatching { knownCompany(JSONObject(name.toString()).also { j -> k.keys().forEach { key -> j.put(key, k.get(key)) } }) }.getOrNull()
+        }
+        CompanyList(list, "${namesKept?.first.orEmpty()}$TAG_SEP${c.etag.orEmpty()}")
     }
+
+    /** [SPD-21] The names and counts last read (memory only), so a 304 for one is joined with the other. */
+    @Volatile private var namesKept: Pair<String, Map<String, JSONObject>>? = null
+    @Volatile private var countsKept: List<JSONObject>? = null
 
     override suspend fun terms(): CompanyTerms = readCall {
         termsOf(request("GET", "/api/terms"))
@@ -867,10 +914,26 @@ class CompanyClient(
         if (method == "POST" && ONCE.any { it.matches(path) }) onceRequest(baseUrl, path, body, device, session = session)
         else exchange(method, path, body, device).json
 
-    private fun exchange(method: String, path: String, body: JSONObject? = null, device: String? = null, headers: Map<String, String> = emptyMap()) =
-        serverExchange(baseUrl, method, path, body, device, headers, session)
+    private fun exchange(method: String, path: String, body: JSONObject? = null, device: String? = null, headers: Map<String, String> = emptyMap()): Answer {
+        // [SPD-23] 1.31 R4·I3: a read the server tags (a company's page, the plaza, talk, activity) is asked again with the tag it
+        // gave, and a 304 answers from what came last time: a few hundred bytes instead of the page.
+        if (method != "GET" || headers.containsKey("If-None-Match") || UNTAGGED.any { path.startsWith(it) }) return serverExchange(baseUrl, method, path, body, device, headers, session)
+        val key = "$path|${device.orEmpty()}|${headers["X-Hide"].orEmpty()}"
+        val kept = tagged.get(key)
+        val a = serverExchange(baseUrl, method, path, body, device, kept?.let { headers + ("If-None-Match" to it.first) } ?: headers, session)
+        if (a.code == 304 && kept != null) return Answer(200, JSONObject(kept.second), kept.first)
+        a.etag?.let { tagged.put(key, it to a.json.toString()) } ?: tagged.remove(key)
+        return a
+    }
+
+    /** [SPD-23] The tagged answers last read, in memory only (the screens keep their own copies on the phone, [PageCache]). */
+    private val tagged = android.util.LruCache<String, Pair<String, String>>(TAGGED_KEEP)
 
     private companion object {
+        const val TAGGED_KEEP = 60
+        /** The whole list keeps its own tags ([allCompanies]); a search changes with each letter. */
+        val UNTAGGED = listOf("/api/companies/all", "/api/companies/counts", "/api/companies?")
+        const val TAG_SEP = "\u241f"
         /** [SRV-08] What the server takes once per X-Request-Id: posts, replies, 신고 and reports. */
         val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"), Regex("/api/members"))
     }
@@ -1174,7 +1237,8 @@ internal fun serverExchange(
     // [QA130-01] 1.30 AY: a Play pre-launch robot (Firebase Test Lab) reads but never writes; to it, as if offline.
     if (!com.bamnat.app.diag.TestLab.allows(method)) throw CompanyException("offline")
     val conn = try {
-        URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
+        // [SPD-26] 1.31 I2: through Cronet (HTTP/3·HTTP/2) when Google Play services has it, otherwise as before.
+        NetEngine.open(URL(baseUrl.trimEnd('/') + path))
     } catch (e: IOException) {
         throw CompanyException("offline")
     }
@@ -1198,28 +1262,52 @@ internal fun serverExchange(
         session?.heard(method, code, conn.getHeaderField(ServerSession.BOOKMARK))
         if (code == 304) {
             result = NetTimings.Result.NOT_MODIFIED
+            // [SPD-27] 1.31 R6: the (empty) body read to its end, so the connection goes back to be used again.
+            drain(conn)
             return Answer(code, JSONObject(), conn.getHeaderField("ETag"))
         }
         val text = (if (code < 400) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
         if (code >= 400) {
             result = NetTimings.Result.REFUSED
             val err = runCatching { JSONObject(text) }.getOrNull()
-            throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"))
+            val retry = err?.optInt("retryAfter")?.takeIf { it > 0 } ?: conn.getHeaderField("Retry-After")?.trim()?.toIntOrNull()
+            throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"),
+                retry, err?.optStringOrNull("why"))
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))
     } catch (e: CompanyException) {
         throw e
     } catch (e: IOException) {
-        throw CompanyException("offline")
-    } finally {
+        // [SPD-27] Only a connection that broke is closed; one read to its end stays open for the next request.
         conn.disconnect()
+        throw CompanyException("offline")
+    } catch (e: RuntimeException) {
+        conn.disconnect()
+        throw e
+    } finally {
         NetTimings.record(method, path, (System.nanoTime() - started) / 1_000_000, result)
     }
 }
 
 /** [SPD-19] How long a connection may take to open. */
 internal const val CONNECT_MS = 6_000
+
+/** [SPD-27] 1.31 R6: reads what is left of an answer and closes its stream, so the connection can be used again. */
+internal fun drain(conn: HttpURLConnection) {
+    runCatching { conn.inputStream?.use { s -> val buf = ByteArray(1024); while (s.read(buf) >= 0) Unit } }
+}
+
+/**
+ * [SPD-24] 1.31 R7: around a read the user did not ask for (`withContext(ReadAhead) { … }`), so the server does not count it in
+ * the day's reads of a member.
+ */
+object ReadAhead : kotlin.coroutines.AbstractCoroutineContextElement(ReadAheadKey) {
+    const val HEADER = "X-Read-Ahead"
+}
+
+/** [ReadAhead]'s key: its own object, since an object cannot hand itself to its own constructor. */
+object ReadAheadKey : kotlin.coroutines.CoroutineContext.Key<ReadAhead>
 
 /**
  * [COMM-01][COMM-02] The server's own rules for names and typed text, checked on the phone first so

@@ -6,19 +6,22 @@ package com.bamnat.app.company
  * kind (검색·회사·광장·토론·쓰기·기타), how long it took and how it ended; never its address, what was typed or the device.
  * A screen that shows something from the phone at once says so ([cached]), and the ways the user feels a wait are timed
  * from the tap to what they waited for ([start]/[end]).
+ * [STAT-08] 1.31: from 처리방침 3.5's date, with the user's yes, the same times also go to [sink] for 사용 통계 (kind and time only).
  */
 object NetTimings {
-    enum class Kind(val label: String) { SEARCH("검색"), COMPANY("회사"), PLAZA("광장"), TALK("토론"), WRITE("보내기"), OTHER("기타") }
+    enum class Kind(val label: String, val key: String) {
+        SEARCH("검색", "search"), COMPANY("회사", "company"), PLAZA("광장", "plaza"), TALK("토론", "talk"), WRITE("보내기", "write"), OTHER("기타", "other"),
+    }
 
     enum class Result { OK, NOT_MODIFIED, REFUSED, OFFLINE }
 
     data class Call(val kind: Kind, val ms: Long, val result: Result)
 
     /** What the user waits for, from the tap to what they wanted on screen. */
-    enum class Wait(val label: String) {
-        FIND("찾기 시작 → 첫 결과"),
-        COMPANY("회사 누름 → 대표판 보임"),
-        PLAZA("광장 열기 → 글 보임"),
+    enum class Wait(val label: String, val key: String) {
+        FIND("찾기 시작 → 첫 결과", "find"),
+        COMPANY("회사 누름 → 대표판 보임", "company"),
+        PLAZA("광장 열기 → 글 보임", "plaza"),
     }
 
     /** The card's numbers: the last [count] requests, their middle and slowest, and how many screens showed at once. */
@@ -45,10 +48,21 @@ object NetTimings {
     private val waits = HashMap<Wait, ArrayDeque<Long>>()
 
     /** One request to the company server, from [serverRequest]. */
-    fun record(method: String, path: String, ms: Long, result: Result) = synchronized(this) {
-        calls.addLast(Call(kindOf(method, path), ms, result))
-        while (calls.size > KEEP) calls.removeFirst()
+    fun record(method: String, path: String, ms: Long, result: Result) {
+        val kind = kindOf(method, path)
+        synchronized(this) {
+            calls.addLast(Call(kind, ms, result))
+            while (calls.size > KEEP) calls.removeFirst()
+        }
+        // [STAT-08] 1.31 N4: an answer that came (not a refusal or no connection), by kind only.
+        if (kind != Kind.OTHER && (result == Result.OK || result == Result.NOT_MODIFIED)) sink?.invoke("call", kind.key, ms)
     }
+
+    /**
+     * [STAT-08] 1.31 N4: where each timed lookup also goes ([com.bamnat.app.diag.LookupStats], which keeps it only for 사용 통계
+     * with 처리방침 3.5 in force and the user's yes); null keeps them in memory only, as before 1.31.
+     */
+    @Volatile var sink: ((kind: String, step: String, ms: Long) -> Unit)? = null
 
     /** A screen showed what it needed: from the phone at once ([atOnce]) or after asking. */
     fun cached(atOnce: Boolean) = synchronized(this) {
@@ -60,10 +74,14 @@ object NetTimings {
     fun start(): Long = System.nanoTime()
 
     /** The wait that began at [startedAt] ended (what the user waited for is on screen). */
-    fun end(wait: Wait, startedAt: Long) = synchronized(this) {
-        val list = waits.getOrPut(wait) { ArrayDeque() }
-        list.addLast((System.nanoTime() - startedAt) / 1_000_000)
-        while (list.size > KEEP) list.removeFirst()
+    fun end(wait: Wait, startedAt: Long) {
+        val ms = (System.nanoTime() - startedAt) / 1_000_000
+        synchronized(this) {
+            val list = waits.getOrPut(wait) { ArrayDeque() }
+            list.addLast(ms)
+            while (list.size > KEEP) list.removeFirst()
+        }
+        sink?.invoke("wait", wait.key, ms) // [STAT-08]
     }
 
     fun summary(): Summary = synchronized(this) {

@@ -445,6 +445,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.companyBoard()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
             NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay(companyCalendarOf(container, null))) { launchSingleTop = true }; NoticeLinks.consume(target) }

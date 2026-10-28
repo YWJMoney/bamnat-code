@@ -1,5 +1,6 @@
 package com.bamnat.app.alarm
 
+import kotlinx.coroutines.launch
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -52,6 +53,10 @@ class AlarmService : Service() {
     private var quietUntil = 0L
     /** [ALRM-08] The power button, seen as the screen going off; registered only while ringing. */
     private var screenOff: android.content.BroadcastReceiver? = null
+    /** [WEAR-06] 1.31 N2: the watch was told this ring started, so it is told when it stops. */
+    private var watchRung = false
+    /** [WEAR-06] 워치 먼저: the phone's own sound and vibration, held back while the watch rings. */
+    private var phoneLater: Runnable? = null
 
     private val alarmAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ALARM)
@@ -119,6 +124,8 @@ class AlarmService : Service() {
                     // [PROV-07] A few minutes on, 일어났나요?; once per alarm, never for a memo's schedule.
                     val minutes = BootAlarms.ringSettings(this).wakeCheckMinutes
                     if (minutes > 0 && !ring.recheck && ring.label == null && !allOff && !AlarmsOff.isOff(this)) WakeCheck.schedule(this, ring, minutes)
+                    // [ALRM-16] 1.31 N3: the day at a glance, after a shift alarm (not a memo's schedule).
+                    if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
                 }
                 if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()
@@ -179,6 +186,8 @@ class AlarmService : Service() {
 
     private fun startRinging(ring: RingRequest) {
         stopOutputs()
+        phoneLater?.let(handler::removeCallbacks)
+        phoneLater = null
         // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it.
         if (_ringing.value == null) _since.value = Today.millis()
         _ringing.value = ring
@@ -186,18 +195,40 @@ class AlarmService : Service() {
         startInForeground(ring)
 
         val settings = BootAlarms.ringSettings(this)
-        val sound = ring.soundUri ?: settings.defaultSound
-        if (sound != AppSettings.SILENT_SOUND) {
-            requestFocus()
-            playSound(candidateUris(sound), settings.gradualVolume)
+        // [WEAR-06] 1.31 N2: the watch rings too, or first. A mission alarm always rings on the phone (the watch can't do the mission).
+        val watch = if (BootAlarms.isLocked(this)) AppSettings.WATCH_ALARM_OFF else appContainer.settingsRepository.current.watchAlarm
+        val watchFirst = watch == AppSettings.WATCH_ALARM_WATCH && settings.missionFor(ring) == AlarmMission.NONE
+        if (watch != AppSettings.WATCH_ALARM_OFF) {
+            watchRung = true
+            val later = Runnable { phoneLater = null; if (_ringing.value === ring) phoneOutputs(ring) }
+            if (watchFirst) {
+                phoneLater = later
+                handler.postDelayed(later, WATCH_FIRST_MILLIS)
+            }
+            appContainer.appScope.launch {
+                val reached = com.bamnat.app.watch.WatchRing.ring(applicationContext, describe(ring))
+                // No watch took it: the phone rings now, without waiting the minute.
+                if (!reached && watchFirst) handler.post { if (phoneLater === later) { handler.removeCallbacks(later); later.run() } }
+            }
         }
-        if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
+        if (!watchFirst) phoneOutputs(ring)
         listenForPowerButton()
 
         handler.postDelayed({
             if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull("auto_stop", offDetail(ring)).joinToString(" "))
             finish()
         }, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+    }
+
+    /** The phone's own sound and vibration for [ring]. */
+    private fun phoneOutputs(ring: RingRequest) {
+        val settings = BootAlarms.ringSettings(this)
+        val sound = ring.soundUri ?: settings.defaultSound
+        if (sound != AppSettings.SILENT_SOUND) {
+            requestFocus()
+            playSound(candidateUris(sound), settings.gradualVolume)
+        }
+        if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
     }
 
     /**
@@ -388,6 +419,12 @@ class AlarmService : Service() {
     private fun finish() {
         val rang = _ringing.value
         stopOutputs()
+        phoneLater?.let(handler::removeCallbacks)
+        phoneLater = null
+        if (watchRung) {
+            watchRung = false
+            appContainer.appScope.launch { com.bamnat.app.watch.WatchRing.stop(applicationContext) }
+        }
         // [ALRM-07] Android 14+ with 전체 화면 알림 off shows only a small notice; say so once, with the way to allow it.
         if (rang != null && screenShownAt == 0L && !Notifications.canUseFullScreen(this)) Notifications.postFullScreenOff(this)
         _allOffAfterMission.value = false
@@ -533,6 +570,22 @@ class AlarmService : Service() {
         fun snooze(context: Context) {
             context.startService(Intent(context, AlarmService::class.java).setAction(ACTION_SNOOZE))
         }
+
+        /**
+         * [WEAR-06] 1.31 N2: 끄기 or 다시 울림 pressed on the watch. 끄기 on a mission alarm works as a button press does
+         * (the sound goes quiet for a while and the mission stays), so the watch never skips the mission.
+         */
+        fun fromWatch(context: Context, snooze: Boolean) {
+            val ring = _ringing.value ?: return
+            when {
+                snooze -> snooze(context)
+                BootAlarms.ringSettings(context).missionFor(ring) != AlarmMission.NONE -> button(context)
+                else -> dismiss(context, "watch")
+            }
+        }
+
+        /** [WEAR-06] 워치 먼저: how long the phone waits for the watch's answer before it rings itself. */
+        const val WATCH_FIRST_MILLIS = 60_000L
 
         /** A notification button that never asks to unlock first (Android 12+ can, per action). */
         private fun Context.lockScreenAction(title: String, action: String, requestCode: Int): NotificationCompat.Action =

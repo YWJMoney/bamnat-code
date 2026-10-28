@@ -154,7 +154,8 @@ class LegalPagesTest {
         assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
         assertTrue(text.contains("공지 열기"))
         assertTrue(text.contains("휴대폰 안에서만 맞춰 보며"))
-        assertTrue(text.contains("<td>배터리 최적화 제외 요청 (앱 1.23.0부터, 이용자가 고를 때)</td>"))
+        // [ALRM-15] 1.31: the settings screen only, no permission to ask directly.
+        assertTrue(text.contains("<td>배터리 최적화 설정 열기 (앱 1.23.0부터, 이용자가 고를 때. 앱 1.31.0부터 권한 없이 휴대폰 설정 화면만 엶)</td>"))
         // [ALRM-04] 증명 사진: the fingerprint's size is the one the app makes, the photo goes, no camera permission.
         assertTrue(text.contains("알람 미션 ‘증명 사진’(앱 1.23.0부터, 이용자가 고를 때)") && text.contains("흑백 지문(64비트)만"))
         assertTrue(text.contains("사진은 카메라 권한 없이 휴대폰의 카메라 앱으로") && text.contains("알람 끄기 미션에 <b>증명 사진</b>"))
@@ -177,7 +178,9 @@ class LegalPagesTest {
         assertTrue(text.contains("1-12. 친구 초대 (선택, 앱 1.26.0부터)"))
         // [INVITE-08] The server's own numbers: the default rules (the developer app may change them), the longest
         // period of use, how long records stay.
-        val server = File(site, "shift-calendar-app/server/company-worker/src/index.js").readText()
+        // [SRV-20] 1.31: index.js and the files split out of it (the bundle puts them back in one).
+        val server = File(site, "shift-calendar-app/server/company-worker/src").listFiles { f -> f.extension == "js" }!!.sortedBy { it.name }
+            .joinToString("\n") { it.readText() }
         val d = com.bamnat.core.tier.InviteTerms.DEFAULT
         assertTrue(server.contains("  friends: ${d.need},\n  days: ${d.days},\n  months: ${d.months},\n  capMonths: ${d.capMonths},"))
         assertTrue(server.contains("days: [1, 60]") && server.contains("graceDays: 30,") && server.contains("keepCounted: 365 * DAY"))
@@ -286,11 +289,36 @@ class LegalPagesTest {
         val v32 = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 28) && v.effective == v32.effective && v.heldUntil == null)
         assertTrue(text.contains("처리방침 3.4 · 앱 버전 1.30.0 기준 · 게시일 2026년 10월 28일 · 시행일 2026년 11월 27일"))
-        assertTrue("3.4 is the newest version line", text.indexOf("처리방침 3.4 ·") < text.indexOf("처리방침 3.3 ·"))
+        assertTrue("3.4 comes before 3.3", text.indexOf("처리방침 3.4 ·") < text.indexOf("처리방침 3.3 ·"))
         assertTrue(text.contains("‘회사 공통 금액’으로 정한 수당의 금액"))
         assertTrue(text.contains("사람마다 다른 수당의 금액"))
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT)!!
         assertTrue(flag.basis.policy.orEmpty().startsWith("3.4 1-2항"))
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.4" })
+    }
+
+    /**
+     * [STAT-08] 3.5 for 1.31.0 (N4): the `stats.lookup` flag turns on by itself on 3.5's date, which is the page's date,
+     * and the page says what the lookup times are, what never goes, and the watch and battery changes of the same version.
+     */
+    @Test fun policy35NamesLookupTimesAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.5")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 29) && v.effective == java.time.LocalDate.of(2026, 11, 28) && v.heldUntil == null)
+        assertTrue(text.contains("처리방침 3.5 · 앱 버전 1.31.0 기준 · 게시일 2026년 10월 29일 · 시행일 2026년 11월 28일"))
+        assertTrue("3.5 is the newest version line", text.indexOf("처리방침 3.5 ·") < text.indexOf("처리방침 3.4 ·"))
+        assertTrue(text.contains("③ 조회에 걸린 시간"))
+        assertTrue(text.contains("찾은 글자, 연 회사, 주소는 보내지 않음"))
+        assertTrue(text.contains("워치는 알람을 따로 갖고 있지 않으며"))
+        assertTrue(text.contains("권한 없이 휴대폰 설정 화면만 엶"))
+        // The words the phone shows from 1.31: the card's title and the settings row, as the page quotes them.
+        assertTrue(text.contains("“${com.bamnat.app.ui.flags.STATS_MORE_TITLE}”"))
+        assertTrue(text.contains("‘${com.bamnat.app.ui.flags.STATS_MORE_ROW}’"))
+        val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP)!!
+        assertTrue(flag.basis.policy.orEmpty().startsWith("3.5 1-9항"))
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.5" })
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Consent && it.key == "usage.stats.lookup" })
     }
 }

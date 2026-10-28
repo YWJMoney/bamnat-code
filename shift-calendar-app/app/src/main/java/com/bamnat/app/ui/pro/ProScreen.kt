@@ -450,7 +450,7 @@ fun passWhy(why: String): String = when (why) {
 fun serverProblem(code: String): String = when (code) {
     "code" -> "코드가 맞지 않거나 시간이 지났어요. 새 코드로 다시 해 주세요."
     "too_many" -> "이 관리자에게는 휴대폰을 2대까지 연결할 수 있어요. 관리자 앱에서 하나를 끊어 주세요."
-    "rate_limited" -> "잠시 뒤 다시 해 주세요."
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text()
     "offline" -> "인터넷에 연결되지 않았어요."
     else -> "지금은 처리하지 못했어요. 잠시 뒤 다시 해 주세요."
 }

@@ -48,6 +48,8 @@ class ZFullBackupTest {
         alarmButtonAction = "snooze",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
+        // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].
+        usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)

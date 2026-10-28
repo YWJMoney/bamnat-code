@@ -71,6 +71,8 @@ class PageCache(
     fun keepBundle(b: CompanyBundle) {
         synchronized(lock) {
             val before = bundles.map[b.page.id]?.value
+            // [SPD-24] 1.31 R7: a page without pay ways (read too often today) never takes the place of a whole one kept.
+            if (b.page.limited && before != null && !before.page.limited) return
             val kept = if (before != null && b.room == null && b.talk == null && b.page.member == before.page.member) b.copy(room = before.room, talk = before.talk) else b
             bundles.map[b.page.id] = Kept(kept, now())
         }

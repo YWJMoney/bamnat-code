@@ -83,8 +83,9 @@ dependencies {
     implementation("androidx.wear.protolayout:protolayout:1.2.1")
     implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
-    implementation("androidx.wear.compose:compose-material:1.4.1")
-    implementation("androidx.wear.compose:compose-foundation:1.4.1")
+    // [WEAR-05] 1.31 상세리뷰: Wear Compose Material 3 (the look Wear OS 5 and 6 use) in place of Material 1.4.
+    implementation("androidx.wear.compose:compose-material3:1.5.0")
+    implementation("androidx.wear.compose:compose-foundation:1.5.0")
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

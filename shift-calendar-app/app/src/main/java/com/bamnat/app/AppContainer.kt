@@ -172,7 +172,11 @@ class AppContainer(context: Context) {
     val startupStats = com.bamnat.app.diag.StartupStats(context.applicationContext,
         allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.StartupStats.policyAllows() })
     /** [STAT-01] 사용 통계 보내기: hears events only while the user said yes. */
-    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats)
+    /** [STAT-08] 1.31 N4: lookup times for 사용 통계 (처리방침 3.5, the same separate yes), from [com.bamnat.app.company.NetTimings]. */
+    val lookupStats = com.bamnat.app.diag.LookupStats(context.applicationContext,
+        allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.LookupStats.policyAllows() })
+        .also { com.bamnat.app.company.NetTimings.sink = it::record }
+    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) { ringSettings() }
     /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
@@ -424,7 +428,7 @@ class AppContainer(context: Context) {
         remoteConfig.config,
         listOf(
             remoteConfig.agreed,
-            settingsRepository.settings.map { listOf(it.shareUsageStats, it.usageStatsMore, it.workStyle) }.distinctUntilChanged(),
+            settingsRepository.settings.map { listOf(it.shareUsageStats, it.usageStatsMore, it.usageStatsLookup, it.workStyle) }.distinctUntilChanged(),
             proStore.state.map { it.passes?.admin to it.passes?.checkedAt }.distinctUntilChanged(),
             flagPreviews.keys, ads.consent,
             payStore.profile.map { it != null }.distinctUntilChanged(),
@@ -435,6 +439,8 @@ class AppContainer(context: Context) {
         // [PERF-16][FLAG-16] 1.28 통합: startup times go out with 사용 통계 only while the `stats.more` row is on
         // (처리방침 3.2 in force, the user's yes to 사용 통계 and to its added items), the same row as `flagsOn`.
         com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
+        // [STAT-08] 1.31 N4: lookup times from 처리방침 3.5's date on (the `stats.lookup` row turns on by itself that day).
+        com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
     }
 
     /** [FLAG-07] This phone as the dark-merge rows read it; nothing of it is sent. */
@@ -454,6 +460,8 @@ class AppContainer(context: Context) {
             consents = buildMap {
                 put("usage", s.shareUsageStats)
                 s.usageStatsMore?.let { put("usage.stats.more", it) }
+                // [STAT-08] 1.31 N4: the same yes, given seeing 조회 시간 (1.31's words).
+                put("usage.stats.lookup", s.usageStatsMore == true && s.usageStatsLookup)
                 ads.consent.value?.let { put("ads", it) }
             },
             profile = setOfNotNull(
@@ -859,6 +867,8 @@ class AppContainer(context: Context) {
             // [SRCH-09] 1.29 AS: once, not kept (no job of its own, so the startup budget is the same): the most used companies
             // and this phone's company page read ahead, unless the phone saves data, so the first search shows at once.
             appScope.launch {
+                // [SPD-26] 1.31 I2: Cronet (HTTP/3) asked of Play services once, in the background; until then, as before.
+                runCatching { com.bamnat.app.company.NetEngine.start(appContext) }
                 // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
                 runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
                 // [SPD-12] 1.30 AP1: the whole list of companies and this phone's company page with its room, on mobile data too.
@@ -884,10 +894,20 @@ class AppContainer(context: Context) {
                 }
             }
             // [SHFT-08][REL-09] The watch follows the main calendar and its next alarm, from app start on.
+            // [WEAR-04][WEAR-06] 1.31: or the calendar chosen for the watch, and whether the watch rings too.
             keep("watch") {
-                combine(scheduleRepository.live, alarmScheduler.upcoming) { snap, next -> snap to next }
+                val chosen = settingsRepository.settings.map { it.watchCalendar to it.watchAlarm }.distinctUntilChanged()
+                combine(scheduleRepository.live, alarmScheduler.upcoming, chosen) { snap, next, _ -> snap to next }
                     .debounce(1_000)
-                    .collect { (snap, next) -> com.bamnat.app.watch.WatchSync.push(appContext, snap, next) }
+                    .collectLatest { (snap, next) ->
+                        val id = settingsRepository.current.watchCalendar
+                        if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) {
+                            com.bamnat.app.watch.WatchSync.push(appContext, snap, next)
+                        } else {
+                            // The chosen calendar's own changes send again as well.
+                            calendars.repository(id).live.debounce(1_000).collect { shown -> com.bamnat.app.watch.WatchSync.push(appContext, snap, next, shown = shown) }
+                        }
+                    }
             }
             // [DAYW-07] The workplace geofence goes in if it is not there yet (the same circle is left alone),
             // location coming back on is listened for while the feature is on, and the periodic check is set.

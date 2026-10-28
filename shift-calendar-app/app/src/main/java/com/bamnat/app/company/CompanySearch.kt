@@ -287,7 +287,10 @@ class CompanySearch(
         }
         if (mine != null) {
             val kept = cache.keptBundle(mine)
-            if (kept == null || !cache.fresh(kept, MINE_EVERY_MS)) runCatching { api().bundle(mine, device) }.getOrNull()?.let(cache::keepBundle)
+            // [SPD-24] 1.31 R7: read ahead, so the server does not count it in the member's reads of the day.
+            if (kept == null || !cache.fresh(kept, MINE_EVERY_MS)) {
+                runCatching { kotlinx.coroutines.withContext(ReadAhead) { api().bundle(mine, device) } }.getOrNull()?.let(cache::keepBundle)
+            }
         }
     }
 
@@ -446,6 +449,8 @@ class CompanySearch(
  * the app (after the first month) calls [CompanySearch.warm] with the same ([warmCompaniesNow]).
  */
 fun com.bamnat.app.AppContainer.warmCompanies() {
+    // [SPD-26] 1.31 I2: the connection is opened as the screen opens, so the first letter typed does not wait for it.
+    if (companyApi.enabled) appScope.launch(kotlinx.coroutines.Dispatchers.IO) { NetEngine.hello(com.bamnat.app.BuildConfig.COMPANY_BASE_URL) }
     val store = companyStore
     companySearch.warmSoon(CompanySearch.saveData(appContext), store.applied.value?.companyId ?: store.member.value?.first, store.device)
 }

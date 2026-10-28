@@ -120,10 +120,10 @@ test("[STAT-01] usage counts come in as names and numbers per day, never with a 
   const twice = await call("POST", "/api/events", bundle([{ ...day, events: { open: 1 } }, { ...day, events: { open: 1 } }]), from(3));
   assert.equal(twice.data.skipped, 1);
   assert.equal(DB.db.prepare("SELECT phones FROM usage_days").get().phones, 3);
-  // [STAT-05] Many phones behind one carrier address: 120 bundles a day, then no more.
-  for (let i = 0; i < 119; i++) await call("POST", "/api/events", bundle([{ ...day, events: { open: i + 10 } }]), from(9));
-  assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 500 } }]), from(9))).status, 204);
-  assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 501 } }]), from(9))).status, 429);
+  // [STAT-05] Many phones behind one carrier address: R131 1.31 [LIM-01] 1200 bundles a day (120 before), then no more.
+  for (let i = 0; i < 1199; i++) await call("POST", "/api/events", bundle([{ ...day, events: { open: (i % 900) + 10 } }]), from(9));
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 950 } }]), from(9))).status, 204);
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 951 } }]), from(9))).status, 429);
 });
 
 test("[STAT-01] switched off, the server takes nothing; day totals go after 400 days", async (t) => {

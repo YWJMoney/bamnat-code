@@ -474,7 +474,8 @@ class BackupManager(
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
                 .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
-                .put("todayShiftNotice", s.todayShiftNotice)
+                .put("todayShiftNotice", s.todayShiftNotice).put("afterAlarmCard", s.afterAlarmCard) // [ALRM-16] 1.31
+                .put("watchAlarm", s.watchAlarm).put("watchCalendar", s.watchCalendar) // [WEAR-04][WEAR-06] 1.31
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
@@ -482,7 +483,9 @@ class BackupManager(
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
                 // [FLAG-16] 1.28 AL: the 3.2 extra yes, like 사용 통계's own (null: not asked yet).
-                .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL),
+                .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL)
+                // [STAT-08] 1.31: whether that yes named 조회 시간.
+                .put("usageStatsLookup", s.usageStatsLookup),
         )
         return root
     }
@@ -939,6 +942,9 @@ class BackupManager(
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
                     bedtimeNotice = o.optBoolean("bedtimeNotice", s.bedtimeNotice),
                     todayShiftNotice = o.optBoolean("todayShiftNotice", s.todayShiftNotice),
+                    afterAlarmCard = o.optBoolean("afterAlarmCard", s.afterAlarmCard),
+                    watchAlarm = o.optString("watchAlarm", s.watchAlarm).takeIf { it in AppSettings.WATCH_ALARMS } ?: s.watchAlarm,
+                    watchCalendar = o.optString("watchCalendar", s.watchCalendar).ifBlank { s.watchCalendar },
                     sleepingNotice = o.optBoolean("sleepingNotice", s.sleepingNotice),
                     quietWhileAsleep = o.optBoolean("quietWhileAsleep", s.quietWhileAsleep),
                     moneyNotices = o.optBoolean("moneyNotices", s.moneyNotices),
@@ -952,6 +958,8 @@ class BackupManager(
                     plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
                     // [FLAG-16] 1.28: a backup without it keeps what this phone has.
                     usageStatsMore = if (!o.has("usageStatsMore")) s.usageStatsMore else if (o.isNull("usageStatsMore")) null else o.optBoolean("usageStatsMore"),
+                    // [STAT-08] 1.31: a backup from before keeps what this phone has.
+                    usageStatsLookup = o.optBoolean("usageStatsLookup", s.usageStatsLookup),
                     // Old records came back with the backup; offer to fix them again.
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )

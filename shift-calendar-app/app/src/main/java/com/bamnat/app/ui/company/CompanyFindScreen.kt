@@ -82,6 +82,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -702,6 +703,7 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
                 }
                 if (r.stable) { Spacer(Modifier.width(6.dp)); StatusChip("안정", Tone.GOOD) }
             }
+            TeamsTodayLine()
             Text(
                 when {
                     r.stable -> "같은 판을 ${r.stablePhones}대 넘게 쓰고 ${r.stableDays}일 동안 바뀐 게 없어요. 이제 바뀐 값 알림은 보내지 않아요."
@@ -835,4 +837,21 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
         confirmButton = { Button(onClick = { onAnswer(true) }) { Text("네, 같이 넣을게요") } },
         dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("근무주기만 넣을게요") } },
     )
+}
+
+/**
+ * [CREW-08] 1.31 N1: 우리 회사 오늘 근무, from this phone's own calendar and teams (모든 조 보기): "오늘 A조(우리 조) 주간 · B조 야간".
+ * Nothing new is sent or read from the server; with no rotation of two teams or more, nothing shows.
+ */
+@Composable
+internal fun TeamsTodayLine() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val snap by c.scheduleRepository.snapshot.collectAsStateWithLifecycle(initialValue = null)
+    val rosters by c.teams.rosters.collectAsStateWithLifecycle()
+    val today = com.bamnat.core.time.Today.date()
+    val line = remember(snap, rosters, today) {
+        snap?.let { com.bamnat.app.ui.calendar.teamsTodayLine(it, rosters[com.bamnat.app.data.PersonalCalendar.MAIN], today) }
+    } ?: return
+    Text("오늘 $line", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.semantics { contentDescription = "우리 회사 오늘 근무: $line" })
 }

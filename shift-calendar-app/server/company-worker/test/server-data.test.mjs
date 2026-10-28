@@ -11,8 +11,11 @@ const listed = new Set([...doc.matchAll(/^\| `([^`]+)`/gm)].map((m) => m[1]));
 
 test("[SRV-03] every table in the company server's SCHEMA has a line in docs/server-data.md", () => {
   const src = read("../src/index.js");
-  const schema = src.slice(src.indexOf("const SCHEMA = ["), src.indexOf("const COLUMNS = ["));
+  // R131 1.31: the tables made after COLUMNS (usage_startup, photo_wrong) too.
+  const schema = src.slice(src.indexOf("const SCHEMA = ["), src.indexOf("const FTS_SQL = ["));
   const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+  // The search index (FTS_SQL) is made after SCHEMA, so a failed index never stops the server.
+  for (const m of src.matchAll(/CREATE VIRTUAL TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
   assert.ok(tables.length > 30, "found the tables");
   const missing = tables.filter((t) => !listed.has(t));
   assert.deepEqual(missing, [], "docs/server-data.md needs a line for these tables");

@@ -241,6 +241,13 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         ChoiceRow(BUTTON_ACTION_ROW, "울릴 때 소리 줄이기·키우기·전원 버튼을 누르면. 끄기 미션이 있으면 소리만 30초 줄어요",
             com.bamnat.app.alarm.AlarmButtons.Action.entries.map { it.key to it.label }, settings.alarmButtonAction) { k -> vm.update { it.copy(alarmButtonAction = k) } }
     }
+    // [WEAR-06] 1.31 N2: the phone's alarm shown and felt on a paired watch.
+    SectionCard(title = "워치") {
+        ChoiceRow(WATCH_ALARM_ROW, "워치에 밤낮을 설치해 두면 알람이 울릴 때 워치가 진동하고, 워치에서 끄기·다시 울림을 누를 수 있어요. " +
+            "‘워치 먼저’는 워치가 받으면 휴대폰은 조용히 있고, 워치가 없거나 1분 안에 끄지 않으면 휴대폰이 울려요",
+            listOf(AppSettings.WATCH_ALARM_OFF to "쓰지 않기", AppSettings.WATCH_ALARM_BOTH to "휴대폰과 워치", AppSettings.WATCH_ALARM_WATCH to "워치 먼저"),
+            settings.watchAlarm) { k -> vm.update { it.copy(watchAlarm = k) } }
+    }
     // [ALRM-03] 스마트 알람 제안: on by default, all on the phone; the hidden ones can come back.
     SectionCard(title = null) {
         SwitchRow("알람 제안", "알람을 끈 때와 잠 기록을 보고, 근무별로 알람을 옮기자고 가끔 물어봐요. 기록은 이 폰에만 있어요",
@@ -373,6 +380,11 @@ private fun NoticesPage(
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(todayShiftNotice = on) }
         }
+        // [ALRM-16] 1.31 N3
+        SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
+            settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+            set(on) { it.copy(afterAlarmCard = on) }
+        }
     }
     SectionCard(title = "돈과 휴가") {
         SwitchRow("나갈 돈·받을 돈", "고정비는 3일 전과 당일에, 못 받은 돈은 다음 날과 7일 뒤에 알려 줘요. 같은 때 온 것은 하나로 묶어요",
@@ -440,6 +452,14 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (sharingMemos) {
             com.bamnat.app.ui.memo.MemoSharingDialog(memoSharing, calendars, onDismiss = { sharingMemos = false },
                 onSave = { vm.setMemoSharing(it); sharingMemos = false })
+        }
+        // [WEAR-04] 1.31: which calendar the watch shows.
+        run {
+            HorizontalDivider()
+            ChoiceRow(WATCH_CALENDAR_ROW, "워치의 오늘·7일·월 보기와 타일에 이 달력의 근무가 나와요. 알람은 그대로 내 달력 것이에요. 달력은 달력 목록에서 더 만들 수 있어요",
+                calendars.map { it.id to it.name }, calendars.firstOrNull { it.id == settings.watchCalendar }?.id ?: com.bamnat.app.data.PersonalCalendar.MAIN) { id ->
+                vm.update { it.copy(watchCalendar = id) }
+            }
         }
         // [SET-02] 근무표 공유 and 동료 근무표 받기 live in the calendar's 도구 only; settings search still finds them.
     }

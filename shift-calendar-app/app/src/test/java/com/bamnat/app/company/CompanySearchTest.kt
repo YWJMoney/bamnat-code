@@ -161,7 +161,8 @@ class CompanySearchTest {
             val file = File(dir, "company_search.json")
             val s = CompanySearch({ CompanyClient(server.base) }, file)
             s.warm(saver = false)
-            assertEquals(1, server.seen.count { it.path == "/api/companies/all" })
+            // [SPD-21] 1.31 asks for the names part; this fake is a 1.30 server and sends the whole list.
+            assertEquals(1, server.seen.count { it.path.substringBefore('?') == "/api/companies/all" })
             assertEquals("the most used list is not needed beside it", 0, server.seen.count { it.path.startsWith("/api/companies/top") })
             val asked = server.requests.get()
             assertEquals("가상화학2", s.peek("가상화학2").hits.first().name)
@@ -179,7 +180,7 @@ class CompanySearchTest {
             assertEquals("가상화학2", next.peek("가상화학2").hits.first().name)
             assertFalse("ten minutes old: asked again", next.peek("가상화학2").enough)
             next.warm(saver = false)
-            val again = server.seen.last { it.path == "/api/companies/all" }
+            val again = server.seen.last { it.path.substringBefore('?') == "/api/companies/all" }
             assertEquals(server.etag, again.headers["if-none-match"])
             assertTrue(next.peek("가상화학2").enough)
             dir.deleteRecursively()

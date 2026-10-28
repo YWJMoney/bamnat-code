@@ -552,7 +552,7 @@ private fun expiryText(s: ShareLinkState): String =
     s.expiresAt.atZone(Today.zone()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
 
 private fun messageFor(e: Exception, options: ShareOptions): String = when (e.message) {
-    "rate_limited" -> "잠시 뒤 다시 해 주세요. 한 시간에 만들 수 있는 링크 수를 넘었어요."
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text("링크 만들기", 3_600, "device")
     "not_found", "forbidden" -> "이 링크는 이미 지워졌어요. 링크 끊기를 누른 뒤 새로 만들어 주세요."
     // A server from before 1.10 takes only shifts and leave.
     // [SHR-11] A server from before 1.13 takes no 일정 and no link without shifts.

@@ -37,19 +37,26 @@ object WatchSync {
     /** The same days are sent again at most this often, so the watch's "몇 분 전" stays honest. */
     private const val RESEND_MILLIS = 60 * 60 * 1000L
 
-    suspend fun push(context: Context, snapshot: ScheduleSnapshot? = null, upcoming: UpcomingAlarm? = null, force: Boolean = false) = lock.withLock {
+    /**
+     * [snapshot]: the main calendar (its alarms, 출근·퇴근 and today's alarm stay the main one's); [shown]: [WEAR-04] 1.31 the
+     * calendar chosen for the watch, read here when not given.
+     */
+    suspend fun push(context: Context, snapshot: ScheduleSnapshot? = null, upcoming: UpcomingAlarm? = null, force: Boolean = false,
+                     shown: ScheduleSnapshot? = null) = lock.withLock {
         val c = context.appContainer
         val snap = snapshot ?: c.scheduleRepository.snapshot.first()
         val next = upcoming ?: c.alarmScheduler.upcoming.value
         val today = Today.date()
         val (from, until) = WatchDays.window(today)
-        val days = WatchDays.of(from, until, snap.resolver::resolve)
+        val settings = c.settingsRepository.settings.value
+        val chosenId = settings.watchCalendar.takeIf { it != PersonalCalendar.MAIN && c.calendars.get(it) != null }
+        val view = if (chosenId == null) snap else shown ?: c.calendars.repository(chosenId).snapshot.first()
+        val days = WatchDays.of(from, until, view.resolver::resolve)
         val alarmAt = next?.let { LocalDateTime.ofInstant(Instant.ofEpochMilli(it.triggerAtMillis), Today.zone()) }
         val label = next?.plan?.let { p -> if (p.shiftName.isNotBlank()) "${p.shiftName} 근무" else "알람" }.orEmpty()
-        val name = c.calendars.get(PersonalCalendar.MAIN)?.name ?: PersonalCalendar.MAIN_NAME
-        val settings = c.settingsRepository.settings.value
+        val name = c.calendars.get(chosenId ?: PersonalCalendar.MAIN)?.name ?: PersonalCalendar.MAIN_NAME
         // [WEAR-03] This week's hours against 주 52시간, what an 알바 can write now, and whether today has an alarm to turn off.
-        val week = com.bamnat.core.hours.WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits).week(today)
+        val week = com.bamnat.core.hours.WorkHoursCalculator(view.resolver, java.time.DayOfWeek.MONDAY, settings.limits).week(today)
         val nowTime = Today.dateTime()
         val clock = when (com.bamnat.app.widget.HourlyClockAction.offered(settings.workStyle, snap.resolver.resolve(today), nowTime) { snap.resolver.resolve(today.minusDays(1)) }) {
             true -> WatchPayload.Clock.OUT
@@ -59,7 +66,7 @@ object WatchSync {
         val alarmToday = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snap.resolver, today).any { it.triggerAt.isAfter(nowTime) }
         fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent,
             weekStart = settings.weekStart.value, weekMinutes = week.totalMinutes, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
-            clock = clock, alarmToday = alarmToday)
+            clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF)
         val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))
         val now = Today.millis()
         if (!force && sameDays == lastBody && now - lastAt < RESEND_MILLIS) return@withLock
@@ -91,6 +98,9 @@ class WatchRequestService : WearableListenerService() {
                 if (date == Today.date()) c.scheduleRepository.updateDay(date) { it.copy(alarmSkipped = true) }
                 WatchSync.push(applicationContext, force = true)
             }
+            // [WEAR-06] 1.31 N2: 끄기 and 다시 울림 pressed on the watch while the phone's alarm rings.
+            WatchDays.RING_OFF_PATH -> com.bamnat.app.alarm.AlarmService.fromWatch(applicationContext, snooze = false)
+            WatchDays.RING_SNOOZE_PATH -> com.bamnat.app.alarm.AlarmService.fromWatch(applicationContext, snooze = true)
             // [WEAR-03] An 알바's 출근·퇴근 from the watch, written as the home widget's button writes it (I 리뷰 N7 d).
             WatchDays.CLOCK_PATH -> c.appScope.launch {
                 val snap = c.scheduleRepository.snapshot.first()

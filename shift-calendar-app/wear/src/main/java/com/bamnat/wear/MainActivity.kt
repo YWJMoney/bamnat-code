@@ -1,6 +1,11 @@
 package com.bamnat.wear
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -44,12 +49,11 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.CompactButton
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import com.bamnat.core.layout.Contrast
 import com.bamnat.core.work.WatchDay
 import com.bamnat.core.work.WatchDays
@@ -110,13 +114,16 @@ private fun Empty(refreshing: Boolean, onRefresh: () -> Unit) {
 
 @Composable
 private fun RefreshChip(refreshing: Boolean, onRefresh: () -> Unit) {
-    Chip(
+    Button(
         onClick = onRefresh,
         enabled = !refreshing,
+        colors = ButtonDefaults.filledTonalButtonColors(),
         label = { Text(if (refreshing) "받는 중…" else "휴대폰에서 다시 받기", fontSize = 12.sp) },
-        colors = ChipDefaults.secondaryChipColors(),
     )
 }
+
+private fun notificationsOn(context: Context) =
+    android.os.Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
 /** [A11Y-03][WEAR-02] White or dark ink, whichever stands out more on the shift's colour: the phone's rule, from core. */
 private fun inkOn(bg: Color): Color = Color(Contrast.inkOn(bg.toArgb().toLong() and 0xFFFFFFFFL).toInt())
@@ -145,7 +152,8 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
     val d = WatchDays.on(p.days, today)
     val list = rememberScalingLazyListState()
     ScalingLazyColumn(Modifier.fillMaxSize(), state = list, horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text("오늘 · ${WatchText.date(today)}", fontSize = 12.sp, color = Color(0xFF9AA3B5)) }
+        // [WEAR-04] 1.31: which calendar this is, now that the phone can send another one than 내 달력.
+        item { Text("${p.calendar.ifBlank { "오늘" }} · ${WatchText.date(today)}", fontSize = 12.sp, color = Color(0xFF9AA3B5), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         item {
             if (d == null) Text(WatchText.NOT_SENT, fontSize = 16.sp)
             else Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -159,15 +167,22 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
         WatchDays.weekText(p)?.let { w -> item { Text(w, fontSize = 12.sp, color = Color(0xFFD6DAE3)) } }
         // [WEAR-03] 오늘 알람 끄기 without taking the phone out, and an 알바's 출근·퇴근 (I 리뷰 N7 c·d).
         if (p.alarmToday) item {
-            Chip(onClick = { scope.launch { WatchStore.send(context, WatchDays.ALARM_OFF_PATH, now.toLocalDate().toString()) } },
-                label = { Text("오늘 알람 끄기", fontSize = 13.sp) }, colors = ChipDefaults.secondaryChipColors(),
-                modifier = Modifier.fillMaxWidth())
+            Button(onClick = { scope.launch { WatchStore.send(context, WatchDays.ALARM_OFF_PATH, now.toLocalDate().toString()) } },
+                colors = ButtonDefaults.filledTonalButtonColors(), modifier = Modifier.fillMaxWidth(),
+                label = { Text("오늘 알람 끄기", fontSize = 13.sp) })
         }
         if (p.clock != WatchPayload.Clock.NONE) item {
             val out = p.clock == WatchPayload.Clock.OUT
-            Chip(onClick = { scope.launch { WatchStore.send(context, WatchDays.CLOCK_PATH, if (out) "out" else "in") } },
-                label = { Text(if (out) "퇴근 적기" else "출근 적기", fontSize = 13.sp) }, colors = ChipDefaults.primaryChipColors(),
-                modifier = Modifier.fillMaxWidth())
+            Button(onClick = { scope.launch { WatchStore.send(context, WatchDays.CLOCK_PATH, if (out) "out" else "in") } },
+                colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth(),
+                label = { Text(if (out) "퇴근 적기" else "출근 적기", fontSize = 13.sp) })
+        }
+        // [WEAR-06] 1.31: the phone's alarm can show here only with the notification permission.
+        if (p.ringOnWatch && !notificationsOn(context)) item {
+            var asked by remember { mutableStateOf(false) }
+            val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked = true }
+            if (!asked || !notificationsOn(context)) Button(onClick = { ask.launch(Manifest.permission.POST_NOTIFICATIONS) }, colors = ButtonDefaults.filledTonalButtonColors(),
+                modifier = Modifier.fillMaxWidth(), label = { Text("워치 알람 알림 허용", fontSize = 13.sp) })
         }
         item { Text(WatchText.synced(p, now), fontSize = 11.sp, color = Color(0xFF9AA3B5), textAlign = TextAlign.Center) }
         item { RefreshChip(refreshing, onRefresh) }
@@ -207,13 +222,11 @@ private fun MonthPage(p: WatchPayload) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // [WEAR-01] Real buttons with a finger-sized target instead of 18sp letters (I 리뷰 P26).
-                CompactButton(onClick = { offset-- }, enabled = offset > range.first, colors = ButtonDefaults.secondaryButtonColors()) {
-                    Text("‹", fontSize = 18.sp)
-                }
+                CompactButton(onClick = { offset-- }, enabled = offset > range.first, colors = ButtonDefaults.filledTonalButtonColors(),
+                    label = { Text("‹", fontSize = 18.sp) })
                 Text("${month.monthValue}월", fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
-                CompactButton(onClick = { offset++ }, enabled = offset < range.last, colors = ButtonDefaults.secondaryButtonColors()) {
-                    Text("›", fontSize = 18.sp)
-                }
+                CompactButton(onClick = { offset++ }, enabled = offset < range.last, colors = ButtonDefaults.filledTonalButtonColors(),
+                    label = { Text("›", fontSize = 18.sp) })
             }
         }
         item {

@@ -10,6 +10,13 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // R131 1.31 [ADMX-16] 두 번째 확인
+    code_needed: "인증 앱의 6자리 코드를 넣어 주세요",
+    do: "할 수 없는 요청이에요. 새로 고친 뒤 다시 해 주세요",
+    code_wrong: "코드가 맞지 않아요. 인증 앱의 지금 코드를 넣어 주세요",
+    second_on: "두 번째 확인이 이미 켜져 있어요",
+    second_off: "두 번째 확인이 이미 꺼져 있어요",
+    second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
     // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
     counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
     screen: "사진이 달라요 화면 종류를 알 수 없어요",
@@ -717,7 +724,8 @@ export function adminLib() {
   const WORK_TYPES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
   const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "시급", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** What a 동의 (consent) condition can name, and how the screens say it (core FlagEval.CONSENTS). */
-  const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)" };
+  const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)",
+    "usage.stats.lookup": "사용 통계 더 보내기 동의(조회 시간, 1.31부터)" };
   /** What a 정보 (profile) condition can name: the user gave the app what the feature needs (core FlagEval.PROFILE). */
   const PROFILE_NAMES = { "setup.done": "첫 설정을 마침", "pay.setup": "급여 설정을 마침", "company.linked": "회사를 연결함" };
   /** Facts only a person can confirm (manual): who confirmed and when is kept on the server (core FlagEval.MANUAL). */
@@ -1159,6 +1167,7 @@ export function adminLib() {
    */
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",

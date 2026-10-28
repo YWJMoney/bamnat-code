@@ -23,6 +23,8 @@ object FlagCatalog {
     const val PHOTO_WRONG = "photo.wrong"
     /** [ITEM-03] 1.30 BC (결정 D102): a company's one allowance amount (회사 공통 정액) goes with the setup to the 광장. */
     const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
+    /** [STAT-08] 1.31 N4: how long lookups took (정해진 구간 값만), sent with 사용 통계 once 처리방침 3.5 names it. */
+    const val STATS_LOOKUP = "stats.lookup"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -163,6 +165,21 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.30.0", group = FlagGroup.LAW,
     )
 
+    /**
+     * [STAT-08] 1.31 N4 (사용자 2026-10-28 "스위치는 기간이 되면 자동으로 켜지는 현 방식"): on by itself from 처리방침 3.5's
+     * date, for phones with 사용 통계 and its separate yes given on 1.31 or later, whose words name it
+     * (`usage.stats.lookup`: the same 더 보내기 동의, given after seeing 조회 시간). Only the
+     * day's middle wait per kind, rounded up to a fixed bucket; never what was looked up.
+     */
+    val STATS_LOOKUP_FLAG = Flag(
+        STATS_LOOKUP, "조회 시간 보내기",
+        what = "사용 통계를 켜고 따로 동의한 휴대폰이 회사 찾기·회사 화면·광장 조회에 걸린 시간을 하루 가운데 값 하나씩, 정해진 구간 값으로만 함께 보내요(휴대폰 구별 없음). 무엇을 찾았는지는 보내지 않아요.",
+        whyOff = "처리방침 3.5(1-9항)가 시행된 날부터 저절로 켜져요. 그 전에는 조회 시간을 이 휴대폰 안(자가 점검 › 조회 속도)에만 둬요.",
+        basis = Basis(policy = "3.5 1-9항", decision = "D103", requirement = "STAT-08", note = "1.31 상세리뷰 N4"),
+        conditions = listOf(Condition.Date(policy = "3.5"), Condition.Consent("usage"), Condition.Consent("usage.stats.more"), Condition.Consent("usage.stats.lookup")),
+        default = false, risk = Risk.LEGAL, since = "1.31.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -174,7 +191,7 @@ object FlagCatalog {
         )
     }
 
-    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG) +
+    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

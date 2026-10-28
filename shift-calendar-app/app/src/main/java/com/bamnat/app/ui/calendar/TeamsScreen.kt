@@ -152,6 +152,22 @@ internal fun rotationOf(snapshot: ScheduleSnapshot, today: LocalDate): WorkPatte
 internal fun rosterFor(saved: TeamRoster?, rotation: WorkPattern.Rotation): TeamRoster =
     (saved ?: TeamRoster.suggest(rotation)).anchored(rotation.steps.size)
 
+/**
+ * [CREW-08] 1.31 N1 (상세리뷰 N1 '우리 회사 오늘 근무'): today's line for every team of [snap]'s rotation, mine first:
+ * "A조(우리 조) 주간 · B조 야간 · C조 휴무". Worked out on the phone from the user's own calendar and teams (nothing is sent);
+ * null without a rotation of two teams or more.
+ */
+internal fun teamsTodayLine(snap: ScheduleSnapshot, saved: TeamRoster?, today: LocalDate): String? {
+    val rotation = rotationOf(snap, today) ?: return null
+    val roster = rosterFor(saved, rotation)
+    if (roster.teams.size < 2 || !rotation.covers(today)) return null
+    val ordered = listOf(roster.mine) + roster.teams.filterNot { it == roster.mine }
+    return ordered.joinToString(" · ") { team ->
+        val type = roster.shiftOn(rotation, team, today)?.let { snap.typesById[it] }?.takeIf { !it.isOff }
+        "${team.name}${if (team == roster.mine) "(우리 조)" else ""} ${type?.name ?: "휴무"}"
+    }
+}
+
 private enum class TeamsView(val label: String) { WEEK("2주"), MONTH("한 달") }
 
 @OptIn(ExperimentalMaterial3Api::class)

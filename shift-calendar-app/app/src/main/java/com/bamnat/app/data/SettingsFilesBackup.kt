@@ -227,6 +227,9 @@ class SettingsFilesBackup(
             "startup_stats" to "앱을 여는 데 걸린 시간, 이 휴대폰에서 잰 것",
             // AQ 1.29 [PHOTO-09]: '사진이 달라요' counts waiting to be sent (60 days), this phone's only.
             "photo_wrong" to "‘사진이 달라요’를 누른 횟수 중 아직 보내지 않은 것(60일), 이 휴대폰에서만",
+            // 1.31 [STAT-08][GUIDE-20]: lookup times waiting to be sent, and whether the first week's 시작 단계 card was put away.
+            "lookup_stats" to "조회에 걸린 시간 중 아직 보내지 않은 것(처리방침 3.5 시행 뒤, 동의한 경우), 이 휴대폰에서만",
+            "start_steps" to "첫 주 ‘시작 3단계’ 카드를 그만 보기로 했는지, 이 휴대폰에서만",
         )
     }
 }

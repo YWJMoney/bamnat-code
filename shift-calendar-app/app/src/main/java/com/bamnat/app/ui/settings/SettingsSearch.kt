@@ -95,6 +95,8 @@ data class SettingEntry(
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
 /** [SET-05] The alarm page's row that moves every shift's alarms at once. */
 internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+internal const val WATCH_ALARM_ROW = "워치에서도 울리기"
+internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 /** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 
@@ -138,6 +140,7 @@ internal object SettingsIndex {
         row(A, WAKE_CHECK_ROW, "일어났나요", "기상 확인", "다시 자요", "확실한 알람"), // [PROV-07]
         row(A, "다시 울림 간격", "스누즈", "미루기", "다시 울림"),
         row(A, "자동으로 끄기", "울리는 시간", "알람 길이"),
+        row(A, WATCH_ALARM_ROW, "워치", "워치 알람", "시계 진동", "Wear OS", "워치 진동"), // [WEAR-06] 1.31
         row(A, PHOTO_ROW, "증명 사진", "사진 미션", "사진 찍어 끄기", "욕실 거울", "기준 사진"), // [ALRM-04] O 1.23 (L)
         screen(A.title, "알람 점검", SettingsGo.DIAGNOSTICS, "알람이 안 울려요", "늦게 울려요", "원인", "진단", "점검"),
         row(N, "오늘의 흐름 보기", "잘 시간", "수면 제안", "카페인", "낮잠", "오늘 카드"),
@@ -159,6 +162,7 @@ internal object SettingsIndex {
         // [LEAVE-06]
         screen(P.title, "연차", SettingsGo.PAY, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
+        row(N, "알람 뒤 오늘 카드", "오늘 카드", "알람 끈 뒤", "이번 주 시간", "52시간"), // [ALRM-16] 1.31
         row(N, "밤낮 소식", "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안", "답장 알림", "문의 답", "신고 결과",
             "받은 근무표 바뀜", "동료 근무 바뀜"), // [COMM-10][SRV-10]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
@@ -176,6 +180,7 @@ internal object SettingsIndex {
         screen("달력 › 도구", "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
         screen("달력 › 도구", "동료 근무표 받기", SettingsGo.RECEIVE, "받은 링크", "받은 근무표", "바꿔 보기", "같이 쉬는 날", "동료 달력").takeIf { share },
         screen(C.title, "달력 목록", SettingsGo.CALENDARS, "새 달력", "달력 추가", "달력 여러 개", "알바", "부업", "순서", "달력 이름"),
+        row(C, WATCH_CALENDAR_ROW, "워치 달력", "워치", "타일", "시계"), // [WEAR-04] 1.31
         row(C, "테마", "다크 모드", "어둡게", "밝게", "야간 모드", "검은 화면"),
         row(C, "휴대폰 배경색에 맞추기", "색", "배경화면", "앱 색"),
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),

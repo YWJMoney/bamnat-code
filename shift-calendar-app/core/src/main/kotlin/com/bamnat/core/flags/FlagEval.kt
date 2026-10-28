@@ -230,6 +230,7 @@ object FlagEval {
         "ads" to "광고 동의(Google 동의 화면)",
         "usage" to "사용 통계 보내기 동의",
         "usage.stats.more" to "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)",
+        "usage.stats.lookup" to "사용 통계 더 보내기 동의(조회 시간, 1.31부터)",
     )
     val PROFILE = mapOf(
         "setup.done" to "첫 설정을 마침",

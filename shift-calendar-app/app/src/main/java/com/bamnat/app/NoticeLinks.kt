@@ -57,6 +57,8 @@ object NoticeLinks {
         DAY,
         /** [COMM-10] 회사 규칙 광장, from 광장 소식. */
         PLAZA,
+        /** [GUIDE-20] 1.31: 회사 찾기, from the first week's 시작 단계 card. */
+        COMPANY_FIND,
         /** [INQ-05] 문의하기 on 내 문의, from 밤낮 소식's answer line. */
         INQUIRY,
         /** [ALRM-01] 설정 › 데이터 at 휴대폰 캘린더에 근무 쓰기, from the permission notice. */
