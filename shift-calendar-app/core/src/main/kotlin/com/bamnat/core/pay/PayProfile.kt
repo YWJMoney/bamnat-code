@@ -201,6 +201,8 @@ data class PayPeriod(
     val payDay: Int? = null,
     /** Pay arrives the month after the period ends (e.g. 말일 마감, 다음 달 10일 지급). */
     val payNextMonth: Boolean = false,
+    /** 1.32 [CALX-06] 주급: the weekday the week's pay arrives (the week starts on the 주휴 week's first day); null = 월급. */
+    val payWeekday: java.time.DayOfWeek? = null,
 ) {
     private fun endIn(m: YearMonth): LocalDate = m.atDay(minOf(endDay ?: 31, m.lengthOfMonth()))
 

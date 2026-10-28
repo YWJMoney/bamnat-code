@@ -120,13 +120,15 @@ internal fun MonthSummaryBar(
     takeHome: Long? = null,
     /** [PAYS-17] 1.27: how many values the pay still needs to be exact ("2개만 넣으면 정확해져요"). */
     payNeeds: Int = 0,
+    /** 1.32 [CALX-06] "9/21~10/20" when the days and hours are the 급여 기간's, as 통계 counts them. */
+    rangeLabel: String? = null,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
     val figures = when (overview.focus) {
         CalendarFocus.SHIFTS -> listOf(
             Figure("${month}월 근무", "${overview.workDays}일",
-                listOfNotNull(overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" },
+                listOfNotNull(rangeLabel, overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" },
                     com.bamnat.core.schedule.RestNudge.monthNote(restSigns)), short = "근무 ${overview.workDays}일"),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
                 overview.extraMinutes.takeIf { it > 0 }?.let { "추가 ${HoursFormat.korean(it)}" }, null, short = HoursFormat.korean(overview.workMinutes)),

@@ -277,6 +277,20 @@ fun CompanyRulesEditor(
                     }
                     period.payDate(month)?.let { Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요.") }
                 }
+                // 1.32 [CALX-06] 주급: the weekday it arrives; the week runs from the 주휴 week's first day.
+                Label("주급이면 받는 요일")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = period.payWeekday == null, onClick = { draft = draft.copy(period = period.copy(payWeekday = null)) },
+                        label = { Text("월급이에요") })
+                    java.time.DayOfWeek.entries.forEach { d ->
+                        FilterChip(selected = period.payWeekday == d, onClick = { draft = draft.copy(period = period.copy(payWeekday = d)) },
+                            label = { Text(com.bamnat.core.hours.StatsRange.dayName(d).take(1)) })
+                    }
+                }
+                period.payWeekday?.let { d ->
+                    Hint("한 주는 ${com.bamnat.core.hours.StatsRange.dayName(draft.holidayWeekFrom)}부터 세고, " +
+                        "주급은 ${com.bamnat.core.hours.StatsRange.dayName(d)}에 들어와요. 통계의 ‘주’ 칩과 달력 위 한 줄이 이 주로 보여요.")
+                }
             }
 
             FoldSection(title = "가산율 (100% 위에 더하는 몫)") {

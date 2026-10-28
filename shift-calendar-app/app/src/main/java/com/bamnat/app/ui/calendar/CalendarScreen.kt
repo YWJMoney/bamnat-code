@@ -434,13 +434,17 @@ fun CalendarScreen(
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
     // [CAL-06] The month on screen in the kind of work's own figures; pay is worked out off the main thread.
-    val overview = remember(snap, visibleMonth, focus, moneyBook) {
-        com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales)
+    // 1.32 [CALX-06] The month's days and hours over the 급여 기간 when 통계 counts by it, so both say the same.
+    val payRange = payProfile?.period?.takeIf { settings.statsByPayPeriod && it.endDay != null && focus == com.bamnat.core.work.CalendarFocus.SHIFTS }
+        ?.let { com.bamnat.core.hours.StatsRange.of(com.bamnat.core.hours.StatsRange.Mode.PAY, visibleMonth, today, it) }
+    val overview = remember(snap, visibleMonth, focus, moneyBook, payRange) {
+        com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales, payRange)
     }
     // [CAL-35] Last month's figures, for the few words of change under the hours.
     val versus = remember(snap, visibleMonth, focus, overview) {
         if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS) null
-        else overview.versus(com.bamnat.core.work.MonthOverview.of(visibleMonth.minusMonths(1), focus, snap.resolver))
+        else overview.versus(com.bamnat.core.work.MonthOverview.of(visibleMonth.minusMonths(1), focus, snap.resolver,
+            range = payRange?.let { payProfile?.period?.let { p -> com.bamnat.core.hours.StatsRange.of(com.bamnat.core.hours.StatsRange.Mode.PAY, visibleMonth.minusMonths(1), today, p) } }))
     }
     val payEstimate by produceState<Long?>(null, payProfile, snap, visibleMonth, focus) {
         value = null
@@ -1148,7 +1152,7 @@ fun CalendarScreen(
             // 1.32 [PROX-02] A money day's one 하루 무료 권유 (급여일 사흘, 근무표 넣은 날, 신고 달).
             if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "하루 무료로 열어 보기") {
                 val payday = payProfile?.period?.let { p ->
-                    listOf(YearMonth.from(today), YearMonth.from(today).minusMonths(1)).mapNotNull(p::payDate)
+                    p.payWeekday == today.dayOfWeek || listOf(YearMonth.from(today), YearMonth.from(today).minusMonths(1)).mapNotNull(p::payDate)
                         .any { !it.isAfter(today) && !it.isBefore(today.minusDays(2)) }
                 } == true
                 com.bamnat.app.ui.pro.ProMomentNotice(settings.workStyle, payday)
@@ -1195,6 +1199,7 @@ fun CalendarScreen(
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),
                         restSigns = restSigns,
                         compact = low,
+                        rangeLabel = payRange?.label(),
                     )
                 }
             }
@@ -1304,6 +1309,10 @@ fun CalendarScreen(
                         invest = investCells,
                         // [DAYW-01] A day calendar shows its exceptions only; painting shows every day.
                         quietWorkDays = settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && !stamping,
+                        // 1.32 [CALX-06] 마감 다음 날 lines, while 통계 counts by the 급여 기간.
+                        cutDays = if (payRange == null || stamping) emptySet() else pageToMonth(baseMonth, page).let { m ->
+                            com.bamnat.core.hours.StatsRange.cutDays(payProfile?.period, m.atDay(1).minusDays(7), m.atEndOfMonth().plusDays(14))
+                        },
                     )
                 }
                 // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
@@ -1313,6 +1322,13 @@ fun CalendarScreen(
             // 1.32 [LEDX-23] What the strips under the dates mean, while the heat map is on.
             if (settings.spendHeat && focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null) {
                 com.bamnat.app.ui.money.SpendHeatLegend(Modifier.padding(start = 16.dp, top = 4.dp))
+            }
+            // 1.32 [CALX-06] "이번 급여 기간은 10월 20일에 끝나요 · 5일 남았어요" (or the 주급 week), on this month only.
+            if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && visibleMonth == YearMonth.from(today)) {
+                com.bamnat.core.hours.StatsRange.endsLine(payProfile?.period, today, payProfile?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY)?.let { line ->
+                    Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp))
+                }
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.

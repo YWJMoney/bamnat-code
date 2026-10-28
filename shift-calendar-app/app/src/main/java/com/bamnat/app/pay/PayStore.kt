@@ -392,11 +392,13 @@ object PayCodec {
     /** [PAYX-15] Pay period and pay day; values out of range fall back to the calendar month. */
     fun period(p: com.bamnat.core.pay.PayPeriod): JSONObject = JSONObject()
         .put("endDay", p.endDay ?: -1).put("payDay", p.payDay ?: -1).put("payNextMonth", p.payNextMonth)
+        .put("payWeekday", p.payWeekday?.name ?: "")
 
     fun periodFrom(o: JSONObject): com.bamnat.core.pay.PayPeriod = com.bamnat.core.pay.PayPeriod(
         endDay = o.optInt("endDay", -1).takeIf { it in 1..30 },
         payDay = o.optInt("payDay", -1).takeIf { it in 1..31 },
         payNextMonth = o.optBoolean("payNextMonth", false),
+        payWeekday = java.time.DayOfWeek.entries.firstOrNull { it.name == o.optString("payWeekday") },
     )
 
     private fun JSONObject.putRate(key: String, v: Double?) = put(key, v ?: JSONObject.NULL)
