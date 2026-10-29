@@ -53,6 +53,8 @@ class ZFullBackupTest {
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
         tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
         payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true,
+        // 1.32 조사 대조 [WTYP-12][WTYP-16].
+        stretchLimitHours = 24, leaveTimeNotice = true,
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)

@@ -299,13 +299,8 @@ class AlarmService : Service() {
     }
 
     /** Chosen sound first, then the system alarm, ringtone and notification sounds. */
-    private fun candidateUris(sound: String?): List<Uri> = buildList {
-        sound?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull()?.let(::add) }
-        RingtoneManager.getActualDefaultRingtoneUri(this@AlarmService, RingtoneManager.TYPE_ALARM)?.let(::add)
-        add(Settings.System.DEFAULT_ALARM_ALERT_URI)
-        add(Settings.System.DEFAULT_RINGTONE_URI)
-        add(Settings.System.DEFAULT_NOTIFICATION_URI)
-    }.distinct()
+    private fun candidateUris(sound: String?): List<Uri> =
+        soundCandidates(sound, RingtoneManager.getActualDefaultRingtoneUri(this@AlarmService, RingtoneManager.TYPE_ALARM))
 
     /**
      * [STAB-01] Plays the first of [candidates] that works. Each is prepared in the background
@@ -443,6 +438,18 @@ class AlarmService : Service() {
     }
 
     companion object {
+        /**
+         * The sounds to try, in order: the shift's or the app's own, then this phone's alarm sound and the system's.
+         * 1.32 [WTYP-13] 조사 대조 W10: a sound file from the old phone that is not on this one gives way to these, never silence.
+         */
+        internal fun soundCandidates(sound: String?, phoneAlarm: Uri?): List<Uri> = buildList {
+            sound?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull()?.let(::add) }
+            phoneAlarm?.let(::add)
+            add(Settings.System.DEFAULT_ALARM_ALERT_URI)
+            add(Settings.System.DEFAULT_RINGTONE_URI)
+            add(Settings.System.DEFAULT_NOTIFICATION_URI)
+        }.distinct()
+
         const val ACTION_START = "com.bamnat.app.alarm.START"
         const val ACTION_DISMISS = "com.bamnat.app.alarm.DISMISS"
         const val ACTION_SNOOZE = "com.bamnat.app.alarm.SNOOZE"
