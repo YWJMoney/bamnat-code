@@ -162,4 +162,37 @@ class WorkTypeAudit132Test {
         assertEquals(listOf(1.0, 1.25, 2.0, 0.5, 3.0), com.bamnat.core.money.DayRate.cleanChips(listOf(1.0, 1.25, 1.0, 2.0, 0.0, 6.0, 0.5, 3.0, 4.0)))
         assertEquals(listOf(1.25), com.bamnat.core.money.FieldRules(unitChips = listOf(1.25)).chips)
     }
+
+    @Test fun aTrackFillsTheCapAndItsKindsOnce() {
+        val t = com.bamnat.core.work.PublicTracks.Track.TEACHER
+        assertEquals(57, t.capHours)
+        val kinds = com.bamnat.core.work.PublicTracks.withKinds(ExtraKinds(), t)
+        assertEquals(listOf("학부모 상담", "생활지도", "평가 출제"), kinds.kinds.filter { !it.isBuiltIn }.map { it.name })
+        // Twice is still once each.
+        val again = com.bamnat.core.work.PublicTracks.withKinds(kinds, t)
+        assertEquals(kinds.kinds.size, again.kinds.size)
+        assertTrue(com.bamnat.core.work.PublicTracks.missing(again, t).isEmpty())
+        // 군인: no cap is assumed.
+        assertEquals(null, com.bamnat.core.work.PublicTracks.Track.MILITARY.capHours)
+        assertTrue(com.bamnat.core.work.DayWork.PUBLIC_RULE_NOTE.contains("2026년 10월 1일"))
+    }
+
+    @Test fun theCompanysRecordIsSetBesideMine() {
+        val r = ScheduleResolver(Fixtures.all, weekdays, emptyList())
+        val thu = LocalDate.of(2026, 10, 15)
+        // The company stamped 퇴근 one minute early; my record says 18:00.
+        val row = com.bamnat.core.imports.AttendanceRow(thu, LocalTime.of(9, 0), LocalTime.of(17, 59))
+        val d = com.bamnat.core.imports.AttendanceCompare.diff(row, r.resolve(thu))!!
+        assertTrue(d.leftEarlier)
+        assertEquals(1, d.shortMinutes)
+        assertTrue(d.lines.single().startsWith("퇴근 회사 17:59 · 내 18:00"))
+        // The same times: nothing to say.
+        assertEquals(null, com.bamnat.core.imports.AttendanceCompare.diff(row.copy(end = LocalTime.of(18, 0)), r.resolve(thu)))
+        // 결근 at the company on a day I worked.
+        val absent = com.bamnat.core.imports.AttendanceCompare.diff(com.bamnat.core.imports.AttendanceRow(thu, absent = true), r.resolve(thu))!!
+        assertTrue(absent.lines.single().startsWith("회사엔 결근"))
+        val res = com.bamnat.core.imports.AttendanceCompare.compare(listOf(row, row.copy(date = thu.plusDays(1), end = LocalTime.of(18, 0))), r::resolve)
+        assertEquals(2, res.compared)
+        assertEquals("2일 비교 · 1일 달라요 · 회사 기록이 1분 적어요", res.summary)
+    }
 }

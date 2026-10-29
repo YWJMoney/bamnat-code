@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -557,11 +559,35 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: 
     if (editing) {
         // [INPUT-02] Tapped from the usual caps or stepped by an hour, not typed.
         var hours by remember { mutableStateOf(capHours ?: DayWork.DEFAULT_CAP_HOURS) }
+        // 1.32 [WTYP-25] 조사 대조 W31: 직렬로 한 번에 (교사·군인).
+        var track by remember { mutableStateOf<com.bamnat.core.work.PublicTracks.Track?>(null) }
+        var addKinds by remember { mutableStateOf(true) }
+        val c = LocalContext.current.appContainer
         AlertDialog(
             onDismissRequest = { editing = false },
             title = { Text("한 달 시간외 상한") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("직렬로 한 번에", style = MaterialTheme.typography.labelLarge)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.bamnat.core.work.PublicTracks.Track.entries.forEach { t ->
+                            com.bamnat.app.ui.components.FilterChip(selected = track == t, onClick = {
+                                track = t
+                                t.capHours?.let { hours = it }
+                            }, label = { Text(t.label) })
+                        }
+                    }
+                    track?.let { t ->
+                        Text(t.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 4.dp))
+                        val missing = remember(t, snapshot) { com.bamnat.core.work.PublicTracks.missing(snapshot.kinds, t) }
+                        if (missing.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(addKinds, { addKinds = it })
+                            Text("추가 근무 종류 넣기: " + missing.joinToString("·") { it.name }, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } ?: Text(com.bamnat.core.work.PublicTracks.ON_SITE_NOTE, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
+                    Text("상한", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CAP_CHOICES.forEach { h ->
                             com.bamnat.app.ui.components.FilterChip(selected = hours == h, onClick = { hours = h }, label = { Text("${h}시간") })
@@ -576,6 +602,9 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: 
             confirmButton = {
                 TextButton(onClick = {
                     prefs.setOvertimeCap(calendarId, hours.takeIf { it > 0 })
+                    track?.takeIf { addKinds && it.kinds.isNotEmpty() }?.let { t ->
+                        c.settingsRepository.update { s -> s.copy(extraKinds = com.bamnat.core.work.PublicTracks.withKinds(s.extraKinds, t)) }
+                    }
                     editing = false
                 }) { Text("저장") }
             },

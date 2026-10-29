@@ -18,6 +18,7 @@ data.backupPhotos
 data.movePhone
 data.openFile
 day.attendance
+day.attendanceCompare
 day.bridges
 day.commute
 day.firstCard
@@ -156,6 +157,7 @@ pro.collection
 pro.invite
 pro.moments
 profile.summary
+public.tracks
 settings.recommended
 setup.again
 share.link

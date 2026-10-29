@@ -185,9 +185,9 @@ object DayWork {
     const val DEFAULT_CAP_HOURS = 57
 
     /**
-     * 1.32 [WTYP-26] (근무유형 조사 8장, 인사혁신처·행정안전부 2026-07-21 입법예고 '공무원 수당 등에 관한 규정' 개정안) said under
-     * the 57시간 bar. The 시행일 was not confirmed when this was written, so it is not given; 밤낮 already counts no 하루 상한.
+     * 1.32 [WTYP-26] (근무유형 조사 8장) said under the 57시간 bar: 인사혁신처 보도자료 2026-09-15 "초과근무 1일 상한 폐지, 일한 만큼
+     * 보상하고 감독 강화한다" — 국무회의 의결, 2026-10-01 시행, 월 57시간 한도 유지. 밤낮 already counts no 하루 상한.
      */
-    const val PUBLIC_RULE_NOTE = "2026년 7월 입법예고된 개정안: 하루 4시간 인정 상한은 없어지고 월 57시간 상한은 그대로예요(시행일은 인사혁신처 발표로 확인). " +
+    const val PUBLIC_RULE_NOTE = "2026년 10월 1일부터 하루 4시간 인정 상한이 없어졌고 월 57시간 상한은 그대로예요(인사혁신처 2026-09-15 발표). " +
         "밤낮은 하루 상한 없이 월 상한까지 계산해요."
 }
