@@ -48,12 +48,29 @@ object RecipeText {
     private fun emojiLike(cp: Int): Boolean = cp >= 0x1F000 || cp in 0x2190..0x2BFF || cp in 0x2300..0x23FF || cp == 0x00A9 ||
         cp == 0x00AE || cp in 0x1F3FB..0x1F3FF || Character.getType(cp).toByte() == Character.OTHER_SYMBOL
 
-    /** User-perceived characters (문자소) of [s], as the app counts letters against a limit. */
+    /**
+     * User-perceived characters (문자소) of [s], as the app and the server count letters against a limit: a joiner and what it
+     * joins, a variation selector, a skin tone, a combining mark or a tag letter add nothing, and two flag letters are one
+     * (UAX #29 in the cases a recipe meets; the server's `graphemes()` counts the same way, not by the platform's own rules).
+     */
     fun graphemes(s: String): Int {
-        val it = java.text.BreakIterator.getCharacterInstance()
-        it.setText(s)
+        val cps = s.codePoints().toArray()
         var n = 0
-        while (it.next() != java.text.BreakIterator.DONE) n++
+        var i = 0
+        var flagHalf = false
+        while (i < cps.size) {
+            val cp = cps[i]
+            val t = Character.getType(cp).toByte()
+            when {
+                cp == ZWJ -> i++ // the next one is joined to this one
+                cp in 0xFE00..0xFE0F || cp in 0x1F3FB..0x1F3FF || cp in 0xE0020..0xE007F ||
+                    t == Character.NON_SPACING_MARK || t == Character.ENCLOSING_MARK -> {}
+                cp in 0x1F1E6..0x1F1FF -> { if (!flagHalf) n++; flagHalf = !flagHalf; i++; continue }
+                else -> n++
+            }
+            flagHalf = false
+            i++
+        }
         return n
     }
 
@@ -61,12 +78,12 @@ object RecipeText {
         "email" to Regex("[^\\s@]+@[^\\s@]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE),
         "phone" to Regex("(\\+?82[\\s.-]?0?|0)\\d{1,2}[\\s.-]?\\d{3,4}[\\s.-]?\\d{4}"),
         "amount" to Regex(
-            "\\d[\\d,.]*\\s*(원|만\\s*원|천\\s*원|억\\s*원|won\\b|krw\\b)|[일이삼사오육칠팔구십백천]+\\s*만\\s*원|\\d{1,3}(,\\d{3})+|\\d{5,}",
+            "\\d[\\d,.]*\\s*(원|만\\s*원|천\\s*원|억\\s*원|won(?![A-Za-z0-9])|krw(?![A-Za-z0-9]))|[일이삼사오육칠팔구십백천]+\\s*만\\s*원|\\d{1,3}(,\\d{3})+|\\d{5,}",
             RegexOption.IGNORE_CASE,
         ),
         // S6: no address to go to, written plainly or spaced out (bamnat . kr), and no move to a chat room.
         "link" to Regex(
-            "(https?|ftp)\\s*:\\s*/\\s*/|www\\s*\\.|[a-z0-9-]+\\s*\\.\\s*(com|net|org|kr|co|io|me|ly|gl|app|xyz|link|site|shop|kakao)\\b|" +
+            "(https?|ftp)\\s*:\\s*/\\s*/|www\\s*\\.|[a-z0-9-]+\\s*\\.\\s*(com|net|org|kr|co|io|me|ly|gl|app|xyz|link|site|shop|kakao)(?![A-Za-z0-9])|" +
                 "bit\\s*\\.\\s*ly|open\\s*\\.\\s*kakao",
             RegexOption.IGNORE_CASE,
         ),
