@@ -1175,7 +1175,7 @@ GUIDE-20,"1.31 상세리뷰 P2: 처음 7일 홈 위 '시작 3단계' 카드(알�
 CREW-08,1.31 상세리뷰 N1: 회사 화면에 '우리 회사 오늘 근무' 한 줄(같이 일하는 조),2 (1.31.0),완료,,"app TeamsScreen.teamsTodayLine, CompanyFindScreen TeamsTodayLine"
 ALRM-15,1.31 상세리뷰 R9: 배터리 최적화 제외를 바로 묻는 권한(REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)을 빼고 휴대폰 설정 화면만 엶,2 (1.31.0),완료,,"app AndroidManifest, SelfCheck BATTERY, DiagnosticsScreen; 처리방침 3.5 4항"
 ALRM-16,"1.31 상세리뷰 N3: 근무 알람을 끄면 오늘 근무·이번 주 시간·내일 근무를 조용한 알림 하나로(3시간 뒤 사라짐, 설정 › 알림에서 끔)",2 (1.31.0),완료,,"app alarm/AfterAlarmCard.kt, AlarmService, SettingsPages·SettingsSearch, 백업 afterAlarmCard"
-WEAR-04,"1.31 상세리뷰 7장: 워치에 보낼 달력 고르기(설정 › 달력, 처음엔 내 달력), 워치 머리에 달력 이름",2 (1.31.0),완료,,"app WatchSync.push(shown), AppContainer keep(watch), SettingsPages WATCH_CALENDAR_ROW, 백업 watchCalendar; wear MainActivity"
+WEAR-04,"1.31 상세리뷰 7장: 워치에 보낼 달력 고르기(설정 › 달력, 처음엔 내 달력), 워치 머리에 달력 이름",2 (1.31.0),완료,,"app WatchSync.push(shown), AppContainer keep(watch), SettingsPages WATCH_CALENDAR_ROW, 백업 watchCalendar; wear MainActivity; 1.32 조사 대조 C16: wear NextShiftComplicationService(다음 근무까지, 근무 중이면 끝까지), ShiftTileService 받은 시각, core WatchDays.countdowns, ComplicationDaysTest"
 WEAR-05,1.31 상세리뷰 7장: 워치 화면을 Wear Compose Material 3(1.5.0)으로,2 (1.31.0),완료,,"wear build.gradle.kts compose-material3, MainActivity Button·CompactButton"
 WEAR-06,"1.31 상세리뷰 N2 워치 진동 알람: 휴대폰 알람이 울리면 워치가 진동하고 끄기·다시 울림을 휴대폰으로(쓰지 않기·휴대폰과 워치·워치 먼저, 워치 먼저는 1분 또는 워치가 없으면 휴대폰이 울림, 미션 알람은 휴대폰에서)",2 (1.31.0),완료,,"core WatchDays RING_*·ringOnWatch; app watch/WatchRing.kt, AlarmService phoneOutputs·fromWatch, WatchRequestService; wear Ring.kt RingListenerService·RingActivity; 처리방침 3.5 2-6항"
 OPS-26,1.31 상세리뷰 P1: 판 속도보다 확인이 먼저: 1.31 동작 확인 체크리스트를 실제 휴대폰 두 대(가능하면 오래된 저가폰 하나)로 돌리고 자가 점검 › 조회 속도 숫자를 받아 다음 할 일을 정함,2 (1.31.0),진행 중,,release/1.31.0/동작-확인-체크리스트.md (사용자 확인 U)
@@ -1255,3 +1255,46 @@ QA132-01,"1.32 요청: 전체 시험(core, 앱, api, 워치, 서버, 관리자 �
 QA132-02,"1.32 요청: 문서(WhatsNew, HANDOFF, tracker, 기능 목록·설정 찾기·도움말), 새 설정의 백업 왕복, play-data-safety, 처리방침 영향.",2 (1.32.0),대기,,
 QA132-03,"1.32 요청: 서명한 APK·AAB·워치 AAB, 서버 파일, 해야 할 일, 남은 일, 출시노트, 동작 확인 체크리스트.",2 (1.32.0),대기,,
 DOM-01,"1.32 요청: 도메인 설정법 문서(구입, Worker 경로, 엣지 캐시, 앱 주소 판, 옛 주소 유지).",2 (1.32.0),완료,,release/1.32.0/도메인-설정-안내.md (프로젝트 파일)
+LEDX-12,"1.32 조사 대조(가계부 조사): 가맹점 이름 다듬기: 표시 이름 별칭, 잡음 토큰, 해외 `*` 규칙.",2 (1.32.0),완료,,LedgerEntrySheet.kt MerchantNames.kt Money.kt PaymentParser.kt LedgerAudit132Test.kt
+LEDX-13,1.32 조사 대조(가계부 조사): 결제 경로(페이)와 가게·결제수단을 나눠 적기.,2 (1.32.0),완료,,MoneyRepository.kt LedgerChecks.kt MerchantNames.kt PaymentParser.kt LedgerAudit132Test.kt
+LEDX-14,1.32 조사 대조(가계부 조사): 카드값 출금을 예상 청구액과 맞춰 차이 보여 주기.,2 (1.32.0),완료,,MoneyRepository.kt LedgerChecks.kt LedgerAudit132Test.kt
+LEDX-15,"1.32 조사 대조(가계부 조사): 이체 짝 맞추기용 ""내 이름""(휴대폰에만).",2 (1.32.0),완료,,AppContainer.kt AutoRecordPrefs.kt MoneyRepository.kt LedgerChecksUi.kt LedgerAudit132Test.kt
+LEDX-16,"1.32 조사 대조(가계부 조사): 부분취소 뒤 남은 금액, 원 결제 없는 환불은 ""환불 받은 돈""으로 두고 골라 연결.",2 (1.32.0),완료,,MoneyRepository.kt FeatureLinks.kt LedgerChecksUi.kt LedgerEntrySheet.kt LedgerAudit132Test.kt
+LEDX-17,"1.32 조사 대조(가계부 조사): 할부 청구 기준 보기(달마다 펼침, 유이자 직접), 남은 잔액.",2 (1.32.0),완료,,BackupManager.kt FeatureLinks.kt LedgerChecksUi.kt LedgerEntrySheet.kt LedgerAudit132Test.kt
+LEDX-18,1.32 조사 대조(가계부 조사): 해외결제 수수료율과 내 환율 정하기.,2 (1.32.0),완료,,AppContainer.kt AutoRecordPrefs.kt MoneyRepository.kt LedgerChecksUi.kt LedgerAudit132Test.kt TaxAudit132Test.kt
+LEDX-19,1.32 조사 대조(가계부 조사): 체크/신용 판정과 한 번 확인.,2 (1.32.0),완료,,AutoRecordPrefs.kt LedgerChecksUi.kt MoneyScreen.kt FitTable.kt LedgerAudit132Test.kt
+LEDX-20,1.32 조사 대조(가계부 조사): 페이 충전·포인트 전환을 이체로.,2 (1.32.0),완료,,MoneyRepository.kt PaymentParser.kt LedgerAudit132Test.kt
+LEDX-21,"1.32 조사 대조(가계부 조사): 분류 배우기에 요일·근무·결제 경로 특징, 30건 문턱.",2 (1.32.0),완료,,AppContainer.kt MoneyRepository.kt MoneyScreen.kt LedgerSmarts.kt LedgerAudit132Test.kt
+LEDX-22,1.32 조사 대조(가계부 조사): 기록·문의·충돌 기록에 금액·가게가 없음을 시험으로 지키기.,2 (1.32.0),완료,,release-checklist.md LedgerPrivacyTest.kt
+LEDX-23,1.32 조사 대조(가계부 조사): 달력 칸 지출 히트맵.,2 (1.32.0),완료,,SettingsRepository.kt CalendarLayout.kt CalendarScreen.kt MonthGrid.kt LedgerAudit132Test.kt
+LEDX-24,1.32 조사 대조(가계부 조사): 가게 이름 사전을 서버 → 휴대폰 서명 파일로 받기(올리는 것 없음).,2 (1.32.0),완료,,RemoteFilesStore.kt MerchantNames.kt RemoteFile.kt MerchantDictionary132Test.kt / 서버 remote/v1/merchants.json은 운영 키로 서명(.sig2)해야 받아짐: 사용자가-해야-할-일
+TAXP-12,"1.32 조사 대조(가계부 조사): 연말정산 자녀 카드 한도, 남은 달 행동 제안.",2 (1.32.0),완료,,PayYearCards.kt YearEndPreview.kt TaxAudit132Test.kt
+TAXP-13,1.32 조사 대조(가계부 조사): 홈택스 미리보기 숫자 넣기.,2 (1.32.0),완료,,PayYearCards.kt YearEndPreview.kt TaxAudit132Test.kt
+TAXP-14,1.32 조사 대조(가계부 조사): 현금 매출 현금영수증 발행 체크.,2 (1.32.0),완료,,BackupManager.kt DayCloseDialog.kt TaxPlusCards.kt Money.kt TaxAudit132Test.kt
+TAXP-15,1.32 조사 대조(가계부 조사): 카드 매출 수수료율 입력과 예상 입금.,2 (1.32.0),완료,,TaxPlusCards.kt ShopMoneySettings.kt TaxPlus.kt TaxAudit132Test.kt
+PROX-01,"1.32 조사 대조(가계부 조사): 하루 이용권 ""오늘 열린 것"".",2 (1.32.0),완료,,ProScreen.kt ProMoments.kt ProMomentsTest.kt
+PROX-02,1.32 조사 대조(가계부 조사): 체험 권유를 돈이 걸린 날에.,2 (1.32.0),완료,,AppContainer.kt SettingsFilesBackup.kt ProMomentStore.kt CalendarScreen.kt ProMomentStoreTest.kt ProMomentsTest.kt
+PROX-03,"1.32 조사 대조(가계부 조사): 결제 투명성(설정 맨 위 금액·다음 결제일·해지 바로 가기), 무료 회수 금지 시험.",2 (1.32.0),완료,,ProScreen.kt SettingsScreen.kt ProMomentStoreTest.kt ProMomentsTest.kt
+CALX-06,"1.32 조사 대조(공통 조사): 기간 칩 주·직접, 카드 기간 표시, 달 요약 같은 기간, 마감 구분선, 주급 요일, 끝나는 날 한 줄.",2 (1.32.0),완료,,CalendarScreen.kt CalendarSummary.kt MonthGrid.kt CompanyRulesEditor.kt StatsRangeTest.kt
+STAB-08,1.32 조사 대조(공통 조사): 수동 백업 30일 알림.,2 (1.32.0),완료,,AppContainer.kt BackupNudgeStore.kt SettingsFilesBackup.kt SettingsRepository.kt BackupNudgeTest.kt
+STAB-09,1.32 조사 대조(공통 조사): 출시 점검표에 Android vitals.,2 (1.32.0),완료,,"release-checklist.md 8장(단계적 출시마다 비정상 종료 0.5%·ANR 0.2%, 넘으면 멈춤)"
+WTYP-09,1.32 조사 대조(근무 유형별 조사): 비번 비상소집 한 번에 기록.,2 (1.32.0),완료,,DayHeader.kt WorkTypeDay.kt Callout.kt
+WTYP-10,1.32 조사 대조(근무 유형별 조사): 연간 교대 리포트(프로).,2 (1.32.0),완료,,PayReportCard.kt WorkTypeReports.kt WorkTypeAudit132Test.kt
+WTYP-11,1.32 조사 대조(근무 유형별 조사): 희망 오프와 신청 마감 알림.,2 (1.32.0),완료,,AndroidManifest.xml AppContainer.kt Receivers.kt DateNoticeAlarm.kt DateNoticesTest.kt
+WTYP-12,1.32 조사 대조(근무 유형별 조사): 전공의 한도 미리 정한 값.,2 (1.32.0),완료,,SettingsRepository.kt CalendarScreen.kt SettingsPages.kt SettingsSearch.kt ZFullBackupTest.kt WorkTypeAudit132Test.kt
+WTYP-13,"1.32 조사 대조(근무 유형별 조사): 회귀 시험 묶음(알람 기기 이전, 알림 시각, 1억+, 백업 복원).",2 (1.32.0),완료,,AlarmService.kt WorkTypeRegression132Test.kt BigAmounts132Test.kt
+WTYP-14,1.32 조사 대조(근무 유형별 조사): 회사 근태 기록 비교.,2 (1.32.0),완료,,AttendanceImportScreen.kt AttendanceCompare.kt WorkTypeAudit132Test.kt
+WTYP-15,1.32 조사 대조(근무 유형별 조사): 선택근무제 정산 기간.,2 (1.32.0),완료,,WorkTypePrefs.kt WorkTypeCards.kt SelectiveWork.kt
+WTYP-16,1.32 조사 대조(근무 유형별 조사): 지금 퇴근 알림 버튼.,2 (1.32.0),완료,,AndroidManifest.xml AppContainer.kt LeaveTimeNotice.kt Receivers.kt ZFullBackupTest.kt
+WTYP-17,1.32 조사 대조(근무 유형별 조사): 대타 주휴 제외.,2 (1.32.0),완료,,HourlyPay.kt HourlyLines.kt WorkTypeAudit132Test.kt
+WTYP-18,"1.32 조사 대조(근무 유형별 조사): 알바 2곳 무료 문구, 휴게 포함 시급.",2 (1.32.0),완료,,HourlyPay.kt HourlyLines.kt WorkTypeAudit132Test.kt
+WTYP-19,1.32 조사 대조(근무 유형별 조사): 소득 종류별 한 해 합계.,2 (1.32.0),완료,,WorkTypePrefs.kt AllCalendarsStats.kt AllCalendars.kt
+WTYP-20,1.32 조사 대조(근무 유형별 조사): 거래처·업체별 정산서 PDF(프로).,2 (1.32.0),완료,,WorkStatsCards.kt WorkTypeReports.kt WorkTypeAudit132Test.kt
+WTYP-21,1.32 조사 대조(근무 유형별 조사): 통계·가계부 연·월 바로 이동.,2 (1.32.0),완료,,CalendarScreen.kt InvestTabs.kt MoneyScreen.kt TaxCards.kt StatsScreen.kt PayScreen.kt
+WTYP-23,"1.32 조사 대조(근무 유형별 조사): 위젯 +1건·오늘 1공, 배달·공무원·자영업 위젯 줄, 대리 콜 출처별 수수료.",2 (1.32.0),완료,,CalendarBook.kt FieldDaySheet.kt FieldUnitSettings.kt PlatformDaySheet.kt WorkTypeAudit132Test.kt WorkTypeG132Test.kt
+WTYP-24,1.32 조사 대조(근무 유형별 조사): 공무원 시간외 신청/인정.,2 (1.32.0),완료,,BackupManager.kt DayExtras.kt WorkTypeCards.kt ExtraKind.kt PublicPayTableTest.kt
+WTYP-25,1.32 조사 대조(근무 유형별 조사): 직렬별 미리 정한 값(교사·군인 등).,2 (1.32.0),완료,,WorkTypeCards.kt PublicTracks.kt WorkTypeAudit132Test.kt / 군인 시간외 상한은 확인되지 않아 상한 없이 두고 부대 지침을 따르라고 안내(남은 일)
+WTYP-26,"1.32 조사 대조(근무 유형별 조사): 57시간·52시간 막대를 첫 카드와 위젯에, 10월 개정 안내.",2 (1.32.0),완료,,WorkTypeCards.kt DayWork.kt WorkTypeAudit132Test.kt DayWorkTest.kt
+WTYP-27,"1.32 조사 대조(근무 유형별 조사): 출퇴근 → 공수 자동 규칙, 자주 쓰는 공수 칩.",2 (1.32.0),완료,,CalendarBook.kt FieldDaySheet.kt FieldUnitSettings.kt FieldWork.kt WorkTypeAudit132Test.kt / 끝난 시각 규칙과 공수 칩까지. 출퇴근 자동 기록(회사 위치 하나)과 잇기는 현장이 날마다 바뀌어 맞지 않아 남은 일(1.32 남은-일.md)
+WTYP-28,1.32 조사 대조(근무 유형별 조사): 실업급여·퇴직공제 근무일 증빙 PDF(프로).,2 (1.32.0),완료,,WorkStatsCards.kt WorkTypeReports.kt WorkTypeAudit132Test.kt
+WTYP-29,"1.32 조사 대조(근무 유형별 조사): 투자 연말 손실 정리 미리 보기, 코인 12/31 기록 알림.",2 (1.32.0),완료,,AndroidManifest.xml AppContainer.kt Receivers.kt DateNoticeAlarm.kt DateNoticesTest.kt
