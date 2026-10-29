@@ -91,7 +91,11 @@ object RecipeText {
     )
 
     /** Why [text] cannot be shared (email, phone, amount, link, chat), or null. The server's `personal()` plus links and chats. */
-    fun problem(text: String): String? = PERSONAL.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+    fun problem(text: String): String? {
+        // [RCP-40] Read as it looks: full-width letters and dots (ｂｉｔ．ｌｙ) and 。 are the plain ones.
+        val t = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC).replace('。', '.')
+        return PERSONAL.firstOrNull { (_, re) -> re.containsMatchIn(t) }?.first
+    }
 
     /** [RCP-15] What 투자 광장 never takes (결정 AI-D8): 리딩방, promised returns, 종목 추천 — the server's INVEST_ADVICE. */
     private val INVEST_ADVICE = Regex(

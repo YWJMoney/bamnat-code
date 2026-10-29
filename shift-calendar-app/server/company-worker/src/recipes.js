@@ -163,7 +163,9 @@ const PROBLEMS = [
 
 /** core RecipeText.problem: why a text cannot go in a recipe or its talk. */
 export function textProblem(text) {
-  for (const [code, re] of PROBLEMS) if (re.test(text)) return code;
+  // [RCP-40] Read as it looks: full-width letters and dots (ｂｉｔ．ｌｙ) and 。 are the plain ones (core does the same).
+  const t = String(text).normalize("NFKC").replace(/。/g, ".");
+  for (const [code, re] of PROBLEMS) if (re.test(t)) return code;
   return null;
 }
 
