@@ -272,6 +272,18 @@ class AppContainer(context: Context) {
         return synchronized(addedCompanies) { addedCompanies.getOrPut(calendarId) { addedCompany(calendarId) } }
     }
 
+    /**
+     * [J133-71] 1.33 (사용자 2026-10-29 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아? … 유형에 맞게"): whether
+     * calendar [calendarId] is offered company things (회사 찾기·고르기, 같은 회사 설정, 광장에 올리기 권유): 교대·일근 always, any other
+     * kind only once that calendar already joined or took a company's setup, so nothing it has goes out of reach.
+     */
+    fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN): Boolean {
+        if (!companyApi.enabled) return false
+        if (scopeOf(calendarId).currentSettings().workStyle?.usesCompany != false) return true
+        val store = companyOf(calendarId).store
+        return store.applied.value != null || store.member.value != null
+    }
+
     /** [CALI-01] The main calendar's and every added one's (not the example's), for what goes over all of them. */
     fun companyScopes(): List<com.bamnat.app.company.CompanyScope> =
         listOf(mainCompany) + calendars.calendars.value.filter { !it.isMain && !it.isExample }.map { companyOf(it.id) }.filter { !it.isMain }

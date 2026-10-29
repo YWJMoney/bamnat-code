@@ -162,6 +162,9 @@ fun PayScreen(
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val gate by vm.gate.collectAsStateWithLifecycle()
+    // [J133-71] 1.33: the words of the calendar's kind of work (알바: 근무지 규칙, no 회사 급여 방식 찾기).
+    val workStyle = vm.settings.collectAsStateWithLifecycle().value.workStyle
+    val rulesTitle = PayTab.RULES.labelFor(workStyle)
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
     // [PAYS-12] 자세히 고치기 from the easy setup; [PAYS-15] the 광장 ask after a payslip set the rules.
@@ -204,7 +207,7 @@ fun PayScreen(
                 title = {
                     Text(when {
                         profile == null || editingSetup -> "급여 계산 설정"
-                        editingRules -> "회사 규칙"
+                        editingRules -> rulesTitle
                         else -> "급여 계산"
                     })
                 },
@@ -228,9 +231,9 @@ fun PayScreen(
                             androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 androidx.compose.material3.DropdownMenuItem(text = { Text("자세히 고치기 (하나씩 묻기)") },
                                     onClick = { menu = false; detailedFrom = DetailedStart(profile); editingSetup = true })
-                                androidx.compose.material3.DropdownMenuItem(text = { Text("처음부터 설정 (회사 급여 방식 찾기)") },
+                                androidx.compose.material3.DropdownMenuItem(text = { Text(if (workStyle?.usesCompany == false) "처음부터 설정" else "처음부터 설정 (회사 급여 방식 찾기)") },
                                     onClick = { menu = false; detailedFrom = null; editingSetup = true })
-                                androidx.compose.material3.DropdownMenuItem(text = { Text("회사 규칙 (가산율·수당 기준)") },
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("$rulesTitle (가산율·수당 기준)") },
                                     onClick = { menu = false; editingRules = true })
                             }
                         }
@@ -414,9 +417,9 @@ private fun PayResult(
         // [J133-18] 1.33 (실사용 테스트 "급여 화면 위에 카드 4개, 결과 숫자가 안 보여요"): on 결과 the cards above come after
         // the month's total and what it still needs.
         if (payTab != PayTab.RESULT) top()
-        PayTabRow(payTab) { payTab = it }
+        PayTabRow(payTab, { payTab = it }, settings.workStyle)
         com.bamnat.app.ui.guide.OnceTip(com.bamnat.app.ui.calendar.HintStore.PAY_TABS,
-            "기본급·수당은 ‘내 급여 값’, 가산율·월급날은 ‘회사 규칙’, 만약에·연말정산은 ‘도구’에 있어요")
+            "기본급·수당은 ‘내 급여 값’, 가산율·월급날은 ‘${PayTab.RULES.labelFor(settings.workStyle)}’, 만약에·연말정산은 ‘도구’에 있어요")
         // U 1.32 [UX132-03] 결과: the total, what it still needs, its lines and days.
         val noBase = closedSnap == null && !com.bamnat.core.pay.BaseAsk.showsEstimate(profile, result.month)
         if (payTab == PayTab.RESULT) {
@@ -680,7 +683,7 @@ private fun PayResult(
 
         // U 1.32 [UX132-03] 회사 규칙: what the rules are, and the editor.
         if (payTab == PayTab.RULES) {
-        SectionCard(title = "회사 규칙", trailing = { TextButton(onClick = onEditRules, enabled = unlocked) { Text("바꾸기") } }) {
+        SectionCard(title = PayTab.RULES.labelFor(settings.workStyle), trailing = { TextButton(onClick = onEditRules, enabled = unlocked) { Text("바꾸기") } }) {
             val summary = profile.named(com.bamnat.app.ui.calendar.LocalExtraKinds.current).rules.summary(profile)
             Text(
                 (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
@@ -726,7 +729,7 @@ private fun PayResult(
             if (onReport != null) onReport(payCheck(profile, shown)) else reportProblem(context, profile, shown)
         }) { Text("계산이 이상해요 (오류 제보)") }
         Text(
-            "회사 급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${shown.ratesVersion}, " +
+            "급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${shown.ratesVersion}, " +
                 "공휴일 ${KoreanHolidays.version}.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

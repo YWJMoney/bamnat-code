@@ -17,7 +17,19 @@ object StartSteps {
         COMPANY("우리 회사 고르기", "회사를 골랐어요", "고르기"),
     }
 
-    data class Row(val step: Step, val done: Boolean)
+    /** [J133-71] [label]: the step in the calendar's kind of work's words (현장: 일정 알람, 알바: 일하는 날). */
+    data class Row(val step: Step, val done: Boolean, val label: String = step.label)
+
+    /** [J133-71] 1.33: what each step is called for [style]. */
+    fun label(step: Step, style: com.bamnat.core.work.WorkStyle?): String = when (step) {
+        Step.ALARM -> when (style) {
+            com.bamnat.core.work.WorkStyle.FIELD -> "일정 알람 켜기"
+            com.bamnat.core.work.WorkStyle.BUSINESS -> "영업 알람 켜기"
+            else -> step.label
+        }
+        Step.SHIFTS -> if (style == com.bamnat.core.work.WorkStyle.HOURLY) "일하는 날 넣기" else step.label
+        Step.COMPANY -> step.label
+    }
 
     /**
      * The rows to show today, or null for no card: [installed] more than [DAYS] days ago (or unknown), [dismissed], or every
@@ -26,13 +38,15 @@ object StartSteps {
     fun rows(
         installed: LocalDate?, today: LocalDate, dismissed: Boolean,
         alarmsOn: Boolean, hasShifts: Boolean, companyLinked: Boolean, companyApplies: Boolean,
+        style: com.bamnat.core.work.WorkStyle? = null,
     ): List<Row>? {
-        if (dismissed || installed == null) return null
+        // [J133-71] 1.33: a 투자 calendar has no work alarm, shifts or company; its own first step is the trade card.
+        if (dismissed || installed == null || style == com.bamnat.core.work.WorkStyle.INVEST) return null
         val age = ChronoUnit.DAYS.between(installed, today)
         if (age < 0 || age >= DAYS) return null
         val rows = listOfNotNull(
-            Row(Step.ALARM, alarmsOn),
-            Row(Step.SHIFTS, hasShifts),
+            Row(Step.ALARM, alarmsOn, label(Step.ALARM, style)),
+            Row(Step.SHIFTS, hasShifts, label(Step.SHIFTS, style)),
             Row(Step.COMPANY, companyLinked).takeIf { companyApplies },
         )
         return rows.takeIf { r -> r.any { !it.done } }

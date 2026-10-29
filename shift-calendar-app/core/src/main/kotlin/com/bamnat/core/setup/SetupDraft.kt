@@ -108,9 +108,12 @@ data class SetupDraft(
                 // A shared order is asked too, already chosen: a template's is only the usual one for that work.
                 SetupStep.ORDER, SetupStep.TODAY.takeIf { usesRotation }, SetupStep.ALARM, SetupStep.SUMMARY,
             )
-            // [COMM-05] Weekday and part-time work look for the company too, or start from a template.
-            WorkStyle.DAY, WorkStyle.HOURLY ->
+            // [COMM-05] Weekday work looks for the company too, or starts from a template.
+            WorkStyle.DAY ->
                 listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
+            // [J133-71] 1.33: a part-time job has no company setup to look for; the hours come first.
+            WorkStyle.HOURLY ->
+                listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
         }
 
     /** "근무 설정 3/6": [step]'s place among [steps], 1-based. */

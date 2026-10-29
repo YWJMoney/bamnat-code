@@ -55,7 +55,8 @@ object StartStepsState {
     fun rows(c: AppContainer, hasShifts: Boolean, style: WorkStyle? = c.settingsRepository.current.workStyle): List<StartSteps.Row>? {
         val s = c.settingsRepository.current
         // [J133-26] 1.33 (실사용 테스트 "식당·현장 달력에 '근무 넣기'·'우리 회사 고르기'"): steps of the calendar on screen's own work.
-        val companyApplies = c.companyApi.enabled && style != WorkStyle.INVEST && style != WorkStyle.BUSINESS && style != WorkStyle.FIELD
+        // [J133-71] 1.33 (사용자 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아?"): only 교대·일근 pick a company.
+        val companyApplies = c.companyApi.enabled && style?.usesCompany != false
         val ownDays = style == WorkStyle.INVEST || style == WorkStyle.BUSINESS || style == WorkStyle.FIELD
         val store = c.companyStore
         return StartSteps.rows(
@@ -63,6 +64,7 @@ object StartStepsState {
             alarmsOn = s.alarmsEnabled, hasShifts = hasShifts || ownDays,
             companyLinked = store.applied.value != null || store.member.value != null ||
                 c.appContext.getSharedPreferences(FILE, 0).getBoolean(K_COMPANY, false), companyApplies = companyApplies,
+            style = style,
         )
     }
 }
@@ -89,7 +91,7 @@ fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: 
             if (!expanded) {
                 next?.let { row ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("다음: ${row.step.label}", style = MaterialTheme.typography.bodyMedium,
+                        Text("다음: ${row.label}", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                         FilledTonalButton(onClick = { open(row.step) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(row.step.action) }
                     }
@@ -100,11 +102,11 @@ fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: 
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows.forEach { row ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)
-                    .semantics(mergeDescendants = true) { contentDescription = if (row.done) row.step.doneLabel else "${row.step.label}, 아직 안 했어요" }) {
+                    .semantics(mergeDescendants = true) { contentDescription = if (row.done) row.step.doneLabel else "${row.label}, 아직 안 했어요" }) {
                     Icon(if (row.done) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked, contentDescription = null,
                         tint = if (row.done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text(if (row.done) row.step.doneLabel else row.step.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text(if (row.done) row.step.doneLabel else row.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     if (!row.done) FilledTonalButton(onClick = { open(row.step) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(row.step.action) }
                 }
             }

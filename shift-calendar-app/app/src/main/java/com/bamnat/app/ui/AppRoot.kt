@@ -1203,7 +1203,8 @@ private fun AppNavHost(
             val payEngine = remember(calendar) {
                 container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle)?.usesPayEngine != false
             }
-            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE
+            // [J133-71] 1.33: and only for work that has a company (교대·일근), or an 알바 calendar that already joined one.
+            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE && remember(calendar) { container.companyFits(calendar) }
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }

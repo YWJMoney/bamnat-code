@@ -1448,7 +1448,8 @@ class CompanyNudgeViewModel(
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
     private val store = scope.store
-    val enabled: Boolean = c.companyApi.enabled
+    // [J133-71] 1.33: a calendar of work with no company (알바·현장·가게·투자) is not asked to share or pick one.
+    val enabled: Boolean = c.companyFits(calendar)
     val applied: StateFlow<AppliedSetup?> = store.applied
     val draft: StateFlow<CompanyDraft?> = store.draft
     private val _terms = MutableStateFlow(c.termsNow())

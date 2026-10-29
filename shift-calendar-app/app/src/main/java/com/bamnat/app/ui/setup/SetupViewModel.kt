@@ -354,7 +354,7 @@ class SetupViewModel(
         }
         // New shifts are a new setup from here on, not a fix of one answer.
         _fixing.value = false
-        store.save(d.copy(step = d.steps.dropWhile { it != SetupStep.COMPANY }.getOrElse(1) { SetupStep.SUMMARY }))
+        store.save(d.copy(step = d.steps.firstOrNull { it != SetupStep.STYLE && it != SetupStep.COMPANY } ?: SetupStep.SUMMARY))
     }
 
     /**
@@ -374,7 +374,9 @@ class SetupViewModel(
         val d = current
         val style = d.style ?: return
         _fixing.value = false
-        store.save(fresh(style, d.rosterMonthly).copy(companyName = d.companyName, step = SetupStep.COMPANY))
+        val again = fresh(style, d.rosterMonthly).copy(companyName = d.companyName)
+        // [J133-71] 알바 has no company step: back to its first question.
+        store.save(again.copy(step = if (SetupStep.COMPANY in again.steps) SetupStep.COMPANY else again.steps.getOrElse(1) { SetupStep.STYLE }))
     }
 
     fun setCompanyName(name: String) = update { it.copy(companyName = name.take(40)) }

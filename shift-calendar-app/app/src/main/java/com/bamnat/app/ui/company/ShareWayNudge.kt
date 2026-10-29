@@ -106,7 +106,8 @@ fun ShareWayCard(
     val memory = remember { ShareWayMemory(context) }
     var shown by rememberSaveable { mutableStateOf(memory.due()) }
     var asking by remember { mutableStateOf(false) }
-    val companyOn = container.companyApi.enabled
+    // [J133-71] 1.33: 같은 회사 동료 words only for a calendar whose work has a company.
+    val companyOn = container.companyFits(LocalCompanyCalendar.current)
     val askOn = container.inquiryApi.enabled
     if (!shown || !companyOn && !askOn) return
     val canShare = onShare != null && companyOn

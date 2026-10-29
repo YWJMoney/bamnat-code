@@ -146,7 +146,8 @@ fun PayQuickSetup(
     var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
     // [PAYF-07] Opened from a public cycle just put in, the company was already looked up (CompanyPayOffer asked "급여 계산
     // 방식도 같이 넣을까요?" when it had one): not asked again. 설정 고치기 of a pay there is asks it first all the same.
-    val steps = listOfNotNull(COMPANY.takeIf { companyFind && (fromCycle == null || initial != null) }, FORM, AMOUNT, HOLIDAY.takeIf { form?.asksHoliday == true }, CONFIRM)
+    // [J133-71] 1.33: 알바·현장 and the rest look for no company; only 교대·일근 do.
+    val steps = listOfNotNull(COMPANY.takeIf { companyFind && style?.usesCompany != false && (fromCycle == null || initial != null) }, FORM, AMOUNT, HOLIDAY.takeIf { form?.asksHoliday == true }, CONFIRM)
     var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: steps.first()) }
     val index = steps.indexOf(step).coerceAtLeast(0)
     val scope = rememberCoroutineScope()

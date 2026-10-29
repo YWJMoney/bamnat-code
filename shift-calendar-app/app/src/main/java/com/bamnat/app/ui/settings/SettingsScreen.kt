@@ -732,7 +732,9 @@ private fun SettingsHub(
         SettingsSearchField(query, onQuery, searchFocus)
         Spacer(Modifier.size(4.dp))
         if (query.isNotBlank()) {
-            val entries = remember(onOpenBoard != null) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn) }
+            // [J133-71] 1.33: what the calendar's kind of work has, so 알바 finds no 회사 찾기.
+            val companyWork = context.appContainer.companyFits(com.bamnat.app.ui.company.companyCalendarOf(context.appContainer, null))
+            val entries = remember(onOpenBoard != null, companyWork) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork) }
             SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, onFound)
             return@Column
         }
@@ -742,11 +744,11 @@ private fun SettingsHub(
         com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
-        Shortcuts(onFound)
-        Spacer(Modifier.size(4.dp))
         val work by vm.workSettings.collectAsStateWithLifecycle()
+        Shortcuts(onFound, work.workStyle)
+        Spacer(Modifier.size(4.dp))
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p,
+            GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -772,7 +774,11 @@ private fun SettingsHub(
             }
         }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
-        if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
+        // [J133-71] 1.33: the 광장 of the kind of work on screen, in its own words (알바 광장, 현장 광장 …).
+        if (onOpenBoard != null) {
+            val (boardTitle, boardLine) = boardRow(work.workStyle)
+            GroupRow(Icons.Outlined.Forum, boardTitle, boardLine, false, onClick = onOpenBoard)
+        }
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
         GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "추천 기능 한 번에 켜기 · 쓰지 않는 카드·안내 끄고 다시 켜기", false) {
             SettingsLinks.go(SettingsGo.FEATURES)
@@ -892,13 +898,16 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
 /** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Shortcuts(onFound: (SettingEntry) -> Unit) {
+private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null) {
     val entries = remember { SettingsIndex.entries().associateBy { it.title } }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("자주 찾는 것", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for ((title, label, icon) in SHORTCUTS) {
+                // [J133-71] 1.33: 근무 주기 only for work that repeats, 급여 only for work paid by the hour or month.
+                if (title == "근무 주기" && style?.usesPattern == false) continue
+                if (title == "급여 계산" && style?.usesPayEngine == false) continue
                 val e = entries[title] ?: continue
                 AssistChip(onClick = { onFound(e) }, label = { Text(label) },
                     leadingIcon = { Icon(icon, null, Modifier.size(AssistChipDefaults.IconSize)) })
@@ -920,7 +929,8 @@ private val SHORTCUTS = listOf(
 internal const val HELP_TITLE = "자주 묻는 질문"
 
 /** How each group stands now, in a few words. */
-private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapshot?, hasPay: Boolean, notificationsOk: Boolean): String = when (page) {
+private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapshot?, hasPay: Boolean, notificationsOk: Boolean,
+                    style: com.bamnat.core.work.WorkStyle? = s.workStyle): String = when (page) {
     SettingsPage.WORK -> listOfNotNull(
         s.workStyle?.label ?: "일하는 방식 정하기",
         snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 }?.let { "근무 ${it}가지" },
@@ -933,13 +943,27 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
             "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice },
         ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck })
     ).joinToString(" · ")
-    SettingsPage.PAY -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
+    // [J133-71] 1.33: 회사 설정 only where the work has a company; 연차 not for 알바's few hours a week.
+    SettingsPage.PAY -> when {
+        style?.usesCompany != false -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
+        style == com.bamnat.core.work.WorkStyle.HOURLY -> if (hasPay) "급여 계산 · 주휴수당 · 연차" else "시급 넣고 급여 계산 시작하기"
+        else -> if (hasPay) "급여 계산 · 연차" else "급여 계산 시작하기"
+    }
     SettingsPage.CALENDAR -> listOf(
         when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "처리방침 · 권한 확인 · 앱 잠금 · 약관 · 밤낮 ${BuildConfig.VERSION_NAME}"
+}
+
+/** [J133-71] The 광장 row of the settings list: the kind of work's own plaza, or the companies' rule plaza for 교대·일근. */
+internal fun boardRow(style: com.bamnat.core.work.WorkStyle?): Pair<String, String> = when (style) {
+    com.bamnat.core.work.WorkStyle.HOURLY -> "알바 광장" to "지역 시급 시세 · 알바하며 겪은 일 나누기"
+    com.bamnat.core.work.WorkStyle.FIELD -> "현장 광장" to "지역·직종 일당 시세 · 일정·단가 협상 팁"
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "가게 광장" to "영업·매출 팁 나누기"
+    com.bamnat.core.work.WorkStyle.INVEST -> "투자 이야기" to "기록하는 방법·공부한 것 나누기"
+    else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론"
 }
 
 /** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */

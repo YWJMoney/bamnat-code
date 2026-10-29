@@ -160,7 +160,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     val types = remember(d.types) { d.types.associateBy { it.id } }
     SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
     val source = d.source
-    if (source != null || d.companyName.isNotBlank()) {
+    if ((source != null || d.companyName.isNotBlank()) && SetupStep.COMPANY in d.steps) {
         SummaryCard("회사", companyLine(d, source), onFix = { vm.fix(SetupStep.COMPANY) })
     }
     SummaryCard(
@@ -302,6 +302,8 @@ fun SetupPaySheet(
             Text("달력을 채웠어요. 예상 급여도 볼까요?", style = MaterialTheme.typography.headlineSmall)
             Text(
                 if (companyPay) "회사 급여 방식은 함께 받아 왔어요. 내 기본급이나 시급만 넣으면 이번 달 예상 급여를 보여 드려요."
+                // [J133-71] 1.33: 알바 looks for no company; the 시급 is all it takes.
+                else if (c.scopeOf(calendar).currentSettings().workStyle?.usesCompany == false) "시급만 넣으면 주휴수당까지 넣어 이번 달 예상 급여를 보여 드려요."
                 // [PAYF-05] 1.29 AP: the pay starts from the company (근무주기처럼): its way when coworkers made one, else made by hand.
                 else "먼저 우리 회사 급여 방식이 있는지 찾아봐요. 있으면 그대로 쓰고 기본급만 넣으면 돼요. 없으면 몇 가지만 골라 직접 만들어요.",
                 style = MaterialTheme.typography.bodyMedium,

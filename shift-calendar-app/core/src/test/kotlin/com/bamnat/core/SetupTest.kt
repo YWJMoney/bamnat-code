@@ -130,7 +130,8 @@ class SetupTest {
         assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.TODAY, SetupStep.ALARM, SetupStep.SUMMARY),
             shared.steps)
         assertEquals(6, SetupDraft(style = WorkStyle.DAY).steps.size)
-        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY),
+        // [J133-71] 알바 has no company step.
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY),
             SetupDraft(style = WorkStyle.HOURLY).steps)
         assertEquals(listOf(SetupStep.STYLE), SetupDraft(style = WorkStyle.FIELD).steps)
         assertEquals(3, SetupDraft(style = WorkStyle.SHIFT, step = SetupStep.BUNDLE).position)

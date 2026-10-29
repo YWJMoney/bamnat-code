@@ -76,6 +76,20 @@ class SettingsSearchTest {
         assertTrue("근무표 공유" in titles)
     }
 
+    /** [J133-71] 1.33 (사용자 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아?"): work with no company finds no 회사 things. */
+    @Test fun workWithNoCompanyFindsNoCompanyRows() {
+        val entries = SettingsIndex.entries(company = false)
+        val titles = entries.map { it.title }
+        assertFalse("회사 찾기" in titles)
+        assertFalse("회사 설정 보내기" in titles)
+        assertFalse("우리 회사 급여 방식 찾기" in titles)
+        assertFalse("회사 규칙 광장" in titles)
+        assertTrue("광장" in titles)
+        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title.startsWith("회사") })
+        assertEquals("광장", SettingsIndex.search("알바 광장", entries).first().title)
+        assertTrue("회사 찾기" in SettingsIndex.entries().map { it.title })
+    }
+
     @Test fun everyShortcutIsInTheIndex() {
         val titles = SettingsIndex.entries().map { it.title }.toSet()
         listOf("근무 종류와 시간", "근무 주기", "급여 계산", "근무표 공유", "알람음", "백업 저장", HELP_TITLE).forEach {

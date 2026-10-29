@@ -29,6 +29,16 @@ enum class WorkStyle(val label: String, val description: String, val examples: S
     /** [INV-01] Days hold trades and the day's gain or loss. */
     val usesTrades: Boolean get() = this == INVEST
 
+    /**
+     * [J133-71] 1.33 (사용자 2026-10-29 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아? … 유형에 맞게 내용들이
+     * 보여지게"): a company's shared setup (회사 찾기, 회사 고르기, 같은 회사 설정, 회사 게시판) is offered only to work that has one:
+     * 교대·일근. 알바 has its own 알바 광장 ([com.bamnat.core.plaza.StylePlaza]); a part-timer who already joined a company keeps it.
+     */
+    val usesCompany: Boolean get() = this == SHIFT || this == DAY
+
+    /** [J133-71] Whose rules the pay follows, in this kind of work's words: 회사, or 근무지 for a part-time job (가게·매장·센터). */
+    val employer: String get() = if (this == HOURLY) "근무지" else "회사"
+
     /** What the money tab calls the main income line. */
     val incomeLabel: String get() = when (this) {
         SHIFT, DAY, HOURLY -> "급여 (세전 예상)"

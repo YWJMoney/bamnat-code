@@ -262,7 +262,8 @@ fun PlazaHomeScreen(
                         Text(if (plan.top == StylePlaza.Top.COMPANY_ROOM) "${styleName(it)}도 보기" else "회사 정보 광장으로")
                     }
                 }
-                TextButton(onClick = onAll, modifier = Modifier.fillMaxWidth()) { Text("다른 회사 규칙 광장 보기") }
+                // [J133-71] 1.33: other companies' rules mean something to 교대·일근 and to a company's room, not to 알바·현장·가게·투자.
+                if (plan.top == StylePlaza.Top.COMPANY_ROOM) TextButton(onClick = onAll, modifier = Modifier.fillMaxWidth()) { Text("다른 회사 규칙 광장 보기") }
                 Spacer(Modifier.height(24.dp))
             }
         }

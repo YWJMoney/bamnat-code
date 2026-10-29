@@ -135,8 +135,11 @@ internal object SettingsIndex {
     private val D = SettingsPage.DATA
     private val V = SettingsPage.PRIVACY
 
-    /** [board]: the build has 회사 규칙 광장; [share]: it can make and take links. */
-    fun entries(board: Boolean = true, share: Boolean = true): List<SettingEntry> = listOfNotNull(
+    /**
+     * [board]: the build has 회사 규칙 광장; [share]: it can make and take links. [company]: [J133-71] the calendar's work has a
+     * company (교대·일근, or one already joined), so 회사 찾기·회사 설정 파일 are found; 알바·현장·가게·투자 search without them.
+     */
+    fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true): List<SettingEntry> = listOfNotNull(
         screen(W.title, "일하는 방식", SettingsGo.WORK_STYLE, "근무 형태", "교대", "일근", "시급", "현장", "프리랜서", "자영업", "가게"),
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
             "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
@@ -199,10 +202,12 @@ internal object SettingsIndex {
             "부양가족", "자녀 수", "간이세액", "공무원 봉급", "계급", "호봉", "호봉표", "탄력근무", "포괄임금", "연차 세는 기준", "회계연도"),
         row(P, "광장 시세와 내 단가 견주기", "시세", "일당", "시급 비교", "임금표"), // [DAILY-16]
         row(P, "견줄 내 지역", "시세 지역", "광장 시세", "내 지역"), // [DAILY-16]
-        row(P, "회사 설정 보내기", "동료", "회사 설정 파일", "같은 회사"),
-        row(P, "회사 설정 불러오기", "동료에게 받은 파일"),
-        screen("설정", "회사 규칙 광장", SettingsGo.BOARD, "회사 규칙", "투표", "토론").takeIf { board },
-        row(P, "회사 찾기", "회사 설정", "같은 회사", "회사 근무표", "회사 계산").takeIf { board },
+        row(P, "회사 설정 보내기", "동료", "회사 설정 파일", "같은 회사").takeIf { company },
+        row(P, "회사 설정 불러오기", "동료에게 받은 파일").takeIf { company },
+        screen("설정", "회사 규칙 광장", SettingsGo.BOARD, "회사 규칙", "투표", "토론").takeIf { board && company },
+        // [J133-71] Other kinds of work find their own 광장.
+        screen("설정", "광장", SettingsGo.BOARD, "알바 광장", "현장 광장", "가게 광장", "투자 이야기", "시세", "이야기").takeIf { board && !company },
+        row(P, "회사 찾기", "회사 설정", "같은 회사", "회사 근무표", "회사 계산").takeIf { board && company },
         // [SET-03] 1.22 묶음 B: someone hidden in the plaza comes back from 내 활동.
         screen("광장 › 내 활동", "가린 사람", SettingsGo.BOARD, "차단", "차단 해제", "안 보기", "가리기", "글 안 보기").takeIf { board },
         screen("달력 › 도구", "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
@@ -247,7 +252,7 @@ internal object SettingsIndex {
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
         row(V, "사용 통계 보내기", "통계", "사용 기록", "익명", "보낼 내용"), // [STAT-01]
-        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board }, // [PLAZA-07]
+        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board && company }, // [PLAZA-07]
         row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
@@ -280,7 +285,7 @@ internal object SettingsIndex {
         row(C, TAB_ORDER_ROW, "첫 화면", "메뉴 순서", "시작 화면", "탭", "탭 순서", "메인 화면", "처음 화면", "메뉴 바꾸기", "메모부터"),
         // ---- 1.26 묶음 AC [SPAT-02] ----
         screen("${W.title} › 근무 주기", "회사 이름으로 근무주기 찾기", SettingsGo.PATTERN, "회사 근무주기", "공개 자료", "근무주기 검색", "회사 검색",
-            "4조 2교대", "3조 2교대", "교대 주기", "처음 제공"),
+            "4조 2교대", "3조 2교대", "교대 주기", "처음 제공").takeIf { company },
         // ---- 1.26 묶음 AE [INVITE-02][INVITE-03] ----
         screen("설정 › 프로", "친구 초대", SettingsGo.PRO, "초대", "초대 링크", "추천", "친구", "프로 한 달", "공짜 프로", "초대한 친구"),
         screen("설정 › 프로", "초대 코드 넣기", SettingsGo.PRO, "초대 코드", "받은 코드", "친구 코드", "추천 코드", "코드 입력"),
@@ -289,8 +294,8 @@ internal object SettingsIndex {
         screen("설정 › 기능 켜고 끄기", "달력의 친구 초대 카드 끄기", SettingsGo.FEATURES, "초대 카드", "초대 알림", "초대 권유", "그만 보기"),
         // AG 1.27 끝
         // ---- 1.27 묶음 AH [PLAZA-14][PLAZA-16] ----
-        screen("${W.title} › 근무 주기", "회사 대표 주기", SettingsGo.PATTERN, "대표 주기", "사업장", "쓰고 있어요", "맞아요", "달라요", "회사 이름 자동 완성"),
-        screen("급여 › 급여 계산 설정", "우리 회사 급여 방식 찾기", SettingsGo.PAY, "급여 방식 찾기", "회사 급여", "계산 방식 가져오기", "수당 가져오기"),
+        screen("${W.title} › 근무 주기", "회사 대표 주기", SettingsGo.PATTERN, "대표 주기", "사업장", "쓰고 있어요", "맞아요", "달라요", "회사 이름 자동 완성").takeIf { company },
+        screen("급여 › 급여 계산 설정", "우리 회사 급여 방식 찾기", SettingsGo.PAY, "급여 방식 찾기", "회사 급여", "계산 방식 가져오기", "수당 가져오기").takeIf { company },
         // ---- 1.27 묶음 AJ [READ-15][READ-17][PAYS-17][PAYS-19] ----
         screen(W.title, "사진과 같은가요? · 다른 곳 고치기", SettingsGo.DUTY_ROSTER, "사진과 같은가요", "다른 곳이 있어요", "잘못 읽음", "칸 고치기",
             "스캐너", "문서 스캐너", "반듯하게", "그림자"),

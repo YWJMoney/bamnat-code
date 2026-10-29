@@ -123,7 +123,12 @@ private fun WorkPage(
         }
         HorizontalDivider()
         // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
-        NavRow(SETUP_AGAIN_ROW, "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요") {
+        // [J133-71] 1.33: 회사 찾기 is said only for work that has a company.
+        NavRow(SETUP_AGAIN_ROW, when {
+            work.workStyle?.usesCompany != false -> "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요"
+            work.workStyle?.usesPayEngine == true -> "근무 시간·요일·알람·급여까지 첫 설정 질문을 다시 받아요"
+            else -> "일하는 방식부터 첫 설정 질문을 다시 받아요"
+        }) {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)
         }
     }
@@ -455,17 +460,27 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
     // [CALS-02] Each calendar has its own pay setup.
     CalendarPick()
+    // [J133-71] 1.33: the pay page in the words of the calendar's kind of work; 회사 rows only where there is a company.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val style = vm.workSettings.collectAsStateWithLifecycle().value.workStyle
+    val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
+    val companyWork = c.companyFits(com.bamnat.app.ui.company.companyCalendarOf(c, null))
     SectionCard(title = null) {
-        NavRow("급여 계산", if (profile != null) "기본급·수당·회사 규칙·연차·급여일" else "기본급만 넣으면 이번 달 예상 급여가 보여요", onOpenPay)
+        NavRow("급여 계산", when {
+            profile != null && hourly -> "시급·수당·근무지 규칙·주휴수당·급여일"
+            profile != null -> "기본급·수당·회사 규칙·연차·급여일"
+            hourly -> "시급만 넣으면 이번 달 예상 급여가 보여요"
+            else -> "기본급만 넣으면 이번 달 예상 급여가 보여요"
+        }, onOpenPay)
         // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
         SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
             else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
         if (settings.rateHint) RateRegionRow()
     }
     // [COMM-01][COMM-02]
-    if (company != null) SectionCard(title = "같은 회사 사람들과", content = company)
+    if (company != null && companyWork) SectionCard(title = "같은 회사 사람들과", content = company)
     // [COMM-00] Coworkers share one setup instead of each typing it in.
-    SectionCard(title = "회사 설정 파일") {
+    if (companyWork) SectionCard(title = "회사 설정 파일") {
         Note("근무 종류·주기·급여 규칙을 파일로 동료에게 보내요. 기본급, 입사일, 연차, 달력에 적은 내용은 들어가지 않아요.")
         NavRow("회사 설정 보내기", "카카오톡·메일 등으로 파일을 보내요", files.shareCompany)
         HorizontalDivider()
@@ -799,7 +814,8 @@ private fun PrivacyPage(
         // the app works the same either way.
         UsageStatsRow(settings.shareUsageStats) { on -> context.appContainer.setUsageStats(on) }
         // [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes; off stops it.
-        if (context.appContainer.companyApi.enabled) AutoShareRow()
+        // [J133-71] Only while a calendar's work has a company.
+        if (context.appContainer.companyScopes().any { context.appContainer.companyFits(it.calendarId) }) AutoShareRow()
         // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
         val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
         var adWords by remember { mutableStateOf(false) }

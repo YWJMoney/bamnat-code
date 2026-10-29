@@ -56,7 +56,8 @@ object PlazaEntry {
  */
 @Composable
 fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifier: Modifier = Modifier, today: LocalDate = com.bamnat.core.time.Today.date()) {
-    if (!c.companyApi.enabled) return
+    // [J133-71] 1.33: only for work that has a company.
+    if (!c.companyFits(calendar)) return
     // [CALI-04] 1.30 BB: every calendar's pay, with that calendar's company (1.29: the main calendar's only).
     val store = c.companyOf(calendar).store
     val draft by store.draft.collectAsStateWithLifecycle()
@@ -95,7 +96,8 @@ fun PlazaRoomLine(modifier: Modifier = Modifier, onOpen: () -> Unit) {
 /** [COMM-12] One line into the plaza from the pay; hidden without the company server. */
 @Composable
 fun PlazaEntryLine(c: AppContainer, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    if (!c.companyApi.enabled) return
+    // [J133-71] 1.33: 회사 규칙 광장 only for work that has a company; 알바·현장·가게 have their own 광장 tab.
+    if (!c.companyFits(LocalCompanyCalendar.current)) return
     // [CALI-04] The calendar on screen's company ([LocalCompanyCalendar]).
     val store = companyScope(c).store
     val draft by store.draft.collectAsStateWithLifecycle()
