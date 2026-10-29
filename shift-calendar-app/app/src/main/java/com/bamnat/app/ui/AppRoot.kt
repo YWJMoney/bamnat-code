@@ -587,7 +587,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val whatsNew = remember {
         val ctx = container.appContext
         val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
-        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+        // [J133-53] A phone with no setup yet (reinstalled, data cleared) has nothing new to compare against.
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || container.settingsRepository.current.workStyle == null
         mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
     }
     // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
@@ -1257,7 +1258,8 @@ private fun AppNavHost(
                 companyFind = companyPay)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                    onDismiss = { inviting = false })
+                    // [J133-17] 나중에 is a no for now: the card on the pay screen waits too, not asking again right after.
+                    onDismiss = { inviting = false; nudges.closeInvite() })
             }
             }
         }

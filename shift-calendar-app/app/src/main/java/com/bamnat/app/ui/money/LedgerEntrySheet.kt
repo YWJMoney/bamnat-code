@@ -421,7 +421,7 @@ fun EntryDialog(
                         onSaveAndNext(build())
                     }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("저장하고 하나 더") }
                 }
-                Button(enabled = ready, onClick = {
+                com.bamnat.app.ui.components.SaveButton(enabled = ready, onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     onSave(build())
                 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("저장") }

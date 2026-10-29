@@ -308,10 +308,13 @@ fun PayQuickSetup(
                         companyFinder.none(payFind.name)
                         next()
                     }) { Text("직접 만들게요") }
-                } else Button(
-                    onClick = { if (step == CONFIRM) draft?.let { onDone(it, fromSlip != null) } else next() },
-                    enabled = ready && (step != CONFIRM || draft != null),
-                ) { Text(if (step == CONFIRM) "이대로 계산" else "다음") }
+                } else if (step == CONFIRM) com.bamnat.app.ui.components.SaveButton(
+                    // [J133-56] The pay screen works the month out next; the button says so at once.
+                    onClick = { draft?.let { onDone(it, fromSlip != null) } },
+                    enabled = ready && draft != null,
+                    busyText = "계산하는 중…",
+                ) { Text("이대로 계산") }
+                else Button(onClick = { next() }, enabled = ready) { Text("다음") }
             }
         }
     }

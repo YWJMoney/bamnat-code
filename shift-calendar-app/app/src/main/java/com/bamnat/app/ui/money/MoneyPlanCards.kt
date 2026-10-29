@@ -654,7 +654,7 @@ fun FixedCostDialog(
             }
             HorizontalDivider()
             val ready = name.isNotBlank() && digits.toAmount() > 0
-            Button(
+            com.bamnat.app.ui.components.SaveButton(
                 enabled = ready,
                 onClick = {
                     onSave(FixedCost(

@@ -750,7 +750,7 @@ private fun TeamEditor(
             }
         },
         confirmButton = {
-            Button(enabled = roster.teams.all { it.name.isNotBlank() } && roster.teams.map { it.name }.toSet().size == roster.teams.size,
+            com.bamnat.app.ui.components.SaveButton(enabled = roster.teams.all { it.name.isNotBlank() } && roster.teams.map { it.name }.toSet().size == roster.teams.size,
                 onClick = { onSave(roster.anchored(size)) }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

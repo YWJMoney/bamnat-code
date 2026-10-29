@@ -280,7 +280,7 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
                 Spacer(Modifier.height(4.dp))
             }
             HorizontalDivider()
-            Button(
+            com.bamnat.app.ui.components.SaveButton(
                 onClick = { onSave((listOf(MoneyBudget.TOTAL) + categories + book.budgets.map { it.category }).distinct().associateWith { values[it]?.toAmount() ?: 0 }) },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
             ) { Text("저장") }
@@ -446,7 +446,7 @@ fun AccountEditor(
                 Spacer(Modifier.height(4.dp))
             }
             HorizontalDivider()
-            Button(
+            com.bamnat.app.ui.components.SaveButton(
                 enabled = name.isNotBlank(),
                 onClick = {
                     onSave((initial ?: MoneyAccount(name = name, type = kind)).copy(

@@ -357,7 +357,8 @@ fun InviteSheet(vm: CompanyNudgeViewModel, onShare: () -> Unit, onDismiss: () ->
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("🧭", style = MaterialTheme.typography.displaySmall, modifier = Modifier.align(Alignment.CenterHorizontally))
-            Text("설정 끝! ${d.company}의 첫 번째 길잡이가 되어 주실래요?", style = MaterialTheme.typography.titleLarge,
+            // [J133-17] A setup made without a company name (알바) has no "○○의" to say.
+            Text(if (d.company.isBlank()) "설정 끝! 같은 일 하는 분들의 첫 번째 길잡이가 되어 주실래요?" else "설정 끝! ${d.company}의 첫 번째 길잡이가 되어 주실래요?", style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Text("방금 맞춘 근무표와 계산 방식을 내 급여 금액 없이 나눠 주시면, 같은 회사 분들은 회사 이름만 찾으면 1분이면 끝나요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,

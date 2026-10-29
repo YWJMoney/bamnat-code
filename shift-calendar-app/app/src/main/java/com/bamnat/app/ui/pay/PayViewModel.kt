@@ -149,7 +149,8 @@ class PayViewModel(
         // [CALI-04] 1.30 BB: the calendar's own company (1.29: the main calendar's only).
         val company = container.companyOf(calendarId)
         val asked = company.autoShare.saved()
-        if (invite && !asked && company.store.applied.value == null) _shareMoment.value =
+        if (invite && !asked && company.store.applied.value == null && company.payWays.way.value == null &&
+            com.bamnat.app.company.ShareAskGate.open(container.appContext)) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()

@@ -387,7 +387,7 @@ fun CompanyDetailScreen(
     }
     askingPay?.let { s ->
         val p = page
-        if (p != null) WithPayDialog(p.name, s, onAnswer = { yes -> askingPay = null; withPay = yes; order(p, s) }, onDismiss = { askingPay = null })
+        if (p != null) WithPayDialog(p.name, s, calendar = vm.calendar, onAnswer = { yes -> askingPay = null; withPay = yes; order(p, s) }, onDismiss = { askingPay = null })
     }
     if (openPhasesFor != null && page != null) {
         LaunchedEffect(page) { page.setups.firstOrNull { it.id == openPhasesFor }?.let { start(page, it) } }
@@ -480,6 +480,7 @@ fun CompanyDetailScreen(
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
                             onTalk = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}") },
+                            onPropose = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}", kind = "proposal") },
                             // [PLZ-10][PLZ-04] My own month with these rules, and how the rule got here.
                             onTry = if (su.hasPay) ({ vm.tryPay(su) }) else null,
                             onHistory = if (su.adopted && (su.version ?: 1) > 1) ({ vm.showHistory(p, su) }) else null,
@@ -596,6 +597,8 @@ private fun SetupCard(
     vote: Boolean? = null,
     onVote: ((Boolean, String?) -> Unit)? = null,
     onTalk: (() -> Unit)? = null,
+    /** [J133-55] After 달라요 when there is no proposal form here: the talk, on 고치자는 제안. */
+    onPropose: (() -> Unit)? = null,
     onTry: (() -> Unit)? = null,
     onHistory: (() -> Unit)? = null,
     onDiff: (() -> Unit)? = null,
@@ -658,7 +661,7 @@ private fun SetupCard(
             if (onVote != null) {
                 Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion)
+                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion, onPropose = onDiff ?: onPropose)
             }
             if (onTry != null || onHistory != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -821,7 +824,14 @@ private data class Compare(
  * a company setup with a pay way, before its order is picked: the pay way too, or the cycle alone. Yes leads to the 기본급 next.
  */
 @Composable
-internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit) {
+internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit,
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
+    // [J133-54] 1.33 (실사용 테스트 "넣기 전에 내 월급이 어떻게 바뀌는지 안 보여요"): this month before and after, on my own pay.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val trial by androidx.compose.runtime.produceState<Trial?>(null, setup.id, calendar) {
+        value = if (c.companyOf(calendar).pay.profile.value == null) null
+            else runCatching { payTrial(c, setup.text, setup.id, Today.month(), calendar) }.getOrNull()
+    }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("급여 계산 방식도 같이 넣을까요?") },
@@ -831,6 +841,16 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
                     style = MaterialTheme.typography.bodyMedium)
                 Text("넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요. 금액은 가져오지 않아요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                trial?.takeIf { it.note == null && !it.loading && (it.now > 0 || it.then > 0) }?.let { t ->
+                    val d = t.diff
+                    Text("이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
+                        if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
+                        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    t.lines.filter { it.now != it.then }.take(3).forEach { l ->
+                        Text("· ${l.label} ${com.bamnat.app.ui.pay.won(l.now)} → ${com.bamnat.app.ui.pay.won(l.then)}",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         },
         confirmButton = { Button(onClick = { onAnswer(true) }) { Text("네, 같이 넣을게요") } },

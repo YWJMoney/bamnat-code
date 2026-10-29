@@ -89,6 +89,10 @@ fun GuideArea(
     LaunchedEffect(calendar, style) { store.startChecklist(calendar, style, today) }
     // A calendar still waiting for its first pattern has its own start card; nothing more on top of it.
     if (style?.usesPattern != false && snapshot.isEmpty) return
+    // [J133-52] A calendar already filled by the setup has its 근무 주기 done: the checklist does not offer it as new.
+    LaunchedEffect(calendar, style?.usesPattern) {
+        if (style?.usesPattern == true && "shift.pattern" !in state.used) store.used("shift.pattern")
+    }
 
     val checklist = remember(state, calendar, style, today) {
         val listOff = com.bamnat.core.guide.FeatureRegistry.get("guide.checklist")?.let { state.isOff(it, calendar) } ?: false

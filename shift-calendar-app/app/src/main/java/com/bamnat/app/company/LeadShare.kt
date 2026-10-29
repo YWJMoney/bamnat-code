@@ -48,6 +48,8 @@ class LeadShare(private val c: AppContainer) {
     /** A cycle was picked for [Pick.company]: asked, or shared at once when the user already said yes to the plaza. */
     fun offer(pick: Pick) {
         if (!c.companyApi.enabled || CompanyText.norm(pick.company).length < 2) return
+        // [J133-17] A no to another share ask lately: not asked now (설정 › 광장 can still turn it on).
+        if (c.companyStore.autoShare.value != true && !ShareAskGate.open(c.appContext)) return
         if (c.companyStore.autoShare.value == true) go(pick, null) else _step.value = Step.Ask(pick)
         c.telemetry.event("lead_share", "offer")
     }
@@ -66,6 +68,7 @@ class LeadShare(private val c: AppContainer) {
         // The same question is not asked again by the public cycle's share card (one consent, AH-D6); its pay card stays.
         // [CALI-02] The card of the calendar it went into.
         _step.value?.pick?.let { p -> scopeOf(p).store.updatePublicUse { it.copy(inviteNever = true) } }
+        ShareAskGate.declined(c.appContext)
         c.telemetry.event("lead_share", "no")
         _step.value = null
     }

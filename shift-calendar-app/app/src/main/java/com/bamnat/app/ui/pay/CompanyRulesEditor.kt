@@ -640,7 +640,7 @@ fun CompanyRulesEditor(
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     OutlinedButton(onClick = onClose) { Text("취소") }
-                    Button(onClick = { vm.update { draft }; onClose() }, enabled = draft != saved) { Text("저장") }
+                    com.bamnat.app.ui.components.SaveButton(onClick = { vm.update { draft }; onClose() }, enabled = draft != saved) { Text("저장") }
                 }
             }
         }

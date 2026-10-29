@@ -819,7 +819,7 @@ fun ShiftTypeEditorDialog(
                         }
                     }
 
-                    Button(
+                    com.bamnat.app.ui.components.SaveButton(
                         onClick = { onSave(draft) },
                         enabled = draft.name.isNotBlank(),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),

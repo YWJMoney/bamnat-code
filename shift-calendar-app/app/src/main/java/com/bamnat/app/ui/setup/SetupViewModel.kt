@@ -663,6 +663,8 @@ class SetupViewModel(
                     // [J133-51] The day the calendar was set up: no question cards or tips on top of it.
                     val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
                     c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
+                    // [J133-52] The setup came from a company: the first week's card does not ask for one again.
+                    if (d.source?.name?.isNotBlank() == true) com.bamnat.app.ui.guide.StartStepsState.companyPicked(c)
                     // [PLAZA-14] 1.27 AH: a cycle from a company search is asked about once, for the calendar it went into.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
                         c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN))

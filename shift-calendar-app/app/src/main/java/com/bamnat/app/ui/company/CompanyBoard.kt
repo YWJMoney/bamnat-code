@@ -305,7 +305,11 @@ fun TrustLine(trust: Int, agree: Int, persons: Int, bad: Int, adopted: Boolean) 
 
 /** 맞았어요 · 달라요 on one setup, for anyone who knows the company; 달라요 asks what is off. */
 @Composable
-fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com.bamnat.app.company.Opinion? = null) {
+fun VoteButtons(
+    mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com.bamnat.app.company.Opinion? = null,
+    /** [J133-55] 달라요 straight on to what it should be: the proposal form, or the talk on 고치자는 제안. */
+    onPropose: (() -> Unit)? = null,
+) {
     var asking by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         val okText = if (mine == true) "맞았어요 ✓" else "맞았어요"
@@ -331,11 +335,17 @@ fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com
                             Text(text, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    Text("무엇이 다른지 토론에 적어 주시면 같은 회사 분들께 큰 도움이 돼요.", style = MaterialTheme.typography.bodySmall,
+                    Text(if (onPropose != null) "‘보내고 고칠 점 적기’를 누르면 맞는 값을 바로 적을 수 있어요. 같은 회사 분들께 큰 도움이 돼요."
+                        else "무엇이 다른지 토론에 적어 주시면 같은 회사 분들께 큰 도움이 돼요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 }
             },
-            confirmButton = { TextButton(onClick = { asking = false; onVote(false, why) }) { Text("달라요 보내기") } },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (onPropose != null) TextButton(onClick = { asking = false; onVote(false, why); onPropose() }) { Text("보내고 고칠 점 적기") }
+                    TextButton(onClick = { asking = false; onVote(false, why) }) { Text(if (onPropose != null) "달라요만 보내기" else "달라요 보내기") }
+                }
+            },
             dismissButton = { TextButton(onClick = { asking = false }) { Text("취소") } },
         )
     }
@@ -355,7 +365,7 @@ fun TalkSheet(holder: TalkHolder) {
     var error by remember(o.setup) { mutableStateOf<String?>(null) }
     var flagging by remember { mutableStateOf<TalkPost?>(null) }
     var replyTo by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
-    var kind by rememberSaveable(o.setup) { mutableStateOf("talk") }
+    var kind by rememberSaveable(o.setup) { mutableStateOf(o.startKind ?: "talk") }
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
     var withSetup by rememberSaveable(o.setup) { mutableStateOf(false) }
     var hiding by remember { mutableStateOf<TalkPost?>(null) }
@@ -515,6 +525,15 @@ private fun PostRow(
     company: String = "", setup: String = "",
 ) {
     var menu by remember { mutableStateOf(false) }
+    // [J133-55] A post goes for good: asked once before it does.
+    var deleting by remember { mutableStateOf(false) }
+    if (deleting) AlertDialog(
+        onDismissRequest = { deleting = false },
+        title = { Text("이 글을 지울까요?") },
+        text = { Text(if (p.kind == "proposal") "고치자는 제안과 그동안 받은 맞아요도 함께 사라지고, 되돌릴 수 없어요." else "지운 글은 되돌릴 수 없어요.") },
+        confirmButton = { TextButton(onClick = { deleting = false; onDelete() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = { deleting = false }) { Text("취소") } },
+    )
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
             .padding(start = 0.dp),
@@ -524,7 +543,7 @@ private fun PostRow(
             Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
-                "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("제안", Tone.WAIT) }
+                "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("고치자는 제안", Tone.WAIT) }
             }
             Spacer(Modifier.width(6.dp))
             when (p.stance) {
@@ -541,7 +560,7 @@ private fun PostRow(
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(18.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; onDelete() })
+                    if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; deleting = true })
                     else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; onFlag() })
                     // [COMM-09] Play's UGC rule: users can block one another.
                     if (!p.mine && p.author != null) DropdownMenuItem(text = { Text("이 사람 글 안 보기") }, onClick = { menu = false; onHide() })

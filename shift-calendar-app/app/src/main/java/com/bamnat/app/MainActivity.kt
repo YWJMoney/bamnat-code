@@ -113,12 +113,13 @@ class MainActivity : ComponentActivity() {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.
+                // [J133-53] Not while the first setup (which offers the chip) is still open.
                 val updated = androidx.compose.runtime.remember {
                     val info = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
                     info != null && info.firstInstallTime != info.lastUpdateTime
                 }
                 val consent by container.consentStore.seen.collectAsStateWithLifecycle()
-                if (!settings.textAsked && updated && consent != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                if (!settings.textAsked && updated && consent != null && settings.workStyle != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // [LOCK-01] Over the app, so the screen the user was on is still there after.

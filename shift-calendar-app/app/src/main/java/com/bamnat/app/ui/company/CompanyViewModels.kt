@@ -597,6 +597,8 @@ class TalkHolder(
         val note: String? = null,
         /** [SPD-13] The talk on screen is the one kept on the phone, being read again (a thin line on top). */
         val refreshing: Boolean = false,
+        /** [J133-55] The kind of post the writing starts on: "proposal" after 달라요. */
+        val startKind: String? = null,
     ) {
         val room: Boolean get() = setup == com.bamnat.core.plaza.StylePlaza.ROOM
     }
@@ -618,12 +620,12 @@ class TalkHolder(
      * [SPD-13] 1.30 AP1: the talk kept on the phone ([com.bamnat.app.company.PageCache]; a room's also from its company's page)
      * shows at once, without a spinner, while it is read again.
      */
-    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null) {
+    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null) {
         val kept = c.companySearch.cache.talk(company, setup)?.value
         changed = false
         last = kept
         com.bamnat.app.company.NetTimings.cached(kept != null)
-        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null)
+        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind)
         reload()
     }
 
@@ -1466,7 +1468,10 @@ class CompanyNudgeViewModel(
         store.sent) { d, hand, due, never, sent ->
         val draft = d ?: CompanyDraft("").takeIf { hand && sent.isEmpty() && store.applied.value == null }
         draft?.takeIf { enabled && com.bamnat.core.plaza.ShareAsk.due(never, due, Today.millis(), usesCompanySetup = false) }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    }.combine(com.bamnat.app.company.ShareAskGate.until(c.appContext)) { d, until -> d?.takeIf { Today.millis() >= (until ?: 0) } }
+        // [J133-54] A pay way just taken from the plaza (coworkers made it) is not the user's to share as the first 길잡이.
+        .combine(scope.payWays.way) { d, way -> d?.takeIf { it.fix || way == null || CompanyText.norm(way.company) != CompanyText.norm(it.company) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** [PLAZA-04] What would go, in the plaza's words and without amounts, so the user sees it before deciding. */
     private val _preview = MutableStateFlow<List<String>>(emptyList())
@@ -1529,6 +1534,7 @@ class CompanyNudgeViewModel(
     /** [PLAZA-04] "다음에" (14, 30, then 90 days) or, with [never], "그만 볼게요". */
     fun closeInvite(never: Boolean = false) {
         if (never) store.inviteNever() else store.inviteLater(Today.millis())
+        com.bamnat.app.company.ShareAskGate.declined(c.appContext)
         c.telemetry.event("company_invite_close", if (never) "never" else "later")
     }
 }

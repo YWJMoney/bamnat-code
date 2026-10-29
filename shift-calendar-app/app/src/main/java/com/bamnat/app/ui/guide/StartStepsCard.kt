@@ -39,10 +39,14 @@ import com.bamnat.core.work.WorkStyle
 object StartStepsState {
     private const val FILE = "start_steps"
     private const val K_DISMISSED = "dismissed"
+    private const val K_COMPANY = "company_picked"
 
     fun dismissed(c: AppContainer): Boolean = c.appContext.getSharedPreferences(FILE, 0).getBoolean(K_DISMISSED, false)
 
     fun dismiss(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_DISMISSED, true).apply()
+
+    /** [J133-52] A company (or its public cycle) was chosen in the first setup, so 회사 고르기 is done already. */
+    fun companyPicked(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_COMPANY, true).apply()
 
     /** Today's rows for this phone, or null for no card. [hasShifts]: the calendar on screen has days. */
     fun rows(c: AppContainer, hasShifts: Boolean): List<StartSteps.Row>? {
@@ -52,7 +56,8 @@ object StartStepsState {
         return StartSteps.rows(
             installed = c.installedAt?.atZone(Today.zone())?.toLocalDate(), today = Today.date(), dismissed = dismissed(c),
             alarmsOn = s.alarmsEnabled, hasShifts = hasShifts,
-            companyLinked = store.applied.value != null || store.member.value != null, companyApplies = companyApplies,
+            companyLinked = store.applied.value != null || store.member.value != null ||
+                c.appContext.getSharedPreferences(FILE, 0).getBoolean(K_COMPANY, false), companyApplies = companyApplies,
         )
     }
 }
