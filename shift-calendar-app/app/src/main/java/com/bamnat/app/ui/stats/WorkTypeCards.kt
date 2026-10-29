@@ -121,7 +121,7 @@ internal fun WorkTypeMoreCards(
     // [SHFT-07] The year's night share, runs of nights and short rests.
     if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot, calendarId) }
     // G 1.32 [WTYP-07] 609 공무원·경찰·소방 (교대 포함) start at 월 57시간 without setting it.
-    if (style == WorkStyle.DAY || profile?.publicGrade != null) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary, profile) }
+    if (style == WorkStyle.DAY || profile?.publicGrade != null) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary, profile, snapshot, month) }
     // 1.32 [WTYP-15] 선택근무 정산 기간 (사무직).
     if (style == WorkStyle.DAY) FeatureCard("day.selective", calendarId) { SelectiveCard(calendarId, snapshot) }
     // G 1.32 [WTYP-07] 609 포괄임금: the fixed overtime hours against this month's.
@@ -519,7 +519,7 @@ private fun SelectiveCard(calendarId: String, snapshot: ScheduleSnapshot) {
 /** [DAYW-05] This month's extra hours against the monthly 시간외 상한, set here. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: PayProfile? = null) {
+private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: PayProfile? = null, snapshot: ScheduleSnapshot, month: YearMonth) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
     val capHours = com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)
@@ -544,6 +544,10 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: 
                 color = if (cap.over) cal.warning else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // 1.32 [WTYP-24] 신청한 시간과 인정된 시간이 다른 달.
+            com.bamnat.core.work.OvertimeApproval.line(remember(snapshot, month) { com.bamnat.core.work.OvertimeApproval.month(month, snapshot.resolver::resolve) })?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning, modifier = Modifier.padding(top = 4.dp))
+            }
             if (cap.over) {
                 Spacer(Modifier.height(8.dp))
                 WarningBanner("시간외 상한을 넘었어요", "이번 달 시간외가 ${capHours}시간보다 ${HoursFormat.korean(cap.overMinutes)} 많아요. 넘은 시간은 인정되지 않을 수 있어요.")
