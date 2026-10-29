@@ -182,7 +182,15 @@ fun CalendarIdentityBar(
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
     // Two faces beside 공유 on a cover screen or with large text, three where there is room.
-    val room = if (maxWidth < 392.dp || LocalDensity.current.fontScale > 1.3f) 2 else 3
+    // [J133-22] 1.33 (실사용 테스트 "작은 폰에서 지금 보는 달력 칩·공유가 0x0으로 사라짐"): a small phone keeps the name and 공유
+    // (as an icon) and leaves the other calendars to the list (+n).
+    val small = maxWidth < 340.dp
+    val room = when {
+        small -> 0
+        LocalDensity.current.fontScale > 1.3f -> 1
+        maxWidth < 392.dp -> 2
+        else -> 3
+    }
     Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         val currentName = (current as? CalendarRow.Got)?.cal?.fullName ?: current.title
         // [UX-03] The name takes all the room the faces and 공유 leave, not half of it.
@@ -216,9 +224,12 @@ fun CalendarIdentityBar(
                 ) { row.Avatar(size = 30.dp) }
             }
             if (faces.size > shown) {
-                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - shown}") }
+                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - shown}", maxLines = 1, softWrap = false) }
             }
-            onShare?.let { ShareAction(it, Modifier.padding(start = 4.dp)) }
+            onShare?.let {
+                if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, "근무표 공유", Modifier.size(20.dp)) }
+                else ShareAction(it, Modifier.padding(start = 4.dp))
+            }
         } else {
             Surface(onClick = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) },
                 shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
@@ -382,7 +393,9 @@ fun NewCalendarDialog(
         onDismissRequest = onDismiss,
         title = { Text("새 달력 만들기") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // [J133-22] 1.33 (실사용 테스트 "작은 폰에서 자판이 '취소·다음'을 덮음"): the box scrolls and the keyboard's own
+            // 다음 key goes on, so the buttons under the keyboard are never needed.
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "근무 형태부터 처음 시작할 때처럼 하나씩 물어볼게요. 지금 달력은 그대로예요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -391,6 +404,8 @@ fun NewCalendarDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { if (it.length <= PersonalCalendar.MAX_NAME) name = it }, singleLine = true,
                     label = { Text("이름") }, placeholder = { Text(suggested) }, modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = { onCreate(name.trim().ifEmpty { suggested }, color) }),
                 )
                 ColorRow(color) { color = it }
             }

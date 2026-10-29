@@ -580,7 +580,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val inquiryUnread by container.inquiryStore.unread.collectAsStateWithLifecycle()
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
-        runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess { container.inquiryStore.update(it) }
+        runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
+            container.inquiryStore.update(it)
+            // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
+            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext)
+        }
     }
 
     // [GUIDE-08] Once after an update: what it brought, each with a way to open it.

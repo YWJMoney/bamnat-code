@@ -278,6 +278,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- [J133-24] 문의 답 while a question waits: only the system's job scheduler binds it. -->
+        <service
+            android:name=".company.InquiryReplyJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [SRV-07][INQ-05][SHR-13] What could not reach a server, sent once the phone is online. -->
         <service
             android:name=".company.OutboxJob"

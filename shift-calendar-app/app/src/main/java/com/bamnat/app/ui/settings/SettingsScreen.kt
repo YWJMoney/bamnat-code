@@ -226,6 +226,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** [J133-21] One shift's earliest alarm at [minutes] before it starts, from the 알람 page's chips. */
+    fun setFirstAlarm(typeId: Long, minutes: Int) {
+        viewModelScope.launch {
+            val t = container.scheduleRepository.shiftTypes.first().firstOrNull { it.id == typeId } ?: return@launch
+            val on = t.alarms.filter { it.enabled }
+            val first = on.maxByOrNull { it.offsetMinutes }
+            val alarms = if (first == null) t.alarms + com.bamnat.core.model.AlarmSpec(minutes)
+                else t.alarms.map { if (it === first) it.copy(offsetMinutes = minutes) else it }.distinctBy { it.offsetMinutes to it.enabled }
+            container.scheduleRepository.saveShiftType(t.copy(alarms = alarms))
+        }
+    }
+
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
         if (!on) container.alarmScheduler.cancelSnooze()

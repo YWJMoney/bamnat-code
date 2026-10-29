@@ -34,6 +34,9 @@ import com.bamnat.core.work.words
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
@@ -206,6 +209,16 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             val times = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
                 .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }
             NavRow(t.name, "${Fmt.time(t.start)} 시작 · " + if (times.isEmpty()) "켜진 알람 없음" else "알람 $times", onOpenShiftTypes)
+            // [J133-21] 1.33 (실사용 테스트 "야간 알람 2시간 전이 세 단계 안쪽, 빠른 칩에 2시간이 없어요"): the first alarm right here.
+            val first = t.alarms.filter { it.enabled }.maxOfOrNull { it.offsetMinutes }
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("첫 알람", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for (m in listOf(30, 60, 90, 120)) {
+                    com.bamnat.app.ui.components.FilterChip(selected = first == m, onClick = { vm.setFirstAlarm(t.id, m) },
+                        label = { Text(if (m % 60 == 0) "${m / 60}시간 전" else if (m > 60) "${m / 60}시간 ${m % 60}분 전" else "${m}분 전") })
+                }
+            }
         }
         // [SET-05] Every shift's alarms earlier or later at once, instead of opening each shift (G.md P21).
         var moving by rememberSaveable { mutableStateOf(false) }
@@ -425,8 +438,8 @@ private fun NoticesPage(
     }
     // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
     SectionCard(title = "소식") {
-        SwitchRow("밤낮 소식", "문의에 답이 오거나, 받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
-            "하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+        SwitchRow("밤낮 소식", "받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
+            "하루 한 번 묶어서 소리 없이 알려 줘요. 문의에 답이 오면 바로 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }

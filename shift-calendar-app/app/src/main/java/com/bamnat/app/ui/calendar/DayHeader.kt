@@ -472,6 +472,13 @@ private fun QuickChips(
     val fieldRules = calendar.field ?: com.bamnat.core.money.FieldRules()
     val dayRate = focus == CalendarFocus.JOBS && fieldRules.dayRateMode
     val platform = focus == CalendarFocus.JOBS && fieldRules.platformMode
+    // [J133-19] 1.33 (실사용 테스트 "야간인 날에 '주간 대근'을 누르면 하루 22시간 근무"): on a working day a 대근 of another shift
+    // asks first whether the day's shift changes or the 대근 comes on top of it.
+    var coverAsk by remember { mutableStateOf<ExtraChoice?>(null) }
+    coverAsk?.let { c -> CoverOrChangeDialog(day, c, snapshot,
+        onChange = { id -> coverAsk = null; vm.assign(day.date, com.bamnat.core.model.ShiftOverride.Shift(id)) },
+        onAdd = { coverAsk = null; vm.toggleExtra(day, c) },
+        onDismiss = { coverAsk = null }) }
     ChipRow(modifier, start = 12.dp, end = endSpace) {
         if (dayRate) dayRateChips(day.date, book, fieldRules, onDelete = vm::deleteJob, onSave = { job, r ->
             calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient, rateFrom = r.rateFrom, unitRules = r.unitRules) }
@@ -511,7 +518,11 @@ private fun QuickChips(
             val i = ExtraText.indexOf(day, c)
             FilterChip(
                 selected = i >= 0,
-                onClick = { vm.toggleExtra(day, c) },
+                onClick = {
+                    val covered = c.entry.coveredShiftId
+                    if (i < 0 && covered != null && day.isWorkDay && day.shiftType != null && day.shiftType?.id != covered) coverAsk = c
+                    else vm.toggleExtra(day, c)
+                },
                 label = { ChipText(if (i >= 0) ExtraText.name(day.extras[i]) else c.label) },
                 leadingIcon = {
                     if (i >= 0) Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) else ExtraKindMark(c.kind, size = 18.dp)
@@ -719,5 +730,32 @@ internal fun ChipText(text: String, style: androidx.compose.ui.text.TextStyle = 
         style = style.copy(color = androidx.compose.material3.LocalContentColor.current, lineHeight = 1.2.em).merge(FooterTrim),
         maxLines = 1, softWrap = false,
         autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize.takeIf { it.isSp } ?: 14.sp),
+    )
+}
+
+/** [J133-19] 근무를 바꿀까요, 더할까요: a 대근 chip on a day that already has a shift. */
+@Composable
+private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: ScheduleSnapshot, onChange: (Long) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
+    val now = day.shiftType?.name ?: "근무"
+    val covered = snapshot.shiftTypes.firstOrNull { it.id == c.entry.coveredShiftId }
+    val total = (day.scheduledMinutes + c.entry.paidMinutes) / 60.0
+    val hours = if (total % 1.0 == 0.0) "${total.toInt()}시간" else "%.1f시간".format(total)
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("이 날은 $now 근무예요") },
+        text = {
+            Text(buildString {
+                covered?.let { append("근무를 ${it.name}${Fmt.ro(it.name)} 바꾸면 이 날은 ${it.name} 하나로 계산돼요. ") }
+                append("‘${c.name}’${Fmt.obj(c.name)} 더하면 $now 근무에 대근이 붙어 하루 $hours 일한 것으로 계산돼요.")
+                if (total > 16) append(" 실제로 이어서 일했을 때만 더해 주세요.")
+            })
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                covered?.let { t -> TextButton(onClick = { onChange(t.id) }) { Text("근무를 ${t.name}${Fmt.ro(t.name)} 바꾸기") } }
+                TextButton(onClick = onAdd) { Text("대근으로 더하기 (하루 $hours)") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }

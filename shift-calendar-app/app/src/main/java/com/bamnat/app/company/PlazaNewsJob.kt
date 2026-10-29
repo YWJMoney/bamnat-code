@@ -146,7 +146,8 @@ class PlazaNewsJob : JobService() {
             if (answers > 0) runCatching { c.inquiryStore.update(c.inquiryApi.mine(c.companyStore.device)) }
             return Digest(
                 plaza = if (plazaOn) o.optJSONArray("plaza").objects().map(::item) else emptyList(),
-                answers = if (c.inquiryStore.asked) answers else 0,
+                // [J133-24] Answers the reply job already said at once are not said again.
+                answers = if (c.inquiryStore.asked && c.inquiryStore.unread.value > InquiryReplyJob.said(c.appContext)) answers else 0,
                 notices = o.optJSONArray("notices").objects().map { it.optString("title") }.filter { it.isNotBlank() },
             )
         }

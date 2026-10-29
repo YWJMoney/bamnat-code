@@ -411,7 +411,9 @@ private fun PayResult(
         // The month asked for is still being worked out; the one before stays meanwhile.
         if (result.month != month) LinearProgressIndicator(Modifier.fillMaxWidth())
 
-        top()
+        // [J133-18] 1.33 (실사용 테스트 "급여 화면 위에 카드 4개, 결과 숫자가 안 보여요"): on 결과 the cards above come after
+        // the month's total and what it still needs.
+        if (payTab != PayTab.RESULT) top()
         PayTabRow(payTab) { payTab = it }
         com.bamnat.app.ui.guide.OnceTip(com.bamnat.app.ui.calendar.HintStore.PAY_TABS,
             "기본급·수당은 ‘내 급여 값’, 가산율·월급날은 ‘회사 규칙’, 만약에·연말정산은 ‘도구’에 있어요")
@@ -448,6 +450,7 @@ private fun PayResult(
                 com.bamnat.core.pay.RuleOnlyNeeds.Kind.FIVE_OR_MORE -> fiveAsk = true
             }
         }
+        top()
         // [PAYS-19] 1.27 순번 449 (사용자 "맞춰보기가 있는데 어디에 있는지 안보이고"): right under the total, one card, two
         // ways named apart: 금액 비교하기 (the payslip's amounts against the app's, 프로) and 계산 방식 찾기 (the company's
         // way from a payslip or its rules page, free).

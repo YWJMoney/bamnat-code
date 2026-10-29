@@ -17,6 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -62,11 +64,31 @@ object StartStepsState {
     }
 }
 
+/**
+ * [J133-16] 1.33 (실사용 테스트 "큰 폰 첫 화면에 달력 격자가 없음"): folded to one line, the next step and its button, so the month
+ * grid is in view under it; 모두 보기 opens the three.
+ */
 @Composable
 fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val next = rows.firstOrNull { !it.done }
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp), highlighted = true) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(StartSteps.title(rows), style = MaterialTheme.typography.titleMedium)
+        Column(Modifier.padding(horizontal = 16.dp, vertical = if (expanded) 16.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (expanded) 8.dp else 2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(StartSteps.title(rows), style = if (expanded) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (expanded) "접기" else "모두 보기") }
+            }
+            if (!expanded) {
+                next?.let { row ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("다음: ${row.step.label}", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        FilledTonalButton(onClick = { open(row.step) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(row.step.action) }
+                    }
+                }
+                return@Column
+            }
             Text("이것만 해 두면 밤낮을 바로 쓸 수 있어요. 나머지 기능은 그 뒤에 하나씩 알려 드려요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows.forEach { row ->

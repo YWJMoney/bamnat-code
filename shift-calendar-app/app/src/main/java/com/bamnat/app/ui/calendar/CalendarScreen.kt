@@ -163,6 +163,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import com.bamnat.app.data.PhoneDayView
 import com.bamnat.core.time.Today
+import androidx.compose.material.icons.filled.Today
 
 internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
@@ -1333,7 +1334,7 @@ fun CalendarScreen(
                 }
                 // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
                 // shows big over the grid, then fades; the top bar's small title alone was missed mid-swipe.
-                SwipeMonthBadge(pagerState, baseMonth, Modifier.align(Alignment.Center))
+                SwipeMonthBadge(pagerState, baseMonth, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
             }
             // 1.32 [LEDX-23] What the strips under the dates mean, while the heat map is on.
             if (settings.spendHeat && focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null) {
@@ -1789,12 +1790,15 @@ private fun CalendarHeader(
                     wideTitle -> MaterialTheme.typography.headlineSmall
                     else -> MaterialTheme.typography.titleLarge
                 }
-                com.bamnat.app.ui.FitText(monthTitle(month), titleStyle, Modifier.weight(1f, fill = false))
+                // [J133-22] 1.33 (실사용 테스트 "작은 폰 달력 머리에 '2026년 10월' 글자가 없음"): a small phone shows this year's month
+                // without the year, and the title is never squeezed out by the buttons around it.
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small), titleStyle, if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
         }
-        TextButton(onClick = onToday, enabled = !atToday) { Text("오늘", maxLines = 1, softWrap = false) }
+        if (small) IconButton(onClick = onToday, enabled = !atToday) { Icon(Icons.Filled.Today, "오늘") }
+        else TextButton(onClick = onToday, enabled = !atToday) { Text("오늘", maxLines = 1, softWrap = false) }
         if (roomy) {
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
@@ -1878,9 +1882,9 @@ private val HEADER_ICONS_WIDTH = 480.dp
 
 /** [CAL-52] 중-4: "2026년 10월" with the year smaller, so the month is what reads first and the line fits a phone. */
 @Composable
-private fun monthTitle(month: YearMonth): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+private fun monthTitle(month: YearMonth, short: Boolean = false): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
     pushStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.72.em, color = MaterialTheme.colorScheme.onSurfaceVariant))
-    append("${month.year}년 ")
+    if (!short || month.year != Today.date().year) append(if (short) "${month.year % 100}년 " else "${month.year}년 ")
     pop()
     append("${month.monthValue}월")
 }
@@ -2616,23 +2620,22 @@ internal fun SwipeMonthBadge(pager: androidx.compose.foundation.pager.PagerState
     val target = pageToMonth(baseMonth, if (moving) pager.targetPage else pager.currentPage)
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(moving, target) {
-        if (moving) shown = true else { kotlinx.coroutines.delay(450); shown = false }
+        if (moving) shown = true else { kotlinx.coroutines.delay(300); shown = false }
     }
     androidx.compose.animation.AnimatedVisibility(
         visible = shown, modifier = modifier,
         enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(120)),
         exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)),
     ) {
+        // [J133-25] 1.33 (실사용 테스트 "달 넘김 상자가 격자 가운데 1초 가려요"): a slim pill over the first row, not a box over the days.
         androidx.compose.material3.Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+            shape = androidx.compose.foundation.shape.CircleShape,
+            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f),
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
         ) {
-            Column(Modifier.padding(horizontal = 28.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (target.year != com.bamnat.core.time.Today.date().year) Text("${target.year}년", style = MaterialTheme.typography.titleMedium)
-                Text("${target.monthValue}월", style = MaterialTheme.typography.displayMedium)
-            }
+            Text((if (target.year != com.bamnat.core.time.Today.date().year) "${target.year}년 " else "") + "${target.monthValue}월",
+                style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
         }
     }
 }

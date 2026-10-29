@@ -246,6 +246,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
                 c.inquiryStore.asked = true
                 c.inquiryStore.clearDraft()
+                com.bamnat.app.company.InquiryReplyJob.schedule(c.appContext)
                 _list.value = listOf(it) + _list.value.orEmpty().filter { o -> o.id != it.id }
             }
         }
