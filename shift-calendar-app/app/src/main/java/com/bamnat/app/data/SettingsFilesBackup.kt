@@ -155,6 +155,8 @@ class SettingsFilesBackup(
             Part("read_fixes"),
             // [PAYF-04] 1.29 AP: 쓰는 회사 급여 방식, like the company setup in use ("company:applied").
             Part("pay_way"),
+            // 1.32 [WTYP-11] 희망 오프: 고른 날과 신청 마감일.
+            Part("wish_off"),
         )
 
         /**

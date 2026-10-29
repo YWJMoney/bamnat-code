@@ -75,6 +75,7 @@ invest.taxRemind
 invest.taxReport
 invest.trade
 invest.weekdays
+invest.yearEnd
 invite.nudge
 journal.list
 leave.ledger
@@ -154,6 +155,7 @@ settings.recommended
 setup.again
 share.link
 share.receive
+shift.callout
 shift.dutyTyping
 shift.firstCard
 shift.health
@@ -167,6 +169,7 @@ shift.swap
 shift.swapCard
 shift.swapFind
 shift.teams
+shift.wishOff
 shop.autoClose
 shop.capture
 shop.cardDue

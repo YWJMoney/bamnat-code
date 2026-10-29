@@ -218,6 +218,7 @@ class AppContainer(context: Context) {
                 rateHints.reload()
                 autoRecordPrefs.reload()
                 shareGroup.reload()
+                wishOff.reload()
             }
         })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
@@ -521,6 +522,8 @@ class AppContainer(context: Context) {
     val proMoments by lazy { com.bamnat.app.tier.ProMomentStore(appContext) }
     /** 1.32 [STAB-08] The last backup saved by hand, for the calendar's 30-day line. */
     val backupNudge by lazy { com.bamnat.app.data.BackupNudgeStore(appContext) }
+    /** 1.32 [WTYP-11] 희망 오프, per calendar. */
+    val wishOff by lazy { com.bamnat.app.data.WishOffStore(appContext) }
 
     /**
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
@@ -874,6 +877,8 @@ class AppContainer(context: Context) {
                 com.bamnat.app.invest.InvestNotices.plans(this@AppContainer).map { it.isNotEmpty() }.distinctUntilChanged()
                     .collect { com.bamnat.app.invest.InvestMonthNotice.schedule(appContext, it) }
             }
+            // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감 and 코인 12월 31일, the next of them.
+            keep("datenotices") { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
             keep("leave") {
                 val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()

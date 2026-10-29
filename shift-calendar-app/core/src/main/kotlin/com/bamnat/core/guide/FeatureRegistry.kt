@@ -658,6 +658,13 @@ object FeatureRegistry {
             ALL, "설정 › 데이터 › 백업 안 한 지 30일 알림", at(Place.SETTINGS_DATA, "백업 안 한 지 30일 알림"), "백업 알림", "마지막 백업", "기록 잃어버림", "백업 언제", off = Off.ELSEWHERE),
         f("stats.range", "CALX-06", "통계 기간 고르기", "통계를 1일~말일, 급여 기간, 주, 직접 고른 날로 세고, 달력 위에 이번 급여 기간이 끝나는 날을 한 줄로 보여 줘요",
             PAID, "통계 › 기간 칩", at(Place.STATS), "기간", "급여 기간", "주별", "직접 기간", "마감일", "주급"),
+        f("shift.callout", "WTYP-09", "비상소집 한 번에 기록", "쉬는 날 불려 나가면 날짜를 누르고 ‘비상소집’ 한 번으로 시작·끝 시간을 추가 근무로 넣어요",
+            setOf(SHIFT, DAY), "$DAY_SHEET › 비상소집", at(Place.TODAY), "비상소집", "동원", "소집", "불려 나감", "비번 출근", off = Off.CALENDAR),
+        f("shift.wishOff", "WTYP-11", "희망 오프", "다음 달 쉬고 싶은 날을 ♡로 표시하고, 신청 마감 이틀 전과 당일에 고른 날 수를 알려 줘요. 고른 날은 복사해 보낼 수 있어요",
+            setOf(SHIFT), "$DAY_SHEET › 희망 오프", at(Place.TODAY), "희망 오프", "희망 휴무", "오프 신청", "듀티 신청", "신청 마감", off = Off.CALENDAR),
+        f("invest.yearEnd", "WTYP-29", "연말 손실 정리", "손실 난 해외 주식을 지금 값으로 팔면 올해 양도세가 얼마 줄어드는지 미리 보고, 코인이 있으면 12월 31일에 시가를 적어 두라고 알려 줘요",
+            setOf(INVEST), "${tab(INVEST)} › 통계 › 연말 손실 정리 미리 보기", at(Place.STATS, "invest.stats"), "손실 정리", "절세 매도", "연말 매도", "코인 시가", "12월 31일",
+            off = Off.CALENDAR, under = "invest.tax"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

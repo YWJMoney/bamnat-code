@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.calendar
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -10,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
@@ -228,5 +228,73 @@ internal fun CalloutChip(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calen
             }) { Text("넣기") }
         },
         dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+    )
+}
+
+/**
+ * 1.32 [WTYP-11] (근무유형 조사 3장 의료) 희망 오프: on a day to come, one tap marks it as a day asked for off (♡ on the
+ * calendar), a second takes it back. Once a day is picked, the month's chip lists the days, copies them to send and sets
+ * the day of the month the requests close; the notices come two days before and on the day.
+ */
+@Composable
+internal fun WishOffChips(date: LocalDate, calendarId: String) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val all by c.wishOff.all.collectAsStateWithLifecycle()
+    val w = all[calendarId] ?: com.bamnat.core.work.WishOff()
+    val on = w.has(date)
+    var asking by remember { mutableStateOf(false) }
+    val month = java.time.YearMonth.from(date)
+    val picked = w.picked(month)
+    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.material3.FilterChip(
+            selected = on,
+            onClick = {
+                c.wishOff.toggle(calendarId, date)
+                if (!on && w.deadlineDay == null && w.days.isEmpty()) asking = true
+            },
+            label = { Text(com.bamnat.core.work.WishOff.NAME, maxLines = 1) },
+            leadingIcon = { Text(com.bamnat.core.work.WishOff.MARK, style = MaterialTheme.typography.labelLarge) },
+        )
+        if (picked.isNotEmpty()) AssistChip(
+            onClick = { asking = true },
+            label = { Text("${month.monthValue}월 ${picked.size}일 · 마감" + (w.deadlineDay?.let { " ${it}일" } ?: " 정하기"), maxLines = 1) },
+        )
+    }
+    if (asking) WishOffDialog(month, w, onDeadline = { c.wishOff.setDeadline(calendarId, it) }, onDismiss = { asking = false })
+}
+
+@Composable
+private fun WishOffDialog(month: java.time.YearMonth, w: com.bamnat.core.work.WishOff, onDeadline: (Int?) -> Unit, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val picked = w.picked(month)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${month.monthValue}월 희망 오프") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (picked.isEmpty()) "아직 고른 날이 없어요. 달력에서 날짜를 누르고 ‘희망 오프’를 골라요."
+                    else com.bamnat.core.work.WishOff.copyText(month, picked), style = MaterialTheme.typography.bodyMedium)
+                Text("신청 마감", style = MaterialTheme.typography.titleSmall)
+                androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    TextButton(enabled = (w.deadlineDay ?: 1) > 1, onClick = { onDeadline(((w.deadlineDay ?: 21) - 1).coerceAtLeast(1)) }) { Text("−") }
+                    Text(w.deadlineDay?.let { "매달 ${it}일" } ?: "정하지 않음", style = MaterialTheme.typography.bodyLarge)
+                    TextButton(enabled = (w.deadlineDay ?: 0) < 31, onClick = { onDeadline(((w.deadlineDay ?: 19) + 1).coerceAtMost(31)) }) { Text("+") }
+                    if (w.deadlineDay != null) TextButton(onClick = { onDeadline(null) }) { Text("없음") }
+                }
+                Text(if (w.deadlineDay != null) "마감 이틀 전과 당일 오전 9시에 다음 달 고른 날 수를 알려 드려요. 그 달에 날이 없으면 그 달 마지막 날이 마감이에요."
+                    else "마감일을 정하면 이틀 전과 당일에 알려 드려요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("희망 오프를 안 쓰면 설정 › 기능 켜고 끄기 › 희망 오프에서 꺼요. 다시 켜는 곳도 같아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = picked.isNotEmpty(), onClick = {
+                val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("희망 오프", com.bamnat.core.work.WishOff.copyText(month, picked)))
+                onDismiss()
+            }) { Text("고른 날 복사") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }

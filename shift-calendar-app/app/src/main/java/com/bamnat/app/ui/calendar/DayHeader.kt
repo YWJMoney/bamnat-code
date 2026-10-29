@@ -502,6 +502,10 @@ private fun QuickChips(
         if (!moneyFirst && !day.isWorkDay && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
             !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
         ) item { CalloutChip(day, snapshot, vm) }
+        // 1.32 [WTYP-11] 희망 오프 on a day to come (기능 켜고 끄기 `shift.wishOff`).
+        if (!moneyFirst && day.date.isAfter(today) && com.bamnat.core.work.WishOff.offered(settings.workStyle) &&
+            !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, com.bamnat.app.calendar.DateNoticeAlarm.WISH_OFF, calendar.id)
+        ) item { WishOffChips(day.date, calendar.id) }
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(

@@ -323,6 +323,12 @@ fun CalendarScreen(
     // [MCAL-01] The user's own calendars, the one on screen, and the list's order with the received ones.
     val myCalendars by vm.calendars.collectAsStateWithLifecycle()
     val activeCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    // 1.32 [WTYP-11] 희망 오프 of this calendar, on the grid while the feature is on and the calendar is 교대.
+    val wishAll by context.appContainer.wishOff.all.collectAsStateWithLifecycle()
+    val wishOff = wishAll[activeCalendar.id] ?: com.bamnat.core.work.WishOff()
+    val guideNow by com.bamnat.app.data.GuideStore.get(context).state.collectAsStateWithLifecycle()
+    val wishShown = wishOff.days.isNotEmpty() && com.bamnat.core.work.WishOff.offered(settings.workStyle) &&
+        remember(guideNow, activeCalendar.id) { !com.bamnat.app.ui.guide.FeatureSwitches.hidden(context.appContainer, com.bamnat.app.calendar.DateNoticeAlarm.WISH_OFF, activeCalendar.id) }
     val calendarOrder by vm.calendarOrder.collectAsStateWithLifecycle()
     val onAddCalendar = rememberAddCalendar(context.appContainer, onSetupCalendar)
     // A link id to open, "" to paste one, null when closed.
@@ -1317,6 +1323,8 @@ fun CalendarScreen(
                         cutDays = if (payRange == null || stamping) emptySet() else pageToMonth(baseMonth, page).let { m ->
                             com.bamnat.core.hours.StatsRange.cutDays(payProfile?.period, m.atDay(1).minusDays(7), m.atEndOfMonth().plusDays(14))
                         },
+                        // 1.32 [WTYP-11] 희망 오프 ♡, unless it is off in 기능 켜고 끄기.
+                        wishDays = if (stamping || !wishShown) emptySet() else wishOff.days,
                     )
                 }
                 // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
