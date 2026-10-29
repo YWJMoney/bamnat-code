@@ -110,6 +110,8 @@ abstract class ScreenshotBase {
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
         // [INVITE-02] Nor about invites (AE's shots put a fake in its place).
         c.inviteApi = com.bamnat.app.tier.InviteClient(baseUrl = "")
+        // [RCP-41] Nor 나눔 판 (RCScreenshotTest puts a fake in its place).
+        c.recipeApi = com.bamnat.app.recipe.RecipeClient(baseUrl = "")
         // [ONBOARD-01] Through the consent pages already; the shots of them start over.
         c.consentStore.markSeen(ConsentItem.entries)
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.

@@ -367,4 +367,28 @@ class LegalPagesTest {
         // The sheet's words match the page's.
         assertTrue(text.contains(com.bamnat.app.share.ShareAudience.COWORKER.label(true)))
     }
+
+    /**
+     * 1.34 [RCP-37] 3.8: the three 나눔 판 flags that send (올리기·좋아요·이야기) wait for 3.8's date; 보기·적용 reads only and is on.
+     * The page is the newest version line and says what a recipe never carries.
+     */
+    @Test fun policy38NamesTheRecipeBoardAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.8")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29))
+        assertTrue(text.contains("처리방침 3.8 · 앱 버전 1.34.0 기준 · 게시일 2026년 10월 30일 · 시행일 2026년 11월 29일"))
+        assertTrue("3.8 is the newest version line", text.indexOf("처리방침 3.8 ·") < text.indexOf("처리방침 3.7 ·"))
+        assertTrue(text.contains("레시피 나눔 판"))
+        assertTrue(text.contains("받는 사람이 채우는 칸"))
+        for (key in listOf(com.bamnat.core.flags.FlagCatalog.RECIPE_PUBLISH, com.bamnat.core.flags.FlagCatalog.RECIPE_VOTE,
+            com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
+            val flag = com.bamnat.core.flags.FlagCatalog.of(key)!!
+            assertTrue(key, flag.basis.policy.orEmpty().startsWith("3.8"))
+            assertTrue(key, flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.8" })
+            assertFalse(key, flag.default)
+        }
+        assertTrue(com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)!!.default)
+    }
 }
