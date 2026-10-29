@@ -2,6 +2,7 @@ package com.bamnat.app.ui.recipe
 
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -253,6 +254,16 @@ private fun PieceCard(r: com.bamnat.core.recipe.Recipe, p: RecipeDetailViewModel
             }
             if (p.on) {
                 RecipeResolve.inputsOf(r, piece).forEach { i -> InputField(i, answers[i.id], { vm.answer(i.id, it) }) }
+                // [RCP-24] 내 근무가 어떻게 보일지: 지금 → 적용 뒤.
+                if (p.kind == PieceKind.SHIFT_LOOK) vm.state.collectAsStateWithLifecycle().value.looks.forEach { (a, b) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(a.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(72.dp))
+                        com.bamnat.app.ui.components.ShiftBadge(a, size = 26.dp)
+                        Text("→")
+                        com.bamnat.app.ui.components.ShiftBadge(b, size = 26.dp)
+                    }
+                }
+                if (p.kind == PieceKind.CAL_THEME) ThemeSample(r, piece)
                 if (p.kind == PieceKind.SHIFT_LOOK || p.kind == PieceKind.ALARMS) {
                     Text("내 근무와 이름이 같거나, 주간·야간처럼 역할이 같은 근무에 넣어요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -398,3 +409,25 @@ private fun PostRow(p: RecipePost, onReply: (() -> Unit)?, onLike: () -> Unit, o
         }
     }
 }
+
+/** [RCP-24] 달력 테마 as the calendar would draw it: 토·일·공휴일 글자와 오늘 동그라미. */
+@Composable
+private fun ThemeSample(r: com.bamnat.core.recipe.Recipe, piece: com.bamnat.core.recipe.Piece) {
+    val v = RecipeResolve.piece(r, piece, emptyMap())
+    val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
+    val dark = com.bamnat.app.ui.components.isDarkSurface()
+    val look = com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme(v["today"] as? Long, v["sat"] as? Long, v["sun"] as? Long,
+        v["holiday"] as? Long, v["cell"] as? String), dark)
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("토 6", color = look.saturday(cal), style = MaterialTheme.typography.titleSmall)
+        Text("일 7", color = look.sunday(cal), style = MaterialTheme.typography.titleSmall)
+        Text("공휴일", color = look.holiday(cal), style = MaterialTheme.typography.titleSmall)
+        val today = look.today ?: MaterialTheme.colorScheme.primary
+        androidx.compose.foundation.layout.Box(Modifier.width(28.dp).height(28.dp).androidx_clip(today), contentAlignment = Alignment.Center) {
+            Text("9", color = com.bamnat.app.ui.components.contentColorOn(today), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+private fun Modifier.androidx_clip(c: androidx.compose.ui.graphics.Color): Modifier =
+    this.then(Modifier.background(c, androidx.compose.foundation.shape.CircleShape))

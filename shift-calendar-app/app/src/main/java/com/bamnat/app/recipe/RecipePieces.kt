@@ -152,6 +152,10 @@ class RecipePieces(private val c: AppContainer) {
             val p = c.scopeOf(cal).pay.profile.value
             if (p == null) listOf(Change("급여 설정이 아직 없어 건너뛰어요. 급여 탭에서 먼저 정해 주세요", skipped = true))
             else listOfNotNull(
+                payPair(values, cal)?.let { (a, b) ->
+                    Change("이번 달 급여 예상 ${com.bamnat.app.ui.Fmt.won(a)} → ${com.bamnat.app.ui.Fmt.won(b)} (" +
+                        (if (b >= a) "+" else "−") + com.bamnat.app.ui.Fmt.won(kotlin.math.abs(b - a)) + ")")
+                },
                 values["wage"]?.let { Change("시급 ${com.bamnat.app.ui.Fmt.won((it as Number).toLong())} (오늘부터)") },
                 values["weeklyPay"]?.let { Change("주휴수당 " + if (it == true) "받음" else "없음") },
                 values["five"]?.let { Change("5인 이상 " + if (it == true) "예" else "아니오") },
@@ -262,21 +266,7 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.HOURLY_RULES -> {
                 val store = c.scopeOf(cal).pay
                 val p = store.profile.value ?: return null
-                var after = p
-                (values["wage"] as? Number)?.toLong()?.let { w ->
-                    after = after.copy(base = ValueTimeline(p.base.entries.filter { it.from != Today.date() } + DatedValue(Today.date(), w), p.base.raise))
-                }
-                (values["five"] as? Boolean)?.let { after = after.copy(fiveOrMoreEmployees = it) }
-                (values["legalBreaks"] as? Boolean)?.let { after = after.copy(legalBreaks = it) }
-                (values["weekStart"] as? String)?.let { after = after.copy(holidayWeekStart = DayOfWeek.valueOf(it)) }
-                (values["tax"] as? String)?.let { after = after.copy(taxMode = TaxMode.valueOf(it), taxChosen = true) }
-                var rules = after.rules
-                (values["weeklyPay"] as? Boolean)?.let { rules = rules.copy(weeklyHolidayPay = it) }
-                (values["breakPay"] as? String)?.let { rules = rules.copy(breakPay = BreakPay.valueOf(it)) }
-                (values["night"] as? Number)?.let { rules = rules.copy(nightPremium = it.toDouble() / 100.0) }
-                (values["partTime"] as? Boolean)?.let { rules = rules.copy(partTimePremium = it) }
-                (values["rounding"] as? String)?.let { rules = rules.copy(wonRounding = WonRounding.valueOf(it)) }
-                after = after.copy(rules = rules)
+                val after = hourlyAfter(p, values)
                 if (after == p) null else {
                     store.save(after)
                     JSONObject().put("before", PayCodec.encode(p)).put("after", PayCodec.encode(after))
@@ -354,6 +344,50 @@ class RecipePieces(private val c: AppContainer) {
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
         }
+    }
+
+    /** [RCP-12] The pay setup with an 알바 근무지 규칙 piece on it (for [apply] and the pay line of [preview]). */
+    fun hourlyAfter(p: com.bamnat.core.pay.PayProfile, values: Map<String, Any?>): com.bamnat.core.pay.PayProfile {
+        var after = p
+        // A 시급 goes only on an hourly pay setup; a monthly one keeps its 기본급.
+        (values["wage"] as? Number)?.toLong()?.takeIf { p.wageType == com.bamnat.core.pay.WageType.HOURLY }?.let { w ->
+            after = after.copy(base = ValueTimeline(p.base.entries.filter { it.from != Today.date() } + DatedValue(Today.date(), w), p.base.raise))
+        }
+        (values["five"] as? Boolean)?.let { after = after.copy(fiveOrMoreEmployees = it) }
+        (values["legalBreaks"] as? Boolean)?.let { after = after.copy(legalBreaks = it) }
+        (values["weekStart"] as? String)?.let { after = after.copy(holidayWeekStart = DayOfWeek.valueOf(it)) }
+        (values["tax"] as? String)?.let { after = after.copy(taxMode = TaxMode.valueOf(it), taxChosen = true) }
+        var rules = after.rules
+        (values["weeklyPay"] as? Boolean)?.let { rules = rules.copy(weeklyHolidayPay = it) }
+        (values["breakPay"] as? String)?.let { rules = rules.copy(breakPay = BreakPay.valueOf(it)) }
+        (values["night"] as? Number)?.let { rules = rules.copy(nightPremium = it.toDouble() / 100.0) }
+        (values["partTime"] as? Boolean)?.let { rules = rules.copy(partTimePremium = it) }
+        (values["rounding"] as? String)?.let { rules = rules.copy(wonRounding = WonRounding.valueOf(it)) }
+        after = after.copy(rules = rules)
+        return after
+    }
+
+    /** [RCP-24] Each of my kinds of day a 근무 꾸미기 piece meets, as it is and as it would be. */
+    suspend fun lookPairs(values: Map<String, Any?>, cal: String): List<Pair<ShiftType, ShiftType>> {
+        val mine = types(cal)
+        val used = HashSet<Long>()
+        return items(values, "items").mapNotNull { i ->
+            val t = match(mine.filter { it.id !in used }, i) ?: return@mapNotNull null
+            used += t.id
+            t to t.copy(label = (i["label"] as? String) ?: t.label, colorArgb = (i["color"] as? Long) ?: t.colorArgb,
+                icon = (i["emoji"] as? String)?.let(ShiftIcon::emojiKey) ?: t.icon)
+        }
+    }
+
+    /** [RCP-24] This month's pay before and after an 알바 근무지 규칙 piece (세전, the app's own engine); null without a pay setup. */
+    suspend fun payPair(values: Map<String, Any?>, cal: String): Pair<Long, Long>? {
+        val scope = c.scopeOf(cal)
+        val p = scope.pay.profile.value ?: return null
+        val snapshot = scope.schedule.snapshot.first()
+        val month = java.time.YearMonth.from(Today.date())
+        val calc = com.bamnat.core.pay.PayCalculator()
+        fun total(x: com.bamnat.core.pay.PayProfile) = runCatching { calc.calculate(x, month, snapshot.resolver::resolve, checks = false).total }.getOrNull()
+        return (total(p) ?: return null) to (total(hourlyAfter(p, values)) ?: return null)
     }
 
     // ---- restore (7일 되돌리기) ----

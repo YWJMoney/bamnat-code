@@ -80,6 +80,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val pieces: List<Piece> = emptyList(), val answers: Map<String, Any?> = emptyMap(),
         val votes: Votes? = null, val talk: RecipeTalk? = null, val message: String? = null,
         val applying: Boolean = false, val appliedId: Long? = null,
+        /** [RCP-24] My kinds of day as they are and as the 근무 꾸미기 piece would make them. */
+        val looks: List<Pair<com.bamnat.core.model.ShiftType, com.bamnat.core.model.ShiftType>> = emptyList(),
     )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -120,7 +122,10 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val lines = r.pieces.associate { p ->
                 p.kind to runCatching { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
             }
-            _state.value = _state.value.copy(pieces = _state.value.pieces.map { it.copy(lines = lines[it.kind].orEmpty()) })
+            val look = r.pieces.firstOrNull { it.kind == PieceKind.SHIFT_LOOK }?.let { p ->
+                runCatching { c.recipes.pieces.lookPairs(RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
+            }.orEmpty()
+            _state.value = _state.value.copy(pieces = _state.value.pieces.map { it.copy(lines = lines[it.kind].orEmpty()) }, looks = look)
         }
     }
 
