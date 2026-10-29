@@ -5944,7 +5944,7 @@ export async function playVitals(env, now) {
  * says which version it uses (결정 AA-D2), so this is what can reach phones, not what has.
  */
 export const REMOTE = {
-  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles"],
+  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles", "merchants"],
   base: "https://ywjmoney.github.io/-/remote/v1",
   // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file). [REMOTE-08] The last two are the
   // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2.
