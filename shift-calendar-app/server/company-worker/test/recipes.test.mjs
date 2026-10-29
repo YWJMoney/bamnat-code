@@ -212,3 +212,12 @@ test("[RCP-36] the operator's own recipe is 공식 and listed at once; a 공개 
   const month = await call("GET", "/api/admin/recipes/month", undefined, admin);
   assert.equal(month.data.actions.official, 1);
 });
+
+test("[RCP-40] every 시작 레시피 and 공개 자료 레시피 core wrote reads the same on the server (no refusal, the same written form)", async () => {
+  const starters = JSON.parse(readFileSync(new URL("../../../docs/recipes/starter-recipes.json", import.meta.url), "utf8"));
+  assert.ok(starters.length >= 66);
+  for (const s of starters) {
+    const r = await cleanRecipe(recipeCanonical(s.recipe));
+    assert.equal(r.text, recipeCanonical(s.recipe), s.recipe.title);
+  }
+});

@@ -46,5 +46,8 @@ fun CalendarThemeRows(encoded: String, onChange: (String) -> Unit) {
         listOf("tint" to "옅게 (처음)", "fill" to "진하게", "dot" to "칠하지 않기"), theme.cell ?: "tint") { c ->
         onChange(theme.copy(cell = c.takeIf { it != "tint" }).encode())
     }
-    if (!theme.isDefault) TextButton(onClick = { onChange("") }) { Text("처음 색으로") }
+    androidx.compose.foundation.layout.Row {
+        if (!theme.isDefault) TextButton(onClick = { onChange("") }) { Text("처음 색으로") }
+        com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.CAL_THEME)
+    }
 }

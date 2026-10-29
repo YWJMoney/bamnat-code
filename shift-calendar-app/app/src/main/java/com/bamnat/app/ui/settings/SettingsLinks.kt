@@ -27,6 +27,8 @@ enum class SettingsGo {
     PROFILE, JOURNAL,
     /** [J133-34] 순번 714: the pay screen opened at a value (기본급·시급, 수당, 월급날), as its 고치기 chips do. */
     PAY_BASE, PAY_ITEMS, PAY_PERIOD,
+    /** [RCP-38] 1.34 설정 › 나눔 판. */
+    RECIPES,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

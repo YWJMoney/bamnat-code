@@ -156,9 +156,14 @@ class MainActivity : ComponentActivity() {
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
     private fun openLink(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW || !appContainer.shareApi.enabled) return
+        if (intent?.action != Intent.ACTION_VIEW) return
         // Reopened from Recents, Android hands back the link the app was first opened with: it was offered then.
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        // [RCP-22] 1.34: a recipe link (bamnat://r/CODE from the recipe's public page).
+        if (intent.data?.scheme == "bamnat" && intent.data?.host == "r") {
+            com.bamnat.app.recipe.RecipeLinks.open(com.bamnat.app.recipe.RecipeLinks.find(intent.dataString)); return
+        }
+        if (!appContainer.shareApi.enabled) return
         ShareLinkId.find(intent.dataString)?.let(appContainer.received::open)
     }
 

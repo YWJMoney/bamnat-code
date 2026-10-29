@@ -179,6 +179,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
+                // [RCP-19] 1.34: these looks (이름·글자·색·이모지) as a 나눔 판 recipe.
+                com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.SHIFT_LOOK)
             }
             item {
                 // Ready-made sets for common workplaces [MKT-03].

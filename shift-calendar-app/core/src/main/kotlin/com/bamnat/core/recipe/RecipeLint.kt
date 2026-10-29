@@ -119,9 +119,23 @@ object RecipeLint {
     /** A word before 님·씨 or a title (과장, 팀장 …): it is probably someone's name (S7). */
     private val NAME = Regex("([가-힣]{2,3})\\s?(님|씨|과장|대리|팀장|부장|차장|사장|실장|주임|선배|후배|반장|조장)")
 
+    /** Words before 님 or a title that are a role, not a name (사장님, 손님, 고객님 …). */
+    private val ROLES = setOf("사장", "선생", "고객", "회원", "직원", "환자", "기사", "사모", "부모", "어르신", "관리자", "운영자", "점장", "실장", "원장",
+        "교수", "의사", "간호사", "학생", "선배", "후배", "동료", "손", "님들", "여러분", "이웃", "주인", "알바", "근무자", "보호자")
+
+    /** A word ending like this describes (하는 사장님, 좋은 선배): not a name. */
+    private const val ENDINGS = "는를을의에한할된던운쁜"
+    private const val SURNAMES = "김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유남심노하곽성차주우구민진나지엄채원천방공현함변염여추도소석선설마길연위표명기반왕금옥육인맹제모탁국어은편용예봉경"
+
     fun nameLike(r: Recipe): List<String> {
         val words = ArrayList<String>()
-        fun scan(s: String) { NAME.findAll(s).forEach { words += it.value } }
+        fun scan(s: String) {
+            NAME.findAll(s).forEach { m ->
+                val who = m.groupValues[1]
+                // A name starts with a family name (김철수 과장, 민수 씨 is too short to tell); 카페 사장님 or 동네 손님 does not.
+                if (who.first() in SURNAMES && who.last() !in ENDINGS && ROLES.none { who.endsWith(it) }) words += m.value
+            }
+        }
         scan(r.desc)
         r.pieces.forEach { p -> walkTexts(p.values, ::scan) }
         return words.distinct()

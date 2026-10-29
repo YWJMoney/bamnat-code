@@ -77,7 +77,9 @@ class RecipePieces(private val c: AppContainer) {
             })
         }
         PieceKind.HOURLY_RULES -> c.scopeOf(cal).pay.profile.value?.let { p ->
-            mapOf("five" to p.fiveOrMoreEmployees, "weeklyPay" to p.rules.weeklyHolidayPay, "weekStart" to p.holidayWeekFrom.name,
+            // The 시급 goes out only as 받는 사람이 정할 칸 (만들기 2단계 turns it into one first).
+            mapOf("wage" to p.base.on(Today.date()).value.takeIf { it > 0 && p.wageType == com.bamnat.core.pay.WageType.HOURLY },
+                "five" to p.fiveOrMoreEmployees, "weeklyPay" to p.rules.weeklyHolidayPay, "weekStart" to p.holidayWeekFrom.name,
                 "breakPay" to p.rules.breakPay.name, "legalBreaks" to p.legalBreaks,
                 "night" to p.rules.nightPremium?.let { Math.round(it * 100) }, "partTime" to p.rules.partTimePremium,
                 "rounding" to p.rules.wonRounding.name.takeIf { n -> n in ROUNDINGS }, "tax" to p.taxMode.name)
@@ -85,7 +87,7 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.FIELD_SHEET -> {
             val f = c.calendars.get(cal)?.field ?: com.bamnat.core.money.FieldRules()
             val cats = c.scopeOf(cal).money.categories.first()
-            mapOf("mode" to (f.mode ?: FieldMode.PER_JOB).name, "chips" to f.chips.take(5),
+            mapOf("mode" to (f.mode ?: FieldMode.PER_JOB).name, "dayRate" to f.dayRate.takeIf { it > 0 }, "chips" to f.chips.take(5),
                 "ends" to f.unitRules.take(6).map { mapOf("end" to "%02d:%02d".format(it.until.hour, it.until.minute), "units" to it.units) },
                 "kinds" to MoneyCategories.of(MoneyKind.INCOME, cats, com.bamnat.core.work.WorkStyle.FIELD).take(12),
                 "costs" to MoneyCategories.of(MoneyKind.EXPENSE, cats, com.bamnat.core.work.WorkStyle.FIELD).take(12))

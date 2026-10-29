@@ -283,7 +283,7 @@ export function adminLib() {
   const HUBS = [
     { key: "today", label: "오늘", icon: "home", tabs: ["home"] },
     { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "dev", "templates", "sla"] },
-    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "companies", "shares", "adopt"] },
+    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
     { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
     { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "rewards", "server", "account"] },
@@ -305,6 +305,8 @@ export function adminLib() {
     review: { label: "검토", area: "review", badge: (o) => reviewCount(o), old: "제보 앱에 없는 방식 달라요 review" },
     versions: { label: "여러 판", area: "companies", badge: (o) => o.versionConflicts ?? 0, count: false, old: "versions" },
     community: { label: "토론·임금표", area: "community", badge: (o) => o.flaggedPosts ?? 0, strip: "신고 글", old: "토론 임금표 신고된 글 community" },
+    // [RCP-39] 1.34 나눔 판: 첫 3개 검토, 신고된 레시피, 가린 것, 공식·공개 자료, 처리 기록.
+    recipes: { label: "나눔 판", area: "community", badge: (o) => (o.recipeQueue ?? 0) + (o.recipeFlagged ?? 0), strip: "레시피 검토", old: "레시피 나눔 판 recipes" },
     companies: { label: "회사", area: "companies", old: "회사·규칙 companies" },
     shares: { label: "공유 링크", area: "shares", old: "공유 링크 신고 shares" },
     adopt: { label: "채택 규칙", area: "settings", old: "설정 자동 채택 맞았어요 비율 채택 보상 상한 settings" },

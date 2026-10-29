@@ -651,6 +651,12 @@ function adminApp(L, BUILD, M) {
       }
       if (name === "versions") jobs.push(api(`/versions?show=${S.versionShow}`).then(keep((d) => { S.data.versions = d; })));
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
+      // [RCP-39] 1.34 나눔 판: the list of one tab and the month's numbers.
+      if (name === "recipes") {
+        jobs.push(api(`/recipes?tab=${S.recipeTab ?? "queue"}`).then(keep((d) => { S.data.recipes = d; })));
+        jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
+        if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
+      }
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
       // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
@@ -992,6 +998,7 @@ function adminApp(L, BUILD, M) {
     community: () => communityView(),
     companies: (id) => (id ? companyView(S.data.company) : V.companiesView()),
     shares: () => sharesView(),
+    recipes: () => recipesView(),
     adopt: () => adoptView(),
     flags: (id) => (id ? flagView() : flagsView()),
     types: () => typesView(),
@@ -1026,7 +1033,7 @@ function adminApp(L, BUILD, M) {
     return Boolean({
       home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
-      notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares,
+      notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
     }[name]);
   }
@@ -2083,6 +2090,60 @@ function adminApp(L, BUILD, M) {
   // ---- [SRV-05] 공유 링크 신고 ----
 
   const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
+
+  // [RCP-39] 1.34 나눔 판.
+  const RECIPE_TABS = [["queue", "검토 대기"], ["flagged", "신고됨"], ["hidden", "가린 것"], ["visible", "보이는 것"], ["official", "공식·공개 자료"]];
+  const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
+  const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
+    field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식" };
+  const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", auto: "자동 가림" };
+
+  /** What a recipe holds, in words: its pieces and the 받는 사람이 정할 칸 (never run, only read). */
+  function recipeParts(body) {
+    try {
+      const r = JSON.parse(body);
+      return `${(r.pieces ?? []).map((p) => esc(RECIPE_PIECES[p.kind] ?? p.kind)).join(" · ")}${r.inputs?.length ? ` · 정할 칸 ${r.inputs.length}개` : ""}`;
+    } catch { return ""; }
+  }
+
+  function recipesView() {
+    const d = S.data.recipes;
+    const m = S.data.recipeMonth;
+    const edit = can("community", "edit");
+    const tab = S.recipeTab ?? "queue";
+    const chips = `<div class="chips" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`;
+    const month = m ? `<p class="hint">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
+    if (!d) return chips + skeleton(2);
+    const help = {
+      queue: "새 휴대폰의 첫 3개 레시피예요. 내용을 보고 올리거나, 고칠 점을 적어 돌려줘요. 하루 안에 봐 주세요.",
+      flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
+      hidden: "가린 레시피는 90일 뒤 지워져요.",
+      visible: "광장에 보이는 레시피예요.",
+      official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
+    }[tab];
+    const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
+        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
+        ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
+        <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
+        ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
+          <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
+          ${r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
+          ${r.official ? "" : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
+          <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
+      : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
+    const upload = edit && tab === "official" ? `<form data-form="recipe-upload" class="card"><h3>시작 레시피·공개 자료 올리기</h3>
+      <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
+      <textarea name="recipe" rows="8" required></textarea>
+      <label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>
+      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>` : "";
+    const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
+      `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
+      : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
+    return `${chips}${month}<p class="hint">${esc(help)}</p>${rows}${upload}${log}`;
+  }
 
   function sharesView() {
     const d = S.data.shares;
@@ -4094,6 +4155,20 @@ function adminApp(L, BUILD, M) {
       S.data.rates = null;
       load();
     },
+    // [RCP-39]
+    "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
+    "recipe-log": () => { S.recipeLog = true; load(); },
+    "recipe-do": async ({ id, key }) => {
+      await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
+      load();
+    },
+    "recipe-delete": ({ id }) => confirmBox("이 레시피를 지울까요?", "모든 판과 이야기가 지워지고 되돌릴 수 없어요. 이미 넣은 분들의 달력은 그대로예요.", "지우기", async () => {
+      await act(() => api(`/recipes/${id}/delete`, "POST", {}), "지웠어요");
+      load();
+    }),
+    "recipe-return": ({ id }) => openDialog(`<form data-form="recipe-return" data-id="${id}"><h2>무엇을 고치면 될까요?</h2>
+      <p>만든 분 앱에 이 메모가 보여요. 고쳐서 다시 올리면 검토로 돌아와요.</p><textarea name="note" rows="3" maxlength="200" required></textarea>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">돌려주기</button></div></form>`),
     // [SRV-05]
     "share-remove": ({ id }) => confirmBox("이 링크를 내릴까요?", "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
       const d = await act(() => api(`/shares/${id}/remove`, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
@@ -4286,6 +4361,30 @@ function adminApp(L, BUILD, M) {
         dialog.close();
         go("companies", c.id);
       }
+    },
+    // [RCP-39]
+    "recipe-return": async (form) => {
+      const id = form.dataset.id;
+      const note = String(new FormData(form).get("note") ?? "").trim();
+      if (!note) return;
+      dialog.close();
+      await act(() => api(`/recipes/${id}/return`, "POST", { note }), "돌려줬어요. 만든 분 앱에 메모가 보여요");
+      load();
+    },
+    "recipe-upload": async (form) => {
+      const f = new FormData(form);
+      let parsed;
+      try { parsed = JSON.parse(String(f.get("recipe") ?? "")); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
+      // One recipe, or docs/recipes/starter-recipes.json whole ([{publicData, recipe}, …]): each goes up on its own.
+      const list = Array.isArray(parsed) ? parsed : [{ recipe: parsed, publicData: f.get("publicData") === "on" }];
+      let done = 0;
+      const failed = [];
+      for (const x of list) {
+        try { await api("/recipes", "POST", { recipe: x.recipe, publicData: x.publicData === true }); done++; }
+        catch (e) { failed.push(x.recipe?.title ?? "?"); }
+      }
+      toast(`${done}개 올렸어요${failed.length ? ` · 못 올린 것 ${failed.length}개: ${failed.slice(0, 3).join(", ")}` : ""}`);
+      if (done) { form.reset(); S.data.recipes = null; load(); }
     },
     "hide-post": (form) => {
       const mute = form.dataset.mute === "1";

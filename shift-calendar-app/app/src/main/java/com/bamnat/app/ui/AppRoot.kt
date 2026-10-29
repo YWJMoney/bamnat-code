@@ -238,6 +238,15 @@ private object Routes {
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board?calendar={calendar}"
     const val PLAZA_RATES = "plaza_rates"
+    /** [RCP-21..38] 1.34 나눔 판: the list of one calendar's kind of work, one recipe, 만들기 and 설정 › 나눔 판. */
+    const val RECIPES = "recipes?calendar={calendar}"
+    fun recipes(calendar: String = PersonalCalendar.MAIN) = "recipes?calendar=$calendar"
+    const val RECIPE = "recipe/{code}?calendar={calendar}"
+    fun recipe(code: String, calendar: String = PersonalCalendar.MAIN) = "recipe/$code?calendar=$calendar"
+    const val RECIPE_MAKE = "recipe_make?calendar={calendar}&draft={draft}&kind={kind}&code={code}"
+    fun recipeMake(calendar: String = PersonalCalendar.MAIN, draft: Long = 0, kind: String = "", code: String = "") =
+        "recipe_make?calendar=$calendar&draft=$draft&kind=$kind&code=$code"
+    const val RECIPE_MINE = "recipe_mine"
     /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
     const val COMPANY_BOARD_ALL = "company_board_all"
     /** [ADMIN-02] 설정 > 문의하기. */
@@ -656,6 +665,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             TopLevel.entries.any { it.route == current } -> nav.navigateTopLevel(TopLevel.CALENDAR.route)
             else -> nav.navigate(TopLevel.CALENDAR.route) { launchSingleTop = true }
         }
+    }
+
+    // [RCP-22] 1.34: a recipe link (bamnat://r/CODE) tapped outside the app, or a code pasted: the recipe opens on top.
+    val openingRecipe by com.bamnat.app.recipe.RecipeLinks.opening.collectAsStateWithLifecycle()
+    LaunchedEffect(openingRecipe) {
+        val code = openingRecipe ?: return@LaunchedEffect
+        com.bamnat.app.recipe.RecipeLinks.opened()
+        nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+    }
+
+    val sharing by com.bamnat.app.recipe.RecipeLinks.make.collectAsStateWithLifecycle()
+    LaunchedEffect(sharing) {
+        val kind = sharing ?: return@LaunchedEffect
+        com.bamnat.app.recipe.RecipeLinks.shared()
+        nav.navigate(Routes.recipeMake(kind = kind.key))
     }
 
     // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).
@@ -1377,9 +1401,15 @@ private fun AppNavHost(
             // [CALI-08] 1.30 BB: the 광장 of one calendar's company; with two calendars or more, chips above choose which.
             var calendar by rememberSaveable { mutableStateOf(companyCalendarOf(container, entry.arguments?.getString("calendar"))) }
             val company = remember(calendar) { container.companyOf(calendar) }
+            val recipesOn by container.recipes.on.collectAsStateWithLifecycle()
             val chips: @Composable () -> Unit = {
                 com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
                     Modifier.padding(horizontal = 16.dp))
+                // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
+                if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.RecipeEntryCard(
+                    onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
+                    onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+                )
             }
             // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
             val member by company.store.member.collectAsStateWithLifecycle()
@@ -1418,6 +1448,49 @@ private fun AppNavHost(
                 onShare = { nav.navigate(Routes.companyReport()) { launchSingleTop = true } },
                 onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.RECIPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "recipes-$calendar") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, calendar) }
+            com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = { nav.popFrom(Routes.RECIPES) },
+                onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) },
+                onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+                onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } })
+        }
+        composable(Routes.RECIPE, arguments = listOf(navArgument("code") { type = NavType.StringType },
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val code = entry.arguments?.getString("code").orEmpty()
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "recipe-$code-$calendar") { com.bamnat.app.ui.recipe.RecipeDetailViewModel(it, code, calendar) }
+            com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = { nav.popFrom(Routes.RECIPE) }, onRemake = { body ->
+                com.bamnat.app.recipe.RecipeLinks.remake = body to code
+                nav.navigate(Routes.recipeMake(calendar))
+            })
+        }
+        composable(Routes.RECIPE_MAKE, arguments = listOf(
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("draft") { type = NavType.LongType; defaultValue = 0L },
+            navArgument("kind") { type = NavType.StringType; defaultValue = "" },
+            navArgument("code") { type = NavType.StringType; defaultValue = "" },
+        )) { entry ->
+            val a = entry.arguments
+            val calendar = a?.getString("calendar") ?: PersonalCalendar.MAIN
+            val draft = a?.getLong("draft") ?: 0L
+            val kind = a?.getString("kind")?.let(com.bamnat.core.recipe.PieceKind::of)
+            val own = a?.getString("code")?.ifEmpty { null }
+            val remake = remember { com.bamnat.app.recipe.RecipeLinks.remake.also { com.bamnat.app.recipe.RecipeLinks.remake = null } }
+            val vm = appViewModel(key = "recipe-make-$calendar-$draft-$kind-$own-${remake?.second}") {
+                com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, calendar, draft, remake?.first, remake?.second?.takeIf { own == null }, kind, own)
+            }
+            com.bamnat.app.ui.recipe.RecipeMakeScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKE) },
+                onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) { popUpTo(Routes.RECIPE_MAKE) { inclusive = true } } })
+        }
+        composable(Routes.RECIPE_MINE) {
+            val vm = appViewModel { com.bamnat.app.ui.recipe.RecipeMineViewModel(it) }
+            com.bamnat.app.ui.recipe.RecipeMineScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MINE) },
+                onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onDraft = { id -> nav.navigate(Routes.recipeMake(draft = id)) },
+                onList = { nav.navigate(Routes.recipes()) { launchSingleTop = true } })
         }
         composable(Routes.PLAZA_RATES) {
             val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
@@ -1700,6 +1773,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL
+    SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }
