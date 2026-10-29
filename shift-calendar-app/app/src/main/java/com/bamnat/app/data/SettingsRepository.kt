@@ -61,6 +61,11 @@ data class AppSettings(
      * null until asked. Only sent with [shareUsageStats] and once the `stats.more` row is on.
      */
     val usageStatsMore: Boolean? = null,
+    /**
+     * [STAT-08] 1.31 N4: [usageStatsMore]'s yes was given on 1.31 or later, whose words name 조회 시간; only then do lookup times
+     * go (처리방침 3.5). A yes from 1.30's words leaves it false until the user turns the row on again.
+     */
+    val usageStatsLookup: Boolean = false,
     /** [COMM-10] 광장 소식: one bundled notice a day about the user's own plaza things. On; off on the plaza screen. */
     val plazaNews: Boolean = true,
     /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
@@ -103,6 +108,12 @@ data class AppSettings(
      */
     /** [FEAT-18] 잠금 화면 오늘 근무: a quiet notice that stays with today's and tomorrow's shift. */
     val todayShiftNotice: Boolean = false,
+    /** [ALRM-16] 1.31 N3: right after a shift alarm is turned off, one quiet notice with the day at a glance. On by default. */
+    val afterAlarmCard: Boolean = true,
+    /** [WEAR-06] 1.31 N2 워치 진동 알람: [WATCH_ALARM_OFF], [WATCH_ALARM_BOTH] (phone and watch) or [WATCH_ALARM_WATCH] (the watch first; the phone rings when no watch answers). */
+    val watchAlarm: String = WATCH_ALARM_OFF,
+    /** [WEAR-04] 1.31: the calendar the watch shows (the main one unless chosen). */
+    val watchCalendar: String = PersonalCalendar.MAIN,
     val briefing: Boolean = false,
     /** [SLP-15] 퇴근길 안전: the one sound when a night or a 24-hour duty ends. Like [briefing]. */
     val commuteNotice: Boolean = false,
@@ -133,6 +144,32 @@ data class AppSettings(
      * day sheet does all of it. On, the first tap shows the card and a second opens the day.
      */
     val showDayCard: Boolean = false,
+    /** B 1.32 [CALX-03] 한 번 눌러 고르기: the first tap only picks the day (marked); a second tap on it opens the day. */
+    val tapSelectFirst: Boolean = false,
+    /** U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골랐어요. */
+    val textAsked: Boolean = false,
+    /** U 1.32 [UX132-06] 촘촘하게: 카드 사이를 줄여 한 화면에 더 많이 보여요 (기본 켬). */
+    val compact: Boolean = true,
+    /** U 1.32 [UX132-05] 글자 크기 5단계 (0 작게 0.9, 1 보통 1.0, 2 크게 1.15, 3 더 크게 1.3, 4 아주 크게 1.5); 휴대폰 글자 크기와 곱해요. */
+    val textStep: Int = 1,
+    /** G 1.32 [WTYP-07] 609 시각을 오전/오후 12시간으로 보여요 (기본 24시간). */
+    val clock12: Boolean = false,
+    /** E 1.32 [LEDX-07] Each day's spending under the date in the calendar. */
+    val spendInCells: Boolean = false,
+    /** 1.32 [LEDX-23] 지출 히트맵: a strip under each date, darker where the month spent more. */
+    val spendHeat: Boolean = false,
+    /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
+    val backupNudge: Boolean = true,
+    /** 1.32 [WTYP-16] 퇴근 시각 알림: at a day calendar's end of work, a quiet notice with 지금 퇴근 (off by default). */
+    val leaveTimeNotice: Boolean = false,
+    /** 1.32 [WTYP-12] 연속 근무 경고: a stretch of work (shifts and extras with under an hour between) longer than this; 0 is not checked. */
+    val stretchLimitHours: Int = 0,
+    /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
+    val payDepositNotice: Boolean = true,
+    /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
+    val calendarOnly: Boolean = false,
+    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
+    val statsByPayPeriod: Boolean = false,
     /** [LOCK-01] 앱 잠금: the phone's own lock before the app shows, on opening and after a minute away. */
     val appLock: Boolean = false,
     /** [CUST-01] 화면 꾸미기: the calendar page's parts in the user's order, "hours,-todayFlow" ([com.bamnat.core.layout.PageLayout]). */
@@ -184,6 +221,10 @@ data class AppSettings(
 
     companion object {
         const val SILENT_SOUND = "silent"
+        const val WATCH_ALARM_OFF = "off"
+        const val WATCH_ALARM_BOTH = "both"
+        const val WATCH_ALARM_WATCH = "watch"
+        val WATCH_ALARMS = setOf(WATCH_ALARM_OFF, WATCH_ALARM_BOTH, WATCH_ALARM_WATCH)
     }
 }
 
@@ -255,6 +296,7 @@ class SettingsRepository(context: Context) {
             plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             usageStatsMore = if (prefs.contains(K_STATS_MORE)) prefs.getBoolean(K_STATS_MORE, false) else null,
+            usageStatsLookup = prefs.getBoolean(K_STATS_LOOKUP, d.usageStatsLookup),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
@@ -267,6 +309,9 @@ class SettingsRepository(context: Context) {
             // The sleep notices of 1.10 and before carry over to the briefing and the commute notice.
             briefing = prefs.getBoolean(K_BRIEFING, prefs.getBoolean(K_SLEEP_REMINDERS, d.briefing)),
             todayShiftNotice = prefs.getBoolean(K_TODAY_SHIFT_NOTICE, d.todayShiftNotice),
+            afterAlarmCard = prefs.getBoolean(K_AFTER_ALARM_CARD, d.afterAlarmCard),
+            watchAlarm = prefs.getString(K_WATCH_ALARM, null)?.takeIf { it in AppSettings.WATCH_ALARMS } ?: d.watchAlarm,
+            watchCalendar = prefs.getString(K_WATCH_CALENDAR, null) ?: d.watchCalendar,
             commuteNotice = prefs.getBoolean(K_COMMUTE_NOTICE, prefs.getBoolean(K_SLEEP_REMINDERS, d.commuteNotice)),
             bedtimeNotice = prefs.getBoolean(K_BEDTIME_NOTICE, d.bedtimeNotice),
             sleepingNotice = prefs.getBoolean(K_SLEEPING_NOTICE, d.sleepingNotice),
@@ -282,6 +327,19 @@ class SettingsRepository(context: Context) {
             phoneDayView = runCatching { PhoneDayView.valueOf(prefs.getString(K_PHONE_DAY_VIEW, null) ?: "") }
                 .getOrDefault(d.phoneDayView).let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
             showDayCard = prefs.getBoolean(K_DAY_CARD, d.showDayCard),
+            tapSelectFirst = prefs.getBoolean(K_TAP_FIRST, d.tapSelectFirst),
+            textAsked = prefs.getBoolean(K_TEXT_ASKED, d.textAsked),
+            compact = prefs.getBoolean(K_COMPACT, d.compact),
+            textStep = prefs.getInt(K_TEXT_STEP, d.textStep),
+            clock12 = prefs.getBoolean(K_CLOCK12, d.clock12),
+            spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
+            spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
+            backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
+            leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
+            stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
+            payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
+            calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
+            statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
             statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
@@ -332,6 +390,7 @@ class SettingsRepository(context: Context) {
             .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
             .apply { if (s.usageStatsMore == null) remove(K_STATS_MORE) else putBoolean(K_STATS_MORE, s.usageStatsMore) }
+            .putBoolean(K_STATS_LOOKUP, s.usageStatsLookup)
             .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
@@ -344,6 +403,9 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_BRIEFING, s.briefing)
             .putBoolean(K_TODAY_SHIFT_NOTICE, s.todayShiftNotice)
+            .putBoolean(K_AFTER_ALARM_CARD, s.afterAlarmCard)
+            .putString(K_WATCH_ALARM, s.watchAlarm)
+            .putString(K_WATCH_CALENDAR, s.watchCalendar)
             .putBoolean(K_COMMUTE_NOTICE, s.commuteNotice)
             .putBoolean(K_BEDTIME_NOTICE, s.bedtimeNotice)
             .putBoolean(K_SLEEPING_NOTICE, s.sleepingNotice)
@@ -357,6 +419,19 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
             .putBoolean(K_DAY_CARD, s.showDayCard)
+            .putBoolean(K_TAP_FIRST, s.tapSelectFirst)
+            .putBoolean(K_TEXT_ASKED, s.textAsked)
+            .putBoolean(K_COMPACT, s.compact)
+            .putInt(K_TEXT_STEP, s.textStep)
+            .putBoolean(K_CLOCK12, s.clock12)
+            .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
+            .putBoolean(K_SPEND_HEAT, s.spendHeat)
+            .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
+            .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
+            .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
+            .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
+            .putBoolean(K_CAL_ONLY, s.calendarOnly)
+            .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
@@ -386,6 +461,19 @@ class SettingsRepository(context: Context) {
         const val K_WEEK_START_V2 = "week_start_v2"
         const val K_PHONE_DAY_VIEW = "phone_day_view"
         const val K_DAY_CARD = "day_card"
+        const val K_TAP_FIRST = "tap_select_first"
+        const val K_TEXT_ASKED = "text_asked"
+        const val K_COMPACT = "compact_layout"
+        const val K_TEXT_STEP = "text_step"
+        const val K_CLOCK12 = "clock_12h"
+        const val K_SPEND_IN_CELLS = "spend_in_cells"
+        const val K_SPEND_HEAT = "spend_heat"
+        const val K_BACKUP_NUDGE = "backup_nudge"
+        const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
+        const val K_STRETCH_LIMIT = "stretch_limit_hours"
+        const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
+        const val K_CAL_ONLY = "calendar_only"
+        const val K_STATS_PERIOD = "stats_pay_period"
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
@@ -429,6 +517,7 @@ class SettingsRepository(context: Context) {
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"
         const val K_STATS_MORE = "usage_stats_more"
+        const val K_STATS_LOOKUP = "usage_stats_lookup"
         const val K_WORK_STYLE = "work_style"
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"
@@ -442,6 +531,9 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_REMINDERS = "sleep_reminders"
         const val K_BRIEFING = "notice_briefing"
         const val K_TODAY_SHIFT_NOTICE = "notice_today_shift"
+        const val K_AFTER_ALARM_CARD = "notice_after_alarm"
+        const val K_WATCH_ALARM = "watch_alarm"
+        const val K_WATCH_CALENDAR = "watch_calendar"
         const val K_COMMUTE_NOTICE = "notice_commute"
         const val K_BEDTIME_NOTICE = "notice_bedtime"
         const val K_SLEEPING_NOTICE = "notice_sleeping"

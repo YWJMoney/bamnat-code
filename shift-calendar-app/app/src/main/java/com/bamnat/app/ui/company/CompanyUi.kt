@@ -29,10 +29,14 @@ import androidx.compose.ui.unit.dp
 import com.bamnat.app.company.CompanyTerms
 import com.bamnat.app.company.ReportStatus
 
+/** [LIM-03] 1.31: [companyProblem] for a refusal, with when it goes again and why when the server said ([RateLimits]). */
+fun companyProblem(e: com.bamnat.app.company.CompanyException): String =
+    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e) else companyProblem(e.code, e.field)
+
 /** What to say for an error word from the company server [COMM-04], with the field it was about. */
 fun companyProblem(code: String, field: String? = null): String = when (code) {
     "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 해 주세요"
-    "rate_limited" -> "오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요"
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text()
     "amount", "phone", "email" -> when (field) {
         "note" -> when (code) {
             "amount" -> "한마디에 금액은 빼 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"
@@ -52,6 +56,10 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "setup", "setup_version", "version", "v" -> "이 설정은 보낼 수 없어요. 앱을 최신 버전으로 업데이트해 주세요"
     "too_large" -> "설정이 너무 커서 보낼 수 없어요"
     "not_found" -> "찾을 수 없어요. 이미 지워졌을 수 있어요"
+    // A 1.32 [FIX132-02] A vote on a version no longer open (1.31 said "인터넷에 연결되지 않았어요" for these).
+    "superseded" -> "이 설정은 새 버전으로 바뀌었어요. 회사 광장에서 지금 쓰는 설정을 보고 알려 주세요"
+    "withdrawn" -> "올린 분이 이 설정을 내렸어요. 더 이상 알려 줄 수 없어요"
+    "held" -> "이 설정은 아직 확인 중이라 알려 줄 수 없어요. 확인이 끝나면 다시 물어볼게요"
     // [SRV-04] A feature the developer paused for a while from the developer app.
     "paused" -> "지금은 잠시 쉬고 있어요. 곧 다시 열게요"
     // [PLAZA-07] 결정 D79: a calendar keeps its company 30 days, a phone joins two at most.

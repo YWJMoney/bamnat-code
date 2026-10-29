@@ -35,7 +35,7 @@ import com.bamnat.core.work.WorkStyle
  * question is not asked twice. The same cards as the setup's first question.
  */
 @Composable
-fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit) {
+fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep: Int? = null, onTextStep: (Int) -> Unit = {}) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -44,6 +44,11 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // [FIT-03] U23: the user's own words first, the kinds of work under them.
+                // U 1.32 [UX132-05] 글자 크기 first, so everything after is read at the size chosen (설정 › 화면과 글자에서 다시).
+                if (textStep != null) {
+                    Text("글자 크기", style = MaterialTheme.typography.titleSmall)
+                    com.bamnat.app.ui.settings.TextSizePicker(textStep, onTextStep)
+                }
                 StepHeader(FIRST_QUESTION, "적거나 고른 일에 맞는 기능만 켜고, 다음 질문도 그 일에 맞춰 물어요. 적은 말은 이 휴대폰에만 있어요.")
                 // [FLAG-12][FLAG-13] A hidden kind of work is not offered here (the owner's phone shows it marked).
                 val shown = com.bamnat.app.ui.flags.typeChoices()

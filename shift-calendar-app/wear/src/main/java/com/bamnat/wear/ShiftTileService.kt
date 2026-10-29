@@ -88,6 +88,11 @@ class ShiftTileService : TileService() {
                 col.addContent(button("오늘 알람 끄기", ALARM_OFF))
             }
         }
+        // 1.32 [WEAR-04] When the days came from the phone, small, so an old copy is seen as old.
+        if (p != null) {
+            col.addContent(space(4f))
+            col.addContent(text(WatchText.syncedAt(p), 10f, GREY, lines = 1))
+        }
         val open = ModifiersBuilders.Clickable.Builder()
             .setId("open")
             .setOnClick(ActionBuilders.LaunchAction.Builder()

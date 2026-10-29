@@ -59,7 +59,7 @@ class MemoRepository(
     fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = combine(memos, sharing) { list, sh ->
         val (from, to) = repeatWindow()
         MemoRepeat.expand(list.filter { it.showsOn(calendar, sh) }, from, to).mapNotNullTo(HashSet()) { it.date }
-    }
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default) // [SPD-25] 1.31 I4: four years of repeats, never on the main thread
 
     /** [MEMO-01] Every memo calendar [calendar] sees, for its link and its views. */
     fun memosFor(calendar: String): Flow<List<Memo>> = combine(memos, sharing) { list, sh -> list.filter { it.showsOn(calendar, sh) } }
@@ -166,6 +166,10 @@ class MemoRepository(
         /** [NOTE-05] The days repeating memos are laid out on: a year back to three years on. */
         fun repeatWindow(today: LocalDate = Today.date()): Pair<LocalDate, LocalDate> =
             today.minusYears(1).withDayOfMonth(1) to today.plusYears(3)
+
+        /** [SPD-25] 1.31 R5: the days the calendar lays repeating memos on, two months either side of [month]. */
+        fun shownWindow(month: java.time.YearMonth): Pair<LocalDate, LocalDate> =
+            month.minusMonths(2).atDay(1) to month.plusMonths(2).atEndOfMonth()
 
         const val TRASH_DAYS = 30L
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L

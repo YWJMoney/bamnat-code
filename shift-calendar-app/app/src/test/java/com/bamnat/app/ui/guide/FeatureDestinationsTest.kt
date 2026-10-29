@@ -23,7 +23,9 @@ class FeatureDestinationsTest {
 
     @Test
     fun everyCardKeyHasAScreenThatTakesIt() {
-        val missing = FeatureRegistry.all.filter { f -> f.route.focus != null && !f.route.place.isSettings && !takes(f.route.focus!!) }
+        // U 1.32 [UX132-02] The pay screen takes its own focus keys (PayFocus): a tab, and for 기본급 its dialog.
+        val missing = FeatureRegistry.all.filter { f -> f.route.focus != null && !f.route.place.isSettings && !takes(f.route.focus!!) &&
+            !(f.route.place == com.bamnat.core.guide.Place.PAY && com.bamnat.app.ui.pay.PayFocus.of(f.route.focus) != null) }
         assertTrue("받는 화면이 없는 바로 가기: " + missing.joinToString { "${it.id}(${it.route.focus})" }, missing.isEmpty())
     }
 

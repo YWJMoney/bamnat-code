@@ -54,6 +54,8 @@ data class WatchPayload(
     val clock: Clock = Clock.NONE,
     /** [WEAR-03] Today has an alarm that can be turned off from the tile (I 리뷰 N7 c). */
     val alarmToday: Boolean = false,
+    /** [WEAR-06] 1.31 N2: the phone rings shift alarms on the watch too (워치 진동 알람), so the watch asks for its notices. */
+    val ringOnWatch: Boolean = false,
 ) {
     enum class Clock { NONE, IN, OUT }
 }
@@ -61,6 +63,42 @@ data class WatchPayload(
 object WatchDays {
     /** Days ahead the phone sends at least, so a watch away from the phone a while still knows. */
     const val DAYS = 45
+
+    /**
+     * 1.32 [WEAR-04] 조사 대조 C16 (조사 11-4 "컴플리케이션에 다음 근무까지 n시간"): one stretch the complication shows one thing
+     * in: before a shift, the time to its start; on it, the time to its end. [to] is the moment counted to.
+     */
+    data class Countdown(val from: LocalDateTime, val to: LocalDateTime, val onShift: Boolean, val name: String)
+
+    /** The stretches from [now] over the next [max] shifts of [days] (days off and leave are passed over). */
+    fun countdowns(days: List<WatchDay>, now: LocalDateTime, max: Int = 14): List<Countdown> {
+        val shifts = days.filter { it.start != null && it.end != null && !it.off }.map { d ->
+            val s = d.date.atTime(d.start!!)
+            val e = if (d.end!!.isAfter(d.start)) d.date.atTime(d.end) else d.date.plusDays(1).atTime(d.end)
+            Triple(s, e, d.name)
+        }.sortedBy { it.first }.filter { it.second.isAfter(now) }.take(max)
+        var cursor = now
+        val out = mutableListOf<Countdown>()
+        for ((s, e, name) in shifts) {
+            if (s.isAfter(cursor)) out += Countdown(cursor, s, onShift = false, name = name)
+            val from = if (s.isAfter(cursor)) s else cursor
+            if (e.isAfter(from)) out += Countdown(from, e, onShift = true, name = name)
+            cursor = maxOf(cursor, e)
+        }
+        return out
+    }
+
+    /** "주간까지 5시간 20분", "근무 끝까지 2시간"; null with no shift ahead. */
+    fun countdownLine(c: Countdown?, now: LocalDateTime): String? {
+        c ?: return null
+        val m = java.time.Duration.between(now, c.to).toMinutes().coerceAtLeast(0)
+        val left = when {
+            m >= 48 * 60 -> "${m / (24 * 60)}일"
+            m >= 60 -> "${m / 60}시간" + if (m % 60 > 0 && m < 10 * 60) " ${m % 60}분" else ""
+            else -> "${m}분"
+        }
+        return if (c.onShift) "근무 끝까지 $left" else "${c.name}까지 $left"
+    }
     const val PATH = "/bamnat/days"
     const val KEY = "payload"
     private const val OFF_COLOR = 0xFF8E9AAFL
@@ -104,7 +142,8 @@ object WatchDays {
     fun encode(p: WatchPayload): String {
         // [WEAR-01][WEAR-03] Fields 6 on are new in 1.23; an older watch reads the first six and ignores them.
         val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString(),
-            p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0")
+            p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0",
+            if (p.ringOnWatch) "1" else "0")
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
@@ -132,7 +171,8 @@ object WatchDays {
             weekMinutes = head.getOrNull(7)?.toIntOrNull() ?: -1,
             weekLimitMinutes = head.getOrNull(8)?.toIntOrNull()?.takeIf { it > 0 } ?: 52 * 60,
             clock = head.getOrNull(9)?.let { c -> WatchPayload.Clock.entries.firstOrNull { it.name == c } } ?: WatchPayload.Clock.NONE,
-            alarmToday = head.getOrNull(10) == "1")
+            alarmToday = head.getOrNull(10) == "1",
+            ringOnWatch = head.getOrNull(11) == "1")
     }
 
     /**
@@ -192,6 +232,15 @@ object WatchDays {
     /** [WEAR-03] Messages the watch sends the phone: turn today's alarm off, and an 알바's 출근·퇴근. */
     const val ALARM_OFF_PATH = "/bamnat/sync/alarm-off"
     const val CLOCK_PATH = "/bamnat/sync/clock"
+    /**
+     * [WEAR-06] 1.31 N2 워치 진동 알람: the phone tells the watch an alarm rings ([RING_PATH], with what it is for) and that it
+     * stopped ([RING_STOP_PATH]); the watch's 끄기 and 다시 울림 go back as [RING_OFF_PATH] and [RING_SNOOZE_PATH]. Phone and
+     * watch only (Data Layer messages), never a server.
+     */
+    const val RING_PATH = "/bamnat/ring"
+    const val RING_STOP_PATH = "/bamnat/ring/stop"
+    const val RING_OFF_PATH = "/bamnat/sync/ring-off"
+    const val RING_SNOOZE_PATH = "/bamnat/sync/ring-snooze"
 
     private val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
 

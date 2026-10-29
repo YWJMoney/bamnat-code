@@ -407,7 +407,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
 
     @Test fun foldedSettingsCalendarShareRows() {
         app.container.shareApi = shares
-        shoot("332_folded_settings_calendar_share", FOLDED) { settingsPage("달력 화면") }
+        shoot("332_folded_settings_calendar_share", FOLDED) { settingsPage("화면과 글자") }
     }
     @Test fun foldedInquiryFormTips() {
         inquiriesOn()

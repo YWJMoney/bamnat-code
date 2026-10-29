@@ -73,10 +73,12 @@ data class MonthOverview(
             resolver: ScheduleResolver,
             jobs: List<Job> = emptyList(),
             sales: List<DailySales> = emptyList(),
+            /** 1.32 [CALX-06] The days the shift figures count (a 급여 기간 when 통계 counts by it); jobs and sales stay the month. */
+            range: com.bamnat.core.hours.StatsRange.Range? = null,
         ): MonthOverview {
             val first = month.atDay(1)
             val last = month.atEndOfMonth()
-            val days = resolver.resolveRange(first, last)
+            val days = resolver.resolveRange(range?.from ?: first, range?.to ?: last)
             val working = days.filter { it.totalMinutes > 0 }
             val leave = days.sumOf { d -> d.leave?.let { it.quarters / 4.0 } ?: 0.0 }
             // [FLD-03] Cancelled jobs are not work.

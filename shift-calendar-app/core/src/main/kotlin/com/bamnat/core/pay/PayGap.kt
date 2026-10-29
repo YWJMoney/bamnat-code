@@ -3,6 +3,7 @@ package com.bamnat.core.pay
 import com.bamnat.core.money.MoneyCategories
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
+import com.bamnat.core.report.ReportDoc
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
@@ -54,4 +55,34 @@ object PayGaps {
 
     /** What of a line is 급여: all of a 급여 line, or the 급여 share of a split one (its main part included). */
     private fun payAmount(e: MoneyEntry): Long = e.shareOf(MoneyCategories.SALARY)
+
+    /**
+     * D 1.32 [PAYA-04] 578 '덜 받은 돈': what came in short of the estimate, said plainly (무료). Null when it did not
+     * come in short.
+     */
+    fun short(gap: PayGap): Long? = if (!gap.matches && gap.diff < 0) -gap.diff else null
+
+    /**
+     * D 1.32 [PAYA-04] (프로) the 근거표 and 정리본: the month's 세전 from the calendar, each 공제 the estimate took, the
+     * estimate, what came in on which days, the gap, and where to ask. A page to show the company or a 상담 centre.
+     */
+    fun doc(gap: PayGap, gross: Long, deductions: List<Pair<String, Long>>, basis: String, payLines: List<Pair<String, Long>> = emptyList()): ReportDoc {
+        fun w(v: Long) = "%,d원".format(v)
+        val blocks = mutableListOf<ReportDoc.Block>(
+            ReportDoc.Facts(listOf("달" to "${gap.month.year}년 ${gap.month.monthValue}월", "근무표로 계산한 급여(세전)" to w(gross),
+                "예상 실수령" to "${w(gap.expected)} ($basis)", "들어온 돈" to "${w(gap.received)} (${gap.dates.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" }})",
+                "차이" to w(gap.diff))),
+        )
+        if (payLines.isNotEmpty()) {
+            blocks += ReportDoc.Heading("세전 내역 (달력의 근무로 계산)")
+            blocks += ReportDoc.Table(listOf("항목", "금액"), payLines.map { listOf(it.first, w(it.second)) }, listOf(3f, 1.5f), right = setOf(1))
+        }
+        if (deductions.isNotEmpty()) {
+            blocks += ReportDoc.Heading("예상 공제")
+            blocks += ReportDoc.Table(listOf("항목", "금액"), deductions.map { listOf(it.first, w(it.second)) }, listOf(3f, 1.5f), right = setOf(1))
+        }
+        blocks += ReportDoc.Paragraph("예상은 근무표와 급여 설정, 올해 4대보험·간이세액표로 계산한 참고값이에요. 회사 명세서와 줄마다 맞춰 보면 어디서 차이가 났는지 알 수 있어요.", small = true)
+        blocks += ReportDoc.Paragraph(SlipAudit.ASK_NOTE, small = true)
+        return ReportDoc("${gap.month.year}년 ${gap.month.monthValue}월 덜 받은 돈 정리", blocks, footer = "밤낮 · 덜 받은 돈 정리 · 참고용")
+    }
 }

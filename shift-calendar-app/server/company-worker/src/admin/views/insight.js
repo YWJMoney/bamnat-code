@@ -67,7 +67,7 @@ export function insightViews(A) {
       <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
         <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></details>`;
     return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>` : "")
-      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${remoteCard()}${funnel}${shares}</div>${events}`;
+      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${remoteCard()}${funnel}${shares}</div>${events}`;
   }
 
   /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
@@ -107,6 +107,24 @@ export function insightViews(A) {
       ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 시작 시간이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}</section>`;
   }
   // AO 1.28 끝
+
+  // R131 1.31 [STAT-08] N4 조회 시간: what consenting phones sent once 처리방침 3.5 is in force, per app version.
+  function lookupCard(d) {
+    const st = d.startup;
+    if (!st) return "";
+    const line = (label, part) => (part ? `${label} ${startupSec(part.p50)}(90% ${startupSec(part.p90)})` : "");
+    const rows = st.versions.filter((v) => v.wait || v.call).map((v) => {
+      const company = v.wait?.company;
+      const few = !company || company.phones < st.few;
+      const small = [line("찾기 첫 결과", v.wait?.find), line("광장 글", v.wait?.plaza), line("서버 검색", v.call?.search), line("서버 회사", v.call?.company),
+        line("서버 광장", v.call?.plaza)].filter(Boolean).join(" · ");
+      return `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${esc(small || "회사 화면 값만 있어요")}</small></span>
+        <span class="row-side"><b>${company ? `${startupSec(company.p50)} · 90% ${startupSec(company.p90)}` : "–"}</b>${few ? '<span class="pill">데이터 부족</span>' : ""}<span class="meta">${company ? `${company.phones}대` : ""}</span></span></div></li>`;
+    }).join("");
+    return `<section class="card" id="lookup-card"><h2>조회 시간</h2>
+      <p class="hint">회사를 누른 뒤 대표판이 보이기까지(가운데 값 · 10대 중 9대가 그 안)와 찾기·광장·서버 답의 시간이에요. 처리방침 3.5 시행(11월 28일) 뒤, 사용 통계와 더 보내기에 동의한 휴대폰만 구간으로 보내요. 무엇을 찾았는지는 오지 않아요.</p>
+      ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 조회 시간이 없어요. 처리방침 3.5가 시행되고 1.31 이상에서 동의한 휴대폰부터 와요.</p>'}</section>`;
+  }
 
   // AQ 1.29 시작 [PHOTO-10] 사진이 달라요: how often people said a photo was read wrong, per day and per screen, with the reasons.
   function photoWrongCard(d) {

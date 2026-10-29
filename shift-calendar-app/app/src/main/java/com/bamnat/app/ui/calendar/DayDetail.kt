@@ -73,6 +73,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -1036,14 +1037,19 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
+    // A 1.32 [FIX132-05] A long press copies the memo, all of it or a part, without opening it.
+    var copying by remember { mutableStateOf(false) }
+    if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" },
+        (listOf(memo.title, memo.body) + memo.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n")) { copying = false }
     Row(
         Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(memoBackground(memo.colorIndex))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = { copying = true }, onLongClickLabel = "메모 복사")
             .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

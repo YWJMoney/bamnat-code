@@ -44,6 +44,8 @@ internal fun WorkStyleLine(data: WidgetData) {
             }
         }
         WorkStyle.DAY -> {
+            // G 1.32 [WTYP-23] 공무원: 이번 달 시간외 against 57시간 (or the cap set).
+            OvertimeWidgetLine(data)
             val extra = data.day(data.today).extraMinutes
             val parts = listOfNotNull(
                 data.leaveLeft?.let { "남은 연차 ${LeaveBook.days(it.coerceAtLeast(0.0))}" },
@@ -54,8 +56,19 @@ internal fun WorkStyleLine(data: WidgetData) {
                 Text(parts.joinToString(" · "), style = style, maxLines = 1)
             }
         }
+        // G 1.32 [WTYP-23] 경찰·소방 교대 too, once a 시간외 상한 applies.
+        WorkStyle.SHIFT, null -> OvertimeWidgetLine(data)
         else -> Unit
     }
+}
+
+/** G 1.32 [WTYP-23] 조사 대조 C14: 자영업 "이번 달 영업 22일 · 휴무 8일" under the sales. */
+@Composable
+internal fun ShopDaysLine(data: WidgetData) {
+    if (styleLinesOff()) return
+    val d = data.shopDays ?: return
+    Spacer(GlanceModifier.height(6.dp))
+    Text("이번 달 영업 ${d.open}일 · 휴무 ${d.closed}일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
 }
 
 /**
@@ -65,6 +78,8 @@ internal fun WorkStyleLine(data: WidgetData) {
 @Composable
 internal fun FieldWeekLine(data: WidgetData) {
     if (styleLinesOff()) return
+    // G 1.32 [WTYP-23] 플랫폼형 says its 건수 on the +1건 row instead.
+    if (data.fieldRules?.platformMode == true) return
     val w = data.fieldWeek ?: return
     Spacer(GlanceModifier.height(6.dp))
     Text(

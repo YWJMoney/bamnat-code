@@ -292,7 +292,7 @@ fun PayFindFlow(
                             state.used = used
                             state.step = if (used is PayFind.Used.Ready) PayFindStep.DONE else PayFindStep.NONE
                         } catch (e: CompanyException) {
-                            error = companyProblem(e.code, e.field)
+                            error = companyProblem(e)
                         }
                         busy = false
                     }

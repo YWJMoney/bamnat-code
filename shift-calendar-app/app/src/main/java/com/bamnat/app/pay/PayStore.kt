@@ -84,7 +84,12 @@ class PayStore(
         synchronized(this@PayStore) { _profile.value?.let { write(transform(it), keepUndo = true) } }
     }
 
-    private fun write(profile: PayProfile?, keepUndo: Boolean) {
+    private fun write(given: PayProfile?, keepUndo: Boolean) {
+        // D 1.32 [PAYA-01] A new payslip match joins the months matched before.
+        val was = _profile.value
+        val profile = given?.verified?.takeIf { it != was?.verified }?.let { v ->
+            given.copy(checks = com.bamnat.core.pay.SlipProof.remember(given.checks, v))
+        } ?: given
         if (keepUndo) _undo.value = _profile.value
         if (profile == null) file.delete() else {
             file.parentFile?.mkdirs()
@@ -202,6 +207,7 @@ object PayCodec {
         .put("dailyHours", p.dailyHours)
         .putOpt("annual", p.annual?.let(::annual))
         .putOpt("verified", p.verified?.let(::verified))
+        .put("checks", org.json.JSONArray(p.checks.map(::verified)))
         // [PAYS-06] Rules in the user's own words; an empty list is left out so older files stay the same.
         .apply { if (p.customRules.isNotEmpty()) put("customRules", JSONArray(p.customRules.map(::customRule))) }
         // [HRLY-04..HRLY-07] 알바 settings, left out at their defaults so older files stay the same.
@@ -250,6 +256,7 @@ object PayCodec {
         dailyHours = o.optInt("dailyHours", 8 * 60).coerceIn(30, 8 * 60),
         annual = o.optJSONObject("annual")?.let(::annualFrom),
         verified = o.optJSONObject("verified")?.let(::verifiedFrom),
+        checks = o.optJSONArray("checks")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(::verifiedFrom) } }.orEmpty(),
         customRules = o.optJSONArray("customRules").objects().mapNotNull(::customRuleFrom).take(CustomRule.MAX),
         taxMode = com.bamnat.core.pay.TaxMode.entries.firstOrNull { it.name == o.optString("taxMode") } ?: com.bamnat.core.pay.TaxMode.NONE,
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
@@ -385,11 +392,13 @@ object PayCodec {
     /** [PAYX-15] Pay period and pay day; values out of range fall back to the calendar month. */
     fun period(p: com.bamnat.core.pay.PayPeriod): JSONObject = JSONObject()
         .put("endDay", p.endDay ?: -1).put("payDay", p.payDay ?: -1).put("payNextMonth", p.payNextMonth)
+        .put("payWeekday", p.payWeekday?.name ?: "")
 
     fun periodFrom(o: JSONObject): com.bamnat.core.pay.PayPeriod = com.bamnat.core.pay.PayPeriod(
         endDay = o.optInt("endDay", -1).takeIf { it in 1..30 },
         payDay = o.optInt("payDay", -1).takeIf { it in 1..31 },
         payNextMonth = o.optBoolean("payNextMonth", false),
+        payWeekday = java.time.DayOfWeek.entries.firstOrNull { it.name == o.optString("payWeekday") },
     )
 
     private fun JSONObject.putRate(key: String, v: Double?) = put(key, v ?: JSONObject.NULL)

@@ -23,7 +23,7 @@ class SettingsLayoutTest {
 
     @Test fun sevenGroups() {
         assertEquals(
-            listOf("내 근무", "알람", "알림과 잠", "급여와 연차", "달력 화면", "데이터", "개인정보·앱 정보"),
+            listOf("내 근무", "알람", "알림과 잠", "급여와 연차", "화면과 글자", "데이터", "개인정보·앱 정보"),
             SettingsPage.entries.map { it.title },
         )
         Place.entries.filter { it.isSettings }.forEach { assertNotNull(it.name, it.settingsPage()) }

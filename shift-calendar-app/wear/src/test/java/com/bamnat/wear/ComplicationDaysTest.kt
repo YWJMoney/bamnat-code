@@ -86,4 +86,26 @@ class ComplicationDaysTest {
         assertEquals("밤낮", none.shortTitle)
         assertEquals("오늘 근무", none.longTitle)
     }
+
+    /** 1.32 [WEAR-04] 다음 근무까지: before a shift to its start, on it to its end, days off passed over. */
+    @Test
+    fun theCountdownGoesToTheNextStartThenTheEnd() {
+        val now = today.atTime(7, 0)
+        val list = com.bamnat.core.work.WatchDays.countdowns(days, now)
+        assertEquals(now, list[0].from)
+        assertEquals(today.atTime(9, 0), list[0].to)
+        assertTrue(!list[0].onShift)
+        assertEquals(today.atTime(18, 0), list[1].to)
+        assertTrue(list[1].onShift)
+        // Then the 야간 that runs into the next morning.
+        assertEquals(today.plusDays(1).atTime(22, 0), list[2].to)
+        assertEquals(today.plusDays(2).atTime(7, 0), list[3].to)
+        assertEquals("주간까지 2시간", com.bamnat.core.work.WatchDays.countdownLine(list[0], now))
+        assertEquals("근무 끝까지 1시간 30분", com.bamnat.core.work.WatchDays.countdownLine(list[1], today.atTime(16, 30)))
+        // Mid-shift the first stretch is the rest of it.
+        val mid = com.bamnat.core.work.WatchDays.countdowns(days, today.atTime(12, 0)).first()
+        assertTrue(mid.onShift)
+        assertEquals(today.atTime(18, 0), mid.to)
+        assertNull(com.bamnat.core.work.WatchDays.countdownLine(null, now))
+    }
 }

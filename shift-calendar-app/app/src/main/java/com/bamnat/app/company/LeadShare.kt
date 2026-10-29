@@ -121,7 +121,7 @@ class LeadShare(private val c: AppContainer) {
             _step.value = try {
                 decide(pick, site)
             } catch (e: CompanyException) {
-                Step.Failed(pick, com.bamnat.app.ui.company.companyProblem(e.code, e.field), site)
+                Step.Failed(pick, com.bamnat.app.ui.company.companyProblem(e), site)
             } catch (e: org.json.JSONException) {
                 Step.Failed(pick, "이 근무주기는 나누지 못했어요", site)
             }

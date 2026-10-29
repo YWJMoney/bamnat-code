@@ -6,6 +6,10 @@
 
     <!-- A restart drops the midnight alarm; ClockReceiver sets it again. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- [WEAR-06] 1.31: the phone's alarm shown and felt on the watch while it rings. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:allowBackup="false"
@@ -79,6 +83,24 @@
                 android:value="0" />
         </service>
 
+        <!-- 1.32 [WEAR-04] 다음 근무까지 (근무 중이면 끝까지). -->
+        <service
+            android:name=".NextShiftComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_monochrome"
+            android:label="@string/next_complication_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
         <!-- The phone's days arriving; only Google Play services binds it. -->
         <service
             android:name=".DaysListenerService"
@@ -91,6 +113,32 @@
                     android:scheme="wear" />
             </intent-filter>
         </service>
+
+        <!-- [WEAR-06] The phone's alarm ringing and stopping. -->
+        <service
+            android:name=".RingListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/bamnat/ring"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name=".RingActionReceiver"
+            android:exported="false" />
+
+        <activity
+            android:name=".RingActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:turnScreenOn="true" />
 
         <!-- Midnight: the tile and complication move on to the new day. -->
         <receiver

@@ -78,7 +78,7 @@ class QScreenshotTest : ScreenshotBase() {
     @Test fun investMonthlySmallBig() = shoot("750_q_invest_monthly_320_200", SMALL_PHONE, 2f, investAlarm { reveal("매달 25일", exact = true) })
 
     @Test fun dayRate() = shoot("751_q_day_rate", FOLDED) {
-        content { com.bamnat.app.ui.calendar.DayRateDialog(today, 1.0, FieldRules(dayRate = 230_000, lastClient = "OO건설"), null, {}, { _, _ -> }) }
+        content { com.bamnat.app.ui.calendar.DayRateDialog(today, 1.0, FieldRules(dayRate = 230_000, lastClient = "OO건설"), null, onDismiss = {}, onSave = { _, _ -> }) }
         tapText("공수 0.25공 늘리기", exact = true, scrolls = 0)
     }
 

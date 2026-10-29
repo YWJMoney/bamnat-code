@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
@@ -29,9 +32,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,6 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -63,11 +69,11 @@ import com.bamnat.app.tier.Gate
 import com.bamnat.app.tier.ProState
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.tier.ProReason
-import kotlinx.coroutines.launch
+import com.bamnat.core.time.Today
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import com.bamnat.core.time.Today
+import kotlinx.coroutines.launch
 
 /**
  * [MON-04] 프로's four pillars (수익화 확정 5-2), each with the [Feature]s it opens. [PROV-08] Since 1.20.0
@@ -170,11 +176,11 @@ fun ProScreen(onBack: () -> Unit) {
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                StatusCard(gate, pro, zone)
+                val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+                StatusCard(gate, pro, zone, settings.workStyle)
                 ConsentWaiting(c, pro, onMessage = { message = it })
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
                 // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
-                val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 ProCollectionCard(gate, settings)
 
                 SectionCard(title = "프로가 더해 주는 것") {
@@ -199,6 +205,9 @@ fun ProScreen(onBack: () -> Unit) {
                         }
                     }
                     Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // G 1.32 [WTYP-01] The ad promise, in words.
+                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 }
 
                 if (!gate.live || gate.preview) {
@@ -257,7 +266,7 @@ fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
         " 인터넷이 연결되면 저절로 다시 보내요. 답은 이 휴대폰에 그대로 있어요."
 
 @Composable
-private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId) {
+private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "지금") {
         Text(gate.access.reason.words, style = MaterialTheme.typography.titleMedium)
         gate.access.until?.let { until ->
@@ -274,7 +283,34 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId) {
         pro.passes?.waitingMonths?.takeIf { it > 0 }?.let {
             Text("받은 보상 이용권 ${it}개월은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
+        if (gate.access.reason == ProReason.DAY_PASS) DayPassOpened(style)
     }
+}
+
+/**
+ * 1.32 [PROX-01] (가계부 조사 5장): what today's 하루 이용권 opened for this kind of work, each a tap from where it lives,
+ * so the day goes on the answers worth money; and the line that says a subscription keeps them every day.
+ */
+@Composable
+private fun DayPassOpened(style: com.bamnat.core.work.WorkStyle?) {
+    Text("오늘 열린 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+    com.bamnat.core.tier.ProMoments.opened(style).forEach { o ->
+        val f = com.bamnat.core.guide.FeatureRegistry.get(o.featureId)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .let { m -> if (f != null) m.clickable(role = Role.Button, onClickLabel = "${o.name} 열기") { com.bamnat.app.ui.guide.FeatureLinks.open(f) } else m }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(o.name, style = MaterialTheme.typography.bodyLarge)
+                Text(o.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (f != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+        }
+    }
+    Text(com.bamnat.core.tier.ProMoments.EVERY_DAY, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    Text("매주 다시 계산 알림은 구독에서만 켤 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -450,7 +486,7 @@ fun passWhy(why: String): String = when (why) {
 fun serverProblem(code: String): String = when (code) {
     "code" -> "코드가 맞지 않거나 시간이 지났어요. 새 코드로 다시 해 주세요."
     "too_many" -> "이 관리자에게는 휴대폰을 2대까지 연결할 수 있어요. 관리자 앱에서 하나를 끊어 주세요."
-    "rate_limited" -> "잠시 뒤 다시 해 주세요."
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text()
     "offline" -> "인터넷에 연결되지 않았어요."
     else -> "지금은 처리하지 못했어요. 잠시 뒤 다시 해 주세요."
 }
@@ -473,3 +509,42 @@ private fun copy(context: Context, text: String) {
 
 /** [INPUT-04] A recovery code as the server makes it: 16 letters and digits, a dash every four (company-worker passCode). */
 private val RECOVERY_CODE = Regex("""[A-Z0-9]{4}(-?[A-Z0-9]{4}){3}""")
+
+/**
+ * 1.32 [PROX-03] (가계부 조사 5장 "결제 투명성"): 설정's first line while money is or will be taken: the next 결제일 and 금액,
+ * when a 체험 turns into a payment, or that a payment failed; and the way to 해지 one tap away. Null when nothing is billed.
+ */
+fun billingWords(reason: ProReason, lastDay: LocalDate?, autoRenew: Boolean, price: String?): String? {
+    val day = lastDay?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: return null
+    return when (reason) {
+        ProReason.SUBSCRIPTION -> if (autoRenew) "프로 구독 중 · 다음 결제 $day" + (price?.let { " · $it" } ?: "") else "구독을 해지했어요 · ${day}까지 써요"
+        ProReason.TRIAL -> if (autoRenew) "무료 체험 ${day}에 끝나요" + (price?.let { " · 그 뒤 $it 결제" } ?: " · 그 뒤 결제돼요") else "무료 체험 ${day}에 끝나요 · 해지해서 결제되지 않아요"
+        ProReason.GRACE -> "결제가 되지 않았어요 · ${day}까지 결제 수단을 바꿔 주세요"
+        else -> null
+    }
+}
+
+/** 1.32 [PROX-03] The line itself, at the top of 설정. */
+@Composable
+fun BillingTopLine(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val c = context.appContainer
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+    val pro by c.proStore.state.collectAsStateWithLifecycle()
+    val plans by c.billing.plans.collectAsStateWithLifecycle()
+    if (!gate.live || gate.preview) return
+    val sub = pro.sub ?: return
+    val price = plans.firstOrNull { it.basePlan == sub.basePlan }?.priceWords
+    val words = billingWords(gate.access.reason, gate.access.until?.let { lastDay(it, Today.zone()) }, sub.autoRenew, price) ?: return
+    Surface(
+        color = if (gate.access.reason == ProReason.GRACE) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.medium, modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(words, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { open(context, ProductIds.manageUrl(context.packageName)) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (gate.access.reason == ProReason.GRACE) "결제 수단 바꾸기" else "해지·관리")
+            }
+        }
+    }
+}

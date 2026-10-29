@@ -27,6 +27,16 @@ class AutoRecordPrefs(context: Context) {
         val confirmFirst: Boolean = false,
         /** [COMN-04] The day 확인하고 적기 was turned on; older lines were already counted and stay counted. */
         val confirmSince: java.time.LocalDate? = null,
+        /** E 1.32 [LEDX-09] Place key → the day the user said they still use that subscription. */
+        val lookedAt: Map<String, java.time.LocalDate> = emptyMap(),
+        /** 1.32 [LEDX-15] The user's own names as banks print them: a deposit from one is a move between their own accounts. */
+        val myNames: List<String> = emptyList(),
+        /** 1.32 [LEDX-18] The card's 해외 이용 수수료 (0.0125 = 1.25%), set by the user. */
+        val abroadFee: Double = com.bamnat.core.money.LedgerSmarts.ABROAD_FEE,
+        /** 1.32 [LEDX-18] Currency → won per unit, typed or learned from a line fixed to the card's bill. */
+        val rates: Map<String, Double> = emptyMap(),
+        /** 1.32 [LEDX-19] Card last-four digits already asked about ("체크카드 맞나요?"), so each is asked once. */
+        val askedCards: Set<String> = emptySet(),
     ) {
         /** [COMN-04] From when unconfirmed lines wait, or null for 바로 적기. */
         val holdFrom: java.time.LocalDate? get() = if (confirmFirst) confirmSince ?: java.time.LocalDate.MIN else null
@@ -56,6 +66,32 @@ class AutoRecordPrefs(context: Context) {
 
     fun notRepeating(key: String) = edit { putStringSet(K_NOT_REPEATING, current.notRepeating + key) }
 
+    /** E 1.32 [LEDX-09] "아직 써요": not asked again for 90 days. */
+    fun lookedAt(key: String, on: java.time.LocalDate = Today.date()) = edit {
+        val next = (current.lookedAt + (key to on)).entries.toList().takeLast(MAX_APPS)
+        putStringSet(K_LOOKED, next.map { "${it.key}\t${it.value.toEpochDay()}" }.toSet())
+    }
+
+    /** 1.32 [LEDX-15] At most [MAX_NAMES] names of 2~10 letters, spaces taken out. */
+    fun setMyNames(names: List<String>) = edit {
+        putString(K_MY_NAMES, cleanNames(names).joinToString("\n"))
+    }
+
+    /** 1.32 [LEDX-18] 해외 이용 수수료 in percent (1.25), held to 0~5%. */
+    fun setAbroadFeePercent(percent: Double) = edit {
+        putFloat(K_ABROAD_FEE, (percent / 100).coerceIn(0.0, com.bamnat.core.money.LedgerSmarts.MAX_ABROAD_FEE).toFloat())
+    }
+
+    /** 1.32 [LEDX-18] The user's rate for [currency]; null forgets it (the rough table again). */
+    fun setRate(currency: String, rate: Double?) = edit {
+        val cur = currency.trim().uppercase().take(3)
+        val next = if (rate == null || rate <= 0 || !rate.isFinite()) current.rates - cur else current.rates + (cur to rate)
+        putStringSet(K_RATES, next.entries.take(MAX_RATES).map { "${it.key}\t${it.value}" }.toSet())
+    }
+
+    /** 1.32 [LEDX-19] The card [last4] was asked about once. */
+    fun askedCard(last4: String) = edit { putStringSet(K_ASKED_CARDS, (current.askedCards + last4).toList().takeLast(MAX_APPS).toSet()) }
+
     /** [CALS-04] Where payment notifications are written down. */
     fun setCalendar(id: String) = edit { putString(K_CALENDAR, id) }
 
@@ -76,6 +112,9 @@ class AutoRecordPrefs(context: Context) {
         if (current.calendar == id) setCalendar(PersonalCalendar.MAIN)
         current.appCalendars.filterValues { it == id }.keys.forEach { setAppCalendar(it, null) }
     }
+
+    private fun cleanNames(names: List<String>): List<String> =
+        names.map { it.replace(Regex("\\s+"), "") }.filter { it.length in 2..10 }.distinct().take(MAX_NAMES)
 
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
         synchronized(this) {
@@ -100,6 +139,16 @@ class AutoRecordPrefs(context: Context) {
         }.toMap(),
         confirmFirst = prefs.getBoolean(K_CONFIRM_FIRST, false),
         confirmSince = if (prefs.contains(K_CONFIRM_SINCE)) java.time.LocalDate.ofEpochDay(prefs.getLong(K_CONFIRM_SINCE, 0)) else null,
+        lookedAt = prefs.getStringSet(K_LOOKED, null).orEmpty().mapNotNull { line ->
+            line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { p -> p[1].toLongOrNull()?.let { p[0] to java.time.LocalDate.ofEpochDay(it) } }
+        }.toMap(),
+        myNames = cleanNames(prefs.getString(K_MY_NAMES, null).orEmpty().split("\n")),
+        abroadFee = if (prefs.contains(K_ABROAD_FEE)) prefs.getFloat(K_ABROAD_FEE, 0f).toDouble().coerceIn(0.0, com.bamnat.core.money.LedgerSmarts.MAX_ABROAD_FEE)
+            else com.bamnat.core.money.LedgerSmarts.ABROAD_FEE,
+        rates = prefs.getStringSet(K_RATES, null).orEmpty().mapNotNull { line ->
+            line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { p -> p[1].toDoubleOrNull()?.takeIf { it > 0 && it.isFinite() }?.let { p[0] to it } }
+        }.toMap(),
+        askedCards = prefs.getStringSet(K_ASKED_CARDS, null).orEmpty().toSet(),
     )
 
     private companion object {
@@ -112,6 +161,13 @@ class AutoRecordPrefs(context: Context) {
         const val K_APP_CALENDARS = "app_calendars"
         const val K_CONFIRM_FIRST = "confirm_first"
         const val K_CONFIRM_SINCE = "confirm_since"
+        const val K_LOOKED = "subs_looked"
         const val MAX_APPS = 30
+        const val K_MY_NAMES = "my_names"
+        const val K_ABROAD_FEE = "abroad_fee"
+        const val K_RATES = "my_rates"
+        const val K_ASKED_CARDS = "asked_cards"
+        const val MAX_RATES = 20
+        const val MAX_NAMES = 3
     }
 }

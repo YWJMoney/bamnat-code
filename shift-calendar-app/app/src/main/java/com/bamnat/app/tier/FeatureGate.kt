@@ -142,7 +142,8 @@ class FeatureGate(
         val live = rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.on == true
         val free = Feature.entries.filter { it.minTier > Tier.FREE && rows[com.bamnat.core.flags.FlagCatalog.FREE_PREFIX + it.name]?.on == true }.toSet()
         // [MON-02] The alarm check screen's preview counts before the launch and in debug builds only.
-        if (previewTier != null && (debug || !live)) {
+        // S 1.32 [SECX-01] Before the launch only on an approved admin phone: a user's phone ignores a stored preview.
+        if (previewTier != null && (debug || (!live && s.passes?.admin?.approved == true))) {
             val on = previewTier >= Tier.PRO
             return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), preview = true)
         }

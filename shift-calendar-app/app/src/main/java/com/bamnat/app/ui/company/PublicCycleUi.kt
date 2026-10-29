@@ -567,7 +567,7 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: Strin
                     is com.bamnat.app.company.PayFind.Used.Ready -> ready = r.way
                 }
             } catch (e: com.bamnat.app.company.CompanyException) {
-                error = companyProblem(e.code, e.field)
+                error = companyProblem(e)
             } catch (e: com.bamnat.app.data.BackupException) {
                 error = e.message ?: "급여 방식을 넣지 못했어요"
             }

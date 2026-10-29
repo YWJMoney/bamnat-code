@@ -1,36 +1,29 @@
 package com.bamnat.app.ui.stats
 
-import com.bamnat.core.hours.shortRests
-import com.bamnat.app.ui.guide.FeatureCard
-import com.bamnat.app.appContainer
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
-import androidx.compose.runtime.produceState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,44 +32,54 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.WarningBanner
+import com.bamnat.app.ui.guide.FeatureCard
+import com.bamnat.app.ui.money.wonBrief
+import com.bamnat.app.ui.pay.TakeHomeLine
+import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.hours.HoursFormat
-import com.bamnat.core.pay.PayCalculator
-import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.hours.WeekSummary
 import com.bamnat.core.hours.WorkHoursCalculator
+import com.bamnat.core.hours.shortRests
 import com.bamnat.core.money.MoneyBook
-import com.bamnat.app.ui.money.wonBrief
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.work.HourlyWeek
 import com.bamnat.core.work.HourlyWork
-import com.bamnat.app.ui.pay.TakeHomeLine
-import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.core.work.WorkStats
 import com.bamnat.core.work.WorkStyle
 import com.bamnat.core.work.words
 import java.time.DayOfWeek
 import java.time.YearMonth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class StatsViewModel(
     private val container: AppContainer,
@@ -123,7 +126,9 @@ class StatsViewModel(
 }
 
 @Composable
-fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
+fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
+                /** U 1.32 [UX132-02] A 고치기 chip: the pay screen at that value ([com.bamnat.app.ui.pay.PayFocus] key). */
+                onOpenPayFocus: (String) -> Unit = { onOpenPay() }) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -148,9 +153,25 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
     // the first open of 통계 draws at once instead of waiting on nine months of days.
     // [UX-10] 1.25 Z (U7): back on this tab, the figures are there from the first frame; worked out again only when the days changed.
-    val figures by com.bamnat.app.ui.rememberLast("stats:${vm.calendarId}:$month", snap, settings.limits, month) {
+    // B 1.32 [CALX-05] Over the pay period when chosen and the pay has one (급여 기간 21일~20일), else 1일~말일.
+    val period = payProfile?.period?.takeIf { settings.statsByPayPeriod && it.endDay != null }
+    // 1.32 [CALX-06] 주 and 직접 for this visit (1일~말일 and 급여 기간 are kept in settings); the trend stays by month.
+    var briefMode by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var weekShift by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+    var customFrom by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+    var customTo by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+    val rangeMode = when (briefMode) {
+        com.bamnat.core.hours.StatsRange.Mode.WEEK.name -> com.bamnat.core.hours.StatsRange.Mode.WEEK
+        com.bamnat.core.hours.StatsRange.Mode.CUSTOM.name -> com.bamnat.core.hours.StatsRange.Mode.CUSTOM
+        else -> if (period != null) com.bamnat.core.hours.StatsRange.Mode.PAY else com.bamnat.core.hours.StatsRange.Mode.MONTH
+    }
+    val custom = customFrom?.let { f -> customTo?.let { t -> com.bamnat.core.hours.StatsRange.Range(java.time.LocalDate.ofEpochDay(f), java.time.LocalDate.ofEpochDay(t)) } }
+    val range = com.bamnat.core.hours.StatsRange.of(rangeMode, month, today, period, payProfile?.holidayWeekFrom ?: DayOfWeek.MONDAY, weekShift, custom)
+    val wholeMonth = rangeMode == com.bamnat.core.hours.StatsRange.Mode.MONTH
+    val figures by com.bamnat.app.ui.rememberLast("stats:${vm.calendarId}:$month:${period?.endDay}:${range.from}:${range.to}", snap, settings.limits, month, period, range) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            StatsFigures(calc.month(month), calc.threeMonths(month), (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) })
+            fun of(m: YearMonth) = if (period == null) calc.month(m) else calc.month(m, period.start(m), period.end(m))
+            StatsFigures(calc.month(month, range.from, range.to), calc.threeMonths(month), (5 downTo 0).map { of(month.minusMonths(it.toLong())) })
         }
     }
     val shownFigures = figures
@@ -179,10 +200,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [CAL-21] A phone (or large text) puts the title on a line of its own, so it never wraps beside the month.
-        val narrow = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 420 }
+        // U 1.32 [UX132-05] The app's own 글자 크기 is in LocalDensity, not in the phone's configuration.
+        val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+        val narrow = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp / fontScale < 420 }
         if (narrow) {
             Text(style.words().statsTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 1,
                 modifier = Modifier.semantics { heading() })
@@ -196,14 +219,45 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
             }
-            Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium)
+            com.bamnat.app.ui.calendar.MonthJumpTitle(month, { vm.showMonth(it) }) // 1.32 [WTYP-21]
             IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
             // [CUST-01] 화면 꾸미기: the cards' order and which show.
             IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "화면 꾸미기") }
+            com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
         }
         if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false }, style = style, calendar = vm.calendarId)
+        // B 1.32 [CALX-05] Which days the month counts: 1일~말일 or the pay period, when the pay has one.
+        // 1.32 [CALX-06] (근무유형 조사 공통 4장) and 주 or 직접, with the days said once under the chips for every card.
+        if (pays || style == WorkStyle.HOURLY) {
+            var picking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.MONTH,
+                    onClick = { briefMode = null; vm.updateSettings { it.copy(statsByPayPeriod = false) } }, label = { Text("1일~말일") })
+                payProfile?.period?.takeIf { it.endDay != null }?.let { pp ->
+                    com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.PAY,
+                        onClick = { briefMode = null; vm.updateSettings { it.copy(statsByPayPeriod = true) } },
+                        label = { Text("급여 기간 ${pp.label(month)}") })
+                }
+                com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.WEEK,
+                    onClick = { briefMode = com.bamnat.core.hours.StatsRange.Mode.WEEK.name; weekShift = 0 }, label = { Text("주") })
+                com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.CUSTOM,
+                    onClick = { picking = true }, label = { Text("직접") })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (rangeMode == com.bamnat.core.hours.StatsRange.Mode.WEEK) {
+                    IconButton(onClick = { weekShift-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") }
+                }
+                Text("아래 숫자: ${range.label(today.year)}" + if (!wholeMonth) " (${range.days}일)" else "",
+                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (rangeMode == com.bamnat.core.hours.StatsRange.Mode.WEEK) {
+                    IconButton(onClick = { weekShift++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
+                }
+            }
+            if (picking) StatsRangePicker(range, onPick = { f, t -> customFrom = f.toEpochDay(); customTo = t.toEpochDay(); briefMode = com.bamnat.core.hours.StatsRange.Mode.CUSTOM.name; picking = false },
+                onDismiss = { picking = false })
+        }
         // [MCAL-06] Whose hours and pay these are, once there are several calendars; [COMN-03] or all of them.
         var everyCalendar by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
         com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer,
@@ -242,13 +296,28 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 withContext(Dispatchers.Default) { com.bamnat.core.pay.TakeHome.nonTaxable(p, month, vm.monthPay(p, snap, month)) }
             }
         }.value
+        // [NAV-01] 근무·급여: the month's pay. U 1.32 [UX132-02] (조사 4.1): first, before the work cards, with a 고치기 chip for
+        // each value people come to change, each straight to its tab and value.
+        if (pays && shown(StatsPart.PAY)) {
+            val total = payTotal
+            PayEntryCard(
+                month = month,
+                total = total,
+                hasProfile = payProfile != null,
+                onClick = onOpenPay,
+                onFocus = if (payProfile != null) onOpenPayFocus else null,
+            )
+            // [HRLY-04] 예상 실수령 next to the pay before tax.
+            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
+        }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
-        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree)
+        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree,
+            range = if (wholeMonth) null else range.from to range.to)
 
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
-            { m -> StatTile("${month.monthValue}월 총 근무", HoursFormat.korean(summary.totalMinutes), m,
-                caption = "근무 ${summary.workDays}일") },
+            { m -> StatTile(if (wholeMonth) "${month.monthValue}월 총 근무" else "총 근무", HoursFormat.korean(summary.totalMinutes), m,
+                caption = "근무 ${summary.workDays}일" + if (wholeMonth) "" else " · ${range.label(today.year)}") },
             // [SETUP-11] Says what it leaves out, like the other three tiles do.
             { m -> StatTile("근무표대로", HoursFormat.korean(summary.scheduledMinutes), m, caption = "추가 근무 빼고") },
             { m -> StatTile("근무일 추가 근무", HoursFormat.korean(summary.extraMinutes - summary.restDayExtraMinutes), m,
@@ -269,18 +338,6 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             FeatureCard("hourly.weeks", vm.calendarId) { HolidayPayWeeks(weeks, month) }
         }
 
-        // [NAV-01] 근무·급여: the month's pay right under its hours.
-        if (pays && shown(StatsPart.PAY)) {
-            val total = payTotal
-            PayEntryCard(
-                month = month,
-                total = total,
-                hasProfile = payProfile != null,
-                onClick = onOpenPay,
-            )
-            // [HRLY-04] 예상 실수령 next to the pay before tax.
-            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
-        }
         // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
         if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
@@ -386,6 +443,18 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DAY, vm.calendarId, week.start.toString())
                         }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
+                    // 1.32 [WTYP-12] 연속 근무 경고: stretches in these days past the limit set in 근무시간 경고.
+                    val long = remember(snap, summary, settings.stretchLimitHours) {
+                        summary.weeks.firstOrNull()?.let { first ->
+                            com.bamnat.core.hours.Stretches.over(com.bamnat.core.hours.Stretches.of(first.start, summary.weeks.last().end, snap.resolver::resolve), settings.stretchLimitHours)
+                        }.orEmpty()
+                    }
+                    if (long.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("연속 근무 ${settings.stretchLimitHours}시간 넘은 때 ${long.size}번", style = MaterialTheme.typography.titleSmall,
+                            color = LocalCalendarColors.current.warning)
+                        long.take(5).forEach { Text(com.bamnat.core.hours.Stretches.line(it, settings.stretchLimitHours), style = MaterialTheme.typography.bodySmall) }
                     }
                     // [CAL-40] I 리뷰 I19: the coming week read from the roster, so 52시간 is seen before it is passed.
                     val next = remember(calc, today) { calc.glance(today.plusWeeks(1)) }
@@ -527,8 +596,9 @@ private fun MonthTrend(values: List<Pair<YearMonth, Long>>, floor: Long, label: 
 }
 
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit) {
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -555,6 +625,17 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    }
+    // U 1.32 [UX132-02] 고치기: 기본급 · 수당 · 근무시간 · 월급날·정산 · 회사 규칙, one tap each.
+    if (onFocus != null) {
+        com.bamnat.app.ui.guide.OnceTip(com.bamnat.app.ui.calendar.HintStore.PAY_CHIPS, "고칠 값을 누르면 급여 화면의 그 자리로 바로 가요")
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "급여 고치기" }) {
+            com.bamnat.app.ui.pay.PayFocus.CHIPS.forEach { f ->
+                androidx.compose.material3.AssistChip(onClick = { onFocus(f.key) }, label = { Text(f.label) },
+                    leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(16.dp)) })
+            }
         }
     }
 }
@@ -777,3 +858,28 @@ private data class StatsFigures(
     val three: com.bamnat.core.hours.ThreeMonthSummary,
     val trend: List<com.bamnat.core.hours.MonthSummary>,
 )
+
+/** 1.32 [CALX-06] 직접: the first and last day 통계 counts, at most a year (StatsRange.MAX_DAYS). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun StatsRangePicker(range: com.bamnat.core.hours.StatsRange.Range, onPick: (java.time.LocalDate, java.time.LocalDate) -> Unit, onDismiss: () -> Unit) {
+    val utc = java.time.ZoneOffset.UTC
+    val state = androidx.compose.material3.rememberDateRangePickerState(
+        initialSelectedStartDateMillis = range.from.atStartOfDay(utc).toInstant().toEpochMilli(),
+        initialSelectedEndDateMillis = range.to.atStartOfDay(utc).toInstant().toEpochMilli(),
+    )
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = state.selectedStartDateMillis != null && state.selectedEndDateMillis != null, onClick = {
+                val f = java.time.Instant.ofEpochMilli(state.selectedStartDateMillis!!).atZone(utc).toLocalDate()
+                val t = java.time.Instant.ofEpochMilli(state.selectedEndDateMillis!!).atZone(utc).toLocalDate()
+                onPick(f, t)
+            }) { Text("이 기간 보기") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
+    ) {
+        androidx.compose.material3.DateRangePicker(state, title = { Text("볼 기간 고르기 (1년까지)", Modifier.padding(start = 24.dp, top = 16.dp)) },
+            modifier = Modifier.heightIn(max = 520.dp))
+    }
+}

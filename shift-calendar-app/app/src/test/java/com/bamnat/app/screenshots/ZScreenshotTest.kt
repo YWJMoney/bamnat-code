@@ -46,7 +46,7 @@ class ZScreenshotTest : ScreenshotBase() {
 
     /** The tab chosen in the app's bar now, by its name ("근무·급여" for 통계), or null on a screen without the bar. */
     private fun Screen.tabNow(): String? {
-        val names = setOf("달력", "돈", "메모", "근무·급여", "통계", "설정")
+        val names = setOf("달력", "가계부", "장부", "메모", "근무·급여", "통계", "설정")
         val chosen = nodes().filter {
             it.config.getOrNull(SemanticsProperties.Role) == Role.Tab && it.config.getOrNull(SemanticsProperties.Selected) == true
         }.mapNotNull { n -> n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }?.takeIf { t -> t in names } }
@@ -72,7 +72,7 @@ class ZScreenshotTest : ScreenshotBase() {
         tab(4, wide = false)
         assertEquals("설정", tabNow())
         back()
-        assertEquals("the tab before, not the calendar", "돈", tabNow())
+        assertEquals("the tab before, not the calendar", "가계부", tabNow())
         back()
         assertEquals("달력", tabNow())
         assertFalse(scenario.finishing())
@@ -119,11 +119,11 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun moneyPagesBackToTheSummaryNotTheCalendar() = open(FOLDED) { scenario ->
         tab(1, wide = false)
-        for (page in listOf("내역", "분석")) {
+        for (page in listOf("내역", "통계")) {
             tapText(page, exact = true)
             assertTrue(chosen(page))
             back()
-            assertEquals("$page → 뒤로", "돈", tabNow())
+            assertEquals("$page → 뒤로", "가계부", tabNow())
             assertTrue("$page → 뒤로: 요약", chosen("요약"))
         }
         back()

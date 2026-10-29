@@ -213,15 +213,15 @@ internal fun PermissionRow(ok: Boolean, title: String, fixLabel: String, onFix: 
 
 /** An hour limit: the title above, the stepper under it, so a narrow cover screen keeps both readable. */
 @Composable
-internal fun LimitRow(title: String, subtitle: String, hours: Int, onChange: (Int) -> Unit) {
+internal fun LimitRow(title: String, subtitle: String, hours: Int, min: Int = 1, max: Int = 168, onChange: (Int) -> Unit) {
     Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         MinutesStepper(
             minutes = hours * 60,
-            onChange = { m -> onChange((m / 60).coerceIn(1, 168)) },
+            onChange = { m -> onChange((m / 60).coerceIn(min, max)) },
             step = 60,
-            max = 168 * 60,
+            max = max * 60,
             dialogTitle = title,
             modifier = Modifier.widthIn(min = 0.dp).padding(top = 4.dp),
         )

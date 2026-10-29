@@ -155,6 +155,8 @@ class SettingsFilesBackup(
             Part("read_fixes"),
             // [PAYF-04] 1.29 AP: 쓰는 회사 급여 방식, like the company setup in use ("company:applied").
             Part("pay_way"),
+            // 1.32 [WTYP-11] 희망 오프: 고른 날과 신청 마감일.
+            Part("wish_off"),
         )
 
         /**
@@ -222,11 +224,24 @@ class SettingsFilesBackup(
             // AG 1.27 [INVITE-11][INVITE-12]: when this phone was asked to invite or to tell the developer (끄기는 기능 스위치로 백업).
             "grow" to "친구 초대 카드·‘함께 만들어요’ 카드를 이 휴대폰에서 본 날과 닫은 날, 되돌리기 수",
             // [FLAG-15] 1.28 AL (AL-D7): an admin's previews are this phone's only.
-            "flag_preview" to "관리자 휴대폰의 기능 미리 보기 스위치, 이 휴대폰에서만",
+            "flag_preview" to "1.31까지의 관리자 미리 보기(1.32부터 비워 둬요, 관리자 앱이 정해요)",
+            // A 1.32 [FIX132-01]: which way this phone's payslip photos read well last.
+            "photo_turn" to "명세서 사진을 읽은 방향, 이 휴대폰의 사진기 것",
+            "plaza_offer" to "명세서로 맞춘 뒤 광장 올리기를 물어본 때, 이 휴대폰에서 본 만큼",
+            // C 1.32 [STAB-03][STAB-04]: this phone's stops, counted, and whether it opened safely.
+            "crash_notice" to "같은 곳에서 멈춘 횟수와 마지막으로 알린 날, 이 휴대폰에서만",
+            "start_guard" to "연달아 멈춘 시작 수(안전 모드), 이 휴대폰에서만",
             // [PERF-15][PERF-16] 1.28 AO: how long this phone took to open; 보내기 대기는 사용 통계와 같이 이 휴대폰의 것.
             "startup_stats" to "앱을 여는 데 걸린 시간, 이 휴대폰에서 잰 것",
             // AQ 1.29 [PHOTO-09]: '사진이 달라요' counts waiting to be sent (60 days), this phone's only.
             "photo_wrong" to "‘사진이 달라요’를 누른 횟수 중 아직 보내지 않은 것(60일), 이 휴대폰에서만",
+            // 1.31 [STAT-08][GUIDE-20]: lookup times waiting to be sent, and whether the first week's 시작 단계 card was put away.
+            "lookup_stats" to "조회에 걸린 시간 중 아직 보내지 않은 것(처리방침 3.5 시행 뒤, 동의한 경우), 이 휴대폰에서만",
+            "start_steps" to "첫 주 ‘시작 3단계’ 카드를 그만 보기로 했는지, 이 휴대폰에서만",
+            // 1.32 [PROX-02]: when this phone was offered a free day on a money day (끄기는 기능 스위치로 백업).
+            "pro_moments" to "급여일·신고 달의 하루 무료 권유를 이 휴대폰에서 본 날과 닫은 날",
+            // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
+            "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",
         )
     }
 }

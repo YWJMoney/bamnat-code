@@ -183,6 +183,20 @@ internal fun HourlyPayCard(
             Text("주 15시간 이상 일하고 결근이 없는 주에 받아요. 쉬는 날을 바꿔 넣으면 바로 다시 세요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 1.32 [WTYP-17] 대타는 주휴에서 빠져요, [WTYP-18] 휴게 포함 시급 환산과 알바 2곳까지 무료.
+        val covers = remember(snapshot, month) { com.bamnat.core.work.HourlyLines.covers(month, snapshot.resolver::resolve) }
+        com.bamnat.core.work.HourlyLines.coverLine(covers)?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        }
+        val stay = remember(snapshot, month, profile) {
+            com.bamnat.core.work.HourlyLines.stay(month, profile.base.on(month.atDay(1)).value, snapshot.resolver::resolve)
+        }
+        com.bamnat.core.work.HourlyLines.stayLine(stay)?.let {
+            Text(if (unlocked) it else "휴게 포함 시급 환산은 금액 가리기를 풀면 보여요.", style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp))
+        }
+        Text(com.bamnat.core.work.HourlyLines.FREE_LINE, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         // [HRLY-08] 근무 기록 내보내기

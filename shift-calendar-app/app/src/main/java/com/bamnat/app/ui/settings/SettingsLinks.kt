@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.material.icons.filled.Search
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.company.InquiryKind
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,8 @@ enum class SettingsGo {
 sealed interface SettingsLink {
     data class Page(val page: SettingsPage, val row: String? = null) : SettingsLink
     data class Go(val go: SettingsGo) : SettingsLink
+    /** U 1.32 [UX132-04] 🔍 on any tab: settings opens on its search, the field ready to type. */
+    data object Search : SettingsLink
 }
 
 /**
@@ -43,6 +46,10 @@ object SettingsLinks {
 
     fun open(page: SettingsPage, row: String? = null) {
         _target.value = SettingsLink.Page(page, row)
+    }
+
+    fun search() {
+        _target.value = SettingsLink.Search
     }
 
     fun go(go: SettingsGo) {
@@ -93,4 +100,12 @@ object InquiryLinks {
 
     /** What the inquiry screen was asked to start with, once. */
     fun take(): InquiryStart? = _pending.getAndUpdate { null }
+}
+
+/** U 1.32 [UX132-04] (조사 4.4) 어디서나 찾기: the same search as 설정's, from the top of every tab. */
+@androidx.compose.runtime.Composable
+fun GlobalSearchButton() {
+    androidx.compose.material3.IconButton(onClick = { SettingsLinks.search() }) {
+        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Search, "기능·설정 찾기")
+    }
 }

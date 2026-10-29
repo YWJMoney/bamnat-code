@@ -306,7 +306,7 @@ CALS-02,"달력마다 따로 설정(새 달력은 첫 달력 설정만 나옴) �
 CALS-03,"결제 알림을 쌓을 달력 정하기 → 결제 알림으로 적기에서 기본 달력과 앱별 달력을 고르고, 달력을 지우면 내 달력으로 돌아감",1.16.0,완료,,"AutoRecordPrefs.calendar·appCalendars·forgetCalendar, MoneyPlanCards.CaptureCalendarControls"
 CALS-04,"카드·계좌별 달력 분리 → 끝 4자리 카드가 있는 달력, 카드사 이름이 맞는 달력(하나일 때), 앱별 달력, 기본 달력 순으로 결제 알림을 넣음",1.16.0,완료,,"core/money/CaptureRoute.kt, AppContainer.captureCalendar, CaptureService, WorkKitTest.paymentsFindTheirCalendar"
 TYPE-01,"근무 유형별 말 바꾸기(시장조사 2026-10-20) → 교대·일반·알바·프리랜서·자영업마다 탭·설정·통계 제목을 그 일의 말로(영업일·정기휴무, 출근·시급, 일감·수입)",1.16.0,완료,,"core/work/WorkKit.kt WorkWords·words(), SettingsPages WorkPage, StatsScreen 제목, WorkKitTest.eachKindOfWorkHasItsOwnWords"
-TYPE-02,"‘근무·급여’로 고정된 탭 → 지금 보는 달력의 근무 유형 이름으로(출근·시급, 일감·수입, 매출·영업)",1.16.0,완료,,"AppRoot TopLevel.labelFor(style)"
+TYPE-02,"‘근무·급여’로 고정된 탭 → 지금 보는 달력의 근무 유형 이름으로(출근·시급, 일감·수입, 매출·영업)",1.16.0,완료,,AppRoot TopLevel.labelFor(style)
 TYPE-03,"자영업 영업일·정기휴무 → 영업시간, 매주 쉬는 요일, 매달 n째 요일·마지막 요일, 공휴일 휴무를 달력에 바로 반영",1.16.0,완료,,"WorkKit NthWeekday·ShopRules·ShopDays, ui/work/ShopDaysScreen.kt ShopKeeper.apply, WorkKitTest.shopDaysOffByRule"
 TYPE-04,"영업일인데 매출이 없으면 휴무 → 지난 영업일에 매출이 없으면 앱을 열 때 휴무로 바꾸고(끌 수 있음), 나중에 매출을 적으면 다시 영업",1.16.0,완료,,"ShopDays.autoClosed, ShopKeeper.catchUp·reopenIfSold, MainActivity.onStart, WorkKitTest.anOpenDayWithoutSalesBecomesClosed"
 TYPE-05,"자영업 통계 → 영업일·휴무일, 영업일 평균 매출, 가장 적은 날, 요일별 평균 매출 그래프",1.16.0,완료,,"WorkStats.shop, StatsScreen SalesFigures, WorkKitTest.shopMonthAveragesOpenDaysOnly"
@@ -315,7 +315,7 @@ TYPE-07,"프리랜서 거래처별 → 거래처별 건수·번 돈·받을 돈,
 TYPE-08,"유형별 기본 분류 → 자영업(재료비·임대료·카드매출 등), 프리랜서(자재비·유류비 등) 분류가 먼저",1.16.0,완료,,"MoneyCategories.of(kind, edits, style), MoneyRepository style, WorkKitTest.workCategoriesComeFirst"
 NOTE-01,"메모를 달력별로 → 메모는 만든 달력에만 보이고, 예전 메모는 모든 달력에 그대로",1.16.0,완료,,"Memo.calendars, DB 16 MIGRATION_15_16, MemoRepository.memosOn/datesWithMemos, MigrationTest.version15MemosStayOnEveryCalendar"
 NOTE-02,"공용 메모장 → 이 달력·공용 메모장·모든 메모로 보기, 메모마다 보일 달력 고르기, 여러 메모를 한 번에 공유",1.16.0,완료,,"MemoNotebook, ui/memo/MemoCalendarsUi.kt, MemoListScreen 공유, MemoEditorScreen MemoCalendarsChip"
-NOTE-03,"키보드가 쓰는 줄을 가림 → 쓰고 있는 줄이 늘 키보드 위에 보이게 스크롤",1.16.0,완료,,"MemoEditorScreen MemoBodyField (BringIntoViewRequester)"
+NOTE-03,키보드가 쓰는 줄을 가림 → 쓰고 있는 줄이 늘 키보드 위에 보이게 스크롤,1.16.0,완료,,MemoEditorScreen MemoBodyField (BringIntoViewRequester)
 NOTE-04,"목록 이어쓰기 → 1. / 1) / - / • 로 시작한 줄에서 엔터를 누르면 다음 번호·같은 표시가 이어지고, 빈 항목에서 엔터면 목록 끝",1.16.0,완료,,"core/memo/ListContinuation.kt, MemoBodyField, ListContinuationTest"
 SHFT-01,"근무 코드별 수당(시장조사 교대 P1) → 근무 종류마다 ‘이 근무 수당 n%’와 야간 여부 표시, 급여 계산에 줄로 더함",1.16.0,완료,,"core/model/NightShift.kt (NightShift.crosses, ShiftType.isNight), PayCalculator ShiftPremium 줄·하루 몫, ui/shifts/ShiftPremium.kt (ShiftPremiumSection, ShiftPremiumMarks), ShiftTypeEditorDialog showPremium, ShiftWorkTest"
 SHFT-02,"교대 통계 첫 카드 → 코드별 횟수, 야간 횟수, 예상 급여",1.16.0,완료,,"core/work/ShiftMonth.kt (ShiftMonth.of: 코드별 횟수·야간), ui/stats/WorkTypeCards.kt ShiftFirstCard, StatsScreen WorkTypeFirstCard, ShiftWorkTest"
@@ -338,28 +338,28 @@ HRLY-08,"출근·퇴근 버튼과 기록 내보내기(알바 P2) → 누르면 �
 HRLY-09,"두 알바 조건 비교 계산기(알바 P3) → 시급·주 시간·주휴·야간·휴일·세금·출퇴근 시간과 교통비로 시간당 실제 수익, 2~4개 나란히",1.17.0,완료,,"core/work/PartTimeTools.kt OfferCompare·JobOffer·OfferResult(HourlyWeek 주휴, TakeHome 세금), ui/work/PartTimeTools.kt OfferCompareScreen(통계 알바 도구), WorkToolsTest.offer*"
 HRLY-10,"근로계약서 사진 보관(알바 P3) → 사진(사진 고르기, 권한 없음) 보기·바꾸기·지우기, 시급·근무 요일·계약 기간, 종료 7일 전 알림",1.17.0,완료,,"core WorkContract(daysLeft·endingSoon·wageDiffers), data/WorkTools.kt(files/calendars/<id>/contract), ui/work/PartTimeTools.kt ContractScreen·PhotoViewer, 통계 계약 종료 배너, 메모 알림(MemoReminder), WorkToolsTest.contractEndingSoon"
 HRLY-11,"퇴사 처리와 마지막 주 주휴 정리(알바 P3) → 마지막 주 주휴(2021 고용노동부 해석), 미사용 연차수당, 퇴직금(1년·주 15시간), 14일 안 지급, 확인 뒤 그날 뒤 반복 근무 멈춤",1.17.0,완료,,"core QuitCheck(lastWeek·severance·leaveDays·leaveDayPay·payBy·endPatterns), ScheduleRepository.endPatternsAfter, ui/work/PartTimeTools.kt QuitScreen, WorkToolsTest.lastWeek*·severance*·leaveDays*·patternsStop*"
-FLD-01,"일당형·건별형 고르기(프리랜서 P1) → 현장 달력을 공수로 셀지 건별로 셀지",1.16.0,완료,,"core/money/FieldWork.kt FieldMode·FieldRules, PersonalCalendar.field(CalendarBook fieldJson), ui/calendar/FieldDaySheet.kt FieldModePrompt·FieldModeSetting(CalendarEditScreen), DayHeader QuickChips"
+FLD-01,일당형·건별형 고르기(프리랜서 P1) → 현장 달력을 공수로 셀지 건별로 셀지,1.16.0,완료,,"core/money/FieldWork.kt FieldMode·FieldRules, PersonalCalendar.field(CalendarBook fieldJson), ui/calendar/FieldDaySheet.kt FieldModePrompt·FieldModeSetting(CalendarEditScreen), DayHeader QuickChips"
 FLD-02,"공수 버튼(프리랜서 P1) → 날짜에 1·0.5·1.5·직접, 업체 기억, 일당×공수",1.16.0,완료,,"core DayRate(job·month·clients·cell), FieldDaySheet dayRateChips·DayRateDialog, ui/money/JobExtras.kt ClientField(JobDialog), WorkCells fieldUnitsText(MonthGrid), WorkStatsCards FieldStatsCards, FieldWorkTest"
 FLD-03,"일감 상태(프리랜서 P1) → 가계약→확정→완료→입금, 취소",1.16.0,완료,,"Job.cancelled·earned·fullyPaid·unpaid, MoneyCalculator.month, WorkStats.clients, MonthOverview, MoneyAlerts, JobReminders, JobExtras JobStatusRow(JobDialog), JobStatusTag, FieldWorkTest.cancelledJobsCountOnlyTheDepositTheyKept"
-FLD-04,"달력 칸에 거래처 색과 상태(프리랜서 P1)",1.16.0,완료,,"core ClientColors, ui/calendar/WorkCells.kt FieldJobMarks·clientColor, MonthGrid DayCell fieldJobs, FieldWorkTest.clientColourIsStable"
-FLD-05,"거래내역서 내보내기(프리랜서 P2) → 거래처·달마다 정산 요청용 이미지",1.16.0,완료,,"core JobStatement, share/StatementImage.kt, WorkStatsCards StatementDialog(StatsScreen 거래처별), FieldWorkTest.statementListsOneClientsMonthWithWithholdingAndPaid"
-FLD-06,"입금 알림을 미수 일감에 잇기(프리랜서 P2)",1.16.0,완료,,"core DepositMatch(target·pending·paid), ui/money/WorkMoneyCards.kt DepositMatchCard(MoneyScreen 요약), FieldRules.notMatched, FieldWorkTest.depositMatchesAJobPartOrAReceivable"
-FLD-07,"연간 3.3%·경비 합계 카드(프리랜서 P2) → 5월 종합소득세 대비",1.16.0,완료,,"core FieldYear.totals, WorkStatsCards FieldStatsCards(연간 카드), FieldWorkTest.yearTotalsAndWorkedDays"
-FLD-08,"경비 증빙과 영수증 사진(프리랜서 P2)",1.16.0,완료,,"ui/money/ReceiptProof.kt ReceiptFiles·ProofSection(PickVisualMedia, files/receipts), LedgerEntrySheet EntryDialog proof·receipt"
-FLD-09,"일감 입금 약속일과 미수 알림(프리랜서 P2)",1.16.0,완료,,"Job.due, JobExtras DueRow(JobDialog), MoneyAlerts unpaid from due, FieldWorkTest.unpaidAlertsFollowThePromisedDayWhenSet"
-FLD-10,"출역일 수·퇴직공제 대상일 수(프리랜서 P2)",1.16.0,완료,,"core FieldYear.workedDays, WorkStatsCards FieldStatsCards 출역일·퇴직공제, FieldWorkTest.yearTotalsAndWorkedDays"
+FLD-04,달력 칸에 거래처 색과 상태(프리랜서 P1),1.16.0,완료,,"core ClientColors, ui/calendar/WorkCells.kt FieldJobMarks·clientColor, MonthGrid DayCell fieldJobs, FieldWorkTest.clientColourIsStable"
+FLD-05,거래내역서 내보내기(프리랜서 P2) → 거래처·달마다 정산 요청용 이미지,1.16.0,완료,,"core JobStatement, share/StatementImage.kt, WorkStatsCards StatementDialog(StatsScreen 거래처별), FieldWorkTest.statementListsOneClientsMonthWithWithholdingAndPaid"
+FLD-06,입금 알림을 미수 일감에 잇기(프리랜서 P2),1.16.0,완료,,"core DepositMatch(target·pending·paid), ui/money/WorkMoneyCards.kt DepositMatchCard(MoneyScreen 요약), FieldRules.notMatched, FieldWorkTest.depositMatchesAJobPartOrAReceivable"
+FLD-07,연간 3.3%·경비 합계 카드(프리랜서 P2) → 5월 종합소득세 대비,1.16.0,완료,,"core FieldYear.totals, WorkStatsCards FieldStatsCards(연간 카드), FieldWorkTest.yearTotalsAndWorkedDays"
+FLD-08,경비 증빙과 영수증 사진(프리랜서 P2),1.16.0,완료,,"ui/money/ReceiptProof.kt ReceiptFiles·ProofSection(PickVisualMedia, files/receipts), LedgerEntrySheet EntryDialog proof·receipt"
+FLD-09,일감 입금 약속일과 미수 알림(프리랜서 P2),1.16.0,완료,,"Job.due, JobExtras DueRow(JobDialog), MoneyAlerts unpaid from due, FieldWorkTest.unpaidAlertsFollowThePromisedDayWhenSet"
+FLD-10,출역일 수·퇴직공제 대상일 수(프리랜서 P2),1.16.0,완료,,"core FieldYear.workedDays, WorkStatsCards FieldStatsCards 출역일·퇴직공제, FieldWorkTest.yearTotalsAndWorkedDays"
 FLD-11,"간단 견적서 만들기(프리랜서 P3) → 품목·수량·단위·단가, 부가세 없음·별도·포함, 사진으로 보내기, 가계약 일감으로 저장",1.17.0,완료,,"core/money/FieldTools.kt Quote·QuoteItem·QuoteVat(toJob), share/QuoteImage.kt, ui/work/FieldTools.kt QuotesCard·QuoteScreen(통계 일감·수입), WorkToolsTest.quoteAddsOrTakesOutVat"
 FLD-12,"공종별 평균 일당 참고표(프리랜서 P3) → 대한건설협회 시중노임단가 2026년 상반기, 일당 정할 때 골라 넣기",1.17.0,완료,,"core TradeWages(출처·연도), ui/work/FieldTools.kt TradeWageDialog·TradeWageLink(FieldDaySheet DayRateDialog), WorkToolsTest.tradeWagesAreThere"
 FLD-13,"일용직 원천징수 계산 표시(프리랜서 P3) → (일당−15만)×2.7%+지방세, 소액부징수 1,000원, 한 번에·날마다 받을 때, 3.3%와 따로",1.17.0,완료,,"core DailyWorkerTax(paidTogether·paidDaily·month·TAX_FREE_UP_TO), ui/work/FieldTools.kt DailyTaxCard·dailyTaxLine(DayRateDialog), WorkToolsTest.dailyWorker*"
-SHOP-01,"하루 마감(자영업 P1) → 카드·현금·계좌·배달앱 나눠 적고 합계",1.16.0,완료,,"ui/money/DayCloseDialog.kt(SalesDialog), core SalesSplit, WorkStatsCards ShopStatsCards 결제 수단별, WorkDayExtras SalesDayExtras, ShopMoneyTest.monthSplitsSalesByMethod"
+SHOP-01,하루 마감(자영업 P1) → 카드·현금·계좌·배달앱 나눠 적고 합계,1.16.0,완료,,"ui/money/DayCloseDialog.kt(SalesDialog), core SalesSplit, WorkStatsCards ShopStatsCards 결제 수단별, WorkDayExtras SalesDayExtras, ShopMoneyTest.monthSplitsSalesByMethod"
 SHOP-02,"카드 매출 입금 예정(자영업 P2) → 수수료 빼고 입금 예정일, 달력에 표시, 입금 확인",1.16.0,완료,,"core work/ShopMoney.kt ShopMoney·CardSettlement, PersonalCalendar.shopMoney, ui/work/ShopMoneySettings.kt(ShopDaysScreen), WorkCells rememberCardDue·CardDueMark(MonthGrid), WorkMoneyCards CardDepositsCard, ShopMoneyTest"
-SHOP-03,"현금 시재 맞추기(자영업 P2) → 있어야 할 현금과 센 현금의 차이",1.16.0,완료,,"core CashDrawer, DayCloseDialog CashCheck, ShopMoney.openingCash, ShopMoneyTest.cashDrawerSaysTheDifference"
+SHOP-03,현금 시재 맞추기(자영업 P2) → 있어야 할 현금과 센 현금의 차이,1.16.0,완료,,"core CashDrawer, DayCloseDialog CashCheck, ShopMoney.openingCash, ShopMoneyTest.cashDrawerSaysTheDifference"
 SHOP-04,"부가세 예상과 신고 알림(자영업 P2) → 대략의 부가세, 1월·7월 부가세·5월 종소세 알림",1.16.0,완료,,"core VatEstimate, money/TaxDeadlines.kt(MoneyAlerts styles, MoneyBook.allStyles, JobReminderScheduler), WorkStatsCards VatCard, ShopMoneyTest.vatIsRoughAndHalfYearly·taxRemindersGoToShopsAndFieldWork"
-SHOP-05,"목표 매출(자영업 P2) → 남은 영업일로 나눈 하루 목표",1.16.0,완료,,"core SalesTarget, WorkStatsCards TargetCard, ShopMoneyTest.targetSplitsWhatIsLeftOverOpenDays"
-SHOP-06,"외상을 매출에 잇기(자영업 P2)",1.16.0,완료,,"DayCloseDialog 외상 → Receivable(SALE), WorkDayExtras SalesDayExtras"
-SHOP-07,"매출·일감 CSV 내보내기(자영업 P2)",1.16.0,완료,,"core money/WorkCsv.kt, ui/money/WorkCsvExport.kt WorkCsvButtons(LedgerList ExportDialog), FieldWorkTest.jobsCsvHasStatusUnitsAndDue, ShopMoneyTest.salesCsvKeepsMethods"
+SHOP-05,목표 매출(자영업 P2) → 남은 영업일로 나눈 하루 목표,1.16.0,완료,,"core SalesTarget, WorkStatsCards TargetCard, ShopMoneyTest.targetSplitsWhatIsLeftOverOpenDays"
+SHOP-06,외상을 매출에 잇기(자영업 P2),1.16.0,완료,,"DayCloseDialog 외상 → Receivable(SALE), WorkDayExtras SalesDayExtras"
+SHOP-07,매출·일감 CSV 내보내기(자영업 P2),1.16.0,완료,,"core money/WorkCsv.kt, ui/money/WorkCsvExport.kt WorkCsvButtons(LedgerList ExportDialog), FieldWorkTest.jobsCsvHasStatusUnitsAndDue, ShopMoneyTest.salesCsvKeepsMethods"
 SHOP-08,"카드 단말기·배달앱 알림을 매출로, 정산 입금을 카드 입금으로(공통 6-2)",1.16.0,완료,,"core money/ShopCapture.kt, app/money/ShopNotices.kt(AppContainer.capture, CaptureService), ShopMoneyTest.shopAppsAddToSalesAndBankDepositsAreSettlements·cardDepositMatchesOneDayOrADaysTotal"
-SHOP-09,"간이과세 기준 대비 연 매출 경고(자영업 P3) → 1억 400만 원 대비 올해 매출·연말 예상·경고",1.17.0,완료,,"core/work/ShopTools.kt SimpleTaxLimit, ui/work/ShopTools.kt SimpleTaxCard(통계 매출·영업), WorkToolsTest.simpleTaxLimitWarnsWhereTheYearIsHeading"
+SHOP-09,간이과세 기준 대비 연 매출 경고(자영업 P3) → 1억 400만 원 대비 올해 매출·연말 예상·경고,1.17.0,완료,,"core/work/ShopTools.kt SimpleTaxLimit, ui/work/ShopTools.kt SimpleTaxCard(통계 매출·영업), WorkToolsTest.simpleTaxLimitWarnsWhereTheYearIsHeading"
 SHOP-10,"날씨 메모(자영업 P3) → 하루 마감에서 맑음·흐림·비·눈과 기온, 하루 화면에 표시, 비 오는 날 vs 맑은 날 평균 매출",1.17.0,완료,,"core Weather·WeatherNote·WeatherSales, data/WorkTools.kt(달력별 JSON), DayCloseDialog WeatherPicker, WorkDayExtras WeatherLine, ui/work/ShopTools.kt WeatherSalesCard, WorkToolsTest.rainyDaysAgainstSunnyDays"
 SHOP-11,"직원 근무표와 인건비 자동 계산(자영업 P3) → 직원·시급·주휴·4대보험, 요일별 근무표, 월 인건비와 인건비율",1.17.0,완료,,"core Staff·StaffShift·StaffRoster·LaborCost(HourlyWeek 주휴, 사업주 4대보험), ui/work/ShopTools.kt StaffCostCard·StaffScreen, WorkToolsTest.laborCost*, WorkToolsStoreTest"
 COMN-01,"합쳐 보기(공통 6-1) → 모든 달력을 한 달력에 색 막대로, 겹치는 시간 경고",1.16.0,완료,,"core/work/CombinedView.kt (spansOf·clashes·clashDays), CommonCalendarsTest; ui/calendar/CombinedScreen.kt, data/EveryCalendar.kt, CalendarSwitcherSheet onCombined, AppRoot Routes.COMBINED"
@@ -401,33 +401,33 @@ INV-06,"일·월·연 손익, 승률, 종목별 손익, 월별 막대",1.17.0,�
 INV-07,"투자일지 → 날마다 시장 메모·복기·원칙 체크·하루 평가, 원칙 편집",1.17.0,완료,,"core/invest/InvestModels.JournalEntry, ui/invest/InvestMoreSheets.kt (JournalSheet·PrinciplesSheet), InvestTabs.JournalTab; InvestAppTest.anEmptyJournalIsRemoved"
 INV-08,"투자 알람(장 시작·마감, 정기 매수일, 목표가 확인, 직접) → 알림의 ‘매매 기록’이 채워진 기록 창을 열고, ‘바로 기록’은 앱을 열지 않고 저장, 정기 매수 계획 진행",1.17.0,완료,,"core/invest/InvestPlans.kt (InvestAlarms·InvestPlans), app/invest/InvestNotices.kt (InvestAlarmReceiver·InvestActionReceiver), Notifications.INVEST_CHANNEL_ID, NoticeLinks.INVEST_TRADE·payload; InvestTest, InvestAppTest.theNoticeOpensItsTradeAndAPlanIsSavedInOneTap"
 INV-09,"배당·이자 기록 → 세전·원천징수(국내 15.4%, 미국 15%)·실수령, 종목별 배당 합계",1.17.0,완료,,"core/invest/CashKind.DIVIDEND·INTEREST, InvestTaxes.dividendTax, ui/invest/InvestSheets.kt CashSheet; InvestTest"
-INV-10,"CSV 내보내기(매매·입출금·보유·일지)와 백업에 투자 기록 전부",1.17.0,완료,,"core/invest/InvestCsv.kt, ui/invest/InvestScreen.kt (LedgerExport.share), data/InvestBackup.kt + BackupManager putMoney·readMoney·writeMoney; InvestTest, InvestAppTest.everythingGoesIntoTheBackupAndComesBack"
+INV-10,CSV 내보내기(매매·입출금·보유·일지)와 백업에 투자 기록 전부,1.17.0,완료,,"core/invest/InvestCsv.kt, ui/invest/InvestScreen.kt (LedgerExport.share), data/InvestBackup.kt + BackupManager putMoney·readMoney·writeMoney; InvestTest, InvestAppTest.everythingGoesIntoTheBackupAndComesBack"
 INV-11,"목표(총자산·수익률·날짜·매달 넣을 돈) → 진행률, 남은 금액, 닿는 달, 매달 필요한 돈",1.17.0,완료,,"core/invest/InvestPlans.kt (InvestGoal·GoalProgress), ui/invest/InvestMoreSheets.kt GoalSheet, InvestScreen.GoalCard; InvestTest"
 INV-12,"세금 미리 보기(해외 22%·250만 공제, 코인 2027년, 배당 15.4%·금융소득 2,000만, ISA 한도, 연금 계좌 이연)",1.17.0,완료,,"core/invest/InvestTaxes.estimate·TaxEstimate, ui/invest/InvestStatsTab.kt TaxCard; InvestTest"
 INV-13,"마음·원칙별 손익, 손익비·수익 팩터, 가장 잘한·아쉬운 매도, 연속 수익·손실일",1.17.0,완료,,"core/invest/InvestStats.PeriodStats (byEmotion·byRules·payoff·profitFactor·best·worst·streaks), ui/invest/InvestStatsTab.kt; InvestTest"
 INV-14,"투자 일정(배당락·실적 발표·공시·청약) 직접 적기 → 그날 아침 8시 30분 알림, 달력 칸 점",1.17.0,완료,,"core/invest/InvestEvent, InvestAlarms.eventNotice, app/invest/InvestNotices.postEvent, ui/invest/InvestMoreSheets.kt EventSheet, MonthGrid InvestEventDot; InvestTest"
-INV-15,"계좌별 보기와 계좌별 수익률",1.17.0,완료,,"ui/invest/InvestViewModel.kt (InvestState.of 계좌 필터), InvestScreen.kt (계좌 칩·AccountsCard)"
+INV-15,계좌별 보기와 계좌별 수익률,1.17.0,완료,,"ui/invest/InvestViewModel.kt (InvestState.of 계좌 필터), InvestScreen.kt (계좌 칩·AccountsCard)"
 INV-16,"위젯 한 줄(오늘 손익·총 수익률, 금액 가리기 존중)",1.17.0,완료,,"widget/WidgetData.InvestLine·investLine, Widgets.kt InvestToday·WeekMark INVEST"
-INV-17,"금액 가리기",1.17.0,완료,,"InvestSettings.hideAmounts, ui/invest/InvestUi.kt InvestFmt (HIDDEN), InvestScreen 눈 아이콘"
+INV-17,금액 가리기,1.17.0,완료,,"InvestSettings.hideAmounts, ui/invest/InvestUi.kt InvestFmt (HIDDEN), InvestScreen 눈 아이콘"
 INV-18,"요일별 손익, 평균 보유일",1.17.0,완료,,"core/invest/InvestStats (byWeekday·averageHoldingDays), Realization.holdingDays, ui/invest/InvestStatsTab.kt Weekdays; InvestTest"
 INV-19,"달러 종목 → 달러 단가와 원화 함께, 환율 한 칸",1.17.0,완료,,"InvestSettings.usdKrw, Trade.fxRate, ui/invest/InvestUi.kt priceWithWon, QuoteSheet·TradeSheet 환율 칸; InvestTest"
 INV-20,"매매 복사, 고치기·지우기와 되돌리기",1.17.0,완료,,"ui/invest/InvestViewModel.kt (saveTrade·deleteTrade 되돌리기), InvestSheets.kt TradeSheet 복사·지우기, InvestSheetHost"
-INV-21,"총자산 기록(현재가가 다 있는 날) → 시간가중 수익률과 총자산 흐름 그래프",1.17.0,완료,,"core/invest/InvestReturns.snapshotFor·timeWeighted, InvestViewModel 자동 기록, InvestScreen.HistoryCard; InvestTest"
+INV-21,총자산 기록(현재가가 다 있는 날) → 시간가중 수익률과 총자산 흐름 그래프,1.17.0,완료,,"core/invest/InvestReturns.snapshotFor·timeWeighted, InvestViewModel 자동 기록, InvestScreen.HistoryCard; InvestTest"
 REV-01,"1.14 이후 전체 리뷰: 출퇴근 자동 기록 수정(끄기, 재진입, 알림 태그, 조기 퇴근 되돌리기, 계획 퇴근 시각 공통화)",1.17.1,완료,,"commute/CommuteRecorder.kt, core Commute.plannedTo; CommuteRecorderTest, CommuteTest"
 REV-02,"전체 리뷰: 서버·관리자·워치 수정(관리자 삭제 시 배정 해제, 일괄 복사 권한, 워치 시간대·재부팅 갱신, 버전 한곳 관리)",1.17.1,완료,,"server/company-worker (npm test), wear ClockReceiver, gradle.properties bamnat.versionCode, release-build.yml :wear"
 REV-03,"전체 리뷰: 투자 달력 수정(미래 기록 제외 수익률, 투자일지 원칙 글자로 저장, 원금 알림, 기본 계좌, 알림 번호 충돌, 금액 가리기)",1.17.1,완료,,"ui/invest/*, invest/InvestNotices.kt, core invest JournalRules; InvestTest"
-REV-04,"전체 리뷰: 계산 수정(반차 가져오기, 반복 표시 달력별, 워치 범위, 카드 대체 알림, 간이과세 면제, 국민연금 상·하한, 휴게시간)",1.17.1,완료,,"core pay/schedule/money; core tests"
+REV-04,"전체 리뷰: 계산 수정(반차 가져오기, 반복 표시 달력별, 워치 범위, 카드 대체 알림, 간이과세 면제, 국민연금 상·하한, 휴게시간)",1.17.1,완료,,core pay/schedule/money; core tests
 REV-05,"전체 리뷰: 데이터 수정(복원 시 근무 도구 유지, 달력 지우기 되돌리기 전체 복원, 분류 이름 바꾸기 트랜잭션, 메모 달력 경로)",1.17.1,완료,,"data/CalendarStorage, RecordsTrash, WorkToolsStore, MoneyRepository; MemoShiftCalendarTest"
 REV-06,"전체 리뷰: 화면 수정(추가 달력 연장 휴무일, 밤샘 알바 퇴근, 결제 알림 스위치, 현금 0원, 근무 유형 되돌리기)",1.17.1,완료,,"ui/settings, ui/calendar/HourlyDay.kt, ui/money, ui/pay, ui/AppRoot.kt"
 REV-07,"공휴일에 밤샘 근무·유급휴가가 겹친 주의 주휴 시간 이중 계산 고치기(공휴일은 소정 하루로 한 번, 8시간 상한)",1.17.2,완료,,"core/pay/PayCalculator.kt (paidHolidayByDate, weeklyHolidayLine); HourlyWorkTest"
-REV-08,"급여 나누기·받은 급여가 월급·상여·주급·일당·알바비·임금·'급여(회사)' 같은 이름도 급여로 보기",1.17.2,완료,,"core/work/MoneyShare.kt MoneyShareFigures.isSalary; MoneyTest"
+REV-08,급여 나누기·받은 급여가 월급·상여·주급·일당·알바비·임금·'급여(회사)' 같은 이름도 급여로 보기,1.17.2,완료,,core/work/MoneyShare.kt MoneyShareFigures.isSalary; MoneyTest
 REV-09,"백업 가져오기로 없어지는 추가 달력을 최근 지운 기록(7일)에 사진과 함께 남기기, 가져오기 되돌리기 때 사진도 돌려주기",1.17.2,완료,,"data/BackupManager (recordsTrash), RecordsTrash.beforeDelete, ImportUndo; RecordsTrashTest"
 REV-10,"위치를 껐다 켠 뒤에도 출퇴근 지오펜스 다시 걸기(앱 시작 때 catchUp, 12시간마다 깨우지 않는 점검)",1.17.2,완료,,"commute/CommuteRecorder.catchUp, CommuteReceiver ACTION_CHECK; CommuteRecorderTest"
 REV-11,"워치 컴플리케이션을 타임라인으로(알람 없이 자정에 다음 날, 저장한 날까지 최대 31일)",1.17.2,완료,,"wear TodayComplicationService (SuspendingTimelineComplicationDataSourceService), ComplicationDays.kt; ComplicationDaysTest"
 REV-12,"투자일지 원칙은 글자 형식만(예전 번호 형식 읽기 제거, 옛 줄은 체크 없음으로)",1.17.2,완료,,"core invest JournalRules, InvestJournalEntity.toModel; InvestTest, InvestAppTest"
-REV-13,"CI 출시 빌드에 워치 AAB·매핑이 붙고 16KB 정렬 검사가 실패를 멈추는지 확인",1.17.2,완료,,"release-build.yml run 39552699731 (workflow_dispatch, success, if-no-files-found: error); zipalign 줄이 따로라 bash -e로 멈춤"
-REV-14,"근무 유형 되돌리기와 '어제 퇴근' 칩 시험",1.17.2,완료,,"ui/AppRoot.kt addStyleTypes·undoOffer, HourlyDay.clockOutLabel, CalendarViewModel.clockOut; WorkStyleUndoTest, LateClockOutWriteTest"
-WEEK-01,"주 근무시간은 달력 첫 요일과 상관없이 늘 월~일로 세기(일요일 시작 달력에서 일~토로 세던 문제)",1.18.0,완료,,"CalendarScreen·MonthGrid(weekStart 분리)·StatsScreen·WidgetData·GuideCards가 WorkHoursCalculator(MONDAY); 설정 문구"
+REV-13,CI 출시 빌드에 워치 AAB·매핑이 붙고 16KB 정렬 검사가 실패를 멈추는지 확인,1.17.2,완료,,"release-build.yml run 39552699731 (workflow_dispatch, success, if-no-files-found: error); zipalign 줄이 따로라 bash -e로 멈춤"
+REV-14,근무 유형 되돌리기와 '어제 퇴근' 칩 시험,1.17.2,완료,,"ui/AppRoot.kt addStyleTypes·undoOffer, HourlyDay.clockOutLabel, CalendarViewModel.clockOut; WorkStyleUndoTest, LateClockOutWriteTest"
+WEEK-01,주 근무시간은 달력 첫 요일과 상관없이 늘 월~일로 세기(일요일 시작 달력에서 일~토로 세던 문제),1.18.0,완료,,CalendarScreen·MonthGrid(weekStart 분리)·StatsScreen·WidgetData·GuideCards가 WorkHoursCalculator(MONDAY); 설정 문구
 CAL-19,"빠른 입력으로 쉬는 날에 근무를 넣으면 '근무일이 아니에요, 대근으로 넣을까요?'를 묻기(말없이 근무일로 바꾸던 문제)",1.18.0,완료,,"CalendarViewModel.askCover·answerCover·stampShift, CalendarScreen CoverAskDialog; ScreenshotTest 357·358"
 CAL-20,"달력 아래 작은 하루 카드는 기본으로 끄고, 설정·화면 꾸미기에서 켜기(옛 PREVIEW 설정은 켠 것으로)",1.18.0,완료,,"AppSettings.showDayCard, BackupManager dayCard, SettingsPages 스위치"
 CAL-21,"일반·작은 폰(폴드 아님)에서 달력이 첫 화면에 보이게: 오늘의 흐름은 860dp보다 짧은 화면에서 한 줄로 시작, 통계 제목은 따로 한 줄",1.18.0,완료,,"TodayFlowCard SHORT_SCREEN_DP, CalendarViewModel.flowFolded(null=고르지 않음), StatsScreen narrow; ScreenshotTest 160·161·364"
@@ -435,7 +435,7 @@ CAL-22,"1년 달력: 열두 달을 근무 색으로 한 화면에, 한 해 근�
 CREW-01,"모든 조 보기: 3조2교대·4조3교대·4조2교대에서 조마다 근무와 그날 쉬는 조, 대근 부탁 글 복사, 조 이름·오늘 근무 맞추기(백업 포함)",1.18.0,완료,,"core schedule/TeamRoster.kt(TeamRosterTest), data/TeamStore.kt, ui/calendar/TeamsScreen.kt, BackupManager teams; ScreenshotTest 350~354"
 CUST-01,"화면 꾸미기: 달력·근무·급여 화면 카드를 켜고 끄고 순서 바꾸기, 미리보기, 새 기능 표시, 백업 포함",1.18.0,완료,,"core layout/PageLayout.kt(PageLayoutTest), ui/components/PageEditSheet.kt, CalendarLayout.kt, StatsScreen StatsEditSheet; ScreenshotTest 355·356·363"
 GUIDE-08,"업데이트 뒤 한 번, 새로 생긴 기능을 열기 버튼과 함께 보여 주고 의견 보내기로 이어 주기(새로 깐 폰에는 안 보임)",1.18.0,완료,,"core guide/WhatsNew.kt, GuideStore.whatsNew, ui/guide/WhatsNewDialog.kt; ScreenshotTest 361·362"
-INQ-02,"문의 진행 단계: 접수 → 확인 중 → 답변 / 개발 목록 → 만드는 중 → 반영(버전)을 앱에서 보기",1.18.0,완료,,"server inquiryProgress, InquiryClient stage·version, InquiryScreen ProgressSteps; inquiry.test.mjs. 서버 다시 올린 뒤 동작"
+INQ-02,문의 진행 단계: 접수 → 확인 중 → 답변 / 개발 목록 → 만드는 중 → 반영(버전)을 앱에서 보기,1.18.0,완료,,"server inquiryProgress, InquiryClient stage·version, InquiryScreen ProgressSteps; inquiry.test.mjs. 서버 다시 올린 뒤 동작"
 INQ-03,"답 평가(도움이 됐어요/아쉬워요), 관리자 홈에 아쉬워요 수",1.18.0,완료,,"POST /api/inquiries/:id/rating, InquiryApi.rate, RateAnswer, admin-app 아쉬워요 타일; inquiry.test.mjs"
 INQ-04,"관리자: 하루 넘게 답이 없는 '놓친 문의' 거르기·홈 타일, 기다린 시간 표시, 개발사항 '반영 버전' 적기와 기록",1.18.0,완료,,"index.js late=1·waitingHours·releasedIn, admin-app.js waitPill·dev-release 양식; inquiry.test.mjs"
 LOCK-01,"앱 잠금: 열 때와 1분 넘게 나갔다 올 때 휴대폰 잠금(지문·얼굴·PIN)으로 풀기, 알람·위젯은 그대로",1.18.0,완료,,"AppLock.kt(안드로이드 11+ BiometricPrompt, 그 전 KeyguardManager), ui/LockCover.kt, 설정 › 개인정보와 권한; ScreenshotTest 373·374"
@@ -491,22 +491,22 @@ PLZ-15,"관리자 앱 광장 운영: 채택 기준 설정, 임금표 검토·내
 REMOTE-01,"서명한 원격 파일: GitHub Pages remote/v1/*.json + Ed25519 서명(.sig), core 순수 Kotlin 검증·엄격한 JSON, 서명 도구 tools/remote_sign.py, 비공개 키는 저장소 밖 (순번 38, 결정 D3)",2 (1.22.0),완료,,"core remote/Ed25519.kt·Json.kt·RemoteFile.kt, tools/remote_sign.py, Ed25519Test·RemoteFileTest (PR #51)"
 REMOTE-02,"요율 원격 갱신: rates.json을 하루 한 번 받아 서명 확인 뒤 적용, 앱에 든 값이 기본, 더 새 판만, 오프라인은 마지막 값 (순번 39)",2 (1.22.0),완료,,"core pay/Rates.kt RateTable.use·RateFile, app remote/RemoteFilesStore.kt (하루 1번·서명·minApp·더 새 판만), RemoteDataTest·RemoteFilesStoreTest"
 REMOTE-03,"프리셋을 데이터 파일로: 근무 순서·근무 종류 묶음·직군 급여를 presets.json으로, 원격 파일로 더하기 (순번 41)",2 (1.22.0),완료,,"remote/v1/presets.json, core remote/PresetFile.kt PresetBook, PresetFileTest (PR #51)"
-LAWX-01,"근로기준법·퇴직급여법·최저임금법 계산 조문 전체 원문 대조 (순번 44)",2 (1.22.0),완료,,"research/1.22-원문대조.md 2장 (국가법령정보센터 원문, 2026-10-22)"
+LAWX-01,근로기준법·퇴직급여법·최저임금법 계산 조문 전체 원문 대조 (순번 44),2 (1.22.0),완료,,"research/1.22-원문대조.md 2장 (국가법령정보센터 원문, 2026-10-22)"
 LAWX-02,"연차 유급휴가 근로기준법 제60·61조 원문 대조, 묶음 D에 전달 (순번 44)",2 (1.22.0),완료,,"research/1.22-원문대조.md 1장 (2026-10-22, 근기법 2026-10-08 시행본, 판례 2021다227100)"
-LAWX-03,"1.16~1.17 세금·노동 숫자(일용직·간이과세·3.3%·최저임금) 원문 대조 (순번 184)",2 (1.22.0),완료,,"research/1.22-원문대조.md 6장, ShopTools LaborCost 연도별 요율로 고침, RemoteDataTest.laborCostFollowsTheYear"
+LAWX-03,1.16~1.17 세금·노동 숫자(일용직·간이과세·3.3%·최저임금) 원문 대조 (순번 184),2 (1.22.0),완료,,"research/1.22-원문대조.md 6장, ShopTools LaborCost 연도별 요율로 고침, RemoteDataTest.laborCostFollowsTheYear"
 PAYR-03,"2027 요율 원문 대조: 장기요양보험료율, 국민연금 10%·기준소득월액, 건강보험, 고용보험, 비과세 요건 (순번 42·45)",2 (1.22.0),완료,,"research/1.22-원문대조.md 3장, remote/v1/rates.json (장기요양 2027은 결정 전이라 비움), RemoteDataTest"
 PAYR-04,"실수령 추정을 근로소득 간이세액표(소득세법 시행령 별표 2)로, 부양가족·자녀 수 입력 (순번 100)",2 (1.22.0),완료,,"core pay/WithholdingTable.kt + remote/v1/taxtable.json (2026-03-01 별표 2 전체), PayProfile.taxFamily·taxChildren, RemoteDataTest.simplifiedTaxTableGoldenRows, 스크린샷 400·401"
-PAYR-05,"공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183)",2 (1.22.0),완료,,"research/1.22-원문대조.md 4장, remote/v1/wages.json (2026-09-01 하반기), RemoteDataTest.constructionWagesAreTheSecondHalf2026"
+PAYR-05,공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183),2 (1.22.0),완료,,"research/1.22-원문대조.md 4장, remote/v1/wages.json (2026-09-01 하반기), RemoteDataTest.constructionWagesAreTheSecondHalf2026"
 PAYR-06,"광장 임금표 옆 정부 공표 시중노임단가 참고 줄, 원격 갱신 (순번 272)",2 (1.22.0),완료,,"PlazaScreens GovernmentWageLine, 스크린샷 402·403"
 PAYR-07,"실수령 추정에 식대 등 비과세(항목마다 월 20만 원까지)와 4대보험 기준 반영, 시급 화면도 가족·자녀 수 사용 (순번 285 리뷰)",2 (1.22.0),완료,,"core pay/TakeHome.nonTaxable·looksNonTaxable, PayScreen 세금 없는 돈 스위치, RemoteDataTest.mealAllowancesAreNonTaxableUpTo200k, 스크린샷 406; notes/1.22-285/A.md"
 SIMPLE-01,"메뉴·설정이 너무 많다는 피드백(2026-10-22, S10) → 탭·달력 도구·설정 줄·첫 실행·권한 요청·기본값 전수 조사, 권한 요청 시점 원문 조사, 지울·합칠·숨길 것 설계 (순번 283)",2 (1.22.0),완료,,"1.22.0 묶음 G: 계획/1.22-G-메뉴설정정리-설계.md 1~6장(1단계), 2단계는 SET-02·SET-03·ONBOARD-05·ONBOARD-06·SIMPLE-03·SIMPLE-04"
-SIMPLE-02,"끄는 법 안내와 '켜 둬도 괜찮아요' 안내 (순번 284)",2 (1.22.0),완료,,"1.22.0 묶음 G: 첫 화면 문구, 설정 찾기 '추천 기능 한 번에 켜기', 도움말 '켜져 있는 알림이나 기능을 끄고 싶어요', 기능 켜고 끄기 맨 위 입구, FeatureRegistry settings.recommended"
+SIMPLE-02,끄는 법 안내와 '켜 둬도 괜찮아요' 안내 (순번 284),2 (1.22.0),완료,,"1.22.0 묶음 G: 첫 화면 문구, 설정 찾기 '추천 기능 한 번에 켜기', 도움말 '켜져 있는 알림이나 기능을 끄고 싶어요', 기능 켜고 끄기 맨 위 입구, FeatureRegistry settings.recommended"
 ONBOARD-03,"첫 실행을 '추천 기능 한 번에 켜기' 한 화면으로: 좋은 기능은 기본 켜짐(새 설치), 필요한 허용을 차례로 받고 거절해도 진행, 서버로 가는 것은 넣지 않음 (순번 284, S10, D42)",2 (1.22.0),완료,,"core consent/Recommended.kt + RecommendedTest; 앱 ui/onboarding/RecommendedScreen.kt(ConsentPages가 부름), data/RecommendedSettings.kt; 하루 브리핑·잘 준비·퇴근길 안전·잠금 화면 오늘 근무 새 설치 켜짐; 화면 사진 520~523"
 ONBOARD-04,"1.22 전에 설정한 휴대폰: 값은 그대로, 1.22 새 기능 안내에서 꺼진 추천 기능을 한 번 권함, 설정에서 언제든 같은 화면 (순번 284)",2 (1.22.0),완료,,"WhatsNewDialog recommendOff, ConsentStore.recommendOffered, 경로 recommended(SettingsGo·Place RECOMMENDED); 화면 사진 524~525"
 SET-02,"설정 9묶음 → 7묶음: 잠과 휴식+알림 = '알림과 잠', 개인정보와 권한+앱 정보 = '개인정보·앱 정보', 두 곳에 있던 줄(듀티표·근태 엑셀, 근무표 공유·받기, 알람 설정, 알람 점검·도움말·처리방침) 한 곳으로 (S10, 순번 283)",2 (1.22.0),완료,,"SettingsPage 7개, SettingsPages(NOTICES = 알림+잠, PRIVACY = 개인정보+앱 정보), 설정 첫 화면 줄 11개; SettingsLayoutTest.sevenGroups·aRowIsInOnePlace; 화면 사진 528~530, 141~143·89·374·382·416~418·437 다시 봄"
 SET-03,"1.22 다른 묶음(A~F)의 새 설정을 설정 구조에 모으기: 줄마다 한 곳, 설정 찾기로 찾힘 (S10 규칙 8)",2 (1.22.0),완료,,"계획/1.22-G-메뉴설정정리-개발계획.md 2단계 표; 설정 찾기 '가린 사람'(광장 › 내 활동), 급여 계산에 부양가족·호봉·탄력근무·연차 세는 기준 낱말; '이미 켜져 있어요'에 위젯 메모 줄·광장 시세 견주기(G4); SettingsLayoutTest.everyNewSettingIsFound"
 ONBOARD-05,"사용 통계 동의를 첫 화면에: 미리 체크하지 않은 선택 상자, 체크해야만 켜짐 (D42)",2 (1.22.0),완료,,"RecommendedScreen StatsLine(첫 실행만), container.setUsageStats; 화면 사진 시험 526(꺼진 채), 527(체크하면 켜짐)"
-ONBOARD-06,"큰 글씨에서 '허용할 것' 카드가 버튼 뒤로 밀림 → 버튼 바로 위 '허용 N개를 차례로 물어요' 한 줄 (통합 리뷰)",2 (1.22.0),완료,,"RecommendedScreen 버튼 위 줄(RecommendedPlan.asks 개수); 화면 사진 522 다시 봄"
+ONBOARD-06,큰 글씨에서 '허용할 것' 카드가 버튼 뒤로 밀림 → 버튼 바로 위 '허용 N개를 차례로 물어요' 한 줄 (통합 리뷰),2 (1.22.0),완료,,RecommendedScreen 버튼 위 줄(RecommendedPlan.asks 개수); 화면 사진 522 다시 봄
 SIMPLE-03,"설정 찾기·도움말·기능 목록·새 기능 안내를 7묶음에 맞추기, 1.22.0 새 기능 안내 31줄 → 8줄",2 (1.22.0),완료,,"SettingsSearch, HelpFaq(screens·답), FeatureRegistry where·Place(SETTINGS_REST 뺌), FeatureLinks, WhatsNew 1.22.0 8줄(GuideTest.theUpdateNoticeIsShort); 화면 사진 531"
 SIMPLE-04,"'끄는 곳' 안내를 실제 한 곳으로: 추천 기능 줄마다 offAt과 아래 안내 TURN_OFF가 같은 '설정 › 알림과 잠', 앱의 모든 '설정 › …'이 있는 묶음 이름 (통합 리뷰)",2 (1.22.0),완료,,"core Recommended.kt, RecommendedTest; 도움말 turnOff가 알림과 잠을 엶; SettingsLayoutTest.everySettingsPlaceTheAppNamesIsThere"
 SRV-01,"서버용 법령 원문 대조: 개인정보 보호법(2026-09-11판)·시행령, 정보통신망법, 전자상거래법, 위치정보법 (순번 56)",2 (1.22.0),완료,,"research/1.22-서버법령.md 1~7장 (2026-10-22 국가법령정보센터 원문, Play UGC·Cloudflare 한도 원문)"
@@ -617,7 +617,7 @@ CAL-47,받은 .bamnat 파일로 앱 열기(백업·회사 설정·근무표 종�
 SRV-07,"무료 체험 동의 대기열(못 보낸 답을 다시 보냄, 서버는 끝나기 1시간 전까지 기다림), 구매 토큰 다른 설치 재묶기 거부, 만료 지난 구독 재확인, 광고 3일 조용 시험, 출시 스위치=데이터 보안 같은 날 (순번 313)",2 (1.23.0),완료,,"ProStore.pendingConsent·AppContainer.sendConsent·OutboxJob, 서버 stopUnconsentedTrials 1시간·purchase_rebind·recheckLapsed; test/operations·money, AdAndLicenseRulesTest"
 COMM-11,"광장·문의 UGC 마무리: 모두의 문의 이 사람 글 안 보기, 가려진 글 이의 제기, 신고 결과·글 운명·제한 끝남 소식, 개인 정보 신고 확인 중 띠, 남은 횟수, 임금표 대기 이유, 규칙 판 바뀐 줄 (순번 314)",2 (1.23.0),완료,,"서버 X-Hide·hiddenByYou·plaza_results·review 띠·left.posts·waitingWhy, PlazaRules.changedSince; InquiryScreen 이 사람 글 안 보기, CompanyBoard 이의 제기; LServerAlarmTest, test/inquiry·plaza"
 SRV-08,"서버 보안·안정: 공유 서버 횟수 제한·SHARE_CREATE 강제·타임아웃, 공개 GET 횟수 제한·캐시, AUTHOR_KEY 분리, 앱 잠금 FLAG_SECURE, 멱등 요청 ID, talk JOIN, .ics ETag (순번 315)",2 (1.23.0),완료,,"공유 서버 kvPut·SHARE_CREATE 503·AbortSignal 5초, 공개 GET 상한·publicList 캐시, AUTHOR_KEY(+_OLD), once()·requests 24시간, AppLock.secure; LShareInquiryTest.theAppLockHides…, test/worker·operations"
-STAT-05,"사용 통계 상한: 묶음 해시로 중복 막기, 네트워크 상한 늘림, 틀린 날만 빼고 받기, 앱은 거절된 묶음을 지우고 기록 (순번 315 R2·R3)",2 (1.23.0),완료,,"서버 usage 묶음 해시·네트워크 120·skipped; UsageStats 400 처리; test/operations"
+STAT-05,"사용 통계 상한: 묶음 해시로 중복 막기, 네트워크 상한 늘림, 틀린 날만 빼고 받기, 앱은 거절된 묶음을 지우고 기록 (순번 315 R2·R3)",2 (1.23.0),완료,,서버 usage 묶음 해시·네트워크 120·skipped; UsageStats 400 처리; test/operations
 INQ-05,"문의 UX: 답장 알림(밤낮 소식 작업), 상태 타임라인, 보내기 대기열, 아쉬워요 한 줄, 주제 표 공용·FAQ 먼저, 지우기 결과 숫자 (순번 316)",2 (1.23.0),완료,,"PlazaNewsJob 밤낮 소식 답장, InquiryScreen inquirySteps 6칸·아쉬운 점 한 줄, InquiryStore.outbox+OutboxJob, core InquiryTopics=서버 INQUIRY_TOPICS(test/operations), HelpFaq.forQuestion, ForgetCounts; LShareInquiryTest.theOutbox…"
 SRV-09,"공지 타겟팅: audience(제조사·SDK·일하는 방식·알람, 휴대폰에서 고름), 행동 버튼 (순번 317)",2 (1.23.0),완료,,"core NoticeAudience·NoticeAction, RemoteConfig 파싱, AppNoticeLine noticePhone·followNotice; LServerAlarmTest.aNoticeForSomePhones…"
 STAT-06,"사용 통계 이벤트 notice_open(공지 열기 횟수, 17→18가지) (순번 317 I14)",2 (1.23.0),완료,,"UsageEvent.NOTICE_OPEN(18), 서버 EVENTS.notice_open; LServerAlarmTest.noticeOpenIsTheEighteenth…, LegalPagesTest 2.9"
@@ -702,7 +702,7 @@ OPS-25,"순번 329 한국어 전용 결정(D53): 번역 안 함, localeFilters k
 QA-06,"순번 330 화면 사진 골든 디핑(핵심 40장), CI 추세 JSON",2 (1.23.0),완료,,"tools/shot_hashes.py: 핵심 40장 32×48 회색 지문(app/src/test/golden/shots.json), CI shots 조각에서 비교, 의도한 변경은 update. 추세: CI가 tests-<조각>.json·size.json을 산출물로 남김"
 QA-07,순번 330 설정 › 데이터 '데이터 점검'(integrity_check·참조·달력 파일·백업 왕복),2 (1.23.0),완료,,"알람 점검 › 데이터 점검(diag/DataCheck.kt): integrity_check, 지운 근무를 가리키는 날, 추가 달력 파일, 백업 만들기·읽기 왕복. 설정이 아니라 알람 점검 화면에 둠(J의 설정 화면과 겹치지 않게), DataCheckTest 2개"
 CAL-48,"CAL-30 남은 것: 접고 펴기·회전에서 시트·편집 값이 남는지 ActivityScenario.recreate 계기 시험 (1.23에서 못 넣음, 상태 보존 코드는 들어감)",2 (1.24.0),대기,,
-CAL-49,"CAL-41 남은 것(P19): 알람을 끈 날에만 plannedAlarms가 resolver를 따로 만듦 → 공유 resolver로 (영향 작아 1.23에서 둠)",2 (1.24.0),대기,,
+CAL-49,CAL-41 남은 것(P19): 알람을 끈 날에만 plannedAlarms가 resolver를 따로 만듦 → 공유 resolver로 (영향 작아 1.23에서 둠),2 (1.24.0),대기,,
 ALRM-03,"스마트 알람 제안: 알람 끄기 기록·수면 기록으로 근무 종류별 제안 하나(늦게 꺼요 → 20분 앞, 이미 깨 있어요 → 15분 뒤, 잠 모자라요 → 잘 시간 알림), 한 탭 적용·되돌리기, 주 1개·30일 조용, 전부 기기 안 (순번 339, 결정 D60)",2 (1.23.0),완료,,"core alarm/AlarmSuggest.kt(근무 종류별 최근 5번·첫 알람, 3/5 기준, 주 1장·30일 쉼·다시 보지 않기) + AlarmSuggestTest 9개. AlarmService가 끈 기록에 type·due·off(기기 안 이벤트 기록만, 사용 통계 제외). 달력 맨 위 AlarmSuggestCard, 한 탭 AlarmShift.move(그 근무만)·10초 되돌리기, 잘 시간 알림 켜기. 설정 › 알람 '알람 제안'(기본 켜짐, 백업)·숨긴 제안 다시 보기, alarm.suggest. AlarmSuggestFlowTest 3개, 화면 710~714"
 EASY-01,"순번 332 둘러보기: '우선 둘러볼게요' → 직군 예시 달력('예시' 띠, 알람 안 울림, 백업·공유 밖)",2 (1.23.0),완료,,"N-1 #88: core example/Browse·ExamplePlan, app BrowseStore·ExampleCalendar(PersonalCalendar.EXAMPLE, 알람·백업·공유·통계 밖)·SetupSteps '우선 둘러볼게요'·ExampleBand; EasyBrowseTest·BrowseFlowTest; 화면 680~684"
 EASY-02,"순번 332 입력 순간 포착: 예시 달력에서 쓰기 동작 13종 → '내 정보로 시작할까요?' 카드(내 정보로·예시 두고·계속 둘러보기), 예시 유출 금지 가드",2 (1.23.0),완료,,N-1 #88: ui/guide/WriteGate.request(쓰기 13종) → '내 정보로 시작할까요?'(내 정보로·예시 두고·계속 둘러보기); ExampleCalendarGuardTest(예시 값 유출 금지)·BrowseFlowTest
@@ -734,7 +734,7 @@ ADMUX-11,"순번 361 관리자 앱 다듬기(하): 할 일 제목 전체 보기,
 QA-08,"순번 362 오늘 공급자(고정 시계, D66): 앱·core·워치·DB 메인 코드의 now()·currentTimeMillis()·systemDefault() 직접 호출을 core Today 한 곳으로, 화면 사진은 2026-10-14(수) 10:30 KST 고정",2 (1.24.0),완료,,"PR #108(2b30e86): core/time/Today.kt, AppContainer.clock, ClockRulesTest(직접 호출 0, 허용은 // real clock: 주석), ScreenshotBase @BeforeClass 고정, 지문 43장; 전체 610장을 TZ=Pacific/Honolulu로 다시 찍어 609장 같음(남은 1장 309는 PERF-05로 고침)"
 PERF-05,"순번 364 (검토 B3) CalendarViewModel의 stateIn(Eagerly) 값 다섯 개를 읽을 때 계산하는 StateFlow로: 값이 한 걸음 늦지 않고, 모으는 쪽이 없으면 코루틴이 돌지 않음",2 (1.24.0),완료,,"T 2단계: ui/DerivedState.kt(DerivedStateFlow·derive), CalendarViewModel activeCalendar·settings·focus·calendarAlarmsOn·payProfile"
 PERF-06,"순번 364 (검토 A1) 컨테이너 생성을 메인 스레드에서 백그라운드 스레드로: 메인 스레드가 창을 만드는 동안 파일을 읽음, 첫 사용은 기다림(lazy 동기화)",2 (1.24.0),완료,,"T 2단계: BamnatApp.onCreate 'bamnat-container' 스레드, onTerminate는 끝날 때까지 기다린 뒤 작업 취소; StartupBudgetTest 21/7"
-REL-16,"순번 364 (검토 M-E5) 7인치 세로 태블릿(600dp)은 레일은 두고 달력 옆 하루 칸은 접음(칸이 좁아 근무 칩이 잘림), 700dp 이상(폴드 안쪽 707dp)만 두 칸",2 (1.24.0),완료,,"T 2단계: AppRoot CALENDAR_BESIDE_DP 700; 화면 660"
+REL-16,"순번 364 (검토 M-E5) 7인치 세로 태블릿(600dp)은 레일은 두고 달력 옆 하루 칸은 접음(칸이 좁아 근무 칩이 잘림), 700dp 이상(폴드 안쪽 707dp)만 두 칸",2 (1.24.0),완료,,T 2단계: AppRoot CALENDAR_BESIDE_DP 700; 화면 660
 ROST-01,"순번 341 한 달 근무 넣기: 그 달 실제 달력 위 키패드 한 화면(직접 넣기 기본, 사진·파일·붙여 넣기는 보조), 읽은 결과를 같은 달력에 겹쳐 그 자리에서 고침",2 (1.24.0),완료,,"P: ui/imports/DutyRosterScreen(MonthGrid+키패드, 사진·엑셀·CSV·다른 방법), MonthGrid marked; MonthInputTest; 화면 720~727"
 ROST-02,"순번 341 넣기 전 덮어쓰기 안내(이미 있던 연차·바꾼 근무 n일), 넣은 뒤 되돌리기",2 (1.24.0),완료,,"P: DutyRoster.overwrites, 넣기 전 덮어쓰기 안내, 넣은 뒤 되돌리기(날·메모 복원); MonthInputTest; 화면 725"
 ROST-03,"순번 342 듀티표 읽기: 코드 뒤 기호(*·/·'·+) 떼고 표시 남김, 이름에 붙은 코드, N-O·N/O 한 칸, 11D·9E 시각+코드",2 (1.24.0),완료,,"P: DutyCodes.read(MARKED·JOINED·TIMED)·splitName, RosterRow.notes → 그 날 메모; DutyRosterTextTest s01~s22·f1~f7"
@@ -743,10 +743,10 @@ ROST-05,"순번 343 휴가 글자: 반차 0.5·반반차 0.25·오전/오후, �
 ROST-06,"순번 343 모르는 휴가·코드는 한 번 묻고 그 달력의 코드 사전에 기억(설정 파일, 백업 포함)",2 (1.24.0),완료,,"P: data/DutyCodeBook(백업 dutyCodes), AskCard; MonthInputTest(halfDaysAndAskedLeave·theCodeBookTravelsInTheBackup); 화면 726"
 ROST-07,"순번 344 빠른 입력 바: 이번 달 전부 넣기 버튼 앞쪽, 반차(오전·오후) 스탬프",2 (1.24.0),완료,,"P: CalendarScreen PaintBar 이번 달 전부 넣기 버튼, DayMark.HALF_AM·HALF_PM; 화면 728·729"
 ROST-08,"순번 344 키패드: 이 순서 반복·지난달과 같게·한 칸 비우기, 큰 글씨에서 잘리지 않는 키",2 (1.24.0),완료,,"P: MonthFill.repeat, 키패드 이 순서 반복·지난달과 같게·비우기, DutyTypingSheet 가로 스크롤; MonthFillTest·MonthInputTest; 화면 727·730·731"
-ROST-09,"순번 345 공유로 받기: 갤러리·메신저의 듀티표 사진·글을 밤낮으로 공유하면 한 달 근무 넣기가 그 내용으로 열림(기기 안)",2 (1.24.0),완료,,"P: IncomingRoster(ACTION_SEND image/*·text/plain), manifest 필터, AppRoot 이동; MonthInputTest.aSharedRosterIsNotABackup"
+ROST-09,순번 345 공유로 받기: 갤러리·메신저의 듀티표 사진·글을 밤낮으로 공유하면 한 달 근무 넣기가 그 내용으로 열림(기기 안),2 (1.24.0),완료,,"P: IncomingRoster(ACTION_SEND image/*·text/plain), manifest 필터, AppRoot 이동; MonthInputTest.aSharedRosterIsNotABackup"
 ROST-10,"순번 345 클립보드 감지: 근무표 모양 글이면 '붙여 넣은 글로 채울까요?' 한 줄(저장 안 함, 거절 기억)",2 (1.24.0),완료,,"P: DutyRosterViewModel.offerClip·declineClip, DutyCodeBook 지문만; MonthInputTest.clipboardTextOfferedOnceAndNeverKept"
 ROST-11,"순번 346 듀티표에서 처음 보는 코드 → 근무 종류 추정 제안, 프로필 '추정' 출처, 밤낮이 한 일 한 줄",2 (1.24.0),완료,,"P: NewKindDialog → Profile INFERRED, JournalKind.ROSTER·RosterFrom; MonthInputTest·JournalTest"
-ROST-12,"순번 346 도움말·설정 찾기·새 기능 안내·HANDOFF",2 (1.24.0),완료,,"P: HelpFaq roster, SettingsSearch, FeatureRegistry, WhatsNew 1.24 2줄, HANDOFF 6-3; GuideTest·SettingsLayoutTest·WorkToolsSearchTest; 화면 737"
+ROST-12,순번 346 도움말·설정 찾기·새 기능 안내·HANDOFF,2 (1.24.0),완료,,"P: HelpFaq roster, SettingsSearch, FeatureRegistry, WhatsNew 1.24 2줄, HANDOFF 6-3; GuideTest·SettingsLayoutTest·WorkToolsSearchTest; 화면 737"
 CAL-50,순번 352 상-4: 달력 위 알림 카드(질문·알람 경고·확인할 기록·공휴일 근무·근무표·알람 제안·지난달 정리·팁·한 일·공지)는 하나만 펼치고 나머지는 '알림 n개 더 보기' 한 줄,2 (1.24.0),완료,,"R: ui/calendar/NoticeStack.kt, CalendarScreen NoticeStack(listOf(...)), AskCard·GuideCards LocalNoticeFolded; 사진 760~765"
 CAL-51,"순번 352 상-4: 낮은 화면(700dp 미만) 한 줄 요약·오늘의 흐름 접기, 가로 폰(높이 480dp 미만) 세로 배치·한 줄 머리·낮은 칸, 하루 칩 줄 '+n' 겹침",2 (1.24.0),완료,,"R: CalendarScreen LOW_SCREEN_DP 700·SIDEWAYS_SCREEN_DP 480, MonthSummaryBar compact, DayHeader ChipRow 버튼 옆; 사진 760~763(주 2개 이상 시험)"
 VIS-04,"순번 353 중-3: 글씨 200% 달력 — 요약 '10월 근무' 한 줄, 공휴일 이름, 오늘·하루 칸 배지 점, 아래 탭 한 줄, 근무 수 칩",2 (1.24.0),완료,,"R: CalendarSummary 한 줄·FlowRow, AppRoot TabLabel 한 줄, MonthGrid 점 배지; 사진 766~767"
@@ -755,21 +755,21 @@ CAL-52,"순번 354 중-4·하: 달 제목 다 보이게(연도 작게), 하루 �
 VIS-05,"순번 354 하: 연간 그래프 축 글자, 설정·도움말 찾기 칸 안내 글, 급여 날짜별 내역 근무 이름 칸, 메모 목록 시각 말줄임",2 (1.24.0),완료,,"R: HintText(설정·도움말 찾기), YearScreen 큰 글씨 한 줄 한 달, PayScreen 이름 위로, StatTile 3줄; 사진 774~776, LayoutCheck 13가지 크기 검사"
 STAT-07,"순번 355 중-5: 근무 수 정의 한 곳(core ShiftCounts) — 달력 칩·요약·근무·급여·통계·위젯이 같은 숫자, 정의가 다르면 이름도 다르게",2 (1.24.0),완료,,"R: core ShiftMonth.counts·leaveDays·nightTimes, 달력 배지·1년 달력·통계 공용, ""밤 시간 근무""; ShiftWorkTest, 사진 777~778"
 A11Y-05,"순번 356 하: 시트 손잡이 한국어 이름, 달력 윗부분 TalkBack 읽는 순서",2 (1.24.0),완료,,"R: res/values(-ko)/sheet_strings.xml(끌어서 옮기기·닫기), 알림 묶음은 보이는 순서대로 읽힘; 사진 779. 한국어 폰 TalkBack 확인은 실기기"
-ADMUX-12,"순번 403 관리자 앱 미구현 전수 목록(U16): 모든 화면·버튼을 실제 브라우저로 눌러 '준비 중'·빈 숫자·동작 안 함을 표로",2 (1.25.0),완료,,"2026-10-25 Playwright로 15화면 모든 버튼 클릭: 죽은 버튼 0·콘솔 오류 0, 미구현 13줄(계획/1.25-AA-개발계획.md 1장) → 모두 404·405에서 구현. 사진 930"
+ADMUX-12,순번 403 관리자 앱 미구현 전수 목록(U16): 모든 화면·버튼을 실제 브라우저로 눌러 '준비 중'·빈 숫자·동작 안 함을 표로,2 (1.25.0),완료,,"2026-10-25 Playwright로 15화면 모든 버튼 클릭: 죽은 버튼 0·콘솔 오류 0, 미구현 13줄(계획/1.25-AA-개발계획.md 1장) → 모두 404·405에서 구현. 사진 930"
 ADMUX-13,"순번 404 지표 기간·활성: 7·28·90일과 직접 고른 기간, 하루·주·달 활성 휴대폰, 앱 판별 휴대폰(동의 통계만, D42), 설치 수는 Play 안내",2 (1.25.0),완료,,"metrics days 7·28·90 + from·to(최대 180일, metricRange), active 하루·7일·가장 많은 날, 앱 판(APP_CODES). 시험 admin-complete 지표·기간, 화면 시험 날짜 두 칸 → (3일). 사진 932·933"
 ADMUX-14,"순번 404 지표 광장·문의: 제보·채택·글·신고·가려짐·규칙 적용 추이, 문의 받음·첫 답 시간(중앙값·90%)·목표 지킴률·도움 됐어요 비율",2 (1.25.0),완료,,"metrics.plaza(제보·채택·글·신고·가려짐·적용·임금표·날마다), metrics.inquiries(inquiryStats 중앙값·90%·지킴률·도움 됐어요·종류별). 시험 admin-complete 값까지. 사진 932"
 ADMUX-15,"순번 404 원격 갱신 배포 현황: remote/v1 파일마다 판·발행일·최소 앱·서명 확인(Ed25519), 그 판을 받을 수 있는 휴대폰 비율",2 (1.25.0),완료,,"GET /api/admin/remote: 8종 판·발행일·minApp·Ed25519 서명 확인·받을 수 있는 휴대폰 %, 공개 키가 RemoteKeys.kt와 같음 시험, 고친 파일은 서명 틀림. 사진 934"
 ADMUX-16,"순번 404 오류 보고: Play 비정상 종료·ANR 비율(Play Developer Reporting API, 선택), 서버 오류 수, 앱 판별 문제 신고",2 (1.25.0),완료,,"서버 500 카운터(countError), 앱 판별 문제 신고, playVitals(Play Developer Reporting API crash·anr, 403 → Play 권한 필요) → G0 값. 시험 가짜 Play로 0.42% 통과·0.61% 못 미침. 사진 934"
 ADMUX-17,"순번 405 할 일 받은함: 권한 안의 모든 할 일(문의·제보·신고 글·가려진 글 기한·개발사항·보상·관리자·임금표·공유 신고·운영)을 기한 순 한 목록, 바로 처리 한 번",2 (1.25.0),완료,,"GET /api/admin/inbox + #/inbox(기한 순, 오늘·이번 주·내 것·모두, 맡기, 이 기기 내일 볼게요), 메뉴 숫자 기한 넘김. 시험 서버 순서·권한, 화면 맡기 → 서버 내 것. 사진 931·938"
 ADMUX-18,"순번 405 같은 회사 여러 판 정리: 회사·부서마다 쓰는 판·기다리는 판·이전 판을 채택 수·신뢰로 나란히, 대표로 정하기·이전 판 되돌리기(기록 남김)",2 (1.25.0),완료,,"GET /api/admin/versions(쓰는·기다리는·이전 판, 적용·맞았어요·윌슨·다른 줄·추천) + POST /rules/:id/promote(새 판, 기록, 409·403). 시험 서버·화면(확인 → 새 판 v3). 사진 935·936"
-ADMUX-19,"순번 405 광장 운영 일괄 처리: 토론 글·임금표 여러 개 고르기로 문제없음·가리기·지우기·채택·숨기기",2 (1.25.0),완료,,"POST /api/admin/posts/bulk·/rates/bulk(100개, 권한 따로, 건너뜀 이유) + 여러 개 고르기 막대. 시험 서버·화면(2개 가리기 → 서버 hidden). 사진 937"
+ADMUX-19,순번 405 광장 운영 일괄 처리: 토론 글·임금표 여러 개 고르기로 문제없음·가리기·지우기·채택·숨기기,2 (1.25.0),완료,,"POST /api/admin/posts/bulk·/rates/bulk(100개, 권한 따로, 건너뜀 이유) + 여러 개 고르기 막대. 시험 서버·화면(2개 가리기 → 서버 hidden). 사진 937"
 ADMUX-20,"순번 406 관리자 안내 문서·HANDOFF 6-13·추적표, 관리자 앱 사진 930~939",2 (1.25.0),완료,,"README 개발자 앱(받은함·여러 판·지표·Play 통계·원격), HANDOFF 6-13, 사진 930~939(server/company-worker/docs/screenshots/admin-1.25), npm test 207·test:ui 14 통과"
-READ-01,"순번 367 U20 원인 규명: 실제 OCR로 읽은 듀티표 사진 표본(기울기 0~5°·원근·붙은 날짜·반쪽 표·세로 표·조 단위) 16장과 1.24 재현(2°부터 0일)",2 (1.25.0),완료,,"U: tools/roster_fixtures.py(RapidOCR PP-OCRv4+korean), core/src/test/resources/roster-photos 16장; RosterPhotoFixturesTest, 원인 표는 계획/1.25-U-개발계획.md"
-READ-02,"순번 368 읽기 엔진: 기울기 재기(투영)·바로 세우기·줄 따라 잇기·날짜 직선 맞추기(x=a+b·날짜)·붙은 숫자(1213) 나누기",2 (1.25.0),완료,,"U: RosterGeometry, DutyRoster.analyse; DutyRosterTiltTest(±5°), RosterPhotoFixturesTest 표본마다 28~31/31"
+READ-01,순번 367 U20 원인 규명: 실제 OCR로 읽은 듀티표 사진 표본(기울기 0~5°·원근·붙은 날짜·반쪽 표·세로 표·조 단위) 16장과 1.24 재현(2°부터 0일),2 (1.25.0),완료,,"U: tools/roster_fixtures.py(RapidOCR PP-OCRv4+korean), core/src/test/resources/roster-photos 16장; RosterPhotoFixturesTest, 원인 표는 계획/1.25-U-개발계획.md"
+READ-02,순번 368 읽기 엔진: 기울기 재기(투영)·바로 세우기·줄 따라 잇기·날짜 직선 맞추기(x=a+b·날짜)·붙은 숫자(1213) 나누기,2 (1.25.0),완료,,"U: RosterGeometry, DutyRoster.analyse; DutyRosterTiltTest(±5°), RosterPhotoFixturesTest 표본마다 28~31/31"
 READ-03,"순번 368 칸마다 확실도: 열 가운데서 벗어난 칸 노랑, 아래로 갈수록 넓어지는 표(원근) 줄마다 다시 맞추기, 세로 표",2 (1.25.0),완료,,"U: RosterRow.unsure·line, gridRows 줄마다 다시 맞춤, columnRows; DutyRosterTiltTest.tableWiderAtTheBottom·cellsOffTheirColumnAreLookedAt"
-READ-04,"순번 369 못 읽었을 때 사진 위 두 번 누르기: 날짜 줄 → 내 줄(날짜 줄이 없으면 1일부터)",2 (1.25.0),완료,,"U: RosterHint, PhotoTapDialog, RosterReader.tapped; DutyRosterTiltTest.twoTaps*, RosterPhotoTest.noRowOfDatesIsReadWithTwoTaps"
+READ-04,순번 369 못 읽었을 때 사진 위 두 번 누르기: 날짜 줄 → 내 줄(날짜 줄이 없으면 1일부터),2 (1.25.0),완료,,"U: RosterHint, PhotoTapDialog, RosterReader.tapped; DutyRosterTiltTest.twoTaps*, RosterPhotoTest.noRowOfDatesIsReadWithTwoTaps"
 READ-05,"순번 369 '어느 줄(조)이 내 것인가요?' 꼭 묻기(고르기 전엔 넣지 않음), 무엇을 읽었는지 보기, 못 읽은 까닭 안내",2 (1.25.0),완료,,"U: WhichLine, ReadDiagnosisDialog, RosterPhotoRead.problem; RosterPhotoTest·SetupRosterPhotoTest"
-READ-06,"순번 370 양식 기억: 고른 줄(이름·조)을 달력마다 기억, 다음 달 같은 줄 먼저 골라 둠, 백업에 함께",2 (1.25.0),완료,,"U: DutyCodeBook.mine·rememberMine(mine: 키); RosterPhotoTest.theLineRememberedTravelsInTheBackup"
+READ-06,"순번 370 양식 기억: 고른 줄(이름·조)을 달력마다 기억, 다음 달 같은 줄 먼저 골라 둠, 백업에 함께",2 (1.25.0),완료,,U: DutyCodeBook.mine·rememberMine(mine: 키); RosterPhotoTest.theLineRememberedTravelsInTheBackup
 READ-07,"사용자 2026-10-25 명세서 사진 인식: 기울어진 명세서 줄 맞추기, 글자 잘못 읽음 고치기(함계→합계), 잘린 실수령액 계산",2 (1.25.0),완료,,"U: OcrRows.join 기울기, PayslipReader.ocrFix·deducted·net, payslip_fixtures.py 7장; PayslipPhotoFixturesTest(40/42 그대로, 42/42 글자 맞으면)"
 READ-08,"사용자 2026-10-25 명세서 + 회사 계산 방법 사진 두 장: 어느 쪽이 명세서인지 가려 읽고, 규칙은 골라 급여 설정에, 공제·실수령은 세금 예측(W)에",2 (1.25.0),완료,,"U: PayPhotos, RuleText.tidy(1 5배→1.5배), PayslipFillDialog 두 칸·RuleTarget; PayRulesPhotoFixturesTest"
 READ-09,"순번 370 사진 다듬기: EXIF 방향, 큰 사진 줄이기, 기울면 바로 세우고 대비 높여 한 번 더 읽어 나은 쪽, 휴대폰 안에서만(D68)",2 (1.25.0),완료,,"U: ImagePrep, RosterScanner.scan 두 번 읽기, PayslipScanner; ML Kit은 실기기 확인"
@@ -778,24 +778,24 @@ READ-11,"순번 372 전체 넣기 되돌리기: 화면을 닫은 뒤에도 도�
 ALRM-07,"순번 410 알람이 잠금 화면에서 안 보임: 경우별 원인(휴대폰 쓰는 중·전체 화면 알림 꺼짐·근무 알람 알림 조용히/숨김·방해 금지 완전히 무음·제조사 잠금 화면 권한), 알림 단추 셋(다시 울림·끄기·오늘 모두 끄기), 화면 없이 울렸으면 허용 안내",2 (1.25.0),완료,,"research/1.25-AB-조사.md 2장, AlarmService 알림 단추 셋·postFullScreenOff, Notifications.alarmChannelTrouble·dndBlocksAlarms·makerLockScreenPermission, 알람 점검 새 줄 3개·달력 경고; AlarmButtonsAllOffTest·M7AppTest, 사진 968"
 ALRM-08,"순번 411 버튼으로 알람 끄기(결정 D78): 알람 화면의 소리 줄이기·키우기·음소거 키와 전원 버튼(화면 꺼짐, 알람 화면이 앞에 있을 때만), 설정 끄기(기본)/다시 울림/아무것도 안 함, 미션 알람은 소리만 30초",2 (1.25.0),완료,,"alarm/AlarmButtons.kt, AlarmActivity.onKeyDown, AlarmService.pressed·quietBriefly·SCREEN_OFF, AppSettings.alarmButtonAction(백업 alarmButton, 잠긴 재부팅 복사본); AlarmButtonsAllOffTest, 사진 960~965·967"
 ALRM-09,"순번 412 오늘 남은 알람 모두 끄기(결정 D78): 알람 화면·알림 단추, 다음 자정(또는 울리던 근무 시작)까지 근무 알람·다시 울림·일어났나요?·메모/투자 울림 멈춤, 내일 알람 그대로, 되돌리기 알림·달력 '오늘 알람 끔 · 다시 켜기', 미션 알람은 미션 뒤, 밤낮이 한 일",2 (1.25.0),완료,,"alarm/AlarmsOff.kt(기기 보호 저장소, 백업 안 함), AlarmScheduler 계획 시작, AlarmService 침묵·ACTION_ALL_OFF, JournalKind.ALARMS_OFF; AlarmButtonsAllOffTest 끝에서 끝(첫 알람 → 모두 끄기 → 오늘 0·내일 06:00 → 다시 켜기 → 06:30), 사진 960~966·969"
-TAX-01,"순번 380 U9-다: 월급이 들어오면 들어온 돈에 더하지 않고 관측치로 남겨 세금 예측에 씀(급여 예상과 한 번만)",2 (1.25.0),완료,,"W: SalaryDeposits·SalaryWatch(알림 적힐 때·돈 탭 열 때), 급여로 옮기고 pay_observations(DB 21), MonthMoney.payCounted=예상?:기록·payObserved(W-D1), 월급 아니에요; WTaxFlowTest 끝에서 끝, TaxForecastTest"
-TAX-02,"순번 380 매달 세전·세후 예상(프로): 실제 들어온 월급·명세서로 회사가 떼는 만큼 맞춤",2 (1.25.0),완료,,"W: TaxLearner(간이세액표×k, 6달 중앙값, 연말정산 달 뺌), 돈 › 요약 세금·실수령 카드(Feature.TAX_FORECAST); 사진 850·855·857·869; 급여 화면 합계 아래·달력 요약 '세전 · 세후' 한 줄(TakeHomeLine), 맞춰 보기 명세서도 관측(PayViewModel.observePayslip, PayPhotos)"
-TAX-03,"순번 381 올해 지금까지 세전·실수령·세금·4대 보험",2 (1.25.0),완료,,"W: TaxLearner.yearSoFar, 실수령 기록 시트; 사진 851·856"
+TAX-01,순번 380 U9-다: 월급이 들어오면 들어온 돈에 더하지 않고 관측치로 남겨 세금 예측에 씀(급여 예상과 한 번만),2 (1.25.0),완료,,"W: SalaryDeposits·SalaryWatch(알림 적힐 때·돈 탭 열 때), 급여로 옮기고 pay_observations(DB 21), MonthMoney.payCounted=예상?:기록·payObserved(W-D1), 월급 아니에요; WTaxFlowTest 끝에서 끝, TaxForecastTest"
+TAX-02,순번 380 매달 세전·세후 예상(프로): 실제 들어온 월급·명세서로 회사가 떼는 만큼 맞춤,2 (1.25.0),완료,,"W: TaxLearner(간이세액표×k, 6달 중앙값, 연말정산 달 뺌), 돈 › 요약 세금·실수령 카드(Feature.TAX_FORECAST); 사진 850·855·857·869; 급여 화면 합계 아래·달력 요약 '세전 · 세후' 한 줄(TakeHomeLine), 맞춰 보기 명세서도 관측(PayViewModel.observePayslip, PayPhotos)"
+TAX-03,순번 381 올해 지금까지 세전·실수령·세금·4대 보험,2 (1.25.0),완료,,"W: TaxLearner.yearSoFar, 실수령 기록 시트; 사진 851·856"
 TAX-04,"순번 381 지난 월급 기록 입력(월급·시급·3.3%·일당), 명세서 사진으로 채우기(휴대폰 안, D68)",2 (1.25.0),완료,,"W: PayRecordDialog·PayslipReader, 같은 달·종류는 바꿔 씀, 일용 원천징수 공식; 사진 852·853(저장 확인)"
-TAX-05,"순번 382 U9-라 자영업·프리랜서 올해 세금 예상(영수증·카드·현금영수증 기록)과 내는 날",2 (1.25.0),완료,,"W: BusinessTax(장부·단순·기준경비율, 부가세 일반·간이·면세, 내는 날), 사업자 시트; BusinessTaxTest 정답값, 사진 858·859"
-TAX-06,"순번 382 사업자 답(과세 유형·업종·경비율·작년 세금 등) 저장",2 (1.25.0),완료,,"W: tax_settings(DB 21), TaxSettings 키·글자"
-TAX-07,"순번 384 세금 기록 백업 왕복",2 (1.25.0),완료,,"W: TaxBackup ""tax"" 키, 없으면 휴대폰 것 유지; WTaxFlowTest.theTaxRecordsSurviveABackup, MigrationAllVersionsTest 21"
+TAX-05,순번 382 U9-라 자영업·프리랜서 올해 세금 예상(영수증·카드·현금영수증 기록)과 내는 날,2 (1.25.0),완료,,"W: BusinessTax(장부·단순·기준경비율, 부가세 일반·간이·면세, 내는 날), 사업자 시트; BusinessTaxTest 정답값, 사진 858·859"
+TAX-06,순번 382 사업자 답(과세 유형·업종·경비율·작년 세금 등) 저장,2 (1.25.0),완료,,"W: tax_settings(DB 21), TaxSettings 키·글자"
+TAX-07,순번 384 세금 기록 백업 왕복,2 (1.25.0),완료,,"W: TaxBackup ""tax"" 키, 없으면 휴대폰 것 유지; WTaxFlowTest.theTaxRecordsSurviveABackup, MigrationAllVersionsTest 21"
 INV-38,"순번 379 U17 매도 단가 입력 때 수수료·세금 자동 계산, 기본 수수료 0.05% 바꾸고 저장해 매번 적용",2 (1.25.0),완료,,"W: InvestSettings.buyFeeRate/sellFeeRate, InvestFees.shown·rateFor, FeeRatesDialog; 사진 860·861(저장 확인), WTaxFlowTest 저장한 수수료"
 INV-39,"순번 383 U9-마 국내·해외 투자 수익 세금 구분(해외 매도 미리 보기 22%·250만 공제, 국내는 비과세 안내)",2 (1.25.0),완료,,"W: InvestTaxes.sellPreview·DOMESTIC_NOTE, 매매 시트 줄; BusinessTaxTest(투자 예)"
 INV-40,"순번 409 투자 체결 단가 자동 1단계(D77): A 알림 금액÷수량, B 이어 온 알림 묶어 평균, C 체결 내역 캡처 읽어 대기함 빈 단가 채우기(안 맞으면 노랗게 묻기, 처음 안내, 갤러리 공유)",2 (1.25.0),완료,,"W: TradeAlertParser AMOUNT, TradeAlerts.add 묶기·fill, FillSheetReader·FillMatcher, InvestFillCapture; 캡처 표본 12장 FillCaptureTest, WTaxFlowTest, 사진 862~868. 실제 증권사 캡처는 실기기 확인"
-INV-41,"순번 383 해외 주식 양도소득세 5월 신고 알림: 지난해 해외 주식 이익이 250만 원 공제를 넘으면 5월 1일과 마감 일주일 전",2 (1.25.0),완료,,"W: InvestTaxes.reportReminders(마감 주말·공휴일이면 다음 평일, ISA·연금 뺌), InvestNotices.withReports; InvestReportTest, WTaxFlowTest"
+INV-41,순번 383 해외 주식 양도소득세 5월 신고 알림: 지난해 해외 주식 이익이 250만 원 공제를 넘으면 5월 1일과 마감 일주일 전,2 (1.25.0),완료,,"W: InvestTaxes.reportReminders(마감 주말·공휴일이면 다음 평일, ISA·연금 뺌), InvestNotices.withReports; InvestReportTest, WTaxFlowTest"
 HOLI-01,"순번 374 (U1): 회사 규칙 '빨간날에 일하면' 한 항목 — 휴일 가산(법)·대근·특근처럼·대체휴일·교대제라 상관없음, 예전 세 칸과 늘 맞게",2 (1.25.0),완료,,"core HolidayWork·withHolidayWork, HolidayWorkPicker(회사 규칙·처음 설정·간편 설정); HolidayWorkGoldenTest, VScreenshotTest 830~833"
-HOLI-02,"순번 374 (U1): 빨간날 휴가는 근무일(출근)만 인정, 야간·휴일 가산 0, 시급·일당제 유급휴일과 휴가 이중 지급 고침",2 (1.25.0),완료,,"PayCalculator 휴가 줄 유급휴일 시간 뺌·월급제 무급 미공제; HolidayWorkGoldenTest(휴가·반차·시급 휴가·무급)"
+HOLI-02,"순번 374 (U1): 빨간날 휴가는 근무일(출근)만 인정, 야간·휴일 가산 0, 시급·일당제 유급휴일과 휴가 이중 지급 고침",2 (1.25.0),완료,,PayCalculator 휴가 줄 유급휴일 시간 뺌·월급제 무급 미공제; HolidayWorkGoldenTest(휴가·반차·시급 휴가·무급)
 HOLI-03,"순번 374 (U1): 빨간날 근무를 특근·대근으로 셀 때 근무 종류(모닝·이브닝·나이트·당직)별 1회 금액, 근무 종류의 야간 가산은 그대로",2 (1.25.0),완료,,"withHolidayShiftPay(근무 종류별 1회, 야간 가산 유지·시작한 날 기준); HolidayWorkGoldenTest, VScreenshotTest 831·847"
 PAYS-12,"순번 375 (U22): 급여 간편 설정 — 근무 형태 묻기 → 흔한 가산 묶음 → 한 장 확인(문장·이번 달 예상), 칸별 편집기는 '자세히 고치기'(D70)",2 (1.25.0),완료,,"core WorkForm·WorkForms·PayStory, ui/pay/PayQuickSetup; WorkFormTest, VScreenshotTest 834~837·846"
 PAYS-13,"순번 375 (U22): 규칙 조립기 모든 대상×방식 → 계산 금액 왕복(계산에 안 들어가는 항목 0), 대상에 빨간날 근무",2 (1.25.0),완료,,"RuleDraft 대상 빨간날 근무, RuleText.HolidayMode; RuleBuilderRoundTripTest(24조합 왕복)"
 PAYS-14,"순번 376 (U9-가): 명세서 사진 → 기본급·가산율·대근 금액·없는 수당·빨간날 방식 역산 → 한 장 확인 → 적용(기기 안, D68)",2 (1.25.0),완료,,"core SlipRules.infer(명세서+회사 계산 방법 글), SlipRulesDialog; SlipRulesTest(표본 5종 ±1%), VScreenshotTest 838~840·842·848"
-PAYS-15,"순번 376 (U9-가): 명세서·규칙으로 맞춘 뒤 광장에 올리기 권유와 혜택 안내",2 (1.25.0),완료,,"PlazaAskDialog(채택 방법·혜택), 적용 뒤 onShareWay; VScreenshotTest 840·841"
+PAYS-15,순번 376 (U9-가): 명세서·규칙으로 맞춘 뒤 광장에 올리기 권유와 혜택 안내,2 (1.25.0),완료,,"PlazaAskDialog(채택 방법·혜택), 적용 뒤 onShareWay; VScreenshotTest 840·841"
 PAYX-48,"순번 377 (U9-나): '사용하러 가기'·바로 가기 목적지 전수 시험, 월급날 비교 카드 늘 보이고 들어온 급여 바로 적기",2 (1.25.0),완료,,"pay.gap focus·카드 늘 보임·AddPayDialog(돈 탭 급여 한 줄); FeatureDestinationsTest, VScreenshotTest 843~845·849"
 FIT-01,"순번 391 (U3): 유형별 기능 표 한 곳(core FitTable) — 달력 꾸미기·도구·근무·급여 꾸미기·돈 꾸미기가 그 달력 유형에 맞는 것만 보여 줌. 투자·자영업 달력에 근무 기능 0, 교대 달력에 투자 기능 0",2 (1.25.0),완료,,"Y: core FitTable·FitTableTest 5(유형 × 화면 전수), 사진 890·892·894·895·908·909"
 FIT-02,"순번 391 (U3): '이 달력에 안 맞아 숨긴 기능 n개 · 더 보기'에서 더하면 그 달력에만 기억(백업 포함), 빼기로 되돌림",2 (1.25.0),완료,,"Y: GuideStore added·백업 featuresAdded(FitBackupTest), 사진 891·893(더하기 → 시트에 보임 → 닫았다 열어도 남음)"
@@ -819,18 +819,18 @@ PLAZA-04,"순번 388 U2·U26 직접 만든 규칙 광장 올리기 권유: 순�
 PLAZA-05,"순번 389 U26 D74 같은 회사 여러 판: 지지가 큰 판이 대표 판, 밀려난 판은 이전 판(이력에 내용), 비교·되돌리기, 쓰던 사람 비교 카드",2 (1.25.0),완료,,"서버 support() 하나로 광장 대표 판 교체(source rival)와 관리자 versions 추천 통일(AA #115), 이력 body, 앱 대표 판 vN·비교·되돌리기·밀려난 판 카드. 서버 npm test, 사진 875~877"
 PLAZA-06,"순번 390 U25-나 첫 설정 다시 받기(설정 도움말·달력 ⋮, 지금 달력으로 채움, 오늘부터), 도움말·문의 안내",2 (1.25.0),완료,,"Routes.SETUP_AGAIN(따로 초안), 설정 › 내 근무·달력 도구·문의 도움말·FAQ 입구, 그만두면 그대로. 사진 886~888"
 NAV-04,"Z 후속: 남은 뒤로 가기 — 근무 직접 치기(시트·옆 패널) 친 것 버리기 전에 묻기, 한 달 근무 넣기 확인 없이 닫힘 막기, 무슨 일 하세요·첫 설정 첫 질문 뒤로 = 앱 닫힘 → 2초 안 두 번, 받을 돈 검색 뒤로 = 검색 닫기",2 (1.25.0),완료,,"2026-10-25 TypingGuard(confirmValueChange·BackHandler·닫기), DutyRosterScreen Ui.unsaved 묻기, ui/ExitGuard(달력·첫 화면·첫 질문 공용), OwedScreen BackHandler. 끝에서 끝 ZScreenshotTest typingSheetAsksBeforeTypedDaysGo(923)·widePanelAsksBeforeTypedDaysGo·rosterScreenAsksBeforeLeaving(924)·theFirstSetupClosesOnlyOnASecondBack·owedSearchClosesBeforeLeaving"
-BAK-02,"Z 후속: 복원한 달력 보기 설정(calendar_view: 목록 보기·오늘의 흐름 접기·공휴일 답) 앱 다시 열지 않고 즉시 반영",2 (1.25.0),완료,,"2026-10-25 CalendarViewModel이 calendar_view 바뀜을 들어 다시 읽음. 끝에서 끝 ZScreenshotTest.aRestoredListViewShowsAtOnce(열린 달력에서 백업 복원 → 바로 목록)"
+BAK-02,Z 후속: 복원한 달력 보기 설정(calendar_view: 목록 보기·오늘의 흐름 접기·공휴일 답) 앱 다시 열지 않고 즉시 반영,2 (1.25.0),완료,,2026-10-25 CalendarViewModel이 calendar_view 바뀜을 들어 다시 읽음. 끝에서 끝 ZScreenshotTest.aRestoredListViewShowsAtOnce(열린 달력에서 백업 복원 → 바로 목록)
 QA-09,"Z 후속: 전체 실행에서만 깨지던 시험 원인 찾아 고치기(건너뛰기 없음) — StartupBudgetTest 2개, OperationsAppTest.usageStatsAreSentOnceADayOnlyWithAYes, 사진 시험 못 찾음",2 (1.25.0),완료,,"2026-10-25 원인 ① 시험 사이 버려진 Compose dispatcher 예약(앞에 Compose 화면 시험이 있으면 늘 재현) → rules/ComposeMainReset(ScreenshotBase·AccessibilityCheckTest·StartupBudgetTest), ② 앱 시작 스레드의 forgetUnless가 시험이 쓴 통계를 지움 → 컨테이너를 먼저 기다림. AlarmButtonsAllOffTest 알람 화면 닫기, StartupBudgetTest 실패 메시지에 화면·상태"
 NAV-05,"순번 419 (1.26 AD, D82): 탭 순서 저장(백업 포함), 맨 앞 탭이 앱을 켤 때 첫 화면, 뒤로 가기 '집'·다시 열기도 맨 앞 탭(Z NAV-02 규칙을 맨 앞 탭 기준으로)",2 (1.26.0),완료,,"2026-10-25 core/layout/TabOrder(TabOrderTest 4), AppSettings.tabOrder·백업 settings.tabOrder(ZFullBackupTest 왕복), AppRoot startTab·TabBackCallback 맨 앞 탭 기준·HomeRequests. 끝에서 끝 ADScreenshotTest longPressDragTapOutsideAndTheAppOpensOnMemos(다시 켜면 메모)·backFromTheFirstTabClosesOnTheSecondPress…, 기본 순서 사진 지문 26개 차이 0"
 NAV-06,"순번 420 (1.26 AD): 탭(아래 줄·옆 줄)을 길게 누르면 편집 — 아이콘이 작게 흔들림(움직임 줄이기면 테두리), 끌어서 옮기기, 접근성 동작 앞으로·뒤로 옮기기, 탭 밖·뒤로 = 저장, '맨 앞 = 첫 화면' 한 줄 안내",2 (1.26.0),완료,,"2026-10-25 ui/TabBar.kt TabEdit·tabEditModifier(길게 누름·끌기·접근성 동작)·WigglingIcon(±3.5°, 애니메이션 없애기면 테두리)·TabEditHint·TabEditCatcher. 끝에서 끝 ADScreenshotTest 길게 누름→끌기→밖 누름, 뒤로=저장, 옆 줄, TalkBack 동작; GestureAlternativesTest TabBar.kt; 사진 1020~1028"
 NAV-07,"순번 421 (1.26 AD): 설정 › 달력 화면 › 첫 화면·메뉴 순서(위·아래, 처음 순서로), 설정 찾기, 기능 목록",2 (1.26.0),완료,,"2026-10-25 ui/settings/TabOrderRows.kt(설정 › 달력 화면 › 첫 화면·메뉴 순서, 처음 순서로), SettingsIndex, FeatureRegistry nav.tabOrder, WhatsNew 1.26.0. 끝에서 끝 ADScreenshotTest.settingsMovesTheTabsAndPutsThemBack, 사진 1029~1032·1034"
-GUIDE-09,"순번 421 (1.26 AD): 도움말 FAQ·문의 화면 자주 묻는 질문에 '달력 말고 다른 화면으로 시작하고 싶어요' — 기능을 모르는 사용자에게 알려 주기",2 (1.26.0),완료,,"2026-10-25 HelpFaq tabOrder(문의 화면 자주 묻는 질문·달력 화면 도움말·app 주제), 뒤로 가기 답 맨 앞 메뉴로. ADScreenshotTest.searchAndHelpFindIt·사진 1033"
+GUIDE-09,순번 421 (1.26 AD): 도움말 FAQ·문의 화면 자주 묻는 질문에 '달력 말고 다른 화면으로 시작하고 싶어요' — 기능을 모르는 사용자에게 알려 주기,2 (1.26.0),완료,,"2026-10-25 HelpFaq tabOrder(문의 화면 자주 묻는 질문·달력 화면 도움말·app 주제), 뒤로 가기 답 맨 앞 메뉴로. ADScreenshotTest.searchAndHelpFindIt·사진 1033"
 SPAT-01,"순번 413 회사별 교대주기 공개 자료 148줄을 앱 자료로(core, 원격 갱신 형식 remote/v1/cycles.json): 순서·시간을 근무 종류·주기 코드로, 못 바꾸는 줄은 형태만, 신뢰도 그대로",2 (1.26.0),완료,,"2026-10-25 tools/cycles_build.py → remote/v1/cycles.json(kind cycles, 서명은 통합), core PublicCycles. PublicCyclesTest 9개(148줄·EXACT 36·USUAL 28·NONE 84·신뢰도)"
 SPAT-02,"순번 414 회사 검색 하나(이름·초성·업종·근무형태): 첫 설정·근무 주기 바꾸기·광장 찾기, 공개 자료 기반 배지·신뢰도·시점·출처 링크, 없으면 처음 제공 권유",2 (1.26.0),완료,,"2026-10-25 PublicCycles.search·PublicCycleSection(첫 설정·근무 주기·회사 찾기·광장), FirstProviderCard. 끝에서 끝 ACScreenshotTest setupSearchShowsPublicRows·companyFindMergesServerAndPublic·boardSearchShowsPublicRows·setupFirstProviderGivesTheCycle"
 SPAT-03,"순번 415 근무주기 맞추기: 순서를 알면 미리 보기 → 오늘이 몇 번째 날 → 달력(WriteGate), 공개 순서 없음은 그 형태의 흔한 순서 후보를 고르거나 고침(사용자 확인)",2 (1.26.0),완료,,"2026-10-25 PublicApplySheet(후보·하루씩 고치기·오늘이 몇 번째 날)·WriteGate·CompanyShare.apply, 첫 설정 SetupSource.PUBLIC. 끝에서 끝 setupPicksAPublicRowAndSavesItsCycle·patternScreenFindsAndAppliesAFormOnlyRow"
-SPAT-04,"순번 416 적용 뒤 급여 넣기 유도(V 간편 급여, 그 업종 흔한 수당을 추정으로 미리 채움)",2 (1.26.0),완료,,"2026-10-25 PayQuickSetup(fromCycle)·PublicPay.prefill·달력 카드. 끝에서 끝 payNudgeOpensThePaySetupFromTheCycle(수당 확인 필요 저장)"
-SPAT-05,"순번 417 급여까지 넣으면 광장 올리기 권유(보상 먼저, 보낼 내용 미리 보기, 기존 제보 길·동의) → 그 회사 광장으로, 공개 자료에서 시작한 것은 공개 자료 확인·고침으로, 근무주기만도 올릴 수 있음(보상은 급여 포함일 때만)",2 (1.26.0),완료,,"2026-10-25 PublicWayNotice(보상 먼저)·제보 화면 공개 자료 확인·고침 쪽지·근무주기만 올리기·광장 보기. 끝에서 끝 shareInviteSendsTheCheckedCycleAndOpensThePlaza·firstProviderWithoutPaySendsTheCycleOnly"
-SPAT-06,"순번 418 도움말·설정 찾기·기능 목록·WhatsNew 2줄·HANDOFF 6-15·화면 사진 1000~1019",2 (1.26.0),완료,,"2026-10-25 HelpFaq publicCycles·SettingsIndex·FeatureRegistry plaza.cycles·WhatsNew 1.26.0 2줄·HANDOFF 6-15, 사진 1000~1019(ACScreenshotTest 20개)"
+SPAT-04,"순번 416 적용 뒤 급여 넣기 유도(V 간편 급여, 그 업종 흔한 수당을 추정으로 미리 채움)",2 (1.26.0),완료,,2026-10-25 PayQuickSetup(fromCycle)·PublicPay.prefill·달력 카드. 끝에서 끝 payNudgeOpensThePaySetupFromTheCycle(수당 확인 필요 저장)
+SPAT-05,"순번 417 급여까지 넣으면 광장 올리기 권유(보상 먼저, 보낼 내용 미리 보기, 기존 제보 길·동의) → 그 회사 광장으로, 공개 자료에서 시작한 것은 공개 자료 확인·고침으로, 근무주기만도 올릴 수 있음(보상은 급여 포함일 때만)",2 (1.26.0),완료,,2026-10-25 PublicWayNotice(보상 먼저)·제보 화면 공개 자료 확인·고침 쪽지·근무주기만 올리기·광장 보기. 끝에서 끝 shareInviteSendsTheCheckedCycleAndOpensThePlaza·firstProviderWithoutPaySendsTheCycleOnly
+SPAT-06,순번 418 도움말·설정 찾기·기능 목록·WhatsNew 2줄·HANDOFF 6-15·화면 사진 1000~1019,2 (1.26.0),완료,,"2026-10-25 HelpFaq publicCycles·SettingsIndex·FeatureRegistry plaza.cycles·WhatsNew 1.26.0 2줄·HANDOFF 6-15, 사진 1000~1019(ACScreenshotTest 20개)"
 INVITE-01,"AE 초대 조사: Play 정책(평점·리뷰·설치, 결제), Install Referrer, 악용 막기, 개인정보 → 설계",2 (1.26.0),완료,,"2026-10-25 research/1.26-AE-초대-조사.md(Play 평점·리뷰·설치 answer/9898684, 결제 9858738, Install Referrer 2.2, 악용 표, 1-1장 사용자 변경·D82 '사용' 정의)"
 INVITE-02,"AE 초대 링크: 프로 화면·설정에서 한 줄 동의 뒤 회사 서버 초대 코드(설치 번호에 묶임) + /i/<코드> → Play 스토어(referrer), 공유 시트 문구",2 (1.26.0),완료,,"2026-10-25 서버 POST /api/invites/code·GET /i/<코드>(storeLink referrer), 앱 tier/Invites.kt·ui/pro/InviteCard.kt(INVITE_MAKE_CONSENT 뒤 공유 시트), 설정 줄. invite.test.mjs 코드·링크, AEScreenshotTest 1040·1041"
 INVITE-03,"AE 설치 인정: 초대받은 휴대폰이 첫 설정 뒤 설치 referrer(또는 설치 7일 안 손으로 코드)를 한 줄 동의 뒤 알리고, 서버 시계로 사용 기간(기본 7일)이 지난 날 다시 열면 친구 한 명, N명(기본 5)마다 초대한 사람에게 프로(PASS why invite, 출시 전 기다림)",2 (1.26.0),완료,,"2026-10-25 서버 /use·/seen(서버 시계 사용 기간)·settleInvites(N명 묶음), 앱 PlayReferrer 한 번·InviteArrivalNotice·초대 코드 넣기. invite.test.mjs 5명·7일, InviteAppTest(실제 Node 서버, 관리자 규칙 2명·7일, 시계 6·7일), AEScreenshotTest 1044~1050"
@@ -854,16 +854,16 @@ INV-45,"순번 450 기능 찾기·도움말·입구(알림 없어도 투자 ⋮ 
 MEMO-03,"순번 451 메모 빠른 검색: 초성·날짜(10월 19일·10/19·오늘·어제)·그날 근무 이름·#태그 앞부분, 찾기용 글자 캐시, 근무별 칩('야간 날')",2 (1.27.0),완료,,"AK: core/memo/MemoSearch.kt, MemoSearchTest 10, MemoListViewModel, 사진 1165~1167"
 MEMO-04,"순번 451 긴 메모·많은 메모 성능: 카드는 앞부분만 그리고 검색어 둘레 문맥을 보여 줌, 메모 1,000개·5만 자 목록·검색 시간 시험",2 (1.27.0),완료,,"AK: MemoSearch.excerpt·Cache, MemoSearchTest(1,000개 색인 119ms·찾기 25ms), AKScreenshotTest 1168·1173(목록 367ms·찾기 226ms)"
 MEMO-05,"순번 451 근무 기준 알림(혁신): 일정 창 '근무에 맞춰'(다음 ○○ 출근 1시간 전·다음 쉬는 날 아침), 메모 글의 '다음 야간 때' 같은 말을 찾아 제안, 저장은 기존 일정 칸(DB 그대로)",2 (1.27.0),완료,,"AK: core/memo/ShiftMemoTime.kt, MemoEditorViewModel.scheduleOffer, ScheduleDialog 근무에 맞춰, 사진 1169·1170"
-MEMO-06,"순번 451 지난 같은 근무 메모 이어 보기(혁신·인수인계): 날짜 메모 편집 화면에서 같은 근무였던 가장 가까운 지난 날 메모를 바로 봄",2 (1.27.0),완료,,"AK: ShiftMemoTime.lastSame, MemoEditorViewModel.lastSameShift, MemoEditorScreen, 사진 1171"
-MEMO-07,"순번 451 글씨 200%·좁은 화면: 메모 목록 날짜 머리 줄의 근무가 잘리지 않고 다음 줄로",2 (1.27.0),완료,,"AK: MemoListScreen DateHeader FlowRow, AKScreenshotTest LayoutCheck 1172"
+MEMO-06,순번 451 지난 같은 근무 메모 이어 보기(혁신·인수인계): 날짜 메모 편집 화면에서 같은 근무였던 가장 가까운 지난 날 메모를 바로 봄,2 (1.27.0),완료,,"AK: ShiftMemoTime.lastSame, MemoEditorViewModel.lastSameShift, MemoEditorScreen, 사진 1171"
+MEMO-07,순번 451 글씨 200%·좁은 화면: 메모 목록 날짜 머리 줄의 근무가 잘리지 않고 다음 줄로,2 (1.27.0),완료,,"AK: MemoListScreen DateHeader FlowRow, AKScreenshotTest LayoutCheck 1172"
 MEMO-08,"순번 451 메모 조사(research/1.27-AK-메모장-조사.md), 기능 찾기·도움말·WhatsNew·HANDOFF 6-23",2 (1.27.0),완료,,"AK: research/1.27-AK-메모장-조사.md, FeatureRegistry memo.search·memo.shiftRemind·memo.lastShift, HelpFaq, WhatsNew 1.27.0, HANDOFF 6-23"
 PLAZA-30,"순번 441 '명세서와 맞춰 봤어요'는 이 달력에 실제 명세서 맞춰 보기 기록이 있을 때만, 없으면 체크 꺼짐 + '명세서로 맞춰 보기' 바로가기, 서버는 달·일치 여부만 받아 신뢰에 씀, 옛 앱 체크는 근거 없음",2 (1.27.0),완료,,"core SlipProof·PayslipCheck.source(급여 파일 = 백업), CompanyClient proof, 제보 화면·맞아요 시트 체크 잠금, 서버 readProof·claim(관리자 '근거 없음'). 시험 ai.test.mjs, PlazaAITest, PlazaAIAppTest, 사진 1120·1121"
 PLAZA-31,"순번 442 달력 → '근무주기를 광장에 올려 주실래요?' → 올리기 → 제보 → 보내기 → '광장 보기' → 그 회사 화면, 실제 node 서버로 단계마다 사진, 거친 곳 고침",2 (1.27.0),완료,,"'광장 보기'는 모든 회사 제보 뒤, 공개 근무주기 카드가 있으면 저절로 나누기 질문은 기다림(한 번만 묻기), 보낸 회사가 참여·base로 남음. AIScreenshotTest 1122~1126(실제 node 서버)"
 PLAZA-32,"순번 443 '이 설정 쓰기' 뒤 그 회사 '정보 광장'을 한 줄 안내와 바로 열기, 광장 맨 위·달력에서 들어가기, 참여자끼리 익명 자유 토의(신고·가림·차단·하루 상한) + 근무·급여 정보·고친 점 카드, 서버는 기존 토론 구조에 회사 방(참여 휴대폰만, 긁기 상한, 관리자 앱 보기·가림)",2 (1.27.0),완료,,"서버 posts grp 'room'·roomPost(하루 10·네트워크 30)·talk 참여만, 관리자 '회사·유형 광장' 거르기, 앱 PlazaHomeScreen·COMPANY_BOARD 나눔·COMPANY_BOARD_ALL·PlazaRoomLine. 시험 ai.test.mjs, PlazaAIAppTest, 사진 1127~1131"
 PLAZA-33,"순번 444 일 유형마다 광장 메뉴: 현장(지역·직종 일당 시세 + 현장 이야기), 가게(영업·매출 팁), 알바(지역 시급 + 알바 이야기), 투자(종목 추천 금지 안내 + 투자 이야기)",2 (1.27.0),완료,,"core StylePlaza(계획 444 표), 서버 STYLE_ROOMS·INVEST_ADVICE·신고 사유 advice, 앱 PlazaHomeScreen 유형별. 시험 ai.test.mjs, PlazaAITest, 사진 1132~1135"
 PLAZA-34,"순번 445 근무 주기·급여 설정이 실제로 바뀔 때마다(같은 값 다시 저장은 빼고) '바뀐 내용을 회사 광장에 나눌까요? (예: 야간 가산 50%→60%)', 저절로 나누기면 묻지 않고 '나눴어요 · 되돌리기' 한 줄, '다시 묻지 않기'·AUTO_SHARE_ROW 유지, 하루 한 번 규칙과 맞춤",2 (1.27.0),완료,,"core ChangeAsk, AutoShare.check·autoBase(DEVICE_ONLY company:auto_base)·undo, AutoShareDialog 줄·체크·다시 묻지 않기, 설정 스위치 켬=저절로·끔=묻기. 시험 PlazaAITest, PlazaAIAppTest, PlazaAFAppTest, ZFullBackupTest, 사진 1136~1138"
-PLAZA-35,"묶음 AI 혁신: 참여한 회사 정보 광장의 새 글을 하루 한 번 광장 소식에 한 줄로('… 정보 광장에 새 글이 3개')",2 (1.27.0),완료,,"서버 roomPostNews·kind room_posts(내 글 빼고), core PlazaNews 줄. 시험 ai.test.mjs PLAZA-35, PlazaAITest"
-PLAZA-36,"묶음 AI 혁신: 고친 점 카드에 '이 값을 쓰면 이번 달 +n원'을 이 휴대폰에서 미리 계산",2 (1.27.0),보류,,"이번 판은 카드·이 값 쓰기 흐름만. 내 급여에 그 항목만 얹어 계산하는 미리보기(SetupPatch.take + PayCalculator)는 다음 판"
+PLAZA-35,묶음 AI 혁신: 참여한 회사 정보 광장의 새 글을 하루 한 번 광장 소식에 한 줄로('… 정보 광장에 새 글이 3개'),2 (1.27.0),완료,,"서버 roomPostNews·kind room_posts(내 글 빼고), core PlazaNews 줄. 시험 ai.test.mjs PLAZA-35, PlazaAITest"
+PLAZA-36,묶음 AI 혁신: 고친 점 카드에 '이 값을 쓰면 이번 달 +n원'을 이 휴대폰에서 미리 계산,2 (1.27.0),보류,,이번 판은 카드·이 값 쓰기 흐름만. 내 급여에 그 항목만 얹어 계산하는 미리보기(SetupPatch.take + PayCalculator)는 다음 판
 PLAZA-37,"묶음 AI 혁신: '명세서 확인' 표시·2점은 근거가 있는 체크만 세고, 근거 없는 체크는 관리자 앱에 따로 보임",2 (1.27.0),완료,,"서버 votes.verified·reports.verified를 proof로만, claim 칸, 관리자 '명세서 확인(근거 없음)'. 시험 ai.test.mjs PLAZA-30"
 INVITE-09,"순번 432 AG 초대 보상 규칙 확인(사용 기간을 채운 서로 다른 친구 N명마다 M개월, 5명 1개월·10명 2개월, 같은 친구·같은 휴대폰 한 번, 자기 초대 안 됨)과 글 고침('7일 넘게 쓸 때마다' → '친구 5명이 각자 7일 이상 쓰면 … 5명 더 채울 때마다 또'), '다음 프로까지 n명'",2 (1.27.0),완료,,"server test/invite.test.mjs (AG: 5→1·9→1·10→2·한 친구 오래 써도 0·같은 휴대폰·자기), core InviteRulesTest, test/ui admin-ui, AGScreenshotTest 1090"
 INVITE-10,"순번 433 AG 초대 자동 인식: 첫 설정 중 Play 설치 리퍼러를 휴대폰 안에서 읽고 마지막 버튼 '저장하고 초대한 분께 알리기'(결정 AG-D2), 달력 카드는 맨 앞, 손으로 넣기는 리퍼러에 코드가 없을 때만, 친구 혜택 없음(AG-D1), 같은 네트워크 몰림 기록",2 (1.27.0),완료,,"AGScreenshotTest 1080·1081·1082·1083, tier/InviteAutoAppTest (실제 node 서버, 리퍼러→동의→waiting→7일→1/5명), invite.test.mjs 몰림 기록"
@@ -878,38 +878,38 @@ PLAZA-14,"순번 438 회사 검색 뒤 고른 주기에 '이 정보를 다른 �
 PLAZA-15,"순번 439 주기·급여 맞아요/달라요 한 휴대폰 한 표(바꿀 수 있음), 달라요는 어디가(순서·시간·급여 항목), 5표 넘고 달라요 40% 넘으면 대표에서 빠지고 다음 믿을 판이 대표, 관리자 앱 의견 수",2 (1.27.0),완료,,"서버 DOUBT·doubted·opinions·activeDoubted·settleDept, VoteButtons(opinion)·opinionLine, 관리자 whyLine·대표에서 빠짐. 시험 plaza-ah.test.mjs, admin-ui [PLAZA-15], PlazaAHAppTest, 사진 1109·1110"
 PLAZA-16,"순번 440 급여 화면 '우리 회사 급여 방식 찾기': 쓰기 전엔 '급여 방식 있음 · 맞아요 n명'만(D79), 쓰면 참여 뒤 계산 방식, 없으면 간편 설정 뒤 나눌지 한 번 물음, 한 화면 한 질문",2 (1.27.0),완료,,"PayFind·PayFindSheet·PayQuickSetup(companyFind). 시험 PlazaAHAppTest, 사진 1112~1114"
 PLAZA-17,"순번 436 혁신 AH-I1 회사 이름 맞춰 찾기(지에스=GS·띄어쓰기·(주)·자모 하나 틀림), AH-I2 같은 순서(다른 조) = 맞아요, AH-I4 신뢰 한 줄",2 (1.27.0),완료,,"core CompanyMatch·CycleMatch, PublicCycles.search. 시험 CompanyMatchTest"
-PLAZA-18,"순번 438 혁신 AH-I3 오늘 근무만 누르면(오늘·내일·모레) 주기의 몇 번째 날인지 찾기",2 (1.27.0),완료,,"core CycleOrders.positions·kinds, PublicCycleUi.TodayFinder. 시험 CompanyMatchTest, 사진 1115"
-PLAZA-19,"순번 436~440 도움말·설정 찾기·기능 목록·WhatsNew 1.27.0·HANDOFF 6-20·사진 1100~1115",2 (1.27.0),완료,,"HelpFaq plazaLead·plazaVote·plazaPayFind, SettingsIndex 2줄, FeatureRegistry plaza.leadCycle·plaza.payFind, WhatsNew 1.27.0 2줄, HANDOFF 6-20, AHScreenshotTest"
+PLAZA-18,순번 438 혁신 AH-I3 오늘 근무만 누르면(오늘·내일·모레) 주기의 몇 번째 날인지 찾기,2 (1.27.0),완료,,"core CycleOrders.positions·kinds, PublicCycleUi.TodayFinder. 시험 CompanyMatchTest, 사진 1115"
+PLAZA-19,순번 436~440 도움말·설정 찾기·기능 목록·WhatsNew 1.27.0·HANDOFF 6-20·사진 1100~1115,2 (1.27.0),완료,,"HelpFaq plazaLead·plazaVote·plazaPayFind, SettingsIndex 2줄, FeatureRegistry plaza.leadCycle·plaza.payFind, WhatsNew 1.27.0 2줄, HANDOFF 6-20, AHScreenshotTest"
 READ-12,"순번 446 사진 인식 조사: 앱 안 사진 읽기 자리 9곳, 실패 원인을 어려운 표본(저조도·화면·작은 글씨·원근·그림자·펜 표시·병합·흐림)으로, 휴대폰 안 방법 비교(D68), 정확도 전·후",2 (1.27.0),완료,,"research/1.27-AJ-사진인식-조사.md, tools/photo_bench.py, core PhotoBenchTest(듀티표 58.7%→94.0%, 명세서 29→40줄, 조용히 틀린 값 0)"
 READ-13,"순번 446 여러 방식으로 읽고 칸·줄·체결마다 합의(원본·조명 펴기·대비·이진화·2배·반전), 다르게 읽은 칸은 노란 확인, 진행 표시",2 (1.27.0),완료,,"core PhotoVariants·RosterVote·SlipVote·FillVote, app ImagePrep.plan/variant·RosterScanner.scan·PayslipScanner.scan; RosterStressTest·PayslipStressTest·FillStressTest 여러 읽기, PhotoCheckTest"
-READ-14,"순번 446 사진 품질 점수(어두움·흐림·작은 글자·기울기·글자 수) → 60점 아래면 '다시 찍어 주세요'와 까닭 한 줄",2 (1.27.0),완료,,"core PhotoQuality, RosterResult.advice, ScanButtons 안내 줄; PhotoQualityTest"
+READ-14,순번 446 사진 품질 점수(어두움·흐림·작은 글자·기울기·글자 수) → 60점 아래면 '다시 찍어 주세요'와 까닭 한 줄,2 (1.27.0),완료,,"core PhotoQuality, RosterResult.advice, ScanButtons 안내 줄; PhotoQualityTest"
 READ-15,"순번 446 ML Kit 문서 스캐너 '스캐너로 반듯하게 찍기'(Play 서비스, 휴대폰 안, 카메라 권한 없음) 듀티표·첫 설정·명세서·체결 캡처, 안 되는 휴대폰은 안내",2 (1.27.0),완료,,"app imports/DocScanner(ScannerButton), play-services-mlkit-document-scanner 16.0.0; APK·AAB 크기 예산 안(계획 6장)"
 READ-16,"순번 446 양식 시험 넓히기: 깨끗하면 모두 맞음, 흔들리면 틀린 값은 반드시 노란 확인(조용히 틀린 값 0)",2 (1.27.0),완료,,"RosterStressTest.fourReadingsPutTogether(400), PayslipStressTest.fourReadingsPutTogether(600), FillStressTest.threeReadingsPutTogether(600), PhotoFixTest"
 READ-17,"순번 447 듀티표 '사진과 내용이 같은가요?': 사진의 날짜 줄·내 줄과 읽은 칸 나란히, '네, 같아요'/'다른 곳이 있어요' → 누른 칸만 고침(한 달 근무 넣기·첫 설정)",2 (1.27.0),완료,,"ui/imports/SameAsPhoto(SameAsPhotoCard·PhotoStrip), DutyRosterViewModel.sameAsPhoto, SetupViewModel.rosterSame·fixRosterDay; PhotoCheckTest.aDayReadTwoWaysIsYellowAndFixedOnItsOwn, AJScreenshotTest 1140~1146"
 READ-18,"순번 447 명세서·회사 계산 방법 사진 작게(눌러 크게)와 읽은 줄, '사진과 내용이 같은가요?' → 줄 눌러 종류·금액만 고침, 줄 더하기·빼기, 확실하지 않으면 답하기 전 채우기 막음",2 (1.27.0),완료,,"ui/pay/PayslipCheck(PhotoThumb·SlipCheck·SlipLineDialog), PayslipFillDialog; PhotoCheckTest.aPayslipReadSeveralWaysAsksAboutTheLineReadTwoWays, AJScreenshotTest 1147·1148"
 READ-19,"순번 447 고친 것 배우기(휴대폰 안, 백업 포함): 듀티표 같은 글자를 같은 근무로 두 번 고치면 근무 글자 사전에, 명세서 줄 이름 → 종류",2 (1.27.0),완료,,"core RosterLearn·SlipNames, app data/ReadFixBook(설정 파일 read_fixes, SettingsFilesBackup); PhotoFixTest, PhotoCheckTest.aWordFixedTheSameWayTwiceIsLearned·aLinesKindTaughtOnceReadsSoNextTime, ZFullBackupTest"
-PAYS-16,"순번 448 명세서 없이 회사 계산 방법(규칙)만으로 급여 설정 → 달력 근무로 그 달 급여(전에는 규칙이 버려짐)",2 (1.27.0),완료,,"SlipRules.infer 규칙만(withSlip=false), PayslipFillDialog rulesOnly '규칙으로 계산하기', SlipRulesSummary; RulesOnlyPayTest, PhotoCheckTest.theCompanysRulesAloneGiveTheMonthsPay, AJScreenshotTest 1152"
+PAYS-16,순번 448 명세서 없이 회사 계산 방법(규칙)만으로 급여 설정 → 달력 근무로 그 달 급여(전에는 규칙이 버려짐),2 (1.27.0),완료,,"SlipRules.infer 규칙만(withSlip=false), PayslipFillDialog rulesOnly '규칙으로 계산하기', SlipRulesSummary; RulesOnlyPayTest, PhotoCheckTest.theCompanysRulesAloneGiveTheMonthsPay, AJScreenshotTest 1152"
 PAYS-17,"순번 448 '이것만 넣으면 정확해져요': 비었거나 추정인 값(기본급·시수·근무 시각·수당 금액·5인 이상)마다 한 줄과 바로 넣기, 달력 요약 줄, 명세서가 더해 주는 것 안내",2 (1.27.0),완료,,"core RuleOnlyNeeds, ui/pay/RuleNeedsCard(MonthlyHoursDialog·FiveOrMoreDialog·ShiftTimesDialog), CalendarSummary payNeeds; AJScreenshotTest 1149·1151"
 PAYS-18,"순번 448 골든: 규칙만(명세서 없음) 달력 근무 → 급여 금액, 기존 골든 사례 그대로",2 (1.27.0),완료,,"RulesOnlyPayTest, PayGoldenCasesTest 그대로 통과"
 PAYS-19,"순번 449 '명세서와 맞춰 보기' 카드를 급여 합계 바로 아래로, 두 길 이름 '금액 비교하기(프로)'·'계산 방식 찾기', 설정 찾기·도움말·기능 목록",2 (1.27.0),완료,,"RuleNeedsCard.SlipMatchCard, PayScreen, FeatureRegistry pay.slipAudit·pay.slipRules, HelpFaq pay·payslipPhotos·photoCheck·rulesOnly, SettingsIndex; AJScreenshotTest 1150, VScreenshotTest"
 PAYS-20,"순번 449 뜬 자리에서 바로 고치기: 급여 내역 줄 풀이에 '이 값 고치기'(기본급·수당)·'계산 방식 고치기'(가산 줄), 명세서 읽은 줄 고치기",2 (1.27.0),완료,,"PayDialogs.LineDetailDialog onFix, RuleNeedsCard.lineFix·RATE_LINES, PayScreen"
-FLAG-01,"순번 454 다크머지 플래그 장부(core flags): Flag·Condition(date·policy·consent·profile·app·workType·rollout·manual·admin·any)·FlagOverride, 이름·하는 일·꺼 둔 까닭·근거·위험 등급·정리 예정 판·담당·만든 판",2 (1.28.0),완료,,"core flags/Flag.kt(Flag·Risk·Basis·Condition 10종·FlagOverride·Force); FlagEvalTest"
+FLAG-01,"순번 454 다크머지 플래그 장부(core flags): Flag·Condition(date·policy·consent·profile·app·workType·rollout·manual·admin·any)·FlagOverride, 이름·하는 일·꺼 둔 까닭·근거·위험 등급·정리 예정 판·담당·만든 판",2 (1.28.0),완료,,core flags/Flag.kt(Flag·Risk·Basis·Condition 10종·FlagOverride·Force); FlagEvalTest
 FLAG-02,"순번 454 FlagEval: 강제 끔 → 앱 판 밖 → 관리자 미리 보기 → 강제 켬 → 조건(모두 채우면 켬, 아니면 기본값), 이유 문장·출처·조건 체크리스트",2 (1.28.0),완료,,"core flags/FlagEval.kt state()(강제 끔→앱 판→미리 보기→강제 켬→조건→기본값, FlagSource·Check·reason); FlagEvalTest 21개"
 FLAG-03,"순번 454 PolicyCalendar: 처리방침 판·게시일·시행일·동의 없이 시행되는 날을 한 곳에(3.1로 씨앗), 서버가 덮어씀",2 (1.28.0),완료,,"core flags/PolicyCalendar.kt(SEED 3.1·3.2 자리값 2026-10-28/11-27, merged(server), holds = 1.27 PolicyConsent.asks와 같은 뜻); FlagEvalTest·FlagsAppTest"
 FLAG-04,"순번 454 법적 등급(LEGAL) 플래그는 서버가 확인한 시각(마지막 config의 serverTime + 경과)으로 날짜를 보고, 강제 켬이어도 처리방침 조건을 확인",2 (1.28.0),완료,,"FlagEval: LEGAL 행은 PhoneFacts.serverToday(KST), 처리방침 조건이 남으면 미리 보기·강제 켬 막힘, until도 서버 시각; RemoteConfigStore.serverNow()(같은 부팅이면 serverTime+경과); FlagEvalTest·FlagsAppTest"
-FLAG-05,"순번 454 장부 내용: billing·ads, type.* 6개, leave.hourly, 옛 기능 스위치 6개, free.<FEATURE>",2 (1.28.0),완료,,"core FlagCatalog(BILLING·ADS·TYPES 6·LEAVE_HOURLY·SWITCHES 6·STATS_MORE·free.*); FlagEvalTest"
+FLAG-05,"순번 454 장부 내용: billing·ads, type.* 6개, leave.hourly, 옛 기능 스위치 6개, free.<FEATURE>",2 (1.28.0),완료,,core FlagCatalog(BILLING·ADS·TYPES 6·LEAVE_HOURLY·SWITCHES 6·STATS_MORE·free.*); FlagEvalTest
 FLAG-06,"순번 454 /api/config의 flags·policy·serverTime 읽기, 옛 서버의 billingLive·freeFeatures·off를 덮어쓰기로 바꿔 1.27과 똑같이",2 (1.28.0),완료,,"app flags/FlagJson.kt, tier/RemoteConfig.kt LaunchConfig.flags·policy·serverTime·overrides()(flags 없을 때만 옛 매핑); FlagsAppTest·OperationsAppTest"
 FLAG-07,"순번 454 앱 Flags(AppContainer): 휴대폰 사실(앱 판·동의·유형·급여 설정·회사 연결·설치 해시·관리자/최고 관리자)로 평가한 상태, config·동의·유형·다시 열기·한국 날짜 바뀜마다 다시",2 (1.28.0),완료,,"app flags/Flags.kt(states·on·paused·types·statsOn), AppContainer.flags·phoneFacts()(회사·설치 해시는 첫 화면 뒤); FlagsAppTest"
 FLAG-08,"순번 454 FeatureGate live = billing 플래그, 무료로 연 기능 = free.* 플래그(프로 기능만), 미리 보기 그대로",2 (1.28.0),완료,,"FeatureGate(flags): live = billing 행, free = 켜진 free.* 프로 기능만; TierAppTest 17개"
-FLAG-09,"순번 454 광고 SDK 시작·띠·보상형은 ads 플래그가 켜졌을 때만(billing 조건 + 광고 동의 길)",2 (1.28.0),완료,,"MainActivity sdkMayStart·AdSlot·RewardedAds가 FlagCatalog.ADS, Ads.consent 흐름; AdAndLicenseRulesTest"
-FLAG-10,"순번 454 기능 스위치 6개(ServerSwitch)를 plaza.write 등 플래그로: 쉼 = 그 플래그 꺼짐",2 (1.28.0),완료,,"ServerSwitch 쓰던 곳 모두 → c.flags.paused(); 옛 off → 그 행 강제 끔; OperationsAppTest"
+FLAG-09,순번 454 광고 SDK 시작·띠·보상형은 ads 플래그가 켜졌을 때만(billing 조건 + 광고 동의 길),2 (1.28.0),완료,,"MainActivity sdkMayStart·AdSlot·RewardedAds가 FlagCatalog.ADS, Ads.consent 흐름; AdAndLicenseRulesTest"
+FLAG-10,순번 454 기능 스위치 6개(ServerSwitch)를 plaza.write 등 플래그로: 쉼 = 그 플래그 꺼짐,2 (1.28.0),완료,,ServerSwitch 쓰던 곳 모두 → c.flags.paused(); 옛 off → 그 행 강제 끔; OperationsAppTest
 FLAG-11,"순번 454 정식 출시 스위치 은퇴(앱): 처리방침 3.1 보류를 billing 조건으로, PolicyConsentNotice 그대로, launchedAt은 서버 값",2 (1.28.0),완료,,"RemoteConfigStore held 마스크 제거, policyAsks()=PolicyCalendar.holds, launch 조건에 처리방침 3.1; LaunchThanks는 billing 행; FlagsAppTest"
 FLAG-12,"순번 454 근무 유형 노출: 숨긴 유형은 새로 고르는 곳(첫 질문·첫 설정·새 달력·둘러보기·하는 일 찾기·근무 형태 바꾸기)에서만 빠지고 쓰던 달력·백업·회사 파일은 그대로, 모두 숨기면 교대",2 (1.28.0),완료,,"core FlagCatalog.TypeExposure.choices, app ui/flags/TypeChoices.kt → JobAsk·FirstStyleScreen·SetupSteps.StyleStep·WorkStyleScreen(쓰던 유형은 남음); 1203·1206"
-FLAG-13,"순번 454 최고 관리자 휴대폰(/api/passes admin.owner)은 숨긴 유형도 '숨김 · 관리자에게만 보여요'로 보임",2 (1.28.0),완료,,"TierApi AdminState.owner(/api/passes admin.owner), HIDDEN_MARK; 1204·1205"
+FLAG-13,순번 454 최고 관리자 휴대폰(/api/passes admin.owner)은 숨긴 유형도 '숨김 · 관리자에게만 보여요'로 보임,2 (1.28.0),완료,,"TierApi AdminState.owner(/api/passes admin.owner), HIDDEN_MARK; 1204·1205"
 FLAG-14,"순번 454 진단(알람 점검) '기능 상태': 플래그마다 켜짐/꺼짐·이유·조건 체크리스트·출처, 보고서 글에도",2 (1.28.0),완료,,"ui/diag/FlagStatusCard.kt(기능 상태, 보고서 글 flagReportLines), DiagnosticsScreen; 1200·1201·1202"
 FLAG-15,"순번 454 관리자 휴대폰의 플래그별 미리 보기 스위치(휴대폰에만, 백업 안 함)",2 (1.28.0),완료,,"flags/FlagPreviews(SharedPreferences flag_preview, 백업 안 함), 관리자만 스위치; 1201·FlagsAppTest"
 FLAG-16,"순번 454 사용 통계(동의한 휴대폰만)에 flagsOn(켜진 플래그 키, 휴대폰 구별 없음)",2 (1.28.0),완료,,"UsageStats.withFlags(flagsOn)는 stats.more(LEGAL, 처리방침 3.2+usage+usage.stats.more 동의)일 때만, ui/flags/StatsMoreConsent.kt 카드·설정 줄, usageStatsMore 백업; 1207·FlagsAppTest"
-FLAG-17,"순번 454 leave.hourly 플래그(2027-06-10, HourlyLeave.FROM)",2 (1.28.0),완료,,"FlagCatalog.LEAVE_HOURLY_FLAG(Date HourlyLeave.FROM); 아직 막는 화면 없음(계획 참고)"
+FLAG-17,"순번 454 leave.hourly 플래그(2027-06-10, HourlyLeave.FROM)",2 (1.28.0),완료,,FlagCatalog.LEAVE_HOURLY_FLAG(Date HourlyLeave.FROM); 아직 막는 화면 없음(계획 참고)
 FLAG-18,"순번 454 규칙·문서: AdAndLicenseRulesTest·CLAUDE.md를 billing·ads 플래그로, HANDOFF 6-24, WhatsNew",2 (1.28.0),완료,,"AdAndLicenseRulesTest(ads 행), CLAUDE.md 결제·광고 줄, HANDOFF 6-24, WhatsNew 1.28.0 한 줄"
 FLAG-19,"순번 454 시험: core 판단기·장부, 앱 RemoteConfig 옛·새 답, FeatureGate, 유형 숨김·최고 관리자, 진단 화면 사진 1200~",2 (1.28.0),완료,,"core FlagEvalTest 21, app FlagsAppTest 11·TierAppTest·OperationsAppTest·AdAndLicenseRulesTest, ALScreenshotTest 1200~1207"
 FLAG-20,"순번 455 서버 기능 플래그 장부 FLAG_CATALOG(계약 키·stats.more·free.<FEATURE>, 이름·하는 일·꺼 둔 이유·근거·조건·위험·정리 판)",2 (1.28.0),완료,,index.js FLAG_CATALOG·flagDef(조건은 AL-D1 JSON); flags.test.mjs 계약 키
@@ -949,10 +949,10 @@ ADMUX-40,"순번 456 출시 허브 자리: 기능 관리·근무 유형·기능�
 ADMUX-41,"순번 456 그대로 지키기: 쓰던 글, 되돌리기 8초, 끊겼을 때 저장된 화면, 새 판 안내, 그 자리 다시 로그인, 대비 4.5:1, 360px 가로 넘침 없음, 큰 글자, 어둡게",2 (1.28.0),완료,,"쓰던 글·되돌리기·저장된 화면·새 판·그 자리 로그인 시험 그대로 통과(test:ui 27). 360px 24개 탭 가로 넘침 없음(Playwright), 폰·폴드·컴퓨터 밝게·어둡게 사진 54장"
 ADMUX-42,"순번 456 README 개발자 앱 표·HANDOFF 6-26·추적표, 화면 사진 전후(폰 390·폴드 880·컴퓨터 1440, 밝게·어둡게)",2 (1.28.0),완료,,"README 개발자 앱 허브 표·키·속도, HANDOFF 6-26, 사진 1.28/admin/before_*(18)·after_*(54), 계획 1.28-AN-개발계획.md"
 FLAG-34,"1.28 통합 플래그 장부 한 곳: core FlagCatalog를 서버 src/flag-catalog.js로 만들어 냄(이름·하는 일·꺼 둔 이유·근거·위험·기본값·조건·정리 예정 판·처리방침 일정·조건 이름), 낡으면 시험이 실패",2 (1.28.0),완료,,"core FlagCatalog(+FlagGroup)·FlagCatalogExportTest → server/company-worker/src/flag-catalog.js; index.js FLAG_CATALOG = CORE_FLAGS, POLICY_CALENDAR 3.1·3.2 = CORE_POLICY; contract.test.mjs 이름·번들 한 번"
-FLAG-35,"1.28 통합 서버·앱 계약 시험: 서버가 /api/config·/api/passes 실제 답을 상태별로 server-fixtures에 쓰고 앱이 LaunchConfig.parse·FlagEval로 읽어 휴대폰 상태 확인, 앱이 만든 /api/events(flagsOn)를 서버가 받아 키별 합계만 남김",2 (1.28.0),완료,,"test/contract.test.mjs → app/src/test/resources/server-fixtures(6 상태+events-from-app.json); app flags/ServerContractTest 5개"
+FLAG-35,"1.28 통합 서버·앱 계약 시험: 서버가 /api/config·/api/passes 실제 답을 상태별로 server-fixtures에 쓰고 앱이 LaunchConfig.parse·FlagEval로 읽어 휴대폰 상태 확인, 앱이 만든 /api/events(flagsOn)를 서버가 받아 키별 합계만 남김",2 (1.28.0),완료,,test/contract.test.mjs → app/src/test/resources/server-fixtures(6 상태+events-from-app.json); app flags/ServerContractTest 5개
 FLAG-36,"1.28 통합 플래그 덮어쓰기 앱 판 범위(minApp·maxApp, AL-D3): 서버 저장·검사·/api/config 전송, 관리자 앱 상세에서 고침, 앱 판단 2단계",2 (1.28.0),완료,,"flag_overrides min_app·max_app, POST /flags/<key>/range, configFlags minApp·maxApp, evalFlag 2단계, admin-app flagRangeBlock; contract.test.mjs, admin-ui [FLAG-36]"
 FLAG-37,"1.28 통합 법적 플래그 하루 전·켜짐 알림은 관리자 방해 금지 시간을 무시(결정 D101), 다른 알림은 그대로",2 (1.28.0),완료,,"notifyAdmins ignoreQuiet, flagTick legal; contract.test.mjs [FLAG-37]"
-FLAG-38,"1.28 통합 옛 관리자 앱 호환: why 없는 POST /api/admin/switches 끄기는 '옛 관리자 앱에서 끔'으로 채워 기록",2 (1.28.0),완료,,"setSwitch OLD_APP_WHY; contract.test.mjs [FLAG-38]"
+FLAG-38,1.28 통합 옛 관리자 앱 호환: why 없는 POST /api/admin/switches 끄기는 '옛 관리자 앱에서 끔'으로 채워 기록,2 (1.28.0),완료,,setSwitch OLD_APP_WHY; contract.test.mjs [FLAG-38]
 FLAG-39,"1.28 통합 설정 찾기에 진단 › 기능 상태, 도움말 한 줄, 관리자 앱 화면 시험 [ADMUX-01] 기다림 고침(화면 요청이 끝날 때까지)",2 (1.28.0),완료,,"SettingsIndex 기능 상태·HelpFaq flagState(SettingsSearchTest), admin-ui t.idle(부하 8배 24회 0 실패)"
 PERF-07,"순번 457 (1.28 AO, 검토 6-1 병목 1) 달력이 보이는 달 ±1달만 먼저 읽어 그리고 전체는 뒤이어 바꿔 끼움; 쓰기·통계·알람·위젯은 전체만",2 (1.28.0),완료,,"창 읽기: ScheduleRepository.snapshotAround·windowSnapshot(±2달 inRange), ScheduleSnapshot.window·covers. CalendarViewModel이 M±1을 확인. 시험: WindowedSnapshotTest 6, 사진 1221. 마지막 달 파일 캐시는 하지 않음(창 읽기가 JVM 3ms)"
 PERF-08,순번 457 같은 근무 일정 전체 읽기를 저장소마다 한 번만(shareIn): 달력·알림·알람·워치가 나눠 씀,2 (1.28.0),완료,,공유: ScheduleRepository.live(shareIn WhileSubscribed 5초)를 달력·알림·알람·워치·급여·통계·돈·공유·휴대폰 캘린더가 씀. 시험: WindowedSnapshotTest
@@ -977,16 +977,16 @@ ADMCP-06,"1.29 관리자 업무 개선: 같은 기기 문의 묶기(보낸 휴�
 ADMCP-07,"1.29 AN-D6 옛 탭 정리: 1.27 탭용 /api/admin/overview·/inbox를 지우고 410 moved(새 자리와 build)로 안내, 큰 글자(크게·아주 크게) 관리자 앱 화면 시험, 폰에서 넓은 상자가 화면 끝까지",2 (1.29.0),완료,,"index.js overview()·inbox() 지움, /overview·/inbox → 410 {error: moved, to, build}, ERRORS.moved, 시험의 /overview 읽기는 helpers adminHome(/badges·/today·/basics). 앱 글자 크기 '아주 크게'(xlarge, CSS에만 있던 것), dialog.wide 폰 100vw. 시험 admin-an [ADMCP-07], test:ui [ADMCP-07] 크게·아주 크게, 사진 server/company-worker/docs/screenshots/admin-1.29(16)"
 NXT-01,"1.29 AU AO D8: 광고 SDK가 끌고 오는 시작 제공자 MlKitInitProvider·WorkManagerInitializer를 매니페스트에서 빼고, 사진 읽기 입구마다 ML Kit 준비(MlKitStart.ensure), WorkManager는 BamnatApp이 Configuration.Provider로 필요할 때",2 (1.29.0),완료,,"AndroidManifest.xml tools:node=remove(MlKitInitProvider, WorkManagerInitializer meta-data), MlKitStart.ensure를 OcrModel·DocScanner에서, BamnatApp Configuration.Provider. 시험: NxtStartupProvidersTest 5, StartupBudgetTest 7"
 NXT-02,"1.29 AU AL: HourlyLeave.open(flags) — 시간 단위 연차(법률 제21784호, 2027-06-10)를 플래그 leave.hourly와 연결, 연차 화면 안내",2 (1.29.0),완료,,"core leave/LeaveTools HourlyLeave.open·note·NOTICE_DAYS, LeaveScreen 직접 넣기 카드 안내. 시험: NxtPayLawTest(NXT-02)"
-NXT-03,"1.29 AU: free.<FEATURE> 이름 하나로 — core 기능 이름표(코드↔한국어 이름)를 서버 장부(flag-catalog.js CORE_FEATURES)·휴대폰 진단·FeatureGate가 같이 씀",2 (1.29.0),완료,,"core flags/ProFeatures.NAMES(16), FlagCatalog.free, FeatureGate.label, flag-catalog.js CORE_FEATURES(FlagCatalogExportTest로 만듦). 시험: FlagEvalTest, contract.test.mjs, NxtStartupProvidersTest(라벨=이름표)"
+NXT-03,1.29 AU: free.<FEATURE> 이름 하나로 — core 기능 이름표(코드↔한국어 이름)를 서버 장부(flag-catalog.js CORE_FEATURES)·휴대폰 진단·FeatureGate가 같이 씀,2 (1.29.0),완료,,"core flags/ProFeatures.NAMES(16), FlagCatalog.free, FeatureGate.label, flag-catalog.js CORE_FEATURES(FlagCatalogExportTest로 만듦). 시험: FlagEvalTest, contract.test.mjs, NxtStartupProvidersTest(라벨=이름표)"
 NXT-04,"1.29 AU 급여 엔진 확인 필요 1: 승인 받은 감시·단속 근로자의 근로자의 날(노동절) — 유급휴일, 일하면 가산 없음(고용노동부 회신 근거)",2 (1.29.0),완료,,"PayCalculator 근거 주석(고용노동부 2023-01-18 회신), pay-golden-cases 예시 14-1. 시험: NxtPayLawTest NXT-04"
 NXT-05,"1.29 AU 급여 엔진 확인 필요 2: 22~06시 유급 휴게의 야간 가산 — 휴게는 근로가 아니라 가산 없음(제56조 제3항·제54조), 대기라면 '일한 시간으로'(제50조 제3항)",2 (1.29.0),완료,,"PayCalculator 유급 휴게 줄 설명·근거(제56조 제3항·제54조·제50조 제3항), 예시 14-2·14-3. 시험: NxtPayLawTest NXT-05"
 NXT-06,"1.29 AU 급여 엔진 확인 필요 3: 연봉 ÷ 13 — 퇴직금 분할 약정 무효(대법원 2010.5.20. 2007다90760 전원합의체), 13번째 몫을 따로 받는지 매달 나눠 받는지 나눠 안내",2 (1.29.0),완료,,"AnnualSalary ÷13 안내(2007다90760, 1350). 시험: NxtPayLawTest NXT-06"
-NXT-07,"1.29 AU AM 4-3: 기능이 켜진/꺼진 휴대폰의 문제 신고 나눠 세기 — 처리방침 3.2 안에서 서버가 이미 아는 것(문의 시각·앱 판)만으로",2 (1.29.0),완료,,"index.js flagEffects compare.split(bugSplit·appCode, audit flag_auto_on/off), admin-app.js effectsView. 시험: test/au-effects.test.mjs 1(서버 279, 관리자 UI 35)"
+NXT-07,1.29 AU AM 4-3: 기능이 켜진/꺼진 휴대폰의 문제 신고 나눠 세기 — 처리방침 3.2 안에서 서버가 이미 아는 것(문의 시각·앱 판)만으로,2 (1.29.0),완료,,"index.js flagEffects compare.split(bugSplit·appCode, audit flag_auto_on/off), admin-app.js effectsView. 시험: test/au-effects.test.mjs 1(서버 279, 관리자 UI 35)"
 NXT-08,"1.29 AU: 의존성 판 올림(Dependabot #95~#105·#128 대신) — 작은 판·보안 패치만, 큰 판(Gradle 9·Kotlin 2.4·AGP 9 등)은 이유와 함께 보류",2 (1.29.0),완료,,"app·wear core-ktx 1.17.0, activity-compose 1.11.0, lifecycle 2.9.4, navigation-compose 2.9.5, 서버 happy-dom 21.0.4(GHSA-834v-8h66-3h79, npm audit 0). 보류 이유: docs/plans/1.29-AU-개발계획.md 3장"
-NXT-09,"1.29 AU 순번 460: 손으로 쓴 Baseline Profile을 1.29 새 화면 경로(급여 설정·회사 검색)까지 넓힘, 실제 생성은 사용자 워크플로",2 (1.29.0),완료,,"app/src/main/baseline-prof.txt NXT-09 덩어리. 시험: BaselineProfileRulesTest.thePaySetupAndCompanySearchAreCovered"
+NXT-09,"1.29 AU 순번 460: 손으로 쓴 Baseline Profile을 1.29 새 화면 경로(급여 설정·회사 검색)까지 넓힘, 실제 생성은 사용자 워크플로",2 (1.29.0),완료,,app/src/main/baseline-prof.txt NXT-09 덩어리. 시험: BaselineProfileRulesTest.thePaySetupAndCompanySearchAreCovered
 NXT-10,"1.29 AU: Phase 0~2 남은 줄(체크리스트 [ ] 65줄) 다시 보기 — 날짜 지난 줄 끝남 목록, 2027 장기요양·Play 수수료 조사, U 줄마다 따라 할 안내",2 (1.29.0),완료,,"docs/plans/1.29-AU-남은줄-정리.md(65줄+460, 닫을 줄 13·20, 42·45·71 조사 링크, 부록 A 수면 검토 묶음, 부록 B 급여 근거)"
-NXT-11,"1.29 AU: WorkManager가 앱의 JobScheduler 번호(4401~4404)와 겹치지 않게 번호 범위를 정함(Configuration)",2 (1.29.0),완료,,"BamnatApp.WORK_JOB_IDS 100000..199999. 시험: NxtStartupProvidersTest(WorkManager 번호 범위)"
-NXT-12,"1.29 통합: 문의에 붙는 알람 점검에서 기능 상태 줄 빼기(처리방침 3.2 1-3항에 없는 항목, AU가 찾음)",2 (1.29.0),완료,,"InquiryViewModel.alarmCheck → DiagReport.withoutFlags(). 알람 점검 화면과 화면의 복사는 그대로. 시험: InquiryDiagTest"
+NXT-11,1.29 AU: WorkManager가 앱의 JobScheduler 번호(4401~4404)와 겹치지 않게 번호 범위를 정함(Configuration),2 (1.29.0),완료,,BamnatApp.WORK_JOB_IDS 100000..199999. 시험: NxtStartupProvidersTest(WorkManager 번호 범위)
+NXT-12,"1.29 통합: 문의에 붙는 알람 점검에서 기능 상태 줄 빼기(처리방침 3.2 1-3항에 없는 항목, AU가 찾음)",2 (1.29.0),완료,,InquiryViewModel.alarmCheck → DiagReport.withoutFlags(). 알람 점검 화면과 화면의 복사는 그대로. 시험: InquiryDiagTest
 PAYF-01,"1.29 급여 설정 첫 질문 '우리 회사 급여 방식 찾기' 검색 칸(바로 치는 칸), 손으로 만든 급여·설정 고치기·마법사에서도 찾기, 회사 이름→'급여 방식 있음 · 맞아요 n명'만(D79)→이 급여 방식 쓰기→기본급만",2 (1.29.0),완료,,"PayQuickSetup COMPANY 단계, PayFindSheet(PayFindFlow·PayFindLine), PayWizard 급여 단계, AppRoot 급여 화면. 시험: APScreenshotTest 1230~1232·1235·1240, AHScreenshotTest 1112~1114"
 PAYF-02,"1.29 회사 검색이 늦어 없는 것처럼 보이던 것: 휴대폰 공개 목록(148곳)을 바로, 서버 답은 오는 대로 얹기, 5분 기억, 화면 열 때 미리 묻기, 찾는 중·느려요 표시, 서버가 답하기 전엔 '없어요' 안 함",2 (1.29.0),완료,,"core PayFindRows(local·merge·payLine), PayFindSearch(기억·prefetch), NameStep PayServer 상태. 시험: core PayFindFlowTest, APScreenshotTest 1233"
 PAYF-03,"1.29 회사 근무주기 'n명이 쓰고 있어요'로 넣을 때 '급여 계산 방식도 같이 넣을까요?' 한 번 묻기, 네→기본급 질문, 근무주기만→급여 그대로",2 (1.29.0),완료,,"CompanyDetailScreen WithPayDialog·CompanyDetailViewModel.apply(withPay), 공개 주기 DonePanel CompanyPayOffer. 시험: APScreenshotTest 1237·1238, AFScreenshotTest 1062·1063"
@@ -1011,7 +1011,7 @@ SRCH-13,"순번 1.29 AS 앱 안 검색·목록 로딩 점검과 고침(광장 �
 SRCH-14,"순번 1.29 AS 처음 사용자 끝에서 끝 검색 시간 측정 시험(바꾸기 전·후, JVM 기준)",2 (1.29.0),완료,,"app/src/test/java/com/bamnat/app/perf/CompanySearchTimingsReport.kt(JVM·이 기계의 소켓 서버), server 비교 스크립트 결과는 docs/plans/1.29-AS-개발계획.md"
 INVA-01,"1.29 AR 사용자 2026-10-27 '캡쳐로 놓기하면 자동으로 인식해서 적용되게 해야하는데 동작하지 않는다': 캡처 공유→읽기→맞춰 보기→넣기 경로의 원인 고침 — 읽기·맞춰 보기·넣기를 시트가 아니라 투자 화면 모델(InvestViewModel)에서(돌림·화면 꺼짐·시트 닫음에도 이어짐), 기록은 화면 상태가 아니라 DB에서 읽음, 다른 종류 달력에서 공유한 사진은 투자 달력이 있으면 어디에 넣을지 물음(전엔 늘 근무표로), 캡처 파일의 찍은 날을 날짜 없는 줄의 날로, 시각 없는 줄은 12:00이 아니라 시각 없음",2 (1.29.0),완료,,"AR: InvestViewModel.readCapture·takeCapture·CaptureRead, IncomingFills.dayOf, SharedShotChoice + AppRoot, IncomingRoster.put, TradeAlerts.Pending.timeKnown; ARCaptureFlowTest 7, 사진 1270~1279"
 INVA-02,"1.29 AR 시간과 수량으로 바로 넣기: 이미 적은 매매·기다리는 체결 알림과 시각(같은 날 30분 안)·수량으로 맞춰 같으면 건너뜀, 알림과 같으면 알림 확정, 새 것은 종목·방향·수량·단가·시각을 모두 읽고 수량×단가가 금액과 원 단위로 맞으면 묻지 않고 바로 넣고 되돌리기; 처음부터 켜짐(fillTrust 기본 켬, 전엔 꺼짐이 원인), 투자 탭 ⋮ '넣기 전에 묻기'로 바꾸고 처음 한 번 바꾸는 곳 안내; 여러 번 읽기 합의(FillVote)는 다수결+원 단위 확인",2 (1.29.0),완료,,"AR: FillMath.exact, FillReconcile.confident·Item.auto·autoNew·asks, FillVote.majority, InvestRepository.fillTrust(없으면 켬)·fillAutoTold, FeatureRegistry invest.captureTrust, HelpFaq investCaptureTrust; FillReconcileTest +4, FillCorpusTest 세 번 읽기, ARCaptureFlowTest"
-INVA-03,"1.29 AR 캡처 꼴 넓히기: 국내 증권사 8(키움·미래에셋·삼성·NH·KB·한국투자·토스·카카오페이)·코인 거래소 3(업비트·빗썸·코인원)·해외 주식 체결 내역 지어낸 화면을 글자 상자(OcrLine)+잡음으로 읽기 정확도 숫자(바꾸기 전/후) — 위에 한 번 쓴 날짜·10월 27일·오전/오후·두 줄 머리글·주문수량과 체결수량·정산금액·코인 단위·1주당·샀어요·이름과 금액 줄·날짜 줄이 위/아래 어느 쪽인지",2 (1.29.0),완료,,"AR: core FillSheetReader(read(text, captured), leadOf·whenOnly·DATE_KO·DATE_SHORT·ORDERED·SETTLED·QTY_COIN·PER_SHARE); FillCorpus·FillCorpusTest(12앱×120장 3,603체결: 맞게 읽음 36.8%→99.2%, 바로 넣음 32.2%→99.2%, 조용히 틀림 0), FillCaptureTest +4"
+INVA-03,1.29 AR 캡처 꼴 넓히기: 국내 증권사 8(키움·미래에셋·삼성·NH·KB·한국투자·토스·카카오페이)·코인 거래소 3(업비트·빗썸·코인원)·해외 주식 체결 내역 지어낸 화면을 글자 상자(OcrLine)+잡음으로 읽기 정확도 숫자(바꾸기 전/후) — 위에 한 번 쓴 날짜·10월 27일·오전/오후·두 줄 머리글·주문수량과 체결수량·정산금액·코인 단위·1주당·샀어요·이름과 금액 줄·날짜 줄이 위/아래 어느 쪽인지,2 (1.29.0),완료,,"AR: core FillSheetReader(read(text, captured), leadOf·whenOnly·DATE_KO·DATE_SHORT·ORDERED·SETTLED·QTY_COIN·PER_SHARE); FillCorpus·FillCorpusTest(12앱×120장 3,603체결: 맞게 읽음 36.8%→99.2%, 바로 넣음 32.2%→99.2%, 조용히 틀림 0), FillCaptureTest +4"
 INVA-04,"1.29 AR 체결 알림이 제대로 잡히지 않음: 증권사 이름 대괄호([키움]·[NH투자증권])를 종목으로 읽던 것, 현금매수, 토스 '구매했어요', 카카오페이 'n주를 …원에 샀어요', '총 n원'을 단가로 읽던 것, 비트코인의 '코인'을 이름표로 읽던 것, 수량 뒤 코인 코드; 목록 밖 앱의 'n주 … 샀어요/구매 완료'도 읽음",2 (1.29.0),완료,,"AR: TradeAlertParser(NOT_HOLDING, BEFORE_QTY, KNOWN_COINS, FILLED·AMOUNT), TradeCapture.worthReading; TradeAlertCorpusTest(19틀×40+체결 아님 9: 438/769→769/769), ARCaptureFlowTest.moreBrokersTradeTextsAreRead"
 INVA-05,"1.29 AR 넣은 결과가 투자 달력·원금·현금·월 요약에 바로 보이고, 되돌리기가 넣은 것만 정확히 지우고(알림 되살림), 앱을 다시 열어도 남음",2 (1.29.0),완료,,"AR: ARCaptureFlowTest.whatWentInShowsInTheCalendarMoneyAndMonthAndStaysAfterReopening·sureRowsGoInAtOnce…(되돌리기), 사진 1273"
 INVA-06,"1.29 AR 투자 쪽 발견 고침: 캡처로 먼저 넣은 체결의 알림이 뒤에 오면(또는 같은 알림이 다시 오면) 두 번 적히던 것, 투자 스낵바가 길게(long)를 무시해 되돌리기가 4초 만에 사라지던 것, 쓰지 않는 옛 단가 채우기 경로(fillFromCapture) 정리",2 (1.29.0),완료,,"AR: TradeAlerts.writtenAlready + TradeCapture.take, InvestMessages SnackbarDuration.Long; TradeAlertCorpusTest.aNotificationForATradeWrittenAlreadyIsNotASecond"
@@ -1056,10 +1056,10 @@ QA130-01,"1.30 AY Firebase Test Lab(Play 출시 전 보고서 로봇) 기기에�
 QA130-02,"1.30 AY Play '네이티브 디버그 기호' 경고: AAB에 기호 넣기(ndk.debugSymbolLevel), 크기 예산 안에서",2 (1.30.0),완료,,"app/build.gradle.kts release ndk.debugSymbolLevel FULL; AAB 23.16 MB(예산 23.5), 유일한 .so(libandroidx.graphics.path)는 이미 벗겨져 기호 0, 1.30-AY 개발계획 3장"
 CALI-01,"1.30 BB 달력마다 회사 묶음 CompanyScope(AppContainer.companyOf): 본 달력은 지금 설정 파일 그대로(옮기지 않음), 보조 달력은 그 달력 폴더의 company.json·pay_way.json",2 (1.30.0),완료,,"app company/CompanyScope.kt·CompanyScopeStorage.kt, AppContainer.companyOf; CompanyScopeTest(같은 객체·1.29 파일 그대로·두 달력 따로)"
 CALI-02,"1.30 BB 회사 서버의 cal = 달력 id(참여·쓰기·보내기·저절로 나누기), 휴대폰 공통 설치 번호는 하나",2 (1.30.0),완료,,"AutoShare·LeadShare·PayFind·CompanyDetailViewModel이 serverCal(main/달력 id)로 보냄; CompanyScopeTest(use cal), 내 활동 달력별 1323"
-CALI-03,"1.30 BB 회사 찾기·회사 화면·광장·내 설정 나누기·보낸 정보 라우트에 달력 인자, 그 달력의 근무·급여에 적용",2 (1.30.0),완료,,"AppRoot 라우트 calendar 인자(company_find·company·company_board·company_report·company_sent); BBScreenshotTest 1321"
-CALI-04,"1.30 BB 급여 화면이 달력별: 회사 급여 방식 카드·급여 방식 찾기·회사 급여 금액 화면(pendingPay)·광장 입구가 보조 달력에도",2 (1.30.0),완료,,"급여 화면 LocalCompanyCalendar(PayWayCard·PayFindSheet·CompanyPayScreen·PlazaEntry·PublicWayNotice); BBScreenshotTest 1320·1324"
+CALI-03,"1.30 BB 회사 찾기·회사 화면·광장·내 설정 나누기·보낸 정보 라우트에 달력 인자, 그 달력의 근무·급여에 적용",2 (1.30.0),완료,,AppRoot 라우트 calendar 인자(company_find·company·company_board·company_report·company_sent); BBScreenshotTest 1321
+CALI-04,1.30 BB 급여 화면이 달력별: 회사 급여 방식 카드·급여 방식 찾기·회사 급여 금액 화면(pendingPay)·광장 입구가 보조 달력에도,2 (1.30.0),완료,,급여 화면 LocalCompanyCalendar(PayWayCard·PayFindSheet·CompanyPayScreen·PlazaEntry·PublicWayNotice); BBScreenshotTest 1320·1324
 CALI-05,"1.30 BB 첫 설정·달력 추가 설정의 회사 선택이 그 달력에 저장, 회사 급여 방식이 있으면 payWays.use·decided로 '쓸까요?'를 두 번 묻지 않음",2 (1.30.0),완료,,"FirstSetup.keepCompany(첫 설정·SetupViewModel.saveCalendar), payWays.use·decided; CompanyScopeTest.aCompanyPickedInAnAddedCalendarsSetupIsThatCalendars"
-CALI-06,1.30 BB 보조 달력에 공개 근무주기를 넣을 때 본 달력 급여에 규칙이 들어가던 버그,2 (1.30.0),완료,,"PublicCycleApply가 그 달력의 share·store로; docs/plans/1.30-BB-개발계획.md"
+CALI-06,1.30 BB 보조 달력에 공개 근무주기를 넣을 때 본 달력 급여에 규칙이 들어가던 버그,2 (1.30.0),완료,,PublicCycleApply가 그 달력의 share·store로; docs/plans/1.30-BB-개발계획.md
 CALI-07,"1.30 BB 보조 달력의 회사 연결 백업·복원, 달력 지우면 회사 참여 정리(다른 달력이 같은 회사면 남김)와 파일 삭제",2 (1.30.0),완료,,"SettingsFilesBackup calendarCompany, CalendarBook onDelete→companyGone; CompanyScopeTest(지우기·백업), ZFullBackupTest.anAddedCalendarsCompanyTravelsWithTheSameKeys, 사진 1325"
 CALI-08,"1.30 BB 광장 위 달력 고르기 칩(달력 2개 이상), '내 활동·내가 보낸 정보'가 그 달력에서 보낸 것만, 다른 달력 것은 이름으로",2 (1.30.0),완료,,"PlazaCalendarChips, ActivityHolder 달력별 보낸 규칙; BBScreenshotTest 1322·1323·1326"
 ITEM-01,1.30 BC 수당 종류: PayItem share(회사 공통·사람마다·다른 금액의 %)·percent·percentOf·fixedAmount·mine과 계산(통상임금·상여 기준에도 반영),2 (1.30.0),완료,,"core PayProfile ItemShare·ItemShares.resolve, PayCalculator·ordinaryWage가 먼저 풀어 계산; PayItemShareTest"
@@ -1101,15 +1101,15 @@ PAYG-01,"1.30 BA 회사 급여 방식 '고르기 → 기본급 → 확정' 한 �
 PAYG-02,"1.30 BA 기본급 칸은 비어서 시작, 지금 기본급은 '그대로 쓰기' 칩 하나, 비면 확정 불가",2 (1.30.0),완료,,"core BaseAsk.keepChip/ready, app BaseFields keepBase; BaseAskTest, 스크린샷 1300"
 PAYG-03,"1.30 BA 'n명이 쓰고 있어요' + 급여 같이: 근무주기만 먼저 넣고 급여는 기본급을 받은 뒤 한 번에, 안 쓰면 아무것도 바뀌지 않음",2 (1.30.0),완료,,"app CompanyViewModels.apply payWaits, PayWayCard PendingWayAsk, PublicCycleUi CompanyPayOffer; 스크린샷 1302, AP 1238, BB 1321"
 PAYG-04,"1.30 BA '기본급만 넣으면 끝나요' 카드 하나로(결과 화면·간편 설정·회사 카드), 0원·이상한 금액 안 보임",2 (1.30.0),완료,,"app ui/pay/BaseNeededCard.kt, PayScreen PayResult noBase, PayQuickSetup CONFIRM; 스크린샷 1306·1307·1318"
-PAYG-05,"1.30 BA '자세히 고치기' 입구: 급여 화면 위 '설정 고치기' 메뉴·회사 규칙 카드·간편 설정 첫 질문",2 (1.30.0),완료,,"app PayScreen 위 메뉴(Tune)·회사 규칙 카드 자세히 고치기, PayQuickSetup 링크·UsingStep, PayWizard autoStart; 스크린샷 1308~1311"
+PAYG-05,1.30 BA '자세히 고치기' 입구: 급여 화면 위 '설정 고치기' 메뉴·회사 규칙 카드·간편 설정 첫 질문,2 (1.30.0),완료,,"app PayScreen 위 메뉴(Tune)·회사 규칙 카드 자세히 고치기, PayQuickSetup 링크·UsingStep, PayWizard autoStart; 스크린샷 1308~1311"
 PAYG-06,"1.30 BA 급여 설정 첫 질문: 쓰는 회사(근무주기 회사) 먼저 → 급여 방식 있으면 바로 '쓸까요?', 없으면 직접 만들기, 모르면 검색",2 (1.30.0),완료,,"core PayFindRows.startStep/knownRow, app rememberPayFindState; PayFindRowsStartStepTest, 스크린샷 1312·1313"
 PAYG-07,"1.30 BA 첫 설정·달력 추가 뒤 시트가 곧 '급여 계산도 들어 있어요, 쓸까요?' + 기본급 칸(질문 3번 → 1번)",2 (1.30.0),완료,,"app SetupFinish SetupPaySheet(calendar) + PendingDone, AppRoot calendar = id; 스크린샷 1303~1305"
 PAYG-08,"1.30 BA 통상시급 기준 시간: 회사 규칙 시간을 펼쳐 먼저(칩 맨 앞), 고치면 확정 뒤 의견(제안) 초안",2 (1.30.0),완료,,"core BaseAsk.hoursChoices/hoursToPropose, app BaseFields MonthlyHoursChips(공개), PendingWays.hoursAsk → HoursProposalSheet; BaseAskTest, PendingWayTest, 스크린샷 1314·1315"
 PAYG-09,"1.30 BA 급여 방식 쓰기의 회사 참여 요청에 ?with=page(SP1), 회사 화면을 다시 읽지 않음(옛 서버는 따로 읽기)",2 (1.30.0),완료,,"app CompanyClient.joinWithPage(body with:page)·pageOf, PayFind.use 대체 읽기; PlazaAHAppTest"
-PAYG-10,"1.30 BA 급여 방식 찾기·직접 만들기·검색 줄 닫기가 그 달력의 회사로(달력 독립)",2 (1.30.0),완료,,"app PayFind·PayFindLine·PendingWays가 companyScope/companyOf; PendingWayTest twoCalendarsNeverTouchEachOther, BB 1321"
+PAYG-10,1.30 BA 급여 방식 찾기·직접 만들기·검색 줄 닫기가 그 달력의 회사로(달력 독립),2 (1.30.0),완료,,"app PayFind·PayFindLine·PendingWays가 companyScope/companyOf; PendingWayTest twoCalendarsNeverTouchEachOther, BB 1321"
 PAYG-11,"1.30 BA 동료 급여 금액 화면: 회사가 정한 수당은 읽기 줄, 사람마다 다른 수당만 묻기, 급여 형태·시작 달은 접기",2 (1.30.0),완료,,"app CompanyPayScreen CommonItemLines·companyHours·접기, commit PERSONAL 금액 모름 표시; 스크린샷 1316·1317, AP 1234"
 PAYG-12,"1.30 BA 설정 고치기에서도 공개 자료 회사의 근무 꼴 제안, 이름 없는 '직접 만들게요'는 손으로 만든 설정으로",2 (1.30.0),완료,,"app PayQuickSetup cycleForm·onByHand foundCycle, PayFind.none 짧은 이름 → setHandMade; 스크린샷 AP 1242"
-PAYG-13,"1.30 BA 넣지 않은 급여 방식 한 줄 '넣지 않았어요 · 다시 넣기'",2 (1.30.0),완료,,"app PendingWays.dropped/again, PayWayCard 줄, NameStep 줄; PendingWayTest, 스크린샷 1301"
+PAYG-13,1.30 BA 넣지 않은 급여 방식 한 줄 '넣지 않았어요 · 다시 넣기',2 (1.30.0),완료,,"app PendingWays.dropped/again, PayWayCard 줄, NameStep 줄; PendingWayTest, 스크린샷 1301"
 PLZD-01,"1.30 BD 광장에 보내기 전 같은 규칙이면 ""이미 있어요 · 적용해 드릴까요?"" 1탭 적용(보내지 않음, 회사가 광장에 있을 때만)",2 (1.30.0),완료,,"app SendGuard.check·useSame, CompanyReportScreen SendGuardAsk(이미 같은 규칙이 있어요 · 이 규칙 쓰기), 서버 응답 same; SendGuardTest, plaza-guard.test.mjs, 스크린샷 1360~1362"
 PLZD-02,"1.30 BD 근무 모양(교대 수·순서 길이·요일별·근무표)이 그 부서 대표 판과 다르면 부서 이름 필수, 같은 부서로는 막기",2 (1.30.0),완료,,"core SameSetup.shape·compare, app SendGuard.Shape(부서·공장 이름 필수, 대표 판과 같은 이름 막기); SameSetupTest, SendGuardTest, 스크린샷 1363~1365"
 PLZD-03,1.30 BD 대표 판과 다른 점이 있으면 '달라진 점만 제안으로 보내기'가 기본(새 판은 보조),2 (1.30.0),완료,,"app SendGuard.Differ·draft(대표 판 + 내 값, 대표의 급여·순서 유지), GuardProposalSheet(DiffEditorSheet draft); SendGuardTest, 스크린샷 1366~1368"
@@ -1120,35 +1120,181 @@ PLZD-07,"1.30 BD 회사 화면 = 부서별 대표 1장 + 다른 판 접기 + 카
 PLZD-08,1.30 BD 회사 화면 맨 위 '내가 쓰는 판' 띠(맞아요·달라요·고쳐서 제안),2 (1.30.0),완료,,"app CompanyVersions MyVersionBand(내가 쓰는 판 · 대표인지, 아니면 대표 판과 비교), 쓰는 판은 접지 않음; 스크린샷 1373"
 PLZD-09,1.30 BD 설정 한 번에: 대표 판 카드 안 '급여 계산도 같이' 토글 → 순서 → 끝(묻는 창 없이),2 (1.30.0),보류,,"1.29 AP 사용자 요청('급여까지 같이 넣을지 한 번 묻기') WithPayDialog 유지, 같은 때 BA가 급여 넣기 흐름을 바꾸는 중이라 토글로 바꾸지 않음(1.30-BD-개발계획 결정 4)"
 PLZD-10,"1.30 BD core DeptGroups.summary(text)·mismatch: 급여 찾기 확인 문구에 부서·교대 꼴, 내 달력과 모양이 다르면 경고",2 (1.30.0),완료,,"core DeptGroups.summary·mismatch, 회사 화면 카드 한 줄 요약; DeptGroupsTest. PayFindSheet 확인 문구 연결은 BA 파일이라 통합 지점으로 넘김(1.30-BD-개발계획)"
-PHOTO-30,"1.30 AW 사진 결과를 전체 화면 한 장으로(위 사진, '명세서 줄'·'회사 규칙' 두 탭, 아래 고정 예상 급여와 '적용' 하나), 용어는 칸·적용 하나로",2 (1.30.0),완료,,"app ui/pay/PhotoResultScreen.kt; screenshots 1410·1411·1414~1416"
+PHOTO-30,"1.30 AW 사진 결과를 전체 화면 한 장으로(위 사진, '명세서 줄'·'회사 규칙' 두 탭, 아래 고정 예상 급여와 '적용' 하나), 용어는 칸·적용 하나로",2 (1.30.0),완료,,app ui/pay/PhotoResultScreen.kt; screenshots 1410·1411·1414~1416
 PHOTO-31,"1.30 AW 명세서 줄 고치기를 창 없이 그 자리에서(줄을 누르면 펼쳐져 종류 칩·이름·금액·시간), 자주 쓰는 종류 6개 먼저",2 (1.30.0),완료,,"app ui/pay/PayslipCheck.SlipLineEditor; screenshot 1412, AJ 1148"
 PHOTO-32,"1.30 AW 규칙 칸을 쉬운 말 카드로(휴일연장 2배, 시급의 50% 더), 누르면 그 자리에서 고치기, 확실하지 않은 칸은 색과 읽은 문장, 읽지 못한 문장의 '직접 넣기'는 이름을 문장으로 채우지 않음",2 (1.30.0),완료,,"core pay/RuleSheet.RuleCell; app ui/pay/rulesheet/RuleCellList.kt; screenshots 1413, AQ 1254~1257"
-PHOTO-33,"1.30 AW 통상시급 카드를 규칙 탭 맨 위에 따로(명세서 값·기준 시간 후보·근거)",2 (1.30.0),완료,,"app ui/pay/rulesheet/HourlyCard.kt; screenshots 1411, AQ 1251, AV 1407"
+PHOTO-33,1.30 AW 통상시급 카드를 규칙 탭 맨 위에 따로(명세서 값·기준 시간 후보·근거),2 (1.30.0),완료,,"app ui/pay/rulesheet/HourlyCard.kt; screenshots 1411, AQ 1251, AV 1407"
 PHOTO-34,"1.30 AW 규칙 사진 적용을 한 화면에서 끝(적용 전 아래 막대에 명세서와 앱 계산·차이·바뀌는 것, '이렇게 바꿀게요' 창 없앰)",2 (1.30.0),완료,,"app ui/pay/PayQuickSetup.SlipRulesDialog, rulesheet/RuleSheetEditor.SheetPreviewBar; V 840~842·848, AJ 1152"
-PHOTO-35,"1.30 AW 사진을 못 찍는 회사: 사진 고르는 창에 '사진 없이 칸으로 적기', 같은 결과 화면에서 칸만으로",2 (1.30.0),완료,,"app ui/pay/PayslipImport.PickDialog(사진 없이 칸으로 적기); screenshot 1423"
+PHOTO-35,"1.30 AW 사진을 못 찍는 회사: 사진 고르는 창에 '사진 없이 칸으로 적기', 같은 결과 화면에서 칸만으로",2 (1.30.0),완료,,app ui/pay/PayslipImport.PickDialog(사진 없이 칸으로 적기); screenshot 1423
 PHOTO-36,"1.30 AW 명세서 글 붙여 넣기 칸을 긴 글 칸(LongTextField, 선택 핸들 가장자리 스크롤, AY 부품)으로",2 (1.30.0),완료,,"app ui/pay/PayslipImport.PickDialog(LongTextField·edgeScroll); V 839, AJ 1152"
 RULE-ED-01,"1.30 AW core RuleSheet: 사진·글·직접·광장 제안이 같은 칸 목록(RuleCell=RuleChange, 수당은 RuleChange.Item으로 BC 3종류 그대로), 공통 값(기준 시간·통상시급과 출처), 설정에서 읽고 쓰기",2 (1.30.0),완료,,"core pay/RuleSheet.kt, RuleText(RuleChange.Item); core RuleSheetTest 10"
-RULE-ED-02,"1.30 AW 칸 목록 화면(통상시급 카드, 칸 카드 켜고 끄기·고치기·빼기, 읽지 못한 문장, 아래 미리 보기 금액)",2 (1.30.0),완료,,"app ui/pay/rulesheet/RuleSheetState·RuleCellList·RuleSheetEditor; screenshots 1417·1420"
+RULE-ED-02,"1.30 AW 칸 목록 화면(통상시급 카드, 칸 카드 켜고 끄기·고치기·빼기, 읽지 못한 문장, 아래 미리 보기 금액)",2 (1.30.0),완료,,app ui/pay/rulesheet/RuleSheetState·RuleCellList·RuleSheetEditor; screenshots 1417·1420
 RULE-ED-03,"1.30 AW 칸 더하기 2단계 시트(1 무엇을: 검색과 흔한 항목 칩 → 2 얼마·조건: 정액·사람마다·%, 가산 배율), 시트 아래 이 칸의 이번 달 금액",2 (1.30.0),완료,,"app ui/pay/rulesheet/CellSheet.kt, CustomItemDialog.FormStep(kindChips); screenshots 1418·1419·1421·1422"
-RULE-ED-04,"1.30 AW '사진으로 읽기'·'글로 붙여 넣기'는 같은 목록에 칸을 더하는 입구(RuleSentenceBox·RuleBuilder는 글 입구 안에만)",2 (1.30.0),완료,,"app ui/pay/PayslipImport.RuleSentenceBox(RuleSheetCells); AQ 1254~1257, Q"
+RULE-ED-04,1.30 AW '사진으로 읽기'·'글로 붙여 넣기'는 같은 목록에 칸을 더하는 입구(RuleSentenceBox·RuleBuilder는 글 입구 안에만),2 (1.30.0),완료,,"app ui/pay/PayslipImport.RuleSentenceBox(RuleSheetCells); AQ 1254~1257, Q"
 RULE-ED-05,"1.30 AW 들어가는 자리: 회사 규칙 '우리 회사 항목'(수당과 규칙을 칸으로), 급여 빠른 설정의 사진 창, 칸만으로 적기(SlipRulesDialog byHand), 광장 제안이 부를 RuleSheetEditor",2 (1.30.0),완료,,"app ui/pay/CompanyRulesEditor(우리 회사 항목), SlipRulesDialog(byHand), RuleSheetEditor"
-RULE-ED-06,"1.30 AW 미리 보기 계산(칸 하나의 이번 달 금액, 전체 예상 급여·통상시급, 명세서와 차이), 메인 스레드 밖",2 (1.30.0),완료,,"app ui/pay/rulesheet/RuleSheetHost.effectOf·rememberSheetPreview(250ms 뒤 메인 스레드 밖); screenshots 1419·1420"
-RULE-ED-07,"1.30 AW 시험: core RuleSheetTest, 앱 화면 사진 1410~1439",2 (1.30.0),완료,,"core RuleSheetTest 10; app AWScreenshotTest 1410~1429"
+RULE-ED-06,"1.30 AW 미리 보기 계산(칸 하나의 이번 달 금액, 전체 예상 급여·통상시급, 명세서와 차이), 메인 스레드 밖",2 (1.30.0),완료,,app ui/pay/rulesheet/RuleSheetHost.effectOf·rememberSheetPreview(250ms 뒤 메인 스레드 밖); screenshots 1419·1420
+RULE-ED-07,"1.30 AW 시험: core RuleSheetTest, 앱 화면 사진 1410~1439",2 (1.30.0),완료,,core RuleSheetTest 10; app AWScreenshotTest 1410~1429
 RULE-ED-08,"1.30 AW 접근성·속도: 칩·버튼 48dp, 시트 imePadding, 큰 글자 2배",2 (1.30.0),완료,,"칩·버튼 48dp, 시트 imePadding; screenshots 1414·1415·1421·1429(큰 글자 2배)"
-HOURLY-04,"1.30 AW 통상시급 카드(시간당 기본 단가 설명, 출처 명세서·회사 규칙·광장·직접, 명세서로 보면 n시간 1탭, 광장 값 쓰기와 다르면 의견, 모르면 '통상임금이 기본급의 몇 %인가요?', 직접 바꾸면 TYPED)",2 (1.30.0),완료,,"core pay/RuleSheet.CommonTerms·HourlyFacts; app rulesheet/HourlyCard(BA MonthlyHoursChips); TYPED 출처 PayScreen·PayQuickSetup·CompanyRulesEditor; screenshots 1424~1429"
+HOURLY-04,"1.30 AW 통상시급 카드(시간당 기본 단가 설명, 출처 명세서·회사 규칙·광장·직접, 명세서로 보면 n시간 1탭, 광장 값 쓰기와 다르면 의견, 모르면 '통상임금이 기본급의 몇 %인가요?', 직접 바꾸면 TYPED)",2 (1.30.0),완료,,core pay/RuleSheet.CommonTerms·HourlyFacts; app rulesheet/HourlyCard(BA MonthlyHoursChips); TYPED 출처 PayScreen·PayQuickSetup·CompanyRulesEditor; screenshots 1424~1429
 FIN130-01,"1.30 마무리 A1: 내 설정 나누기 '이 규칙 쓰기'의 급여 방식도 BA PendingWay로(급여가 있으면 기본급을 받은 뒤 한 번에, 없으면 금액 화면에서 만든 뒤 '쓰고 있어요'), 끝 화면 '급여 화면에서 기본급 넣기'",2 (1.30.0),완료,,"app SendGuard.useSame, CompanyReportViewModel.Sending.Used.toPay, SendGuardUi GuardDonePanel·문구, CompanyReportScreen onOpenPay, AppRoot; Fin130Test, BDScreenshotTest 1360·1361, FinScreenshotTest 1472·1473"
 FIN130-02,"1.30 마무리 A2: 제안 편집기 '내 급여도 이 값으로'(PROP-03)가 그 달력 급여가 이 방식을 쓸 때 열리고(급여 화면·회사 화면의 그 판), 보조 달력 제안은 그 달력 급여만 고침, plaza.fixed_amount를 못 읽으면 꺼짐",2 (1.30.0),완료,,"app PlazaCompare DiffEditorSheet(companyScope.share.takeEdited, getOrDefault(false)), PayWayCard·CompanyFindScreen alsoMine; Fin130Test, BCScreenshotTest 1351"
-FIN130-03,"1.30 마무리 A3: '이 제안으로 내 월급 계산해 보기'가 광장을 연 달력의 급여·근무로 계산",2 (1.30.0),완료,,"app ProposalTrial(companyScope), proposalTrial(scope); Fin130Test, BCScreenshotTest 1352~1354"
+FIN130-03,1.30 마무리 A3: '이 제안으로 내 월급 계산해 보기'가 광장을 연 달력의 급여·근무로 계산,2 (1.30.0),완료,,"app ProposalTrial(companyScope), proposalTrial(scope); Fin130Test, BCScreenshotTest 1352~1354"
 FIN130-04,"1.30 마무리 A4: 통상시급 기준 시간 출처가 회사 값이면 PLAZA(광장), 사용자가 바꾸면 TYPED(직접): 회사 파일 합치기·기본급 넣기·금액 화면·이 값 쓰기",2 (1.30.0),완료,,"core BaseAsk.apply; app CompanyShare.merge·takeOne, CompanyPayViewModel.save; BaseAskTest, Fin130Test"
 FIN130-05,"1.30 마무리 A5: 급여 화면의 회사 방식(통상시급 시간)과 제안 계산의 판을 휴대폰에 둔 회사 페이지에서 먼저 읽고, 없을 때만 서버에서 읽어 둠",2 (1.30.0),완료,,"app HoursProposal companyWayText·keptSetupText, ProposalTrial; Fin130Test"
-FIN130-06,"1.30 마무리 A6: 내 설정 보내기·이 규칙 쓰기·제안 보내기·제안 공감 뒤 휴대폰에 둔 회사 페이지를 비워 다음 확인이 새로 읽음",2 (1.30.0),완료,,"app CompanyReportViewModel.send, SendGuard.useSame, TalkHolder.send·vote (CompanySearch.forgetPage); Fin130Test"
-FIN130-07,"1.30 마무리 A7: 급여가 이미 있는 달력의 첫 설정·설정 다시 하기에서 고른 회사 설정의 급여 방식은 묻지 않고 합치지 않음: PendingWay(FIRST_SETUP)로 급여 화면에서 기본급과 한 번에",2 (1.30.0),완료,,"app FirstSetup.keepCompany, AppRoot(설정 뒤 급여 화면); Fin130Test"
-FIN130-08,"1.30 마무리 A8: 새 수당의 '나만 받아요' 기본값과 시간 의견의 달력이 화면의 달력 기준",2 (1.30.0),완료,,"app CustomItemDialog payFromCompany(LocalCompanyCalendar), HoursProposalSheet TalkHolder(calendar); Fin130Test"
+FIN130-06,1.30 마무리 A6: 내 설정 보내기·이 규칙 쓰기·제안 보내기·제안 공감 뒤 휴대폰에 둔 회사 페이지를 비워 다음 확인이 새로 읽음,2 (1.30.0),완료,,"app CompanyReportViewModel.send, SendGuard.useSame, TalkHolder.send·vote (CompanySearch.forgetPage); Fin130Test"
+FIN130-07,1.30 마무리 A7: 급여가 이미 있는 달력의 첫 설정·설정 다시 하기에서 고른 회사 설정의 급여 방식은 묻지 않고 합치지 않음: PendingWay(FIRST_SETUP)로 급여 화면에서 기본급과 한 번에,2 (1.30.0),완료,,"app FirstSetup.keepCompany, AppRoot(설정 뒤 급여 화면); Fin130Test"
+FIN130-08,1.30 마무리 A8: 새 수당의 '나만 받아요' 기본값과 시간 의견의 달력이 화면의 달력 기준,2 (1.30.0),완료,,"app CustomItemDialog payFromCompany(LocalCompanyCalendar), HoursProposalSheet TalkHolder(calendar); Fin130Test"
 FIN130-09,"1.30 마무리 A9: 회사 규칙 설정의 통상시급 기준 시간 칩을 한 벌로(BA MonthlyHoursChips: 회사 규칙 n시간 먼저, 180·209·226·243, 다르면 의견 보내기)",2 (1.30.0),완료,,"app BaseFields MonthlyHoursChips(choices, onPropose), HoursProposal CompanyHoursLine, CompanyRulesEditor; FinScreenshotTest 1470·1471, BCScreenshotTest 1348·1349"
 FIN130-11,"1.30 마무리 S1: 모양이 다른(보류) 판이 관리자 '정할 판' 수와 '여러 판' 비교에서 빠짐(shape 표시, 추천·live 아님)",2 (1.30.0),완료,,"server company-worker index.js BADGE_SQL.versionConflicts·versions(), admin/views/plaza.js '모양이 다른 판'; fin130.test.mjs"
-FIN130-12,"1.30 마무리 S2: 보류 판에는 투표·토론·글쓰기가 안 되고, 안정·첫 판 판단에 들어가지 않음",2 (1.30.0),완료,,"server index.js vote·talkable·talkData·stableFacts·stableOf·report first (pgShown); fin130.test.mjs"
-FIN130-13,"1.30 마무리 S3: 직군 광장 '투표 중' 수에서 보류 판을 뺌(게시판과 같게)",2 (1.30.0),완료,,"server index.js plazas(); fin130.test.mjs"
-FIN130-14,"1.30 마무리 S4: 보류 판을 채택하면 reason 'shape'를 지워 보낸 분 화면에 보류 문구가 남지 않음",2 (1.30.0),완료,,"server index.js adopt(); fin130.test.mjs"
+FIN130-12,"1.30 마무리 S2: 보류 판에는 투표·토론·글쓰기가 안 되고, 안정·첫 판 판단에 들어가지 않음",2 (1.30.0),완료,,server index.js vote·talkable·talkData·stableFacts·stableOf·report first (pgShown); fin130.test.mjs
+FIN130-13,1.30 마무리 S3: 직군 광장 '투표 중' 수에서 보류 판을 뺌(게시판과 같게),2 (1.30.0),완료,,server index.js plazas(); fin130.test.mjs
+FIN130-14,1.30 마무리 S4: 보류 판을 채택하면 reason 'shape'를 지워 보낸 분 화면에 보류 문구가 남지 않음,2 (1.30.0),완료,,server index.js adopt(); fin130.test.mjs
 FIN130-15,"1.30 마무리 S5: 처리방침 3.4 시행일(서버 정책 일정, 관리자 앱이 바꾼 날 포함) 전에는 회사 공통 수당 금액(fixedAmount)을 조용히 빼고 받음(보고·제안)",2 (1.30.0),완료,,"server plaza-items.js withoutFixedAmounts, index.js fixedAmountsOpen·report·post; fin130.test.mjs, talk-proposal-text.test.mjs"
-FIN130-16,"1.30 마무리 S6: 달라진 점에서 회사 공통→사람마다를 '회사 공통 100,000원→사람마다'로, 이름에 괄호가 있는 수당(식대(중식))을 한 이름으로",2 (1.30.0),완료,,"server plaza-diff.js pdNamed·pdPersonal·diffFacts; fin130.test.mjs"
-FIN130-17,"1.30 마무리 S7: 대표 보고가 보류여도 같은 판에 보이는 보고가 있으면 다른 판처럼 채택",2 (1.30.0),완료,,"server index.js settle(); fin130.test.mjs"
+FIN130-16,"1.30 마무리 S6: 달라진 점에서 회사 공통→사람마다를 '회사 공통 100,000원→사람마다'로, 이름에 괄호가 있는 수당(식대(중식))을 한 이름으로",2 (1.30.0),완료,,server plaza-diff.js pdNamed·pdPersonal·diffFacts; fin130.test.mjs
+FIN130-17,1.30 마무리 S7: 대표 보고가 보류여도 같은 판에 보이는 보고가 있으면 다른 판처럼 채택,2 (1.30.0),완료,,server index.js settle(); fin130.test.mjs
+LIM-01,"1.31 상세리뷰 R1: 회사 서버 한도를 휴대폰(설치 해시)마다 먼저 세고, 네트워크(공장 와이파이·통신사 공유 주소)는 그 10배로. 공개 읽기 시간당 600→3000",2 (1.31.0),완료,,server index.js limitFor·overLimit·PUBLIC_PER_HOUR; r131.test.mjs [LIM-01][LIM-02] 40대 같은 와이파이
+LIM-02,"1.31 상세리뷰 R1·I5: 한도에 걸린 답(429)에 이유(why)와 몇 초 뒤(retryAfter, Retry-After 머리글)",2 (1.31.0),완료,,server index.js limited(); r131.test.mjs
+LIM-03,1.31 상세리뷰 I5: 앱의 한도 문구를 '이유 + 몇 분 뒤 + 그동안 할 수 있는 것'으로 (회사·토론·문의·프로·공유·받은 근무표),2 (1.31.0),완료,,"app company/RateLimits.kt, CompanyClient CompanyException(retryAfter, why), CompanyUi companyProblem(e)·talkProblem(e)"
+SRCH-15,1.31 상세리뷰 R2: 회사 검색 정렬을 SQL 안에서 한 뒤 200줄로 잘라 같은 이름이 많아도 친 회사가 먼저,2 (1.31.0),완료,,server index.js searchCompanies; r131.test.mjs [SRCH-15]
+SRCH-16,"1.31 상세리뷰 I7: 세 글자 이상 검색은 FTS5 trigram 색인(company_fts, 이름·읽는 법·다른 이름), 색인이 없으면 전처럼",2 (1.31.0),완료,,server index.js company_fts·ftsWords; r131.test.mjs [SRCH-16] 2개; docs/server-data.md
+SPD-21,"1.31 상세리뷰 R3: 회사 전체 목록을 이름(?part=names)·수로 나눠 ETag를 따로, 앱은 둘을 함께 받아 합침(옛 서버면 전처럼)",2 (1.31.0),완료,,server index.js part=names; app CompanyClient.allCompanies; r131.test.mjs [SPD-21]
+SPD-22,1.31 상세리뷰 R3: 전체 목록을 읽는 동안 온 같은 요청은 한 번 읽은 것을 나눔,2 (1.31.0),완료,,server read-fast.js; r131.test.mjs [SPD-22]
+SPD-23,"1.31 상세리뷰 R4·I3: 회사 페이지·광장 목록도 ETag/304, 앱은 GET마다 ETag를 기억(60개)",2 (1.31.0),완료,,server index.js; app CompanyClient.exchange LruCache; r131.test.mjs [SPD-23]
+SPD-24,"1.31 상세리뷰 R7: 하루 많이 본 사람의 '근무만 보이는' 페이지가 온전한 페이지를 덮어쓰지 않음, 미리 읽기는 X-Read-Ahead로 알림",2 (1.31.0),완료,,"app PageCache.keepBundle, CompanySearch warm ReadAhead, CompanyClient.companyBundle; server index.js"
+SPD-25,"1.31 상세리뷰 R5·I4: 달력 메모 목록을 보이는 달 ±2개월만, 메인 스레드 밖(Dispatchers.Default)에서 펼침",2 (1.31.0),완료,,"app CalendarViewModel.datedMemos, MemoRepository.shownWindow·datesWithMemos flowOn"
+SPD-26,"1.31 상세리뷰 I2: Cronet(HTTP/3·HTTP/2·brotli, play-services-cronet 18.1.1)과 /api/hello로 연결 미리 열기(45초에 한 번), 자가 점검에 연결 방식",2 (1.31.0),완료,,"app company/NetEngine.kt, CompanySearch.warmCompanies, SelfCheck; server /api/hello; r131.test.mjs [SPD-26]"
+SPD-27,1.31 상세리뷰 R6: 304·오류 답 뒤에도 연결을 다시 쓰도록 본문을 비우고 끊지 않음(입출력 오류 때만 끊음),2 (1.31.0),완료,,"app CompanyClient.serverExchange·drain, share/ShareLink.kt"
+SPD-28,1.31 상세리뷰 N5: 지난번 달력 한 달(색·글자)을 noBackupFilesDir에 두고 다음 시작 때 데이터를 읽는 동안 바로 그림,2 (1.31.0),완료,,"app ui/calendar/FirstFrame.kt, CalendarScreen FirstFrameGrid"
+ADMX-13,1.31 상세리뷰 R8: 관리자 배지 기억(15초)을 배지가 세는 쓰기에서만 지움(사용 통계·입장 같은 휴대폰 쓰기는 그대로),2 (1.31.0),완료,,server index.js BADGE_WRITES; r131.test.mjs [ADMX-13]
+ADMX-14,"1.31 상세리뷰 N6 하루 3분 정리: 아침 9시 KST 푸시 하나(답할 문의·정할 판·가려진 글), 누르면 큐 모드로",2 (1.31.0),완료,,"server index.js digestTick·digestText, admin-app.js ?start=queue; r131.test.mjs [ADMX-14]"
+ADMX-15,1.31 상세리뷰 I8: 탭으로 돌아왔을 때 답장을 쓰는 중이면 숫자만 다시 받고 화면은 그대로,2 (1.31.0),완료,,server admin-app.js visibilitychange; test/ui/admin-ui.test.mjs [ADMX-15]
+ADMX-16,"1.31 상세리뷰 I9: 관리자 로그인 두 번째 확인(인증 앱 6자리 TOTP, 같은 코드 두 번 막기, 최고 관리자는 ADMIN_2FA_RESET=1로 풀기)",2 (1.31.0),완료,,"server totp.js, index.js admin_totp·login·/me/2fa, admin-app.js; r131.test.mjs [ADMX-16] RFC 6238 예시"
+SRV-20,1.31 상세리뷰 I6: 서버 index.js를 inquiries·money·usage·flags·units 파일로 나눔(묶음은 tools/bundle.mjs가 다시 한 파일로),2 (1.31.0),완료,,"server src/inquiries.js·money.js·usage.js·flags.js·units.js, tools/bundle.mjs; 묶은 dist/worker.js로 npm test 전체 통과"
+STAT-08,"1.31 상세리뷰 N4: 조회에 걸린 시간(회사 찾기·회사 화면·광장 기다림, 서버 답)을 구간 값으로, 처리방침 3.5 시행일(11-28)부터 저절로(stats.lookup LEGAL), 따로 동의한 휴대폰만",2 (1.31.0),완료,,"core FlagCatalog STATS_LOOKUP, PolicyCalendar 3.5; app diag/LookupStats.kt, NetTimings sink, StatsMoreConsent; server usage.js lookupRows, insight.js lookupCard; FlagEvalTest, LegalPagesTest, r131.test.mjs [STAT-08]"
+GUIDE-20,"1.31 상세리뷰 P2: 처음 7일 홈 위 '시작 3단계' 카드(알람 켜기·근무 넣기·우리 회사 고르기), 보이는 동안 질문 카드는 쉼, 그만 보기",2 (1.31.0),완료,,"core guide/StartSteps.kt + StartStepsTest; app ui/guide/StartStepsCard.kt, CalendarScreen"
+CREW-08,1.31 상세리뷰 N1: 회사 화면에 '우리 회사 오늘 근무' 한 줄(같이 일하는 조),2 (1.31.0),완료,,"app TeamsScreen.teamsTodayLine, CompanyFindScreen TeamsTodayLine"
+ALRM-15,1.31 상세리뷰 R9: 배터리 최적화 제외를 바로 묻는 권한(REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)을 빼고 휴대폰 설정 화면만 엶,2 (1.31.0),완료,,"app AndroidManifest, SelfCheck BATTERY, DiagnosticsScreen; 처리방침 3.5 4항"
+ALRM-16,"1.31 상세리뷰 N3: 근무 알람을 끄면 오늘 근무·이번 주 시간·내일 근무를 조용한 알림 하나로(3시간 뒤 사라짐, 설정 › 알림에서 끔)",2 (1.31.0),완료,,"app alarm/AfterAlarmCard.kt, AlarmService, SettingsPages·SettingsSearch, 백업 afterAlarmCard"
+WEAR-04,"1.31 상세리뷰 7장: 워치에 보낼 달력 고르기(설정 › 달력, 처음엔 내 달력), 워치 머리에 달력 이름",2 (1.31.0),완료,,"app WatchSync.push(shown), AppContainer keep(watch), SettingsPages WATCH_CALENDAR_ROW, 백업 watchCalendar; wear MainActivity; 1.32 조사 대조 C16: wear NextShiftComplicationService(다음 근무까지, 근무 중이면 끝까지), ShiftTileService 받은 시각, core WatchDays.countdowns, ComplicationDaysTest"
+WEAR-05,1.31 상세리뷰 7장: 워치 화면을 Wear Compose Material 3(1.5.0)으로,2 (1.31.0),완료,,"wear build.gradle.kts compose-material3, MainActivity Button·CompactButton"
+WEAR-06,"1.31 상세리뷰 N2 워치 진동 알람: 휴대폰 알람이 울리면 워치가 진동하고 끄기·다시 울림을 휴대폰으로(쓰지 않기·휴대폰과 워치·워치 먼저, 워치 먼저는 1분 또는 워치가 없으면 휴대폰이 울림, 미션 알람은 휴대폰에서)",2 (1.31.0),완료,,"core WatchDays RING_*·ringOnWatch; app watch/WatchRing.kt, AlarmService phoneOutputs·fromWatch, WatchRequestService; wear Ring.kt RingListenerService·RingActivity; 처리방침 3.5 2-6항"
+OPS-26,1.31 상세리뷰 P1: 판 속도보다 확인이 먼저: 1.31 동작 확인 체크리스트를 실제 휴대폰 두 대(가능하면 오래된 저가폰 하나)로 돌리고 자가 점검 › 조회 속도 숫자를 받아 다음 할 일을 정함,2 (1.31.0),진행 중,,release/1.31.0/동작-확인-체크리스트.md (사용자 확인 U)
+FIX132-01,1.32 요청: 사진 방향,2 (1.32.0),완료,,SettingsFilesBackup.kt ImagePrep.kt PayslipScanner.kt
+FIX132-02,1.32 요청: 달라요 알려주기,2 (1.32.0),완료,,CompanyNudges.kt CompanyUi.kt CompanyViewModels.kt
+FIX132-03,1.32 요청: 급여 '모든 달에 적용 / 이 달부터',2 (1.32.0),완료,,PayDialogs.kt PayScreen.kt PayViewModel.kt
+FIX132-04,1.32 요청: 광장 올리기,2 (1.32.0),완료,,SendGuardUi.kt PayScreen.kt RuleNeedsCard.kt
+FIX132-05,1.32 요청: 메모 복사,2 (1.32.0),완료,,DayDetail.kt CopyTextSheet.kt MemoEditorScreen.kt
+CALX-04,1.32 요청: 화면 구성 확장,2 (1.32.0),완료,,SettingsRepository.kt CalendarLayout.kt CalendarScreen.kt
+PAYA-01,1.32 요청: 명세서 체크,2 (1.32.0),완료,,PayStore.kt PayProfile.kt SlipProof.kt
+PAYA-04,"1.32 요청: '덜 받은 돈': 입금과 예상의 차액은 무료, 근거표와 정리본은 프로예요.",2 (1.32.0),완료,,WorkTypeCards.kt PayGap.kt LedgerSmartsTest.kt
+WTYP-04,"1.32 요청: 건설: 단가를 '이 날부터' 바꾸는 것을 무료로 하고, 공수를 소수 셋째 자리까지 받아요.",2 (1.32.0),완료,,CalendarBook.kt FieldDaySheet.kt FeatureRegistry.kt
+WTYP-05,"1.32 요청: 위젯 신뢰성: 월 이름, 자정과 월 넘김 갱신, 글자 잘림.",2 (1.32.0),완료,,DailyWidgets.kt WidgetData.kt Widgets.kt
+SECX-01,1.32 요청: 알람 점검의 '기능 상태' 카드와 '관리자 미리 보기' 스위치를 앱에서 빼요. 관리자 앱에서 역할에 맞게 기기마다 미리 보기를 정해요.,2 (1.32.0),완료,,AppContainer.kt Flags.kt FeatureGate.kt
+SECX-02,"1.32 요청: 점검 보고와 문의에 붙는 정보에서 플래그 키, 조건, 개발자 말을 빼요.",2 (1.32.0),완료,,DiagnosticsScreen.kt
+SECX-03,1.32 요청: 앱 전체 점검,2 (1.32.0),완료,,DiagnosticsScreen.kt
+SECX-04,"1.32 요청: 서버의 공개 응답에 내부 필드(설치 해시, 네트워크, 묶음 번호, 관리자 메모)가 없는지 점검해요. 관리자 경로의 역할 검사도 점검해요.",2 (1.32.0),완료,,HelpFaq.kt SettingsSearch.kt ServerContractTest.kt
+SECX-05,"1.32 요청: 보안 점검 보고서를 문서로 남기고, 찾은 것을 모두 고쳐요.",2 (1.32.0),완료,,release/1.32.0/보안-점검-보고서.md (프로젝트 파일)
+CALX-01,"1.32 요청: 요일 줄 위에 월 줄을 두고, 넘길 때 큰 월 글자를 보여 줘요(진동은 고를 수 있어요).",2 (1.32.0),완료,,CalendarScreen.kt
+CALX-02,"1.32 요청: 월 제목을 누르면 연·월로 바로 이동하고, '오늘' 단추를 둬요.",2 (1.32.0),완료,,"CalendarScreen.kt MonthPickerDialog, 오늘 단추 (이전 판부터 있음, 1.32 확인)"
+CALX-03,"1.32 요청: 날짜 누름을 '바로 열기 / 고르고 한 번 더'로 정해요. 모든 달력 종류가 따르고, 길게 누르면 바로 열려요. 처음 7일 안내에서 골라요.",2 (1.32.0),완료,,SettingsRepository.kt CalendarScreen.kt SettingsPages.kt
+CALX-05,"1.32 요청: 근무시간과 연장을 '급여 주기 / 1일~말일' 중 골라 봐요. 요약, 통계, 위젯, 워치에 같이 적용하고, 기간 칩을 둬요.",2 (1.32.0),완료,,SettingsRepository.kt StatsScreen.kt WorkHoursCalculator.kt
+STAB-02,"1.32 요청: Android 종료 기록(ANR, 메모리 부족, 기기 쪽 멈춤)을 읽어 휴대폰 안에 남겨요.",2 (1.32.0),완료,,CrashLog.kt
+STAB-03,"1.32 요청: 같은 멈춤은 하나로 묶고, 알림은 하루 한 번만 보내요. 문구도 고쳐요.",2 (1.32.0),완료,,SettingsFilesBackup.kt CrashLog.kt
+STAB-04,"1.32 요청: 시작할 때 연달아 멈추면 안전 모드를 띄워요(백업 꺼내기, 문의, 다시 시작).",2 (1.32.0),완료,,AppContainer.kt BamnatApp.kt SettingsFilesBackup.kt
+STAB-05,"1.32 요청: 사진 읽기 메모리를 보호해요(메모리가 적은 휴대폰은 변형 수를 줄이고, 메모리 부족을 잡아요).",2 (1.32.0),완료,,ImagePrep.kt PayslipScanner.kt
+STAB-06,1.32 요청: 백업을 만든 뒤 다시 열어 무결성을 확인해요.,2 (1.32.0),완료,,BackupManager.kt SettingsScreen.kt
+STAB-07,"1.32 요청: 메인 스레드가 오래 멈춘 곳을 휴대폰 안에 기록해요(진단 보고에만 쓰고, 보내지 않아요).",2 (1.32.0),완료,,MainActivity.kt CrashLog.kt MainStall.kt
+PAYA-02,"1.32 요청: 명세서 시간 칸과 달력 시간을 줄마다 비교해, 요율 문제인지 근무 기록·마감 문제인지 안내해요.",2 (1.32.0),완료,,PayslipMatchDialog.kt SlipAudit.kt LedgerSmartsTest.kt
+PAYA-03,1.32 요청: 여러 달을 한꺼번에 맞춰요(프로).,2 (1.32.0),완료,,PayScreen.kt PayViewModel.kt MultiMonthFit.kt
+PAYA-05,1.32 요청: 급여 입금 알림이 오면 예상 급여와 바로 비교해요.,2 (1.32.0),완료,,NoticeLinks.kt SettingsRepository.kt PayDepositNotice.kt
+PAYA-06,1.32 요청: 광장에 '명세서로 확인된 계산법' 배지를 둬요(명세서 일치 2명 이상).,2 (1.32.0),완료,,CompanyClient.kt PlazaScreens.kt
+LEDX-01,1.32 요청: 내 계좌끼리의 이체를 짝지어요.,2 (1.32.0),완료,,MoneyRepository.kt LedgerSmarts.kt LedgerSmartsTest.kt
+LEDX-02,"1.32 요청: 중복을 묶어요(카드 승인 + 출금, 페이 + 카드).",2 (1.32.0),완료,,MoneyRepository.kt LedgerSmarts.kt
+LEDX-03,1.32 요청: 부분취소와 환불을 원래 결제에 연결해요. 해외결제는 ±3%까지 맞춰요.,2 (1.32.0),완료,,MoneyRepository.kt LedgerSmarts.kt
+LEDX-04,"1.32 요청: 할부를 표시해요(몇 개월, 남은 회차).",2 (1.32.0),완료,,LedgerList.kt LedgerSmarts.kt
+LEDX-05,1.32 요청: 휴대폰 안에서 분류를 배워요(나이브 베이즈). 자신이 없으면 후보 2개를 칩으로 보여 줘요.,2 (1.32.0),완료,,MoneyRepository.kt MoneyPlanCards.kt MoneyScreen.kt
+LEDX-06,1.32 요청: 규칙을 만들 때 그 규칙이 바꿀 지난 거래를 미리 보여 줘요.,2 (1.32.0),완료,,AutoSortCards.kt MoneyScreen.kt LedgerSmarts.kt
+LEDX-07,1.32 요청: 달력 칸에 그날 쓴 돈을 보여 줘요. 이번 달 예상 지출과 오늘 쓸 수 있는 돈도 보여 줘요.,2 (1.32.0),완료,,SettingsRepository.kt CalendarLayout.kt MonthGrid.kt
+LEDX-08,"1.32 요청: 해외결제는 임시 원화와 수수료로 적고, DCC면 알려 줘요.",2 (1.32.0),완료,,MoneyRepository.kt LedgerSmarts.kt
+LEDX-09,1.32 요청: 구독을 점검해요(오래 안 쓴 반복 결제).,2 (1.32.0),완료,,AutoRecordPrefs.kt LedgerSmartCards.kt MoneyScreen.kt
+LEDX-10,1.32 요청: 연말정산 카드 25% 문턱 게이지와 체크카드·신용카드 안내.,2 (1.32.0),완료,,LedgerSmartCards.kt MoneyScreen.kt FeatureRegistry.kt
+LEDX-11,"1.32 요청: 명세서 줄별 설명(4대보험, 소득세, 지방소득세 계산식).",2 (1.32.0),완료,,PayslipMatchDialog.kt SlipAudit.kt LedgerSmartsTest.kt
+TAXP-01,"1.32 요청: 요약의 들어온 돈을 실수령으로 보여 줘요(명세서, 입금, 추정 순). 세전과 세후를 한 줄에 두고, 추정 세후만 프로예요.",2 (1.32.0),완료,,MoneyScreen.kt TaxPlusCards.kt FeatureRegistry.kt
+TAXP-02,"1.32 요청: 세금을 자세히 설명해요(간이세액표 구간, 비율, 계산식). 프로예요.",2 (1.32.0),완료,,TaxCards.kt TaxPlusCards.kt TaxPlus.kt
+TAXP-03,"1.32 요청: 연말정산 미리보기를 넓혀요(카드, 의료, 교육, 기부, 월세, 연금저축, 매주 다시 계산). 프로이고, 하루 이용권은 결과 보기까지예요.",2 (1.32.0),완료,,AppContainer.kt YearEndWeekly.kt PayYearCards.kt
+TAXP-04,"1.32 요청: 할부를 청구 기준으로 보고, 다음 달 카드값을 예측해요(프로).",2 (1.32.0),완료,,TaxPlusCards.kt FeatureRegistry.kt FitTable.kt
+TAXP-05,"1.32 요청: 근무별 소비를 분석해요(야간 다음 날, 연장 많은 달). 프로예요.",2 (1.32.0),완료,,TaxPlusCards.kt FeatureRegistry.kt FitTable.kt
+TAXP-06,"1.32 요청: 자영업 매출을 현금, 카드, 이체, 배달앱으로 나눠요(무료).",2 (1.32.0),완료,,TaxPlusCards.kt FeatureRegistry.kt FitTable.kt
+TAXP-07,"1.32 요청: 자영업 세금을 예측해요(간이·일반, 부가세, 종소세, 경비율, 카드 발행공제, 지난해 낸 세금으로 보정). 세금 통장도 있어요. 프로예요.",2 (1.32.0),완료,,DayCloseDialog.kt TaxCards.kt TaxPlusCards.kt
+TAXP-08,1.32 요청: 카드 매출 입금을 대조해요(프로).,2 (1.32.0),완료,,TaxPlusCards.kt WorkMoneyCards.kt TaxPlus.kt
+TAXP-09,1.32 요청: 연간 돈 리포트 PDF(프로). CSV는 무료예요.,2 (1.32.0),완료,,LedgerReports.kt TaxPlusCards.kt FeatureRegistry.kt
+TAXP-10,1.32 요청: 프리랜서 3.3% 합계와 5월 신고 준비 묶음(프로).,2 (1.32.0),완료,,TaxPlusCards.kt FeatureRegistry.kt FitTable.kt
+TAXP-11,"1.32 요청: 요율 원문을 확인해요(건강보험, 장기요양, 간이세액표 개정, 발행공제). 못 찾으면 '확인 필요'로 표시해요.",2 (1.32.0),완료,,TaxPlusCards.kt TaxPlus.kt TaxPlusTest.kt
+WTYP-01,"1.32 요청: 광고 규칙을 확정해요(소리 없음, 실행 직후와 입력 중 금지, 닫기 항상 보임). 시험으로 지켜요.",2 (1.32.0),완료,,MainActivity.kt Ads.kt AdSlot.kt
+WTYP-02,"1.32 요청: 배달·운전 같은 플랫폼형 일감 모드(플랫폼별 건수·금액, 정산 주기, 수수료·보험·유류비, 시간당 순수익).",2 (1.32.0),완료,,CalendarBook.kt DayHeader.kt FieldDaySheet.kt
+WTYP-03,"1.32 요청: 사장님 직원 근무표(3명까지 무료, 4명 이상과 직원별 PDF는 프로). Phase 3 최소 이월이에요.",2 (1.32.0),완료,,ShopTools.kt FeatureRegistry.kt WorkProof.kt
+WTYP-06,1.32 요청: 근무 기록 증빙 PDF(프로).,2 (1.32.0),완료,,PayReportCard.kt FeatureRegistry.kt WorkProof.kt
+WTYP-07,"1.32 요청: 조사 보고서의 '확인 필요' 항목을 확인하고 고쳐요(명절 패턴, 대타 주휴, 첫 통계 카드 무료 등).",2 (1.32.0),완료,,MainActivity.kt SettingsRepository.kt Format.kt
+WTYP-08,"1.32 요청: 새 기능마다 근무 유형별 안내, 끄기와 다시 켜는 곳, 도움말과 설정 찾기를 둬요.",2 (1.32.0),완료,,"FeatureRegistry.kt 1.32 행 25개, SettingsSearch.kt, HelpFaq.kt, FeatureNamesU132Test"
+UX132-01,"1.32 사용성: '돈' 탭 이름을 '가계부'로(사장님·현장은 '장부'), 안쪽 '분석' 탭은 '통계'. 안내, 기능 위치, 도움말, 설정 찾기도 같이.",2 (1.32.0),완료,,"AppRoot.kt TopLevel.labelFor, core WorkKit.moneyTab, MoneyScreen.kt, FeatureNamesU132Test"
+UX132-02,1.32 사용성: 근무·급여 맨 위 '○월 예상 급여' 카드와 고치기 칩(기본급·수당·근무시간·월급날·정산·회사 규칙)으로 급여 화면의 그 자리로 바로 가요.,2 (1.32.0),완료,,"StatsScreen.kt PayEntryCard, ui/pay/PayTabs.kt PayFocus, Routes.pay(calendar, focus)"
+UX132-03,"1.32 사용성: 급여 화면을 결과·내 급여 값·회사 규칙·도구 네 탭으로 나누고, 회사 규칙 편집기는 자주 쓰는 묶음만 펼쳐요.",2 (1.32.0),완료,,"PayScreen.kt PayResult, PayTabs.kt, CompanyRulesEditor.kt FoldSection"
+UX132-04,"1.32 사용성: 근무·급여와 가계부 맨 위 🔍 찾기, 초성 검색.",2 (1.32.0),완료,,"SettingsLinks.kt GlobalSearchButton, SettingsSearch.kt SearchText.initials, SettingsSearchTest.initialsAndTextSize"
+UX132-05,1.32 사용성: 글자 크기 다섯 단계를 처음 시작할 때(업데이트한 휴대폰은 한 번 묻기)와 설정 › 화면과 글자에서 골라요. 레이아웃은 그 배율을 따라요.,2 (1.32.0),완료,,"Theme.kt TextSize, TextSizeRows.kt, FirstStyleScreen.kt, MainActivity.kt"
+UX132-06,"1.32 사용성: 기본은 촘촘하게(카드 사이 8dp, 카드 안 12dp), 끄면 넉넉하게.",2 (1.32.0),완료,,"Theme.kt Spacing/LocalSpacing, Components.kt SectionCard"
+UX132-07,"1.32 사용성: 한 번만 뜨는 한 줄 안내, 기능 목록 경로 이름을 화면 글자와 맞추기, 1.32 새 기능 25개 기능 목록·찾기·도움말 등록, 사용성 조사·적용 문서.",2 (1.32.0),완료,,"guide/OnceTip.kt, FeatureRegistry.kt, FeatureNamesU132Test, 계획/1.32-사용성-적용.md"
+UX132-08,1.32 사용성 다음: 숫자를 길게 누르면 '어떻게 나왔나 + 고치기' 시트.,2 (1.33),대기,,
+UX132-09,"1.32 사용성 다음: 쉬운 화면 모드(탭 3개, 꼭 필요한 카드, 아이콘에 글자).",2 (1.33),대기,,
+UX132-10,1.32 사용성 다음: '아직 안 써 본 좋은 기능' 지도(일하는 방식별).,2 (1.33),대기,,
+UX132-11,1.32 사용성 다음: 회사 규칙 편집기의 칸 단위 이동과 강조.,2 (1.33),대기,,
+UX132-12,1.32 사용성 다음: 넓은 화면에서 급여 화면 두 칸 배치.,2 (1.33),대기,,
+UX132-13,"1.32 사용성 다음: '말로 고치기' 한 줄(기본급 320만 원, 월급날 25일).",2 (1.33),대기,,
+UX132-14,1.32 사용성 다음: 메모·달력 탭 위에도 찾기 단추.,2 (1.33),대기,,
+UX132-15,1.32 사용성 다음: 큰 글자에서 제목 글자 배율 상한(1.6).,2 (1.33),대기,,
+QA132-01,"1.32 요청: 전체 시험(core, 앱, api, 워치, 서버, 관리자 화면), lint, 화면 지문, 새 기능 시험.",2 (1.32.0),대기,,
+QA132-02,"1.32 요청: 문서(WhatsNew, HANDOFF, tracker, 기능 목록·설정 찾기·도움말), 새 설정의 백업 왕복, play-data-safety, 처리방침 영향.",2 (1.32.0),대기,,
+QA132-03,"1.32 요청: 서명한 APK·AAB·워치 AAB, 서버 파일, 해야 할 일, 남은 일, 출시노트, 동작 확인 체크리스트.",2 (1.32.0),대기,,
+DOM-01,"1.32 요청: 도메인 설정법 문서(구입, Worker 경로, 엣지 캐시, 앱 주소 판, 옛 주소 유지).",2 (1.32.0),완료,,release/1.32.0/도메인-설정-안내.md (프로젝트 파일)
+LEDX-12,"1.32 조사 대조(가계부 조사): 가맹점 이름 다듬기: 표시 이름 별칭, 잡음 토큰, 해외 `*` 규칙.",2 (1.32.0),완료,,LedgerEntrySheet.kt MerchantNames.kt Money.kt PaymentParser.kt LedgerAudit132Test.kt
+LEDX-13,1.32 조사 대조(가계부 조사): 결제 경로(페이)와 가게·결제수단을 나눠 적기.,2 (1.32.0),완료,,MoneyRepository.kt LedgerChecks.kt MerchantNames.kt PaymentParser.kt LedgerAudit132Test.kt
+LEDX-14,1.32 조사 대조(가계부 조사): 카드값 출금을 예상 청구액과 맞춰 차이 보여 주기.,2 (1.32.0),완료,,MoneyRepository.kt LedgerChecks.kt LedgerAudit132Test.kt
+LEDX-15,"1.32 조사 대조(가계부 조사): 이체 짝 맞추기용 ""내 이름""(휴대폰에만).",2 (1.32.0),완료,,AppContainer.kt AutoRecordPrefs.kt MoneyRepository.kt LedgerChecksUi.kt LedgerAudit132Test.kt
+LEDX-16,"1.32 조사 대조(가계부 조사): 부분취소 뒤 남은 금액, 원 결제 없는 환불은 ""환불 받은 돈""으로 두고 골라 연결.",2 (1.32.0),완료,,MoneyRepository.kt FeatureLinks.kt LedgerChecksUi.kt LedgerEntrySheet.kt LedgerAudit132Test.kt
+LEDX-17,"1.32 조사 대조(가계부 조사): 할부 청구 기준 보기(달마다 펼침, 유이자 직접), 남은 잔액.",2 (1.32.0),완료,,BackupManager.kt FeatureLinks.kt LedgerChecksUi.kt LedgerEntrySheet.kt LedgerAudit132Test.kt
+LEDX-18,1.32 조사 대조(가계부 조사): 해외결제 수수료율과 내 환율 정하기.,2 (1.32.0),완료,,AppContainer.kt AutoRecordPrefs.kt MoneyRepository.kt LedgerChecksUi.kt LedgerAudit132Test.kt TaxAudit132Test.kt
+LEDX-19,1.32 조사 대조(가계부 조사): 체크/신용 판정과 한 번 확인.,2 (1.32.0),완료,,AutoRecordPrefs.kt LedgerChecksUi.kt MoneyScreen.kt FitTable.kt LedgerAudit132Test.kt
+LEDX-20,1.32 조사 대조(가계부 조사): 페이 충전·포인트 전환을 이체로.,2 (1.32.0),완료,,MoneyRepository.kt PaymentParser.kt LedgerAudit132Test.kt
+LEDX-21,"1.32 조사 대조(가계부 조사): 분류 배우기에 요일·근무·결제 경로 특징, 30건 문턱.",2 (1.32.0),완료,,AppContainer.kt MoneyRepository.kt MoneyScreen.kt LedgerSmarts.kt LedgerAudit132Test.kt
+LEDX-22,1.32 조사 대조(가계부 조사): 기록·문의·충돌 기록에 금액·가게가 없음을 시험으로 지키기.,2 (1.32.0),완료,,release-checklist.md LedgerPrivacyTest.kt
+LEDX-23,1.32 조사 대조(가계부 조사): 달력 칸 지출 히트맵.,2 (1.32.0),완료,,SettingsRepository.kt CalendarLayout.kt CalendarScreen.kt MonthGrid.kt LedgerAudit132Test.kt
+LEDX-24,1.32 조사 대조(가계부 조사): 가게 이름 사전을 서버 → 휴대폰 서명 파일로 받기(올리는 것 없음).,2 (1.32.0),완료,,RemoteFilesStore.kt MerchantNames.kt RemoteFile.kt MerchantDictionary132Test.kt / 서버 remote/v1/merchants.json은 운영 키로 서명(.sig2)해야 받아짐: 사용자가-해야-할-일
+TAXP-12,"1.32 조사 대조(가계부 조사): 연말정산 자녀 카드 한도, 남은 달 행동 제안.",2 (1.32.0),완료,,PayYearCards.kt YearEndPreview.kt TaxAudit132Test.kt
+TAXP-13,1.32 조사 대조(가계부 조사): 홈택스 미리보기 숫자 넣기.,2 (1.32.0),완료,,PayYearCards.kt YearEndPreview.kt TaxAudit132Test.kt
+TAXP-14,1.32 조사 대조(가계부 조사): 현금 매출 현금영수증 발행 체크.,2 (1.32.0),완료,,BackupManager.kt DayCloseDialog.kt TaxPlusCards.kt Money.kt TaxAudit132Test.kt
+TAXP-15,1.32 조사 대조(가계부 조사): 카드 매출 수수료율 입력과 예상 입금.,2 (1.32.0),완료,,TaxPlusCards.kt ShopMoneySettings.kt TaxPlus.kt TaxAudit132Test.kt
+PROX-01,"1.32 조사 대조(가계부 조사): 하루 이용권 ""오늘 열린 것"".",2 (1.32.0),완료,,ProScreen.kt ProMoments.kt ProMomentsTest.kt
+PROX-02,1.32 조사 대조(가계부 조사): 체험 권유를 돈이 걸린 날에.,2 (1.32.0),완료,,AppContainer.kt SettingsFilesBackup.kt ProMomentStore.kt CalendarScreen.kt ProMomentStoreTest.kt ProMomentsTest.kt
+PROX-03,"1.32 조사 대조(가계부 조사): 결제 투명성(설정 맨 위 금액·다음 결제일·해지 바로 가기), 무료 회수 금지 시험.",2 (1.32.0),완료,,ProScreen.kt SettingsScreen.kt ProMomentStoreTest.kt ProMomentsTest.kt
+CALX-06,"1.32 조사 대조(공통 조사): 기간 칩 주·직접, 카드 기간 표시, 달 요약 같은 기간, 마감 구분선, 주급 요일, 끝나는 날 한 줄.",2 (1.32.0),완료,,CalendarScreen.kt CalendarSummary.kt MonthGrid.kt CompanyRulesEditor.kt StatsRangeTest.kt
+STAB-08,1.32 조사 대조(공통 조사): 수동 백업 30일 알림.,2 (1.32.0),완료,,AppContainer.kt BackupNudgeStore.kt SettingsFilesBackup.kt SettingsRepository.kt BackupNudgeTest.kt
+STAB-09,1.32 조사 대조(공통 조사): 출시 점검표에 Android vitals.,2 (1.32.0),완료,,"release-checklist.md 8장(단계적 출시마다 비정상 종료 0.5%·ANR 0.2%, 넘으면 멈춤)"
+WTYP-09,1.32 조사 대조(근무 유형별 조사): 비번 비상소집 한 번에 기록.,2 (1.32.0),완료,,DayHeader.kt WorkTypeDay.kt Callout.kt
+WTYP-10,1.32 조사 대조(근무 유형별 조사): 연간 교대 리포트(프로).,2 (1.32.0),완료,,PayReportCard.kt WorkTypeReports.kt WorkTypeAudit132Test.kt
+WTYP-11,1.32 조사 대조(근무 유형별 조사): 희망 오프와 신청 마감 알림.,2 (1.32.0),완료,,AndroidManifest.xml AppContainer.kt Receivers.kt DateNoticeAlarm.kt DateNoticesTest.kt
+WTYP-12,1.32 조사 대조(근무 유형별 조사): 전공의 한도 미리 정한 값.,2 (1.32.0),완료,,SettingsRepository.kt CalendarScreen.kt SettingsPages.kt SettingsSearch.kt ZFullBackupTest.kt WorkTypeAudit132Test.kt
+WTYP-13,"1.32 조사 대조(근무 유형별 조사): 회귀 시험 묶음(알람 기기 이전, 알림 시각, 1억+, 백업 복원).",2 (1.32.0),완료,,AlarmService.kt WorkTypeRegression132Test.kt BigAmounts132Test.kt
+WTYP-14,1.32 조사 대조(근무 유형별 조사): 회사 근태 기록 비교.,2 (1.32.0),완료,,AttendanceImportScreen.kt AttendanceCompare.kt WorkTypeAudit132Test.kt
+WTYP-15,1.32 조사 대조(근무 유형별 조사): 선택근무제 정산 기간.,2 (1.32.0),완료,,WorkTypePrefs.kt WorkTypeCards.kt SelectiveWork.kt
+WTYP-16,1.32 조사 대조(근무 유형별 조사): 지금 퇴근 알림 버튼.,2 (1.32.0),완료,,AndroidManifest.xml AppContainer.kt LeaveTimeNotice.kt Receivers.kt ZFullBackupTest.kt
+WTYP-17,1.32 조사 대조(근무 유형별 조사): 대타 주휴 제외.,2 (1.32.0),완료,,HourlyPay.kt HourlyLines.kt WorkTypeAudit132Test.kt
+WTYP-18,"1.32 조사 대조(근무 유형별 조사): 알바 2곳 무료 문구, 휴게 포함 시급.",2 (1.32.0),완료,,HourlyPay.kt HourlyLines.kt WorkTypeAudit132Test.kt
+WTYP-19,1.32 조사 대조(근무 유형별 조사): 소득 종류별 한 해 합계.,2 (1.32.0),완료,,WorkTypePrefs.kt AllCalendarsStats.kt AllCalendars.kt
+WTYP-20,1.32 조사 대조(근무 유형별 조사): 거래처·업체별 정산서 PDF(프로).,2 (1.32.0),완료,,WorkStatsCards.kt WorkTypeReports.kt WorkTypeAudit132Test.kt
+WTYP-21,1.32 조사 대조(근무 유형별 조사): 통계·가계부 연·월 바로 이동.,2 (1.32.0),완료,,CalendarScreen.kt InvestTabs.kt MoneyScreen.kt TaxCards.kt StatsScreen.kt PayScreen.kt
+WTYP-23,"1.32 조사 대조(근무 유형별 조사): 위젯 +1건·오늘 1공, 배달·공무원·자영업 위젯 줄, 대리 콜 출처별 수수료.",2 (1.32.0),완료,,CalendarBook.kt FieldDaySheet.kt FieldUnitSettings.kt PlatformDaySheet.kt WorkTypeAudit132Test.kt WorkTypeG132Test.kt
+WTYP-24,1.32 조사 대조(근무 유형별 조사): 공무원 시간외 신청/인정.,2 (1.32.0),완료,,BackupManager.kt DayExtras.kt WorkTypeCards.kt ExtraKind.kt PublicPayTableTest.kt
+WTYP-25,1.32 조사 대조(근무 유형별 조사): 직렬별 미리 정한 값(교사·군인 등).,2 (1.32.0),완료,,WorkTypeCards.kt PublicTracks.kt WorkTypeAudit132Test.kt / 군인 시간외 상한은 확인되지 않아 상한 없이 두고 부대 지침을 따르라고 안내(남은 일)
+WTYP-26,"1.32 조사 대조(근무 유형별 조사): 57시간·52시간 막대를 첫 카드와 위젯에, 10월 개정 안내.",2 (1.32.0),완료,,WorkTypeCards.kt DayWork.kt WorkTypeAudit132Test.kt DayWorkTest.kt
+WTYP-27,"1.32 조사 대조(근무 유형별 조사): 출퇴근 → 공수 자동 규칙, 자주 쓰는 공수 칩.",2 (1.32.0),완료,,CalendarBook.kt FieldDaySheet.kt FieldUnitSettings.kt FieldWork.kt WorkTypeAudit132Test.kt / 끝난 시각 규칙과 공수 칩까지. 출퇴근 자동 기록(회사 위치 하나)과 잇기는 현장이 날마다 바뀌어 맞지 않아 남은 일(1.32 남은-일.md)
+WTYP-28,1.32 조사 대조(근무 유형별 조사): 실업급여·퇴직공제 근무일 증빙 PDF(프로).,2 (1.32.0),완료,,WorkStatsCards.kt WorkTypeReports.kt WorkTypeAudit132Test.kt
+WTYP-29,"1.32 조사 대조(근무 유형별 조사): 투자 연말 손실 정리 미리 보기, 코인 12/31 기록 알림.",2 (1.32.0),완료,,AndroidManifest.xml AppContainer.kt Receivers.kt DateNoticeAlarm.kt DateNoticesTest.kt

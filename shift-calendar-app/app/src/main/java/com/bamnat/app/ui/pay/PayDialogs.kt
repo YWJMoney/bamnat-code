@@ -148,7 +148,8 @@ fun LineDetailDialog(
     )
 }
 
-private enum class ScopeKind(val label: String) { ONLY("이 달만"), FROM("이 달부터 계속"), RANGE("기간 지정") }
+// A 1.32 [FIX132-03] 모든 달 first and picked: 1.31's '이 달부터' left the months before on the old value.
+private enum class ScopeKind(val label: String) { ALL("모든 달 같게"), FROM("이 달부터 계속"), ONLY("이 달만"), RANGE("기간 지정") }
 
 /**
  * Changes a value with a scope and shows what it does to the next 12 months before applying
@@ -168,9 +169,10 @@ fun EditValueDialog(
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
     val current = timeline.on(month).value
     var value by remember { mutableStateOf<Long?>(current) }
-    var scope by remember { mutableStateOf(ScopeKind.FROM) }
+    var scope by remember { mutableStateOf(ScopeKind.ALL) }
     var until by remember { mutableStateOf(month.plusMonths(2)) }
     val editScope = when (scope) {
+        ScopeKind.ALL -> EditScope.AllMonths
         ScopeKind.ONLY -> EditScope.OnlyMonth(month)
         ScopeKind.FROM -> EditScope.FromMonth(month)
         ScopeKind.RANGE -> EditScope.Range(month, maxOf(month, until))
@@ -202,8 +204,9 @@ fun EditValueDialog(
                         RadioButton(selected = scope == k, onClick = pick)
                         Text(
                             when (k) {
+                                ScopeKind.ALL -> "모든 달 같게 (지난달·다음 달 모두, 추천)"
                                 ScopeKind.ONLY -> "${month.monthValue}월만 (다음 달부터는 원래대로)"
-                                ScopeKind.FROM -> "${month.monthValue}월부터 계속 (이후 입력값도 바뀌어요)"
+                                ScopeKind.FROM -> "${month.monthValue}월부터 계속 (오른 달처럼 그 전 달은 예전 값 그대로)"
                                 ScopeKind.RANGE -> "기간 지정"
                             },
                             style = MaterialTheme.typography.bodyMedium,

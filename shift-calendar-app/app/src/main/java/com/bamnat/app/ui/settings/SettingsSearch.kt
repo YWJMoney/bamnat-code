@@ -31,9 +31,29 @@ internal object SearchText {
      * How well [query] fits: the whole query in [title] counts most, then each word found in the title,
      * a keyword or [other] text. Half the words, at least one, must be found; 0 means no fit.
      */
+    private const val CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+
+    /** U 1.32 [UX132-04] Each 한글 syllable as its first consonant: "기본급" → "ㄱㅂㄱ". Other letters stay. */
+    fun initials(s: String): String = buildString {
+        for (c in s) append(if (c in '가'..'힣') CHO[(c - '가') / (21 * 28)] else c)
+    }
+
+    /** The query is 초성 only ("ㄱㅂㄱ"). */
+    fun isInitials(q: String): Boolean = q.length >= 2 && q.all { it in CHO }
+
     fun score(query: String, title: String, keywords: List<String>, other: String = ""): Int {
         val q = norm(query)
         if (q.isEmpty()) return 0
+        // U 1.32 [UX132-04] 초성 검색: "ㄱㅂㄱ" finds 기본급, "ㅇㄹ" 알람.
+        if (isInitials(q)) {
+            val t = initials(norm(title))
+            return when {
+                t.startsWith(q) -> 40
+                q in t -> 30
+                keywords.any { q in initials(norm(it)) } -> 20
+                else -> 0
+            }
+        }
         val t = norm(title)
         val keys = keywords.map(::norm).filter { it.isNotEmpty() }
         val o = norm(other)
@@ -95,6 +115,8 @@ data class SettingEntry(
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
 /** [SET-05] The alarm page's row that moves every shift's alarms at once. */
 internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+internal const val WATCH_ALARM_ROW = "워치에서도 울리기"
+internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 /** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 
@@ -138,6 +160,7 @@ internal object SettingsIndex {
         row(A, WAKE_CHECK_ROW, "일어났나요", "기상 확인", "다시 자요", "확실한 알람"), // [PROV-07]
         row(A, "다시 울림 간격", "스누즈", "미루기", "다시 울림"),
         row(A, "자동으로 끄기", "울리는 시간", "알람 길이"),
+        row(A, WATCH_ALARM_ROW, "워치", "워치 알람", "시계 진동", "Wear OS", "워치 진동"), // [WEAR-06] 1.31
         row(A, PHOTO_ROW, "증명 사진", "사진 미션", "사진 찍어 끄기", "욕실 거울", "기준 사진"), // [ALRM-04] O 1.23 (L)
         screen(A.title, "알람 점검", SettingsGo.DIAGNOSTICS, "알람이 안 울려요", "늦게 울려요", "원인", "진단", "점검"),
         row(N, "오늘의 흐름 보기", "잘 시간", "수면 제안", "카페인", "낮잠", "오늘 카드"),
@@ -150,15 +173,22 @@ internal object SettingsIndex {
         row(N, "근무표 점검 기준", "병원 기준", "나이트 뒤 쉬는 날", "연속 나이트", "한 달 나이트", "연속 근무", "N-O-D", "나오데", "이브데이", "점검 끄기"),
         row(N, "한 주 근무 경고", "64시간", "근무시간 경고", "주 52시간"),
         row(N, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
+        // 1.32 [WTYP-16]
+        row(N, "퇴근 시각 알림", "지금 퇴근", "퇴근 버튼", "잔업 기록", "야근 기록", "퇴근 알림"),
+        // 1.32 [WTYP-12]
+        row(N, "연속 근무 경고", "전공의", "연속 24시간", "주 80시간", "평균 72시간", "당직", "36시간"),
         row(N, "하루 브리핑", "커피", "낮잠 알림", "알림"),
         row(N, "퇴근길 안전", "운전", "졸음"),
         row(N, "잘 준비", "취침 알림", "잘 시간 알림"),
         row(N, "자는 중 표시", "자는 중", "알림창"),
         row(N, "나갈 돈·받을 돈", "고정비", "미수금", "돈 알림", "받을 돈"),
+        // D 1.32 [PAYA-05]
+        row(N, "급여 입금 비교", "월급 들어옴", "급여 알림", "입금 비교", "월급날 알림"),
         row(N, "연차 사용 촉진 알림", "연차", "휴가 알림", "연차 소멸 안내", "소멸", "사용 촉진"),
         // [LEAVE-06]
         screen(P.title, "연차", SettingsGo.PAY, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
+        row(N, "알람 뒤 오늘 카드", "오늘 카드", "알람 끈 뒤", "이번 주 시간", "52시간"), // [ALRM-16] 1.31
         row(N, "밤낮 소식", "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안", "답장 알림", "문의 답", "신고 결과",
             "받은 근무표 바뀜", "동료 근무 바뀜"), // [COMM-10][SRV-10]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
@@ -176,16 +206,28 @@ internal object SettingsIndex {
         screen("달력 › 도구", "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
         screen("달력 › 도구", "동료 근무표 받기", SettingsGo.RECEIVE, "받은 링크", "받은 근무표", "바꿔 보기", "같이 쉬는 날", "동료 달력").takeIf { share },
         screen(C.title, "달력 목록", SettingsGo.CALENDARS, "새 달력", "달력 추가", "달력 여러 개", "알바", "부업", "순서", "달력 이름"),
+        row(C, WATCH_CALENDAR_ROW, "워치 달력", "워치", "타일", "시계"), // [WEAR-04] 1.31
         row(C, "테마", "다크 모드", "어둡게", "밝게", "야간 모드", "검은 화면"),
         row(C, "휴대폰 배경색에 맞추기", "색", "배경화면", "앱 색"),
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),
         row(C, "날짜 칸 아래", "음력", "근무시간 표시", "날짜 밑"),
         row(C, "메모 보기", "달력 메모", "메모 표시"),
+        // U 1.32 [UX132-05][UX132-06] G [WTYP-07]
+        row(C, "글자 크기", "글씨", "글씨 크게", "크게", "작게", "노안", "안 보여요", "큰 글씨", "글꼴"),
+        row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
+        row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
+        row(C, "날짜 밑에 그날 쓴 돈", "지출 표시", "쓴 돈", "달력에 지출", "하루 지출"), // E 1.32 [LEDX-07]
+        row(C, "지출 히트맵", "히트맵", "많이 쓴 날", "지출 색", "소비 패턴"), // 1.32 [LEDX-23]
         row(C, "위젯에 메모 보이기", "위젯", "홈 화면", "메모 첫 줄", "위젯 메모"), // [DAILY-01]
         row(C, "메모 공유", "달력별 메모", "메모 함께 보기", "메모 따로", "공용 메모"), // [MEMO-02]
         row(C, "날짜를 누르면", "미리보기", "하루 화면", "그 주만 보기", "바로 크게"),
+        // B 1.32 [CALX-04]
+        row(C, "달력만 보기", "카드 숨기기", "달력만", "요소 끄기", "화면 단순하게", "깔끔하게"),
+        // B 1.32 [CALX-03]
+        row(C, "한 번 눌러 고르기", "한 번 눌러 선택", "두 번 눌러 열기", "잘못 눌러 열림", "고르기만"),
         row(C, "하루 화면 순서", "순서 바꾸기", "하루 화면"),
         row(D, "백업 저장", "백업", "휴대폰 바꾸기", "옮기기", "암호", "저장"),
+        row(D, "백업 안 한 지 30일 알림", "백업 알림", "마지막 백업", "백업 언제", "기록 잃어버림"), // 1.32 [STAB-08]
         row(D, "사진도 백업", "사진", "영수증 사진", "계약서 사진", "백업 크기"), // [BACK-01]
         row(D, "파일 불러오기", "복원", "백업 불러오기", "되돌리기"),
         row(D, "최근 지운 기록", "휴지통", "되돌리기", "지운 달력", "실수로 지움", "복구"), // [UNDO-01]
@@ -253,9 +295,7 @@ internal object SettingsIndex {
         screen("급여", "명세서와 맞춰 보기", SettingsGo.PAY, "맞춰 보기", "맞춰보기", "금액 비교하기", "계산 방식 찾기", "명세서 비교", "실제 입금액",
             "사진으로 회사 방식 맞추기", "명세서로 맞춰 보기"),
         screen("급여", "이것만 넣으면 정확해져요", SettingsGo.PAY, "규칙만", "명세서 없이", "시수", "월 소정근로시간", "기본급 넣기", "필수 값", "0원"),
-        // ---- 1.28 통합 [FLAG-39] AL 6장이 남긴 것: 진단 › 기능 상태 (FlagStatusCard) ----
-        screen("${A.title} › 알람 점검", com.bamnat.app.ui.diag.FLAG_SECTION, SettingsGo.DIAGNOSTICS, "켜진 기능", "언제 켜져", "왜 꺼져", "결제 언제",
-            "광고 언제", "대기 중", "남은 조건", "다크머지", "관리자 미리 보기", "시간 단위 연차"),
+        // S 1.32 [SECX-04] 1.28's 진단 › 기능 상태 row is gone with the card (no developer words such as 다크머지 in search).
     )
 
     /** The best fits for [query], best first. */

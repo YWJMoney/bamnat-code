@@ -31,6 +31,10 @@ object ProCatalog {
         "money.takeHome" to "TAX_FORECAST",
         "money.payRecords" to "TAX_FORECAST",
         "money.bizTax" to "TAX_FORECAST",
+        // 1.32 조사 대조: 리포트 묶음(PAY_REPORT)의 새 PDF들.
+        "shift.yearReport" to "PAY_REPORT",
+        "field.statementPdf" to "PAY_REPORT",
+        "field.daysProof" to "PAY_REPORT",
     )
 
     fun isPro(id: String): Boolean = id in tiers

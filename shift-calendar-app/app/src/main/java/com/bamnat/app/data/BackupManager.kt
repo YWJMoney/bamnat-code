@@ -122,7 +122,7 @@ class BackupManager(
                     // [PAYX-18] Version 19; only when set.
                     .apply { if (x.compLeave) put("comp", true) }
                     // [PAYX-30] Version 20; only when set.
-                    .putOpt("sub", x.substituteEpochDay))
+                    .putOpt("sub", x.substituteEpochDay).putOpt("approved", x.approvedMinutes)) // [WTYP-24] Version 22.
             }
         })
         // [LEAVE-01] The 연차 원장's stored rows (version 19). Uses stay on the days above.
@@ -155,7 +155,9 @@ class BackupManager(
                     .putOpt("account", e.accountId).putOpt("toAccount", e.toAccountId).putOpt("fixedId", e.fixedId)
                     .putOpt("memo", e.memo.ifEmpty { null }).putOpt("tags", e.tags.ifEmpty { null })
                     .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 })
-                    .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null }))
+                    .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null })
+                    // [LEDX-17] Version 22.
+                    .putOpt("instRate", e.installmentRate.takeIf { it > 0 }))
             }
         })
         into.put("jobs", JSONArray().apply {
@@ -173,7 +175,8 @@ class BackupManager(
                 put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)
                     // [SHOP-01][SHOP-02][SHOP-03] Version 17.
                     .put("card", d.card).put("cash", d.cash).put("transfer", d.transfer).put("delivery", d.delivery)
-                    .putOpt("counted", d.cashCounted).put("settled", d.cardSettled))
+                    .putOpt("counted", d.cashCounted).put("settled", d.cardSettled)
+                    .putOpt("cashReceipt", d.cashReceipt.takeIf { it > 0 })) // [TAXP-14] Version 22.
             }
         })
         // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
@@ -361,6 +364,44 @@ class BackupManager(
     }
 
     /**
+     * C 1.32 [STAB-06] 573: the file 백업 저장 just wrote, read back from where it went and opened as a restore would
+     * (with [password] when it has one), every photo's sum checked, then let go. Its own folder, so nothing waiting for
+     * a restore is touched. Throws [BackupException] when it does not open.
+     */
+    suspend fun verifyFile(input: java.io.InputStream, password: CharArray?) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val dir = java.io.File(staging ?: throw BackupException("백업 파일을 읽을 수 없어요"), "../backup-verify").canonicalFile
+        try {
+            dir.deleteRecursively(); dir.mkdirs()
+            val buffered = java.io.BufferedInputStream(input, 64 * 1024)
+            if (password == null) {
+                BackupArchive.read(buffered, java.io.File(dir, "photos"))
+                return@withContext
+            }
+            val line = java.io.ByteArrayOutputStream().also { b ->
+                while (true) { val c = buffered.read(); if (c < 0) throw BackupException("백업 파일이 손상됐어요"); if (c == '\n'.code) break; b.write(c) }
+            }.toByteArray().decodeToString()
+            val o = runCatching { JSONObject(line) }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
+            val dec = Base64.getDecoder()
+            val key = BackupCrypto.deriveKey(password, dec.decode(o.getString("salt")), o.getInt("iter"))
+            val zip = java.io.File(dir, "opened.zip")
+            try {
+                zip.outputStream().use { out -> BackupCrypto.decrypt(buffered, key, dec.decode(o.getString("iv")), out) }
+            } catch (e: BackupCrypto.WrongPassword) {
+                throw BackupException("백업 파일이 손상됐어요")
+            } finally {
+                key.fill(0)
+            }
+            zip.inputStream().use { BackupArchive.read(it, java.io.File(dir, "photos")) }
+        } catch (e: BackupException) {
+            throw e
+        } catch (e: Exception) {
+            throw BackupException("백업 파일이 손상됐어요")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
      * [PROV-03][REL-15] 자동 백업's check that the file it wrote opens: the bytes read back, opened with [key],
      * every sum checked. Its own folder, so a file waiting for a restore is left alone.
      */
@@ -453,7 +494,7 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
@@ -474,7 +515,8 @@ class BackupManager(
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
                 .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
-                .put("todayShiftNotice", s.todayShiftNotice)
+                .put("todayShiftNotice", s.todayShiftNotice).put("afterAlarmCard", s.afterAlarmCard) // [ALRM-16] 1.31
+                .put("watchAlarm", s.watchAlarm).put("watchCalendar", s.watchCalendar) // [WEAR-04][WEAR-06] 1.31
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
@@ -482,7 +524,9 @@ class BackupManager(
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
                 // [FLAG-16] 1.28 AL: the 3.2 extra yes, like 사용 통계's own (null: not asked yet).
-                .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL),
+                .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL)
+                // [STAT-08] 1.31: whether that yes named 조회 시간.
+                .put("usageStatsLookup", s.usageStatsLookup),
         )
         return root
     }
@@ -602,6 +646,7 @@ class BackupManager(
                 coveredShiftTypeId = if (o.has("covered") && !o.isNull("covered")) o.getLong("covered") else null,
                 needsReview = o.optBoolean("review"), position = o.optInt("pos"), compLeave = o.optBoolean("comp"),
                 substituteEpochDay = if (o.has("sub") && !o.isNull("sub")) o.getLong("sub") else null,
+                approvedMinutes = o.optIntOrNull("approved"),
             )
         }
         val leave = from.optJSONArray("leave")?.objects()?.mapNotNull { o ->
@@ -678,6 +723,7 @@ class BackupManager(
                 accountId = o.optLongOrNull("account"), toAccountId = o.optLongOrNull("toAccount"), memo = o.optString("memo"),
                 tags = o.optString("tags"), parts = o.optString("parts"), installments = o.optInt("installments", 1).coerceIn(1, 60),
                 fixedId = o.optLongOrNull("fixedId"), proof = o.optString("proof"), receipt = o.optString("receipt"),
+                installmentRate = o.optDouble("instRate", 0.0).takeIf { !it.isNaN() }?.coerceIn(0.0, com.bamnat.core.money.MoneyEntry.MAX_INSTALLMENT_RATE) ?: 0.0,
             )
         }
         val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
@@ -730,6 +776,7 @@ class BackupManager(
                 o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"),
                 card = o.optLong("card"), cash = o.optLong("cash"), transfer = o.optLong("transfer"), delivery = o.optLong("delivery"),
                 cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
+                cashReceipt = o.optLong("cashReceipt").coerceAtLeast(0),
             )
         }
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
@@ -907,6 +954,19 @@ class BackupManager(
                     phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView)
                         .let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
                     showDayCard = o.optBoolean("dayCard", o.optString("phoneDayView") == PhoneDayView.PREVIEW.name),
+                    tapSelectFirst = o.optBoolean("tapFirst", false),
+                    textAsked = o.optBoolean("textAsked", s.textAsked),
+                    compact = o.optBoolean("compact", s.compact),
+                    textStep = o.optInt("textStep", s.textStep),
+                    clock12 = o.optBoolean("clock12", s.clock12),
+                    spendInCells = o.optBoolean("spendInCells", s.spendInCells),
+                    spendHeat = o.optBoolean("spendHeat", s.spendHeat),
+                    backupNudge = o.optBoolean("backupNudge", s.backupNudge),
+                    leaveTimeNotice = o.optBoolean("leaveTimeNotice", s.leaveTimeNotice),
+                    stretchLimitHours = o.optInt("stretchLimit", s.stretchLimitHours).coerceIn(0, 48),
+                    payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
+                    calendarOnly = o.optBoolean("calendarOnly", false),
+                    statsByPayPeriod = o.optBoolean("statsPayPeriod", false),
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),
@@ -939,6 +999,9 @@ class BackupManager(
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
                     bedtimeNotice = o.optBoolean("bedtimeNotice", s.bedtimeNotice),
                     todayShiftNotice = o.optBoolean("todayShiftNotice", s.todayShiftNotice),
+                    afterAlarmCard = o.optBoolean("afterAlarmCard", s.afterAlarmCard),
+                    watchAlarm = o.optString("watchAlarm", s.watchAlarm).takeIf { it in AppSettings.WATCH_ALARMS } ?: s.watchAlarm,
+                    watchCalendar = o.optString("watchCalendar", s.watchCalendar).ifBlank { s.watchCalendar },
                     sleepingNotice = o.optBoolean("sleepingNotice", s.sleepingNotice),
                     quietWhileAsleep = o.optBoolean("quietWhileAsleep", s.quietWhileAsleep),
                     moneyNotices = o.optBoolean("moneyNotices", s.moneyNotices),
@@ -952,6 +1015,8 @@ class BackupManager(
                     plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
                     // [FLAG-16] 1.28: a backup without it keeps what this phone has.
                     usageStatsMore = if (!o.has("usageStatsMore")) s.usageStatsMore else if (o.isNull("usageStatsMore")) null else o.optBoolean("usageStatsMore"),
+                    // [STAT-08] 1.31: a backup from before keeps what this phone has.
+                    usageStatsLookup = o.optBoolean("usageStatsLookup", s.usageStatsLookup),
                     // Old records came back with the backup; offer to fix them again.
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )

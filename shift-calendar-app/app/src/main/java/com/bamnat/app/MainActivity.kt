@@ -102,9 +102,21 @@ class MainActivity : ComponentActivity() {
             )
             onDispose { }
         }
-        BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
+        // G 1.32 [WTYP-07] 오전/오후로 보기: every time on screen is written by Fmt, so the root is drawn again on a change.
+        com.bamnat.app.ui.Fmt.clock12 = settings.clock12
+        BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact) {
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
-                AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
+                androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
+                // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
+                // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.
+                val updated = androidx.compose.runtime.remember {
+                    val info = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
+                    info != null && info.firstInstallTime != info.lastUpdateTime
+                }
+                val consent by container.consentStore.seen.collectAsStateWithLifecycle()
+                if (!settings.textAsked && updated && consent != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                    onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
+                    onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // [LOCK-01] Over the app, so the screen the user was on is still there after.
                 val locked by AppLock.locked.collectAsStateWithLifecycle()
                 if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
@@ -146,6 +158,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // C 1.32 [STAB-07] The freeze watch runs only while the app is on screen.
+        com.bamnat.app.diag.MainStall.start(this)
+        // G 1.32 [WTYP-01] No banner right after the app comes to the front.
+        com.bamnat.app.ui.components.AdMoment.opened(com.bamnat.core.time.Today.instant())
         // [PERF-09] Before the container is whole this part waits for it ([open] runs it).
         shown.value?.let(::started)
     }
@@ -174,6 +190,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        com.bamnat.app.diag.MainStall.stop()
         // [PERF-15] A screen gone before its month showed gives no startup sample.
         if (!isChangingConfigurations) StartupTrace.activityStopped()
         if (!startDone) return

@@ -43,6 +43,8 @@
 //                                 [INVITE-02][INVITE-03]; GET /api/invites/rules the rules, with no install [INVITE-08]
 // GET/POST /api/admin/settings/invite [INVITE-08] the developer app's 친구 초대 rules
 // GET    /api/companies/all       SP1 1.30 [SPD-06] every company with its 대표 주기 line, ETag (If-None-Match → 304)
+//                                  R131 1.31 [SPD-21] ?part=names: names only (an ETag that changes with names only)
+// GET    /api/companies/counts    R131 1.31 [SPD-21] each company's counts and 대표 주기 line, with its own ETag
 //                                 SP1 1.30 [SPD-05] GET /api/companies/:id?with=room,talk adds a member's room and room talk;
 //                                 [SPD-08] POST /api/members?with=page adds the page; [SPD-02] header x-d1-bookmark both ways
 // GET    /i/:code                 [INVITE-02] the invite link: on to the Play listing with the code as install referrer
@@ -68,12 +70,23 @@ import { spDbKey, spSession, spBookmarked, spNoCache, spKept, spPairChunks, spIn
 import { readItemShare, itemShareCanon, itemShareText, withProposalTexts, withoutFixedAmounts, ITEM_FIXED_POLICY } from "./plaza-items.js";
 // BD 1.30 [PLZD-04][PLZD-05][PLZD-07] 광장 중복·변별: a version of another shape held, a day's versions from one phone, what folded versions change.
 import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.js";
+// R131 1.31 [ADMX-16] 두 번째 확인 (TOTP).
+import { totpSecret, totpCheck, totpUri } from "./totp.js";
+// R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
+import { DAY, HOUR } from "./units.js";
+import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
+import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
-const LIMITS = {
+export const LIMITS = {
   reportBytes: 32 * 1024,
   reportsPerDay: 10,
-  reportsPerNetworkDay: 30,
+  // R131 1.31 [LIM-01] A network is many phones (a plant's Wi-Fi, a carrier's shared address): ten times a phone's own limit.
+  reportsPerNetworkDay: 300,
   votesPerHour: 60,
+  votesPerNetworkHour: 600,
   company: 40,
   dept: 20,
   note: 500,
@@ -82,7 +95,7 @@ const LIMITS = {
   // [COMM-06] A post in the talk on a rule set.
   post: 500,
   postsPerDay: 20,
-  postsPerNetworkDay: 60,
+  postsPerNetworkDay: 600,
   flagsToHide: 3,
   muteDays: 30,
   hiddenPostDays: 90,
@@ -133,8 +146,6 @@ const ANSWERS = {
   unclear: "내용만으로는 알기 어려워요. 예시를 더 넣어 다시 보내 주세요",
 };
 
-const HOUR = 60 * 60 * 1000;
-const DAY = 24 * HOUR;
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
 /**
@@ -183,7 +194,7 @@ const PRESETS = {
   support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", takedown: "none", ops: "view", metrics: "none", shares: "view", audit: "none", flags: "view", flagOff: "none" } },
   viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", takedown: "none", ops: "view", metrics: "view", shares: "view", audit: "view", flags: "view", flagOff: "none" } },
 };
-const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
+export const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
 export default {
   async fetch(request, env, ctx) {
@@ -198,7 +209,9 @@ export default {
     } finally {
       if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
       // AN 1.28 [ADMUX-37] Anything sent may change what the developer app's badges count.
-      if (request.method !== "GET" && request.method !== "HEAD") badgesChanged();
+      // R131 1.31 [ADMX-13] Only writes to what the badges count: before 1.31 every write did (usage counts, votes, joins too), so
+      // with phones busy the badges' 15-second memo was read again on nearly every ask.
+      if (request.method !== "GET" && request.method !== "HEAD" && BADGE_WRITES.some((r) => r.test(new URL(request.url).pathname))) badgesChanged();
     }
   },
   // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
@@ -208,7 +221,8 @@ export default {
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
       .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
       // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
-      .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).finally(badgesChanged)); // AX 1.30 [ADMX-10]
+      .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).then(() => digestTick(env, Date.now())) // R131 1.31 [ADMX-14]
+      .finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
 
@@ -265,7 +279,7 @@ export async function prune(env, now) {
  * [ADMIN-11][ADMIN-12] Deletes the questions [where] picks with everything hung on them: messages, marks,
  * admins' notes and links to a 개발사항 (the item stays). The questions themselves go last.
  */
-function dropInquiries(env, where, ...params) {
+export function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
     ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
@@ -316,7 +330,24 @@ async function route(request, env, ctx) {
     await ready(env);
     return spBookmarked(await once(request, env, path, () => routeOnce(request, env, url, ctx)), s);
   }
-  return spBookmarked(await routeOnce(request, env, url, ctx), s);
+  return spBookmarked(await tagged(request, path, await routeOnce(request, env, url, ctx)), s);
+}
+
+/**
+ * R131 1.31 [SPD-23] The reads a phone opens again and again (a company's page, the plaza's lists, a talk, the room, 내 활동, the
+ * terms) answer with an ETag of their words, and with 304 and no body when the phone already has them: before 1.31
+ * only the whole list of companies did, and reading a kept page again took all of it again.
+ */
+const TAGGED_READS = [/^\/api\/companies\/[A-Za-z0-9]{12}(\/room|\/history)?$/, /^\/api\/companies\/([A-Za-z0-9]{12}|style-[a-z]+)\/setups\/(room|[0-9a-f]{16})\/posts$/,
+  /^\/api\/(board|plazas|terms|activity|members)$/, /^\/api\/inquiries\/public$/];
+
+async function tagged(request, path, res) {
+  if (request.method !== "GET" || res.status !== 200 || res.headers.get("etag") || !TAGGED_READS.some((r) => r.test(path))) return res;
+  if (!/json/.test(res.headers.get("content-type") ?? "")) return res;
+  const text = await res.text();
+  const headers = new Headers(res.headers);
+  headers.set("etag", await spEtag(text));
+  return spNotModified(request, new Response(text, { status: 200, headers }));
 }
 
 /**
@@ -324,13 +355,14 @@ async function route(request, env, ctx) {
  * Worker's memory: a write per read would spend D1's daily writes (100,000) faster than a bot spends its
  * reads. Approximate across Workers, enough to stop one caller from emptying the day's reads.
  */
-const PUBLIC_PER_HOUR = 600;
+const PUBLIC_PER_HOUR = 3000; // R131 1.31 [LIM-01] 600 before: a plant's Wi-Fi is many phones
 const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/history$/,
   /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/,
   // AS 1.29 [SRCH-04]
   /^\/api\/companies\/top$/,
   // SP1 1.30 [SPD-06]
   /^\/api\/companies\/all$/,
+  /^\/api\/companies\/counts$/, // R131 1.31 [SPD-21]
   // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
   /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
 const publicReads = new Map();
@@ -349,7 +381,7 @@ async function publicAllowed(request, env, path) {
 async function routeOnce(request, env, url, ctx) {
   const path = url.pathname;
   const method = request.method;
-  if (!(await publicAllowed(request, env, path))) return json({ error: "rate_limited" }, 429);
+  if (!(await publicAllowed(request, env, path))) return tooMany("network", HOUR - (Date.now() % HOUR));
   if (path === "/" || path === "/robots.txt") {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
@@ -360,6 +392,8 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/admin/health" && method === "GET") return json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
+  // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
+  if (path === "/api/hello" && (method === "GET" || method === "HEAD")) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
   // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
@@ -368,7 +402,10 @@ async function routeOnce(request, env, url, ctx) {
   // SP1 1.30 시작 [SPD-06] Every company in one list with an ETag (304 when the app has it); [SPD-04] the same public answers
   // kept a short while at the edge and in this Worker; [SPD-05] ?with=room,talk: a member's page, room and room talk at once.
   if (path === "/api/companies/all" && method === "GET") {
-    return spNotModified(request, await edgeCached(request, ctx, ALL_EDGE_SECONDS, () => allCompanies(env)));
+    return spNotModified(request, await edgeCached(request, ctx, ALL_EDGE_SECONDS, () => allCompanies(env, url)));
+  }
+  if (path === "/api/companies/counts" && method === "GET") {
+    return spNotModified(request, await edgeCached(request, ctx, ALL_EDGE_SECONDS, () => companyCounts(env)));
   }
   if (path === "/api/terms" && method === "GET") {
     // One read, not kept in memory (the developer's new settings show at once); the edge keeps it ten minutes where it can.
@@ -615,6 +652,9 @@ const SCHEMA = [
   // [FLAG-30] Per day and app version: how many phones that sent their flag list had each flag on ('*': how many sent one).
   "CREATE TABLE IF NOT EXISTS usage_flags (day TEXT NOT NULL, app TEXT NOT NULL, flag TEXT NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app, flag))",
   // AM 1.28 끝
+  // R131 1.31 [ADMX-16] An admin's authenticator secret (on once a code was confirmed) and the last step used (no code twice).
+  `CREATE TABLE IF NOT EXISTS admin_totp (admin TEXT PRIMARY KEY, secret TEXT NOT NULL, on_at INTEGER, used_step INTEGER NOT NULL DEFAULT -1,
+    created_at INTEGER NOT NULL)`,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -680,6 +720,8 @@ const COLUMNS = [
   "ALTER TABLE inquiries ADD COLUMN copied_at INTEGER",
   "ALTER TABLE inquiries ADD COLUMN copied_by TEXT",
   // AT 1.29 끝
+  // S 1.32 [SECX-01] Flags an approved admin phone sees before everyone (미리 보기), as a JSON array the developer app sets.
+  "ALTER TABLE admin_devices ADD COLUMN previews TEXT",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -717,12 +759,36 @@ const LATE_INDEXES = [
   // SP1 1.30 끝
 ];
 
+/**
+ * R131 1.31 [SRCH-16] The words a company is found by (its name, its reading, its other names and theirs) in an FTS5 trigram
+ * index, so a search of three letters or more reads the companies holding them instead of every company. Kept by triggers;
+ * filled whole once each time the schema changes. A database without FTS5 skips this and searches as before.
+ */
+const FTS_SQL = [
+  `CREATE VIRTUAL TABLE IF NOT EXISTS company_fts USING fts5(cid UNINDEXED, src UNINDEXED, words, tokenize = "trigram")`,
+  `CREATE TRIGGER IF NOT EXISTS company_fts_ci AFTER INSERT ON companies BEGIN
+    INSERT INTO company_fts (cid, src, words) VALUES (new.id, 'c', new.norm || ' ' || new.said); END`,
+  `CREATE TRIGGER IF NOT EXISTS company_fts_cu AFTER UPDATE OF norm, said ON companies BEGIN
+    DELETE FROM company_fts WHERE cid = old.id AND src = 'c';
+    INSERT INTO company_fts (cid, src, words) VALUES (new.id, 'c', new.norm || ' ' || new.said); END`,
+  `CREATE TRIGGER IF NOT EXISTS company_fts_cd AFTER DELETE ON companies BEGIN DELETE FROM company_fts WHERE cid = old.id; END`,
+  `CREATE TRIGGER IF NOT EXISTS company_fts_ai AFTER INSERT ON aliases BEGIN
+    INSERT INTO company_fts (cid, src, words) VALUES (new.company_id, 'a:' || new.norm, new.norm || ' ' || new.said); END`,
+  `CREATE TRIGGER IF NOT EXISTS company_fts_au AFTER UPDATE ON aliases BEGIN
+    DELETE FROM company_fts WHERE src = 'a:' || old.norm;
+    INSERT INTO company_fts (cid, src, words) VALUES (new.company_id, 'a:' || new.norm, new.norm || ' ' || new.said); END`,
+  `CREATE TRIGGER IF NOT EXISTS company_fts_ad AFTER DELETE ON aliases BEGIN DELETE FROM company_fts WHERE src = 'a:' || old.norm; END`,
+  "DELETE FROM company_fts",
+  "INSERT INTO company_fts (cid, src, words) SELECT id, 'c', norm || ' ' || said FROM companies",
+  "INSERT INTO company_fts (cid, src, words) SELECT company_id, 'a:' || norm, norm || ' ' || said FROM aliases",
+];
+
 const schemas = new WeakMap();
 
 /** Changes whenever SCHEMA, COLUMNS or LATE_INDEXES does, so a server made by this code skips making tables again. */
 const SCHEMA_VERSION = (() => {
   let h = 5381;
-  for (const c of [...SCHEMA, ...COLUMNS, ...LATE_INDEXES].join("\n")) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  for (const c of [...SCHEMA, ...COLUMNS, ...LATE_INDEXES, ...FTS_SQL].join("\n")) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
   return h.toString(36);
 })();
 
@@ -747,6 +813,12 @@ function ready(env) {
         }
       }
       await env.DB.batch(LATE_INDEXES.map((sql) => env.DB.prepare(sql)));
+      // R131 1.31 [SRCH-16] Without FTS5 (or its trigram words) the search reads through, as before 1.31.
+      try {
+        await env.DB.batch(FTS_SQL.map((sql) => env.DB.prepare(sql)));
+      } catch (e) {
+        console.error(`company_fts: ${e?.message ?? e}`);
+      }
       await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
     // AM 1.28 [FLAG-23] the 1.27 switches become flag overrides, once per database.
     }).then(() => migrateFlags(env)).catch((e) => {
@@ -758,11 +830,11 @@ function ready(env) {
   return done;
 }
 
-const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
-const one = (env, sql, ...params) => stmt(env, sql, ...params).first();
-const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all()).results;
-const run = async (env, sql, ...params) => meterAdd(env, await stmt(env, sql, ...params).run());
-const batch = async (env, list) => {
+export const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
+export const one = (env, sql, ...params) => stmt(env, sql, ...params).first();
+export const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all()).results;
+export const run = async (env, sql, ...params) => meterAdd(env, await stmt(env, sql, ...params).run());
+export const batch = async (env, list) => {
   const results = await env.DB.batch(list);
   for (const r of results) meterAdd(env, r);
   return results;
@@ -825,7 +897,7 @@ function readSettings(rows) {
 // (INSERT OR IGNORE) and read it back, two D1 calls and a write before the answer.
 const salts = new WeakMap();
 
-async function salt(env) {
+export async function salt(env) {
   if (typeof env.RATE_SALT === "string" && env.RATE_SALT) return env.RATE_SALT;
   // Until the secret is set the server keeps a salt of its own; the developer app asks for RATE_SALT.
   const key = spDbKey(env);
@@ -844,7 +916,7 @@ async function salt(env) {
 }
 
 /** Salted hashes of the caller's address: this hour's, last hour's, the day's and one for logins. */
-async function network(request, env, now) {
+export async function network(request, env, now) {
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   const s = await salt(env);
   const hash = async (what) => (await sha256(`${s}|${what}|${ip}`)).slice(0, 32);
@@ -858,27 +930,49 @@ async function network(request, env, now) {
 }
 
 /** Counts one use against [limit] for the window; false once the window's uses are spent. */
-async function allow(env, key, limit, windowMs, now) {
+export async function allow(env, key, limit, windowMs, now) {
+  return (await limitCheck(env, key, limit, windowMs, now)).ok;
+}
+
+/** [allow] with when its window ends, for the answer's Retry-After (R131 1.31 [LIM-02]). */
+async function limitCheck(env, key, limit, windowMs, now) {
   const row = await one(env, `INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2)
     ON CONFLICT (key) DO UPDATE SET
       count = CASE WHEN expires <= ?3 THEN 1 ELSE count + 1 END,
       expires = CASE WHEN expires <= ?3 THEN ?2 ELSE expires END
-    RETURNING count`, key, now + windowMs, now);
+    RETURNING count, expires`, key, now + windowMs, now);
   meterAdd(env, null, 1);
-  return row.count <= limit;
+  return { ok: row.count <= limit, expires: Number(row.expires ?? now + windowMs) };
 }
 
-const deviceId = (v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null);
+/**
+ * R131 1.31 [LIM-01][LIM-02] The phone's own limit first, then its network's (ten times larger: a plant's Wi-Fi or a carrier's
+ * shared address is many phones), counted together in one round. Null when all let it through, else the 429 that says which
+ * ([why] "device" or "network", the first that refused) and when it opens again, so the app can say so and what to do.
+ */
+export async function overLimit(env, now, checks) {
+  const got = await Promise.all(checks.map(([, key, limit, windowMs]) => limitCheck(env, key, limit, windowMs, now)));
+  const i = got.findIndex((r) => !r.ok);
+  return i < 0 ? null : tooMany(checks[i][0], got[i].expires - now);
+}
+
+/** R131 1.31 [LIM-02] A 429 with why and when: `retryAfter` seconds in the body and the Retry-After header. */
+export function tooMany(why, ms) {
+  const retryAfter = Math.max(1, Math.ceil(ms / 1000));
+  return json({ error: "rate_limited", why, retryAfter }, 429, { "retry-after": String(retryAfter) });
+}
+
+export const deviceId = (v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null);
 
 /** An install as the server keeps it: a hash of the app's random id, never the id itself. */
-const deviceHash = async (id) => (await sha256(`device|${id}`)).slice(0, 40);
+export const deviceHash = async (id) => (await sha256(`device|${id}`)).slice(0, 40);
 
 /**
  * [ADMIN-04] Who did it comes from the request: admin() puts the signed-in admin on env.actor. [ADMIN-17]
  * Only the name is written (the email stays on the admins screen), with the id for 내가 한 일. Old rows
  * are cleaned by prune() each hour, not here, so a change costs one statement.
  */
-async function audit(env, now, action, target, detail = "") {
+export async function audit(env, now, action, target, detail = "") {
   await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, ?, ?)", now, action, target,
     String(detail).slice(0, 300), env.actor ? actorName(env) : "", env.actor?.id ?? "");
 }
@@ -908,7 +1002,7 @@ export function personal(text) {
 
 // ---- a setup: what a report may hold ----
 
-class Refuse extends Error {
+export class Refuse extends Error {
   constructor(code, field, status = 400) {
     super(code);
     this.code = code;
@@ -917,7 +1011,7 @@ class Refuse extends Error {
   }
 }
 
-const refuse = (code, field) => {
+export const refuse = (code, field) => {
   throw new Refuse(code, field);
 };
 
@@ -934,9 +1028,9 @@ const LEGACY_KINDS = { OVERTIME: "1", SPECIAL: "2", COVER: "3" };
 const SCOPE = /^(all|over:\d{1,4}|law|night|window:([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d|holiday|rest)$/;
 const TIMING = /^(B,([01]\d|2[0-3]):[0-5]\d,([01]\d|2[0-3]):[0-5]\d,\d{1,3},(-|([01]\d|2[0-3]):[0-5]\d)|A,\d{1,4}|P,\d{1,4}|S,(-|\d{1,6}(;\d{1,6})*))$/;
 
-const given = (v) => v !== undefined && v !== null;
+export const given = (v) => v !== undefined && v !== null;
 const object = (v, field) => (v && typeof v === "object" && !Array.isArray(v) ? v : refuse("setup", field));
-const list = (v, max, field) => (Array.isArray(v) && v.length <= max ? v : refuse("setup", field));
+export const list = (v, max, field) => (Array.isArray(v) && v.length <= max ? v : refuse("setup", field));
 const bool = (v, field) => (typeof v === "boolean" ? v : refuse("setup", field));
 const int = (v, lo, hi, field) => (Number.isInteger(v) && v >= lo && v <= hi ? v : refuse("setup", field));
 const real = (v, lo, hi, field) => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : refuse("setup", field));
@@ -1192,7 +1286,7 @@ function premium(raw, say) {
   };
 }
 
-function item(raw, names, say) {
+export function item(raw, names, say) {
   const i = object(raw, "items");
   const a = i.amount;
   // Allowance names and how they are paid travel; what anyone is paid does not.
@@ -1496,6 +1590,16 @@ async function terms(env) {
   return { threshold: adoptPoints, rewardMonths, agree: adoptAgree, firstMonths };
 }
 
+/**
+ * R131 1.31 [SRCH-16] The FTS5 words that pick the candidates of a search, or null when either word is two letters (not in a
+ * trigram index) and the search reads through. [ftsBroken] remembers a database without the index.
+ */
+function ftsTerms(q, said) {
+  if ([...q].length < 3 || [...said].length === 2) return null;
+  return [q, said].filter((t) => [...t].length >= 3).map((t) => `"${t.replace(/"/g, '""')}"`).join(" OR ");
+}
+const ftsBroken = new WeakSet();
+
 async function search(env, url) {
   const raw = String(url.searchParams.get("q") ?? "");
   if (isChoseong(raw)) return json({ companies: await searchChoseong(env, raw.replace(/\s/g, "").slice(0, 20)) }, 200, SEARCH_CACHE);
@@ -1507,18 +1611,36 @@ async function search(env, url) {
   const said = spoken(raw).slice(0, 60);
   const saidLike = said.length >= 2 ? esc(said) : like;
   // Names from before 1.29 get their reading beside the search, not before it.
-  const [rows] = await Promise.all([all(env, `
-    SELECT c.id, c.name, c.norm, c.said,
+  // R131 1.31 [SRCH-15] Ranked before the limit, in the statement: before 1.31 any 200 matches were read and ranked after, so
+  // with more than 200 names holding the words the very company typed could be left out. [SRCH-16] FTS5 finds the candidates
+  // when the words are three letters or more (searchIds); shorter ones are read through as before.
+  const terms = ftsBroken.has(spDbKey(env)) ? null : ftsTerms(q, said);
+  const read = (fts) => all(env, `
+    SELECT * FROM (SELECT c.id, c.name, c.norm, c.said,
       (SELECT a.name FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\')
         ORDER BY a.norm = ?2 DESC LIMIT 1) AS alias,
       EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm = ?2) AS alias_exact,
       (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
       (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
     FROM companies c
-    WHERE c.hidden = 0 AND c.merged_into IS NULL
+    WHERE c.hidden = 0 AND c.merged_into IS NULL ${fts ? "AND c.id IN (SELECT cid FROM company_fts WHERE company_fts MATCH ?5)" : ""}
       AND (c.norm LIKE ?1 ESCAPE '\\' OR c.said LIKE ?3 ESCAPE '\\'
-        OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\')))
-    LIMIT 200`, like, q, saidLike), fillNames(env)]);
+        OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND (a.norm LIKE ?1 ESCAPE '\\' OR a.said LIKE ?3 ESCAPE '\\'))))
+    WHERE adopted > 0 OR pending > 0
+    ORDER BY (norm = ?2 OR said = ?6 OR alias_exact = 1) DESC, adopted > 0 DESC, (norm LIKE ?4 ESCAPE '\\' OR said LIKE ?7 ESCAPE '\\') DESC,
+      length(name), name
+    LIMIT 60`, like, q, saidLike, `${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`, fts, said,
+    said.length >= 2 ? `${said.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : "\u0000");
+  const viaIndex = async () => {
+    if (!terms) return read(null);
+    try {
+      return await read(terms);
+    } catch {
+      ftsBroken.add(spDbKey(env));
+      return read(null);
+    }
+  };
+  const [rows] = await Promise.all([viaIndex(), fillNames(env)]);
   const exact = (c) => (c.norm === q || c.said === said || c.alias_exact === 1 ? 1 : 0);
   const starts = (c) => (c.norm.startsWith(q) || (said.length >= 2 && String(c.said ?? "").startsWith(said)) ? 1 : 0);
   const companies = rows
@@ -1731,7 +1853,7 @@ const shared = (text, name) => ({ ...JSON.parse(text), company: name });
 // per calendar, another only 30 days later, two per phone, and a phone reading too much gets the shifts only for the
 // day. Everyone else, and apps before 1.26, still get shift times and their order, with "급여 방식 있음 · 확인 n명".
 
-const MEMBER = { perPhone: 2, waitDays: 30, readsPerDay: 120, joinsPerNetworkDay: 30, stablePhones: 3, stableDays: 30 };
+const MEMBER = { perPhone: 2, waitDays: 30, readsPerDay: 120, joinsPerDay: 10, joinsPerNetworkDay: 300, stablePhones: 3, stableDays: 30 };
 const CAL = /^[A-Za-z0-9_-]{1,24}$/;
 /** What a calendar is called here: the app's own id for it, or "app" from an app that does not say. */
 const calOf = (v) => (typeof v === "string" && CAL.test(v) ? v : "app");
@@ -1759,14 +1881,15 @@ async function viewer(request, env, companyId) {
   const dev = await deviceHash(id);
   const row = await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0 LIMIT 1", dev, companyId);
   if (!row) return { dev, member: false };
-  return memberRead(dev);
+  // R131 1.31 [SPD-24] A read the app makes ahead of time or again in the background (X-Read-Ahead: 1) does not count.
+  return memberRead(dev, request?.headers.get("x-read-ahead") === "1");
 }
 
 /** A member's read of pay, counted in memory: past [MEMBER.readsPerDay] a day it reads as anyone else ([limited]). */
-function memberRead(dev) {
+function memberRead(dev, ahead = false) {
   const day = Math.floor(Date.now() / DAY);
   const key = `${dev}|${day}`;
-  const n = (memberReads.get(key) ?? 0) + 1;
+  const n = (memberReads.get(key) ?? 0) + (ahead ? 0 : 1);
   memberReads.set(key, n);
   if (memberReads.size > 20000) for (const k of memberReads.keys()) if (!k.endsWith(`|${day}`)) memberReads.delete(k);
   return n > MEMBER.readsPerDay ? { dev, member: false, limited: true } : { dev, member: true };
@@ -1831,7 +1954,8 @@ async function members(request, env) {
     return json({ joined: false, company: c.id });
   }
   const net = await network(request, env, now);
-  if (!(await allow(env, `join|${net.day}`, MEMBER.joinsPerNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const limitHit = await overLimit(env, now, [["device", `join|${dev}`, MEMBER.joinsPerDay, DAY], ["network", `join|${net.day}`, MEMBER.joinsPerNetworkDay, DAY]]);
+  if (limitHit) return limitHit;
   const r = await joinCompany(env, dev, c.id, calOf(body.cal), now);
   // SP1 1.30 [SPD-08] With ?with=page (or "with": "page"), the company's page as the member now reads it: 이 설정 쓰기 and 이 급여
   // 방식 쓰기 go on without asking for the page again. An app before 1.30 asks for neither and gets the answer as before.
@@ -1853,7 +1977,7 @@ async function room(request, env, companyId) {
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   if (!who.dev) refuse("device", "device");
-  if (!who.member) return json({ error: who.limited ? "rate_limited" : "member" }, who.limited ? 429 : 403);
+  if (!who.member) return who.limited ? tooMany("reads", DAY - (Date.now() % DAY)) : json({ error: "member" }, 403);
   const r = await roomData(env, c, who, Date.now());
   return json(r.body, r.status);
 }
@@ -1972,7 +2096,7 @@ const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : 
 
 export const ROOM = "room";
 export const STYLE_ROOMS = { "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
-const ROOM_LIMITS = { perDay: 10, perNetworkDay: 30, shown: 100 };
+const ROOM_LIMITS = { perDay: 10, perNetworkDay: 300, shown: 100 };
 /** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
 export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:field|shop|hourly|invest))\/setups\/room\/posts$/;
@@ -2013,10 +2137,9 @@ async function roomPost(request, env, body) {
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   const net = await network(request, env, now);
-  if (!(await allow(env, `room|${dev}`, ROOM_LIMITS.perDay, DAY, now)) ||
-      !(await allow(env, `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY, now))) {
-    return json({ error: "rate_limited" }, 429);
-  }
+  const limitHit = await overLimit(env, now, [["device", `room|${dev}`, ROOM_LIMITS.perDay, DAY],
+    ["network", `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY]]);
+  if (limitHit) return limitHit;
   let parent = null;
   if (given(body.parent)) {
     const top = typeof body.parent === "string" ? await one(env, "SELECT id, parent FROM posts WHERE id = ? AND company_id = ? AND grp = ?",
@@ -2539,32 +2662,70 @@ export const ALL_EDGE_SECONDS = 300;
 const ALL_CACHE = { "cache-control": `public, max-age=${ALL_EDGE_SECONDS}, stale-while-revalidate=3600` };
 const allMemo = new WeakMap();
 
-async function allCompanies(env) {
-  const key = spDbKey(env);
-  let kept = allMemo.get(key);
-  // Not made afresh for no-cache: reading every company is the one costly read here, and five minutes old is fresh enough.
-  if (!kept || Date.now() - kept.at >= ALL_EDGE_SECONDS * 1000) {
-    const [rows, aliasRows] = await Promise.all([
-      all(env, `SELECT c.id, c.name, c.norm, c.said, c.cho,
-          (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
-          (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
-        FROM companies c WHERE c.hidden = 0 AND c.merged_into IS NULL AND c.kind != 'topic'`),
-      all(env, `SELECT a.company_id, a.name FROM aliases a JOIN companies c ON c.id = a.company_id
-        WHERE c.hidden = 0 AND c.merged_into IS NULL ORDER BY a.name`),
-      fillNames(env),
-    ]);
-    const named = (v, made) => (v && v !== "-" ? v : made);
-    const companies = rows.filter((c) => c.adopted > 0 || c.pending > 0).map((c) => ({ id: c.id, name: c.name,
-      aliases: aliasRows.filter((a) => a.company_id === c.id).map((a) => a.name),
-      said: named(c.said, spoken(c.name)), cho: named(c.cho, choseong(c.norm)),
-      adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
-    const lines = await searchLeads(env, companies.map((c) => c.id), true);
-    for (const c of companies) Object.assign(c, lines.get(c.id) ?? { users: 0 });
-    companies.sort((a, b) => b.users - a.users || a.name.localeCompare(b.name, "ko"));
-    kept = { at: Date.now(), companies, etag: await spEtag(JSON.stringify(companies)) };
-    allMemo.set(key, kept);
+async function allCompanies(env, url = null) {
+  const kept = await allKept(env);
+  // R131 1.31 [SPD-21] ?part=names: what a company is found by, without its counts, so its ETag changes only with names (the
+  // counts change with every new user and before 1.31 made the phone take the whole list again every ten minutes).
+  if (url?.searchParams.get("part") === "names") {
+    return json({ companies: kept.names, n: kept.names.length, at: iso(kept.at), part: "names" }, 200, { ...ALL_CACHE, etag: kept.namesTag });
   }
   return json({ companies: kept.companies, n: kept.companies.length, at: iso(kept.at) }, 200, { ...ALL_CACHE, etag: kept.etag });
+}
+
+/** R131 1.31 [SPD-21] Each company's counts and 대표 주기 line: the part of /all that changes, small and with its own ETag. */
+async function companyCounts(env) {
+  const kept = await allKept(env);
+  return json({ counts: kept.counts, at: iso(kept.at) }, 200, { ...ALL_CACHE, etag: kept.countsTag });
+}
+
+/**
+ * Every company the app can find, kept [ALL_EDGE_SECONDS] in this Worker. R131 1.31 [SPD-22] Requests that come while it is
+ * being read wait for that one read (before 1.31 each started its own, the one costly read here), and other names are put
+ * with their company through a map (before, the whole list of other names was gone over once per company).
+ */
+function allKept(env) {
+  const key = spDbKey(env);
+  const kept = allMemo.get(key);
+  if (kept && (kept.making || Date.now() - kept.at < ALL_EDGE_SECONDS * 1000)) return kept.making ?? Promise.resolve(kept);
+  const making = makeAll(env).then((made) => {
+    allMemo.set(key, made);
+    return made;
+  }, (e) => {
+    if (kept) allMemo.set(key, kept);
+    else allMemo.delete(key);
+    throw e;
+  });
+  allMemo.set(key, { ...(kept ?? {}), at: kept?.at ?? 0, making });
+  return making;
+}
+
+async function makeAll(env) {
+  // Not made afresh for no-cache: reading every company is the one costly read here, and five minutes old is fresh enough.
+  const [rows, aliasRows] = await Promise.all([
+    all(env, `SELECT c.id, c.name, c.norm, c.said, c.cho,
+        (SELECT COUNT(*) FROM rules r WHERE r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0) AS adopted,
+        (SELECT COUNT(DISTINCT p.grp) FROM reports p WHERE p.company_id = c.id AND p.status = 'pending' AND ${pgShown("p")}) AS pending
+      FROM companies c WHERE c.hidden = 0 AND c.merged_into IS NULL AND c.kind != 'topic'`),
+    all(env, `SELECT a.company_id, a.name FROM aliases a JOIN companies c ON c.id = a.company_id
+      WHERE c.hidden = 0 AND c.merged_into IS NULL ORDER BY a.name`),
+    fillNames(env),
+  ]);
+  const named = (v, made) => (v && v !== "-" ? v : made);
+  const others = new Map();
+  for (const a of aliasRows) others.set(a.company_id, [...(others.get(a.company_id) ?? []), a.name]);
+  const companies = rows.filter((c) => c.adopted > 0 || c.pending > 0).map((c) => ({ id: c.id, name: c.name,
+    aliases: others.get(c.id) ?? [],
+    said: named(c.said, spoken(c.name)), cho: named(c.cho, choseong(c.norm)),
+    adopted: c.adopted, pending: c.pending, ...(c.adopted === 0 ? { first: true } : {}) }));
+  const lines = await searchLeads(env, companies.map((c) => c.id), true);
+  for (const c of companies) Object.assign(c, lines.get(c.id) ?? { users: 0 });
+  companies.sort((a, b) => b.users - a.users || a.name.localeCompare(b.name, "ko"));
+  const names = companies.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, said: c.said, cho: c.cho }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const counts = companies.map(({ id, name, aliases, said, cho, ...rest }) => ({ id, ...rest }));
+  const [etag, namesTag, countsTag] = await Promise.all([spEtag(JSON.stringify(companies)), spEtag(JSON.stringify(names)),
+    spEtag(JSON.stringify(counts))]);
+  return { at: Date.now(), companies, etag, names, namesTag, counts, countsTag };
 }
 // SP1 1.30 끝
 
@@ -2608,10 +2769,9 @@ async function report(request, env) {
   if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(r.setup);
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
-  if (!(await allow(env, `report|${dev}`, LIMITS.reportsPerDay, DAY, now)) ||
-      !(await allow(env, `report|${net.day}`, LIMITS.reportsPerNetworkDay, DAY, now))) {
-    return json({ error: "rate_limited" }, 429);
-  }
+  const limitHit = await overLimit(env, now, [["device", `report|${dev}`, LIMITS.reportsPerDay, DAY],
+    ["network", `report|${net.day}`, LIMITS.reportsPerNetworkDay, DAY]]);
+  if (limitHit) return limitHit;
   const c = await companyFor(env, r.company, now, r);
   const grp = (await sha256(`${r.deptNorm}|${await fingerprint(r.setup)}`)).slice(0, 16);
   await forgetNetworks(env, now);
@@ -2952,7 +3112,8 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
-    stmt(env, "DELETE FROM counters WHERE key IN (?, ?)", `report|${dev}`, `post|${dev}`),
+    // R131 1.31 [LIM-01] every limit counted for this install (its hash is in the key), not only reports and posts.
+    stmt(env, "DELETE FROM counters WHERE instr(key, ?) > 0", dev),
     // [COMM-06] Their posts and their 신고 go too; a post they flagged counts one fewer.
     stmt(env, "DELETE FROM posts WHERE device = ?", dev),
     stmt(env, "UPDATE posts SET flags = flags - 1 WHERE id IN (SELECT post_id FROM post_flags WHERE device = ?)", dev),
@@ -2991,14 +3152,17 @@ async function vote(request, env) {
   const verified = body.ok && body.verified === true && proofCounts(proof);
   const now = Date.now();
   const net = await network(request, env, now);
-  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  // R131 1.31 [LIM-01] the phone's own hour first, then its network's (many phones).
+  const limitHit = await overLimit(env, now, [["device", `vote|${await deviceHash(device)}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
+    ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
+  if (limitHit) return limitHit;
   const c = await follow(env, body.company);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   const grp = body.setup;
   const rule = await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp);
   // [FIN130-12] A version held for its shape is not on the plaza: nothing to vote on until the developer places it.
   const pending = rule ? null : await one(env, `SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND ${pgShown()} LIMIT 1`, c.id, grp);
-  if (!rule && !pending) return json({ error: "not_found" }, 404);
+  if (!rule && !pending) return voteGone(env, c.id, grp);
   const dev = await deviceHash(device);
   await forgetNetworks(env, now);
   const cluster = await clusterFor(env, c.id, net);
@@ -3013,10 +3177,28 @@ async function vote(request, env) {
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
 }
 
+/**
+ * A 1.32 [FIX132-02] (사용자 2026-10-28 "'달라요' → 알려주기가 인터넷 연결 안 됨"): 1.31 answered every version not open to
+ * votes with not_found, and the app said "인터넷에 연결되지 않았어요" for any failure. Now the answer says why: replaced by a
+ * newer version of the same department (with the version in use, so the app can offer it), taken down, or held for review.
+ */
+async function voteGone(env, company, grp) {
+  const old = await one(env, "SELECT dept_norm, withdrawn, superseded FROM rules WHERE company_id = ? AND grp = ? ORDER BY adopted_at DESC LIMIT 1", company, grp);
+  if (old?.superseded && !old.withdrawn) {
+    const now = await one(env, "SELECT grp, version FROM rules WHERE company_id = ? AND dept_norm = ? AND withdrawn = 0 AND superseded = 0 ORDER BY adopted_at DESC LIMIT 1",
+      company, old.dept_norm);
+    return json({ error: "superseded", current: now ? { setup: now.grp, version: now.version } : null }, 409);
+  }
+  if (old?.withdrawn) return json({ error: "withdrawn" }, 410);
+  const held = await one(env, "SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' LIMIT 1", company, grp);
+  if (held) return json({ error: "held" }, 409);
+  return json({ error: "not_found" }, 404);
+}
+
 // ---- rule sets everyone can see, vote on and talk about [COMM-06][COMM-07] ----
 
 /** Why a post is flagged, as the app offers it. */
-const FLAGS = {
+export const FLAGS = {
   abuse: "욕설·비방",
   personal: "개인 정보가 있어요",
   spam: "광고·도배",
@@ -3273,10 +3455,9 @@ async function post(request, env) {
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
-  if (!(await allow(env, `post|${dev}`, LIMITS.postsPerDay, DAY, now)) ||
-      !(await allow(env, `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY, now))) {
-    return json({ error: "rate_limited" }, 429);
-  }
+  const limitHit = await overLimit(env, now, [["device", `post|${dev}`, LIMITS.postsPerDay, DAY],
+    ["network", `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY]]);
+  if (limitHit) return limitHit;
   // [PLZ-05] A reply goes under a post of the same talk; replies to replies go under the same first post.
   let parent = null;
   if (given(body.parent)) {
@@ -3371,7 +3552,10 @@ async function postVote(request, env, id) {
   if (body.ok !== null && typeof body.ok !== "boolean") refuse("ok", "ok");
   const now = Date.now();
   const net = await network(request, env, now);
-  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  // R131 1.31 [LIM-01] the phone's own hour first, then its network's (many phones).
+  const limitHit = await overLimit(env, now, [["device", `vote|${await deviceHash(device)}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
+    ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
+  if (limitHit) return limitHit;
   const dev = await deviceHash(device);
   const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
   if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
@@ -3417,7 +3601,10 @@ async function useRule(request, env, on) {
   const dev = await deviceHash(device);
   const now = Date.now();
   const net = await network(request, env, now);
-  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  // R131 1.31 [LIM-01] the phone's own hour first, then its network's (many phones).
+  const limitHit = await overLimit(env, now, [["device", `vote|${await deviceHash(device)}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
+    ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
+  if (limitHit) return limitHit;
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   if (on) await run(env, "INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", c.id, body.setup, dev, now);
@@ -3448,7 +3635,8 @@ async function setNick(request, env) {
   if (why) refuse(why, "nick");
   const now = Date.now();
   const net = await network(request, env, now);
-  if (!(await allow(env, `nick|${net.day}`, 20, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const limitHit = await overLimit(env, now, [["device", `nick|${dev}`, 10, DAY], ["network", `nick|${net.day}`, 200, DAY]]);
+  if (limitHit) return limitHit;
   const taken = await one(env, "SELECT device FROM nicks WHERE norm = ?", norm);
   if (taken && taken.device !== dev) return json({ error: "taken", field: "nick" }, 409);
   await run(env, `INSERT INTO nicks (device, nick, norm, at) VALUES (?, ?, ?, ?)
@@ -3483,7 +3671,7 @@ async function plazas(env) {
  * (people, an amendment, the developer), when, what changed from the one before, and whether it was
  * taken down. Adopted versions never disappear; this is how the rule grew.
  */
-async function history(env, companyId, url, request) {
+export async function history(env, companyId, url, request) {
   // SP1 1.30 [SPD-09] Where and who together, then the department and its versions (with each one's senders and proposed post)
   // together: two rounds, not two per version.
   const grp = url.searchParams.get("setup") ?? "";
@@ -3630,10 +3818,9 @@ async function addRate(request, env) {
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   const net = await network(request, env, now);
-  if (!(await allow(env, `rate|${dev}`, LIMITS.reportsPerDay, DAY, now)) ||
-      !(await allow(env, `rate|${net.day}`, LIMITS.reportsPerNetworkDay, DAY, now))) {
-    return json({ error: "rate_limited" }, 429);
-  }
+  const limitHit = await overLimit(env, now, [["device", `rate|${dev}`, LIMITS.reportsPerDay, DAY],
+    ["network", `rate|${net.day}`, LIMITS.reportsPerNetworkDay, DAY]]);
+  if (limitHit) return limitHit;
   const norm = normName(r.trade);
   const before = await one(env, `SELECT id, status FROM rates WHERE device = ? AND job = ? AND region = ? AND trade_norm = ? AND unit = ? AND year = ?
     AND status IN ('pending', 'adopted', 'review')`, dev, r.job, r.region, norm, r.unit, r.year);
@@ -3662,7 +3849,10 @@ async function rateVote(request, env, id) {
   if (body.ok !== null && typeof body.ok !== "boolean") refuse("ok", "ok");
   const now = Date.now();
   const net = await network(request, env, now);
-  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  // R131 1.31 [LIM-01] the phone's own hour first, then its network's (many phones).
+  const limitHit = await overLimit(env, now, [["device", `vote|${await deviceHash(device)}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
+    ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
+  if (limitHit) return limitHit;
   const dev = await deviceHash(device);
   const r = await one(env, "SELECT * FROM rates WHERE id = ?", id);
   if (!r || !["pending", "adopted", "review"].includes(r.status)) return json({ error: "not_found" }, 404);
@@ -3795,7 +3985,10 @@ async function flag(request, env, id) {
   const reason = Object.hasOwn(FLAGS, body.reason) ? body.reason : "abuse";
   const now = Date.now();
   const net = await network(request, env, now);
-  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  // R131 1.31 [LIM-01] the phone's own hour first, then its network's (many phones).
+  const limitHit = await overLimit(env, now, [["device", `vote|${await deviceHash(device)}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
+    ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
+  if (limitHit) return limitHit;
   const dev = await deviceHash(device);
   const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
   if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
@@ -3815,1260 +4008,6 @@ async function flag(request, env, id) {
     }
   }
   return json({ ok: true });
-}
-
-// ---- questions from the app [ADMIN-02] ----
-//
-// 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
-// answer shows in the app. Like a report it carries no amount, contact or name: those are refused, not
-// cleaned. What goes with it (app version, phone model, Android, the alarm check if the user ticks it)
-// is shown in the app before sending. Only the install's hash is kept, so only that phone can write to,
-// or delete, the thread, and a thread with nothing new for 180 days is deleted. A question sent as
-// public is also in 모두의 문의 (below), without anything that went with it.
-
-const INQUIRY = {
-  // [INQ-01] Since 1.14.1 suggestions, anything else and a company's way the app cannot set come here too.
-  kinds: ["question", "bug", "idea", "company", "other"],
-  text: 2000,
-  diag: 6000,
-  pay: 3000,
-  setup: 3000,
-  bytes: 16 * 1024,
-  perDay: 5,
-  perNetworkDay: 20,
-  messagesPerHour: 20,
-  // [INQ-04] A question waiting on an admin longer than this is 놓친 문의.
-  lateMs: DAY,
-  // Each side of a thread; a longer back and forth is better as a new question.
-  messages: 40,
-  keepMs: 180 * DAY,
-};
-
-/** What the app may send with a question, as the developer app shows it: label, field, longest. */
-const INQUIRY_INFO = [
-  ["앱", "app", 40],
-  ["기기", "model", 80],
-  ["Android", "android", 40],
-  ["알람 점검", "diag", INQUIRY.diag],
-  // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
-  ["급여 계산", "pay", INQUIRY.pay],
-  // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
-  ["회사 설정", "setup", INQUIRY.setup],
-];
-
-/** [INQ-01] A company's way names the workplace: it stays with the developer, whatever the app asks. */
-const PRIVATE_KINDS = ["company"];
-
-// ---- sorting questions without reading each one [ADMIN-02] ----
-//
-// Every question gets a topic and an urgency from its words, its kind and what came with it, worked
-// out when the list is read, so better words sort old questions too and nothing new is stored. The
-// developer filters by topic and sees the urgent ones first instead of opening each to sort it.
-
-/** Topic, label and the words that point to it; the most matched topic wins, the first on a tie. */
-// [INQ-05] The app sorts with the same table: core/ops/InquiryTopics.kt (a test keeps them alike).
-export const INQUIRY_TOPICS = [
-  ["alarm", "알람", /알람|울리|울려|울림|소리|진동|깨워|스누즈|다시\s*울/g],
-  ["pay", "급여 계산", /급여|월급|시급|일당|연봉|수당|가산|명세서|통상임금|주휴|연차|퇴직|세금|4대\s*보험|계산/g],
-  ["schedule", "근무표·달력", /근무표|달력|캘린더|교대|패턴|근무\s*유형|대근|휴무|비번|야간|주간|오프|일정|메모/g],
-  ["share", "공유", /공유|링크|상대방|가족|동기화|받은\s*사람|보낸\s*사람/g],
-  ["company", "회사 설정", /회사|부서|규칙|투표|토론|채택/g],
-  ["backup", "백업·기기 이동", /백업|복원|새\s*(폰|휴대폰|기기)|기기\s*변경|옮기|가져오기|내보내기/g],
-  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료/g],
-  ["app", "앱 동작", /멈춰|멈춤|멈추|꺼져|꺼짐|튕|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
-];
-const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
-
-/** Words that make a problem urgent: an alarm that did not ring, an app that will not open, money paid. */
-const URGENT = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
-
-/** What the list and a thread show for sorting: topic, its label and how soon it needs an answer. */
-function triage(kind, text, info) {
-  const t = String(text ?? "");
-  let topic = "etc";
-  let best = 0;
-  for (const [key, , re] of INQUIRY_TOPICS) {
-    const n = t.match(re)?.length ?? 0;
-    if (n > best) [topic, best] = [key, n];
-  }
-  // What came with it says more than any word: 계산이 이상해요 sends the pay check, the alarm form its check.
-  if (kind === "company" || info?.setup) topic = "company";
-  else if (info?.pay) topic = "pay";
-  else if (best === 0 && info?.diag) topic = "alarm";
-  const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
-  return { topic, topicName: TOPIC_NAMES[topic], urgency };
-}
-
-async function inquiries(request, env, path) {
-  const method = request.method;
-  const device = deviceId(request.headers.get("x-device"));
-  if (path === "/api/inquiries" && method === "POST") return ask(request, env);
-  if (path === "/api/inquiries/public" && method === "GET") return publicList(env, new URL(request.url).searchParams, device, request.headers.get("x-hide"));
-  const pub = path.match(/^\/api\/inquiries\/public\/([A-Za-z0-9]{22})$/);
-  if (pub && method === "GET") return publicThread(env, pub[1], device, request.headers.get("x-hide"));
-  const mark = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/(same|flag)$/);
-  if (mark && method === "POST") return inquiryMark(request, env, mark[1], mark[2]);
-  if (!device) return json({ error: "device", field: "device" }, 400);
-  const dev = await deviceHash(device);
-  if (path === "/api/inquiries" && method === "GET") {
-    const rows = await all(env, `SELECT i.*, (SELECT COUNT(*) FROM inquiry_photos p WHERE p.inquiry_id = i.id) AS photos
-      FROM inquiries i WHERE i.device = ? ORDER BY i.updated_at DESC LIMIT 50`, dev);
-    const out = [];
-    for (const r of rows) out.push(await inquiryView(env, r));
-    return json({ inquiries: out });
-  }
-  const rated = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/rating$/);
-  if (rated && method === "POST") return inquiryRating(request, env, rated[1], dev);
-  // [SRV-06] A photo sent with one's own question; someone else's reads as missing.
-  const photo = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
-  if (photo && method === "GET") {
-    const owner = await one(env, "SELECT device FROM inquiries WHERE id = ?", photo[1]);
-    return owner && owner.device === dev ? photoFile(env, photo[1], Number(photo[2])) : json({ error: "not_found" }, 404);
-  }
-  const m = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})(\/messages)?$/);
-  if (!m) return json({ error: "not_found" }, 404);
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
-  // Someone else's question reads as missing, so ids cannot be tried out.
-  if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
-  if (!m[2] && method === "GET") return json(await inquiryView(env, row));
-  if (!m[2] && method === "DELETE") {
-    await batch(env, dropInquiries(env, "id = ?", row.id));
-    return new Response(null, { status: 204 });
-  }
-  if (m[2] && method === "POST") {
-    const body = await readJson(request, INQUIRY.bytes);
-    const text = inquiryText(body.text);
-    const now = Date.now();
-    if (!(await allow(env, `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
-    const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
-    if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
-    await batch(env, [
-      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
-      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
-    ]);
-    return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)), 201);
-  }
-  return json({ error: "not_found" }, 404);
-}
-
-/** [INQ-03] 도움이 됐어요 (good: true) or 아쉬워요 (false) on the answers to one's own question; null takes it back. */
-async function inquiryRating(request, env, id, dev) {
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", id);
-  if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
-  const body = await readJson(request, 1024);
-  if (body.good !== true && body.good !== false && body.good !== null) refuse("good", "good");
-  const answered = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin'", id);
-  if (!answered.n) return json({ error: "not_answered", field: "good" }, 409);
-  await run(env, "UPDATE inquiries SET rating = ? WHERE id = ?", body.good === null ? null : body.good ? 1 : -1, id);
-  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)));
-}
-
-/** A new question: what the user typed, and what they agreed to send with it. */
-async function ask(request, env) {
-  // [SRV-06] Room for two photos as base64 next to the words.
-  const body = await readJson(request, INQUIRY.bytes + PHOTO.max * Math.ceil((PHOTO.bytes * 4) / 3) + 1024);
-  if (body.v !== 1) refuse("version", "v");
-  const device = deviceId(body.device);
-  if (!device) refuse("device", "device");
-  if (!INQUIRY.kinds.includes(body.kind)) refuse("kind", "kind");
-  const text = inquiryText(body.text);
-  const info = inquiryInfo(body.info);
-  const now = Date.now();
-  const net = await network(request, env, now);
-  const dev = await deviceHash(device);
-  if (!(await allow(env, `inquiry|${dev}`, INQUIRY.perDay, DAY, now)) ||
-      !(await allow(env, `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY, now))) {
-    return json({ error: "rate_limited" }, 429);
-  }
-  const photos = await readPhotos(env, body.photos);
-  const id = randomId(22);
-  await batch(env, [
-    // [SRV-06] Photos stay with the developer even on a public question.
-    ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
-      id, i + 1, data.base64, data.bytes, now)),
-    // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
-    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now),
-    stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
-    // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all.
-    ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
-    stmt(env, "DELETE FROM counters WHERE expires < ?", now),
-  ]);
-  // [ADMIN-19] Admins who asked for it hear of a new question (a bug or a problem counts as urgent); nothing
-  // happens without VAPID keys, and a push that fails never fails the question.
-  await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
-    title: "새 문의",
-    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식" })[body.kind] ?? "문의"} 1건`,
-    url: "/admin/#/inquiries",
-  }, now);
-  const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
-  // Photos the server could not take this time (switched off or full): the question went without them.
-  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);
-}
-
-/** What the user typed: up to 2000 characters, without an email, phone number or amount. */
-function inquiryText(v) {
-  if (typeof v !== "string") refuse("text", "text");
-  const text = v.normalize("NFC").replace(/\r\n?/g, "\n").trim();
-  if (!text || [...text].length > INQUIRY.text) refuse("text", "text");
-  const why = personal(text);
-  if (why) refuse(why, "text");
-  return text;
-}
-
-/**
- * What goes with a question, only the fields the app shows before sending. The alarm check is made by
- * the app, not typed: its times and shift names are what it is for, so only its length is checked.
- */
-function inquiryInfo(v) {
-  if (v === undefined || v === null) return {};
-  if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
-  const out = {};
-  for (const [, key, longest] of INQUIRY_INFO) {
-    const x = v[key];
-    if (x === undefined || x === null || x === "") continue;
-    if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
-    if (key !== "diag" && personal(x) === "email") refuse("info", key);
-    if ((key === "pay" || key === "setup") && personal(x)) refuse("info", key);
-    out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
-  }
-  return out;
-}
-
-const messagesOf = (env, id) => all(env, "SELECT sender, text, by, at FROM inquiry_messages WHERE inquiry_id = ? ORDER BY id", id);
-
-/** A question as the app sees it; [admin] adds what was sent with it and who answered. */
-async function inquiryView(env, row, admin = false) {
-  const messages = await messagesOf(env, row.id);
-  const view = {
-    id: row.id,
-    kind: row.kind,
-    status: row.status,
-    createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
-    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
-    public: row.public === 1,
-    same: row.same ?? 0,
-    ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
-    rating: row.rating ?? 0,
-    progress: await inquiryProgress(env, row, messages),
-    // [SRV-06] How many photos came with it; each one is read on its own address.
-    photos: row.photos ?? (await one(env, "SELECT COUNT(*) AS n FROM inquiry_photos WHERE inquiry_id = ?", row.id)).n,
-  };
-  if (!admin) return view;
-  const info = JSON.parse(row.info);
-  const context = {};
-  for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  const [reasons, notes, items] = (await batch(env, [
-    stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
-      GROUP BY reason ORDER BY n DESC, reason`, row.id),
-    stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
-    stmt(env, `SELECT d.id, d.title, d.status, (SELECT COUNT(*) FROM dev_links x JOIN inquiries xi ON xi.id = x.inquiry_id WHERE x.item_id = d.id) AS links FROM dev_links l
-      JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = ? ORDER BY l.at`, row.id),
-  ])).map((r) => r.results);
-  return {
-    ...view, appVersion: info.app ?? null, context, waitingHours: row.status === "open" ? Math.floor((Date.now() - row.updated_at) / HOUR) : null, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
-    flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
-    // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
-    assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
-    notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
-    ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
-  };
-}
-
-/**
- * [INQ-02] Where a question stands, as the asker sees it: 접수 (received), 확인 중 (an admin took it),
- * 답변 (answered), 개발 목록 (in a 개발사항 being made) and 반영 (in a finished one, with its version). The
- * items themselves stay the admins': only the stage and the version go to the app.
- */
-async function inquiryProgress(env, row, messages) {
-  const items = await all(env, `SELECT d.status, d.released_in FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
-    WHERE l.inquiry_id = ?`, row.id);
-  const done = items.filter((d) => d.status === "done");
-  if (done.length) return { stage: "released", version: done.map((d) => d.released_in).find(Boolean) ?? null };
-  if (items.some((d) => d.status === "todo" || d.status === "doing")) return { stage: items.some((d) => d.status === "doing") ? "building" : "planned" };
-  const answered = messages.some((m) => m.sender === "admin");
-  const last = messages[messages.length - 1];
-  if (answered && last?.sender === "admin") return { stage: "answered" };
-  if (row.assignee) return { stage: "checking" };
-  return { stage: answered ? "checking" : "received" };
-}
-
-/** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
-function actorName(env) {
-  const a = env.actor;
-  const name = typeof a === "string" ? a : a && typeof a === "object" ? a.name : null;
-  return typeof name === "string" && name ? name.slice(0, 40) : "admin";
-}
-
-/** /api/admin/inquiries: the list, one thread, an answer and open or closed. */
-// ---- 모두의 문의 [ADMIN-02] ----
-//
-// A question sent from an app that says so on its form is public: anyone with the app reads it and the
-// developer's answers, says 나도 그래요 or 신고s it. The writer is never named, and what went with the
-// question (app, phone, alarm check, pay check) stays with the developer. A question sent before was
-// promised to the developer only, so it stays private. Three 신고 hide it until the developer looks.
-
-/** Why a public question is hidden, as its writer's app shows it. */
-const INQUIRY_HIDE = {
-  abuse: "욕설이나 비방이 있어요",
-  personal: "개인 정보가 있어요",
-  spam: "광고나 도배예요",
-  flags: "신고가 모여 개발자가 확인하고 있어요",
-};
-
-const PUBLIC_PAGE = 30;
-const PUBLIC_CACHE_MS = 60 * 1000;
-const publicRows = new WeakMap();
-
-/** What anyone sees of a public question in the list; [author] the writer sealed for 이 사람 글 안 보기 (COMM-11). */
-function publicItem(r, me, sameByMe, author) {
-  return {
-    id: r.id,
-    kind: r.kind,
-    status: r.status,
-    preview: [...(r.first ?? "")].slice(0, 160).join(""),
-    answers: r.answers,
-    same: r.same,
-    sameByMe: sameByMe.has(r.id),
-    mine: r.device === me,
-    ...(author ? { author } : {}),
-    createdAt: iso(r.created_at),
-    updatedAt: iso(r.updated_at),
-    ...triage(r.kind, r.first, JSON.parse(r.info)),
-  };
-}
-
-/** 모두의 문의, newest activity first or most 나도 그래요 first, one topic or all, a page at a time. */
-async function publicList(env, params, device, hide) {
-  const me = device ? await deviceHash(device) : null;
-  const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
-  const order = params.get("sort") === "same" ? "i.same DESC, i.updated_at DESC" : "i.updated_at DESC";
-  const offset = Math.max(0, Math.min(Number.parseInt(params.get("after") ?? "0", 10) || 0, 1000));
-  // [SRV-08] The 500 rows behind 모두의 문의 are read once a minute per Worker and order, not on every look.
-  const cacheKey = `${order}`;
-  const cached = publicRows.get(env.DB ?? env)?.get(cacheKey);
-  const rows = cached && cached.until > Date.now() ? cached.rows : await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
-      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
-      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
-    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
-  if (!cached || cached.rows !== rows) {
-    if (!publicRows.has(env.DB ?? env)) publicRows.set(env.DB ?? env, new Map());
-    publicRows.get(env.DB ?? env).set(cacheKey, { rows, until: Date.now() + PUBLIC_CACHE_MS });
-  }
-  const sameByMe = new Set(me ? (await all(env, "SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same'", me))
-    .map((r) => r.inquiry_id) : []);
-  // [COMM-11] 이 사람 글 안 보기 in 모두의 문의 too, the same way as the plaza: the server keeps no list.
-  const key = await authorKey(env);
-  const hidden = await hiddenAuthors(key, hide);
-  const kept = rows.filter((r) => r.device === me || !hidden.has(r.device));
-  const hiddenByYou = rows.length - kept.length;
-  const items = await Promise.all(kept.map(async (r) => publicItem(r, me, sameByMe, r.device === me ? null : await authorToken(key, r.device))));
-  const topics = {};
-  for (const i of items) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
-  const shown = items.filter((i) => !topic || i.topic === topic);
-  const page = shown.slice(offset, offset + PUBLIC_PAGE);
-  return json({ topics, topicNames: TOPIC_NAMES, inquiries: page, next: offset + PUBLIC_PAGE < shown.length ? offset + PUBLIC_PAGE : null,
-    ...(hiddenByYou ? { hiddenByYou } : {}) });
-}
-
-/** One public question with every message; its writer also sees it while hidden, with why. */
-async function publicThread(env, id, device, hide) {
-  const me = device ? await deviceHash(device) : null;
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1", id);
-  if (!row || (row.hidden && row.device !== me)) return json({ error: "not_found" }, 404);
-  const key = await authorKey(env);
-  if (row.device !== me && (await hiddenAuthors(key, hide)).has(row.device)) return json({ error: "hidden_by_you" }, 404);
-  const messages = await messagesOf(env, row.id);
-  const marks = me ? await all(env, "SELECT kind FROM inquiry_marks WHERE inquiry_id = ? AND device = ?", row.id, me) : [];
-  return json({
-    id: row.id,
-    kind: row.kind,
-    status: row.status,
-    same: row.same,
-    sameByMe: marks.some((m) => m.kind === "same"),
-    flaggedByMe: marks.some((m) => m.kind === "flag"),
-    mine: row.device === me,
-    ...(row.device === me ? {} : { author: await authorToken(key, row.device) }),
-    createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
-    messages: messages.map((m) => ({ from: m.sender === "user" ? "user" : "admin", text: m.text, at: iso(m.at) })),
-    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, JSON.parse(row.info)),
-    ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
-  });
-}
-
-/** 나도 그래요 (on: false takes it back) or 신고, once per install; not on one's own question. */
-async function inquiryMark(request, env, id, kind) {
-  const body = await readJson(request, 1024);
-  const device = deviceId(body.device);
-  if (!device) refuse("device", "device");
-  const now = Date.now();
-  const net = await network(request, env, now);
-  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
-  const dev = await deviceHash(device);
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL", id);
-  if (!row) return json({ error: "not_found" }, 404);
-  if (row.device === dev) return json({ error: "own" }, 400);
-  if (kind === "same") {
-    await batch(env, [
-      body.on === false
-        ? stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND device = ? AND kind = 'same'", id, dev)
-        : stmt(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'same', NULL, ?)", id, dev, now),
-      stmt(env, "UPDATE inquiries SET same = (SELECT COUNT(*) FROM inquiry_marks WHERE inquiry_id = ?1 AND kind = 'same') WHERE id = ?1", id),
-    ]);
-    const after = await one(env, "SELECT same FROM inquiries WHERE id = ?", id);
-    return json({ same: after.same, sameByMe: body.on !== false });
-  }
-  const reason = Object.hasOwn(FLAGS, body.reason) && body.reason !== "false" ? body.reason : "abuse";
-  const added = await run(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'flag', ?, ?)", id, dev, reason, now);
-  if (added.meta.changes) {
-    await run(env, `UPDATE inquiries SET flags = flags + 1,
-        hidden = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hidden END WHERE id = ?1`, id, LIMITS.flagsToHide);
-    const after = await one(env, "SELECT hidden FROM inquiries WHERE id = ?", id);
-    if (after.hidden) {
-      await audit(env, now, "inquiry_autohide", id);
-      await notifyAdmins(env, "flagged", { title: "신고로 가려진 문의", body: "신고가 쌓여 모두의 문의 하나가 가려졌어요", url: "/admin/#/inquiries" }, now);
-    }
-  }
-  return json({ ok: true });
-}
-
-async function adminInquiries(request, env, url, path, now) {
-  const method = request.method;
-  if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams, env.actor?.id ?? ""));
-  if (path === "/inquiries/bulk" && method === "POST") return inquiryBulk(request, env, now);
-  // AT 1.29 [ADMCP-01][ADMCP-03] 문의 복사: read whole (seeing is enough), then 복사함 (changing questions).
-  if (path === "/inquiries/export" && method === "GET") return json(await inquiryExport(env, url.searchParams));
-  if (path === "/inquiries/copied" && method === "POST") return inquiryCopied(request, env, now);
-  // [SRV-06] A photo sent with a question, for an admin who may read questions.
-  const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
-  if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing)?$/);
-  if (!m) return json({ error: "not_found" }, 404);
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
-  if (!row) return json({ error: "not_found" }, 404);
-  if (!m[2] && method === "GET") return json(await adminInquiryView(env, row));
-  if (method !== "POST" || !m[2]) return json({ error: "not_found" }, 404);
-  const body = await readJson(request, INQUIRY.bytes);
-  if (m[2] === "/typing") {
-    // [ADMIN-16] 답 쓰는 중: lasts 30 seconds unless sent again, so a closed tab stops showing by itself.
-    const key = `typing|${row.id}|${env.actor.id}|${actorName(env).replace(/\|/g, "")}`;
-    if (body.on === false) await run(env, "DELETE FROM counters WHERE key = ?", key);
-    else await run(env, "INSERT OR REPLACE INTO counters (key, count, expires) VALUES (?, 1, ?)", key, now + 30 * 1000);
-    return json({ ok: true });
-  }
-  if (m[2] === "/reply") {
-    await replyTo(env, row, body, now);
-  } else if (m[2] === "/assign") {
-    // [ADMIN-12] 내가 맡기, or let it go (to: null); one tap, so two admins do not answer the same question.
-    if (body.to !== "me" && body.to !== null) refuse("to", "to");
-    // Letting go is for whoever holds it, or the owner; nobody releases someone else's question.
-    if (!mayAssign(env.actor, row, body.to)) throw new Refuse("no_permission", "assignee", 403);
-    await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", body.to ? env.actor.id : null, body.to ? actorName(env) : null, row.id);
-    await audit(env, now, "inquiry_assign", row.id, body.to ? actorName(env) : "");
-  } else if (m[2] === "/notes") {
-    // [ADMIN-12] A note for the other admins: never in the app's view of the question.
-    const text = plainText(body.text, DEV.note, "text", true);
-    await run(env, "INSERT INTO inquiry_notes (inquiry_id, by, text, at) VALUES (?, ?, ?, ?)", row.id, actorName(env), text, now);
-  } else if (m[2] === "/visibility") {
-    // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
-    if (!row.public) refuse("public", "action");
-    if (body.action === "hide") {
-      const reason = Object.hasOwn(INQUIRY_HIDE, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
-      await run(env, "UPDATE inquiries SET hidden = ?, kept = 1 WHERE id = ?", reason, row.id);
-      await audit(env, now, "inquiry_hide", row.id, reason);
-    } else if (body.action === "show") {
-      await batch(env, [
-        stmt(env, "UPDATE inquiries SET hidden = NULL, kept = 1, flags = 0 WHERE id = ?", row.id),
-        stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'", row.id),
-      ]);
-      await audit(env, now, "inquiry_show", row.id);
-    } else {
-      refuse("action", "action");
-    }
-  } else {
-    if (!["open", "closed"].includes(body.status)) refuse("status", "status");
-    // Opening or closing is the developer's bookkeeping; it does not keep a thread from its 180 days.
-    await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.status, row.id);
-    await audit(env, now, "inquiry_status", row.id, body.status);
-  }
-  return json(await adminInquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)));
-}
-
-const mayAssign = (actor, row, to) => to !== null || !row.assignee || row.assignee === actor.id || actor.owner;
-
-/**
- * An admin's answer to one question. [ADMIN-15] The same words from the same admin within a minute are
- * one answer, so a double tap or a resend after a slow network does not reach the asker twice.
- * [ADMIN-16] An answer sent from a saved one counts as a use of it.
- */
-async function replyTo(env, row, body, now, audited = true) {
-  if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
-  const text = body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim();
-  const status = body.close === true ? "closed" : "answered";
-  const again = await one(env, `SELECT id FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ? AND by = ? AND at > ?
-    ORDER BY id DESC LIMIT 1`, row.id, text, actorName(env), now - 60 * 1000);
-  if (again) return false;
-  await batch(env, [
-    stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", row.id, text, actorName(env), now),
-    // [ADMIN-12] Whoever answers a question nobody took has taken it.
-    stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
-      assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, status, now, env.actor?.id ?? null, actorName(env), row.id),
-    ...(Number.isInteger(body.template) ? [stmt(env, "UPDATE reply_templates SET uses = uses + 1 WHERE id = ?", body.template)] : []),
-    // Sent, so no longer 답 쓰는 중.
-    stmt(env, "DELETE FROM counters WHERE key LIKE ?", `typing|${row.id}|${env.actor?.id ?? ""}|%`),
-  ]);
-  if (audited) await audit(env, now, "inquiry_reply", row.id, status);
-  return true;
-}
-
-/** [ADMIN-16] What can be done to many questions at once, and what it needs besides 문의 고치기. */
-const BULK = { assign: null, unassign: null, close: null, open: null, reply: null, link: "dev" };
-
-/**
- * [ADMIN-16] Up to 100 questions at once: take them, let them go, close, open again, send each the same
- * answer, or link them to a 개발사항. What one admin may not do to one of them (let go of someone else's)
- * is skipped and counted, the rest goes through, and the activity log gets one line for the lot.
- */
-async function inquiryBulk(request, env, now) {
-  const body = await readJson(request, INQUIRY.bytes + 4096);
-  if (!Object.hasOwn(BULK, body.action)) refuse("action", "action");
-  const ids = Array.isArray(body.ids) ? [...new Set(body.ids)] : [];
-  if (!ids.length || ids.length > DEV.bulk || ids.some((id) => typeof id !== "string" || !/^[A-Za-z0-9]{22}$/.test(id))) refuse("ids", "ids");
-  if (BULK[body.action] && !can(env.actor, BULK[body.action], "edit")) return json({ error: "no_permission", area: BULK[body.action] }, 403);
-  let item = null;
-  if (body.action === "link") {
-    item = typeof body.item === "string" ? await one(env, "SELECT * FROM dev_items WHERE id = ? AND deleted_at IS NULL", body.item) : null;
-    if (!item) return json({ error: "not_found" }, 404);
-  }
-  const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
-  let done = 0;
-  let skipped = ids.length - rows.length;
-  const a = env.actor;
-  for (const row of rows) {
-    if (body.action === "assign" || body.action === "unassign") {
-      const to = body.action === "assign" ? "me" : null;
-      if (!mayAssign(a, row, to)) {
-        skipped++;
-        continue;
-      }
-      await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", to ? a.id : null, to ? actorName(env) : null, row.id);
-    } else if (body.action === "close" || body.action === "open") {
-      await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.action === "close" ? "closed" : "open", row.id);
-    } else if (body.action === "reply") {
-      if (!(await replyTo(env, row, { text: body.text, close: body.close === true, template: body.template }, now, false))) {
-        skipped++;
-        continue;
-      }
-    } else {
-      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", item.id, row.id, actorName(env), now);
-      if (r.meta.changes) await devEvent(env, item.id, now, "link", { inquiry: row.id }).run();
-    }
-    done++;
-  }
-  if (item) await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
-  await audit(env, now, "inquiry_bulk", item ? item.title : "", `${body.action} ${done}${skipped ? ` (${skipped} 건너뜀)` : ""}`);
-  return json({ done, skipped });
-}
-
-/**
- * [ADMIN-16][ADMIN-17] One question for an admin: what inquiryView gives, with the saved answers (its
- * topic's first, then the most used) when this admin may answer, who else is writing to it, and what
- * admins did to it, for the timeline.
- */
-/**
- * [ADMUX-07] The question's audit lines (in the order written) with its 개발사항 links put in by time. Two
- * from the same millisecond cannot be told apart by time, so a link goes after an assign or a reply of
- * that moment and before a status change or a hide (a question is linked, then closed).
- */
-function timeline(events, links) {
-  const late = new Set(["inquiry_status", "inquiry_hide", "inquiry_show"]);
-  const out = [];
-  const queue = [...links].sort((x, y) => x.at - y.at);
-  for (const e of events) {
-    while (queue.length && (queue[0].at < e.at || (queue[0].at === e.at && late.has(e.action)))) {
-      const l = queue.shift();
-      out.push({ at: iso(l.at), action: "dev_link", detail: l.title, item: l.id, by: l.by });
-    }
-    out.push({ at: iso(e.at), action: e.action, detail: e.detail, by: plainActor(e.actor) });
-  }
-  for (const l of queue) out.push({ at: iso(l.at), action: "dev_link", detail: l.title, item: l.id, by: l.by });
-  return out;
-}
-
-async function adminInquiryView(env, row) {
-  const view = await inquiryView(env, row, true);
-  const now = Date.now();
-  const [events, links, typing] = (await batch(env, [
-    stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
-      'inquiry_hide', 'inquiry_show') ORDER BY id LIMIT 200`, row.id),
-    stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
-    stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
-  ])).map((r) => r.results);
-  const out = {
-    ...view,
-    events: timeline(events, links),
-    typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
-    // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
-    ...copyFields(row),
-    sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
-  };
-  if (view.waitingHours !== null) {
-    const last = view.messages[view.messages.length - 1];
-    out.slaLeft = last?.from === "user" ? slaLeft(row.kind, row.updated_at, await slaTargets(env), now) : null;
-  }
-  if (env.actor && can(env.actor, "inquiries", "edit")) {
-    const list = (await templates(env, now)).templates;
-    out.templates = list.sort((x, y) => (y.topic === view.topic) - (x.topic === view.topic) || y.uses - x.uses || x.id - y.id);
-  }
-  return out;
-}
-
-/** [ADMIN-17] Who did it, as a name: rows written before 1.23 carried "이름 <메일>", shown without the mail. */
-const plainActor = (actor) => String(actor ?? "").replace(/\s*<[^<>]*@[^<>]*>\s*$/, "");
-
-/**
- * [ADMIN-16] How a list is paged: [after] rows are skipped (the last answer's next), [limit] come, 50
- * unless asked for fewer or up to 100.
- */
-function page(params, fallback = 50) {
-  const after = Number(params.get("after"));
-  const limit = Number(params.get("limit"));
-  return { after: Number.isInteger(after) && after > 0 ? after : 0, limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : fallback };
-}
-
-/** One page of [list] and where the next starts, or null at the end. */
-const paged = (list, { after, limit }) => ({ items: list.slice(after, after + limit), next: after + limit < list.length ? after + limit : null });
-
-/** [ADMUX-06] How long a question of each kind may wait for an answer, in hours (설정 › 답 목표). */
-const SLA = { keys: { slaBug: 8, slaQuestion: 24, slaIdea: 72, slaOther: 72 }, least: 1, most: 168 };
-const slaKey = (kind) => (kind === "bug" || kind === "problem" ? "slaBug" : kind === "question" ? "slaQuestion" : kind === "idea" ? "slaIdea" : "slaOther");
-const slaSetting = (key) => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-
-const slaTargets = async (env) => readSla(await all(env, SLA_SQL));
-
-function readSla(rows) {
-  const out = {};
-  for (const [k, fallback] of Object.entries(SLA.keys)) {
-    const n = Number(rows.find((r) => r.key === slaSetting(k))?.value);
-    out[k] = Number.isInteger(n) && n >= SLA.least && n <= SLA.most ? n : fallback;
-  }
-  return out;
-}
-
-/** [ADMUX-06] Minutes until a waiting question passes its kind's target (below 0: past it), or null. */
-const slaLeft = (kind, waitingSince, targets, now) => (waitingSince === null ? null : Math.round((waitingSince + targets[slaKey(kind)] * HOUR - now) / 60000));
-
-/** The sorts the questions list offers; the default is the one it always had. */
-const INQUIRY_SORTS = ["default", "sla", "oldest", "newest", "same"];
-
-/**
- * Questions waiting first, then the newest; [q] finds words in what was asked or answered. [ADMIN-16]
- * Up to 1000 are read in one go, counted by topic before the topic filter and paged after sorting.
- */
-async function inquiryList(env, params, actorId = "") {
-  // [ADMUX-02] 놓친 것 is only ever a waiting question, so the status filter follows it.
-  const late = params.get("late") === "1" ? Date.now() - INQUIRY.lateMs : 0;
-  const status = late ? "open" : ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
-  const q = String(params.get("q") ?? "").trim().slice(0, 40);
-  const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
-  // [ADMIN-12] mine: the ones I took; free: the ones nobody took yet.
-  const who = ["mine", "free"].includes(params.get("who")) ? params.get("who") : "";
-  const sort = INQUIRY_SORTS.includes(params.get("sort")) ? params.get("sort") : "default";
-  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  // AT 1.29 [ADMCP-02] One kind (문제 신고만), copied or not yet (복사함), and one sending phone (같은 기기).
-  const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
-  const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
-  const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
-  const now = Date.now();
-  const [rows, statusRows, slaRows, typing, fresh] = (await batch(env, [stmt(env, `SELECT i.*,
-      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
-      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
-      (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
-      (SELECT COUNT(*) FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = i.id) AS dev,
-      (SELECT COUNT(*) FROM inquiry_notes n WHERE n.inquiry_id = i.id) AS notes
-    FROM inquiries i
-    WHERE (?1 IS NULL OR i.status = ?1)
-      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\')
-        OR i.info LIKE ?3 ESCAPE '\\' OR i.id = ?2)
-      AND (?4 = '' OR (?4 = 'mine' AND i.assignee = ?5) OR (?4 = 'free' AND i.assignee IS NULL))
-      AND (?6 = 0 OR (i.status = 'open' AND i.updated_at < ?6))
-      AND (?7 IS NULL OR i.kind = ?7)
-      AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
-      AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender),
-  stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
-  slaQuery(env),
-  stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now),
-  // AT 1.29 [ADMCP-04] 복사 전 문제 제보, whatever the filter: how many, and how many came today.
-  stmt(env, FRESH_BUGS_SQL, todayStart(now))])).map((r) => r.results);
-  const counts = { open: 0, answered: 0, closed: 0 };
-  for (const r of statusRows) {
-    if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
-  }
-  const targets = readSla(slaRows);
-  const writing = typingByInquiry(typing, actorId);
-  const listed = rows.map((r) => {
-    const info = JSON.parse(r.info);
-    const waitingSince = r.status === "open" && r.last === "user" ? r.updated_at : null;
-    return {
-      id: r.id,
-      kind: r.kind,
-      status: r.status,
-      preview: [...(r.first ?? "")].slice(0, 120).join(""),
-      count: r.count,
-      waiting: r.last === "user",
-      appVersion: info.app ?? null,
-      createdAt: iso(r.created_at),
-      updatedAt: iso(r.updated_at),
-      ...triage(r.kind, r.first, info),
-      public: r.public === 1,
-      hidden: r.hidden ?? null,
-      flags: r.flags ?? 0,
-      same: r.same ?? 0,
-      assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
-      dev: r.dev,
-      notes: r.notes,
-      // [INQ-04] How long the user has waited on an answer, in hours; null when it is not their turn to wait.
-      waitingHours: waitingSince === null ? null : Math.floor((now - waitingSince) / HOUR),
-      // [ADMUX-06] Minutes left before this kind's answer target; below 0 once past it.
-      slaLeft: slaLeft(r.kind, waitingSince, targets, now),
-      rating: r.rating ?? 0,
-      // [ADMIN-16] Another admin writing an answer to it right now.
-      typing: writing[r.id] ?? [],
-      // AT 1.29 [ADMCP-03] 복사함 (when, by whom) and [ADMCP-06] a short mark of the phone that sent it.
-      ...copyFields(r),
-    };
-  });
-  // How many of this view are in each topic, so the filter shows where the questions pile up.
-  const topics = {};
-  for (const i of listed) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
-  const rank = { urgent: 0, normal: 1, low: 2 };
-  // Among those waiting for an answer: urgent first, then the ones most people said 나도 그래요 to; the rest
-  // stay newest first.
-  const waits = (i) => (i.status === "open" ? 0 : 1);
-  const left = (i) => i.slaLeft ?? Infinity;
-  const order = {
-    default: (a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] || b.same - a.same : 0),
-    sla: (a, b) => left(a) - left(b) || waits(a) - waits(b),
-    oldest: (a, b) => a.updatedAt.localeCompare(b.updatedAt),
-    newest: (a, b) => b.updatedAt.localeCompare(a.updatedAt),
-    same: (a, b) => b.same - a.same || waits(a) - waits(b),
-  }[sort];
-  const shown = listed.filter((i) => !topic || i.topic === topic).sort(order);
-  const { items, next } = paged(shown, page(params));
-  return { counts, topics, topicNames: TOPIC_NAMES, inquiries: items, total: shown.length, next, sort, sla: targets,
-    // [ADMUX-02] What the server took the filter to be, so the app shows the status 놓친 것 fixed.
-    status: status ?? "", late: Boolean(late),
-    // AT 1.29 [ADMCP-02][ADMCP-04] The new filters as taken, and 복사 전 문제 제보 for the strip above the list.
-    kind: kind ?? "", copied, sender, fresh: { bugs: fresh[0]?.n ?? 0, today: fresh[0]?.today ?? 0 } };
-}
-
-// AT 1.29 시작
-// [ADMCP-01]~[ADMCP-06] 문의 복사: a question (or many) read whole to copy into a development task, 복사함 marked
-// on the ones copied (with, if asked, a 개발사항 made from them and their status changed in the same step), and
-// the open problem reports nobody copied yet counted for the badges and the list.
-
-/** Open or answered 문제 신고 nobody copied yet, and how many of them came since ?1 (today's start). */
-const FRESH_BUGS_SQL = `SELECT COUNT(*) AS n, COALESCE(SUM(created_at >= ?1), 0) AS today FROM inquiries
-  WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'`;
-
-const todayStart = (now) => Date.parse(`${kstDay(now)}T00:00:00+09:00`);
-
-/**
- * [ADMCP-03] 복사함 as the lists and a question show it, and [ADMCP-06] the sending phone as six letters of the
- * hash the server already keeps: enough to see that two questions came from one phone, nothing that names it.
- */
-const copyFields = (row) => ({
-  copied: row.copied_at ? { at: iso(row.copied_at), by: row.copied_by ?? "" } : null,
-  sender: String(row.device ?? "").slice(0, 6),
-});
-
-/** At most this many questions in one copy, like the other bulk steps (DEV.bulk). */
-const COPY_MOST = 100;
-
-/** The ids in [v] (an array, or "a,b,c" from an address): 1 to 100 question ids, each once, or a refusal. */
-function copyIds(v) {
-  const list = Array.isArray(v) ? v : String(v ?? "").split(",").filter(Boolean);
-  const ids = [...new Set(list)];
-  if (!ids.length || ids.length > COPY_MOST || ids.some((id) => typeof id !== "string" || !/^[A-Za-z0-9]{22}$/.test(id))) refuse("ids", "ids");
-  return ids;
-}
-
-/**
- * [ADMCP-01][ADMCP-02] GET /inquiries/export?ids=: the questions whole (thread, what came with it, notes, the
- * timeline), in the order asked, for the app to write as one text. Reading only: 복사함 is marked by /copied
- * once the text is really on the clipboard. Anyone who may see questions may copy them.
- */
-async function inquiryExport(env, params) {
-  const ids = copyIds(params.get("ids"));
-  const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const out = [];
-  for (const id of ids) {
-    const row = byId.get(id);
-    if (!row) continue;
-    const { templates, typing, ...view } = await adminInquiryView(env, row);
-    out.push(view);
-  }
-  return { inquiries: out, missing: ids.length - out.length };
-}
-
-/**
- * [ADMCP-03] POST /inquiries/copied {ids, dev?: {title, body}, item?, status?, assign?}: 복사함 on each (now, by
- * me), and in the same step, when asked, a new 개발사항 made from them or an existing one they join (both need
- * 개발사항 고치기), closed or opened again, and taken by me where nobody holds them. One activity line for the lot.
- */
-async function inquiryCopied(request, env, now) {
-  const body = await readJson(request, 32 * 1024);
-  const ids = copyIds(body.ids);
-  if (body.status !== undefined && body.status !== null && !["open", "closed"].includes(body.status)) refuse("status", "status");
-  const wantsDev = (body.dev !== undefined && body.dev !== null) || (body.item !== undefined && body.item !== null);
-  if (wantsDev && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
-  const rows = await all(env, `SELECT id, assignee FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
-  if (!rows.length) return json({ error: "not_found" }, 404);
-  const name = actorName(env);
-  const a = env.actor;
-  let item = null;
-  if (body.item !== undefined && body.item !== null) {
-    item = typeof body.item === "string" ? await one(env, "SELECT id, title FROM dev_items WHERE id = ? AND deleted_at IS NULL", body.item) : null;
-    if (!item) return json({ error: "not_found" }, 404);
-  } else if (body.dev !== undefined && body.dev !== null) {
-    if (typeof body.dev !== "object" || Array.isArray(body.dev)) refuse("title", "title");
-    const title = plainText(body.dev.title, DEV.title, "title", true);
-    const text = plainText(body.dev.body, DEV.body, "body");
-    item = { id: `d${randomId(15)}`, title };
-    await batch(env, [
-      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
-        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, item.id, title, text, a.id, name, now, now),
-      devEvent(env, item.id, now, "create", { title, body: cut(text) }),
-    ]);
-    await audit(env, now, "dev_create", title, item.id);
-  }
-  const found = rows.map((r) => r.id);
-  const marks = found.map(() => "?").join(", ");
-  const stmts = [stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...found)];
-  if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...found));
-  // Only the ones nobody holds: copying is no reason to take a question from another admin.
-  const free = body.assign === true ? rows.filter((r) => !r.assignee).map((r) => r.id) : [];
-  if (free.length) {
-    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${free.map(() => "?").join(", ")})`, a.id, name, ...free));
-  }
-  await batch(env, stmts);
-  let linked = 0;
-  if (item) {
-    for (const id of found) {
-      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", item.id, id, name, now);
-      if (r.meta.changes) {
-        linked++;
-        await devEvent(env, item.id, now, "link", { inquiry: id }).run();
-      }
-    }
-    await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
-  }
-  const status = body.status === "open" || body.status === "closed" ? body.status : null;
-  const steps = [`${found.length}건`, item ? `개발사항 ${linked}건 연결` : "", status ? (status === "closed" ? "닫음" : "다시 엶") : "",
-    free.length ? `${free.length}건 맡음` : ""].filter(Boolean).join(" · ");
-  await audit(env, now, "inquiry_copy", item ? item.title : "", steps);
-  return json({ marked: found.length, skipped: ids.length - found.length, copied: { at: iso(now), by: name },
-    item: item ? { id: item.id, title: item.title } : null, linked, status, assigned: free.length });
-}
-// AT 1.29 끝
-
-const SLA_SQL = `SELECT key, value FROM settings WHERE key IN (${Object.keys(SLA.keys).map((k) => `'${slaSetting(k)}'`).join(", ")})`;
-const slaQuery = (env) => env.DB.prepare(SLA_SQL);
-
-/** [ADMIN-16] typing|<question>|<admin id>|<name> rows as names per question, leaving out [me]. */
-function typingByInquiry(rows, me) {
-  const out = {};
-  for (const { key } of rows) {
-    const [, id, admin, ...name] = key.split("|");
-    if (admin === me) continue;
-    (out[id] ??= []).push(name.join("|"));
-  }
-  return out;
-}
-
-// ---- 개발사항: what admins gather from questions for the developer [ADMIN-10][ADMIN-11] ----
-//
-// Any admin with "dev" adds an item (from a question in one tap, or by hand), changes or deletes it, and
-// links more questions to it; how many questions are linked is how many people asked. Setting 개발중,
-// 완료 or 반려 needs "devStatus" as well (the owner has it and gives it). Every change is written to the
-// item's own history with who made it and what it was before, and deleting only marks the item, so the
-// owner can bring it back with its history whole.
-
-const DEV = {
-  statuses: { todo: "접수", doing: "개발중", done: "완료", rejected: "반려" },
-  title: 100,
-  body: 4000,
-  reason: 300,
-  note: 1000,
-  // Before and after of a long text in the history; enough to see what changed.
-  kept: 1000,
-  bulk: 100,
-  list: 2000,
-};
-
-/** [ADMIN-12] What a new server's admins start with in 자주 쓰는 답; they add their own and delete these. */
-const DEFAULT_TEMPLATES = [
-  ["확인 중", "알려 주셔서 고마워요. 지금 확인하고 있어요. 고치는 대로 다시 알려 드릴게요."],
-  ["고쳤어요", "말씀하신 문제를 고쳤어요. 앱을 최신 버전으로 업데이트한 뒤 다시 확인해 주세요."],
-  ["더 알려 주세요", "정확히 확인하려면 조금 더 알려 주세요. 언제, 어떤 화면에서, 무엇을 눌렀을 때 생겼는지 적어 주시면 큰 도움이 돼요."],
-  ["설정 안내", "설정에서 바로 바꿀 수 있어요. 설정 > 해당 항목에서 원하는 값으로 바꿔 보세요."],
-  ["개발 예정", "좋은 의견 고마워요. 개발할 목록에 올려 두었어요. 반영되면 다시 알려 드릴게요."],
-  ["반영했어요", "말씀해 주신 내용을 반영했어요. 앱을 최신 버전으로 업데이트하면 쓸 수 있어요."],
-];
-
-/** Text an admin typed: control characters out, lines kept, [max] letters; [required] refuses an empty one. */
-function plainText(v, max, field, required = false) {
-  if (v === undefined || v === null) v = "";
-  if (typeof v !== "string") refuse(field, field);
-  const text = v.normalize("NFC").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim();
-  if ((required && !text) || [...text].length > max) refuse(field, field);
-  return text;
-}
-
-const cut = (text) => ([...text].length > DEV.kept ? `${[...text].slice(0, DEV.kept).join("")}…` : text);
-
-/** One line of an item's history, by the signed-in admin. */
-const devEvent = (env, id, now, action, detail = {}) => stmt(env,
-  "INSERT INTO dev_history (item_id, at, actor_id, actor, action, detail) VALUES (?, ?, ?, ?, ?, ?)",
-  id, now, env.actor?.id ?? "", actorName(env), action, JSON.stringify(detail));
-
-async function devRoute(request, env, url, path, now) {
-  const method = request.method;
-  if (path === "/dev" && method === "GET") return json(await devList(env, url.searchParams));
-  if (path === "/dev" && method === "POST") return devCreate(request, env, now);
-  if (path === "/dev/bulk" && method === "POST") return devBulk(request, env, now);
-  const m = path.match(/^\/dev\/(d[A-Za-z0-9]{15})(\/delete|\/restore|\/links|\/links\/remove|\/notes|\/reply)?$/);
-  if (!m) return json({ error: "not_found" }, 404);
-  const row = await one(env, "SELECT * FROM dev_items WHERE id = ?", m[1]);
-  if (!row) return json({ error: "not_found" }, 404);
-  if (!m[2] && method === "GET") return json(await devView(env, row));
-  if (method !== "POST") return json({ error: "not_found" }, 404);
-  const body = await readJson(request, 16 * 1024);
-  if (m[2] === "/restore") {
-    // Only the owner brings back what someone deleted, so a deletion cannot be undone behind their back.
-    if (!env.actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
-    if (row.deleted_at === null) return json(await devView(env, row));
-    await batch(env, [
-      stmt(env, "UPDATE dev_items SET deleted_at = NULL, updated_at = ? WHERE id = ?", now, row.id),
-      devEvent(env, row.id, now, "restore"),
-    ]);
-    await audit(env, now, "dev_restore", row.title, row.id);
-  } else if (row.deleted_at !== null) {
-    return json({ error: "deleted" }, 409);
-  } else if (!m[2]) {
-    const changed = await devUpdate(env, row, body, now);
-    if (changed === "stale") return json({ error: "changed", item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) }, 409);
-  } else if (m[2] === "/delete") {
-    await batch(env, [
-      stmt(env, "UPDATE dev_items SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, row.id),
-      devEvent(env, row.id, now, "delete", { title: row.title }),
-    ]);
-    await audit(env, now, "dev_delete", row.title, row.id);
-  } else if (m[2] === "/links" || m[2] === "/links/remove") {
-    // Linking shows a question to whoever opens the item, so it takes a look at questions too.
-    if (!can(env.actor, "inquiries")) return json({ error: "no_permission", area: "inquiries" }, 403);
-    const inquiry = typeof body.inquiry === "string" && /^[A-Za-z0-9]{22}$/.test(body.inquiry) ? body.inquiry : refuse("inquiry", "inquiry");
-    if (m[2] === "/links") {
-      if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", inquiry))) return json({ error: "not_found" }, 404);
-      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", row.id, inquiry, actorName(env), now);
-      if (r.meta.changes) {
-        await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
-        await audit(env, now, "dev_link", row.title, inquiry);
-      }
-    } else {
-      const r = await run(env, "DELETE FROM dev_links WHERE item_id = ? AND inquiry_id = ?", row.id, inquiry);
-      if (r.meta.changes) {
-        await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
-        await audit(env, now, "dev_unlink", row.title, inquiry);
-      }
-    }
-  } else if (m[2] === "/notes") {
-    const text = plainText(body.text, DEV.note, "text", true);
-    await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "note", { text })]);
-  } else {
-    return devReply(env, row, body, now);
-  }
-  return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)));
-}
-
-/** A new item, by hand or from a question (inquiry): the question is linked in the same step. */
-async function devCreate(request, env, now) {
-  const body = await readJson(request, 16 * 1024);
-  const title = plainText(body.title, DEV.title, "title", true);
-  const text = plainText(body.body, DEV.body, "body");
-  let inquiry = null;
-  if (body.inquiry !== undefined && body.inquiry !== null) {
-    if (!can(env.actor, "inquiries")) return json({ error: "no_permission", area: "inquiries" }, 403);
-    inquiry = typeof body.inquiry === "string" && /^[A-Za-z0-9]{22}$/.test(body.inquiry) ? body.inquiry : refuse("inquiry", "inquiry");
-    if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", inquiry))) return json({ error: "not_found" }, 404);
-  }
-  const id = `d${randomId(15)}`;
-  const a = env.actor;
-  await batch(env, [
-    stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
-      VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, a.id, actorName(env), now, now),
-    devEvent(env, id, now, "create", { title, body: cut(text) }),
-    ...(inquiry ? [stmt(env, "INSERT INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", id, inquiry, actorName(env), now),
-      devEvent(env, id, now, "link", { inquiry })] : []),
-  ]);
-  await audit(env, now, "dev_create", title, id);
-  return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", id)), 201);
-}
-
-/**
- * Title, body, who holds it and its status, in one call; each change is one line of history with what
- * it was. With [since] (the updatedAt the admin's screen showed), a change made meanwhile by someone
- * else is not written over: "stale", and the screen shows the newer item.
- */
-async function devUpdate(env, row, body, now) {
-  if (body.since !== undefined && body.since !== iso(row.updated_at)) return "stale";
-  const stmts = [];
-  const notes = [];
-  const edit = {};
-  const set = {};
-  if (body.title !== undefined) {
-    const title = plainText(body.title, DEV.title, "title", true);
-    if (title !== row.title) [edit.title, set.title] = [[row.title, title], title];
-  }
-  if (body.body !== undefined) {
-    const text = plainText(body.body, DEV.body, "body");
-    if (text !== row.body) [edit.body, set.body] = [[cut(row.body), cut(text)], text];
-  }
-  if (Object.keys(edit).length) {
-    stmts.push(devEvent(env, row.id, now, "edit", edit));
-    notes.push(["dev_edit", Object.keys(edit).join(" ")]);
-  }
-  if (body.assignee !== undefined) {
-    if (body.assignee !== "me" && body.assignee !== null) refuse("assignee", "assignee");
-    const to = body.assignee ? { id: env.actor.id, name: actorName(env) } : null;
-    if ((to?.id ?? null) !== row.assignee) {
-      set.assignee = to?.id ?? null;
-      set.assignee_name = to?.name ?? null;
-      stmts.push(devEvent(env, row.id, now, "assign", { assignee: [row.assignee_name ?? "", to?.name ?? ""] }));
-    }
-  }
-  if (body.releasedIn !== undefined) {
-    // [INQ-02] The version a finished item went out in, e.g. 1.18.0; blank clears it.
-    const v = body.releasedIn === null || body.releasedIn === "" ? null : String(body.releasedIn).trim();
-    if (v !== null && !/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(v)) refuse("releasedIn", "releasedIn");
-    if (v !== (row.released_in ?? null)) {
-      set.released_in = v;
-      stmts.push(devEvent(env, row.id, now, "release", { releasedIn: [row.released_in ?? "", v ?? ""] }));
-    }
-  }
-  if (body.status !== undefined) {
-    const next = devStatus(env, body.status, body.reason);
-    if (next.status !== row.status || next.reason !== row.reason) {
-      [set.status, set.reason] = [next.status, next.reason];
-      stmts.push(devEvent(env, row.id, now, "status", { status: [row.status, next.status], ...(next.reason ? { reason: next.reason } : {}) }));
-      notes.push(["dev_status", `${row.status}→${next.status}`]);
-    }
-  }
-  if (!stmts.length) return false;
-  const cols = Object.keys(set);
-  // Written only over the item as this admin read it: a change that landed meanwhile makes it "stale",
-  // and then nothing (not even a history line) is written.
-  const updated = await run(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ? AND updated_at = ?`,
-    // Always a new updated_at, even in the same millisecond as the last change, so a second writer of that
-    // moment no longer matches it.
-    ...cols.map((c) => set[c]), Math.max(now, row.updated_at + 1), row.id, row.updated_at);
-  if (!updated.meta.changes) return "stale";
-  await batch(env, stmts);
-  // The activity screen shows the title; the id goes with what changed.
-  for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
-  return true;
-}
-
-/** A status this admin may set: devStatus is needed, and 반려 says why (the reason is kept with it). */
-function devStatus(env, status, reason) {
-  if (!can(env.actor, "devStatus", "edit")) throw new Refuse("no_permission", "devStatus", 403);
-  if (!Object.hasOwn(DEV.statuses, status)) refuse("status", "status");
-  const why = status === "rejected" ? plainText(reason, DEV.reason, "reason", true) : "";
-  return { status, reason: why };
-}
-
-/** The owner (or whoever was given 처리) sets one status on many items at once. */
-async function devBulk(request, env, now) {
-  const body = await readJson(request, 16 * 1024);
-  const next = devStatus(env, body.status, body.reason);
-  if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > DEV.bulk || body.ids.some((x) => typeof x !== "string" || !/^d[A-Za-z0-9]{15}$/.test(x))) {
-    refuse("ids", "ids");
-  }
-  const ids = [...new Set(body.ids)];
-  const rows = await all(env, `SELECT id, status, reason FROM dev_items WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(", ")})`, ...ids);
-  const change = rows.filter((r) => r.status !== next.status || r.reason !== next.reason).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
-  if (change.length) {
-    await batch(env, change.flatMap((r) => [
-      stmt(env, "UPDATE dev_items SET status = ?, reason = ?, updated_at = ? WHERE id = ?", next.status, next.reason, now, r.id),
-      devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
-    ]));
-    await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
-  }
-  return json({ changed: change.length, ids: change.map((r) => r.id) });
-}
-
-/**
- * [ADMIN-11] One answer to every linked question at once, typically when an item is 완료: the admin
- * reads the prefilled text and sends it. [ids] limits it to some of them; [close] closes them too.
- */
-async function devReply(env, row, body, now) {
-  if (!can(env.actor, "inquiries", "edit")) return json({ error: "no_permission", area: "inquiries" }, 403);
-  const text = plainText(body.text, INQUIRY.text, "text", true);
-  const linked = (await all(env, "SELECT l.inquiry_id AS id FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ?", row.id)).map((r) => r.id);
-  const pick = Array.isArray(body.ids) ? linked.filter((id) => body.ids.includes(id)) : linked;
-  if (!pick.length) refuse("ids", "ids");
-  const status = body.close === true ? "closed" : "answered";
-  await batch(env, [
-    ...pick.flatMap((id) => [
-      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, text, actorName(env), now),
-      stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, id),
-    ]),
-    stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id),
-    devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
-  ]);
-  await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
-  return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
-}
-
-/** The list: one status, open (접수 and 개발중), all, deleted ones, mine, or words in the title or body. */
-async function devList(env, params) {
-  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
-  const q = String(params.get("q") ?? "").trim().slice(0, 40);
-  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const mine = params.get("who") === "mine" ? env.actor.id : "";
-  const [rows, countRows] = (await batch(env, [
-    // Only links to questions still kept count.
-    stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
-        (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
-      FROM dev_items d
-      WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
-          AND (?1 = 'all' OR d.status = ?1 OR (?1 = 'open' AND d.status IN ('todo', 'doing')))))
-        AND (?2 = '' OR d.title LIKE ?3 ESCAPE '\\' OR d.body LIKE ?3 ESCAPE '\\')
-        AND (?4 = '' OR d.assignee = ?4)
-      ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine),
-    stmt(env, `SELECT CASE WHEN deleted_at IS NULL THEN status ELSE 'deleted' END AS s, COUNT(*) AS n FROM dev_items GROUP BY s`),
-  ])).map((r) => r.results);
-  const counts = { todo: 0, doing: 0, done: 0, rejected: 0, deleted: 0 };
-  for (const r of countRows) if (Object.hasOwn(counts, r.s)) counts[r.s] = r.n;
-  counts.open = counts.todo + counts.doing;
-  counts.all = counts.open + counts.done + counts.rejected;
-  // Still to do: most asked for first. Finished: newest first.
-  const rank = { doing: 0, todo: 1, done: 2, rejected: 3 };
-  const open = (r) => r.status === "todo" || r.status === "doing";
-  rows.sort((a, b) => (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
-  // [ADMIN-16] A page at a time, after sorting all of the view.
-  const { items, next } = paged(rows, page(params));
-  return { counts, statuses: DEV.statuses, items: items.map(devItem), next, total: rows.length };
-}
-
-const devItem = (r) => ({
-  id: r.id,
-  title: r.title,
-  // The whole body too, so 일괄 복사 hands developers everything without opening each item.
-  body: r.body,
-  preview: [...r.body].slice(0, 160).join(""),
-  status: r.status,
-  reason: r.reason,
-  releasedIn: r.released_in ?? null,
-  links: r.links ?? 0,
-  waiting: r.waiting ?? 0,
-  createdBy: { id: r.created_by, name: r.created_by_name },
-  assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
-  createdAt: iso(r.created_at),
-  updatedAt: iso(r.updated_at),
-  deletedAt: r.deleted_at ? iso(r.deleted_at) : null,
-});
-
-/** One item with its whole history and the questions behind it (their words only for who may read questions). */
-async function devView(env, row) {
-  const [links, history] = (await batch(env, [
-    stmt(env, `SELECT l.inquiry_id, l.by, l.at, i.kind, i.status, i.updated_at,
-        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first
-      FROM dev_links l LEFT JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? ORDER BY l.at`, row.id),
-    stmt(env, "SELECT id, at, actor, action, detail FROM dev_history WHERE item_id = ? ORDER BY id DESC", row.id),
-  ])).map((r) => r.results);
-  const read = can(env.actor, "inquiries");
-  return {
-    ...devItem({ ...row, links: links.filter((l) => l.kind).length, waiting: links.filter((l) => l.status === "open").length }),
-    statuses: DEV.statuses,
-    inquiries: read ? links.filter((l) => l.kind).map((l) => ({
-      id: l.inquiry_id, kind: l.kind, status: l.status, preview: [...(l.first ?? "")].slice(0, 160).join(""),
-      updatedAt: iso(l.updated_at), linkedBy: l.by, linkedAt: iso(l.at),
-    })) : [],
-    history: history.map((h) => {
-      let detail = {};
-      try {
-        detail = JSON.parse(h.detail);
-      } catch {
-        // An old line keeps its action; nothing more to show.
-      }
-      // The words sent to questions are theirs to read who may read questions, like the previews above.
-      if (!read && h.action === "reply" && detail && typeof detail === "object") delete detail.text;
-      return { id: h.id, at: iso(h.at), actor: h.actor, action: h.action, detail };
-    }),
-  };
-}
-
-// ---- 자주 쓰는 답, shared by every admin [ADMIN-12] ----
-
-async function templates(env, now) {
-  // A new server starts with a few; once they are written, deleting one keeps it deleted. The key goes in
-  // first and only the call that put it there seeds, so two admins opening the list at once add them once.
-  const first = await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('templates', '1')");
-  if (first.meta.changes) {
-    await batch(env, DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
-  }
-  const rows = await all(env, "SELECT id, label, text, by, topic, uses FROM reply_templates ORDER BY id");
-  return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by, topic: r.topic ?? "", uses: r.uses ?? 0 })), topicNames: TOPIC_NAMES };
-}
-
-/** [ADMIN-16] A saved answer's topic: one of the question topics, or '' for any question. */
-function templateTopic(v) {
-  if (v === undefined || v === null || v === "") return "";
-  if (typeof v !== "string" || !Object.hasOwn(TOPIC_NAMES, v)) refuse("topic", "topic");
-  return v;
-}
-
-async function templateRoute(request, env, path, now) {
-  const method = request.method;
-  if (path === "/templates" && method === "GET") return json(await templates(env, now));
-  if (path === "/templates" && method === "POST") {
-    await templates(env, now);
-    const body = await readJson(request, 8 * 1024);
-    const label = plainText(body.label, 20, "label", true);
-    const text = plainText(body.text, INQUIRY.text, "text", true);
-    const topic = templateTopic(body.topic);
-    if ((await one(env, "SELECT COUNT(*) AS n FROM reply_templates")).n >= 40) return json({ error: "too_many" }, 409);
-    await run(env, "INSERT INTO reply_templates (label, text, by, at, topic) VALUES (?, ?, ?, ?, ?)", label, text, actorName(env), now, topic);
-    await audit(env, now, "template_add", label);
-    return json(await templates(env, now), 201);
-  }
-  // [ADMIN-16] A saved answer changed in place, keeping how often it was used.
-  const edit = path.match(/^\/templates\/(\d{1,9})$/);
-  if (edit && method === "POST") {
-    const row = await one(env, "SELECT label FROM reply_templates WHERE id = ?", Number(edit[1]));
-    if (!row) return json({ error: "not_found" }, 404);
-    const body = await readJson(request, 8 * 1024);
-    const label = plainText(body.label, 20, "label", true);
-    const text = plainText(body.text, INQUIRY.text, "text", true);
-    await run(env, "UPDATE reply_templates SET label = ?, text = ?, topic = ?, by = ?, at = ? WHERE id = ?", label, text, templateTopic(body.topic),
-      actorName(env), now, Number(edit[1]));
-    await audit(env, now, "template_edit", label, row.label === label ? "" : `${row.label} → ${label}`);
-    return json(await templates(env, now));
-  }
-  const m = path.match(/^\/templates\/(\d{1,9})\/remove$/);
-  if (m && method === "POST") {
-    const row = await one(env, "SELECT label FROM reply_templates WHERE id = ?", Number(m[1]));
-    if (!row) return json({ error: "not_found" }, 404);
-    await run(env, "DELETE FROM reply_templates WHERE id = ?", Number(m[1]));
-    await audit(env, now, "template_remove", row.label);
-    return json(await templates(env, now));
-  }
-  return json({ error: "not_found" }, 404);
 }
 
 // ---- the developer app's API [ADMIN-01] ----
@@ -5111,6 +4050,8 @@ function secretIssue(env, name, least) {
  */
 function areaFor(path) {
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
+  // S 1.32 [SECX-01] 휴대폰 미리 보기: phonePreviews checks owner, or flags:edit on the admin's own phone.
+  if (/^\/devices\/d[A-Za-z0-9]{15}\/previews$/.test(path)) return null;
   // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
   if (path === "/badges" || path === "/today" || path === "/basics") return null;
   // AX 1.30 [ADMX-08] One search: each part reads only what the admin may see (adminSearch).
@@ -5132,9 +4073,9 @@ function areaFor(path) {
   return "owner";
 }
 
-const can = (actor, area, level = "view") => actor.owner || (LEVELS.indexOf(actor.perms[area] ?? "none") >= LEVELS.indexOf(level));
+export const can = (actor, area, level = "view") => actor.owner || (LEVELS.indexOf(actor.perms[area] ?? "none") >= LEVELS.indexOf(level));
 
-async function admin(request, env, url) {
+export async function admin(request, env, url) {
   const path = url.pathname.slice("/api/admin".length);
   const method = request.method;
   const now = Date.now();
@@ -5187,6 +4128,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // [MON-09] A code for this admin's own phone.
   if (path === "/me/link-code" && method === "POST") return linkCode(env, actor, now);
   if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
+  // R131 1.31 [ADMX-16] 두 번째 확인: see whether it is on, start it (a new secret), confirm it with a code, turn it off with one.
+  if (path === "/me/2fa" && method === "GET") return json(await secondView(env, actor));
+  if (path === "/me/2fa" && method === "POST") return secondChange(request, env, actor, now);
   // [ADMIN-19] This browser's web push.
   if (path === "/me/push" && method === "GET") return json(await pushView(env, actor));
   if (path === "/me/push" && method === "POST") return pushSubscribe(request, env, actor, now);
@@ -5257,6 +4201,10 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) {
     return flagRoute(request, env, url, path, method, actor, now);
   }
+  // S 1.32 [SECX-01] The phones an admin may set 미리 보기 on (all for the owner, else their own) and the setting itself.
+  if (path === "/me/phones" && method === "GET") return json(await myPhones(env, actor));
+  m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/previews$/);
+  if (m && method === "POST") return phonePreviews(request, env, actor, m[1], now);
   if (path === "/devices" && method === "GET") return json(await phoneList(env));
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
@@ -5348,6 +4296,18 @@ async function login(request, env, now) {
   if (account && account.status !== "active") return json({ error: account.status === "pending" ? "pending" : "suspended" }, 403);
   const token = randomId(40);
   const who = account ? account.id : OWNER.id;
+  // R131 1.31 [ADMX-16] With 두 번째 확인 on, the code too: none yet asks for it (not a miss); a wrong one is a miss like a password.
+  const second = await one(env, "SELECT secret, used_step FROM admin_totp WHERE admin = ? AND on_at IS NOT NULL", who);
+  if (second && !(who === OWNER.id && env.ADMIN_2FA_RESET === "1")) {
+    if (body.code === undefined || body.code === "") return json({ error: "code_needed" }, 401);
+    const step = await totpCheck(second.secret, String(body.code), now, second.used_step);
+    if (step === null) {
+      for (const key of keys) await allow(env, key, Infinity, LIMITS.lockMs, now);
+      await audit(env, now, "login_failed", "code");
+      return json({ error: "code_wrong" }, 401);
+    }
+    await run(env, "UPDATE admin_totp SET used_step = ? WHERE admin = ?", step, who);
+  }
   await batch(env, [
     ...keys.map((key) => stmt(env, "DELETE FROM counters WHERE key = ?", key)),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
@@ -5357,6 +4317,38 @@ async function login(request, env, now) {
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
+}
+
+/** R131 1.31 [ADMX-16] Whether this admin's 두 번째 확인 is on, and (owner) whether the Cloudflare reset switch is set. */
+async function secondView(env, actor) {
+  const row = await one(env, "SELECT on_at FROM admin_totp WHERE admin = ?", actor.id);
+  return { on: Boolean(row?.on_at), since: row?.on_at ? iso(row.on_at) : null, ...(actor.owner && env.ADMIN_2FA_RESET === "1" ? { resetSet: true } : {}) };
+}
+
+/**
+ * R131 1.31 [ADMX-16] {do: "start"} makes a new secret (not on yet) and answers it with the link an authenticator app reads;
+ * {do: "confirm", code} turns it on when the code is right; {do: "off", code} turns it off with a right code.
+ */
+async function secondChange(request, env, actor, now) {
+  const body = await readJson(request, 1024);
+  if (body.do === "start") {
+    const secret = totpSecret();
+    await run(env, `INSERT INTO admin_totp (admin, secret, on_at, used_step, created_at) VALUES (?, ?, NULL, -1, ?)
+      ON CONFLICT (admin) DO UPDATE SET secret = excluded.secret, on_at = NULL, used_step = -1, created_at = excluded.created_at
+      WHERE admin_totp.on_at IS NULL`, actor.id, secret, now);
+    const row = await one(env, "SELECT secret, on_at FROM admin_totp WHERE admin = ?", actor.id);
+    if (row.on_at) return json({ error: "second_on" }, 409);
+    return json({ secret: row.secret, uri: totpUri(row.secret, actor.owner ? "최고 관리자" : actor.email) });
+  }
+  if (body.do !== "confirm" && body.do !== "off") refuse("do", "do");
+  const row = await one(env, "SELECT secret, on_at, used_step FROM admin_totp WHERE admin = ?", actor.id);
+  if (!row || (body.do === "confirm") === Boolean(row.on_at)) return json({ error: body.do === "confirm" ? "second_not_started" : "second_off" }, 409);
+  const step = await totpCheck(row.secret, String(body.code ?? ""), now, row.used_step);
+  if (step === null) return json({ error: "code_wrong", field: "code" }, 400);
+  if (body.do === "confirm") await run(env, "UPDATE admin_totp SET on_at = ?, used_step = ? WHERE admin = ?", now, step, actor.id);
+  else await run(env, "DELETE FROM admin_totp WHERE admin = ?", actor.id);
+  await audit(env, now, body.do === "confirm" ? "second_on" : "second_off", actor.id);
+  return json(await secondView(env, actor));
 }
 
 /** The session and who it belongs to, when the cookie holds a live one of an active admin. */
@@ -5383,7 +4375,7 @@ async function signedIn(request, env, now) {
 const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
 
 // [ADMIN-15] With the yes-or-no areas and the look-only ones, so the app draws each as the server reads it.
-const me = (actor) => ({ id: actor.id, name: actor.name, email: actor.email, owner: actor.owner, perms: actor.perms, areas: AREAS,
+export const me = (actor) => ({ id: actor.id, name: actor.name, email: actor.email, owner: actor.owner, perms: actor.perms, areas: AREAS,
   toggles: TOGGLES, viewOnly: VIEW_ONLY });
 
 // ---- web push to admins [ADMIN-19] ----
@@ -5405,6 +4397,8 @@ const PUSH_KINDS = {
   versions: { label: "정할 판·모양이 다른 판", area: ["companies", "review"] },
   doubt: { label: "달라요 급증·달라요 많은 규칙", area: "review" },
   spike: { label: "문제 신고·서버 오류 급증", area: ["inquiries", "metrics"] },
+  // R131 1.31 [ADMX-14] 하루 3분 정리: at 9 in the morning (KST) one push with what is waiting today; it opens 큐 모드.
+  daily: { label: "아침 9시 오늘 할 일(답할 문의·정할 판·가려진 글 수)", area: ["inquiries", "review", "community"] },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
@@ -5433,6 +4427,45 @@ export async function alertTick(env, now) {
   for (const a of fresh) await notifyAdmins(env, a.kind, { title: "주의 필요", body: a.title, url: `/admin/${a.to}` }, now);
   await run(env, "INSERT INTO settings (key, value) VALUES ('ax_alerts', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
     JSON.stringify({ day, sent: { ...sent, ...Object.fromEntries(fresh.map((a) => [a.key, 1])) } }));
+}
+
+/**
+ * R131 1.31 [ADMX-14] 하루 3분 정리: hourly, and at 9 KST once a day, each admin who asked for `daily` gets one push with what
+ * waits in their areas (답할 문의 · 정할 판 · 가려진 글), counted as their own badges count it. Pressing it opens the developer
+ * app in 큐 모드 (?start=queue). Nothing is sent to an admin with nothing waiting, nor in their quiet hours.
+ */
+export async function digestTick(env, now) {
+  const keys = pushReady(env);
+  if (!keys || new Date(now + 9 * HOUR).getUTCHours() !== DIGEST_HOUR) return { sent: 0 };
+  const day = kstDay(now);
+  if ((await one(env, "SELECT value FROM settings WHERE key = 'daily_digest'"))?.value === day) return { sent: 0 };
+  await run(env, "INSERT INTO settings (key, value) VALUES ('daily_digest', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", day);
+  const rows = await all(env, `SELECT s.*, a.perms, a.status, a.name, a.email FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
+    WHERE (',' || s.kinds || ',') LIKE '%,daily,%'`);
+  const byAdmin = new Map();
+  for (const r of rows) {
+    const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { id: r.admin, name: r.name, email: r.email, owner: false, perms: readPerms(r.perms) } : null;
+    if (!actor || !mayGet(actor, "daily") || quietNow(r.quiet_from, r.quiet_to, now)) continue;
+    if (!byAdmin.has(r.admin)) byAdmin.set(r.admin, { actor, subs: [] });
+    byAdmin.get(r.admin).subs.push(r);
+  }
+  let sent = 0;
+  for (const { actor, subs } of byAdmin.values()) {
+    const text = digestText(await badges(env, actor, now));
+    if (!text) continue;
+    sent += (await deliver(env, keys, subs, { tag: "daily", title: "오늘 할 일", body: text, url: "/admin/?start=queue" }, now)).sent ?? 0;
+  }
+  return { sent };
+}
+
+/** The KST hour of [digestTick]. */
+export const DIGEST_HOUR = 9;
+
+/** "답할 문의 2 · 정할 판 1 · 가려진 글 0" from an admin's badges, only the areas they see; null when nothing waits. */
+export function digestText(b) {
+  const parts = [["답할 문의", b.inquiries], ["정할 판", b.pending], ["가려진 글", b.flaggedPosts]].filter(([, n]) => Number.isInteger(n));
+  if (!parts.some(([, n]) => n > 0)) return null;
+  return `${parts.map(([w, n]) => `${w} ${n}`).join(" · ")}. 눌러서 하나씩 끝내요`;
 }
 
 /** A KST hour of [now] inside quiet hours [from]..[to] (to may be past midnight: 22..7). */
@@ -5713,7 +4746,7 @@ async function joinLimited(request, env, now) {
 
 /** What the person who opened an invite link sees before making an account. */
 async function inviteInfo(request, env, url, now) {
-  if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
+  if (await joinLimited(request, env, now)) return tooMany("network", HOUR);
   const token = request.method === "POST" ? (await readJson(request, 1024)).token : url.searchParams.get("t");
   const row = await inviteFor(env, token, now);
   if (!row) return json({ error: "invite" }, 404);
@@ -5722,7 +4755,7 @@ async function inviteInfo(request, env, url, now) {
 
 /** With mail set up, a six-digit code goes to the invited email, so the account is made from that mailbox. */
 async function joinCode(request, env, now) {
-  if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
+  if (await joinLimited(request, env, now)) return tooMany("network", HOUR);
   const body = await readJson(request, 1024);
   const row = await inviteFor(env, body.token, now);
   if (!row) return json({ error: "invite" }, 404);
@@ -5742,7 +4775,7 @@ async function joinCode(request, env, now) {
  * starts with the permissions the owner chose when inviting.
  */
 async function join(request, env, now) {
-  if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
+  if (await joinLimited(request, env, now)) return tooMany("network", HOUR);
   const body = await readJson(request, 2048);
   const row = await inviteFor(env, body.token, now);
   if (!row) return json({ error: "invite" }, 404);
@@ -5987,6 +5020,9 @@ const BADGE_SQL = {
  */
 const BADGES = { keepMs: 15_000, maxKept: 200 };
 let badgeEpoch = 0;
+/** R131 1.31 [ADMX-13] The writes that may change a badge: questions, posts and their flags, reports and rules, the developer app. */
+const BADGE_WRITES = [/^\/api\/admin\//, /^\/api\/inquiries/, /^\/api\/posts/, /^\/api\/reports/, /^\/api\/votes$/, /^\/api\/rates/, /^\/api\/admin-link$/,
+  /^\/api\/purchases$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/setups/, /^\/api\/mine$/];
 const badgeMemory = new WeakMap();
 
 function badgesChanged() {
@@ -6115,7 +5151,7 @@ const NO_SCORE = { points: 0, persons: 0, networks: 0, bad: 0 };
  * Setups waiting for a decision, the ones with most behind them first, and rules people doubt. Everything
  * is read in one trip to the database, however many setups wait.
  */
-async function queue(env) {
+export async function queue(env) {
   // The same 60 setups in every statement: one order with nothing left to chance, read in one batch.
   const waiting = `WITH g AS (SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
     GROUP BY company_id, grp ORDER BY last DESC, company_id, grp LIMIT 60)`;
@@ -6217,7 +5253,7 @@ async function queue(env) {
  * [EXTRA-06] The developer's answer to a way the app cannot set yet. One the app will learn can earn
  * the sender the same reward as an adopted setup.
  */
-async function answer(request, env, id, now) {
+export async function answer(request, env, id, now) {
   const body = await readJson(request, 1024);
   if (!Object.hasOwn(ANSWERS, body.answer)) refuse("answer", "answer");
   const r = await one(env, "SELECT id, device FROM reports WHERE id = ? AND status = 'ask'", id);
@@ -6761,1428 +5797,6 @@ async function moderatePost(env, id, body, now) {
 
 // ---- input and output ----
 
-// ---- 정식 출시, 프로 이용권, 관리자 휴대폰, 구매 확인 [MON-02][MON-03][MON-06][MON-08][MON-09][MON-10] ----
-
-const MONEY = {
-  // [MON-10] Phones installed before the launch get this many months of 프로 from it, until changed.
-  thanksMonths: 1,
-  // [MON-07] Days after install without ads; the app has the same default.
-  adQuietDays: 3,
-  // [MON-06] Days before a trial ends that the app asks for consent (결정 D17: day 23 of 30).
-  trialAskDays: 7,
-  // [MON-09] A code from the developer app ties a phone to an admin for ten minutes, once; two phones each.
-  linkMs: 10 * 60 * 1000,
-  linkCodesPerHour: 10,
-  linkTriesPerHour: 10,
-  phonesPerAdmin: 2,
-  // [MON-08] A recovery code moves passes to a new phone once.
-  codesPerDay: 10,
-  claimsPerHour: 10,
-  passMonths: 12,
-  // [MON-03] What the server keeps of a purchase, and for how long after it ends.
-  subKeepMs: 30 * DAY,
-  // [MON-11] 계약 또는 청약철회 등에 관한 기록: 5년 (전자상거래법 시행령 제6조 제1항).
-  consentKeepMs: 5 * 365 * DAY,
-  freeFeatures: 30,
-};
-
-/** The app's names for features the server may open to everyone; never the other way round. */
-const FEATURE = /^[A-Z][A-Z_]{1,39}$/;
-
-async function launchState(env) {
-  // AM 1.28 [FLAG-22] billingLive and freeFeatures come from the flags now (billing by the server's view, free.* forced on).
-  const [rows, store] = await Promise.all([all(env, "SELECT key, value FROM settings WHERE key IN ('launched_at', 'thanks_months')"), flagStore(env)]);
-  const get = (k) => rows.find((r) => r.key === k)?.value;
-  const thanks = Number(get("thanks_months"));
-  const launched = Number(get("launched_at"));
-  const now = Date.now();
-  const legacy = legacyFlags(store, now);
-  return {
-    billingLive: serverEval(store, "billing", now).on,
-    launchedAt: Number.isFinite(launched) && launched > 0 ? launched : null,
-    thanksMonths: Number.isInteger(thanks) && thanks >= 0 ? thanks : MONEY.thanksMonths,
-    freeFeatures: legacy.free,
-    off: legacy.off,
-    store,
-  };
-}
-
-/**
- * [MON-02] What every app reads once a day: the 정식 출시 switch and what goes with it. No device, nothing kept.
- * AM 1.28 [FLAG-22] 1.28 apps read flags (only what the server overrides), policy and serverTime; apps up to 1.27 keep
- * reading billingLive, freeFeatures and off, which the server works out from the same flags.
- */
-async function config(env) {
-  const now = Date.now();
-  const [s, notices] = await Promise.all([launchState(env), noticeRows(env)]);
-  // The first answer that finds billing on records the launch, if the hourly job has not yet.
-  const launchedAt = s.launchedAt ?? (s.billingLive ? await recordLaunch(env, s.store, now) : null);
-  return {
-    v: 1, billingLive: s.billingLive, launchedAt: launchedAt ? iso(launchedAt) : null, thanksMonths: s.thanksMonths,
-    freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
-    // [SRV-04] 공지 running now (the app picks the ones for its version) and what is switched off.
-    notices: notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: s.off,
-    flags: configFlags(s.store, now), policy: configPolicy(s.store), serverTime: iso(now),
-  };
-}
-
-async function launchView(env) {
-  const s = await launchState(env);
-  const n = await one(env, "SELECT COUNT(*) AS n FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?", Date.now());
-  return { ...(await config(env)), play: playReady(env) !== null, subscribers: n.n, launched: s.launchedAt !== null };
-}
-
-/** [MON-08] A date [months] calendar months after [ms], on the last day of a shorter month when needed. */
-export function addMonths(ms, months) {
-  const d = new Date(ms);
-  const day = d.getUTCDate();
-  d.setUTCDate(1);
-  d.setUTCMonth(d.getUTCMonth() + months);
-  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
-  d.setUTCDate(Math.min(day, last));
-  return d.getTime();
-}
-
-/**
- * [MON-08] Passes given to one install, stacked: each starts when the one before ends, when it was given,
- * or at the launch, whichever is last, so months given while everything was free are not used up.
- * A reward Play paid as a deferred renewal is not a pass.
- */
-export function stack(rows, launchedAt) {
-  const given = rows.filter((r) => r.status === "paid" && !r.deferred).sort((a, b) => a.paid_at - b.paid_at);
-  const months = given.reduce((n, r) => n + r.months, 0);
-  if (!launchedAt) return { until: null, waiting: months, items: given };
-  let until = 0;
-  for (const r of given) until = addMonths(Math.max(until, r.paid_at, launchedAt), r.months);
-  return { until: given.length ? until : null, waiting: 0, items: given };
-}
-
-async function installOf(request) {
-  const id = deviceId(request.headers.get("x-device"));
-  if (!id) throw new Refuse("device", "device");
-  return deviceHash(id);
-}
-
-/** [MON-08][MON-09] What this install has: its passes, its admin link and whether it holds a recovery code. */
-async function passes(env, dev, now) {
-  const [rows, link, code, s] = await Promise.all([
-    all(env, "SELECT months, status, paid_at, deferred, rule_id FROM rewards WHERE device = ?", dev),
-    one(env, "SELECT status, admin_name, admin FROM admin_devices WHERE device = ?", dev),
-    one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
-    launchState(env),
-  ]);
-  if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
-  const p = stack(rows, s.launchedAt);
-  return {
-    until: p.until ? iso(p.until) : null,
-    waitingMonths: p.waiting,
-    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
-    deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
-    // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
-    admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id } : null,
-    code: Boolean(code),
-    checkedAt: iso(now),
-  };
-}
-
-const passCode = () => randomId(16).toUpperCase().replace(/(.{4})(?=.)/g, "$1-");
-const passCodeHash = async (code) => (await sha256(`pass|${String(code).toUpperCase().replace(/[^A-Z0-9]/g, "")}`)).slice(0, 40);
-
-/** [MON-08] /api/passes, /api/passes/code, /api/passes/claim and /api/admin-link, all for one install. */
-async function money(request, env, path) {
-  const method = request.method;
-  const now = Date.now();
-  const dev = await installOf(request);
-  if (path === "/api/passes" && method === "GET") return json(await passes(env, dev, now));
-  if (path === "/api/passes/code" && method === "POST") {
-    if (!(await allow(env, `passcode|${dev}`, MONEY.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
-    // A new code replaces the old one; it is shown once and kept only as a hash.
-    const code = passCode();
-    await batch(env, [
-      stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
-      stmt(env, "INSERT INTO pass_codes (hash, device, created_at) VALUES (?, ?, ?)", await passCodeHash(code), dev, now),
-    ]);
-    return json({ code }, 201);
-  }
-  if (path === "/api/passes/claim" && method === "POST") {
-    const body = await readJson(request, 1024);
-    const net = await network(request, env, now);
-    if (!(await allow(env, `claim|${net.day}`, MONEY.claimsPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
-    if (typeof body.code !== "string" || body.code.length > 40) refuse("code", "code");
-    const hash = await passCodeHash(body.code);
-    const row = await one(env, "SELECT device FROM pass_codes WHERE hash = ?", hash);
-    if (!row) return json({ error: "code", field: "code" }, 404);
-    if (row.device !== dev) {
-      // The passes move; the old phone keeps nothing and the code is spent.
-      await batch(env, [
-        stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
-        stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
-        // [INVITE-02] The invite code moves with them, so links already sent count here.
-        stmt(env, "UPDATE OR IGNORE invite_codes SET device = ? WHERE device = ?", dev, row.device),
-        stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", dev, row.device),
-      ]);
-      await audit(env, now, "pass_move", dev.slice(0, 8), row.device.slice(0, 8));
-    }
-    return json(await passes(env, dev, now));
-  }
-  if (path === "/api/admin-link" && method === "POST") return linkPhone(request, env, dev, now);
-  if (path === "/api/admin-link" && method === "DELETE") {
-    await run(env, "DELETE FROM admin_devices WHERE device = ?", dev);
-    return new Response(null, { status: 204 });
-  }
-  if (path === "/api/purchases" && method === "POST") return purchase(request, env, dev, now);
-  if (path === "/api/consents" && method === "POST") return consent(request, env, dev, now);
-  return json({ error: "not_found" }, 404);
-}
-
-// AE 1.26 시작
-// ---- 친구 초대 [INVITE-02][INVITE-03][INVITE-04][INVITE-08] ----
-// The person who invited gets months of 프로 each time [friends] friends' phones installed the app by the invite,
-// finished the first setup and used it for the period: opened again on a Korean day at least [days] days after the
-// day they told the server (research/1.26-AE-초대-조사.md, 결정 D81·D82). The developer app sets the numbers
-// (설정 › 친구 초대). The friend gets nothing, and a store rating or review is never part of it (Play: User
-// Ratings, Reviews, and Installs).
-
-const INVITE = {
-  // [INVITE-08] Until changed in the developer app: 5 friends, 7 days, 1 month, no cap (0).
-  friends: 5,
-  days: 7,
-  months: 1,
-  capMonths: 0,
-  // A cap, when one is set, counts the months of the last 365 days.
-  capDays: 365,
-  // A friend who has not used the app for the period by [days] + 30 days after telling is let go.
-  graceDays: 30,
-  // A counted friend (its phone mark, so the phone is not counted again) is kept a year.
-  keepCounted: 365 * DAY,
-  codesPerDay: 5,
-  usesPerHour: 10,
-  usesPerDevice: 5,
-  seenPerDay: 30,
-  // AG 1.27: more friends of one code than this from one network in an hour are noted (not refused).
-  burstPerHour: 2,
-  package: "com.bamnat.app",
-};
-/** [INVITE-08] What the developer app may set, and the settings rows they are kept in. */
-const INVITE_LIMITS = { friends: [1, 50], days: [1, 60], months: [1, 12], capMonths: [0, 120] };
-const INVITE_KEYS = { friends: "invite_friends", days: "invite_days", months: "invite_months", capMonths: "invite_cap_months" };
-const INVITE_SETTINGS_SQL = `SELECT key, value FROM settings WHERE key IN (${Object.values(INVITE_KEYS).map((k) => `'${k}'`).join(", ")})`;
-
-/** [INVITE-08] The invite rules from their settings rows, each within its limits, else its default. */
-function readInviteSettings(rows) {
-  return Object.fromEntries(Object.entries(INVITE_KEYS).map(([name, key]) => {
-    const n = Number(rows.find((r) => r.key === key)?.value);
-    const [lo, hi] = INVITE_LIMITS[name];
-    return [name, Number.isInteger(n) && n >= lo && n <= hi ? n : INVITE[name]];
-  }));
-}
-
-const inviteSettings = async (env) => readInviteSettings(await all(env, INVITE_SETTINGS_SQL));
-
-/** Days a friend has to come back in, from the day it told the server: the period and 30 more. */
-const inviteDeadline = (set) => (set.days + INVITE.graceDays) * DAY;
-
-// No 0/O, 1/I: a code read out or typed by hand. 32 letters, so a random byte maps evenly.
-const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const INVITE_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
-/** What the app sends as the phone mark: SHA-256 of the app-scoped Android ID, never the id itself. */
-const PHONE_MARK = /^[0-9a-f]{64}$/;
-
-const inviteCode = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => INVITE_CHARS[b % 32]).join("");
-
-/** A code as a person may type it: "abcd-2345" is ABCD2345. */
-export const inviteCodeOf = (v) => {
-  const c = typeof v === "string" ? v.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
-  return INVITE_CODE.test(c) ? c : null;
-};
-
-/** The phone mark as the server keeps it: hashed again with the server's secret salt. */
-async function phoneMark(env, v) {
-  if (typeof v !== "string" || !PHONE_MARK.test(v)) return null;
-  return (await sha256(`${await salt(env)}|phone|${v}`)).slice(0, 40);
-}
-
-/** [INVITE-02] The Play listing with the code as the install referrer (Play Install Referrer API). */
-export function storeLink(code) {
-  const referrer = `utm_source=bamnat_invite&utm_content=${code}`;
-  return `https://play.google.com/store/apps/details?id=${INVITE.package}&referrer=${encodeURIComponent(referrer)}`;
-}
-
-/**
- * AG 1.27 [INVITE-13] The Play app itself by an Android intent link, the referrer kept as on the web link, and the web
- * link when the Play app is missing (Chrome's intent: links; 확인 필요 for each messenger's own browser).
- */
-export function playIntent(code, store = storeLink(code)) {
-  const referrer = encodeURIComponent(`utm_source=bamnat_invite&utm_content=${code}`);
-  return `intent://details?id=${INVITE.package}&referrer=${referrer}#Intent;scheme=market;package=com.android.vending;` +
-    `S.browser_fallback_url=${encodeURIComponent(store)};end`;
-}
-
-/** Why a reward was given, as the app names it. */
-const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
-
-/** Whole days from one Korean date ("2026-10-25") to another. */
-const dayGap = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
-
-/**
- * [INVITE-02] /i/<code>: a small page that sends an Android phone on to the Play listing with the code, and
- * shows the code elsewhere. It keeps nothing and does not look the code up, so it tells nobody which codes exist.
- */
-function invitePage(raw) {
-  const code = inviteCodeOf(raw);
-  if (!code) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
-  const store = storeLink(code);
-  // AG 1.27 [INVITE-13] A messenger's own browser (카카오톡, 네이버, 인스타그램, 페이스북, 라인) may open the Play web page,
-  // where an install can lose the referrer: there the Play app is opened straight, with the web page to fall back to.
-  const app = playIntent(code, store);
-  const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>밤낮 초대</title>
-<style>body{font-family:system-ui,sans-serif;margin:0;padding:32px 16px;background:#f6f7fb;color:#1b1d24}main{max-width:420px;margin:auto}
-a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
-code{font-size:1.4em;letter-spacing:.08em}@media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head>
-<body><main><h1>밤낮 근무 달력</h1><p>친구가 밤낮을 같이 쓰자고 초대했어요. 이 링크로 Play 스토어에서 받으면 앱이 초대를 저절로 알아보고, 첫 설정 마지막에 친구에게 알릴 수 있어요.</p>
-<p><a class="b" id="go" href="${store}">Play 스토어에서 받기</a></p>
-<p>안드로이드 휴대폰에서 열어 주세요. 링크로 받지 못했다면 설치하고 7일 안에 앱의 설정 › 프로 › ‘초대 코드 넣기’에 <code>${shown}</code>를 넣어 주세요.</p>
-<p><small>이 페이지는 아무것도 저장하지 않아요.</small></p></main>
-<script>var u=navigator.userAgent,a=/Android/i.test(u),w=/KAKAOTALK|NAVER|Instagram|FBAN|FBAV|FB_IAB|Line\//i.test(u);
-if(a&&w)document.getElementById("go").href=${JSON.stringify(app)};
-if(a)location.replace(w?${JSON.stringify(app)}:${JSON.stringify(store)});</script></body></html>`;
-  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600", "referrer-policy": "no-referrer" } });
-}
-
-/** Months the inviter was given for invites since [since]. */
-async function inviteMonths(env, dev, since = 0) {
-  const r = await one(env, `SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND rule_id = 'invite' AND status = 'paid'
-    AND paid_at > ?`, dev, since);
-  return r.m;
-}
-
-/** [INVITE-08] The rules as the app says them, before anything is sent. */
-const inviteRules = (set) => ({ need: set.friends, days: set.days, months: set.months, capMonths: set.capMonths });
-
-/**
- * [INVITE-05][INVITE-08] What the inviter sees: the code and link, the rules, friends counted toward the next
- * months ([progress] of [need]), friends still in their period ([waiting]), friends counted in all and the months
- * they gave. "3/5명 · 2명은 사용 기간 채우는 중".
- */
-async function inviteView(env, dev, origin, now) {
-  const set = await inviteSettings(env);
-  const [mine, counts, months, recent, used] = await Promise.all([
-    one(env, "SELECT code FROM invite_codes WHERE device = ?", dev),
-    all(env, "SELECT status, COUNT(*) AS n FROM invite_uses WHERE inviter = ? AND (status != 'waiting' OR created_at > ?) GROUP BY status",
-      dev, now - inviteDeadline(set)),
-    inviteMonths(env, dev),
-    set.capMonths ? inviteMonths(env, dev, now - INVITE.capDays * DAY) : 0,
-    one(env, "SELECT status FROM invite_uses WHERE invitee = ?", dev),
-  ]);
-  const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
-  return {
-    code: mine?.code ?? null,
-    link: mine ? `${origin}/i/${mine.code}` : null,
-    ...inviteRules(set),
-    progress: n("qualified"),
-    waiting: n("waiting"),
-    friends: n("credited") + n("capped") + n("qualified"),
-    given: months,
-    capReached: set.capMonths > 0 && recent + set.months > set.capMonths,
-    // The invite this phone itself came by, as this phone reported it.
-    used: used?.status ?? null,
-  };
-}
-
-/**
- * [INVITE-08] Each [friends] friends who used the app for the period give the inviter [months] of 프로, the oldest
- * first, as often as they add up (a lowered number may give more than one at once). One statement takes a group,
- * so two friends finishing at once cannot both use the same ones. Over a cap, the group is counted without months.
- */
-async function settleInvites(env, inviter, set, now) {
-  for (let i = 0; i < 50; i++) {
-    const have = await one(env, "SELECT COUNT(*) AS n FROM invite_uses WHERE inviter = ? AND status = 'qualified'", inviter);
-    if (have.n < set.friends) return;
-    const recent = set.capMonths ? await inviteMonths(env, inviter, now - INVITE.capDays * DAY) : 0;
-    const capped = inviter.startsWith("gone") || (set.capMonths > 0 && recent + set.months > set.capMonths);
-    const id = `i${randomId(21)}`;
-    const took = await run(env, `UPDATE invite_uses SET status = ?, batch = ? WHERE invitee IN (SELECT invitee FROM invite_uses
-      WHERE inviter = ? AND status = 'qualified' ORDER BY decided_at, invitee LIMIT ?)
-      AND (SELECT COUNT(*) FROM invite_uses WHERE inviter = ? AND status = 'qualified') >= ?`,
-      capped ? "capped" : "credited", id, inviter, set.friends, inviter, set.friends);
-    if (!took.meta.changes) return;
-    if (capped) {
-      await audit(env, now, "invite_capped", id, inviter.slice(0, 8));
-      continue;
-    }
-    let deferred = null;
-    try {
-      deferred = await deferFor(env, inviter, set.months, now);
-    } catch (e) {
-      console.error(`defer invite: ${e?.code ?? e}`);
-    }
-    const memo = `친구 초대 ${took.meta.changes}명`;
-    await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
-      VALUES (?, ?, 'invite', ?, ?, 'paid', ?, ?, ?, ?)`, id, `invite:${id}`, inviter, set.months,
-      deferred ? `${memo} · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : memo, now, now, deferred ? 1 : 0);
-    await audit(env, now, "invite_credit", id, inviter.slice(0, 8));
-  }
-}
-
-/** [INVITE-08] A lowered number of friends may already be met: settles the inviters it reached. */
-async function settleAllInvites(env, set, now) {
-  const due = await all(env, `SELECT inviter FROM invite_uses WHERE status = 'qualified' GROUP BY inviter HAVING COUNT(*) >= ? LIMIT 200`, set.friends);
-  for (const d of due) await settleInvites(env, d.inviter, set, now);
-}
-
-/**
- * [INVITE-02][INVITE-03] /api/invites, /api/invites/code, /api/invites/use and /api/invites/seen, all for one install;
- * [INVITE-08] /api/invites/rules for anyone.
- */
-async function invites(request, env, path, url) {
-  const method = request.method;
-  const now = Date.now();
-  // [INVITE-08] The rules the 프로 screen says before the user agrees to anything: no install number goes.
-  if (path === "/api/invites/rules" && method === "GET") {
-    return json(inviteRules(await inviteSettings(env)), 200, { "cache-control": "public, max-age=3600" });
-  }
-  const dev = await installOf(request);
-  if (path === "/api/invites" && method === "GET") return json(await inviteView(env, dev, url.origin, now));
-  if (path === "/api/invites/code" && method === "POST") {
-    const body = await readJson(request, 1024);
-    const mark = await phoneMark(env, body.phone);
-    if (!mark) refuse("phone", "phone");
-    if (!(await allow(env, `invitecode|${dev}`, INVITE.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
-    // One code per install, kept as it is: a link already sent keeps working.
-    const had = await one(env, "SELECT code FROM invite_codes WHERE device = ?", dev);
-    if (had) {
-      await run(env, "UPDATE invite_codes SET phone = ? WHERE device = ?", mark, dev);
-    } else {
-      for (let i = 0; i < 5; i++) {
-        const r = await run(env, "INSERT OR IGNORE INTO invite_codes (code, device, phone, created_at) VALUES (?, ?, ?, ?)", inviteCode(), dev, mark, now);
-        if (r.meta.changes) break;
-      }
-    }
-    return json(await inviteView(env, dev, url.origin, now), had ? 200 : 201);
-  }
-  if (path === "/api/invites/use" && method === "POST") {
-    const body = await readJson(request, 1024);
-    const net = await network(request, env, now);
-    if (!(await allow(env, `inviteuse|${net.day}`, INVITE.usesPerHour, HOUR, now)) ||
-        !(await allow(env, `inviteuse|${dev}`, INVITE.usesPerDevice, DAY, now))) {
-      return json({ error: "rate_limited" }, 429);
-    }
-    const code = inviteCodeOf(body.code);
-    if (!code) refuse("code", "code");
-    if (!["referrer", "typed"].includes(body.source)) refuse("source", "source");
-    const mark = await phoneMark(env, body.phone);
-    if (!mark) refuse("phone", "phone");
-    const set = await inviteSettings(env);
-    const before = await one(env, "SELECT status, reason FROM invite_uses WHERE invitee = ?", dev);
-    if (before) return json({ status: before.status, reason: before.reason || null, days: set.days, daysLeft: null });
-    const owner = await one(env, "SELECT device, phone FROM invite_codes WHERE code = ?", code);
-    if (!owner) return json({ error: "code", field: "code" }, 404);
-    // [INVITE-04] A phone counts once, whoever invited it and however often the app was installed again.
-    if (await one(env, "SELECT 1 FROM invite_uses WHERE phone = ?", mark)) {
-      await audit(env, now, "invite_refused", code, "phone");
-      return json({ status: "refused", reason: "phone", days: set.days, daysLeft: null });
-    }
-    const self = owner.device === dev || owner.phone === mark;
-    await run(env, `INSERT OR IGNORE INTO invite_uses (invitee, phone, code, inviter, source, first_day, status, reason, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, dev, mark, code, owner.device, body.source, kstDay(now), self ? "refused" : "waiting", self ? "self" : "", now);
-    if (self) await audit(env, now, "invite_refused", code, "self");
-    // AG 1.27 [INVITE-10] Many friends of one code from one network in an hour (the hour's hashed network, kept the
-    // hour as the other counters) are let in, as coworkers share a hospital's or a factory's Wi-Fi, and noted with
-    // the code only for the developer app's summary (결정 AG-D5).
-    else if (!(await allow(env, `invitenet|${net.now}|${code}`, INVITE.burstPerHour, HOUR, now))) await audit(env, now, "invite_burst", code, "");
-    return json({ status: self ? "refused" : "waiting", reason: self ? "self" : null, days: set.days, daysLeft: self ? null : set.days }, 201);
-  }
-  if (path === "/api/invites/seen" && method === "POST") {
-    if (!(await allow(env, `inviteseen|${dev}`, INVITE.seenPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
-    const row = await one(env, "SELECT * FROM invite_uses WHERE invitee = ?", dev);
-    if (!row) return json({ error: "not_found" }, 404);
-    const set = await inviteSettings(env);
-    const answer = (status, daysLeft = null) => json({ status, reason: row.reason || null, days: set.days, daysLeft });
-    if (row.status !== "waiting") return answer(row.status);
-    if (now - row.created_at > inviteDeadline(set)) {
-      await run(env, "UPDATE invite_uses SET status = 'expired', decided_at = ? WHERE invitee = ? AND status = 'waiting'", now, dev);
-      return answer("expired");
-    }
-    // [INVITE-03][INVITE-08] 사용: the app opened again on a Korean day (the server's clock, not the phone's) at least
-    // [days] after the day it told the server. The app sends this once a day it is opened.
-    const used = dayGap(row.first_day, kstDay(now));
-    if (used < set.days) return answer("waiting", set.days - used);
-    await run(env, "UPDATE invite_uses SET status = 'qualified', decided_at = ? WHERE invitee = ? AND status = 'waiting'", now, dev);
-    await settleInvites(env, row.inviter, set, now);
-    return answer((await one(env, "SELECT status FROM invite_uses WHERE invitee = ?", dev))?.status ?? "qualified");
-  }
-  return json({ error: "not_found" }, 404);
-}
-
-/** [INVITE-08] 설정 › 친구 초대 in the developer app: GET the rules, POST changes (a key left out stays as it was). */
-async function inviteSettingsRoute(request, env, method, now) {
-  if (method === "GET") return json(await inviteSettings(env));
-  if (method !== "POST") return json({ error: "not_found" }, 404);
-  const body = await readJson(request, 1024);
-  const was = await inviteSettings(env);
-  const set = Object.fromEntries(Object.entries(INVITE_LIMITS).map(([key, [lo, hi]]) => {
-    const v = body[key] ?? was[key];
-    if (!Number.isInteger(v) || v < lo || v > hi) refuse(key, key);
-    return [key, v];
-  }));
-  await batch(env, Object.entries(INVITE_KEYS).map(([name, key]) =>
-    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, String(set[name]))));
-  await audit(env, now, "invite_settings", "", `${set.friends}명 · ${set.days}일 · ${set.months}개월 · 상한 ${set.capMonths ? `${set.capMonths}개월` : "없음"}`);
-  await settleAllInvites(env, set, now);
-  return json(set);
-}
-
-/**
- * [INVITE-06] For the developer app's 보상 screen: the rewards by status and, when [withInvites], how invites went,
- * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
- */
-async function rewardCounts(env, withInvites, now) {
-  const [rewardRows, counts, refused, top, codes, setRows, bursts] = (await batch(env, [
-    stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
-    stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
-    stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
-    stmt(env, `SELECT code, COUNT(*) AS friends, SUM(status IN ('credited', 'capped', 'qualified')) AS counted, SUM(status = 'waiting') AS waiting
-      FROM invite_uses WHERE status IN ('credited', 'capped', 'qualified', 'waiting') GROUP BY code ORDER BY friends DESC LIMIT 5`),
-    stmt(env, "SELECT COUNT(*) AS n FROM invite_codes"),
-    stmt(env, INVITE_SETTINGS_SQL),
-    // AG 1.27 [INVITE-10] 몰림: friends of one code from one network in an hour, the last 30 days.
-    stmt(env, "SELECT target AS code, COUNT(*) AS n FROM audit WHERE action = 'invite_burst' AND at > ? GROUP BY target ORDER BY n DESC LIMIT 5", now - 30 * DAY),
-  ])).map((r) => r.results ?? []);
-  const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
-  return [rewardRows, withInvites ? {
-    codes: codes[0]?.n ?? 0, credited: n("credited"), capped: n("capped"), qualified: n("qualified"), waiting: n("waiting"),
-    expired: n("expired"), rules: readInviteSettings(setRows),
-    refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
-    top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),
-    bursts: bursts.reduce((a, b) => a + b.n, 0),
-    burstCodes: bursts.map((b) => ({ code: b.code, n: b.n })),
-  } : undefined];
-}
-// AE 1.26 끝
-
-// ---- 관리자 휴대폰 [MON-09] ----
-
-/** The developer app makes a code for the signed-in admin's own phone. */
-async function linkCode(env, actor, now) {
-  if (!(await allow(env, `linkcode|${actor.id}`, MONEY.linkCodesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
-  let code;
-  for (let i = 0; i < 5 && !code; i++) {
-    const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
-    const c = String(n).padStart(6, "0");
-    if (!(await one(env, "SELECT 1 FROM link_codes WHERE code = ? AND expires > ?", c, now))) code = c;
-  }
-  if (!code) return json({ error: "busy" }, 503);
-  await batch(env, [
-    stmt(env, "DELETE FROM link_codes WHERE admin = ? OR expires < ?", actor.id, now),
-    stmt(env, "INSERT INTO link_codes (code, admin, admin_name, expires) VALUES (?, ?, ?, ?)", code, actor.id, actor.name, now + MONEY.linkMs),
-  ]);
-  return json({ code, expiresAt: iso(now + MONEY.linkMs) }, 201);
-}
-
-async function linkPhone(request, env, dev, now) {
-  const body = await readJson(request, 1024);
-  const net = await network(request, env, now);
-  if (!(await allow(env, `link|${net.day}`, MONEY.linkTriesPerHour, HOUR, now)) ||
-      !(await allow(env, `link|${dev}`, MONEY.linkTriesPerHour, HOUR, now))) {
-    return json({ error: "rate_limited" }, 429);
-  }
-  if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) refuse("code", "code");
-  const row = await one(env, "SELECT * FROM link_codes WHERE code = ? AND expires > ?", body.code, now);
-  if (!row) return json({ error: "code", field: "code" }, 404);
-  const owner = row.admin === OWNER.id;
-  if (!owner && !(await one(env, "SELECT 1 FROM admins WHERE id = ? AND status = 'active'", row.admin))) {
-    await run(env, "DELETE FROM link_codes WHERE code = ?", body.code);
-    return json({ error: "code", field: "code" }, 404);
-  }
-  const others = await one(env, "SELECT COUNT(*) AS n FROM admin_devices WHERE admin = ? AND device != ?", row.admin, dev);
-  if (others.n >= MONEY.phonesPerAdmin) return json({ error: "too_many", field: "code" }, 409);
-  const status = owner ? "approved" : "pending";
-  await batch(env, [
-    stmt(env, "DELETE FROM link_codes WHERE code = ?", body.code),
-    stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
-    stmt(env, `INSERT INTO admin_devices (id, device, admin, admin_name, status, created_at, approved_at, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, `d${randomId(15)}`, dev, row.admin, row.admin_name, status, now, owner ? now : null, now),
-  ]);
-  await audit(env, now, "device_link", row.admin_name, status);
-  return json({ status, name: row.admin_name }, 201);
-}
-
-async function phoneList(env) {
-  const rows = await all(env, "SELECT id, admin, admin_name, status, created_at, approved_at, seen_at FROM admin_devices ORDER BY created_at DESC");
-  return {
-    devices: rows.map((d) => ({
-      id: d.id, admin: d.admin, adminName: d.admin_name, status: d.status, createdAt: iso(d.created_at),
-      approvedAt: d.approved_at ? iso(d.approved_at) : null, seenAt: d.seen_at ? iso(d.seen_at) : null,
-    })),
-    perAdmin: MONEY.phonesPerAdmin,
-  };
-}
-
-async function setPhone(env, id, action, now) {
-  const d = await one(env, "SELECT * FROM admin_devices WHERE id = ?", id);
-  if (!d) return json({ error: "not_found" }, 404);
-  if (action === "approve") await run(env, "UPDATE admin_devices SET status = 'approved', approved_at = ? WHERE id = ?", now, id);
-  else await run(env, "DELETE FROM admin_devices WHERE id = ?", id);
-  await audit(env, now, action === "approve" ? "device_approve" : "device_remove", d.admin_name);
-  return json(await phoneList(env));
-}
-
-// ---- 구매 확인과 체험 전환 동의 [MON-03][MON-06] ----
-
-const PLAY = {
-  scope: "https://www.googleapis.com/auth/androidpublisher",
-  token: "https://oauth2.googleapis.com/token",
-  api: "https://androidpublisher.googleapis.com/androidpublisher/v3/applications",
-  states: {
-    SUBSCRIPTION_STATE_ACTIVE: "ACTIVE", SUBSCRIPTION_STATE_IN_GRACE_PERIOD: "GRACE", SUBSCRIPTION_STATE_CANCELED: "CANCELED",
-    SUBSCRIPTION_STATE_ON_HOLD: "ON_HOLD", SUBSCRIPTION_STATE_PAUSED: "PAUSED", SUBSCRIPTION_STATE_EXPIRED: "EXPIRED",
-    SUBSCRIPTION_STATE_PENDING: "PENDING", SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED: "EXPIRED",
-  },
-};
-const PRODUCT = /^[a-z0-9_.]{1,40}$/;
-/** [SRV-07] How long before a trial turns paid an unanswered one is stopped, how long a first phone keeps its token, rechecks an hour. */
-const TRIAL_STOP_BEFORE = 2 * HOUR;
-const REBIND_AFTER = 7 * DAY;
-const RECHECK_BATCH = 20;
-const playTokens = new WeakMap();
-
-/** The service account the owner pasted as the secret PLAY_SERVICE_ACCOUNT, or null; its key is never shown. */
-function playReady(env) {
-  if (typeof env.PLAY_SERVICE_ACCOUNT !== "string" || !env.PLAY_SERVICE_ACCOUNT.trim()) return null;
-  try {
-    const a = JSON.parse(env.PLAY_SERVICE_ACCOUNT);
-    return typeof a.client_email === "string" && typeof a.private_key === "string" ? a : null;
-  } catch {
-    return null;
-  }
-}
-
-const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const b64urlText = (text) => b64url(new TextEncoder().encode(text));
-
-/** An OAuth token for the Play Developer API from the service account (JWT bearer, RS256), kept until near its end. */
-async function playToken(env, account, now, scope = PLAY.scope) {
-  // [ADMUX-16] One token per scope: purchases (androidpublisher) and Play's vitals (playdeveloperreporting).
-  const tokens = playTokens.get(env.DB ?? env) ?? {};
-  const kept = tokens[scope];
-  if (kept && kept.until > now + 60_000) return kept.token;
-  const pem = account.private_key.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
-  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-  const iat = Math.floor(now / 1000);
-  const head = b64urlText(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64urlText(JSON.stringify({ iss: account.client_email, scope, aud: PLAY.token, iat, exp: iat + 3600 }));
-  const sig = b64url(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${head}.${claims}`)));
-  const res = await fetch(PLAY.token, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: `grant_type=${encodeURIComponent("urn:ietf:params:oauth:grant-type:jwt-bearer")}&assertion=${head}.${claims}.${sig}`,
-  });
-  if (!res.ok) throw new Refuse("play_auth", "play", 502);
-  const t = await res.json();
-  playTokens.set(env.DB ?? env, { ...tokens, [scope]: { token: t.access_token, until: now + (Number(t.expires_in) || 3600) * 1000 } });
-  return t.access_token;
-}
-
-async function playCall(env, method, path, body) {
-  const account = playReady(env);
-  if (!account) throw new Refuse("play_off", "play", 503);
-  const pkg = env.PLAY_PACKAGE || "com.bamnat.app";
-  const res = await fetch(`${PLAY.api}/${encodeURIComponent(pkg)}${path}`, {
-    method,
-    headers: { authorization: `Bearer ${await playToken(env, account, Date.now())}`, ...(body ? { "content-type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 404 || res.status === 410) throw new Refuse("purchase", "token", 404);
-  if (!res.ok) throw new Refuse("play", "play", 502);
-  const text = await res.text();
-  return text ? JSON.parse(text) : {};
-}
-
-/** [MON-03] subscriptionsv2.get read the way the app needs it. */
-export function readSub(p, product) {
-  const items = Array.isArray(p.lineItems) ? p.lineItems : [];
-  const item = items.find((i) => i.productId === product) ?? items[0] ?? {};
-  const expiry = Date.parse(item.expiryTime ?? "");
-  return {
-    state: PLAY.states[p.subscriptionState] ?? "PENDING",
-    expiry: Number.isFinite(expiry) ? expiry : null,
-    trial: Boolean(item.offerPhase?.freeTrial),
-    autoRenew: item.autoRenewingPlan?.autoRenewEnabled === true,
-    basePlan: item.offerDetails?.basePlanId ?? "",
-    acknowledged: p.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED",
-    etag: typeof p.etag === "string" ? p.etag : "",
-  };
-}
-
-/**
- * [MON-03] The app sends what Play gave it after a purchase and on each start. With the owner's service
- * account the server asks Play itself and keeps the token while the subscription lasts (for consent and
- * reward deferral); without one it keeps nothing and the app goes by the phone's Play.
- */
-async function purchase(request, env, dev, now) {
-  const body = await readJson(request, 4096);
-  if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
-  if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
-  if (!playReady(env)) return json({ verified: false });
-  const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
-  const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
-  // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
-  // leaked token cannot move the consent record or reward deferrals to someone else's phone. After a week
-  // without the first phone (a new phone with the same Google account) it moves, and the log says so.
-  const bound = await one(env, "SELECT device, checked_at FROM subs WHERE hash = ?", hash);
-  if (bound && bound.device !== dev) {
-    if (now - bound.checked_at < REBIND_AFTER) {
-      await audit(env, now, "purchase_rebind_refused", body.product, hash.slice(0, 8));
-      return json({ verified: false });
-    }
-    await audit(env, now, "purchase_rebind", body.product, hash.slice(0, 8));
-  }
-  await run(env, `INSERT INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, expiry = excluded.expiry, trial = excluded.trial,
-      auto_renew = excluded.auto_renew, base_plan = excluded.base_plan, checked_at = excluded.checked_at`,
-  hash, dev, body.token, body.product, s.basePlan, s.state, s.expiry, s.trial ? 1 : 0, s.autoRenew ? 1 : 0, now, now);
-  const row = await one(env, "SELECT consent_at, stopped_at FROM subs WHERE hash = ?", hash);
-  return json({
-    verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
-    acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
-  });
-}
-
-/**
- * [MON-06] The user's own answer before a trial turns paid (전자상거래법 제13조 6항): "keep" or "cancel",
- * with the price and the date they were shown. Kept as evidence; the trial's record says consent was given.
- */
-async function consent(request, env, dev, now) {
-  const body = await readJson(request, 2048);
-  // [SRV-07] A phone that could not send the answer at once sends it later from its queue, with the moment
-  // the user tapped: that moment is the consent, as long as it is not in the future or before the trial.
-  const tapped = Date.parse(body.answeredAt ?? "");
-  const at = Number.isFinite(tapped) && tapped <= now + 5 * 60 * 1000 && tapped >= now - 40 * DAY ? Math.min(tapped, now) : now;
-  if (!["keep", "cancel"].includes(body.answer)) refuse("answer", "answer");
-  if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
-  const price = typeof body.price === "string" ? body.price.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40) : "";
-  const ends = Date.parse(body.trialEnd ?? "");
-  if (!price || !Number.isFinite(ends)) refuse("detail", "price");
-  if (!(await allow(env, `consent|${dev}`, 20, DAY, now))) return json({ error: "rate_limited" }, 429);
-  const detail = JSON.stringify({ answer: body.answer, product: body.product, price, trialEnd: iso(ends), shown: String(body.shown ?? "").slice(0, 300),
-    ...(at !== now ? { answeredAt: iso(at), receivedAt: iso(now) } : {}) });
-  await batch(env, [
-    stmt(env, "INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', ?, ?)", dev, detail, at),
-    ...(body.answer === "keep" ? [stmt(env, "UPDATE subs SET consent_at = ? WHERE device = ? AND trial = 1 AND product = ?", at, dev, body.product)] : []),
-  ]);
-  return json({ ok: true, at: iso(at) }, 201);
-}
-
-/**
- * [MON-06] Hourly: a trial ending within [TRIAL_STOP_BEFORE] whose user has not said "keep" does not turn
- * paid. The next renewal is stopped as if the user had cancelled (they can resubscribe in Play); without
- * the service account nothing can be stopped from here and the app keeps asking instead.
- * [SRV-07] Two hours, not a day: a "keep" tapped on the subway waits in the phone's queue and reaches the
- * server on the next connection, and the hourly run still has two tries before Play charges.
- */
-export async function stopUnconsentedTrials(env, now) {
-  if (!playReady(env)) return 0;
-  const due = await all(env, `SELECT hash, token, product, expiry FROM subs WHERE trial = 1 AND auto_renew = 1 AND consent_at IS NULL
-    AND stopped_at IS NULL AND state IN ('ACTIVE', 'GRACE') AND expiry > ? AND expiry <= ?`, now, now + TRIAL_STOP_BEFORE);
-  let stopped = 0;
-  for (const s of due) {
-    try {
-      await playCall(env, "POST", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(s.token)}:cancel`,
-        { cancellationContext: { cancellationType: "USER_REQUESTED_STOP_RENEWALS" } });
-      await run(env, "UPDATE subs SET stopped_at = ?, auto_renew = 0 WHERE hash = ?", now, s.hash);
-      await audit(env, now, "trial_stop", s.product, iso(s.expiry));
-      stopped++;
-    } catch (e) {
-      console.error(`trial stop ${s.hash.slice(0, 8)}: ${e?.code ?? e}`);
-    }
-  }
-  return stopped;
-}
-
-/**
- * [SRV-07] Daily per subscription: one Play says is still running past its end is asked again, so a
- * renewal, a grace period or a hold is known here even when the phone has not opened the app. At most
- * [RECHECK_BATCH] an hour, each no more than once a day.
- */
-export async function recheckLapsed(env, now) {
-  if (!playReady(env)) return 0;
-  const due = await all(env, `SELECT hash, token, product FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry IS NOT NULL
-    AND expiry < ? AND checked_at < ? ORDER BY checked_at LIMIT ?`, now, now - DAY, RECHECK_BATCH);
-  let checked = 0;
-  for (const r of due) {
-    try {
-      const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(r.token)}`), r.product);
-      await run(env, "UPDATE subs SET state = ?, expiry = ?, auto_renew = ?, checked_at = ? WHERE hash = ?",
-        s.state, s.expiry, s.autoRenew ? 1 : 0, now, r.hash);
-      checked++;
-    } catch (e) {
-      // A token Play no longer knows has ended; anything else is tried again tomorrow.
-      if (e instanceof Refuse && e.code === "purchase") await run(env, "UPDATE subs SET state = 'EXPIRED', checked_at = ? WHERE hash = ?", now, r.hash);
-      else await run(env, "UPDATE subs SET checked_at = ? WHERE hash = ?", now, r.hash);
-      console.error(`recheck ${r.hash.slice(0, 8)}: ${e?.code ?? e}`);
-    }
-  }
-  return checked;
-}
-
-/**
- * [MON-08] A reward for someone paying a running subscription is given as a later renewal (Play's
- * deferral) instead of a pass running beside what they already pay for. Null when it cannot be.
- */
-async function deferFor(env, dev, months, now) {
-  if (!playReady(env)) return null;
-  const sub = await one(env, `SELECT * FROM subs WHERE device = ? AND trial = 0 AND auto_renew = 1 AND state = 'ACTIVE' AND expiry > ?
-    ORDER BY expiry DESC LIMIT 1`, dev, now);
-  if (!sub) return null;
-  const path = `/purchases/subscriptionsv2/tokens/${encodeURIComponent(sub.token)}`;
-  const fresh = readSub(await playCall(env, "GET", path), sub.product);
-  if (fresh.state !== "ACTIVE" || !fresh.expiry) return null;
-  const seconds = Math.round((addMonths(fresh.expiry, months) - fresh.expiry) / 1000);
-  const r = await playCall(env, "POST", `${path}:defer`, { deferralContext: { etag: fresh.etag, deferDuration: `${seconds}s` } });
-  const next = Date.parse(r.itemExpiryTimeDetails?.[0]?.expiryTime ?? "") || addMonths(fresh.expiry, months);
-  await run(env, "UPDATE subs SET expiry = ?, checked_at = ? WHERE hash = ?", next, now, sub.hash);
-  return next;
-}
-
-// ---- running the service, 1.22 [SRV-04][SRV-05][SRV-06][STAT-01][COMM-09][COMM-10][ADMIN-13][ADMIN-14] ----
-
-/** A day as people in Korea count it (KST, no daylight saving), "2026-10-22". */
-const kstDay = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
-
-/**
- * [SRV-04] What the developer app can switch off for every phone at once. The app hides the way in and
- * says it is resting; the server stops its own part too, so an older app cannot go around it.
- */
-const SWITCHES = {
-  PLAZA_WRITE: "광장 글쓰기(글·답글·제안·임금표)",
-  COMPANY_REPORT: "회사 규칙 보내기",
-  INQUIRY_PHOTOS: "문의 사진 받기",
-  SHARE_CREATE: "근무표 링크 새로 만들기",
-  USAGE_STATS: "사용 통계 받기",
-  PLAZA_NEWS: "광장 소식 알림",
-};
-
-/** [SRV-04] A notice the app shows as one line over the calendar; tapping it opens the rest. */
-const NOTICE = { max: 10, title: 40, body: 500, levels: ["info", "important"], longestDays: 90 };
-
-/**
- * [SRV-09] Who a notice is for, chosen on the phone: the server only checks the shape and sends every
- * notice to every app, which keeps those that fit (maker, Android version, way of working, alarms on).
- * Nothing about the phone comes here. And what its button opens in the app, or an https page.
- */
-const AUDIENCE = {
-  makers: 10, maker: /^[a-z0-9][a-z0-9 _-]{0,19}$/,
-  workTypes: ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"],
-  features: ["ALARM", "SHARE", "PAY", "PLAZA", "BACKUP"],
-  sdk: [21, 99],
-};
-const NOTICE_ACTIONS = ["ALARM_CHECK", "BACKUP", "PRO", "INQUIRY", "SHARE", "PLAZA", "WHATS_NEW", "URL"];
-
-/** [SRV-09] A notice's audience as the developer app sends it; null for everyone. */
-export function readAudience(a) {
-  if (a === undefined || a === null) return null;
-  if (typeof a !== "object" || Array.isArray(a)) refuse("audience", "audience");
-  const out = {};
-  if (a.makers !== undefined) {
-    if (!Array.isArray(a.makers) || a.makers.length > AUDIENCE.makers) refuse("audience", "makers");
-    const makers = a.makers.map((m) => String(m).trim().toLowerCase());
-    if (!makers.every((m) => AUDIENCE.maker.test(m))) refuse("audience", "makers");
-    if (makers.length) out.makers = [...new Set(makers)];
-  }
-  for (const k of ["minSdk", "maxSdk"]) {
-    if (a[k] === undefined || a[k] === null) continue;
-    if (!Number.isInteger(a[k]) || a[k] < AUDIENCE.sdk[0] || a[k] > AUDIENCE.sdk[1]) refuse("audience", k);
-    out[k] = a[k];
-  }
-  if (out.minSdk && out.maxSdk && out.maxSdk < out.minSdk) refuse("audience", "maxSdk");
-  for (const [k, allowed] of [["workTypes", AUDIENCE.workTypes], ["features", AUDIENCE.features]]) {
-    if (a[k] === undefined) continue;
-    if (!Array.isArray(a[k]) || !a[k].every((v) => allowed.includes(v))) refuse("audience", k);
-    if (a[k].length) out[k] = [...new Set(a[k])];
-  }
-  return Object.keys(out).length ? out : null;
-}
-
-/** [SRV-09] A notice's button: a place in the app, or an https page with a short label. */
-export function readAction(a) {
-  if (a === undefined || a === null) return null;
-  if (typeof a !== "object" || !NOTICE_ACTIONS.includes(a.kind)) refuse("action", "action");
-  const label = a.label === undefined || a.label === null || a.label === "" ? null : plainText(a.label, 12, "action", true);
-  if (a.kind !== "URL") return { kind: a.kind, ...(label ? { label } : {}) };
-  let url;
-  try {
-    url = new URL(String(a.url ?? ""));
-  } catch {
-    refuse("action", "url");
-  }
-  if (url.protocol !== "https:" || String(a.url).length > 300) refuse("action", "url");
-  return { kind: "URL", url: url.toString(), ...(label ? { label } : {}) };
-}
-
-/** [SRV-04] The notices as stored. */
-async function noticeRows(env) {
-  const row = await one(env, "SELECT value FROM settings WHERE key = 'notices'");
-  try {
-    const v = JSON.parse(row?.value ?? "[]");
-    return (Array.isArray(v) ? v : []).filter((n) => n && typeof n.id === "string" && Number.isFinite(n.from) && Number.isFinite(n.until));
-  } catch {
-    return [];
-  }
-}
-
-async function opsState(env) {
-  // AM 1.28 [FLAG-24] what is switched off is the six switch flags forced off.
-  await migrateFlags(env);
-  const [notices, forced] = await Promise.all([noticeRows(env), all(env, "SELECT key, until FROM flag_overrides WHERE force = 'off'")]);
-  const now = Date.now();
-  return { notices, off: forced.filter((r) => SWITCH_FLAGS[r.key] && !(r.until && r.until <= now)).map((r) => SWITCH_FLAGS[r.key]) };
-}
-
-/** [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. */
-const paused = (env, name) => switchOff(env, name);
-
-const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
-  minApp: n.minApp ?? null, maxApp: n.maxApp ?? null, audience: n.audience ?? null, action: n.action ?? null });
-
-/** A notice as the developer app sends it; the app version range is the app's versionCode, either end open. */
-function readNotice(body, now) {
-  const title = plainText(body.title, NOTICE.title, "title", true);
-  const text = plainText(body.body, NOTICE.body, "body", true);
-  const level = NOTICE.levels.includes(body.level) ? body.level : refuse("level", "level");
-  const from = Date.parse(body.from ?? "");
-  const until = Date.parse(body.until ?? "");
-  if (!Number.isFinite(from)) refuse("from", "from");
-  if (!Number.isFinite(until) || until <= from || until < now || until - from > NOTICE.longestDays * DAY) refuse("until", "until");
-  const version = (v, field) => {
-    if (v === undefined || v === null || v === "") return null;
-    return Number.isInteger(v) && v > 0 && v < 1_000_000 ? v : refuse("app", field);
-  };
-  const minApp = version(body.minApp, "minApp");
-  const maxApp = version(body.maxApp, "maxApp");
-  if (minApp !== null && maxApp !== null && maxApp < minApp) refuse("app", "maxApp");
-  return { title, body: text, level, from, until, minApp, maxApp, audience: readAudience(body.audience), action: readAction(body.action) };
-}
-
-async function noticeList(env, now) {
-  const s = await opsState(env);
-  return {
-    // [ADMUX-07] The newest app this server has heard from, for the notice form's 앱 버전 칸.
-    latestApp: await latestApp(env, now),
-    notices: s.notices.sort((a, b) => b.from - a.from).map((n) => ({ ...noticeView(n), state: now < n.from ? "later" : now < n.until ? "on" : "ended" })),
-    switches: Object.entries(SWITCHES).map(([key, label]) => ({ key, label, off: s.off.includes(key) })),
-  };
-}
-
-/** [ADMUX-07] The highest app version (name and versionCode) in questions of the last 60 days, or null. */
-async function latestApp(env, now) {
-  const rows = await all(env, `SELECT DISTINCT json_extract(info, '$.app') AS app FROM inquiries WHERE created_at > ? AND json_valid(info)
-    ORDER BY created_at DESC LIMIT 300`, now - 60 * DAY);
-  let best = null;
-  for (const { app } of rows) {
-    const m = String(app ?? "").match(/^\s*([\d.]+)\s*\((\d+)\)/);
-    if (m && (!best || Number(m[2]) > best.code)) best = { name: m[1], code: Number(m[2]) };
-  }
-  return best;
-}
-
-/** Adds a notice, or changes one with the same id. Ended ones are dropped when the list is full. */
-async function saveNotice(request, env, now) {
-  const body = await readJson(request, 4096);
-  const n = readNotice(body, now);
-  const s = await opsState(env);
-  let list = s.notices.filter((x) => x.until > now - 30 * DAY);
-  const id = typeof body.id === "string" && /^n[A-Za-z0-9]{9}$/.test(body.id) ? body.id : null;
-  if (id && !list.some((x) => x.id === id)) return json({ error: "not_found" }, 404);
-  if (id) list = list.map((x) => (x.id === id ? { id, ...n } : x));
-  else {
-    if (list.length >= NOTICE.max) list = list.filter((x) => x.until > now);
-    if (list.length >= NOTICE.max) refuse("too_many", "notices");
-    list.push({ id: `n${randomId(9)}`, ...n });
-  }
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(list));
-  await audit(env, now, id ? "notice_edit" : "notice_add", n.title);
-  return json(await noticeList(env, now));
-}
-
-async function removeNotice(env, id, now) {
-  const s = await opsState(env);
-  const gone = s.notices.find((x) => x.id === id);
-  if (!gone) return json({ error: "not_found" }, 404);
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(s.notices.filter((x) => x.id !== id)));
-  await audit(env, now, "notice_remove", gone.title);
-  return json(await noticeList(env, now));
-}
-
-/** [FLAG-38] What a 끄기 from a developer app cached before 1.28 (no why) is recorded with. */
-const OLD_APP_WHY = "옛 관리자 앱에서 끔";
-
-/**
- * [SRV-04] 기능 스위치, kept for the 운영 screen's old buttons: AM 1.28 [FLAG-24] it forces the switch's flag off (with why)
- * or back to its conditions, under the same rule as 기능 관리 (결정 D97: forcing off is the owner's or flagOff's).
- */
-async function setSwitch(request, env, now) {
-  const body = await readJson(request, 1024);
-  if (!Object.hasOwn(SWITCHES, body.key)) refuse("key", "key");
-  if (typeof body.off !== "boolean") refuse("off", "off");
-  const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === body.key);
-  // 1.28 통합 [FLAG-38] A developer app cached before 1.28 sends no why: its 끄기 still works, and the record says where it came from.
-  const given = typeof body.why === "string" ? body.why.trim() : "";
-  const old = body.off && !given;
-  const res = await setFlagForce(new Request("https://switch/", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ force: body.off ? "off" : null, why: old ? OLD_APP_WHY : given }) }), env, env.actor, key, now);
-  if (res.status !== 200) return res;
-  await audit(env, now, body.off ? "switch_off" : "switch_on", body.key, old ? `${SWITCHES[body.key]} · ${OLD_APP_WHY}` : SWITCHES[body.key]);
-  return json(await noticeList(env, now));
-}
-
-/**
- * [ADMIN-14] The year's chores, month by month, the same list as docs/ops-calendar.md (a test keeps the
- * two together). Shown on the developer app's home screen in place of mail (결정 D1: no mail key).
- */
-const OPS_CALENDAR = [
-  [1, "rates-new-year", "새해 최저임금·4대 보험 요율이 앱 계산과 맞는지 확인", "최저임금법 제10조 제2항, 국민건강보험법 시행령 제44조, 노인장기요양보험법 시행령 제4조"],
-  [1, "wages-jan", "1월 공표 시중노임단가를 remote/v1/wages.json에 넣기(판 올리고 서명)", "대한건설협회 시중노임단가(1월·9월 공표)"],
-  [1, "holidays-this-year", "올해 공휴일·대체공휴일이 달력과 맞는지 확인", "관공서의 공휴일에 관한 규정 제2조·제3조"],
-  [3, "tax-table", "근로소득 간이세액표가 바뀌었으면 remote/v1/taxtable.json 고치기(판 올리고 서명)", "소득세법 시행령 별표 2(2026년 개정은 3월 1일 이후 원천징수분부터)"],
-  [3, "privacy-review", "처리방침·데이터 보안 답안을 지금 서버와 대조", "개인정보 보호법 제30조, docs/server-data.md"],
-  [3, "incident-drill", "유출 대응 절차서를 한 번 따라 해 보기(연락 순서·공지 문구)", "개인정보 보호법 제34조, docs/incident-response.md"],
-  [4, "android-preview", "새 Android 미리보기에서 알람·알림 점검", "Play 대상 API 수준 요건(매년 8월 31일)"],
-  [5, "store-listing", "스토어 등록정보·화면 사진이 지금 앱과 맞는지 확인", "Google Play 메타데이터 정책"],
-  [6, "pension-prepare", "7월부터 쓰는 국민연금 기준소득월액 상하한 준비", "국민연금법 시행령 제5조"],
-  [6, "labor-law-amendment", "2027-06-10 시행 근로기준법 개정(조문 번호 이동, 시간 단위 연차)에 맞춰 앱의 법 조문 글귀와 연차 계산을 확인", "근로기준법 개정(2027-06-10 시행), docs/tracker.csv LEAVE-12"],
-  [7, "pension-apply", "국민연금 기준소득월액 상하한을 remote/v1/rates.json에 넣어 7월 급여부터 맞추기(판 올리고 서명)", "국민연금법 시행령 제5조"],
-  [8, "minwage-next", "다음 해 최저임금 결정(8월 5일까지)을 앱에 넣을 준비", "최저임금법 제8조 제1항"],
-  [8, "target-api", "대상 API 수준 마감(8월 31일) 전에 업데이트 출시", "Google Play 대상 API 수준 요건"],
-  [9, "wages-sep", "9월 공표 시중노임단가를 remote/v1/wages.json에 넣기(판 올리고 서명)", "대한건설협회 시중노임단가(1월·9월 공표)"],
-  [9, "holidays-next", "다음 해 공휴일·대체공휴일·선거일 확인", "관공서의 공휴일에 관한 규정"],
-  [10, "health-next", "다음 해 건강보험료율이 결정되면 remote/v1/rates.json에 넣기(결정 시기는 해마다 확인)", "국민건강보험법 시행령 제44조"],
-  [11, "ltc-next", "다음 해 장기요양보험료율이 결정되면 remote/v1/rates.json에 넣기(2027년 요율은 결정되는 대로)", "노인장기요양보험법 시행령 제4조"],
-  [12, "release-new-year", "새해 요율·최저임금·공휴일을 넣은 업데이트를 1월 1일 전에 출시", "위 항목들"],
-  [12, "server-data", "서버 최소 데이터 점검(지울 것은 지우기)", "개인정보 보호법 제21조, docs/server-data.md"],
-].map(([month, key, text, source]) => ({ month, key, text, source }));
-
-/** One month's chores with which of them are ticked ([done] is the stored list of keys). */
-function opsItems(month, done) {
-  let ticked = [];
-  try {
-    ticked = JSON.parse(done ?? "[]");
-  } catch {
-    ticked = [];
-  }
-  const m = Number(month.slice(5, 7));
-  return OPS_CALENDAR.filter((i) => i.month === m).map((i) => ({ key: i.key, text: i.text, source: i.source, done: ticked.includes(i.key) }));
-}
-
-const MONTH = /^20\d\d-(0[1-9]|1[0-2])$/;
-
-async function opsMonth(env, month, now) {
-  const m = MONTH.test(month ?? "") ? month : kstDay(now).slice(0, 7);
-  const row = await one(env, "SELECT value FROM settings WHERE key = ?", `ops:${m}`);
-  return { month: m, items: opsItems(m, row?.value) };
-}
-
-async function checkOps(request, env, now) {
-  const body = await readJson(request, 1024);
-  if (!MONTH.test(body.month ?? "")) refuse("month", "month");
-  const item = OPS_CALENDAR.find((i) => i.key === body.key && i.month === Number(body.month.slice(5, 7)));
-  if (!item) refuse("key", "key");
-  if (typeof body.done !== "boolean") refuse("done", "done");
-  const row = await one(env, "SELECT value FROM settings WHERE key = ?", `ops:${body.month}`);
-  const was = opsItems(body.month, row?.value).filter((i) => i.done).map((i) => i.key);
-  const next = body.done ? [...new Set([...was, item.key])] : was.filter((k) => k !== item.key);
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", `ops:${body.month}`, JSON.stringify(next));
-  await audit(env, now, body.done ? "ops_done" : "ops_undo", body.month, item.text);
-  return json(await opsMonth(env, body.month, now));
-}
-
-// [STAT-01] Usage statistics (결정 D2·D42): only phones whose user said yes send, once a day, the days
-// before today as event names and counts. The app keeps the same list (core UsageEvents.kt); a name the
-// server does not know is skipped, so a newer app still sends the rest.
-
-/**
- * [STAT-05] Up to 120 bundles a day from one network: a mobile carrier puts thousands of phones behind
- * one address, so the old 6 dropped most of them. The same bundle sent twice (a retry) counts once a day.
- */
-const USAGE = { days: 7, keepDays: 400, count: 1000, bundlesPerNetworkDay: 120, bytes: 8 * 1024 };
-
-/** Event names and what the dashboard calls them. */
-export const EVENTS = {
-  open: "앱 열기",
-  pay_view: "급여 화면",
-  pay_setup: "급여 설정 마침",
-  pay_report: "급여 리포트",
-  paywall_view: "프로 화면 보기",
-  trial_start: "무료 체험 시작",
-  subscribe: "구독 시작",
-  pro_sub: "프로 구독 중",
-  share_made: "근무표 링크 만들기",
-  share_received: "받은 근무표 넣기",
-  plaza_post: "광장 글쓰기",
-  plaza_apply: "광장 규칙 적용",
-  company_report: "회사 규칙 보내기",
-  inquiry: "문의 보내기",
-  backup: "백업 만들기",
-  alarm_rang: "근무 알람 울림",
-  ics_export: "캘린더로 내보내기",
-  // [STAT-06] 1.23: a notice opened (how often, never which or by whom).
-  notice_open: "공지 열기",
-};
-
-async function usage(request, env) {
-  // Switched off, the server takes nothing and the app does not try again until tomorrow.
-  if (await paused(env, "USAGE_STATS")) return new Response(null, { status: 204 });
-  const body = await readJson(request, USAGE.bytes);
-  if (body.v !== 1) refuse("version", "v");
-  if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
-  if (!Array.isArray(body.days) || body.days.length < 1 || body.days.length > USAGE.days) refuse("days", "days");
-  const now = Date.now();
-  const net = await network(request, env, now);
-  if (!(await allow(env, `events|${net.day}`, USAGE.bundlesPerNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
-  // [STAT-05] A bundle already counted today (the phone sent it again after a timeout) is not counted twice.
-  const bundle = (await sha256(`events|${kstDay(now)}|${JSON.stringify(body)}`)).slice(0, 32);
-  if (!(await allow(env, `bundle|${bundle}`, 1, DAY, now))) return json({ ok: true, again: true });
-  // A phone's day can be a day off Korea's; one ahead of tomorrow or older than the week is not a day it kept.
-  // [STAT-05] Such a day is left out and the rest counted, instead of refusing the whole bundle.
-  const latest = kstDay(now + DAY);
-  const oldest = kstDay(now - (USAGE.days + 1) * DAY);
-  const days = new Set();
-  const rows = [];
-  let skipped = 0;
-  for (const d of body.days) {
-    if (!d || typeof d !== "object" || typeof d.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.day)) refuse("day", "day");
-    if (d.day > latest || d.day < oldest || days.has(d.day)) {
-      skipped++;
-      continue;
-    }
-    days.add(d.day);
-    if (!d.events || typeof d.events !== "object" || Array.isArray(d.events)) refuse("events", "events");
-    const recent = d.recent ?? [];
-    if (!Array.isArray(recent) || recent.length > Object.keys(EVENTS).length * 2) refuse("recent", "recent");
-    const counts = new Map();
-    for (const [name, n] of Object.entries(d.events)) {
-      if (!Number.isInteger(n) || n < 1 || n > USAGE.count) refuse("count", "events");
-      if (Object.hasOwn(EVENTS, name)) counts.set(name, n);
-    }
-    const lately = new Set(recent.filter((e) => typeof e === "string" && Object.hasOwn(EVENTS, e)));
-    for (const e of counts.keys()) lately.add(e);
-    for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
-  }
-  const app = body.app;
-  if (days.size === 0) return json({ ok: true, skipped });
-  // AM 1.28 [FLAG-30] Which flags were on (only phones with stats.more on send it): per day, the list sent with the day or,
-  // once for the bundle, flagsOn at the top for its newest day. '*' counts the phones that sent a list at all.
-  const listOf = (v) => {
-    if (v === undefined || v === null) return null;
-    if (!Array.isArray(v) || v.length > 200) refuse("flagsOn", "flagsOn");
-    return [...new Set(v.filter((k) => typeof k === "string" && k.length <= 60 && flagDef(k)))];
-  };
-  const flagDays = new Map();
-  const top = listOf(body.flagsOn);
-  if (top) flagDays.set([...days].sort().at(-1), top);
-  for (const d of body.days) if (days.has(d.day) && d.flagsOn !== undefined) flagDays.set(d.day, listOf(d.flagsOn) ?? []);
-  const flagRows = [...flagDays].flatMap(([day, keys]) => [[day, "*"], ...keys.map((k) => [day, k])]);
-  const stmts = [...days].map((day) => stmt(env, `INSERT INTO usage_days (day, app, phones) VALUES (?, ?, 1)
-    ON CONFLICT (day, app) DO UPDATE SET phones = phones + 1`, day, app));
-  // AO 1.28 [PERF-17] Startup times, counted once on the bundle's newest day; a wrong part is left out, the rest counts.
-  const startupDay = [...days].sort().at(-1);
-  for (const [kind, step, bucket] of startupRows(body.startup)) {
-    stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
-      ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));
-  }
-  // D1 binds at most 100 values a query: 16 rows of six.
-  for (let i = 0; i < rows.length; i += 16) {
-    const part = rows.slice(i, i + 16);
-    stmts.push(stmt(env, `INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES ${part.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}
-      ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
-    ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
-  }
-  for (let i = 0; i < flagRows.length; i += 25) {
-    const part = flagRows.slice(i, i + 25);
-    stmts.push(stmt(env, `INSERT INTO usage_flags (day, app, flag, phones) VALUES ${part.map(() => "(?, ?, ?, 1)").join(", ")}
-      ON CONFLICT (day, app, flag) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, k]) => [day, app, k])));
-  }
-  await batch(env, stmts);
-  return skipped ? json({ ok: true, skipped }) : new Response(null, { status: 204 });
-}
-
-// AO 1.28 시작 ------------------------------------------------------------------------------------------------
-/**
- * [PERF-16][PERF-17] The bucket edges (ms) the app rounds a startup time up to (app diag/StartupStats.BUCKETS): only
- * these values are taken, so no phone's exact time is kept. 20000 means over 15 seconds.
- */
-export const STARTUP_BUCKETS = [100, 200, 300, 400, 500, 700, 1000, 1500, 2000, 3000, 4000, 6000, 10000, 15000, 20000];
-/** What each kind of opening may carry: a cold one from the process start, a warm one from the screen. */
-const STARTUP_STEPS = { cold: ["container", "activity", "firstMonth"], warm: ["container", "firstMonth"] };
-
-/**
- * [PERF-17] `startup: {container, activity, firstMonth, warm: {container, firstMonth}}` → [kind, step, bucket] rows.
- * Anything else (a missing part, a number off the edges, an unknown key) is left out without refusing the bundle.
- */
-export function startupRows(startup) {
-  const rows = [];
-  if (!startup || typeof startup !== "object" || Array.isArray(startup)) return rows;
-  const take = (kind, part) => {
-    if (!part || typeof part !== "object" || Array.isArray(part)) return;
-    for (const step of STARTUP_STEPS[kind]) {
-      const v = part[step];
-      if (Number.isInteger(v) && STARTUP_BUCKETS.includes(v)) rows.push([kind, step, v]);
-    }
-  };
-  take("cold", startup);
-  take("warm", startup.warm);
-  return rows;
-}
-
-/** [PERF-17] The bucket where [share] of the phones are at or under, from {bucket → phones}. */
-function bucketQuantile(hist, total, share) {
-  let seen = 0;
-  for (const b of STARTUP_BUCKETS) {
-    seen += hist.get(b) ?? 0;
-    if (seen >= total * share) return b;
-  }
-  return STARTUP_BUCKETS.at(-1);
-}
-
-const appOrder = (a, b) => {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pb[i] - pa[i];
-  return 0;
-};
-
-/**
- * [PERF-17] 지표 › 앱 시작 시간: per app version (newest first, at most 6) and kind, each step's phones, middle value and
- * 90th percentile (the bucket's upper edge: "at most"). Under 30 phones a version says 데이터 부족 in the admin app.
- */
-async function startupMetrics(env, from, to) {
-  const rows = await all(env, `SELECT app, kind, step, bucket, SUM(phones) AS phones FROM usage_startup
-    WHERE day BETWEEN ? AND ? GROUP BY app, kind, step, bucket`, from, to);
-  const byApp = new Map();
-  for (const r of rows) {
-    const key = `${r.app}|${r.kind}|${r.step}`;
-    if (!byApp.has(r.app)) byApp.set(r.app, new Map());
-    const hist = byApp.get(r.app);
-    if (!hist.has(key)) hist.set(key, new Map());
-    hist.get(key).set(r.bucket, (hist.get(key).get(r.bucket) ?? 0) + r.phones);
-  }
-  const versions = [...byApp.keys()].sort(appOrder).slice(0, 6).map((app) => {
-    const out = { app };
-    for (const [kind, steps] of Object.entries(STARTUP_STEPS)) {
-      const part = {};
-      for (const step of steps) {
-        const hist = byApp.get(app).get(`${app}|${kind}|${step}`);
-        if (!hist) continue;
-        const phones = [...hist.values()].reduce((n, v) => n + v, 0);
-        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5), p90: bucketQuantile(hist, phones, 0.9) };
-      }
-      if (Object.keys(part).length) out[kind] = part;
-    }
-    return out;
-  });
-  return { versions, few: 30 };
-}
-// AO 1.28 끝 --------------------------------------------------------------------------------------------------
-
-// AQ 1.29 시작 ------------------------------------------------------------------------------------------------
-/**
- * [PHOTO-09][PHOTO-10] The screens with a '사진이 달라요' button and the reasons it offers, the same codes as the app's
- * core/stats/PhotoWrong.kt (PhotoScreen, PhotoWrongReason). Anything else is refused.
- */
-export const PHOTO_SCREENS = {
-  roster: "근무표 사진", payslip: "명세서 사진", rules: "회사 규칙 사진", pay_table: "호봉표 사진",
-  invest: "투자 캡처", tax: "세금 서류 사진", receipt: "영수증 사진",
-};
-export const PHOTO_REASONS = {
-  numbers: "숫자가 틀려요", missing: "빠진 칸이 있어요", extra: "없는 칸이 생겼어요", names: "이름이나 종류가 틀려요",
-  nothing: "거의 읽지 못했어요",
-  hourly: "통상시급이 달라요", hours: "기준 시간이 달라요", // AV 1.30 [PHOTO-28] 명세서로 계산한 통상시급·기준 시간이 틀렸을 때
-  other: "다른 점이 있어요",
-};
-/** Rows a bundle may carry, days a phone keeps them (the app's PhotoWrongBook), presses a row, bundles a network a day. */
-const PHOTO_WRONG = { rows: 60, keepDays: 60, count: 99, perNetworkDay: 30, bytes: 8 * 1024 };
-
-/**
- * [PHOTO-10] `{v:1, app:"1.29.0", counts:[{day, screen, reason, n}]}`, sent by the app once 처리방침 3.3 lets it (flag
- * photo.wrong). Added to the day's totals; the same bundle sent again the same day (after a timeout) counts once.
- */
-async function photoWrong(request, env) {
-  const body = await readJson(request, PHOTO_WRONG.bytes);
-  if (body.v !== 1) refuse("version", "v");
-  if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
-  if (!Array.isArray(body.counts) || body.counts.length < 1 || body.counts.length > PHOTO_WRONG.rows) refuse("counts", "counts");
-  const now = Date.now();
-  const latest = kstDay(now + DAY);
-  const oldest = kstDay(now - (PHOTO_WRONG.keepDays + 1) * DAY);
-  const rows = new Map();
-  for (const c of body.counts) {
-    if (!c || typeof c !== "object" || Array.isArray(c)) refuse("count", "counts");
-    if (typeof c.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(c.day) || c.day > latest || c.day < oldest) refuse("day", "day");
-    if (typeof c.screen !== "string" || !Object.hasOwn(PHOTO_SCREENS, c.screen)) refuse("screen", "screen");
-    if (typeof c.reason !== "string" || !Object.hasOwn(PHOTO_REASONS, c.reason)) refuse("reason", "reason");
-    if (!Number.isInteger(c.n) || c.n < 1 || c.n > PHOTO_WRONG.count) refuse("n", "n");
-    const key = `${c.day}|${c.screen}|${c.reason}`;
-    rows.set(key, Math.min(PHOTO_WRONG.count, (rows.get(key) ?? 0) + c.n));
-  }
-  const net = await network(request, env, now);
-  if (!(await allow(env, `photo-wrong|${net.day}`, PHOTO_WRONG.perNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
-  const bundle = (await sha256(`photo-wrong|${kstDay(now)}|${JSON.stringify(body)}`)).slice(0, 32);
-  if (!(await allow(env, `bundle|${bundle}`, 1, DAY, now))) return json({ ok: true, again: true });
-  const list = [...rows].map(([k, n]) => [...k.split("|"), n]);
-  const stmts = [];
-  // D1 binds at most 100 values a query: 20 rows of five.
-  for (let i = 0; i < list.length; i += 20) {
-    const part = list.slice(i, i + 20);
-    stmts.push(stmt(env, `INSERT INTO photo_wrong (day, app, screen, reason, total) VALUES ${part.map(() => "(?, ?, ?, ?, ?)").join(", ")}
-      ON CONFLICT (day, app, screen, reason) DO UPDATE SET total = total + excluded.total`,
-    ...part.flatMap(([day, screen, reason, n]) => [day, body.app, screen, reason, n])));
-  }
-  await batch(env, stmts);
-  return new Response(null, { status: 204 });
-}
-
-/** [PHOTO-10] 지표 › 사진이 달라요: totals per day, per screen (with its reasons) and per app version, from..to. */
-async function photoWrongMetrics(env, from, to) {
-  const rows = await all(env, `SELECT day, app, screen, reason, SUM(total) AS total FROM photo_wrong
-    WHERE day BETWEEN ? AND ? GROUP BY day, app, screen, reason`, from, to);
-  const days = new Map();
-  const screens = new Map();
-  const apps = new Map();
-  let total = 0;
-  for (const r of rows) {
-    total += r.total;
-    days.set(r.day, (days.get(r.day) ?? 0) + r.total);
-    apps.set(r.app, (apps.get(r.app) ?? 0) + r.total);
-    if (!screens.has(r.screen)) screens.set(r.screen, { screen: r.screen, label: PHOTO_SCREENS[r.screen] ?? r.screen, total: 0, reasons: {} });
-    const s = screens.get(r.screen);
-    s.total += r.total;
-    s.reasons[r.reason] = (s.reasons[r.reason] ?? 0) + r.total;
-  }
-  return {
-    total,
-    days: [...days].sort((a, b) => a[0].localeCompare(b[0])).map(([day, n]) => ({ day, total: n })),
-    screens: [...screens.values()].sort((a, b) => b.total - a.total),
-    apps: [...apps].sort((a, b) => appOrder(a[0], b[0])).map(([app, n]) => ({ app, total: n })),
-    reasons: PHOTO_REASONS,
-  };
-}
-// AQ 1.29 끝 --------------------------------------------------------------------------------------------------
-
-/**
- * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share
- * is phone-days that did it within 28 days over all phone-days: about how many of the phones in use
- * do it, without knowing which phones they are. Under 30 phones a day it says 데이터 부족.
- * [ADMUX-13]~[ADMUX-16] 1.25: any period up to 180 days (from·to), how many phones on which app, the
- * plaza, how fast questions get their first answer, server errors and, with Play's numbers, crashes.
- */
-async function metrics(env, url, now) {
-  const r = metricRange(url, now);
-  const { from, to, days } = r;
-  const start = Date.parse(`${from}T00:00:00+09:00`);
-  const end = Date.parse(`${to}T00:00:00+09:00`) + DAY;
-  const lastWeek = kstDay(Date.parse(`${to}T00:00:00+09:00`) - 6 * DAY);
-  const byDay = (col) => `strftime('%Y-%m-%d', (${col} + 32400000) / 1000, 'unixepoch')`;
-  const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows] = (await batch(env, [
-    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
-    stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
-      WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
-    stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
-      SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
-    // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
-    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", r.beforeFrom, r.beforeTo),
-    // [ADMUX-13] Which app the phones of the period's last seven days run.
-    stmt(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY app ORDER BY phones DESC", lastWeek, to),
-    // [ADMUX-14] The plaza, day by day.
-    stmt(env, `SELECT ${byDay("created_at")} AS day, COUNT(*) AS n, COUNT(DISTINCT device) AS people FROM reports WHERE created_at >= ? AND created_at < ? GROUP BY day`, start, end),
-    stmt(env, `SELECT ${byDay("adopted_at")} AS day, COUNT(*) AS n FROM rules WHERE adopted_at >= ? AND adopted_at < ? GROUP BY day`, start, end),
-    stmt(env, `SELECT ${byDay("created_at")} AS day, COUNT(*) AS n FROM posts WHERE created_at >= ? AND created_at < ? GROUP BY day`, start, end),
-    stmt(env, `SELECT ${byDay("at")} AS day, COUNT(*) AS n FROM post_flags WHERE at >= ? AND at < ? GROUP BY day`, start, end),
-    stmt(env, "SELECT COUNT(*) AS n FROM posts WHERE hide_reason = 'flags' AND hidden_at >= ? AND hidden_at < ?", start, end),
-    stmt(env, `SELECT ${byDay("at")} AS day, COUNT(*) AS n FROM uses WHERE at >= ? AND at < ? GROUP BY day`, start, end),
-    stmt(env, "SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'adopted' THEN 1 ELSE 0 END) AS adopted FROM rates WHERE created_at >= ? AND created_at < ?", start, end),
-    // [ADMUX-14] Each question of the period and when it first got an answer.
-    stmt(env, `SELECT i.kind, i.created_at, i.rating, (SELECT MIN(m.at) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS first
-      FROM inquiries i WHERE i.created_at >= ? AND i.created_at < ?`, start, end),
-    // [ADMUX-16] Requests the worker answered with 500, counted per Korean day.
-    stmt(env, "SELECT key, count FROM counters WHERE key BETWEEN ? AND ?", `errors|${from}`, `errors|${to}`),
-    stmt(env, `SELECT COALESCE(json_extract(info, '$.app'), '') AS app, COUNT(*) AS n FROM inquiries
-      WHERE kind = 'bug' AND created_at >= ? AND created_at < ? AND json_valid(info) GROUP BY app ORDER BY n DESC LIMIT 10`, start, end),
-    env.DB.prepare(SLA_SQL),
-  ])).map((x) => x.results);
-  const was = new Map(beforeRows.map((x) => [x.day, x.phones]));
-  const phoneDays = dayRows.reduce((n, x) => n + x.phones, 0);
-  const daily = dayRows.length ? Math.round(phoneDays / dayRows.length) : 0;
-  const ev = new Map(eventRows.map((x) => [x.event, x]));
-  const share = (e) => (phoneDays ? (ev.get(e)?.recent ?? 0) / phoneDays : null);
-  const enough = daily >= 30;
-  const gate = (name, rule, e, least) => {
-    const v = share(e);
-    return { name, rule, value: v === null ? null : Math.round(v * 1000) / 10, status: !enough || v === null ? "few" : v * 100 >= least ? "pass" : "fail" };
-  };
-  const s = subs[0] ?? {};
-  const week = dayRows.filter((x) => x.day >= lastWeek);
-  const vitals = await playVitals(env, now);
-  const vital = (name, rule, key, least) => {
-    const v = vitals?.[key];
-    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : "play" };
-    return { name, rule, value: Math.round(v * 10000) / 100, status: vitals.users < 100 ? "few" : v * 100 < least ? "pass" : "fail" };
-  };
-  const dayList = [];
-  for (let d = start; d < end; d += DAY) dayList.push(kstDay(d));
-  const series = (rows) => {
-    const m = new Map(rows.map((x) => [x.day, x.n]));
-    return dayList.map((day) => m.get(day) ?? 0);
-  };
-  const total = (rows) => rows.reduce((n, x) => n + x.n, 0);
-  const sla = readSla(slaRows);
-  return {
-    from, to, days, phoneDays, daily, enough,
-    series: dayRows.map((x) => ({ day: x.day, phones: x.phones })),
-    // The same day [days] earlier for each day of the series, 0 when nothing came that day.
-    before: dayRows.map((x) => was.get(kstDay(Date.parse(`${x.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
-    events: Object.entries(EVENTS).map(([event, label]) => {
-      const e = ev.get(event);
-      return { event, label, phones: e?.phones ?? 0, total: e?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
-    }),
-    gates: [
-      // [ADMUX-16] Play's own numbers when the service account may read them; until then the row says where to look.
-      { gate: "G0", ...vital("비정상 종료", "1.09% 미만(내부 0.5%)", "crash", 1.09) },
-      { gate: "G0", ...vital("ANR", "0.47% 미만(내부 0.2%)", "anr", 0.47) },
-      { gate: "G0", name: "테스터", rule: "12명이 14일", value: null, status: "play" },
-      { gate: "G1", ...gate("급여 화면을 본 사용자", "30% 이상", "pay_view", 30) },
-      { gate: "G2", ...gate("근무표 링크를 만든 사용자", "15% 이상", "share_made", 15) },
-      { gate: "G2", ...gate("유료 구독 사용자", "2.0% 이상", "pro_sub", 2) },
-    ],
-    funnel: {
-      paywall: ev.get("paywall_view")?.phones ?? 0, trial: ev.get("trial_start")?.total ?? 0, subscribe: ev.get("subscribe")?.total ?? 0,
-      trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0,
-    },
-    shares: await shareStats(env, days),
-    // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.
-    active: {
-      daily, week: week.length ? Math.round(week.reduce((n, x) => n + x.phones, 0) / week.length) : 0,
-      most: dayRows.reduce((m, x) => (x.phones > (m?.phones ?? -1) ? x : m), null),
-      versions: appVersions(versionRows),
-    },
-    dayList,
-    plaza: {
-      reports: total(reportRows), people: reportRows.reduce((n, x) => n + x.people, 0), adopted: total(ruleRows), posts: total(postRows),
-      flags: total(flagRows), hidden: hiddenRows[0]?.n ?? 0, applied: total(useRows), rates: rateRows[0]?.n ?? 0, ratesAdopted: rateRows[0]?.adopted ?? 0,
-      series: { reports: series(reportRows), adopted: series(ruleRows), posts: series(postRows), flags: series(flagRows), applied: series(useRows) },
-    },
-    inquiries: inquiryStats(inquiryRows, sla, dayList, now),
-    errors: {
-      server: series(errorRows.map((x) => ({ day: x.key.slice(7), n: x.count }))),
-      serverTotal: errorRows.reduce((n, x) => n + x.count, 0),
-      bugs: bugRows.map((x) => ({ app: x.app || "모름", n: x.n })),
-      play: vitals ? { users: vitals.users ?? null, day: vitals.day ?? null, error: vitals.error ?? null } : null,
-    },
-  };
-}
-
 // AA 1.25 시작
 /** [ADMUX-13] The days asked: 7 to 90 back from yesterday, or from·to dates (at most 180 days, none after yesterday). */
 export function metricRange(url, now) {
@@ -8218,9 +5832,9 @@ const METRIC_MAX_DAYS = 180;
  * phones send only the name (usage stats), so the codes of releases are listed here and ones questions
  * carried ("1.24.0 (35)") are learned on top.
  */
-const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38, "1.28.0": 39 };
+export const APP_CODES = { "1.17.2": 28, "1.18.0": 29, "1.19.0": 30, "1.20.0": 31, "1.21.0": 32, "1.22.0": 33, "1.23.0": 34, "1.24.0": 35, "1.25.0": 36, "1.26.0": 37, "1.27.0": 38, "1.28.0": 39 };
 
-function appVersions(rows) {
+export function appVersions(rows) {
   const all = rows.reduce((n, x) => n + x.phones, 0);
   return rows.map((x) => ({ app: x.app, code: APP_CODES[x.app] ?? null, phones: x.phones, share: all ? Math.round((1000 * x.phones) / all) / 10 : 0 }));
 }
@@ -8330,7 +5944,7 @@ export async function playVitals(env, now) {
  * says which version it uses (결정 AA-D2), so this is what can reach phones, not what has.
  */
 export const REMOTE = {
-  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles"],
+  kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles", "merchants"],
   base: "https://ywjmoney.github.io/-/remote/v1",
   // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file). [REMOTE-08] The last two are the
   // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2.
@@ -8450,7 +6064,7 @@ export function wilson(ok, n) {
  * Wilson share and what differs from the rule in use. show "conflict" (default): two or more live ones;
  * "history": also departments whose only others are earlier versions.
  */
-async function versions(env, show) {
+export async function versions(env, show) {
   const [ruleRows, groupRows, reports, votes, useRows, postRows, companyRows, settingRows] = (await batch(env, [
     env.DB.prepare("SELECT id, company_id, dept, dept_norm, grp, version, setup, source, adopted_at, withdrawn, superseded FROM rules WHERE withdrawn = 0"),
     env.DB.prepare(`SELECT company_id, grp, dept, dept_norm, setup, verified, created_at, reason FROM reports WHERE status = 'pending'
@@ -8664,7 +6278,7 @@ async function sealKey(secret) {
  * AUTHOR_KEY, changing RATE_SALT after a leak no longer empties every phone's list; the key it replaced
  * (AUTHOR_KEY_OLD, or the salt before AUTHOR_KEY was set) still opens the marks phones already keep.
  */
-async function authorKey(env) {
+export async function authorKey(env) {
   const own = typeof env.AUTHOR_KEY === "string" && env.AUTHOR_KEY.length >= 16 ? env.AUTHOR_KEY : null;
   const old = typeof env.AUTHOR_KEY_OLD === "string" && env.AUTHOR_KEY_OLD.length >= 16 ? env.AUTHOR_KEY_OLD : null;
   const secrets = own ? [own, old ?? await salt(env)] : [await salt(env)];
@@ -8674,7 +6288,7 @@ async function authorKey(env) {
 
 const unb64url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
-async function authorToken(key, device) {
+export async function authorToken(key, device) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plain = Uint8Array.from(device.match(/../g), (h) => Number.parseInt(h, 16));
   const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key.seal, plain));
@@ -8682,7 +6296,7 @@ async function authorToken(key, device) {
 }
 
 /** The writers behind the marks in [header]; a mark this server did not make is skipped. */
-async function hiddenAuthors(key, header) {
+export async function hiddenAuthors(key, header) {
   const out = new Set();
   const marks = String(header ?? "").split(",").map((m) => m.trim()).filter((m) => HIDE.token.test(m)).slice(0, HIDE.max);
   for (const m of marks) {
@@ -8776,7 +6390,7 @@ async function newsItems(env, dev, since, now) {
 
 // [SRV-06] Photos with a question: what the phone made (JPEG, long side 1600px, no metadata) checked again.
 
-const PHOTO = { max: 2, bytes: 700 * 1024, totalBytes: 150 * 1024 * 1024, keepAfterCloseMs: 90 * DAY };
+export const PHOTO = { max: 2, bytes: 700 * 1024, totalBytes: 150 * 1024 * 1024, keepAfterCloseMs: 90 * DAY };
 
 /**
  * A JPEG without what could say where or on what it was taken: APP1~APP15 (Exif, XMP, maker notes) and
@@ -8813,7 +6427,7 @@ export function cleanJpeg(bytes) {
 }
 
 /** The photos of a new question, or why they were left out ("paused", "full"); a bad photo is refused. */
-async function readPhotos(env, raw) {
+export async function readPhotos(env, raw) {
   if (raw === undefined || raw === null) return { list: [] };
   if (!Array.isArray(raw) || raw.length > PHOTO.max) refuse("photos", "photos");
   const list = raw.map((p) => {
@@ -8837,7 +6451,7 @@ async function readPhotos(env, raw) {
   return { list };
 }
 
-async function photoFile(env, id, n) {
+export async function photoFile(env, id, n) {
   const row = await one(env, "SELECT data FROM inquiry_photos WHERE inquiry_id = ? AND n = ?", id, n);
   if (!row) return json({ error: "not_found" }, 404);
   return new Response(Uint8Array.from(atob(row.data), (c) => c.charCodeAt(0)), {
@@ -8992,7 +6606,7 @@ async function removeShare(request, env, id, now) {
   return shareReports(env);
 }
 
-async function shareStats(env, days) {
+export async function shareStats(env, days) {
   if (!shareAdmin(env)) return null;
   try {
     return await shareCall(env, "GET", `/api/admin/stats?days=${days}`);
@@ -9001,640 +6615,6 @@ async function shareStats(env, days) {
   }
 }
 
-// AM 1.28 시작
-// ---- 기능 플래그(다크머지) [FLAG-20]~[FLAG-33] ----
-//
-// Every feature that ships switched off, waits for a date, a policy or a person's confirmation, or can be switched off
-// in an incident is one row of FLAG_CATALOG (the same keys as the app's core FlagCatalog, 묶음 AL; a test compares the
-// keys with the contract, 통합계획 2-1). The phone decides by itself from the conditions it was built with; the server
-// only sends what overrides them (/api/config flags) and keeps who changed what, when and why. The order of the
-// decision is in src/admin-lib.js evalFlag, which this server and the developer app's 미리 보기 share.
-
-const FL = adminLib();
-
-/** The six 기능 스위치 of 1.22 (SWITCHES) as flags, for apps up to 1.27 that read /api/config off. */
-const SWITCH_FLAGS = { "plaza.write": "PLAZA_WRITE", "company.report": "COMPANY_REPORT", "inquiry.photos": "INQUIRY_PHOTOS",
-  "share.create": "SHARE_CREATE", "usage.stats": "USAGE_STATS", "plaza.news": "PLAZA_NEWS" };
-
-const TYPE_FLAGS = { SHIFT: "type.shift", DAY: "type.day", HOURLY: "type.hourly", FIELD: "type.field", BUSINESS: "type.business", INVEST: "type.invest" };
-
-/**
- * [FLAG-20] The catalog. 이름·하는 일·꺼 둔 이유·근거·위험·기본값·조건·정리 예정 판 are what the developer app shows and the
- * conditions the app ships with. 1.28 통합 [FLAG-34]: they come from the app's core FlagCatalog through the generated
- * src/flag-catalog.js (core FlagCatalogExportTest writes it and fails while it is old), so there is one book.
- */
-export const FLAG_CATALOG = CORE_FLAGS;
-
-/** The keys of the contract (통합계획 2-1) and the integrator's stats.more; free.<FEATURE> are made on demand. */
-export const FLAG_KEYS = FLAG_CATALOG.map((f) => f.key);
-
-// AU 1.29
-/**
- * [FLAG-20] 프로 features the server may open to everyone (app FeatureGate.Feature), as free.<FEATURE>.
- * [NXT-03] The names are core's ProFeatures (CORE_FEATURES, made by FlagCatalogExportTest), so the developer app and
- * the phone's 진단 name a free.<FEATURE> row the same way.
- */
-const FREE_FEATURES = CORE_FEATURES;
-// AU 1.29 끝
-/** [FLAG-34] free.<FEATURE>, the same pattern as core FlagCatalog.free. */
-const FREE_KEY = new RegExp(CORE_FREE.pattern);
-
-/** A flag by key: the catalog's, or a free.<FEATURE> made from core's words and the feature's Korean name; null for anything else. */
-function flagDef(key) {
-  const known = FLAG_CATALOG.find((f) => f.key === key);
-  if (known) return known;
-  const m = FREE_KEY.exec(key ?? "");
-  if (!m) return null;
-  const label = FREE_FEATURES[m[1]] ?? m[1];
-  const fill = (t) => t.replaceAll(CORE_FREE.slot, label);
-  const { pattern, slot, ...row } = CORE_FREE;
-  return { ...row, key, name: fill(CORE_FREE.name), what: fill(CORE_FREE.what), whyOff: fill(CORE_FREE.whyOff) };
-}
-
-/**
- * [FLAG-33] 처리방침 판마다 게시일·시행일·동의 없이도 시행되는 날(heldUntil). The developer app can change these (the owner),
- * so a date moved again needs no app release. unfavourable: 이용자에게 불리한 변경(30일 전 고지, 처리방침 9항).
- * [FLAG-34] The versions the app ships with (core PolicyCalendar.SEED: 3.1, 3.2) take their dates from it; 3.2's are a
- * placeholder until 순번 459 fixes them (관리자 앱에서 고쳐요).
- */
-const POLICY_UNFAVOURABLE = { "2.5": true, "3.0": true, "3.1": false, "3.2": true, "3.3": false };
-const POLICY_CALENDAR = [
-  { version: "2.5", posted: "2026-10-22", effective: "2026-11-21", heldUntil: null },
-  { version: "3.0", posted: "2026-10-25", effective: "2026-11-24", heldUntil: null },
-  ...CORE_POLICY,
-].map((p) => ({ ...p, unfavourable: POLICY_UNFAVOURABLE[p.version] ?? false }));
-
-/** [FLAG-25] The newest release this server knows (APP_CODES), to tell which flags are past their 정리 예정 판. */
-const latestRelease = () => Object.keys(APP_CODES).sort(FL.versionCompare).at(-1);
-
-const FLAG_LIMITS = { why: 300, untilDays: 365, history: 100 };
-
-const flagMigrations = new WeakMap();
-
-/**
- * [FLAG-23] Once per database: the 1.27 settings become overrides. 정식 출시 on → billing and ads forced on (the
- * same as before: both started together), 무료로 연 기능 → free.<FEATURE> forced on, 기능 스위치 off → forced off (the
- * hourly job's own rests keep auto). The old rows stay, unread, and a second run changes nothing.
- */
-function migrateFlags(env) {
-  let done = flagMigrations.get(env.DB);
-  if (!done) {
-    done = (async () => {
-      if ((await one(env, "SELECT value FROM settings WHERE key = 'flags_migrated'"))?.value) return;
-      const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('billing_live', 'free_features', 'switches_off', 'auto_rested')");
-      const get = (k) => rows.find((r) => r.key === k)?.value;
-      const list = (k) => {
-        try {
-          const v = JSON.parse(get(k) ?? "[]");
-          return Array.isArray(v) ? v : [];
-        } catch {
-          return [];
-        }
-      };
-      const now = Date.now();
-      const put = [];
-      const add = (key, force, why, auto = 0) => put.push(stmt(env, `INSERT OR IGNORE INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto)
-        VALUES (?, ?, ?, NULL, NULL, NULL, '옮김(1.28)', 'system', ?, ?)`, key, force, why, now, auto));
-      if (get("billing_live") === "1") {
-        add("billing", "on", "1.27까지의 정식 출시 스위치가 켜져 있었어요");
-        add("ads", "on", "1.27까지의 정식 출시 스위치가 켜져 있었어요");
-      }
-      for (const f of list("free_features")) if (typeof f === "string" && FEATURE.test(f)) add(`free.${f}`, "on", "1.27까지 무료로 연 기능이었어요");
-      const auto = new Set(list("auto_rested").map((r) => r?.key));
-      for (const s of list("switches_off")) {
-        const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === s);
-        if (key) add(key, "off", auto.has(s) ? "오늘 사용이 많아 내일까지 쉬어요(자동)" : "1.27까지의 기능 스위치로 꺼져 있었어요", auto.has(s) ? 1 : 0);
-      }
-      put.push(stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('flags_migrated', ?)", iso(now)));
-      await batch(env, put);
-      if (put.length > 1) {
-        await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'flag_migrate', '', ?, '', '')", now, `${put.length - 1}개를 기능 관리로 옮겼어요`);
-      }
-    })().catch((e) => {
-      flagMigrations.delete(env.DB);
-      throw e;
-    });
-    flagMigrations.set(env.DB, done);
-  }
-  return done;
-}
-
-/** An override row as the API and evalFlag see it. */
-function readOverride(r) {
-  if (!r) return null;
-  let conditions = null;
-  try {
-    conditions = r.conditions ? JSON.parse(r.conditions) : null;
-  } catch {
-    conditions = null;
-  }
-  return { force: r.force === "on" || r.force === "off" ? r.force : null, why: r.why ?? "", conditions: Array.isArray(conditions) ? conditions : null,
-    until: r.until ? iso(r.until) : null, reviewAt: r.review_at ?? null, by: r.by_name ?? "", byId: r.by_id ?? "", at: iso(r.at), auto: r.auto === 1,
-    // 1.28 통합 [FLAG-36] AL-D3: outside this versionCode range the phone turns the flag off (판단 2단계).
-    minApp: r.min_app ?? null, maxApp: r.max_app ?? null };
-}
-
-/**
- * [FIN130-15] Whether 처리방침 [ITEM_FIXED_POLICY] is in force today (KST), by the calendar as the owner set it in the developer
- * app: a company's one amount (fixedAmount) is taken only from then. A version not in the calendar is not in force.
- */
-async function fixedAmountsOpen(env, now = Date.now()) {
-  const raw = (await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value;
-  const p = mergePolicy(raw).find((x) => x.version === ITEM_FIXED_POLICY);
-  return Boolean(p?.effective) && kstDay(now) >= p.effective;
-}
-
-/** [FLAG-33] The calendar with the owner's changes, and versions the owner added. */
-function mergePolicy(raw) {
-  let over = {};
-  try {
-    over = JSON.parse(raw ?? "{}") ?? {};
-  } catch {
-    over = {};
-  }
-  const out = POLICY_CALENDAR.map((p) => ({ ...p, ...(over[p.version] ?? {}), changed: Object.hasOwn(over, p.version) }));
-  for (const [version, p] of Object.entries(over)) if (!out.some((x) => x.version === version)) out.push({ version, heldUntil: null, unfavourable: false, ...p, changed: true });
-  return out.sort((a, b) => FL.versionCompare(a.version, b.version));
-}
-
-/** [FLAG-21] Everything a decision needs, in one trip: overrides, confirmations, the policy calendar, what the server saw. */
-const FLAG_STORE_SQL = {
-  flagOverrides: "SELECT * FROM flag_overrides",
-  flagChecks: "SELECT key, by_name, by_id, at, note FROM flag_checks",
-  flagPolicy: "SELECT value FROM settings WHERE key = 'policy_overrides'",
-  flagState: "SELECT key, on_now, since, warned FROM flag_state",
-};
-
-async function flagStore(env) {
-  await migrateFlags(env);
-  const [o, c, p, s] = (await batch(env, Object.values(FLAG_STORE_SQL).map((sql) => env.DB.prepare(sql)))).map((r) => r.results);
-  return storeFrom(o, c, p, s);
-}
-
-/** The store from the rows of FLAG_STORE_SQL (also read inside the home screen's one batch). */
-function storeFrom(o, c, p, s) {
-  return {
-    overrides: new Map(o.map((r) => [r.key, readOverride(r)])),
-    checks: Object.fromEntries(c.map((r) => [r.key, { by: r.by_name, byId: r.by_id, at: iso(r.at), note: r.note ?? "" }])),
-    policy: mergePolicy(p[0]?.value),
-    state: new Map(s.map((r) => [r.key, r])),
-  };
-}
-
-/** Every flag there is: the catalog and the free.<FEATURE> rows that have an override. */
-const flagKeys = (store) => [...FLAG_KEYS, ...[...store.overrides.keys()].filter((k) => !FLAG_KEYS.includes(k) && flagDef(k))];
-
-/** The server's view of [key] at [now]: conditions that depend on a phone do not hold it back. */
-const serverEval = (store, key, now = Date.now()) => FL.evalFlag(flagDef(key), store.overrides.get(key) ?? null,
-  { now, policy: store.policy, checks: store.checks, phone: null });
-
-/** [FLAG-24] Whether one of the six switch flags is forced off now; read on every write it guards. */
-async function switchOff(env, name) {
-  await migrateFlags(env);
-  const key = Object.keys(SWITCH_FLAGS).find((k) => SWITCH_FLAGS[k] === name);
-  const r = await one(env, "SELECT force, until FROM flag_overrides WHERE key = ?", key);
-  return FL.forceOf(r ? { force: r.force, until: r.until ? iso(r.until) : null } : null, Date.now()) === "off";
-}
-
-/** The manual keys a condition list waits on (inside '또는' too). */
-const manualKeys = (list) => [...new Set((list ?? []).flatMap((c) => (c.type === "manual" ? [c.key] : c.type === "any" ? manualKeys(c.of) : [])))];
-
-/**
- * [FLAG-22] What /api/config says about flags: only what the server overrides, as 통합계획 2-1 shapes them, plus
- * confirmed (AL-D2): the manual facts the developer confirmed, for every flag that waits on one (a phone with no
- * answer from the server treats a manual condition as unknown, so such a flag is always sent).
- */
-function configFlags(store, now) {
-  const out = {};
-  for (const key of flagKeys(store)) {
-    const def = flagDef(key);
-    const o = store.overrides.get(key) ?? null;
-    const force = FL.forceOf(o, now);
-    const manual = manualKeys(o?.conditions ?? def.conditions);
-    const ranged = o?.minApp != null || o?.maxApp != null;
-    if (!force && !o?.conditions && !manual.length && !ranged) continue;
-    const confirmed = Object.fromEntries(manual.filter((k) => store.checks[k]).map((k) => [k, store.checks[k].at]));
-    // 1.28 통합 [FLAG-36] minApp/maxApp (AL-D3) go with every flag sent; null is no end.
-    out[key] = { force, why: force ? o.why : "", conditions: o?.conditions ?? null, until: force && o.until ? o.until : null,
-      minApp: o?.minApp ?? null, maxApp: o?.maxApp ?? null, confirmed };
-  }
-  return out;
-}
-
-/** [FLAG-22] The calendar as the app reads it. */
-const configPolicy = (store) => store.policy.map((p) => ({ version: p.version, posted: p.posted, effective: p.effective, heldUntil: p.heldUntil ?? null }));
-
-/** [FLAG-22] For apps up to 1.27: free.<FEATURE> forced on, and the six switches forced off by their old names. */
-function legacyFlags(store, now) {
-  const free = [];
-  const off = [];
-  for (const key of flagKeys(store)) {
-    const m = FREE_KEY.exec(key);
-    if (m && serverEval(store, key, now).on) free.push(m[1]);
-    if (SWITCH_FLAGS[key] && FL.forceOf(store.overrides.get(key), now) === "off") off.push(SWITCH_FLAGS[key]);
-  }
-  return { free, off };
-}
-
-/**
- * [FLAG-25] The first moment billing is on by the server's view is the launch (launchedAt): thank-you months and passes
- * count from it. Written once; never moved again, whatever happens to the flag later.
- */
-async function recordLaunch(env, store, now) {
-  if (!serverEval(store, "billing", now).on) return null;
-  const had = await one(env, "SELECT value FROM settings WHERE key = 'launched_at'");
-  if (had && Number(had.value) > 0) return Number(had.value);
-  await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('launched_at', ?)", String(now));
-  const kept = Number((await one(env, "SELECT value FROM settings WHERE key = 'launched_at'"))?.value);
-  if (kept === now) await audit(env, now, "launch_recorded", "billing", `정식 출시일 ${iso(now)}`);
-  return kept;
-}
-
-/**
- * [FLAG-25][FLAG-28] The hourly job (17분) and every change: forces whose until passed end, a flag the server sees turn on
- * or off is written down (when, for the 24 hours of 홈 경고), the launch is recorded, and admins with 기능 관리 hear of a
- * legal flag the day before it turns on by itself and once it did (D99).
- */
-export async function flagTick(env, now = Date.now(), { push = true } = {}) {
-  let store = await flagStore(env);
-  const ended = [...store.overrides.entries()].filter(([, o]) => (o.force && o.until && Date.parse(o.until) <= now));
-  for (const [key, o] of ended) {
-    await run(env, "UPDATE flag_overrides SET force = NULL, until = NULL WHERE key = ?", key);
-    await flagHistory(env, now, key, "flag_expire", o, { ...o, force: null, until: null }, "정한 기한이 끝났어요", { system: true });
-  }
-  if (ended.length) store = await flagStore(env);
-  const news = [];
-  for (const key of flagKeys(store)) {
-    const def = flagDef(key);
-    const ev = serverEval(store, key, now);
-    const was = store.state.get(key);
-    if (!was) {
-      await run(env, "INSERT OR IGNORE INTO flag_state (key, on_now, since, warned) VALUES (?, ?, ?, NULL)", key, ev.on ? 1 : 0, now);
-    } else if ((was.on_now === 1) !== ev.on) {
-      await run(env, "UPDATE flag_state SET on_now = ?, since = ? WHERE key = ?", ev.on ? 1 : 0, now, key);
-      await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, '', '')", now,
-        ev.on ? "flag_auto_on" : "flag_auto_off", key, ev.reason.slice(0, 300));
-      if (def.risk === "LEGAL" && ev.on) news.push({ title: `${def.name}이(가) 켜졌어요`, body: "24시간 동안 홈 맨 위에서 한 번에 강제로 끌 수 있어요.", url: `/admin/#/flags/${key}`, legal: true });
-    }
-    // D99: the day before a legal flag would turn on by itself (its date comes, nothing else left).
-    if (def.risk === "LEGAL" && !ev.on && ev.state === "waiting") {
-      const tomorrow = serverEval(store, key, now + DAY);
-      const day = kstDay(now + DAY);
-      if (tomorrow.on && was?.warned !== day) {
-        await run(env, "UPDATE flag_state SET warned = ? WHERE key = ?", day, key);
-        news.push({ title: `내일 ${def.name}이(가) 저절로 켜져요`, body: `${day} 0시(한국 시간)에 켜져요. 미루려면 기능 관리에서 강제로 꺼 주세요.`, url: `/admin/#/flags/${key}`, legal: true });
-      }
-    }
-  }
-  await recordLaunch(env, store, now);
-  // [FLAG-37] D101: these two are a legal flag's, so they go inside an admin's quiet time too.
-  if (push) for (const { legal, ...n } of news) await notifyAdmins(env, "flags", { ...n, urgent: true }, now, { ignoreQuiet: legal === true });
-  return news;
-}
-
-/** [FLAG-21] One change, kept whole (before and after) for the flag's own history, and a line in 활동 기록. */
-async function flagHistory(env, now, key, action, before, after, why, { system = false } = {}) {
-  const who = system ? "" : env.actor ? actorName(env) : "";
-  const id = system ? "" : env.actor?.id ?? "";
-  await run(env, "INSERT INTO flag_history (key, at, action, actor, actor_id, before, after, why) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", key, now, action,
-    who, id, before === null || before === undefined ? null : JSON.stringify(before), after === null || after === undefined ? null : JSON.stringify(after), why ?? "");
-  await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, ?, ?)", now, action, key, String(why ?? "").slice(0, 300), who, id);
-}
-
-/** [FLAG-30] Of the phones that sent which flags were on (stats.more), how many had each, per flag, over [days] days. */
-async function flagShares(env, now, days = 7) {
-  const from = kstDay(now - days * DAY);
-  const rows = await all(env, "SELECT flag, SUM(phones) AS phones FROM usage_flags WHERE day >= ? GROUP BY flag", from);
-  const base = rows.find((r) => r.flag === "*")?.phones ?? 0;
-  return { base, share: Object.fromEntries(rows.filter((r) => r.flag !== "*").map((r) => [r.flag, base ? Math.round((1000 * r.phones) / base) / 10 : null])) };
-}
-
-/** [FLAG-21][ADMUX-21] One flag as the list and the detail show it. */
-function flagRow(store, key, now, shares) {
-  const def = flagDef(key);
-  const o = store.overrides.get(key) ?? null;
-  const ev = serverEval(store, key, now);
-  const conds = o?.conditions ?? def.conditions;
-  const release = latestRelease();
-  const legal = def.risk === "LEGAL";
-  const manual = (c) => manualKeys([c]);
-  return {
-    key, name: def.name, group: def.group, what: def.what, whyOff: def.whyOff, basis: def.basis, risk: def.risk, default: def.default, sunset: def.sunset,
-    owner: def.owner, since: def.since, switchKey: SWITCH_FLAGS[key] ?? null, conditions: conds, catalogConditions: def.conditions, override: o,
-    on: ev.on, state: ev.state, source: ev.source, reason: ev.reason, next: ev.next, daysLeft: FL.daysLeft(ev.next, now),
-    checklist: ev.conditions.map((x) => ({ label: x.label, met: x.met, type: x.c.type, keys: manual(x.c) })),
-    warnings: FL.noticeWarnings(def, conds, store.policy),
-    sunsetDue: Boolean(def.sunset && release && FL.versionCompare(release, def.sunset) >= 0),
-    reviewDue: Boolean(o?.reviewAt && o.reviewAt <= kstDay(now)),
-    onShare: shares?.share?.[key] ?? null,
-    onSince: store.state.get(key)?.since ? iso(store.state.get(key).since) : null,
-    alert: Boolean(legal && ev.on && store.state.get(key)?.since && now - store.state.get(key).since < DAY),
-    manualKeys: manualKeys(conds),
-  };
-}
-
-/** Who may do what to a flag (D97): the owner everything; 기능 강제로 끄기 (flagOff) for force off; the rest by area. */
-function flagMay(actor, def, step, current) {
-  if (actor.owner) return true;
-  const legal = def.risk === "LEGAL";
-  if (step === "on") return false;
-  if (step === "off") return can(actor, "flagOff", "edit");
-  if (step === "clear") return current === "on" ? can(actor, "flagOff", "edit") : !legal && can(actor, "flagOff", "edit");
-  if (step === "conditions") return !legal && can(actor, "flags", "edit");
-  return false;
-}
-
-/** What the screens tell an admin about their own reach, so buttons lock with the reason instead of failing. */
-const flagReach = (actor) => ({ owner: Boolean(actor.owner), edit: can(actor, "flags", "edit"), off: Boolean(actor.owner || can(actor, "flagOff", "edit")) });
-
-/** [ADMUX-21] The list, with the calendar and the confirmations. */
-async function flagList(env, actor, now) {
-  const store = await flagStore(env);
-  const shares = await flagShares(env, now);
-  return {
-    serverTime: iso(now), release: latestRelease(), reach: flagReach(actor), policy: store.policy, checks: store.checks, manualNames: FL.MANUAL_NAMES,
-    freeFeatures: FREE_FEATURES, statsPhones: shares.base,
-    flags: flagKeys(store).map((k) => flagRow(store, k, now, shares)),
-  };
-}
-
-/** [ADMUX-22] One flag: the row, its whole history, phones it is on for by app version, and problems before and after. */
-async function flagDetail(env, actor, key, now) {
-  const def = flagDef(key);
-  if (!def) return json({ error: "not_found" }, 404);
-  const store = await flagStore(env);
-  const shares = await flagShares(env, now);
-  const row = flagRow(store, key, now, shares);
-  const pivot = store.state.get(key)?.since ?? now;
-  const from = kstDay(pivot - 7 * DAY);
-  const to = kstDay(pivot + 7 * DAY);
-  const [history, versions, bugs, errors, series] = (await batch(env, [
-    stmt(env, "SELECT * FROM flag_history WHERE key = ? ORDER BY id DESC LIMIT ?", key, FLAG_LIMITS.history),
-    stmt(env, `SELECT f.app, SUM(f.phones) AS on_phones, (SELECT SUM(b.phones) FROM usage_flags b WHERE b.flag = '*' AND b.app = f.app AND b.day >= ?) AS base
-      FROM usage_flags f WHERE f.flag = ? AND f.day >= ? GROUP BY f.app ORDER BY on_phones DESC`, kstDay(now - 7 * DAY), key, kstDay(now - 7 * DAY)),
-    stmt(env, "SELECT created_at FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", pivot - 7 * DAY, pivot + 7 * DAY),
-    stmt(env, "SELECT key, count FROM counters WHERE key >= ? AND key <= ?", `errors|${from}`, `errors|${to}`),
-    stmt(env, `SELECT f.day, f.phones, (SELECT SUM(b.phones) FROM usage_flags b WHERE b.flag = '*' AND b.day = f.day) AS base
-      FROM (SELECT day, SUM(phones) AS phones FROM usage_flags WHERE flag = ? AND day >= ? GROUP BY day) f ORDER BY f.day`, key, kstDay(now - 28 * DAY)),
-  ])).map((r) => r.results);
-  const errBefore = errors.filter((e) => e.key.slice(7) < kstDay(pivot)).reduce((n, e) => n + e.count, 0);
-  const errAfter = errors.filter((e) => e.key.slice(7) >= kstDay(pivot)).reduce((n, e) => n + e.count, 0);
-  const parse = (v) => {
-    try {
-      return v ? JSON.parse(v) : null;
-    } catch {
-      return null;
-    }
-  };
-  return json({
-    ...row, serverTime: iso(now), reach: flagReach(actor), policy: store.policy, checks: store.checks, manualNames: FL.MANUAL_NAMES,
-    statsPhones: shares.base, launchedAt: key === "billing" ? (await launchState(env)).launchedAt : undefined,
-    thanksMonths: key === "billing" ? (await launchState(env)).thanksMonths : undefined,
-    history: history.map((h) => ({ id: h.id, at: iso(h.at), action: h.action, actor: h.actor || "시스템", actorId: h.actor_id || null, before: parse(h.before), after: parse(h.after), why: h.why })),
-    versions: versions.map((v) => ({ app: v.app, code: APP_CODES[v.app] ?? null, phones: v.on_phones, share: v.base ? Math.round((1000 * v.on_phones) / v.base) / 10 : null })),
-    series: series.map((x) => ({ day: x.day, share: x.base ? Math.round((1000 * x.phones) / x.base) / 10 : null, phones: x.phones })),
-    compare: { pivot: iso(pivot), days: 7, bugsBefore: bugs.filter((b) => b.created_at < pivot).length, bugsAfter: bugs.filter((b) => b.created_at >= pivot).length,
-      errorsBefore: errBefore, errorsAfter: errAfter, measured: store.state.has(key) },
-  });
-}
-
-/** A day (YYYY-MM-DD, KST) or a moment as ms, at most a year ahead and after now; null when not given. */
-function readUntil(v, field, now) {
-  if (v === undefined || v === null || v === "") return null;
-  const ms = typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00+09:00`) : Date.parse(String(v));
-  if (!Number.isFinite(ms) || ms <= now || ms > now + FLAG_LIMITS.untilDays * DAY) refuse(field, field);
-  return ms;
-}
-
-/**
- * 1.28 통합 [FLAG-36] AL-D3: the app versionCode range of a flag (both null: every version), with why. Outside it the
- * phone turns the flag off before anything else but a force off (판단 2단계). Who may: as for its conditions.
- */
-async function setFlagRange(request, env, actor, key, now) {
-  const def = flagDef(key);
-  if (!def) return json({ error: "flag", field: "key" }, 404);
-  if (!flagMay(actor, def, "conditions")) return json({ error: "no_permission", area: def.risk === "LEGAL" ? "owner" : "flags" }, 403);
-  const body = await readJson(request, 2048);
-  const code = (v, field) => (v === undefined || v === null || v === "" ? null : Number.isInteger(v) && v > 0 && v < 1_000_000 ? v : refuse("app", field));
-  const minApp = code(body.minApp, "minApp");
-  const maxApp = code(body.maxApp, "maxApp");
-  if (minApp !== null && maxApp !== null && maxApp < minApp) refuse("app", "maxApp");
-  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
-  const store = await flagStore(env);
-  const before = store.overrides.get(key) ?? null;
-  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto, min_app, max_app) VALUES (?, NULL, ?, NULL, NULL, NULL, ?, ?, ?, 0, ?, ?)
-    ON CONFLICT (key) DO UPDATE SET min_app = excluded.min_app, max_app = excluded.max_app, by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at`,
-  key, why, actorName(env), actor.id, now, minApp, maxApp);
-  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
-  await flagHistory(env, now, key, "flag_range", before, after, why);
-  await flagTick(env, now);
-  return flagDetail(env, actor, key, now);
-}
-
-/** [FLAG-21][FLAG-27][ADMUX-23] Force on, force off (reason required, 다시 볼 날), or back to the conditions. */
-async function setFlagForce(request, env, actor, key, now) {
-  const def = flagDef(key);
-  if (!def) return json({ error: "flag", field: "key" }, 404);
-  const body = await readJson(request, 4096);
-  const force = body.force === "on" || body.force === "off" ? body.force : body.force === null ? null : refuse("force", "force");
-  const store = await flagStore(env);
-  const before = store.overrides.get(key) ?? null;
-  const current = FL.forceOf(before, now);
-  const step = force ?? "clear";
-  if (!flagMay(actor, def, step, current)) {
-    return json({ error: "no_permission", area: step === "off" || (step === "clear" && current === "on") ? "flagOff" : "owner" }, 403);
-  }
-  const why = plainText(body.why, FLAG_LIMITS.why, "why", force !== null);
-  const until = force ? readUntil(body.until, "flag_until", now) : null;
-  const realDay = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`))
-    && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
-  const review = force === "off" && body.reviewAt ? (realDay(body.reviewAt) && body.reviewAt >= kstDay(now) && body.reviewAt <= kstDay(now + FLAG_LIMITS.untilDays * DAY)
-    ? body.reviewAt : refuse("review_at", "reviewAt")) : null;
-  // [FLAG-32] At least one way of working stays to choose.
-  if (force === "off" && def.group === "type") {
-    const left = Object.values(TYPE_FLAGS).filter((k) => k !== key && serverEval(store, k, now).on);
-    if (!left.length) return json({ error: "last_type", field: "key" }, 409);
-  }
-  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 0)
-    ON CONFLICT (key) DO UPDATE SET force = excluded.force, why = excluded.why, until = excluded.until, review_at = excluded.review_at,
-      by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at, auto = 0`,
-  key, force, why, until, review, actorName(env), actor.id, now);
-  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
-  const action = def.group === "type" && force !== "on" ? (force === "off" ? "type_hide" : "type_show") : force === "off" ? "flag_force_off" : force === "on" ? "flag_force_on" : "flag_clear";
-  await flagHistory(env, now, key, action, before, after, why || (force === null ? "조건대로 되돌림" : ""));
-  await flagTick(env, now);
-  return flagDetail(env, actor, key, now);
-}
-
-/** [FLAG-21][ADMUX-23] The conditions changed (checked), or back to the app's own (null). */
-async function setFlagConditions(request, env, actor, key, now) {
-  const def = flagDef(key);
-  if (!def) return json({ error: "flag", field: "key" }, 404);
-  if (!flagMay(actor, def, "conditions")) return json({ error: "no_permission", area: def.risk === "LEGAL" ? "owner" : "flags" }, 403);
-  const body = await readJson(request, 8192);
-  let conditions = null;
-  if (body.conditions !== null && body.conditions !== undefined) {
-    const checked = FL.checkConditions(body.conditions);
-    if (checked.error) return json({ error: "conditions", field: "conditions", detail: checked.error }, 400);
-    const unknown = JSON.stringify(checked.list).match(/"type":"manual","key":"([^"]+)"/g)?.map((m) => m.slice(23, -1)).filter((k) => !Object.hasOwn(FL.MANUAL_NAMES, k)) ?? [];
-    if (unknown.length) return json({ error: "conditions", field: "conditions", detail: `모르는 확인 이름이에요: ${unknown[0]}` }, 400);
-    conditions = checked.list;
-  }
-  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
-  const store = await flagStore(env);
-  const before = store.overrides.get(key) ?? null;
-  await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto) VALUES (?, NULL, ?, ?, NULL, NULL, ?, ?, ?, 0)
-    ON CONFLICT (key) DO UPDATE SET conditions = excluded.conditions, by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at`,
-  key, why, conditions ? JSON.stringify(conditions) : null, actorName(env), actor.id, now);
-  const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
-  await flagHistory(env, now, key, "flag_conditions", before, after, why);
-  await flagTick(env, now);
-  return flagDetail(env, actor, key, now);
-}
-
-/** [FLAG-21][FLAG-27] 확인했어요 on a manual condition (or taken back): the owner's when any legal flag waits on it. */
-async function setFlagCheck(request, env, actor, name, now) {
-  if (!Object.hasOwn(FL.MANUAL_NAMES, name)) return json({ error: "manual", field: "key" }, 404);
-  // The flags that wait on it now: the catalog's conditions or the ones the developer app put in their place.
-  const store = await flagStore(env);
-  const users = flagKeys(store).map(flagDef).filter((f) => manualKeys(store.overrides.get(f.key)?.conditions ?? f.conditions).includes(name));
-  const legal = users.some((f) => f.risk === "LEGAL");
-  if (!actor.owner && (legal || !can(actor, "flags", "edit"))) return json({ error: "no_permission", area: legal ? "owner" : "flags" }, 403);
-  const body = await readJson(request, 2048);
-  if (typeof body.done !== "boolean") refuse("done", "done");
-  const note = plainText(body.note, FLAG_LIMITS.why, "note");
-  const was = await one(env, "SELECT * FROM flag_checks WHERE key = ?", name);
-  if (body.done) {
-    await run(env, "INSERT OR REPLACE INTO flag_checks (key, by_name, by_id, at, note) VALUES (?, ?, ?, ?, ?)", name, actorName(env), actor.id, now, note);
-  } else {
-    await run(env, "DELETE FROM flag_checks WHERE key = ?", name);
-  }
-  for (const f of users.length ? users : [{ key: name }]) {
-    await flagHistory(env, now, f.key, body.done ? "flag_check" : "flag_uncheck", was ? { check: name, at: iso(was.at), by: was.by_name } : null,
-      body.done ? { check: name, at: iso(now), by: actorName(env) } : null, `${FL.MANUAL_NAMES[name]}${note ? ` · ${note}` : ""}`);
-  }
-  await flagTick(env, now);
-  return json(await flagList(env, actor, now));
-}
-
-/** [FLAG-33] The owner moves a policy version's dates (or adds a version), with why. */
-async function setPolicy(request, env, actor, now) {
-  if (!actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
-  const body = await readJson(request, 2048);
-  if (!/^\d{1,2}\.\d{1,2}$/.test(body.version ?? "")) refuse("policy", "version");
-  const day = (v, field, optional = false) => (optional && (v === null || v === undefined || v === "") ? null
-    : typeof v === "string" && /^20\d\d-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`)) ? v : refuse("policy", field));
-  const posted = day(body.posted, "posted");
-  const effective = day(body.effective, "effective");
-  const heldUntil = day(body.heldUntil, "heldUntil", true);
-  if (effective < posted || (heldUntil && heldUntil < effective)) refuse("policy", "effective");
-  const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
-  const raw = (await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value;
-  let over = {};
-  try {
-    over = JSON.parse(raw ?? "{}") ?? {};
-  } catch {
-    over = {};
-  }
-  const before = mergePolicy(raw).find((p) => p.version === body.version) ?? null;
-  over[body.version] = { posted, effective, heldUntil, unfavourable: Boolean(body.unfavourable) };
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)", JSON.stringify(over));
-  await flagHistory(env, now, `policy.${body.version}`, "policy_edit", before, over[body.version], why);
-  await flagTick(env, now);
-  return json(await flagList(env, actor, now));
-}
-
-/** [FLAG-25] 감사 보상 개월 (thanksMonths), the owner's, now on billing's screen. */
-async function setThanks(request, env, actor, now) {
-  if (!actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
-  const body = await readJson(request, 1024);
-  if (!Number.isInteger(body.thanksMonths) || body.thanksMonths < 0 || body.thanksMonths > 12) refuse("thanksMonths", "thanksMonths");
-  const before = (await launchState(env)).thanksMonths;
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('thanks_months', ?)", String(body.thanksMonths));
-  if (before !== body.thanksMonths) await flagHistory(env, now, "billing", "launch_thanks", { thanksMonths: before }, { thanksMonths: body.thanksMonths }, `감사 보상 ${body.thanksMonths}개월`);
-  return flagDetail(env, actor, "billing", now);
-}
-
-/** [FLAG-32][ADMUX-26] The six ways of working, shown or hidden. */
-async function typeList(env, actor, now) {
-  const store = await flagStore(env);
-  return {
-    reach: flagReach(actor),
-    types: Object.entries(TYPE_FLAGS).map(([style, key]) => ({ style, key, ...flagRow(store, key, now, null), label: FL.WORK_NAMES[style] })),
-  };
-}
-
-/** [FLAG-21]~[FLAG-33] /api/admin/flags, /flags/:key(/force|/conditions|/thanks), /checks/:name, /policy, /types. */
-async function flagRoute(request, env, url, path, method, actor, now) {
-  if (path === "/flags" && method === "GET") return json(await flagList(env, actor, now));
-  if (path === "/policy" && method === "POST") return setPolicy(request, env, actor, now);
-  if (path === "/types" && method === "GET") return json(await typeList(env, actor, now));
-  if (path === "/types" && method === "POST") {
-    const body = await readJson(request, 2048);
-    const key = TYPE_FLAGS[body.type] ?? refuse("type", "type");
-    if (typeof body.show !== "boolean") refuse("show", "show");
-    const res = await setFlagForce(new Request(request.url, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ force: body.show ? null : "off", why: body.why ?? "" }) }), env, actor, key, now);
-    return res.status === 200 ? json(await typeList(env, actor, now)) : res;
-  }
-  let m = path.match(/^\/checks\/([a-z0-9.]{3,60})$/);
-  if (m && method === "POST") return setFlagCheck(request, env, actor, m[1], now);
-  m = path.match(/^\/flags\/([A-Za-z0-9._]{2,50})(\/force|\/conditions|\/range|\/thanks)?$/);
-  if (!m || !flagDef(m[1])) return json({ error: "not_found" }, 404);
-  if (method === "GET" && !m[2]) return flagDetail(env, actor, m[1], now);
-  if (method === "POST" && m[2] === "/force") return setFlagForce(request, env, actor, m[1], now);
-  if (method === "POST" && m[2] === "/conditions") return setFlagConditions(request, env, actor, m[1], now);
-  if (method === "POST" && m[2] === "/range") return setFlagRange(request, env, actor, m[1], now);
-  if (method === "POST" && m[2] === "/thanks" && m[1] === "billing") return setThanks(request, env, actor, now);
-  return json({ error: "not_found" }, 404);
-}
-
-/** [ADMUX-27][FLAG-28] The home screen's part: legal flags on for less than 24 hours, and how many flags want a look. */
-export async function flagOverview(env, actor, now = Date.now(), given = null) {
-  if (!can(actor, "flags")) return {};
-  const store = given ?? (await flagStore(env));
-  const rows = flagKeys(store).map((k) => flagRow(store, k, now, null));
-  const due = rows.filter((r) => r.reviewDue || r.warnings.length || r.sunsetDue
-    || (r.state === "waiting" && r.checklist.every((c) => c.met !== false || c.type === "manual"))).length;
-  return {
-    flagAlerts: rows.filter((r) => r.alert && r.state !== "forced_off").map((r) => ({ key: r.key, name: r.name, since: r.onSince, reason: r.reason })),
-    // flagsWaiting: the same number by the name AN's 출시 hub badge reads.
-    flagsDue: due, flagsWaiting: due,
-  };
-}
-/**
- * 1.28 통합 [ADMUX-40][FLAG-30] 분석 › 기능별 효과: every flag with the share of phones it was on for (stats.more, last
- * 7 days) and, once the server saw it turn on or off, problem reports and server errors 7 days before and after,
- * the same numbers the flag's own page shows (flagDetail), for all flags in one trip.
- */
-async function flagEffects(env, actor, now) {
-  const store = await flagStore(env);
-  const shares = await flagShares(env, now);
-  const rows = flagKeys(store).map((k) => flagRow(store, k, now, shares));
-  const measured = rows.filter((r) => store.state.get(r.key)?.since);
-  const pivots = measured.map((r) => store.state.get(r.key).since);
-  const lo = pivots.length ? Math.min(...pivots) - 7 * DAY : now;
-  const hi = pivots.length ? Math.max(...pivots) + 7 * DAY : now;
-  const [bugs, errors, flips] = pivots.length ? (await batch(env, [
-    stmt(env, "SELECT created_at, info FROM inquiries WHERE kind IN ('bug', 'problem') AND created_at >= ? AND created_at < ?", lo, hi),
-    stmt(env, "SELECT key, count FROM counters WHERE key >= ? AND key <= ?", `errors|${kstDay(lo)}`, `errors|${kstDay(hi)}`),
-    // AU 1.29 [NXT-07]: whether `since` is a turn the server saw (flagTick's audit line) or only when it first looked.
-    stmt(env, "SELECT target, at FROM audit WHERE action IN ('flag_auto_on', 'flag_auto_off') AND at >= ?", lo + 7 * DAY),
-  ])).map((r) => r.results) : [[], [], []];
-  const around = (pivot) => {
-    const b = bugs.filter((x) => x.created_at >= pivot - 7 * DAY && x.created_at < pivot + 7 * DAY);
-    const e = errors.filter((x) => x.key.slice(7) >= kstDay(pivot - 7 * DAY) && x.key.slice(7) <= kstDay(pivot + 7 * DAY));
-    return { pivot: iso(pivot), days: 7, bugsBefore: b.filter((x) => x.created_at < pivot).length, bugsAfter: b.filter((x) => x.created_at >= pivot).length,
-      errorsBefore: e.filter((x) => x.key.slice(7) < kstDay(pivot)).reduce((n, x) => n + x.count, 0),
-      errorsAfter: e.filter((x) => x.key.slice(7) >= kstDay(pivot)).reduce((n, x) => n + x.count, 0) };
-  };
-  return {
-    serverTime: iso(now), statsPhones: shares.base, flagsReach: can(actor, "flags"),
-    flags: rows.map((r) => ({ key: r.key, name: r.name, group: r.group, risk: r.risk, state: r.state, on: r.on, onShare: r.onShare,
-      compare: store.state.get(r.key)?.since ? { ...around(store.state.get(r.key).since), split: bugSplit(store, r, bugs, flips) } : null })),
-  };
-}
-// AM 1.28 끝
 
 // AU 1.29
 /**
@@ -9649,7 +6629,7 @@ async function flagEffects(env, actor, now) {
  * - unseen: sent before the server first looked at the flag (its first look is not a turn, so the state before is unknown).
  * The 기능 상태 lines a user may attach in the 점검 기록 are not read for this: 1-3항 keeps them for answering that question.
  */
-function bugSplit(store, row, bugs, flips = []) {
+export function bugSplit(store, row, bugs, flips = []) {
   const st = store.state.get(row.key);
   const since = st?.since;
   const nowOn = st?.on_now === 1;
@@ -9686,14 +6666,14 @@ function appCode(info) {
 }
 // AU 1.29 끝
 
-function json(data, status = 200, headers = {}) {
+export function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", ...headers },
   });
 }
 
-async function readJson(request, maxBytes) {
+export async function readJson(request, maxBytes) {
   if (!(request.headers.get("content-type") || "").startsWith("application/json")) throw new Refuse("content_type", "body");
   if (Number(request.headers.get("content-length") || 0) > maxBytes) throw new Refuse("too_large", "body", 413);
   const text = await request.text();
@@ -9708,9 +6688,9 @@ async function readJson(request, maxBytes) {
   return body;
 }
 
-const iso = (ms) => new Date(ms).toISOString();
+export const iso = (ms) => new Date(ms).toISOString();
 
-function randomId(length) {
+export function randomId(length) {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   let out = "";
   // 256 % 57 leaves a small bias; skipping the top values keeps every character equally likely.
@@ -9718,7 +6698,7 @@ function randomId(length) {
   return out.length >= length ? out.slice(0, length) : out + randomId(length - out.length);
 }
 
-async function sha256(text) {
+export async function sha256(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

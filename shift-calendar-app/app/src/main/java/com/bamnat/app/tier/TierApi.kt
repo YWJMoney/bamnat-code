@@ -18,7 +18,7 @@ data class PassItem(val months: Int, val at: Instant, val why: String)
  * [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved".
  * [FLAG-13] 1.28: [owner] when the link code was made by the owner (최고 관리자); such a phone sees hidden kinds of work.
  */
-data class AdminState(val status: String, val name: String, val owner: Boolean = false) {
+data class AdminState(val status: String, val name: String, val owner: Boolean = false, val previews: List<String> = emptyList()) {
     val approved: Boolean get() = status == "approved"
 }
 
@@ -130,7 +130,11 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             waitingMonths = o.optInt("waitingMonths"),
             items = o.optJSONArray("items").objects().map { PassItem(it.getInt("months"), Instant.parse(it.getString("at")), it.optString("why")) },
             deferred = o.optInt("deferred"),
-            admin = o.optJSONObject("admin")?.let { AdminState(it.getString("status"), it.optString("name"), it.optBoolean("owner")) },
+            // S 1.32 [SECX-01] previews: set in the developer app for this phone only.
+            admin = o.optJSONObject("admin")?.let { a ->
+                AdminState(a.getString("status"), a.optString("name"), a.optBoolean("owner"),
+                    a.optJSONArray("previews")?.let { arr -> List(arr.length()) { arr.optString(it) }.filter { it.isNotBlank() } }.orEmpty())
+            },
             hasCode = o.optBoolean("code"),
             checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Today.instant(),
         )

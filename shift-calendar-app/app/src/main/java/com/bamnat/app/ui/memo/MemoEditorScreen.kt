@@ -131,6 +131,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var copying by remember { mutableStateOf(false) }
+    if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" }, shareText(memo)) { copying = false }
     val bodyTools = remember { MemoBodyTools() }
     val background = memoBackground(memo.colorIndex)
     // [UX-11] 1.25 Z (U10): the line being typed is kept in view by moving this scroll only, never the window.
@@ -202,6 +204,13 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                         .putExtra(Intent.EXTRA_TEXT, shareText(memo))
                                     runCatching { context.startActivity(Intent.createChooser(send, "메모 공유")) }
                                 },
+                                enabled = !memo.isBlank,
+                            )
+                            // A 1.32 [FIX132-05] 복사: the whole memo, or part of it in a box that scrolls with the selection.
+                            DropdownMenuItem(
+                                text = { Text("복사하기") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                                onClick = { menu = false; copying = true },
                                 enabled = !memo.isBlank,
                             )
                             DropdownMenuItem(

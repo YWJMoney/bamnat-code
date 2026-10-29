@@ -157,6 +157,7 @@ class RemoteFilesStore(
                 RemoteFiles.TAXES -> com.bamnat.core.invest.InvestTaxes.use(f)
                 RemoteFiles.ALARM_GUIDE -> com.bamnat.core.remote.AlarmGuides.use(f)
                 RemoteFiles.CYCLES -> com.bamnat.core.plaza.PublicCycles.use(f)
+                RemoteFiles.MERCHANTS -> com.bamnat.core.money.MerchantNames.use(f) // 1.32 [LEDX-24]
             }
         }
     }

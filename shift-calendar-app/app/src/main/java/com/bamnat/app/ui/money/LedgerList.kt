@@ -565,7 +565,9 @@ private fun LedgerRow(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(signedWon(e), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e), maxLines = 1)
                     when {
-                        e.installments > 1 -> Text("${e.installments}개월 할부", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay.
+                        e.installments > 1 -> Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) ?: "${e.installments}개월 할부",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.kind == MoneyKind.TRANSFER -> Text("이체", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.amount < 0 -> Text("취소", style = MaterialTheme.typography.labelSmall, color = cal.income)
                     }

@@ -436,7 +436,7 @@ class CompanyDetailViewModel(
                 done(result)
                 loadRoom()
             } catch (e: CompanyException) {
-                failed(companyProblem(e.code, e.field))
+                failed(companyProblem(e))
             } catch (e: BackupException) {
                 failed(e.message ?: "설정을 넣지 못했어요")
             } catch (e: org.json.JSONException) {
@@ -471,7 +471,7 @@ class CompanyDetailViewModel(
                 }
                 null
             } catch (e: CompanyException) {
-                companyProblem(e.code, e.field)
+                companyProblem(e)
             }
             done(error)
             if (error == null) runCatching { c.companyApi.company(id).also(c.companySearch::keepPage) }.getOrNull()?.let { _state.value = State.Loaded(it) }
@@ -504,7 +504,7 @@ class CompanyDetailViewModel(
             _history.value = try {
                 HistoryState(setup.dept.ifEmpty { "회사 전체" }, c.companyApi.history(page.id, setup.id))
             } catch (e: CompanyException) {
-                HistoryState(setup.dept.ifEmpty { "회사 전체" }, null, companyProblem(e.code, e.field))
+                HistoryState(setup.dept.ifEmpty { "회사 전체" }, null, companyProblem(e))
             }
         }
     }
@@ -655,7 +655,7 @@ class TalkHolder(
                 o.copy(talk = t, error = null, refreshing = false)
             } catch (e: CompanyException) {
                 // [SPD-13] What was kept stays on screen; the problem shows only when there is nothing to show.
-                o.copy(error = if (o.talk != null) null else companyProblem(e.code, e.field), refreshing = false)
+                o.copy(error = if (o.talk != null) null else companyProblem(e), refreshing = false)
             }
             val now = _open.value
             if (now?.company == o.company && now.setup == o.setup) _open.value = next.copy(talk = next.talk ?: now.talk)
@@ -703,7 +703,7 @@ class TalkHolder(
                 changed = true
                 null
             } catch (e: CompanyException) {
-                talkProblem(e.code)
+                talkProblem(e)
             }
             if (error != null) {
                 _open.value?.let { cur -> cur.talk?.let { t -> _open.value = cur.copy(talk = t.copy(posts = t.posts.filter { it.id != pending.id })) } }
@@ -736,7 +736,7 @@ class TalkHolder(
                 }
                 null
             } catch (e: CompanyException) {
-                talkProblem(e.code)
+                talkProblem(e)
             }
             done(error)
         }
@@ -756,13 +756,17 @@ class TalkHolder(
                 c.companyApi.flag(c.companyStore.device, id, reason)
                 null
             } catch (e: CompanyException) {
-                talkProblem(e.code)
+                talkProblem(e)
             }
             done(error)
             reload()
         }
     }
 }
+
+/** [LIM-03] 1.31: [talkProblem] for a refusal, with when it goes again and why when the server said. */
+fun talkProblem(e: com.bamnat.app.company.CompanyException): String =
+    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e, "글쓰기") else talkProblem(e.code)
 
 /** What to say when a post is refused. */
 fun talkProblem(code: String): String = when (code) {
@@ -771,7 +775,7 @@ fun talkProblem(code: String): String = when (code) {
     "email" -> "메일 주소는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
-    "rate_limited" -> "오늘은 글을 더 쓸 수 없어요. 내일 다시 써 주세요"
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text("글쓰기")
     "own" -> "내 글에는 할 수 없어요"
     "parent" -> "답글을 달 글이 지워졌어요"
     "change" -> "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
@@ -894,7 +898,7 @@ class CompanyBoardViewModel(
                 f.value.copy(items = (if (from == 0) emptyList() else f.value.items) + b.items, next = b.next, loading = false, fromCache = false)
             } catch (e: CompanyException) {
                 val shown = f.value.items.isNotEmpty()
-                f.value.copy(loading = false, error = if (shown) null else companyProblem(e.code, e.field), stale = shown && from == 0)
+                f.value.copy(loading = false, error = if (shown) null else companyProblem(e), stale = shown && from == 0)
             }
             // A page for a name no longer in the box is dropped; the new name's pages are on their way.
             if (q == asked && fl == _filter.value) {
@@ -963,7 +967,7 @@ class ActivityHolder(
             val next = try {
                 c.companyApi.activity(device).also { cache.keepActivity(device, it) }.let(::mine)
             } catch (e: CompanyException) {
-                if (kept != null) mine(kept) else Open(error = companyProblem(e.code, e.field))
+                if (kept != null) mine(kept) else Open(error = companyProblem(e))
             }
             if (_open.value != null) _open.value = next
         }
@@ -1003,7 +1007,7 @@ class ActivityHolder(
                 when (e.code) {
                     "taken" -> "다른 분이 쓰는 별명이에요"
                     "nick" -> "쓸 수 없는 별명이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
-                    else -> talkProblem(e.code)
+                    else -> talkProblem(e)
                 }
             }
             done(error)
@@ -1044,7 +1048,7 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
                     b.entries.firstOrNull { it.mine }?.let { c.rateHints.shared(it.job, it.region, it.trade) }
                 }, loading = false)
             } catch (e: CompanyException) {
-                State(_state.value.board, loading = false, error = companyProblem(e.code, e.field))
+                State(_state.value.board, loading = false, error = companyProblem(e))
             }
             if (f == _filter.value) _state.value = next
         }
@@ -1068,7 +1072,7 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
                 when (e.code) {
                     "adopted" -> "같은 시세가 이미 채택됐어요. 다른 분의 시세에 맞아요·달라요를 눌러 주세요"
                     "trade" -> "직종을 두 글자 이상, 20자 안으로 적어 주세요"
-                    else -> talkProblem(e.code)
+                    else -> talkProblem(e)
                 }
             }
             if (error == null) load()
@@ -1252,7 +1256,7 @@ class CompanyReportViewModel(
     /** [PLAZA-30] 1.27 AI: the calendar's pay, for what the 명세서 tick rests on as it changes (a match done from the form). */
     val payProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = scope.pay.profile
     fun proof(p: com.bamnat.core.pay.PayProfile?): com.bamnat.core.pay.SlipProof? =
-        com.bamnat.core.pay.SlipProof.of(p?.verified, java.time.YearMonth.from(Today.date()))
+        com.bamnat.core.pay.SlipProof.best(p, java.time.YearMonth.from(Today.date()))
     /** [PLAZA-30] Opens the main pay screen's 명세서로 맞춰 보기. */
     fun askMatch() { c.pendingMatch = true }
     val applied: StateFlow<AppliedSetup?> = scope.store.applied
@@ -1432,6 +1436,9 @@ class CompanyReportViewModel(
  * [COMM-02][COMM-03] The small asks around a company setup, on the pay screen and in settings:
  * 맞았어요·달라요 on the shared setup in use, and the invitation to share a hand-made or corrected one.
  */
+/** A 1.32 [FIX132-02] The server's answers for a version no longer open to votes. */
+private val GONE = setOf("superseded", "withdrawn", "not_found")
+
 class CompanyNudgeViewModel(
     private val c: AppContainer,
     /** [CALI-04] 1.30 BB: the calendar whose company setup is asked about. */
@@ -1480,21 +1487,34 @@ class CompanyNudgeViewModel(
     }
 
     /** [why] for 달라요: wrong, old or name. [done] says whether the server took it. */
-    fun vote(ok: Boolean, verified: Boolean = false, why: String? = null, done: (Boolean) -> Unit = {}) {
+    /**
+     * A 1.32 [FIX132-02] [done] gets null when it went, else what to say: the server's own reason (a newer version, taken
+     * down, under review), never "인터넷에 연결되지 않았어요" unless the phone really was offline.
+     */
+    fun vote(ok: Boolean, verified: Boolean = false, why: String? = null, done: (String?) -> Unit = {}) {
         val a = applied.value ?: return
         viewModelScope.launch {
-            val sent = runCatching { c.companyApi.vote(c.companyStore.device, a.companyId, a.setup, ok, verified, why) }.isSuccess
-            if (sent) {
+            val problem = try {
+                c.companyApi.vote(c.companyStore.device, a.companyId, a.setup, ok, verified, why)
                 store.voted(ok)
                 c.telemetry.event("company_vote", if (ok) (if (verified) "ok_verified" else "ok") else why ?: "wrong")
+                null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: CompanyException) {
+                // A version that is gone will not take a vote later either: the card stops asking about it.
+                if (e.code in GONE) store.voted(ok)
+                companyProblem(e)
+            } catch (e: Exception) {
+                companyProblem("server")
             }
-            done(sent)
+            done(problem)
         }
     }
 
     /** [PLAZA-30] 1.27 AI: whether 명세서와 맞춰 봤어요 may be chosen (a matched month on this calendar). */
     fun hasProof(): Boolean =
-        com.bamnat.core.pay.SlipProof.of(scope.pay.profile.value?.verified, java.time.YearMonth.from(Today.date()))?.counts == true
+        com.bamnat.core.pay.SlipProof.best(scope.pay.profile.value, java.time.YearMonth.from(Today.date()))?.counts == true
 
     /** "나중에": asked again in a week. */
     fun later() = store.voteLaterUntil(Today.millis() + 7L * 24 * 60 * 60 * 1000)

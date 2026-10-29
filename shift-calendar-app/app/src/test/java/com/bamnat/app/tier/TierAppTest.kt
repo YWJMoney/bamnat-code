@@ -174,7 +174,11 @@ class TierAppTest {
     }
 
     @Test fun thePreviewCountsBeforeTheLaunchOrInDebugOnly() {
-        val before = gate(LaunchConfig(billingLive = false), preview = Tier.FREE)
+        // S 1.32 [SECX-01] Before the launch only an admin phone the developer app approved counts it; a user's does not.
+        assertFalse("사용자 휴대폰은 저장된 미리 보기를 무시해요", gate(LaunchConfig(billingLive = false), preview = Tier.FREE).preview)
+        val admin = Passes(until = null, waitingMonths = 0, items = emptyList(), deferred = 0,
+            admin = AdminState("approved", "관리자"), hasCode = false, checkedAt = now)
+        val before = gate(LaunchConfig(billingLive = false), edit = { setPasses(admin) }, preview = Tier.FREE)
         assertTrue(before.preview)
         assertTrue(before.locked(Feature.MONEY_STATS))
         assertEquals(ProReason.PREVIEW, before.access.reason)

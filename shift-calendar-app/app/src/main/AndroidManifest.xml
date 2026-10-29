@@ -15,8 +15,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- [ALRM-01] 알람 점검's 배터리 최적화 제외 asks straight away; allowed for alarm clocks (Play's 배터리 최적화 정책). -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- [ALRM-15] 1.31 R9: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. 알람 점검 opens the phone's own list of apps (no permission),
+         so Play's review has no permission to ask about; exact alarms already ring through Doze. -->
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
@@ -196,6 +196,16 @@
         <!-- [INV-34] 월말 요약 on the last day of the month. -->
         <receiver
             android:name=".invest.InvestMonthReceiver"
+            android:exported="false" />
+
+        <!-- 1.32 [WTYP-16] 퇴근 시각 알림 and its 지금 퇴근 button. -->
+        <receiver
+            android:name=".alarm.LeaveTimeReceiver"
+            android:exported="false" />
+
+        <!-- 1.32 [WTYP-11][WTYP-29] 희망 오프 신청 마감, 코인 12월 31일 시가 기록. -->
+        <receiver
+            android:name=".calendar.DateNoticeReceiver"
             android:exported="false" />
 
         <!-- [PAY-12][REL-08] 연차 lapse notice on 11/1 and 12/1. -->

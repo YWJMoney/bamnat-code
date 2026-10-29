@@ -109,7 +109,7 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 c.telemetry.event("share_report", reason.code)
                 "신고했어요. 운영자가 확인하고 운영 규칙에 어긋나면 링크를 내려요. 누가 신고했는지는 남지 않아요."
             } catch (e: ShareLinkException) {
-                if (e.message == "rate_limited") "잠시 뒤에 다시 신고해 주세요." else "신고를 보내지 못했어요. 잠시 뒤 다시 해 주세요."
+                if (e.message == "rate_limited") com.bamnat.app.company.RateLimits.text("신고", 3_600, "device") else "신고를 보내지 못했어요. 잠시 뒤 다시 해 주세요."
             } catch (e: IOException) {
                 "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요."
             }

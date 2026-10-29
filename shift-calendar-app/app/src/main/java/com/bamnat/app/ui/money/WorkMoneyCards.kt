@@ -44,6 +44,7 @@ fun WorkMoneyCards(calendarId: String, book: MoneyBook, style: WorkStyle?, today
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val cal = calendars.firstOrNull { it.id == calendarId }
     // [GUIDE-05] 입금 확인 can be turned off for its calendar.
+    if (style == WorkStyle.FIELD && cal?.field?.platformMode == true) PlatformMoneyCard(c, calendarId, book, cal.field!!, today)
     if (style == WorkStyle.FIELD) com.bamnat.app.ui.guide.FeatureCard("field.deposit", calendarId) { DepositMatchCard(c, calendarId, book, cal?.field ?: FieldRules(), today) }
     if (style == WorkStyle.BUSINESS) CardDepositsCard(c, calendarId, book, cal?.shopMoney ?: ShopMoney(), today)
 }
@@ -120,5 +121,53 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
         val total = waiting.sumOf { it.amount }
         Text("들어올 카드 매출 ${Fmt.won(total)} · 수수료 ${rules.feeLabel}, ${rules.settleDays}영업일 뒤로 셌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        // F 1.32 [TAXP-08] The deposits that came, set against the days they pay.
+        val gate by c.featureGate.state.collectAsStateWithLifecycle()
+        CardMatchLines(calendarId, book, today, gate)
+    }
+}
+
+/**
+ * G 1.32 [WTYP-02] 604: this month by platform (건수, 금액, 운행 시간), costs (each day's and the ledger's 자동차·교통), 시간당
+ * 순수익, and the weeks still to be paid with the deposit that looks like each, "입금 확인" marking the week paid.
+ */
+@Composable
+private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBook, rules: FieldRules, today: LocalDate) {
+    val month = java.time.YearMonth.from(today)
+    val m = remember(book, month, rules) { com.bamnat.core.money.PlatformWork.month(month, book.jobs, book.entries, rules) }
+    val payouts = remember(book, rules) { com.bamnat.core.money.PlatformWork.payouts(book.jobs, rules) }
+    if (m.rows.isEmpty() && payouts.isEmpty()) return
+    SectionCard(title = "${month.monthValue}월 플랫폼 수입") {
+        m.rows.forEach { r ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("${r.platform} ${r.count}건", style = MaterialTheme.typography.bodyLarge)
+                    // G 1.32 [WTYP-23] 콜 출처마다 수수료·보험료.
+                    if (r.fees > 0) Text("수수료·보험 ${Fmt.won(r.fees)} 빼면 ${Fmt.won(r.amount - r.fees)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(Fmt.won(r.amount), style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text("쓴 돈 ${Fmt.won(m.costs)} (유류비·정비·보험 포함)" + (if (m.fees > 0) " · 수수료 ${Fmt.won(m.fees)}" else "") + " · 남은 돈 ${Fmt.won(m.net)}",
+            style = MaterialTheme.typography.bodyMedium)
+        m.perHour?.let { Text("시간당 순수익 ${Fmt.won(it)} · 한 건 ${m.perCount?.let(Fmt::won) ?: "-"}", style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary) }
+        payouts.take(4).forEach { p ->
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            val dep = remember(p, book.entries) { com.bamnat.core.money.PlatformWork.depositFor(p, book.entries) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${p.platform} ${Fmt.shortDate(p.payDate)} 정산 ${Fmt.won(p.expected)}", style = MaterialTheme.typography.bodyLarge,
+                        color = if (p.payDate.isBefore(today.minusDays(2)) && dep == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface)
+                    Text("${Fmt.shortDate(p.from)}~${Fmt.shortDate(p.to)} 일한 몫" + (dep?.let { " · ${Fmt.shortDate(it.date)} ${Fmt.won(it.amount)} 들어온 것 같아요" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = {
+                    c.appScope.launch { com.bamnat.core.money.PlatformWork.settle(p).forEach { c.calendars.money(calendarId).save(it) } }
+                }) { Text("입금 확인") }
+            }
+        }
     }
 }

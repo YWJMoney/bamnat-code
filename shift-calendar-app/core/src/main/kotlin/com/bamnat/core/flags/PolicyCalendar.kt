@@ -55,6 +55,8 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
             PolicyVersion("3.3", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 27)),
             // [ITEM-03] 1.30: 회사 공통 수당 금액(결정 D102)과 사진이 달라요 이유 두 개; the same day again so all change at once.
             PolicyVersion("3.4", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 27)),
+            // [STAT-08] 1.31: 조회에 걸린 시간 구간 (1-9항, N4); posted with 1.31 the next day, 30 days as items are added.
+            PolicyVersion("3.5", LocalDate.of(2026, 10, 29), LocalDate.of(2026, 11, 28)),
         ))
 
         /** "3.10" after "3.9": compared part by part as numbers. */

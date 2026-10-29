@@ -13,9 +13,20 @@ object Fmt {
     private val korean = Locale.KOREAN
     private val time = DateTimeFormatter.ofPattern("HH:mm")
 
+    /**
+     * G 1.32 [WTYP-07] 609 설정 › 화면과 글자 › 오전/오후로 보기: "오후 3:05" instead of "15:05". Set from the settings when the
+     * app and the widgets start and when it is changed; the root redraws on a change.
+     */
+    @Volatile var clock12: Boolean = false
+
+    private fun twelve(t: LocalTime): String {
+        val h = t.hour % 12
+        return "${if (t.hour < 12) "오전" else "오후"} ${if (h == 0) 12 else h}:${"%02d".format(t.minute)}"
+    }
+
     fun dayOfWeekShort(d: DayOfWeek): String = d.getDisplayName(TextStyle.SHORT, korean)
 
-    fun time(t: LocalTime?): String = t?.format(time) ?: "--:--"
+    fun time(t: LocalTime?): String = t?.let { if (clock12) twelve(it) else it.format(time) } ?: "--:--"
 
     fun timeRange(start: LocalTime, end: LocalTime): String =
         "${time(start)} – ${time(end)}" + if (WorkTime.isOvernight(start, end)) " (다음날)" else ""

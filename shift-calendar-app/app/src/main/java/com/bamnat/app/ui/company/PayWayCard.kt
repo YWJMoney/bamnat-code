@@ -99,7 +99,7 @@ class PayWayViewModel(
                 load()
                 null
             } catch (e: CompanyException) {
-                companyProblem(e.code, e.field)
+                companyProblem(e)
             }
             done(error)
         }

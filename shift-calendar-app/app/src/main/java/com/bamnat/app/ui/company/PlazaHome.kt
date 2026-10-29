@@ -148,7 +148,7 @@ class PlazaHomeViewModel(
                     c.companyApi.talk(c.companyStore.device, room, StylePlaza.ROOM).also { cache.keepTalk(room, StylePlaza.ROOM, it) }
                 } to null
             } catch (e: CompanyException) {
-                null to companyProblem(e.code, e.field)
+                null to companyProblem(e)
             }
             val next = if (talk.first == null && _state.value.talk != null) _state.value.copy(refreshing = false, stale = true)
                 else stateOf(talk.first, talk.second, r)

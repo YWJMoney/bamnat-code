@@ -10,6 +10,13 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // R131 1.31 [ADMX-16] 두 번째 확인
+    code_needed: "인증 앱의 6자리 코드를 넣어 주세요",
+    do: "할 수 없는 요청이에요. 새로 고친 뒤 다시 해 주세요",
+    code_wrong: "코드가 맞지 않아요. 인증 앱의 지금 코드를 넣어 주세요",
+    second_on: "두 번째 확인이 이미 켜져 있어요",
+    second_off: "두 번째 확인이 이미 꺼져 있어요",
+    second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
     // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
     counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
     screen: "사진이 달라요 화면 종류를 알 수 없어요",
@@ -145,6 +152,9 @@ export function adminLib() {
     version: "앱 버전을 다시 확인해 주세요",
     weak_password: "더 다양한 글자로 비밀번호를 만들어 주세요. 메일 주소와 같으면 안 돼요",
     withdrawn: "이미 내린 규칙이에요",
+    // A 1.32 [FIX132-02] A vote on a version no longer open: a newer one took its place, or it waits for review.
+    superseded: "새 판이 나와 이 판에는 더 의견을 받지 않아요",
+    held: "검토 중이라 지금은 의견을 받지 않아요",
     wrong: "비밀번호가 맞지 않아요",
     push: "웹 푸시가 연결되지 않은 서버예요",
     subscription: "알림 구독 정보를 읽지 못했어요. 알림을 껐다 다시 켜 주세요",
@@ -717,7 +727,8 @@ export function adminLib() {
   const WORK_TYPES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
   const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "시급", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** What a 동의 (consent) condition can name, and how the screens say it (core FlagEval.CONSENTS). */
-  const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)" };
+  const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)",
+    "usage.stats.lookup": "사용 통계 더 보내기 동의(조회 시간, 1.31부터)" };
   /** What a 정보 (profile) condition can name: the user gave the app what the feature needs (core FlagEval.PROFILE). */
   const PROFILE_NAMES = { "setup.done": "첫 설정을 마침", "pay.setup": "급여 설정을 마침", "company.linked": "회사를 연결함" };
   /** Facts only a person can confirm (manual): who confirmed and when is kept on the server (core FlagEval.MANUAL). */
@@ -1159,6 +1170,7 @@ export function adminLib() {
    */
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
@@ -1171,7 +1183,7 @@ export function adminLib() {
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
     launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
-    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음",
+    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음", device_previews: "관리자 휴대폰 미리 보기",
     pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
     purchase_rebind: "구매를 새 휴대폰에 다시 이음", purchase_rebind_refused: "구매 다시 잇기 거절",
     notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",

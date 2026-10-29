@@ -176,6 +176,8 @@ object SpeedCheck {
         com.bamnat.app.company.NetTimings.Wait.entries.forEach { w ->
             s.waits[w]?.let { (mid, max) -> add("${w.label}: 보통 ${time(mid)} · 가장 느림 ${time(max)}") }
         }
+        // [SPD-26] 1.31 I2: which way the requests go.
+        add(if (com.bamnat.app.company.NetEngine.fast) "연결 방식: 빠른 연결(HTTP/3·HTTP/2)" else "연결 방식: 기본 연결")
     }
 
     /** 320ms, 1.2초. */
@@ -265,8 +267,8 @@ object ConsentSummary {
             Change.NOTIFICATIONS -> SystemSettings.appNotifications(context)
             Change.FULL_SCREEN -> if (Build.VERSION.SDK_INT >= 34) SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
             Change.EXACT -> if (Build.VERSION.SDK_INT >= 31) SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
-            Change.BATTERY -> openFirst(context, listOf(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg),
-                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)))
+            // [ALRM-15] 1.31 R9: the phone's list (no permission); the app's own page when a phone has no such list.
+            Change.BATTERY -> openFirst(context, listOf(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), details))
             Change.CALENDAR, Change.LOCATION -> SystemSettings.open(context, details)
             Change.PAYMENT_READ -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.AUTO_RECORD)
             Change.HEALTH -> SettingsLinks.open(SettingsPage.NOTICES, "워치·휴대폰 수면 기록 함께 보기")

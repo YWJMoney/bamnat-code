@@ -208,7 +208,7 @@ class AccessibilityCheckTest {
             )
         } + launch(FOLDED) { s ->
             listOf(
-                run { tap(s, "돈"); audit(s, "512_a11y_folded_money") },
+                run { tap(s, "가계부"); audit(s, "512_a11y_folded_money") },
                 run { tap(s, "메모"); audit(s, "513_a11y_folded_memos") },
                 run { tap(s, "근무·급여"); audit(s, "514_a11y_folded_stats") },
                 run { tap(s, "설정"); audit(s, "515_a11y_folded_settings") },

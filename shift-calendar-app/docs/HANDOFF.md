@@ -1,11 +1,38 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-28, 앱 1.30.0(versionCode 41, 워치 100041) 기준이에요. 맨 위 0-new항이 지금 판(1.30.0), 0-a2항이 1.29.0, 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-29, 앱 1.32.0(versionCode 43, 워치 100043) 기준이에요. 맨 위 0-new항이 지금 판(1.32.0), 0-a4항이 1.31.0, 0-a3항이 1.30.0, 0-a2항이 1.29.0, 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0-new. 지금 판: 1.30.0 달력 독립·급여 적용 한 번에·수당 종류·광장 중복 정리·조회 속도·사진 견고화·관리자 혁신 (2026-10-28)
+## 0-new. 지금 판: 1.32.0 요청 A~G·보안 점검·사용성·조사 대조 (2026-10-28~29)
+
+사용자 지시(2026-10-28 16:45Z, 17:08Z): 1.32 요청 검토보고서 A~G 전부, 앱에서 개발자·플래그·관리자 정보가 보이거나 조작되지 않게(관리자 앱에서만 역할대로), 앱 전체 보안 점검, '돈' 탭 이름, 깊은 급여 기능 찾기 쉽게, 글자 크기와 동적 레이아웃. 계획은 `docs/plans/1.32-개발계획.md`(554~622). 1.31.0은 올리지 않고 1.32.0으로 건너뛰어요.
+
+- **보안(SECX-01~05)**: 휴대폰 미리 보기는 서버 `admin_devices.previews`에 관리자 앱이 정한 것만(최고 관리자 = 모든 승인 휴대폰, `flags:edit` = 자기 휴대폰만, `/api/admin/devices/:id/previews`·`/me/phones`). 앱의 `FlagStatusCard`와 휴대폰 쪽 미리 보기 스위치는 지웠고, 옛 저장 값은 무시해요. 서버는 강제 사유 `why`를 휴대폰에 빈 값으로 보내요. 문의·점검 보고는 `DiagReport.withoutFlags`. **새 화면에 플래그 키, 조건, '다크머지' 같은 말을 쓰지 마세요**(`SettingsSearchTest`가 지켜요).
+- **사용성(UX132-01~07)**: 아래 탭 이름은 core `WorkKit.moneyTab(style)`('가계부', 사장님·현장 '장부'). 급여 화면은 `ui/pay/PayTabs.kt`(`PayTab` 네 개, 바로 가기 `PayFocus`, `Routes.pay(calendar, focus)`), 회사 규칙 편집기는 `FoldSection`. 어디서나 찾기는 `GlobalSearchButton`(`SettingsLink.Search`), 초성은 `SearchText.initials`. 글자 크기는 `ui/theme/Theme.kt` `TextSize`(5단계, 휴대폰 글꼴과 곱해 최대 2.0)와 `LocalSpacing`(촘촘하게 기본). **새 카드 간격은 `LocalSpacing.current.card`를 쓰고, 큰 글자 분기는 `LocalDensity.current.fontScale`를 읽어요**(앱 배율이 들어가 있어요). 한 번만 뜨는 안내는 `ui/guide/OnceTip.kt`. 기능 목록 경로 이름은 화면 글자와 같아야 해요(`FeatureNamesU132Test`).
+- **A~G**: 사진 방향 `imports/ImagePrep.kt`·`pay/PayslipScanner.kt`(`photo_turn`), 안정성 `diag/CrashLog.kt`·`MainStall.kt`·`StartGuard.kt`, 명세서 비교 core `pay/SlipAudit.kt`·`MultiMonthFit.kt`·`PayGap.kt`, 가계부 core `money/LedgerSmarts.kt`, 세금 core `tax/TaxPlus.kt`, 근무 유형 core `work/WorkTypeChecks.kt`·`report/WorkProof.kt`, 앱 `ui/work/ShopTools.kt`. 모두 휴대폰 안 계산이라 서버로 가는 것은 늘지 않았어요(처리방침 3.5 그대로).
+- **R 조사 대조(사용자 21:33Z, 순번 626~670)**: 두 조사 문서(`조사/1.32/`)를 줄마다 대조한 표는 프로젝트 `계획/1.32-조사-대조표.md`, 줄여서 됨·빠짐 61줄을 LEDX-12~24, TAXP-12~15, PROX-01~03, CALX-06, STAB-08·09, WTYP-09~29, WEAR-04로 넣었어요. DB 22(`installmentRate`·`cashReceipt`·`approvedMinutes`, 기본값만). 가계부는 core `money/MerchantNames.kt`(표시 이름·경로·서명 사전 `remote/v1/merchants.json`)·`LedgerChecks.kt`·`LedgerSmarts.Learner`, 앱 `AutoRecordPrefs`(내 이름·해외 수수료·환율·카드 답, 백업 `auto_record`)·`ui/money/LedgerChecksUi.kt`. 세금 core `pay/YearEndPreview.kt`(자녀 한도·홈택스·남은 달), `tax/TaxPlus.kt`. 근무 유형 core `work/PublicTracks.kt`·`SelectiveWork.kt`·`HourlyLines.kt`·`OvertimeApproval.kt`·`imports/AttendanceCompare.kt`·`report/WorkTypeReports.kt`(교대 리포트·거래내역서·근무일 증빙), `money/FieldWork.kt`(`unitChips`·`unitRules`·`platformCosts`)·`PlatformWork.Cut`, 앱 `ui/calendar/FieldUnitSettings.kt`, `widget/FieldWidgetActions.kt`(위젯 +1건·오늘 1공, `widget.fieldActions`로 끔), 날짜 알림 `DateNoticeAlarm`(희망 오프 마감·12/31 코인), `LeaveTimeNotice`. 워치 `NextShiftComplicationService`(core `WatchDays.countdowns`). 프로 PDF 세 개는 `ProCatalog`에서 PAY_REPORT. 회귀 시험 `r132/WorkTypeRegression132Test`: `rescheduleAlarms`가 막 쓴 근무를 한 박자 늦게 볼 수 있어 시험은 두 번째 다시 잡기를 기다려요.
+- **다음 후보**: UX132-08~15(숫자 길게 눌러 고치기, 쉬운 화면 모드 등), 현장 위치별 출퇴근 → 공수, 군인 시간외 상한, 선택근무제 급여 엔진. `release/1.32.0/남은-일.md`.
+- 사용자 몫: 회사 서버 배포(1.31 변경 포함), PR #132 합치기 = 처리방침 3.5 게시, 관리자 앱에서 휴대폰 미리 보기 다시 켜기, TOTP, 휴대폰·워치 확인, Play 업로드, (선택) 가게 이름 사전 서버 파일 서명, 도메인(`release/1.32.0/도메인-설정-안내.md`). `release/1.32.0/사용자가-해야-할-일.md`.
+
+## 0-a4. 앞 판: 1.31.0 1.30 상세리뷰 반영(도메인 I1 빼고 전부) (2026-10-28)
+
+사용자 지시(2026-10-28): "도메인 제외 모든 문제점 개선점 혁신점 수용 … 검증까지 … 누락없이". 계획과 추적 ID 표는 `docs/plans/1.31-상세리뷰-반영.md`. 도메인(I1)은 사용자가 이 판 뒤에 진행해요.
+
+- **한도(LIM)**: 서버는 휴대폰(설치 해시)마다 먼저 세고 네트워크는 10배. 429는 `{error, why, retryAfter}` + `Retry-After`. 앱 문구는 `company/RateLimits.kt` 한 곳(`RateLimits.of(e, what, instead)`). 새 화면에서 한도 문구를 쓰면 여기로.
+- **조회 속도(SPD-21~28)**: 앱 연결은 `company/NetEngine.open(url)`(Cronet, 없으면 HttpURLConnection). 새 네트워크 코드도 이걸 쓰고, 304·오류 뒤 `drain`으로 본문을 비워요(끊지 않기). GET ETag 기억은 `CompanyClient.exchange`(UNTAGGED 경로 빼고). 서버 전체 목록은 `?part=names`·counts 둘. 첫 화면 미리 그림은 `ui/calendar/FirstFrame.kt`.
+- **조회 시간 통계(STAT-08)**: `stats.lookup` LEGAL(처리방침 3.5 시행 11-28에 저절로 켜짐). 앱 `diag/LookupStats.kt`(NetTimings sink), 서버 `usage.js lookupRows` → `usage_startup` 종류 wait·call, 관리자 지표 '조회 시간' 카드.
+- **서버 파일**: `src/index.js`에서 `inquiries.js`·`money.js`·`usage.js`·`flags.js`·`units.js`·`totp.js`로 나눴어요. 나눈 파일은 `./index.js`에서 읽어도 되지만 **파일이 읽히는 순간(맨 위 const)에 index.js 값을 쓰면 안 돼요**(순환 import). 묶음은 `npm run bundle`, 묶은 파일로 시험하려면 `test/helpers.mjs` 2행을 잠시 `../dist/worker.js`로.
+- **관리자 앱(ADMX-13~16)**: 배지 기억은 `BADGE_WRITES`만 지움, 아침 9시 `digestTick`(푸시 종류 `daily`), 답장 쓰는 중 탭 복귀는 숫자만, 로그인 두 번째 확인(TOTP, `admin_totp`; 최고 관리자가 휴대폰을 잃으면 Cloudflare 변수 `ADMIN_2FA_RESET=1`로 비밀번호만 받고, 끈 뒤 변수 지움).
+- **처음 7일(GUIDE-20)**: core `guide/StartSteps.kt`, 앱 `ui/guide/StartStepsCard.kt`. 카드가 보이는 동안 질문 카드는 쉬어요.
+- **알람(ALRM-15·16)**: 배터리 권한 빠짐(설정 화면만 엶). 알람 끈 뒤 `alarm/AfterAlarmCard.kt`(설정 `afterAlarmCard`).
+- **워치(WEAR-04~06)**: 워치 화면 Material 3. 설정 `watchCalendar`(워치에 보낼 달력)·`watchAlarm`(off·both·watch). 진동 알람은 휴대폰이 울릴 때 메시지를 보내는 방식(워치는 알람을 갖지 않음): 앱 `watch/WatchRing.kt`·`AlarmService.phoneOutputs/fromWatch`, 워치 `Ring.kt`. 경로는 core `WatchDays.RING_*`(워치→휴대폰은 `/bamnat/sync/` 아래라 기존 WatchRequestService가 받음).
+- **처리방침 3.5**(게시 10-29, 시행 11-28): 1-9항 조회 시간, 2-6항 워치 달력·진동 알람, 4항 배터리. 사용자 몫: PR 합치기 = 3.5 게시.
+- **추적 주의**: STAT-07은 1.23의 근무 수 정의예요. 조회 시간은 STAT-08.
+- 사용자 몫: 회사 서버 배포(새 표 `admin_totp`·`company_fts`는 서버가 스스로 만듦), 휴대폰·워치 확인(`release/1.31.0/동작-확인-체크리스트.md`), Play 업로드(워치 AAB는 Wear OS 트랙에만). `release/1.31.0/사용자가-해야-할-일.md`.
+
+## 0-a3. 앞 판: 1.30.0 달력 독립·급여 적용 한 번에·수당 종류·광장 중복 정리·조회 속도·사진 견고화·관리자 혁신 (2026-10-28)
 
 사용자 지시(2026-10-27 14:24Z): 11월 3일 프로덕션 신청 전 "모든 흐름이 간편하고 정확하고 빠르게, 적은 조작으로 최대 활용". 통합 브랜치 `claude/project-thread-fn252f`(main b535d1b = 1.29.0에서). Fable 점검 3명 → Opus 1차 6묶음(BB·SP1·AV·AX·AY·BC) → 2차 4묶음(BA·BD·AP1·AW) → 통합 → Fable 최종 점검 2명 → Opus FIX(FIN130). 전체 정리는 `docs/plans/1.30-통합계획.md`, 묶음마다 `docs/plans/1.30-<묶음>-개발계획.md`.
 

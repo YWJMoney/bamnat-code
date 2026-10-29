@@ -120,13 +120,15 @@ internal fun MonthSummaryBar(
     takeHome: Long? = null,
     /** [PAYS-17] 1.27: how many values the pay still needs to be exact ("2개만 넣으면 정확해져요"). */
     payNeeds: Int = 0,
+    /** 1.32 [CALX-06] "9/21~10/20" when the days and hours are the 급여 기간's, as 통계 counts them. */
+    rangeLabel: String? = null,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
     val figures = when (overview.focus) {
         CalendarFocus.SHIFTS -> listOf(
             Figure("${month}월 근무", "${overview.workDays}일",
-                listOfNotNull(overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" },
+                listOfNotNull(rangeLabel, overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" },
                     com.bamnat.core.schedule.RestNudge.monthNote(restSigns)), short = "근무 ${overview.workDays}일"),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
                 overview.extraMinutes.takeIf { it > 0 }?.let { "추가 ${HoursFormat.korean(it)}" }, null, short = HoursFormat.korean(overview.workMinutes)),
@@ -152,7 +154,7 @@ internal fun MonthSummaryBar(
     val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + f.notes.joinToString("") { " $it" } } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
         CalendarFocus.SHIFTS -> "근무·급여 열기"
-        else -> "돈 탭 열기"
+        else -> "가계부 탭 열기"
     }
     Surface(
         onClick = onOpen,
@@ -321,7 +323,7 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                     snapshot.kinds.kinds.firstOrNull()?.let { k ->
                         LegendRow("추가 근무", "잔업·특근·대근은 모서리 표시, 시간은 +2h처럼") { ExtraKindMark(k, size = 18.dp) }
                     }
-                    LegendRow("부업 일감", "돈 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
+                    LegendRow("부업 일감", "가계부 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
                     }

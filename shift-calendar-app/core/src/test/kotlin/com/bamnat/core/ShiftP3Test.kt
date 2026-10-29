@@ -189,6 +189,11 @@ class ShiftP3Test {
         // A newer copy whose phone clock went back an hour still replaces the old one: compared by epoch millis.
         val sent = p.copy(sentAtMillis = 1_000_000L)
         assertEquals(sent, WatchDays.decode(WatchDays.encode(sent)))
+        // [WEAR-06] 1.31: whether the watch rings with the phone travels too; an older copy without it reads as no.
+        val rings = sent.copy(ringOnWatch = true)
+        assertEquals(rings, WatchDays.decode(WatchDays.encode(rings)))
+        assertTrue(!WatchDays.decode(WatchDays.encode(sent))!!.ringOnWatch)
+        assertTrue(WatchDays.RING_OFF_PATH.startsWith("/bamnat/sync/") && WatchDays.RING_STOP_PATH.startsWith(WatchDays.RING_PATH))
         val later = sent.copy(syncedAt = p.syncedAt.minusHours(1), sentAtMillis = 2_000_000L)
         assertTrue(WatchDays.replaces(later, sent))
         assertTrue(!WatchDays.replaces(sent, later))

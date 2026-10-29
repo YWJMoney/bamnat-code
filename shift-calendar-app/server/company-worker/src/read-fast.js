@@ -12,7 +12,7 @@
  */
 export const SP_SESSION_READS = [
   /^\/api\/companies$/,
-  /^\/api\/companies\/(top|all)$/,
+  /^\/api\/companies\/(top|all|counts)$/,
   /^\/api\/companies\/[A-Za-z0-9]{12}(\/room|\/history)?$/,
   /^\/api\/companies\/([A-Za-z0-9]{12}|style-[a-z]+)\/setups\/(room|[0-9a-f]{16})\/posts$/,
   /^\/api\/(board|plazas|terms|members)$/,
@@ -116,8 +116,18 @@ export async function spKept(keep, key, ms, make, fresh = false) {
   const now = Date.now();
   const kept = keep.get(key);
   if (!fresh && kept && now - kept.at < ms) return kept.value;
-  const value = await make();
-  if (keep.size >= 300) for (const [k, v] of keep) if (now - v.at >= ms) keep.delete(k);
+  // R131 1.31 [SPD-22] Asks that come while the same list is being read wait for that read instead of reading it again.
+  if (!fresh && kept?.making) return kept.making;
+  const making = make();
+  keep.set(key, { at: kept?.at ?? -Infinity, value: kept?.value, making });
+  let value;
+  try {
+    value = await making;
+  } catch (e) {
+    if (keep.get(key)?.making === making) keep.delete(key);
+    throw e;
+  }
+  if (keep.size >= 300) for (const [k, v] of keep) if (!v.making && now - v.at >= ms) keep.delete(k);
   if (keep.size >= 300) keep.clear();
   keep.set(key, { at: now, value });
   return value;

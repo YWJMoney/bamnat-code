@@ -230,5 +230,7 @@ internal fun CountdownContent(data: WidgetData) {
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold),
             maxLines = 2,
         )
+        // G 1.32 [WTYP-05] 607 다음 오프까지, one line under.
+        data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = 12.sp), maxLines = 1) }
     }
 }

@@ -467,16 +467,21 @@ private fun QuickChips(
     val log by vm.sleepLog.collectAsStateWithLifecycle()
     // [FLD-01][FLD-02] A day-rate field calendar offers 공수 buttons instead of 일감 적기.
     val calendar by vm.activeCalendar.collectAsStateWithLifecycle()
-    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val calendarContainer = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val calendars = calendarContainer.calendars
     val fieldRules = calendar.field ?: com.bamnat.core.money.FieldRules()
     val dayRate = focus == CalendarFocus.JOBS && fieldRules.dayRateMode
+    val platform = focus == CalendarFocus.JOBS && fieldRules.platformMode
     ChipRow(modifier, start = 12.dp, end = endSpace) {
         if (dayRate) dayRateChips(day.date, book, fieldRules, onDelete = vm::deleteJob, onSave = { job, r ->
-            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient) }
+            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient, rateFrom = r.rateFrom, unitRules = r.unitRules) }
             vm.saveJob(job)
-        })
+        }, onReprice = { list -> list.forEach(vm::saveJob) })
+        // G 1.32 [WTYP-02] 플랫폼형: 오늘 플랫폼마다 건수·금액·운행 시간.
+        if (platform) platformChips(day.date, book, fieldRules, onSave = vm::saveJob, onDelete = vm::deleteJob,
+            onCut = { p, c -> calendars.updateField(calendar.id) { it.copy(platformCosts = it.platformCosts + (p to c)) } })
         // [CAL-05] Field and shop work: the day's job or sales is the first chip.
-        focus.addLabel?.takeIf { !dayRate }?.let { label ->
+        focus.addLabel?.takeIf { !dayRate && !platform }?.let { label ->
             val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null
             item {
                 AssistChip(
@@ -494,6 +499,14 @@ private fun QuickChips(
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) hourlyChips(day, today, snapshot, vm, now)
         // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
         if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
+        // 1.32 [WTYP-09] 비번 날 비상소집·동원, one chip (기능 켜고 끄기 `shift.callout`).
+        if (!moneyFirst && !day.isWorkDay && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
+            !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
+        ) item { CalloutChip(day, snapshot, vm) }
+        // 1.32 [WTYP-11] 희망 오프 on a day to come (기능 켜고 끄기 `shift.wishOff`).
+        if (!moneyFirst && day.date.isAfter(today) && com.bamnat.core.work.WishOff.offered(settings.workStyle) &&
+            !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, com.bamnat.app.calendar.DateNoticeAlarm.WISH_OFF, calendar.id)
+        ) item { WishOffChips(day.date, calendar.id) }
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(
@@ -551,7 +564,7 @@ private fun QuickChips(
         if (focus == CalendarFocus.JOBS && calendar.field?.mode == null) {
             FieldModePrompt { m ->
                 calendars.updateField(calendar.id) { it.copy(mode = m) }
-                if (m == com.bamnat.core.money.FieldMode.DAY_RATE) addingMoney = false
+                if (m == com.bamnat.core.money.FieldMode.DAY_RATE || m == com.bamnat.core.money.FieldMode.PLATFORM) addingMoney = false
             }
         } else if (focus == CalendarFocus.INVEST) {
             // [INV-03] 매매 기록 for this day.

@@ -162,3 +162,34 @@ internal val RATE_LINES = setOf(
     com.bamnat.core.pay.LineKind.OVERTIME, com.bamnat.core.pay.LineKind.NIGHT, com.bamnat.core.pay.LineKind.HOLIDAY,
     com.bamnat.core.pay.LineKind.EXTRA, com.bamnat.core.pay.LineKind.EXTRA_HOURS,
 )
+
+/**
+ * A 1.32 [FIX132-04] (사용자 2026-10-28 "명세서로 맞춘 뒤 '광장에 올릴까요?'가 잘 안 뜸"): right after a month matches a payslip, one
+ * card offers to put the company's way on the plaza with the 명세서 tick on (2점). Asked once a match; '괜찮아요' puts it away.
+ * 1.31 asked only through 저절로 나누기, which skips quietly without a company, with sharing off or with the same rule there.
+ */
+@Composable
+internal fun ShareAfterMatchCard(profile: PayProfile) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("plaza_offer", android.content.Context.MODE_PRIVATE) }
+    val today = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
+    val proof = remember(profile) { com.bamnat.core.pay.SlipProof.best(profile, today) }
+    val check = (listOfNotNull(profile.verified) + profile.checks).maxByOrNull { it.atMillis }
+    var asked by remember(check) { mutableStateOf(check == null || prefs.getLong("asked", 0L) == check.atMillis) }
+    val fresh = check != null && com.bamnat.core.time.Today.millis() - check.atMillis < 30L * 24 * 60 * 60 * 1000
+    if (asked || !fresh || proof?.counts != true) return
+    com.bamnat.app.ui.company.SoftCard(highlighted = true) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("명세서와 맞았어요! 같은 회사 분들께도 알려 줄까요?", style = MaterialTheme.typography.titleSmall)
+            Text("금액 없이 근무·계산 방식만 광장에 올라가요. 명세서로 확인한 방식이라 2점으로 세서 더 빨리 믿을 수 있는 방식이 돼요. " +
+                "이미 같은 방식이 있으면 ‘맞아요’ 하나로 세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    prefs.edit().putLong("asked", check!!.atMillis).apply(); asked = true
+                    com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_REPORT)
+                }) { Text("광장에 올리기") }
+                TextButton(onClick = { prefs.edit().putLong("asked", check!!.atMillis).apply(); asked = true }) { Text("괜찮아요") }
+            }
+        }
+    }
+}

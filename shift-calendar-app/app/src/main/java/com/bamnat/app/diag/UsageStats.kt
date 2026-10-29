@@ -25,6 +25,8 @@ class UsageStats(
     private val post: (String, JSONObject) -> Unit = { url, body -> serverRequest(url, "POST", "/api/events", body) },
     /** [PERF-16] 1.28 AO: startup times added to the bundle when [StartupStats.allowed]; null sends none. */
     private val startup: StartupStats? = null,
+    /** [STAT-08] 1.31 N4: lookup times added when [LookupStats.policyAllows]; null sends none. */
+    private val lookups: LookupStats? = null,
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -59,12 +61,16 @@ class UsageStats(
         if (flagsOn == null) body else JSONObject(body).put("flagsOn", org.json.JSONArray(flagsOn.sorted())).toString()
 
     /** [PERF-16] AO 1.28: the bundle with its `startup` part when there is one to send (gated by [StartupStats.policyAllows]). */
-    private fun withStartup(body: JSONObject): JSONObject = body.apply { startup?.payload()?.let { put("startup", it) } }
+    private fun withStartup(body: JSONObject): JSONObject = body.apply {
+        startup?.payload()?.let { put("startup", it) }
+        lookups?.payload()?.let { put("lookups", it) } // [STAT-08] 1.31
+    }
 
     /** Turning it off forgets everything not sent yet. */
     fun clear() = synchronized(lock) {
         prefs.edit().clear().apply()
         startup?.clear() // [PERF-16]
+        lookups?.clear() // [STAT-08]
     }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
@@ -90,6 +96,7 @@ class UsageStats(
         }
         synchronized(lock) { prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day).apply() }
         startup?.sent() // [PERF-16]
+        lookups?.sent() // [STAT-08]
         true
     }
 

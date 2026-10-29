@@ -227,6 +227,10 @@ fun MonthGrid(
     /** [WORK-02][WORK-03] Field and shop work show the day's income in place of hours. */
     money: MoneyBook = MoneyBook.EMPTY,
     showMoney: Boolean = false,
+    /** E 1.32 [LEDX-07] The day's spending under the date (가계부 lines of this calendar). */
+    showSpend: Boolean = false,
+    /** 1.32 [LEDX-23] 지출 히트맵: a strip under each date, darker where the month spent more. */
+    spendHeat: Boolean = false,
     /** [FEAT-17] Memo-first: the start of each day's memo in place of the hours. */
     memoTexts: Map<LocalDate, String> = emptyMap(),
     /** [CAL-01] With a stamp chosen in quick input, a finger dragged over days paints them all at once. */
@@ -249,6 +253,10 @@ fun MonthGrid(
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
     /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
     marked: Set<LocalDate> = emptySet(),
+    /** 1.32 [CALX-06] The first day of each 급여 기간 on the grid: a line at its left edge (마감 다음 날). */
+    cutDays: Set<LocalDate> = emptySet(),
+    /** 1.32 [WTYP-11] 희망 오프 days: a small ♡ at the top right. */
+    wishDays: Set<LocalDate> = emptySet(),
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -257,6 +265,10 @@ fun MonthGrid(
         MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
     }
     val cardDue = rememberCardDue(money)
+    val shades = remember(cells, spendHeat, month) {
+        if (!spendHeat || focus != CalendarFocus.SHIFTS) emptyMap()
+        else com.bamnat.core.money.LedgerChecks.heat(cells.days.filterKeys { YearMonth.from(it) == month }.mapValues { it.value.expense })
+    }
     // Days under the finger while painting, shown at once and written when it lifts.
     var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
     val paint by rememberUpdatedState(onPaint)
@@ -348,10 +360,14 @@ fun MonthGrid(
                         quickMenu = quickMenu,
                         focus = focus,
                         showMoney = showMoney,
+                        showSpend = showSpend,
                         span = cells.spans[date],
                         startsHere = cells.starts[date] ?: 0,
                         sales = cells.sales[date],
                         heat = if (focus == CalendarFocus.SALES && inMonth) cells.heat(date) else 0f,
+                        spendShade = if (inMonth) shades[date] ?: 0 else 0,
+                        periodStart = date in cutDays,
+                        wishOff = date in wishDays,
                         fieldJobs = cells.field[date],
                         cardDue = date in cardDue,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
@@ -406,6 +422,7 @@ fun WeekStrip(
     modifier: Modifier = Modifier,
     money: MoneyBook = MoneyBook.EMPTY,
     showMoney: Boolean = false,
+    showSpend: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     hourly: HourlyCells? = null,
@@ -439,6 +456,7 @@ fun WeekStrip(
                 onQuickAction = { onQuickAction(date, it) },
                 focus = focus,
                 showMoney = showMoney,
+                showSpend = showSpend,
                 span = cells.spans[date],
                 startsHere = cells.starts[date] ?: 0,
                 sales = cells.sales[date],
@@ -474,11 +492,18 @@ private fun DayCell(
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     /** [WORK-02][WORK-03] The day's income under the date, for field and shop work. */
     showMoney: Boolean = false,
+    showSpend: Boolean = false,
     span: JobSpan? = null,
     startsHere: Int = 0,
     sales: Long? = null,
     /** [CAL-06] A shop's day tinted by how strong its sales were. */
     heat: Float = 0f,
+    /** 1.32 [LEDX-23] The day's spending against the month's, 1~4; 0 for none or the heat map off. */
+    spendShade: Int = 0,
+    /** 1.32 [CALX-06] A 급여 기간 starts on this day. */
+    periodStart: Boolean = false,
+    /** 1.32 [WTYP-11] The day is asked for off (희망 오프). */
+    wishOff: Boolean = false,
     onLongPress: (() -> Unit)? = null,
     isRangeStart: Boolean = false,
     /** [FLD-04] Field work's jobs on this day, drawn in their clients' colours. */
@@ -560,6 +585,10 @@ private fun DayCell(
         day.entry?.attendance?.let { append(", ").append(it.label) }
         if (holidayWeekDone) append(", 이 주 주휴 충족")
         invest?.describe(date)?.let { append(", ").append(it) }
+        // 1.32 [LEDX-23]
+        if (spendShade >= 3) append(if (spendShade == 4) ", 이달 지출 많은 날" else ", 이달 지출 조금 많은 날")
+        if (periodStart) append(", 급여 기간 시작")
+        if (wishOff) append(", 희망 오프")
     }
 
     Box(
@@ -602,6 +631,13 @@ private fun DayCell(
             }
             .alpha(if (inMonth) 1f else 0.35f),
     ) {
+        // 1.32 [LEDX-23] 지출 히트맵: under everything, at the cell's foot.
+        if (spendShade > 0) com.bamnat.app.ui.money.SpendHeatStrip(spendShade, Modifier.align(Alignment.BottomCenter))
+        // 1.32 [CALX-06] 마감 다음 날: a short line at the left edge, so the 급여 기간 reads on the grid.
+        if (periodStart) Box(Modifier.align(Alignment.CenterStart).width(3.dp).fillMaxHeight(0.7f).background(scheme.primary.copy(alpha = 0.7f), RoundedCornerShape(2.dp)))
+        // 1.32 [WTYP-11] 희망 오프: a small ♡ in the top right corner, over the badge's row.
+        if (wishOff) Text(com.bamnat.core.work.WishOff.MARK, Modifier.align(Alignment.TopEnd).padding(end = 2.dp),
+            style = MaterialTheme.typography.labelSmall, color = scheme.tertiary)
         // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
             Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp),
@@ -694,11 +730,14 @@ private fun DayCell(
                 val investText = invest?.footer(date)
                 // [FLD-02] A day-rate day says its 공수 ("1공", "0.5") under the bar.
                 val unitsText = if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null
+                // E 1.32 [LEDX-07] What the day spent, when the user put it in the cells.
+                val spendText = if (showSpend && focus == CalendarFocus.SHIFTS) money?.expense?.takeIf { it > 0 }?.let { "−" + Fmt.wonShort(it) } else null
                 val footer = when {
                     memoText != null -> memoText
                     investText != null -> investText
                     unitsText != null -> unitsText
                     moneyText != null -> moneyText
+                    spendText != null -> spendText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
                     // [CAL-28] Both on: the hours first and the lunar date after them, in one line (I 리뷰 P10).
                     showLunar && showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes) + "·" + remember(date) { KoreanLunar.fromSolar(date).short }

@@ -27,6 +27,12 @@ object WatchText {
         return "알람 $day${hm(at)}" + p.alarmLabel.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
     }
 
+    /**
+     * 1.32 [WEAR-04] 조사 대조 C16: the tile's small "휴대폰에서 받음 10/29 14:05". A clock time, not "3시간 전", because the tile is
+     * drawn again only at midnight and at the alarm.
+     */
+    fun syncedAt(p: WatchPayload) = "휴대폰에서 받음 ${p.syncedAt.monthValue}/${p.syncedAt.dayOfMonth} ${hm(p.syncedAt)}"
+
     /** "휴대폰에서 받은 지 3시간 전" style line. */
     fun synced(p: WatchPayload, now: LocalDateTime) = "휴대폰에서 받음 · ${WatchDays.age(p.syncedAt, now)}"
 

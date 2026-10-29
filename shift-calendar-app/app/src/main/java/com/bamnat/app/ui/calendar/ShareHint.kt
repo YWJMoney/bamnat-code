@@ -50,6 +50,10 @@ internal class HintStore(context: Context) {
 
         /** [PAYR-08] The pay screen's first walkthrough (체험 풀이, notes M12) was closed: it stays closed. */
         const val PAY_WALKTHROUGH = "pay_walkthrough"
+        /** U 1.32 [UX132-07] The pay screen's tabs, said once. */
+        const val PAY_TABS = "pay_tabs_hint"
+        /** U 1.32 [UX132-07] 근무·급여's 고치기 chips, said once. */
+        const val PAY_CHIPS = "pay_chips_hint"
     }
 }
 

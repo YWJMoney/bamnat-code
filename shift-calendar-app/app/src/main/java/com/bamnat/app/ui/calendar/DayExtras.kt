@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AssistChip
-import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,9 +42,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.MinutesStepper
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.TimePickerDialog
@@ -181,7 +182,8 @@ private fun ExtraRow(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(name, style = MaterialTheme.typography.titleSmall)
-                Text(ExtraText.time(extra) + if (extra.entry.compLeave) " · 보상휴가로" else "",
+                Text(ExtraText.time(extra) + (if (extra.entry.compLeave) " · 보상휴가로" else "") +
+                    (extra.entry.approvedMinutes?.let { " · 인정 ${HoursFormat.korean(it.coerceAtMost(extra.minutes))}" } ?: ""),
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = scheme.onSurfaceVariant)
             }
             if (amount != null && amount != 0L) {
@@ -316,6 +318,24 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        // 1.32 [WTYP-24] 시간외 신청/인정: the office approved less than was asked (공무원·사무직).
+        val style by vm.settings.collectAsStateWithLifecycle()
+        if (style.workStyle == com.bamnat.core.work.WorkStyle.DAY || e.approvedMinutes != null) {
+            FilterChip(
+                selected = e.approvedMinutes != null,
+                onClick = { update(e.copy(approvedMinutes = if (e.approvedMinutes == null) extra.minutes else null)) },
+                label = { Text("인정된 시간이 달라요") },
+            )
+            e.approvedMinutes?.let { ok ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("인정된 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    MinutesStepper(minutes = ok.coerceAtMost(extra.minutes), onChange = { m -> update(e.copy(approvedMinutes = m.coerceIn(0, extra.minutes))) },
+                        step = 30, max = extra.minutes, dialogTitle = "인정된 시간")
+                }
+                Text("신청 ${HoursFormat.korean(extra.minutes)} 중 ${HoursFormat.korean(ok.coerceAtMost(extra.minutes))} 인정. 공무원 시간외수당은 인정된 시간으로 계산하고, " +
+                    "근무시간(52시간·연속 근무)은 실제 일한 시간으로 세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         // [PAYX-30] 휴일대체: work on a holiday swapped in advance for another day is a working day's; that day is the holiday.
         if (day.isRestDay || com.bamnat.core.holiday.KoreanHolidays.isHoliday(day.date)) {

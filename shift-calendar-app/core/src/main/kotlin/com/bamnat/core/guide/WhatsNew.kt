@@ -10,6 +10,40 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.32.0 (계획/1.32-개발계획.md, 사용성 조사; S 보안 has no line: what went is not for users).
+        Release(43, "1.32.0", listOf(
+            // [UX132-05][UX132-06]
+            Line("글자 크기를 다섯 단계로 고르고, 화면이 글자에 맞춰 바뀌어요. 기본은 촘촘하게 보여요(설정 › 화면과 글자)", "view.textSize"),
+            // [UX132-01][UX132-02][UX132-03]
+            Line("‘돈’ 탭이 ‘가계부’가 됐어요. 근무·급여 맨 위 급여 카드의 칩으로 기본급·수당·월급날을 바로 고쳐요", "pay.fixChips"),
+            // [UX132-04]
+            Line("근무·급여와 가계부 위 🔍로 어디서나 기능과 설정을 찾아요. ㄱㅂㄱ처럼 초성으로도 돼요"),
+            // [PAYA-02][PAYA-04][PAYA-05]
+            Line("명세서와 줄마다 맞춰 보고, 월급이 들어오면 예상 급여와 바로 견줘 덜 받은 돈을 알려 드려요", "pay.depositCompare"),
+            // [LEDX-01..11][TAXP-01..11]
+            Line("가계부가 이체·중복·환불을 알아서 정리하고, 실수령·다음 카드값·연말정산 미리보기를 더 자세히 보여 줘요", "money.cardBill"),
+            // [WTYP-02..07]
+            Line("배달·운전 플랫폼, 직원 근무표 3명 무료, 근무 기록 증빙, 명절 멈추기, 근속·포괄 연장 카드가 생겼어요", "field.platform"),
+            // 1.32 조사 대조 [WTYP-09..29][WEAR-04]
+            Line("교대는 희망 오프·비상소집, 사무직은 선택근무·퇴근 알림, 공무원은 직렬·인정 시간, 현장은 공수 규칙·위젯 +1건, 워치는 다음 근무까지가 생겼어요", "shift.wishOff"),
+            // 1.32 조사 대조 [LEDX-12..24][TAXP-12..15]
+            Line("가계부가 페이 충전·해외 결제·체크카드·환불을 더 맞게 적고, 연말정산에 자녀 카드 한도와 홈택스 숫자를 넣어요", "money.asks"),
+        )),
+        // 1.31.0 (docs/plans/1.31-상세리뷰-반영.md; the 1.30 상세리뷰 except the domain, I1).
+        Release(42, "1.31.0", listOf(
+            // [SPD-21][SPD-22][SPD-25][SPD-26][SPD-27] R1·R4·I2·I3·I4.
+            Line("회사 찾기·회사 화면·광장이 더 빨리 열려요. 빠른 연결을 쓰고, 바뀌지 않은 것은 다시 받지 않아요"),
+            // [SPD-28][GUIDE-20] N5·P2.
+            Line("앱을 열면 지난번 달력이 바로 보이고, 처음 일주일은 알람·근무·회사 세 가지만 차례로 알려 드려요"),
+            // [ALRM-16] N3.
+            Line("근무 알람을 끄면 오늘 근무와 이번 주 시간, 내일 근무를 알림 하나로 보여 드려요(설정 › 알림에서 끌 수 있어요)"),
+            // [WEAR-04][WEAR-05][WEAR-06] N2·watch.
+            Line("워치에 보낼 달력을 고르고, 알람이 울리면 워치도 진동해요. 워치에서 끄면 휴대폰 알람도 꺼져요(설정 › 알람 › 워치)"),
+            // [CREW-08] N1.
+            Line("회사 화면에서 오늘 같이 일하는 사람을 바로 봐요"),
+            // [LIM-01][LIM-02] R2·R3.
+            Line("요청이 많아 잠시 막히면 몇 분 뒤에 되는지와 그동안 할 수 있는 일을 알려 드려요"),
+        )),
         // 1.30.0 (docs/plans/1.30-통합계획.md; 통합 folded BA·BB·BC·BD·SP1·AP1·AV·AW·AY into six lines, AX is the developer's app).
         Release(41, "1.30.0", listOf(
             // [SPD-01][SPD-11][SPD-13] Bundles SP1·AP1.
@@ -45,7 +79,7 @@ object WhatsNew {
             // [PERF-15] Bundle AO.
             Line("앱을 여는 데 걸린 시간을 ‘알람 점검’ 화면에서 볼 수 있어요", "alarm.check"),
             // [FLAG-14] Bundle AL.
-            Line("‘알람 점검’ 화면 아래 ‘기능 상태’에서 기능마다 켜졌는지, 꺼졌으면 왜 그런지(남은 조건) 보여요. 문의할 때 그 부분을 보내 주시면 돼요", "alarm.check"),
+            Line("새 기능은 날짜·처리방침 같은 조건을 모두 채우면 인터넷이 없어도 그날 저절로 켜져요", "alarm.check"),
             // [FLAG-16][PERF-16] Bundles AL·AO.
             Line("사용 통계를 보내는 분께 처리방침 3.2가 시행된 뒤 한 번 더 물어요. ‘동의’를 고른 경우에만 켜진 기능 목록과 앱 여는 데 걸린 시간을 함께 보내요", "privacy.usageStats"),
         )),
@@ -71,7 +105,7 @@ object WhatsNew {
         // 1.26.0 (계획/1.26-회사교대주기-메뉴순서-초대-통합계획.md 1장 4번: AC 2·AD 1·AE 1; 통합 folds them).
         Release(37, "1.26.0", listOf(
             // [NAV-05][NAV-06] Bundle AD.
-            Line("아래 메뉴를 길게 누르면 순서를 바꿀 수 있어요. 맨 앞에 둔 메뉴가 앱을 켤 때 첫 화면이 돼요(설정 › 달력 화면 › 첫 화면·메뉴 순서)", "nav.tabOrder"),
+            Line("아래 메뉴를 길게 누르면 순서를 바꿀 수 있어요. 맨 앞에 둔 메뉴가 앱을 켤 때 첫 화면이 돼요(설정 › 화면과 글자 › 첫 화면·메뉴 순서)", "nav.tabOrder"),
             // [SPAT-02][SPAT-05] Bundle AC.
             Line("회사 이름으로 공개 자료의 근무주기를 찾아 순서와 오늘 날짜만 맞추면 달력에 들어가요", "plaza.cycles"),
             Line("우리 회사가 없으면 처음으로 넣어 광장에 올려요. 급여 정보까지 올리면 보상을 드려요", "plaza.cycles"),

@@ -3,6 +3,7 @@ package com.bamnat.app.flags
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.diag.UsageStats
 import com.bamnat.app.tier.AdminState
@@ -53,6 +54,7 @@ class FlagsAppTest {
     private val now = Instant.parse("2026-11-12T03:00:00Z")
 
     @Before fun clean() {
+        context.appContainer // [QA-09] the start's own clean-up first (it forgets a usage book written before it)
         context.getSharedPreferences("launch_config", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("flag_preview", Context.MODE_PRIVATE).edit().clear().commit()
     }
@@ -187,7 +189,8 @@ class FlagsAppTest {
 
     // ---- kinds of work ----
 
-    @Test fun aHiddenKindLeavesThePickingListsButTheOwnerSeesItMarked() {
+    // S 1.32 [SECX-01] Being the owner shows nothing hidden; only the developer app's 미리 보기 for that phone does.
+    @Test fun aHiddenKindLeavesThePickingListsButAPreviewPhoneSeesItMarked() {
         val c = LaunchConfig.parse(JSONObject(newAnswer), now)
         val user = flags(c)
         assertEquals(WorkStyle.entries - WorkStyle.INVEST, user.types().map { it.style })
@@ -195,8 +198,11 @@ class FlagsAppTest {
         val admin = flags(c) { phone(admin = true, owner = false) }
         assertEquals("an admin who is not the owner: hidden too", WorkStyle.entries - WorkStyle.INVEST, admin.types().map { it.style })
         val owner = flags(c) { phone(admin = true, owner = true) }
-        assertEquals(WorkStyle.entries, owner.types().map { it.style })
-        assertEquals(listOf(WorkStyle.INVEST), owner.types().filter { it.hidden }.map { it.style })
+        assertEquals("the owner alone: hidden too", WorkStyle.entries - WorkStyle.INVEST, owner.types().map { it.style })
+        val preview = flags(c) { phone(admin = true, owner = false, previews = setOf("type.invest")) }
+        assertEquals(WorkStyle.entries, preview.types().map { it.style })
+        assertEquals(listOf(WorkStyle.INVEST), preview.types().filter { it.hidden }.map { it.style })
+        assertFalse("not an approved admin: no preview", flags(c) { phone(admin = false, previews = setOf("type.invest")) }.types().any { it.style == WorkStyle.INVEST })
     }
 
     @Test fun theOwnerMarkComesFromPassesAndIsKept() {
@@ -213,15 +219,19 @@ class FlagsAppTest {
     // ---- admin preview, stats ----
 
     @Test fun anAdminPreviewTurnsARowOnOnlyOnThatPhone() {
-        val previews = FlagPreviews(context)
-        previews.set(FlagCatalog.LEAVE_HOURLY, true)
+        // S 1.32 [SECX-01] The list comes from /api/passes (the developer app); nothing on the phone sets it.
+        val o = JSONObject("""{"until":null,"waitingMonths":0,"items":[],"deferred":0,"code":false,"checkedAt":"2026-11-12T00:00:00Z",
+            "admin":{"status":"approved","name":"dd","owner":false,"previews":["leave.hourly",""]}}""")
+        val previews = TierClient.readPasses(o).admin!!.previews.toSet()
+        assertEquals(setOf(FlagCatalog.LEAVE_HOURLY), previews)
         val c = LaunchConfig(flags = emptyMap())
-        val admin = flags(c) { phone(admin = true, previews = previews.keys.value) }
+        val admin = flags(c) { phone(admin = true, previews = previews) }
         assertTrue(admin.on(FlagCatalog.LEAVE_HOURLY))
         assertEquals(FlagSource.ADMIN_PREVIEW, admin.state(FlagCatalog.LEAVE_HOURLY)!!.source)
-        assertFalse(flags(c) { phone(admin = false, previews = previews.keys.value) }.on(FlagCatalog.LEAVE_HOURLY))
-        assertEquals("kept on this phone", setOf(FlagCatalog.LEAVE_HOURLY), FlagPreviews(context).keys.value)
-        previews.clear()
+        assertFalse(flags(c) { phone(admin = false, previews = previews) }.on(FlagCatalog.LEAVE_HOURLY))
+        val store = ProStore(context)
+        store.setPasses(TierClient.readPasses(o))
+        assertEquals("kept with the passes", listOf(FlagCatalog.LEAVE_HOURLY), ProStore(context).current.passes!!.admin!!.previews)
     }
 
     @Test fun flagsOnGoesOnlyWithStatsMore() = runBlocking {

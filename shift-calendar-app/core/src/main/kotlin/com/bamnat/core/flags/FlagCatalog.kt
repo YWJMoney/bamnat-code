@@ -23,6 +23,8 @@ object FlagCatalog {
     const val PHOTO_WRONG = "photo.wrong"
     /** [ITEM-03] 1.30 BC (결정 D102): a company's one allowance amount (회사 공통 정액) goes with the setup to the 광장. */
     const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
+    /** [STAT-08] 1.31 N4: how long lookups took (정해진 구간 값만), sent with 사용 통계 once 처리방침 3.5 names it. */
+    const val STATS_LOOKUP = "stats.lookup"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -101,7 +103,7 @@ object FlagCatalog {
 
     val ADS_FLAG = Flag(
         ADS, "광고(띠·보상형)",
-        what = "프로가 아닌 휴대폰에 근무·급여와 돈 탭 아래 띠 광고 한 곳과 사용자가 고르는 보상형 광고가 보여요(알람·잠금·첫 설정 화면에는 없음).",
+        what = "프로가 아닌 휴대폰에 근무·급여와 가계부 탭 아래 띠 광고 한 곳과 사용자가 고르는 보상형 광고가 보여요(알람·잠금·첫 설정 화면에는 없음).",
         whyOff = "결제와 같은 날, Google 광고 동의 화면이 막지 않을 때만 시작해요(아직 묻지 않았으면 동의 화면을 띄울 수 있게 켬, 거절하면 꺼짐). 결제와 따로 끌 수 있게 나눴어요.",
         basis = Basis(policy = "3.1 1-8항", decision = "D84·D98·D99", requirement = "MON-07"),
         conditions = launch + Condition.Consent("ads", unknownMeets = true), default = false, risk = Risk.LEGAL, sunset = "1.30.0",
@@ -113,7 +115,7 @@ object FlagCatalog {
         Flag(
             typeKey(s), "${TYPE_NAMES.getValue(s)} 근무 유형",
             what = "첫 질문·첫 설정·새 달력·근무 형태 바꾸기·하는 일 찾기·둘러보기에 ‘${TYPE_NAMES.getValue(s)}’ 유형이 보여요.",
-            whyOff = "기본으로 켜 둬요. 끄면 새로 고르는 곳에서만 빠지고 이미 쓰는 달력·백업·회사 파일은 그대로예요. 최고 관리자로 연결된 휴대폰에는 숨긴 유형도 보여요.",
+            whyOff = "기본으로 켜 둬요. 끄면 새로 고르는 곳에서만 빠지고 이미 쓰는 달력·백업·회사 파일은 그대로예요. 관리자 앱에서 미리 보기를 받은 관리자 휴대폰에만 숨긴 유형이 보여요.",
             basis = Basis(decision = "D98", requirement = if (s == WorkStyle.INVEST) "INV-01" else "WORK-01", note = "근무 유형 노출(순번 454)"),
             conditions = emptyList(), default = true, group = FlagGroup.TYPE,
         )
@@ -163,6 +165,21 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.30.0", group = FlagGroup.LAW,
     )
 
+    /**
+     * [STAT-08] 1.31 N4 (사용자 2026-10-28 "스위치는 기간이 되면 자동으로 켜지는 현 방식"): on by itself from 처리방침 3.5's
+     * date, for phones with 사용 통계 and its separate yes given on 1.31 or later, whose words name it
+     * (`usage.stats.lookup`: the same 더 보내기 동의, given after seeing 조회 시간). Only the
+     * day's middle wait per kind, rounded up to a fixed bucket; never what was looked up.
+     */
+    val STATS_LOOKUP_FLAG = Flag(
+        STATS_LOOKUP, "조회 시간 보내기",
+        what = "사용 통계를 켜고 따로 동의한 휴대폰이 회사 찾기·회사 화면·광장 조회에 걸린 시간을 하루 가운데 값 하나씩, 정해진 구간 값으로만 함께 보내요(휴대폰 구별 없음). 무엇을 찾았는지는 보내지 않아요.",
+        whyOff = "처리방침 3.5(1-9항)가 시행된 날부터 저절로 켜져요. 그 전에는 조회 시간을 이 휴대폰 안(자가 점검 › 조회 속도)에만 둬요.",
+        basis = Basis(policy = "3.5 1-9항", decision = "D103", requirement = "STAT-08", note = "1.31 상세리뷰 N4"),
+        conditions = listOf(Condition.Date(policy = "3.5"), Condition.Consent("usage"), Condition.Consent("usage.stats.more"), Condition.Consent("usage.stats.lookup")),
+        default = false, risk = Risk.LEGAL, since = "1.31.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -174,7 +191,7 @@ object FlagCatalog {
         )
     }
 
-    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG) +
+    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }
@@ -185,7 +202,7 @@ object FlagCatalog {
     /**
      * [FLAG-05] AL-D4 `free.<FEATURE>`: off by default with no condition; the server's force on opens that 프로 feature to
      * everyone. The app reads it only for a 프로 feature, so it can never lock a free one.
-     * [NXT-03] 1.29 AU: the feature is named from [ProFeatures] ("무료로 연 프로 기능: 돈 통계"), as the server names it.
+     * [NXT-03] 1.29 AU: the feature is named from [ProFeatures] ("무료로 연 프로 기능: 가계부 통계"), as the server names it.
      */
     fun free(key: String): Flag? {
         if (!key.startsWith(FREE_PREFIX)) return null
@@ -213,15 +230,19 @@ object FlagCatalog {
 object TypeExposure {
     data class Choice(val style: WorkStyle, val hidden: Boolean)
 
-    const val HIDDEN_MARK = "숨김 · 관리자에게만 보여요"
+    // S 1.32 [SECX-01] Only a phone the developer app gave this kind's 미리 보기 sees it, marked so.
+    const val HIDDEN_MARK = "미리 보기 · 이 휴대폰에만 보여요"
 
-    fun choices(on: (WorkStyle) -> Boolean, owner: Boolean, keep: WorkStyle? = null): List<Choice> {
+    fun choices(on: (WorkStyle) -> Boolean, owner: Boolean, keep: WorkStyle? = null): List<Choice> = choices(on, { owner }, keep)
+
+    /** S 1.32 [SECX-01] [previewed]: the hidden kinds this admin phone was given 미리 보기 for in the developer app. */
+    fun choices(on: (WorkStyle) -> Boolean, previewed: (WorkStyle) -> Boolean, keep: WorkStyle? = null): List<Choice> {
         val open = WorkStyle.entries.filter { on(it) || it == keep }.toMutableSet()
         if (open.isEmpty()) open += WorkStyle.SHIFT
         return WorkStyle.entries.mapNotNull { s ->
             when {
                 s in open -> Choice(s, hidden = false)
-                owner -> Choice(s, hidden = true)
+                previewed(s) -> Choice(s, hidden = true)
                 else -> null
             }
         }

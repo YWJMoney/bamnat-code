@@ -97,6 +97,9 @@ class PayViewModel(
     val month: StateFlow<YearMonth> = _month.asStateFlow()
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }
 
+    /** 1.32 [WTYP-21] 연·월 바로 이동. */
+    fun showMonth(m: java.time.YearMonth) { _month.value = m }
+
     private val calculator = PayCalculator()
     val settings: StateFlow<com.bamnat.app.data.AppSettings> =
         scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
@@ -274,13 +277,20 @@ class PayViewModel(
         container.telemetry.event("pay_bulk_edit", if (target is ValueTarget.Base) "base" else "item")
     }
 
+    /** A 1.32 [FIX132-03] '모든 달 같게': every value at its latest entered amount for every month (undo puts it back). */
+    fun unifyMonths() {
+        update { com.bamnat.core.pay.PaySameness.unify(it) }
+        container.telemetry.event("pay_unify")
+    }
+
     fun setRaise(target: ValueTarget, rule: RaiseRule?) =
         update { it.withTimeline(target, timelineOf(it, target).copy(raise = rule)) }
 
     /** [PAYS-01] With no [amount] the allowance is 금액 모름: left out of the total and listed until it is known. */
     fun addItem(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
         val id = "item-" + System.currentTimeMillis()  // real clock: an id, not a time
-        val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(p.period.start(from), amount)))
+        // A 1.32 [FIX132-03] A new allowance counts in every month (1.31 started it this month, so earlier months lacked it).
+        val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(com.bamnat.core.pay.BulkEditPlanner.EARLIEST, amount)))
         p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
             ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes,
             taxable = !(cadence == Cadence.MONTHLY && fixedOvertimeMinutes == 0 && com.bamnat.core.pay.TakeHome.looksNonTaxable(name))),
@@ -291,7 +301,10 @@ class PayViewModel(
     fun setItemAmount(id: String, amount: Long, month: YearMonth) = update { p ->
         val from = p.period.start(month)
         Unknowns.answered(p, Unknowns.item(id)).let { q ->
-            q.copy(items = q.items.map { if (it.id == id) it.copy(amount = it.amount.with(DatedValue(from, amount))) else it })
+            // A 1.32 [FIX132-03] An amount that was 모름 is the same amount in every month.
+            q.copy(items = q.items.map { if (it.id == id) it.copy(amount = if (it.amount.entries.isEmpty())
+                com.bamnat.core.pay.BulkEditPlanner.apply(it.amount, amount, com.bamnat.core.pay.EditScope.AllMonths)
+                else it.amount.with(DatedValue(from, amount))) else it })
         }
     }
 
@@ -513,6 +526,20 @@ class PayViewModel(
     fun setCustomRuleOn(id: String, on: Boolean) = update { p -> p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(on = on) else it }) }
 
     fun removeCustomRule(id: String) = update { p -> p.copy(customRules = p.customRules.filterNot { it.id == id }) }
+
+    /** D 1.32 [PAYA-03] Every kept payslip month at once (프로): the settings that fit them all; nothing is saved until [applyFit]. */
+    suspend fun fitMonths(profile: PayProfile, snapshot: ScheduleSnapshot): com.bamnat.core.pay.MultiMonthFit.Result? = withContext(Dispatchers.Default) {
+        val named = profile.named(settings.value.extraKinds).hourlyWeek(settings.value)
+        com.bamnat.core.pay.MultiMonthFit.fit(named,
+            total = { p, m -> calculator.calculate(p, m, snapshot.resolver::resolve, checks = false).total },
+            match = { p, m, slip -> PayslipMatcher.match(p, m, snapshot.resolver::resolve, slip, calculator = calculator) },
+        )
+    }.also { container.telemetry.event("pay_fit_months", when { it == null -> "none"; it.improved -> "better"; else -> "same" }) }
+
+    /** D 1.32 [PAYA-03] Keeps the settings that fit every month; 되돌리기 brings the old ones back. */
+    fun applyFit(result: com.bamnat.core.pay.MultiMonthFit.Result) = update { p ->
+        result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames), checks = p.checks, verified = p.verified)
+    }
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
     fun applyMatch(match: PayslipMatch) = update { p ->

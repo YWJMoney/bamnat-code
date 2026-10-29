@@ -15,7 +15,7 @@ object ProFeatures {
         "PAYSLIP_MATCH" to "명세서 대조",
         "PAY_RULE_IMPORT" to "임금 규칙 자동 인식",
         "PAY_BULK_EDIT" to "값 일괄 적용",
-        "MONEY_STATS" to "돈 통계",
+        "MONEY_STATS" to "가계부 통계",
         "MORE_CALENDARS" to "달력 여러 개",
         "PAY_REPORT" to "급여 리포트 PDF·CSV",
         "WORK_COMPARE" to "근무·급여 비교",

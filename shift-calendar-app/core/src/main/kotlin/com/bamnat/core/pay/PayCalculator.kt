@@ -520,7 +520,9 @@ class PayCalculator(
                 // [PHOTO-05] Outside its months, before its 근속, or past its times a month: not this day.
                 if (!rule.inPeriod(month) || rule.tenureOk(month, profile.hireDate) != true) continue
                 if (rule.maxTimes > 0 && (customTotals[rule.id]?.times ?: 0) >= rule.maxTimes) continue
-                val r = customRule(rule, day, m, holiday(day.date) || officeWeekend(day.date), hourly, monthlyBase, baseLabel, rates) ?: continue
+                val asked = customRule(rule, day, m, holiday(day.date) || officeWeekend(day.date), hourly, monthlyBase, baseLabel, rates) ?: continue
+                // 1.32 [WTYP-24] 공무원 시간외 is paid on what the office 인정했어요, when the user wrote less than was asked.
+                val r = if (rule.id == PublicServantPay.OVERTIME_ID) approvedOnly(asked, day) else asked
                 val signed = if (rule.deduct) -r.amount else r.amount
                 customTotals.getOrPut(rule.id) { CustomTotal(rule) }.apply { amount += signed; this.minutes += r.credited; times++ }
                 if (rule.id == PublicServantPay.OVERTIME_ID) overtimeByDay[day.date] = (overtimeByDay[day.date] ?: 0) + r.credited
@@ -962,6 +964,21 @@ class PayCalculator(
 
     /** What a company rule pays for one piece of work, how, and what the law would pay for it. */
     private class RuleResult(val amount: Long, val formula: String, val credited: Int, val legal: Long)
+
+    /**
+     * 1.32 [WTYP-24] The day's 시간외 cut to the minutes approved: each extra with [com.bamnat.core.model.ExtraEntry.approvedMinutes]
+     * counts that many, the rest all of theirs; the amount follows in proportion and the formula says so.
+     */
+    private fun approvedOnly(r: RuleResult, day: ResolvedDay): RuleResult {
+        if (day.extras.none { it.entry.approvedMinutes != null } || r.credited <= 0) return r
+        val asked = day.extras.sumOf { it.minutes }
+        val approved = day.extras.sumOf { e -> e.entry.approvedMinutes?.coerceIn(0, e.minutes) ?: e.minutes }
+        val cut = (asked - approved).coerceAtLeast(0)
+        if (cut == 0) return r
+        val credited = (r.credited - cut).coerceAtLeast(0)
+        val amount = if (r.credited == 0) 0 else Math.round(r.amount.toDouble() * credited / r.credited)
+        return RuleResult(amount, r.formula + " · 인정 ${credited / 60.0}".removeSuffix(".0") + "시간", credited, r.legal * credited / r.credited)
+    }
 
     /** [EXTRA-08] Where a piece of work sits: on a day off or not, and on the clock (null when unknown). */
     private class PieceAt(

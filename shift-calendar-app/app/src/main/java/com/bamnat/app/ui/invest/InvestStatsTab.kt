@@ -83,6 +83,32 @@ internal fun InvestStatsTab(state: InvestState, wide: Boolean, calendarId: Strin
         com.bamnat.app.ui.guide.FeatureCard("invest.weekdays", calendarId) { Weekdays(stats, hide) }
     }
     com.bamnat.app.ui.guide.FeatureCard("invest.tax", calendarId) { TaxCard(state, ym.year) }
+    // 1.32 [WTYP-29] 연말 손실 정리 미리 보기 and the coins' 12월 31일 notice, this year only.
+    if (ym.year == state.today.year) com.bamnat.app.ui.guide.FeatureCard(com.bamnat.app.calendar.DateNoticeAlarm.YEAR_END, calendarId) { HarvestCard(state) }
+}
+
+/**
+ * 1.32 [WTYP-29] (투자 조사 10장) 연말 손실 정리: each 해외 주식 held at a loss that would lower this year's 양도소득세 if sold
+ * today at the typed price, the most first; and, with coins, that 12월 31일 brings a notice to write their price down.
+ */
+@Composable
+private fun HarvestCard(state: InvestState) {
+    val list = remember(state) { InvestTaxes.lossHarvest(state.full, state.fullResult, state.today) }
+    val coins = remember(state) { InvestTaxes.coinsHeld(state.fullResult) }
+    if (list.isEmpty() && coins == 0) return
+    val hide = state.hide
+    SectionCard(title = "연말 손실 정리 미리 보기") {
+        if (list.isEmpty()) Text("지금 값으로 팔아 올해 해외 주식 세금이 줄어드는 종목은 없어요.", style = MaterialTheme.typography.bodyMedium)
+        list.take(5).forEach { h ->
+            Text("${h.title} ${com.bamnat.core.invest.Portfolio.quantityText(h.quantity)}주를 지금 값으로 팔면 손실 ${InvestFmt.signed(h.loss, hide)} → " +
+                "올해 양도세 ${InvestFmt.won(h.saves, hide)} 줄어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp))
+        }
+        if (list.isNotEmpty()) Text(InvestTaxes.HARVEST_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (coins > 0) Text("코인 ${coins}개 · 12월 31일 오전 9시에 그날 시가를 투자일지에 적어 두라고 알려 드려요(${InvestTaxes.CRYPTO_FROM_YEAR}년 과세 대비, 참고용).",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("값은 직접 적은 현재가로 계산해요. 이 카드와 알림은 설정 › 기능 켜고 끄기 › 연말 손실 정리에서 끄고 켜요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

@@ -152,7 +152,7 @@ import com.bamnat.core.time.Today
 internal enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
     /** [WORK-06] Income, spending and what is left, for every kind of work. */
-    MONEY("money", "돈", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
+    MONEY("money", "가계부", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
     MEMOS("memos", "메모", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
     /** [NAV-01] Hours and pay of the month together; field and shop work, paid in 돈, keep 통계. */
     STATS("stats", "근무·급여", Icons.Outlined.Insights, Icons.Filled.Insights),
@@ -160,7 +160,12 @@ internal enum class TopLevel(val route: String, val label: String, val icon: Ima
     ;
 
     /** [TYPE-02] The hours-and-money tab is named for the work of the calendar on screen. */
-    fun labelFor(style: WorkStyle?): String = if (this == STATS) style.words().tab else label
+    // U 1.32 [UX132-01] (사용자 2026-10-28 "돈 메뉴 이름을 가계부와 통계를 포괄하는 말로"): 가계부, and 장부 for a shop or field calendar.
+    fun labelFor(style: WorkStyle?): String = when (this) {
+        STATS -> style.words().tab
+        MONEY -> com.bamnat.core.work.moneyTab(style)
+        else -> label
+    }
 
     companion object {
         /** [NAV-05] The tabs in the order kept in settings ([com.bamnat.core.layout.TabOrder] keys are the routes). */
@@ -207,8 +212,9 @@ private object Routes {
 
     fun diagnostics(testing: Boolean) = "diagnostics?testing=$testing"
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
-    const val PAY = "pay?calendar={calendar}"
-    fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
+    const val PAY = "pay?calendar={calendar}&focus={focus}"
+    // U 1.32 [UX132-02] [focus] is a [com.bamnat.app.ui.pay.PayFocus] key: the tab and value the screen opens on.
+    fun pay(calendar: String = PersonalCalendar.MAIN, focus: String? = null) = "pay?calendar=$calendar" + (focus?.let { "&focus=$it" } ?: "")
     /** [LEAVE-06] One calendar's 연차 원장; without one, the main calendar's. */
     const val LEAVE = "leave?calendar={calendar}"
     fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
@@ -330,7 +336,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val context = LocalContext.current
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
+                    val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" },
+                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }
                 val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
@@ -445,9 +453,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.companyBoard()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
             NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay(companyCalendarOf(container, null))) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PAY_GAP -> {
+                NoticeLinks.calendar.value?.takeIf { container.calendars.get(it) != null }?.let(container.calendars::setActive)
+                com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(Place.STATS, "pay.gap"))
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -527,7 +541,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {
-            is SettingsLink.Page -> {
+            is SettingsLink.Page, SettingsLink.Search -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.SETTINGS.route -> Unit
@@ -1115,7 +1129,8 @@ private fun AppNavHost(
                 return@composable
             }
             val vm = appViewModel(key = "stats_$calendar") { StatsViewModel(it, calendar) }
-            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
+            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } },
+                onOpenPayFocus = { f -> nav.navigate(Routes.pay(vm.calendarId, f)) { launchSingleTop = true } })
         }
         composable(TopLevel.SETTINGS.route) {
             val vm = appViewModel { SettingsViewModel(it) }
@@ -1155,8 +1170,10 @@ private fun AppNavHost(
             val vm = appViewModel { InquiryViewModel(it) }
             InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
         }
-        composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("focus") { type = NavType.StringType; nullable = true; defaultValue = null })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val payFocus = com.bamnat.app.ui.pay.PayFocus.of(entry.arguments?.getString("focus"))
             val vm = appViewModel(key = "pay_$calendar") { PayViewModel(it, calendar) }
             val profile by vm.profile.collectAsStateWithLifecycle()
             // [CALI-04] 1.30 BB: the calendar's own company: its coworkers' setup, pay way, notices and 광장.
@@ -1188,7 +1205,7 @@ private fun AppNavHost(
                 }
             }
             CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
-            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
+            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 top = {
@@ -1602,7 +1619,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.AUTO_RECORD -> NoticeLinks.open(NoticeLinks.Target.AUTO_RECORD)
         Place.MEMOS -> navigateTopLevel(TopLevel.MEMOS.route)
         Place.STATS -> navigateTopLevel(TopLevel.STATS.route)
-        Place.PAY -> screen(Routes.pay(cal))
+        Place.PAY -> screen(Routes.pay(cal, link.focus?.takeIf { com.bamnat.app.ui.pay.PayFocus.of(it) != null }))
         Place.PATTERN -> openPattern(c, cal)
         Place.SHIFT_TYPES -> screen(Routes.shiftTypes(cal))
         Place.EXTRA_KINDS -> screen(Routes.extraKinds(cal))

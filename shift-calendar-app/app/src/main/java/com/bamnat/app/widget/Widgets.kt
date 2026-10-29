@@ -82,7 +82,11 @@ class MonthWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent {
-            val offset = androidx.glance.currentState(MonthPageAction.OFFSET) ?: 0
+            // G 1.32 [WTYP-05] 607 A month turned last month counts from the month it was turned in, so on the 1st the
+            // widget comes back to the new month instead of staying a month ahead or behind.
+            val base = androidx.glance.currentState(MonthPageAction.BASE)
+            val offset = if (base != null && base != MonthPageAction.monthKey(data.today)) 0
+                else androidx.glance.currentState(MonthPageAction.OFFSET) ?: 0
             GlanceTheme { WidgetFrame { MonthContent(data, offset) } }
         }
     }
@@ -93,13 +97,18 @@ class MonthPageAction : androidx.glance.appwidget.action.ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: androidx.glance.action.ActionParameters) {
         val delta = parameters[DELTA] ?: 0
         androidx.glance.appwidget.state.updateAppWidgetState(context, glanceId) { prefs ->
-            prefs[OFFSET] = if (delta == 0) 0 else ((prefs[OFFSET] ?: 0) + delta).coerceIn(-MAX_MONTHS, MAX_MONTHS)
+            val now = monthKey(Today.date())
+            val start = if (prefs[BASE] != null && prefs[BASE] != now) 0 else prefs[OFFSET] ?: 0
+            prefs[OFFSET] = if (delta == 0) 0 else (start + delta).coerceIn(-MAX_MONTHS, MAX_MONTHS)
+            prefs[BASE] = now
         }
         MonthWidget().update(context, glanceId)
     }
 
     companion object {
         val OFFSET = androidx.datastore.preferences.core.intPreferencesKey("month_offset")
+        val BASE = androidx.datastore.preferences.core.intPreferencesKey("month_base")
+        fun monthKey(d: java.time.LocalDate): Int = d.year * 12 + d.monthValue - 1
         val DELTA = androidx.glance.action.ActionParameters.Key<Int>("delta")
         /** A year either way, as far as anyone looks from a home screen. */
         const val MAX_MONTHS = 12
@@ -144,7 +153,7 @@ private fun emptyText(data: WidgetData): String = when {
 private fun TodayContent(data: WidgetData) {
     Column(GlanceModifier.fillMaxSize()) {
         if (data.isEmpty) {
-            Text(emptyText(data), style = small(GlanceTheme.colors.onSurfaceVariant))
+            Text(emptyText(data), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 3)
             return@Column
         }
         // [CAL-11] Field work: today's and tomorrow's jobs; a shop: today's sales and the month's.
@@ -263,6 +272,8 @@ private fun JobsToday(data: WidgetData) {
     }
     // [COMN-05] The week's days or 공수, and what is still owed.
     if (data.style == WorkStyle.FIELD) FieldWeekLine(data)
+    // G 1.32 [WTYP-23] +1건 (플랫폼형), 오늘 1공 (공수형).
+    if (data.style == WorkStyle.FIELD) FieldWidgetButtons(data)
 }
 
 /** [CAL-11] A shop's own day and month; the amounts are the user's, on their own screen, as in the calendar's cells. */
@@ -277,8 +288,10 @@ private fun SalesToday(data: WidgetData) {
     )
     Spacer(GlanceModifier.height(8.dp))
     val month = YearMonth.from(data.today)
-    Text("${month.monthValue}월 매출", style = small(GlanceTheme.colors.onSurfaceVariant))
+    Text("${month.monthValue}월 매출", style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
     Text(Fmt.wonShort(data.monthSales(month)), style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+    // G 1.32 [WTYP-23] 이번 달 영업·휴무 일수.
+    ShopDaysLine(data)
 }
 
 /** [INV-16] The investor's today: what today earned and the total return; no amounts while they are hidden. */
@@ -301,7 +314,7 @@ private fun InvestToday(data: WidgetData) {
         maxLines = 1,
     )
     Spacer(GlanceModifier.height(8.dp))
-    Text("총 수익률", style = small(GlanceTheme.colors.onSurfaceVariant))
+    Text("총 수익률", style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
     val r = line.totalReturn
     Text(
         r?.let { (if (it > 0) "+" else if (it < 0) "−" else "") + "%.2f%%".format(kotlin.math.abs(it * 100)) } ?: "원금을 적어 주세요",
@@ -410,6 +423,7 @@ private fun MonthContent(data: WidgetData, offset: Int = 0) {
             Text(
                 Fmt.month(month),
                 style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+                maxLines = 1,
                 modifier = GlanceModifier.defaultWeight(),
             )
             // [WIDG-03] Turned away from this month, a tap on "이번 달" comes back.
@@ -424,6 +438,7 @@ private fun MonthContent(data: WidgetData, offset: Int = 0) {
                 Text(
                     Fmt.dayOfWeekShort(dow),
                     style = small(weekdayColor(dow, false)).copy(textAlign = TextAlign.Center),
+                    maxLines = 1,
                     modifier = GlanceModifier.defaultWeight(),
                 )
             }

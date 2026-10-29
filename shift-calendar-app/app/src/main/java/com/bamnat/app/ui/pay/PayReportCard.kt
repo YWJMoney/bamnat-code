@@ -134,6 +134,36 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
         }, enabled = !busy, modifier = Modifier.padding(top = 8.dp)) { Text("상담용 묶음 (급여·근무시간·연차)") }
         Text("노무사나 고용노동부 상담(1350)에 보여 줄 파일을 한 번에 만들어요. 보내는 곳은 직접 골라요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // G 1.32 [WTYP-06] 608 근무 기록 증빙: each day's start·end·휴게·일한 시간 and each week against 52시간.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            // 1.32 [WTYP-10] 연간 교대 리포트: 야간·공휴일·쉬는 날 근무·시간·예상 급여, a year on one page.
+            if (context.appContainer.settingsRepository.current.workStyle.let { it == null || it == com.bamnat.core.work.WorkStyle.SHIFT }) {
+                ReportButton("${month.year}년 교대 리포트", pdf = true, enabled = !busy) {
+                    make("year_shift") {
+                        val pays = year().associateBy { it.month }
+                        val today = Today.date()
+                        val through = if (month.year == today.year) today else LocalDate.of(month.year, 12, 31)
+                        val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            val months = com.bamnat.core.report.YearShiftReport.months(month.year, through, snapshot.resolver::resolve) { m -> pays[m]?.total }
+                            com.bamnat.core.report.YearShiftReport.doc(month.year, who.job, months, today)
+                        }
+                        ReportShare.pdf(context, doc, "bamnat-교대리포트-${month.year}.pdf")
+                    }
+                }
+            }
+            listOf(0L to "${month.monthValue}월 근무 기록 증빙", 2L to "최근 3개월 근무 기록").forEach { (back, label) ->
+                ReportButton(label, pdf = true, enabled = !busy) {
+                    make("work_proof") {
+                        val from = month.minusMonths(back).atDay(1); val to = month.atEndOfMonth()
+                        val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            val days = com.bamnat.core.report.WorkProof.days(from, to, snapshot.resolver::resolve)
+                            com.bamnat.core.report.WorkProof.doc(who.job, from, to, days, Today.date())
+                        }
+                        ReportShare.pdf(context, doc, "bamnat-근무기록-$from-$to.pdf")
+                    }
+                }
+            }
+        }
     }
 }
 

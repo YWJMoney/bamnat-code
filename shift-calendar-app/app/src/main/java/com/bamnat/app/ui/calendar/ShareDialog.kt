@@ -531,7 +531,7 @@ internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when
         MoneyShare.SALES -> "달마다 매출 합계만, 경비와 날마다 금액은 빼요"
     }
     else -> when (kind) {
-        MoneyShare.PAY -> "급여 계산을 설정하거나 돈 탭에 받은 급여를 적으면 고를 수 있어요"
+        MoneyShare.PAY -> "급여 계산을 설정하거나 가계부 탭에 받은 급여를 적으면 고를 수 있어요"
         MoneyShare.JOBS -> "이 기간 일감에 금액을 적으면 고를 수 있어요"
         MoneyShare.SALES -> "이 기간 매출을 적으면 고를 수 있어요. 달력에서 날짜를 눌러 적어요"
     }
@@ -552,7 +552,7 @@ private fun expiryText(s: ShareLinkState): String =
     s.expiresAt.atZone(Today.zone()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
 
 private fun messageFor(e: Exception, options: ShareOptions): String = when (e.message) {
-    "rate_limited" -> "잠시 뒤 다시 해 주세요. 한 시간에 만들 수 있는 링크 수를 넘었어요."
+    "rate_limited" -> com.bamnat.app.company.RateLimits.text("링크 만들기", 3_600, "device")
     "not_found", "forbidden" -> "이 링크는 이미 지워졌어요. 링크 끊기를 누른 뒤 새로 만들어 주세요."
     // A server from before 1.10 takes only shifts and leave.
     // [SHR-11] A server from before 1.13 takes no 일정 and no link without shifts.

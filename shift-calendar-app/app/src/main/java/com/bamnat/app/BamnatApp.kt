@@ -57,6 +57,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         // and the container starts with the first use after unlocking (BOOT_COMPLETED at the latest).
         // [PERF-06] 364 (검토 A1): built on a thread of its own, so its files are read while the main thread
         // makes the window; the first use on the main thread waits for it (lazy is synchronized).
+        // C 1.32 [STAB-04] Counted before anything that could stop it; a phone still locked is not counted.
+        if (!BootAlarms.isLocked(this)) com.bamnat.app.diag.StartGuard.begin(this)
         if (!BootAlarms.isLocked(this)) building = Thread({ container }, "bamnat-container").apply { start() }
         StartupTrace.mark(StartupTrace.Step.APP)
     }

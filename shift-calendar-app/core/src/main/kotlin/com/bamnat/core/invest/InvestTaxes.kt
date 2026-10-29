@@ -207,6 +207,34 @@ object InvestTaxes {
     /** [INV-41] Ids of [reportReminders]: below zero, apart from saved dates. */
     const val REPORT_EVENT_ID = -5_31_000L
 
+    /**
+     * 1.32 [WTYP-29] (투자 조사 10장) 연말 손실 정리 미리 보기: each 해외 주식 still held at a loss in a taxed account, and what this
+     * year's 양도소득세 comes to less if it were all sold today at the price the user typed ([sellPreview], oldest first, 250만 원
+     * 공제, 22%). Only holdings that save tax: when this year's gain is under the 공제 a loss saves nothing. 참고용, nothing is sold.
+     */
+    data class Harvest(val key: String, val title: String, val accountId: Long, val quantity: Double, val price: Double, val loss: Long, val saves: Long)
+
+    fun lossHarvest(book: InvestBook, result: PortfolioResult, today: LocalDate): List<Harvest> {
+        val sheltered = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
+        return result.holdings.asSequence()
+            .filter { it.held && it.market.foreign && it.accountId != null && it.accountId !in sheltered && (it.unrealizedWon ?: 0.0) < 0 }
+            .mapNotNull { h ->
+                val q = h.quote ?: return@mapNotNull null
+                val sell = Trade(accountId = h.accountId!!, date = today, symbol = h.symbol, name = h.name, market = h.market, side = Side.SELL,
+                    quantity = h.quantity, price = q.price, fxRate = h.fx)
+                val p = sellPreview(book, sell) ?: return@mapNotNull null
+                (-p.extraTax).takeIf { it > 0 }?.let { Harvest(h.key, h.title, h.accountId, h.quantity, q.price, p.gain, it) }
+            }
+            .sortedByDescending { it.saves }.toList()
+    }
+
+    /** 1.32 [WTYP-29] 연말 손실 정리's notes: when a sale counts, and that the choice is the user's. */
+    const val HARVEST_NOTE = "올해 손익에 넣으려면 결제일이 올해 안이어야 해요. 증권사가 알려 주는 연말 매도 마감일을 확인해 주세요. " +
+        "팔지 말지는 직접 정해요(참고용)."
+
+    /** 1.32 [WTYP-29] How many coins are held, for the 12월 31일 시가 기록 알림. */
+    fun coinsHeld(result: PortfolioResult): Int = result.byKey.count { it.held && it.market == Market.CRYPTO }
+
     /** [INV-39] Said under 국내 주식 sells. */
     const val DOMESTIC_NOTE = "국내 상장주식은 대주주(종목당 50억 원 이상 등)가 아니면 양도소득세가 없어요. 거래세는 위에 넣었어요."
 

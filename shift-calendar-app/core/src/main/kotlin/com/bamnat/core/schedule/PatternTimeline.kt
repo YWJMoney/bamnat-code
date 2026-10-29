@@ -76,4 +76,30 @@ object PatternTimeline {
         entries.filter { !it.date.isBefore(date) && (limit == null || !it.date.isAfter(limit)) && it.override != ShiftOverride.None }
             .map { it.date }
             .sorted()
+
+    /**
+     * G 1.32 [WTYP-07] 609 명절 패턴 멈추기 (조사 2장 공장: "추석·설 휴무 뒤에도 패턴이 이어지게"): the rotation on [from] stops for
+     * the days [from]..[to] (nothing scheduled then, the user marks them as 휴무) and goes on from [to]+1 at the step it
+     * had on [from], so the order picks up where it left. Days before [from] stay as they were; a weekly pattern just
+     * leaves the gap.
+     */
+    fun pause(existing: List<WorkPattern>, from: LocalDate, to: LocalDate): List<WorkPattern> {
+        require(!to.isBefore(from)) { "pause ends before it starts" }
+        val p = on(existing, from) ?: return existing
+        val resume = to.plusDays(1)
+        val next = when (p) {
+            // Step on [from] lands on [resume]: the anchor moves by the paused days.
+            is WorkPattern.Rotation -> p.copy(anchorDate = p.anchorDate.plusDays(java.time.temporal.ChronoUnit.DAYS.between(from, resume)))
+            else -> p
+        }
+        val before = changeFrom(existing, next, resume)
+        return before.mapNotNull { q ->
+            when {
+                q.startDate == resume -> q
+                q.endDate != null && q.endDate!!.isBefore(from) -> q
+                q.startDate.isBefore(from) -> q.withRange(q.startDate, from.minusDays(1))
+                else -> null
+            }
+        }.sortedBy { it.startDate }
+    }
 }

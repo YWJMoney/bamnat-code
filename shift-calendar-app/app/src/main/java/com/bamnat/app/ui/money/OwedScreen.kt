@@ -872,7 +872,7 @@ private fun ReceivableSheet(
                                 label = { Text(if (date == today.toString()) "다른 날" else Fmt.shortDate(LocalDate.parse(date))) })
                         }
                         Text(
-                            if (r.countAsIncome) "받은 돈은 돈 탭 들어온 돈에도 적어요." else "들어온 돈에는 적지 않아요 (${r.kind.hint}).",
+                            if (r.countAsIncome) "받은 돈은 가계부 탭 들어온 돈에도 적어요." else "들어온 돈에는 적지 않아요 (${r.kind.hint}).",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         val a = Receivables.clampPayment(r, amount.toAmount())
@@ -954,7 +954,7 @@ private fun JobOwedSheet(job: Job, today: LocalDate, onDismiss: () -> Unit, onRe
             }
             if (job.withheld > 0) Text("3.3% 뗀 뒤 받을 금액이에요 (뗀 세금 ${Fmt.won(job.withheld)}).", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("받았다고 하면 그 일감의 돈 받음이 켜지고, 돈 탭 들어온 돈에 더해져요.", style = MaterialTheme.typography.bodySmall,
+            Text("받았다고 하면 그 일감의 돈 받음이 켜지고, 가계부 탭 들어온 돈에 더해져요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             JobPayments.deposit(job)?.let { after ->
                 FilledTonalButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onReceive(after) },
@@ -1072,7 +1072,7 @@ private fun ReceivableDialog(
                         Text("받으면 수입으로 적기", style = MaterialTheme.typography.bodyLarge)
                         Text(if (kind == ReceivableKind.SALE) "그날 매출에 이미 넣었다면 꺼 두세요. 두 번 세지 않게요."
                             else if (kind == ReceivableKind.LOAN) "빌려준 돈은 돌려받아도 수입이 아니에요."
-                            else "받은 날 돈 탭에 수입 한 줄이 생겨요.",
+                            else "받은 날 가계부 탭에 수입 한 줄이 생겨요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = income, onCheckedChange = { income = it; touchedIncome = true })

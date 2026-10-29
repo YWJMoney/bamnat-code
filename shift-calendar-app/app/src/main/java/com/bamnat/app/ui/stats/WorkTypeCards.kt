@@ -1,6 +1,6 @@
 package com.bamnat.app.ui.stats
 
-import com.bamnat.app.ui.guide.FeatureCard
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,14 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import com.bamnat.app.ui.components.CountStepper
-import com.bamnat.app.ui.components.StepperRow
-import com.bamnat.app.ui.components.FilterChip
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,16 +30,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.data.WorkTypePrefs
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.components.CountStepper
+import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StepperRow
 import com.bamnat.app.ui.components.WarningBanner
+import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.holiday.KoreanHolidays
@@ -53,13 +56,13 @@ import com.bamnat.core.pay.PayGaps
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.TakeHome
 import com.bamnat.core.pay.TaxMode
+import com.bamnat.core.time.Today
 import com.bamnat.core.work.DayWork
 import com.bamnat.core.work.ShiftMonth
 import com.bamnat.core.work.WorkStyle
-import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
-import com.bamnat.core.time.Today
+import kotlinx.coroutines.launch
 
 /*
  * Work-type cards of 통계: the first card a shift worker [SHFT-02] or a day worker [DAYW-02] sees, and the
@@ -83,10 +86,12 @@ internal fun WorkTypeFirstCard(
     columns: Int,
     /** [PAYX-25] The month's 비과세 when it needs the month's pay (생산직); null works it out from the setup. */
     nonTaxable: Long? = null,
+    /** G 1.32 [WTYP-07] The days the month counts (the pay period when chosen). */
+    range: Pair<LocalDate, LocalDate>? = null,
 ) {
     when {
         // [GUIDE-05] Each card can be turned off for its calendar.
-        style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal) }
+        style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal, range) }
         style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable) }
     }
 }
@@ -117,7 +122,18 @@ internal fun WorkTypeMoreCards(
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
     if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot, calendarId) }
-    if (style == WorkStyle.DAY) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
+    // G 1.32 [WTYP-07] 609 공무원·경찰·소방 (교대 포함) start at 월 57시간 without setting it.
+    if (style == WorkStyle.DAY || profile?.publicGrade != null) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary, profile, snapshot, month) }
+    // 1.32 [WTYP-15] 선택근무 정산 기간 (사무직).
+    if (style == WorkStyle.DAY) FeatureCard("day.selective", calendarId) { SelectiveCard(calendarId, snapshot) }
+    // G 1.32 [WTYP-07] 609 포괄임금: the fixed overtime hours against this month's.
+    com.bamnat.core.work.WorkTypeChecks.cover(profile, summary.extraMinutes)?.let { c ->
+        FeatureCard("pay.coverHours", calendarId) { CoverHoursCard(c) }
+    }
+    // G 1.32 [WTYP-07] 609 근속 and the year for 퇴직금, from 입사일.
+    if (style?.usesPayEngine != false) com.bamnat.core.work.WorkTypeChecks.tenure(profile?.hireDate, Today.date())?.let { t ->
+        FeatureCard("pay.tenure", calendarId) { TenureCard(t) }
+    }
     // [LEAVE-04] 징검다리 for every kind of work that takes leave.
     if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {
         FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot, style) }
@@ -127,8 +143,10 @@ internal fun WorkTypeMoreCards(
 /** [SHFT-02] Each code's count this month, the night shifts and the expected pay. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTotal: Long?) {
-    val tally = remember(snapshot, month) { ShiftMonth.of(month, snapshot.shiftTypes, snapshot.resolver::resolve) }
+private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTotal: Long?, range: Pair<LocalDate, LocalDate>? = null) {
+    val tally = remember(snapshot, month, range) {
+        ShiftMonth.of(month, snapshot.shiftTypes, snapshot.resolver::resolve, range?.first ?: month.atDay(1), range?.second ?: month.atEndOfMonth())
+    }
     if (tally.counts.isEmpty()) return
     SectionCard(title = "${month.monthValue}월 근무") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -234,6 +252,16 @@ private fun DayFirstCard(
                 repeat(columns.coerceAtMost(3) - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
+        // 1.32 [WTYP-26] (조사 4·8장) 이번 주 52시간 and, for 공무원, 이번 달 시간외 57시간: bars on the first card.
+        if (YearMonth.from(today) == month) {
+            val week = remember(snapshot, today) { com.bamnat.core.hours.WorkHoursCalculator(snapshot.resolver, java.time.DayOfWeek.MONDAY).week(today) }
+            HoursBar("이번 주 근무", week.totalMinutes, com.bamnat.core.hours.HourLimits().legalWeeklyHours)
+        }
+        com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
+            HoursBar("${month.monthValue}월 시간외", summary.extraMinutes, cap)
+            if (profile?.publicGrade != null) Text(DayWork.PUBLIC_RULE_NOTE, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+        }
         TaxModeChips(mode) { prefs.setTaxMode(calendarId, it) }
         if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
@@ -297,7 +325,8 @@ private fun PayGapCard(
     nonTaxable: Long? = null, onOpenPay: () -> Unit = {}, onAddPay: (LocalDate, Long) -> Unit = { _, _ -> },
     takeHome: suspend (Long, YearMonth) -> com.bamnat.core.tax.TaxLearner.Forecast? = { _, _ -> null },
 ) {
-    val prefs = WorkTypePrefs.get(LocalContext.current)
+    val context = LocalContext.current
+    val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
@@ -329,7 +358,7 @@ private fun PayGapCard(
             }
             gap == null -> {
                 Text("예상 ${Fmt.won(expected)} ($basisLabel)", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
-                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 돈 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
+                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 가계부 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp))
                 Button(onClick = { adding = true }, modifier = Modifier.padding(top = 8.dp)) { Text("들어온 급여 적기") }
@@ -350,10 +379,25 @@ private fun PayGapCard(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                if (!gap.matches && gap.diff < 0) {
+                PayGaps.short(gap)?.let { short ->
+                    // D 1.32 [PAYA-04] 덜 받은 돈: the amount free; the 근거표 and the 정리본 PDF are 프로 (PAY_REPORT).
+                    Text("덜 받은 돈 ${Fmt.won(short)}", style = MaterialTheme.typography.titleSmall, color = cal.warning,
+                        modifier = Modifier.padding(top = 6.dp))
                     Text("명세서와 근무 기록을 맞춰 보세요. 빠진 수당이나 공제가 있을 수 있어요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp))
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+                    TextButton(onClick = {
+                        if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
+                            val gross = payTotal ?: return@launch
+                            val ded = TakeHome.estimate(gross, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+                                nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).deductions
+                            com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
+                                "bamnat-덜받은돈-$month.pdf")
+                        } else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT)
+                    }) {
+                        Text("근거표·정리본 PDF")
+                        if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 4.dp), locked = true)
+                    }
                 }
                 TextButton(onClick = { adding = true }) { Text("더 들어온 급여 적기") }
             }
@@ -397,13 +441,90 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
     )
 }
 
+/** 1.32 [WTYP-26] "n / 52시간" with a bar, red past the limit. */
+@Composable
+internal fun HoursBar(label: String, minutes: Int, limitHours: Int) {
+    val cal = LocalCalendarColors.current
+    val over = minutes > limitHours * 60
+    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).semantics(mergeDescendants = true) {}) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text("${HoursFormat.korean(minutes)} / ${limitHours}시간", style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
+                color = if (over) cal.warning else MaterialTheme.colorScheme.onSurface)
+        }
+        LinearProgressIndicator(
+            progress = { (minutes / (limitHours * 60f)).coerceIn(0f, 1f) },
+            color = if (over) cal.warning else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+    }
+}
+
+/** 1.32 [WTYP-15] 선택근무 정산 기간: worked against 일수 ÷ 7 × 40시간, what is left and per day; set here. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SelectiveCard(calendarId: String, snapshot: ScheduleSnapshot) {
+    val prefs = WorkTypePrefs.get(LocalContext.current)
+    val choices by prefs.all.collectAsStateWithLifecycle()
+    val c = choices[calendarId] ?: com.bamnat.app.data.WorkTypeChoices()
+    var editing by remember { mutableStateOf(false) }
+    val today = remember { Today.date() }
+    val cal = LocalCalendarColors.current
+    SectionCard(title = "선택근무 정산 기간", trailing = { TextButton(onClick = { editing = true }) { Text(if (c.selectiveMonths == null) "정하기" else "바꾸기") } }) {
+        val months = c.selectiveMonths
+        if (months == null) {
+            Text("선택근무제를 쓰면 정산 기간(1개월·3개월)을 정해 두고 남은 시간과 하루 평균을 봐요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            val period = com.bamnat.core.hours.SelectiveWork.period(today, months, c.selectiveStart)
+            val p = remember(snapshot, period, today) { com.bamnat.core.hours.SelectiveWork.progress(period, today, snapshot.resolver::resolve) }
+            Text("${Fmt.monthDay(period.from)} ~ ${Fmt.monthDay(period.to)} · 기준 ${HoursFormat.korean(period.standardMinutes)}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            HoursBar("일한 시간", p.workedMinutes, period.standardMinutes / 60)
+            Text(when {
+                p.overMinutes > 0 -> "기준보다 ${HoursFormat.korean(p.overMinutes)} 더 일했어요 · 연장근로예요"
+                p.perDayLeft != null -> "남은 ${HoursFormat.korean(p.leftMinutes)} · 남은 근무일 ${p.workDaysLeft}일이면 하루 평균 ${HoursFormat.korean(p.perDayLeft!!)}"
+                else -> "남은 ${HoursFormat.korean(p.leftMinutes)}"
+            }, style = MaterialTheme.typography.bodyMedium, color = if (p.overMinutes > 0) cal.warning else MaterialTheme.colorScheme.onSurface)
+            if (p.overMinutes == 0 && p.plannedOverMinutes > 0) Text("근무표대로 하면 기간 끝에 ${HoursFormat.korean(p.plannedOverMinutes)} 넘어요",
+                style = MaterialTheme.typography.bodySmall, color = cal.warning)
+            Text(com.bamnat.core.hours.SelectiveWork.NOTE, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+    if (editing) {
+        var months by remember { mutableStateOf(c.selectiveMonths ?: 1) }
+        var start by remember { mutableStateOf(c.selectiveStart) }
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text("선택근무 정산 기간") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.bamnat.core.hours.SelectiveWork.MONTHS.forEach { m ->
+                            com.bamnat.app.ui.components.FilterChip(selected = months == m, onClick = { months = m },
+                                label = { Text(if (m == 1) "1개월 (매달 1일~말일)" else "3개월 (연구개발 등)") })
+                        }
+                    }
+                    if (months == 3) com.bamnat.app.ui.components.CountStepper(start, { start = it }, name = "시작하는 달", range = 1..12,
+                        format = { "${it}월 시작" }, valueWidth = 96.dp)
+                    Text("근로기준법 제52조: 정산 기간은 1개월 이내, 신상품·신기술 연구개발 업무는 3개월 이내예요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { TextButton(onClick = { prefs.setSelective(calendarId, months, start); editing = false }) { Text("저장") } },
+            dismissButton = { TextButton(onClick = { prefs.setSelective(calendarId, null); editing = false }) { Text("안 써요") } },
+        )
+    }
+}
+
 /** [DAYW-05] This month's extra hours against the monthly 시간외 상한, set here. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
+private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: PayProfile? = null, snapshot: ScheduleSnapshot, month: YearMonth) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
-    val capHours = choices[calendarId]?.overtimeCapHours
+    val capHours = com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)
     var editing by remember { mutableStateOf(false) }
     val cal = LocalCalendarColors.current
     SectionCard(title = "시간외 상한", trailing = { TextButton(onClick = { editing = true }) { Text(if (capHours == null) "정하기" else "바꾸기") } }) {
@@ -425,6 +546,10 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
                 color = if (cap.over) cal.warning else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // 1.32 [WTYP-24] 신청한 시간과 인정된 시간이 다른 달.
+            com.bamnat.core.work.OvertimeApproval.line(remember(snapshot, month) { com.bamnat.core.work.OvertimeApproval.month(month, snapshot.resolver::resolve) })?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning, modifier = Modifier.padding(top = 4.dp))
+            }
             if (cap.over) {
                 Spacer(Modifier.height(8.dp))
                 WarningBanner("시간외 상한을 넘었어요", "이번 달 시간외가 ${capHours}시간보다 ${HoursFormat.korean(cap.overMinutes)} 많아요. 넘은 시간은 인정되지 않을 수 있어요.")
@@ -434,11 +559,35 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
     if (editing) {
         // [INPUT-02] Tapped from the usual caps or stepped by an hour, not typed.
         var hours by remember { mutableStateOf(capHours ?: DayWork.DEFAULT_CAP_HOURS) }
+        // 1.32 [WTYP-25] 조사 대조 W31: 직렬로 한 번에 (교사·군인).
+        var track by remember { mutableStateOf<com.bamnat.core.work.PublicTracks.Track?>(null) }
+        var addKinds by remember { mutableStateOf(true) }
+        val c = LocalContext.current.appContainer
         AlertDialog(
             onDismissRequest = { editing = false },
             title = { Text("한 달 시간외 상한") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("직렬로 한 번에", style = MaterialTheme.typography.labelLarge)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.bamnat.core.work.PublicTracks.Track.entries.forEach { t ->
+                            com.bamnat.app.ui.components.FilterChip(selected = track == t, onClick = {
+                                track = t
+                                t.capHours?.let { hours = it }
+                            }, label = { Text(t.label) })
+                        }
+                    }
+                    track?.let { t ->
+                        Text(t.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 4.dp))
+                        val missing = remember(t, snapshot) { com.bamnat.core.work.PublicTracks.missing(snapshot.kinds, t) }
+                        if (missing.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(addKinds, { addKinds = it })
+                            Text("추가 근무 종류 넣기: " + missing.joinToString("·") { it.name }, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } ?: Text(com.bamnat.core.work.PublicTracks.ON_SITE_NOTE, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
+                    Text("상한", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CAP_CHOICES.forEach { h ->
                             com.bamnat.app.ui.components.FilterChip(selected = hours == h, onClick = { hours = h }, label = { Text("${h}시간") })
@@ -453,6 +602,9 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
             confirmButton = {
                 TextButton(onClick = {
                     prefs.setOvertimeCap(calendarId, hours.takeIf { it > 0 })
+                    track?.takeIf { addKinds && it.kinds.isNotEmpty() }?.let { t ->
+                        c.settingsRepository.update { s -> s.copy(extraKinds = com.bamnat.core.work.PublicTracks.withKinds(s.extraKinds, t)) }
+                    }
                     editing = false
                 }) { Text("저장") }
             },
@@ -491,3 +643,38 @@ private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
 
 /** [INPUT-02] The caps people set most: 주 12시간 × 4주 ≈ 52시간, the app's own 57 and rounder company limits. */
 private val CAP_CHOICES = listOf(40, 52, DayWork.DEFAULT_CAP_HOURS, 60)
+
+/** G 1.32 [WTYP-07] 609 포괄임금: 고정 연장수당이 덮는 시간과 이번 달 실제 연장. 넘은 시간은 따로 받을 수 있어요. */
+@Composable
+private fun CoverHoursCard(c: com.bamnat.core.work.WorkTypeChecks.Cover) {
+    val cal = LocalCalendarColors.current
+    SectionCard(title = "포괄 연장 시간") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${HoursFormat.korean(c.usedMinutes)} / ${HoursFormat.korean(c.coveredMinutes)}", style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
+                modifier = Modifier.weight(1f))
+            Text(if (c.over) "${HoursFormat.korean(c.overMinutes)} 넘음" else "${HoursFormat.korean(c.leftMinutes)} 남음",
+                style = MaterialTheme.typography.titleSmall.merge(NumberStyle), color = if (c.over) cal.warning else MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(progress = { c.share.toFloat().coerceIn(0f, 1f) }, color = if (c.over) cal.warning else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        Text(if (c.over) "고정 연장수당이 정한 시간보다 더 일했어요. 넘은 시간의 연장수당은 따로 받을 수 있어요 (근로기준법 제56조)."
+            else "고정 연장수당에 들어 있는 시간이에요. 이 시간을 넘으면 알려 드려요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** G 1.32 [WTYP-07] 609 근속 기간, 다음 해까지, 퇴직금 1년. */
+@Composable
+private fun TenureCard(t: com.bamnat.core.work.WorkTypeChecks.Tenure) {
+    SectionCard(title = "근속") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t.text, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), modifier = Modifier.weight(1f))
+            Text("입사 ${t.hire.year}.${t.hire.monthValue}.${t.hire.dayOfMonth}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(t.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

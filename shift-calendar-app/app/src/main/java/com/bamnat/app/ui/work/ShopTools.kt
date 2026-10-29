@@ -31,6 +31,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.bamnat.app.appContainer
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -300,6 +302,20 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                     Hint("급여 ${Fmt.won(l.base)} + 주휴 ${Fmt.won(l.holidayPay)}" + if (l.insurance > 0) " + 4대보험 ${Fmt.won(l.insurance)}" else "")
                 }
                 ValueLine("합계", Fmt.won(cost.total), strong = true)
+                // G 1.32 [WTYP-03] 직원별 근무·급여 PDF (프로), to hand to each staff member.
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                val gatePdf by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    roster.staff.forEach { s ->
+                        TextButton(onClick = {
+                            if (gatePdf.locked(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return@TextButton }
+                            scope.launch {
+                                runCatching { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.StaffReport.doc(s, month, roster, "", com.bamnat.core.time.Today.date()),
+                                    "bamnat-직원-${s.name.ifBlank { "직원" }}-$month.pdf") }
+                            }
+                        }) { Text("${s.name.ifBlank { "이름 없음" }} PDF") }
+                    }
+                }
             }
         }
         SwitchLine("휴게시간 빼고 세기", roster.legalBreaks, { roster = roster.copy(legalBreaks = it) }, "4시간이면 30분, 8시간이면 1시간을 빼요(근로기준법 제54조)")
@@ -309,9 +325,14 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                     onRemove = { roster = roster.copy(staff = roster.staff.filterIndexed { k, _ -> k != i }) })
             }
         }
+        // G 1.32 [WTYP-03] 605: three staff free; a fourth and more with 프로. Staff already saved always stay.
+        val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+        val pro = gate.allows(com.bamnat.app.tier.Feature.ROSTER_PDF)
         if (roster.staff.size < 30) OutlinedButton(onClick = {
+            if (!com.bamnat.core.report.StaffReport.canAdd(roster, pro)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return@OutlinedButton }
             roster = roster.copy(staff = roster.staff + Staff(UUID.randomUUID().toString(), "", minimum))
-        }) { Text("직원 더하기") }
+        }) { Text(if (com.bamnat.core.report.StaffReport.canAdd(roster, pro)) "직원 더하기" else "직원 더하기 (4명부터 프로)") }
+        Hint("직원 ${com.bamnat.core.report.StaffReport.FREE_STAFF}명까지는 무료예요. 적어 둔 근무표는 언제든 볼 수 있어요.")
         Hint("주휴수당은 한 주 15시간 이상이면 한 주 시간 ÷ 40 × 8시간만큼 줘요. 4대보험 사장님 몫은 국민연금 4.75%, 건강보험 3.595%, 장기요양, 고용보험 1.15%(150명 미만)로 셌어요.")
     }
 }

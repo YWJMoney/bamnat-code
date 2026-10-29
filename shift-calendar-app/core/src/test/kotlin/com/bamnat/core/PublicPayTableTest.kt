@@ -134,4 +134,26 @@ class PublicPayTableTest {
         val onSite = p.copy(publicGrade = p.publicGrade!!.copy(onSite = true))
         assertEquals(10 * 10_949L, PayCalculator().calculate(onSite, YearMonth.of(2026, 11), r::resolve).lines.single { it.label.contains("시간외근무수당") }.amount)
     }
+
+    /** 1.32 [WTYP-24] 신청 2시간인데 1시간만 인정된 날은 인정된 시간으로 수당을 셈해요. 근무시간은 그대로예요. */
+    @Test fun overtimeIsPaidOnTheApprovedMinutes() {
+        val f = Fixtures
+        val p = PublicServantPay.apply(
+            PayPresets.firstSetup(PayProfile(Occupation.PUBLIC, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_542_700))))),
+            PublicGrade("GENERAL:9급", 10, onSite = false), on,
+        )
+        val mon = LocalDate.of(2026, 11, 2)
+        val extras = (0L until 5L).map { i ->
+            DayEntry(mon.plusDays(i), extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120, approvedMinutes = if (i >= 3) 60 else null)))
+        }
+        val r = ScheduleResolver(f.all, WorkPattern.Rotation(mon, listOf(f.day.id, f.day.id, f.day.id, f.day.id, f.day.id, f.off.id, f.off.id)), extras)
+        val pay = PayCalculator().calculate(p, YearMonth.of(2026, 11), r::resolve)
+        // 3일은 2시간 − 1시간 = 1시간씩, 2일은 인정 1시간 − 1시간 = 0: 3시간.
+        assertEquals(3 * 10_949L, pay.lines.single { it.label.contains("시간외근무수당") }.amount)
+        val m = com.bamnat.core.work.OvertimeApproval.month(YearMonth.of(2026, 11), r::resolve)
+        assertEquals(600, m.askedMinutes)
+        assertEquals(480, m.approvedMinutes)
+        assertEquals(2, m.days)
+        assertTrue(com.bamnat.core.work.OvertimeApproval.line(m)!!.contains("인정 안 됨 2시간"))
+    }
 }

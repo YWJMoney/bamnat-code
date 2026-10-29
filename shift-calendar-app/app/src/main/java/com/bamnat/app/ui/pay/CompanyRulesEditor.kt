@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.ui.semantics.stateDescription
 import com.bamnat.core.pay.LeaveBook
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -276,9 +277,23 @@ fun CompanyRulesEditor(
                     }
                     period.payDate(month)?.let { Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요.") }
                 }
+                // 1.32 [CALX-06] 주급: the weekday it arrives; the week runs from the 주휴 week's first day.
+                Label("주급이면 받는 요일")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = period.payWeekday == null, onClick = { draft = draft.copy(period = period.copy(payWeekday = null)) },
+                        label = { Text("월급이에요") })
+                    java.time.DayOfWeek.entries.forEach { d ->
+                        FilterChip(selected = period.payWeekday == d, onClick = { draft = draft.copy(period = period.copy(payWeekday = d)) },
+                            label = { Text(com.bamnat.core.hours.StatsRange.dayName(d).take(1)) })
+                    }
+                }
+                period.payWeekday?.let { d ->
+                    Hint("한 주는 ${com.bamnat.core.hours.StatsRange.dayName(draft.holidayWeekFrom)}부터 세고, " +
+                        "주급은 ${com.bamnat.core.hours.StatsRange.dayName(d)}에 들어와요. 통계의 ‘주’ 칩과 달력 위 한 줄이 이 주로 보여요.")
+                }
             }
 
-            SectionCard(title = "가산율 (100% 위에 더하는 몫)") {
+            FoldSection(title = "가산율 (100% 위에 더하는 몫)") {
                 PremiumRow("연장", rules.overtimePremium, 0.5, listOf(0.5, 0.75, 1.0)) { setRules(rules.copy(overtimePremium = it)) }
                 PremiumRow("야간 (${rules.nightLabel(rates)})", rules.nightPremium, 0.5, listOf(0.5, 0.75, 1.0)) { setRules(rules.copy(nightPremium = it)) }
                 PremiumRow("휴일 8시간까지", rules.holidayPremiumWithin8h, 0.5, listOf(0.5, 1.0, 1.5)) { setRules(rules.copy(holidayPremiumWithin8h = it)) }
@@ -287,7 +302,7 @@ fun CompanyRulesEditor(
                     if (!draft.fiveOrMoreEmployees) " 5인 미만이라 법정 가산은 0%예요. 회사가 주는 가산을 골라 주세요." else "")
             }
 
-            SectionCard(title = "야간 시간") {
+            FoldSection(title = "야간 시간") {
                 // [PAYX-12] Every shift on the calendar, base shifts included, earns the night premium in this window.
                 NightWindowPicker(rules) { s, e -> setRules(rules.copy(nightStart = s, nightEnd = e)) }
                 Hint("달력의 근무는 기본 근무로 계산해도 이 시간에 걸친 부분은 야간 가산을 받아요. 법은 22~06시예요(근로기준법 제56조 제3항). " +
@@ -307,7 +322,7 @@ fun CompanyRulesEditor(
                 }
             }
 
-            SectionCard(title = "쉬는 날과 공휴일") {
+            FoldSection(title = "쉬는 날과 공휴일") {
                 // [EXTRA-02] 휴무일 work is not 휴일근로 by law; the company may still pay it so.
                 Label("쉬는 날(휴무일)에 일하면")
                 RestDayWork.entries.forEach { mode ->
@@ -390,7 +405,7 @@ fun CompanyRulesEditor(
             }
 
             // [EXTRA-04] How each kind is paid lives with its times on one screen; here is what it says.
-            SectionCard(title = "연장 휴무일 근무 지정") {
+            FoldSection(title = "연장 휴무일 근무 지정") {
                 kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                         ExtraKindMark(k, size = 22.dp)
@@ -410,7 +425,7 @@ fun CompanyRulesEditor(
             // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.
             // [RULE-ED-05] 1.30 AW (사용자 "사진 촬영 금지 회사… 칸 추가 방식으로"): the company's own allowances and rules as the same 칸 as
             // the photo's result, each opened where it is; '칸 더하기' starts from the usual allowances. Words and photos stay under it.
-            SectionCard(title = "우리 회사 항목") {
+            FoldSection(title = "우리 회사 항목") {
                 Hint("수당·더 받는 근무·빠지는 돈을 칸으로 하나씩 더해요. 사진이 없어도 돼요. 위에 있는 가산율이나 대근 방식도 칸으로 담으면 알아서 맞춰 넣어요.")
                 val shiftNames = remember(snapshot.shiftTypes) { snapshot.shiftTypes.associate { it.id to it.name } }
                 val own = remember(draft.items, draft.customRules, shiftNames) { com.bamnat.core.pay.RuleSheet.of(draft, shiftNames) }
@@ -441,7 +456,7 @@ fun CompanyRulesEditor(
                 }
             }
 
-            SectionCard(title = "연장 시간 끝자리") {
+            FoldSection(title = "연장 시간 끝자리") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(1, 10, 15, 30, 60).forEach { u ->
                         FilterChip(selected = rules.overtimeRounding.unit == u,
@@ -469,7 +484,7 @@ fun CompanyRulesEditor(
                 }
             }
             // [PAYX-24][PAYX-27][PAYX-29][PAYX-33] Company ways the law leaves open, each with what it changes.
-            SectionCard(title = "회사마다 다른 계산") {
+            FoldSection(title = "회사마다 다른 계산") {
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("입사·퇴사 달 기본급 일할")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -515,7 +530,7 @@ fun CompanyRulesEditor(
                 Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요.")
             }
             // [PAYX-25] 생산직 연장·야간·휴일수당 비과세, for 예상 실수령.
-            SectionCard(title = "세금") {
+            FoldSection(title = "세금") {
                 Toggle("생산직 연장·야간 비과세", "공장 생산직, 운전·경비·청소·돌봄 같은 일을 하고 월정액급여가 260만 원 이하면 연장·야간·휴일 수당에 연 240만 원까지 세금이 없어요(소득세법 시행령 제17조)",
                     draft.productionWorker) { draft = draft.copy(productionWorker = it) }
                 if (draft.productionWorker) {
@@ -524,7 +539,7 @@ fun CompanyRulesEditor(
                 }
             }
             // [PAYX-16] 포괄임금·탄력제: ready examples with what each does; the app never decides whether the company's is valid.
-            SectionCard(title = "예시 규칙") {
+            FoldSection(title = "예시 규칙") {
                 Hint("계약서에 포괄임금(고정 연장수당)이나 탄력적 근로시간제가 있으면 예시를 넣고 숫자만 고쳐요. 유효한지는 앱이 판단하지 않아요.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // [PAYX-26] Splitting a salary into 기본급 and 고정 연장 is for a monthly salary only.
@@ -548,7 +563,7 @@ fun CompanyRulesEditor(
                     dismissButton = { TextButton(onClick = { example = null }) { Text("닫기") } },
                 )
             }
-            SectionCard(title = "연차") {
+            FoldSection(title = "연차") {
                 // [LEAVE-02] The 연차 원장 makes the law's leave from the hire date; days the company gave, 이월 and
                 // 조정 go in on the 연차 screen (급여 › 연차 카드).
                 val policy = rules.leave
@@ -764,4 +779,18 @@ private fun WeekdayPicker(selected: DayOfWeek, onPick: (DayOfWeek) -> Unit) {
 internal fun CompanyRules.payText(kind: Long): String {
     val own = extraByShift[kind].orEmpty().count { !it.value.isLegal }
     return (extraRule(kind)?.describe() ?: "법대로") + if (own > 0) " · 근무별 ${own}개" else ""
+}
+
+/**
+ * U 1.32 [UX132-03] (조사 4.2): 기본 and 정산 기간과 월급날 stay open; the other groups are one line each until opened, so the
+ * value looked for is a tap away instead of a long scroll.
+ */
+@Composable
+private fun FoldSection(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(false) }
+    SectionCard(title = title, modifier = Modifier.semantics { stateDescription = if (open) "펼침" else "접힘" }, trailing = {
+        TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "펼치기") }
+    }) {
+        if (open) content()
+    }
 }

@@ -12,6 +12,8 @@ import kotlin.math.roundToLong
 enum class FieldMode(val label: String, val hint: String) {
     DAY_RATE("일당(공수)형", "오늘 1공·반공처럼 공수로 세고, 업체마다 일당이 있어요"),
     PER_JOB("건별형", "일감마다 금액·선금·잔금을 적어요"),
+    /** G 1.32 [WTYP-02] 배달·대리·택시: 플랫폼별 건수·금액·운행 시간, 주급 정산, 시간당 순수익. */
+    PLATFORM("플랫폼(배달·운전)형", "배민·쿠팡이츠·대리처럼 플랫폼마다 오늘 건수·금액·운행 시간을 적어요"),
 }
 
 /**
@@ -25,12 +27,43 @@ data class FieldRules(
     val lastClient: String = "",
     /** [FLD-06] Ledger lines answered 아니에요, so they are not asked about again. */
     val notMatched: List<Long> = emptyList(),
+    /** G 1.32 [WTYP-04] 606 "이 날부터 일당 ○원": each change with its first day, oldest first. Free. */
+    val rateFrom: List<Pair<LocalDate, Long>> = emptyList(),
+    /** G 1.32 [WTYP-02] Each platform's weekly 정산 (마감 요일, 입금 요일), when the user changed it from [Platform]'s. */
+    val platformPay: Map<String, Pair<java.time.DayOfWeek, java.time.DayOfWeek>> = emptyMap(),
+    /** G 1.32 [WTYP-23] 조사 대조 W28: what each platform (대리 콜 출처마다) takes off what it shows, when the user said. */
+    val platformCosts: Map<String, PlatformWork.Cut> = emptyMap(),
+    /** G 1.32 [WTYP-27] 조사 대조 W35: the 공수 chips the user picked, in place of [DayRate.UNITS]. */
+    val unitChips: List<Double> = emptyList(),
+    /** G 1.32 [WTYP-27] 끝난 시각 → 공수 (17:00까지 1공, 19:00까지 1.5공, 21:00까지 2공), earliest first. */
+    val unitRules: List<DayRate.EndRule> = emptyList(),
 ) {
     val dayRateMode: Boolean get() = mode == FieldMode.DAY_RATE
+    val platformMode: Boolean get() = mode == FieldMode.PLATFORM
+
+    /** G 1.32 [WTYP-27] The day sheet's 공수 chips. */
+    val chips: List<Double> get() = unitChips.ifEmpty { DayRate.UNITS }
+
+    /** G 1.32 [WTYP-23] What [platform] takes; nothing until the user says. */
+    fun cutOf(platform: String): PlatformWork.Cut = platformCosts[platform] ?: PlatformWork.Cut()
+
+    /** G 1.32 [WTYP-04] The 일당 on [date]: the last change on or before it, else [dayRate]. */
+    fun rateOn(date: LocalDate): Long = rateFrom.lastOrNull { !it.first.isAfter(date) }?.second ?: dayRate
+
+    /** G 1.32 [WTYP-04] From [from] the 일당 is [rate]; the remembered [dayRate] follows when [from] is not in the past of the last change. */
+    fun withRateFrom(from: LocalDate, rate: Long): FieldRules {
+        // The first change keeps the 일당 before it for the days before it, so 지난 날 stay at what they were.
+        val kept = rateFrom.ifEmpty { if (dayRate > 0 && dayRate != rate) listOf(LocalDate.of(2000, 1, 1) to dayRate) else emptyList() }
+        val list = (kept.filter { it.first != from } + (from to rate)).sortedBy { it.first }.takeLast(24)
+        return copy(rateFrom = list, dayRate = list.last().second)
+    }
 
     companion object {
         /** Lines remembered as 아니에요; older ones drop off. */
         const val KEEP_NOT_MATCHED = 50
+        /** G 1.32 [WTYP-27] At most this many own chips and end rules. */
+        const val MAX_CHIPS = 5
+        const val MAX_RULES = 6
     }
 }
 
@@ -39,13 +72,49 @@ object DayRate {
     /** The buttons on the day sheet; 직접 asks for any other number. */
     val UNITS = listOf(1.0, 0.5, 1.5)
 
+    /**
+     * G 1.32 [WTYP-27] 조사 대조 W35 (조사 10장): "[until]까지 끝나면 [units]공". A day that ends by the earliest rule's time
+     * is its 공수; one that ends later takes the next rule's, and past the last rule the last one's.
+     */
+    data class EndRule(val until: java.time.LocalTime, val units: Double)
+
+    /** G 1.32 [WTYP-27] The rules the research names as the common case, offered to start from. */
+    val SAMPLE_RULES = listOf(EndRule(java.time.LocalTime.of(17, 0), 1.0), EndRule(java.time.LocalTime.of(19, 0), 1.5),
+        EndRule(java.time.LocalTime.of(21, 0), 2.0))
+
+    /** G 1.32 [WTYP-27] The 공수 for a day that ended at [end]; null without rules. */
+    fun byEnd(end: java.time.LocalTime, rules: List<EndRule>): Double? {
+        val sorted = rules.sortedBy { it.until }
+        return (sorted.firstOrNull { !end.isAfter(it.until) } ?: sorted.lastOrNull())?.units
+    }
+
+    /** G 1.32 [WTYP-27] "17:00까지 1공 · 19:00까지 1.5공". */
+    fun rulesLine(rules: List<EndRule>): String =
+        rules.sortedBy { it.until }.joinToString(" · ") { "%02d:%02d까지 %s".format(it.until.hour, it.until.minute, label(it.units)) }
+
+    /** G 1.32 [WTYP-27] Own chips, kept to [FieldRules.MAX_CHIPS] distinct values in 0..5. */
+    fun cleanChips(list: List<Double>): List<Double> = list.filter { it > 0 && it <= 5 }.distinct().take(FieldRules.MAX_CHIPS)
+
     /** A title for the job a tap writes, e.g. "1공", "0.5공". */
     fun label(units: Double): String = trim(units) + "공"
 
     /** What the month cell shows: "1공", "0.5", "1.5". A whole day says 공; a part day only its number. */
     fun cell(units: Double): String = if (units == 1.0) "1공" else trim(units)
 
-    fun trim(units: Double): String = if (units == units.toLong().toDouble()) units.toLong().toString() else "%.2f".format(units).trimEnd('0').trimEnd('.')
+    // G 1.32 [WTYP-04] 공수 to the third decimal (0.125공), as 건설 현장 쓰는 대로.
+    fun trim(units: Double): String = if (units == units.toLong().toDouble()) units.toLong().toString() else "%.3f".format(units).trimEnd('0').trimEnd('.')
+
+    /** G 1.32 [WTYP-04] A typed 공수 ("0.125", "1,5"), to three decimals; null when not a number in 0..5. */
+    fun parse(text: String): Double? = text.trim().replace(',', '.').toDoubleOrNull()
+        ?.let { Math.round(it * 1000) / 1000.0 }?.takeIf { it > 0 && it <= 5 }
+
+    /**
+     * G 1.32 [WTYP-04] Day-rate jobs from [from] written again at [rate] × their 공수, for "지난 날은 그대로, 이 날부터 바꾸기".
+     * Paid ones keep what was paid ([job] owes the rest again).
+     */
+    fun repriceFrom(from: LocalDate, rate: Long, jobs: List<Job>): List<Job> =
+        jobs.filter { !it.date.isBefore(from) && it.units != null && !it.cancelled && !PlatformWork.isPlatform(it) }
+            .map { job(it.date, it.units!!, rate, it.client, it) }.filter { n -> jobs.first { it.id == n.id }.amount != n.amount }
 
     /** The amount for [units] days at [rate], to the won. */
     fun amount(rate: Long, units: Double): Long = (rate * units).roundToLong().coerceAtLeast(0)
@@ -69,13 +138,13 @@ object DayRate {
     }
 
     /** The day-rate job already on [date], to be changed by a tap instead of adding another. */
-    fun on(date: LocalDate, jobs: List<Job>): Job? = jobs.firstOrNull { it.date == date && it.units != null && !it.cancelled }
+    fun on(date: LocalDate, jobs: List<Job>): Job? = jobs.firstOrNull { it.date == date && it.units != null && !it.cancelled && !PlatformWork.isPlatform(it) }
 
     data class Month(val units: Double, val amount: Long, val days: Int)
 
     /** [FLD-02] The month's 공수 and what they come to; cancelled jobs are left out. */
     fun month(month: YearMonth, jobs: List<Job>): Month {
-        val list = jobs.filter { YearMonth.from(it.date) == month && it.units != null && !it.cancelled }
+        val list = jobs.filter { YearMonth.from(it.date) == month && it.units != null && !it.cancelled && !PlatformWork.isPlatform(it) }
         return Month(list.sumOf { it.units ?: 0.0 }, list.sumOf { it.amount }, list.map { it.date }.distinct().size)
     }
 

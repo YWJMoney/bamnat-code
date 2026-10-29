@@ -92,6 +92,7 @@ import com.bamnat.core.money.LedgerFilter
 import com.bamnat.core.money.LedgerPeriod
 import com.bamnat.core.money.MoneyAccount
 import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.tax.TaxPlus
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MoneyStats
@@ -144,7 +145,7 @@ class MoneyViewModel(
     }
 
     /** [LEDG-15] The money tab's three pages. */
-    enum class Page(val label: String) { SUMMARY("요약"), LIST("내역"), REPORT("분석") }
+    enum class Page(val label: String) { SUMMARY("요약"), LIST("내역"), REPORT("통계") }
 
     private val _page = MutableStateFlow(Page.SUMMARY)
     val page: StateFlow<Page> = _page.asStateFlow()
@@ -180,6 +181,16 @@ class MoneyViewModel(
         if (profile.ledgerTakeHome) return PayIncome.paidIn(profile, month, gross).takeIf { it.isNotEmpty() }?.sumOf { it.net }
         return gross(month)
     }
+
+    /** E 1.32 [LEDX-10] The year's 총급여 the pay engine expects (세전, every month of [year]); null without pay set up. */
+    suspend fun yearGross(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, year: Int): Long? = withContext(Dispatchers.Default) {
+        if (style?.usesPayEngine == false || profile == null || snapshot == null) return@withContext null
+        (1..12).sumOf { m -> runCatching { payCalculator.calculate(profile, YearMonth.of(year, m), snapshot.resolver::resolve, checks = false).total }.getOrDefault(0L) }
+            .takeIf { it > 0 }
+    }
+
+    /** E 1.32 [LEDX-09] A subscription the user said they still use, by place, so it is not asked again for 90 days. */
+    fun stillUsing(place: String) = container.autoRecordPrefs.lookedAt(com.bamnat.core.money.PaymentParser.placeKey(place))
 
     /** [TAX-01][TAX-04] The calendar's 월급 관측 and tax answers. */
     private val tax = container.tax(calendarId)
@@ -256,8 +267,16 @@ class MoneyViewModel(
     override fun saveEntry(entry: MoneyEntry) {
         val before = book.value
         val old = before?.entries?.firstOrNull { it.id == entry.id && entry.id != 0L }
+        // 1.32 [LEDX-18] A line written at a rough rate, fixed to the card's bill: the rate it shows is kept for next time.
+        val settled = old?.let { o ->
+            com.bamnat.core.money.LedgerSmarts.abroadOf(o)?.takeIf { o.amount != entry.amount && entry.amount > 0 && com.bamnat.core.money.LedgerSmarts.abroadOf(entry) != null }
+        }?.let { (cur, amount) ->
+            val prefs = container.autoRecordPrefs
+            com.bamnat.core.money.LedgerSmarts.learnedRate(amount, entry.amount, prefs.current.abroadFee)?.let { prefs.setRate(cur, it) }
+            entry.copy(note = com.bamnat.core.money.LedgerSmarts.settledAbroad(entry.note))
+        } ?: entry
         container.appScope.launch {
-            money.save(entry)
+            money.save(settled)
             // [LEDG-18] The other lines from this place can follow in one tap.
             val same = old?.let { money.samePlace(entry, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
@@ -338,6 +357,14 @@ class MoneyViewModel(
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats turned down. */
     val autoRecord: StateFlow<AutoRecordPrefs.State> = container.autoRecordPrefs.state
     fun setCaptureFilter(filter: CaptureFilter) = container.autoRecordPrefs.setFilter(filter)
+
+    /** E 1.32 [LEDX-06] The past lines a new rule moves, with one 되돌리기. */
+    fun recategorizeAll(list: List<MoneyEntry>, category: String) {
+        container.appScope.launch {
+            money.saveAll(list.map { com.bamnat.core.money.Ledger.recategorize(it, category) })
+            _undo.tryEmit(UndoMessage("지난 거래 ${list.size}건을 ‘$category’(으)로 옮겼어요") { money.saveAll(list) })
+        }
+    }
 
     /** [LEDG-21] A rule written or changed on the rules page. */
     fun setRule(merchant: String, category: String) { container.appScope.launch { money.setRule(merchant, category) } }
@@ -543,6 +570,11 @@ fun MoneyScreen(
     // [COMN-04] With 확인하고 적기 on, the unconfirmed lines are in book.pending, out of every total.
     val unseen = remember(book) { book.pending + book.entries.filter { !it.reviewed } }
     val otherPlaces = remember(book, today) { OtherPlaces.groups(book.entries, today) }
+    // E 1.32 [LEDX-05] Learned from this calendar's own lines, on the phone.
+    // 1.32 [LEDX-21] With what each day was on this calendar, as the notification reader learns.
+    val learner = remember(book.entries, snapshot) {
+        com.bamnat.core.money.LedgerSmarts.Learner.of(book.entries, snapshot?.takeIf { !it.isEmpty }?.let { com.bamnat.core.tax.TaxPlus.dayLabel(it.resolver::resolve) } ?: { null })
+    }
     val repeats = remember(book, today, autoRecord.notRepeating) {
         RepeatFinder.find(book.entries, book.fixed, today, autoRecord.notRepeating)
     }
@@ -566,10 +598,15 @@ fun MoneyScreen(
         MoneyPart.NEW to {
             NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
                 onFinish = { finishing = it }, onDrop = vm::dropCapture,
-                waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete)
+                waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete,
+                guesses = { e -> learner.guess(e).filter { it.category != "기타" } }, onPick = { e, c -> vm.recategorize(listOf(e), c) })
         },
         MoneyPart.RECENT to { RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) }) },
-        MoneyPart.INCOME to { IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome) },
+        MoneyPart.INCOME to {
+            // F 1.32 [TAXP-01] 세전·세후 on one line: 명세서 > 입금 > 직접 적음 > 추정.
+            val net = remember(takeHome, payRecords, month) { takeHome?.let { v -> TaxPlus.netLine(month, payRecords, v.gross, v.forecast) } }
+            IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net, gate = gate)
+        },
         // [TAX-02][TAX-05] 세전·세후 and this year's tax (프로).
         MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true }) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
@@ -596,6 +633,18 @@ fun MoneyScreen(
         MoneyPart.ACCOUNTS to { AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it }) },
         // [LEDG-02] Ways to type less.
         MoneyPart.AUTO to { AutoRecordCard(onPaste = { pasting = true }) },
+        MoneyPart.PACE to { PaceCard(book, today, budget) },
+        MoneyPart.SUBS to { SubscriptionsCard(book.entries, today, autoRecord.lookedAt, onStillUsing = vm::stillUsing, onOpen = vm::showPlace) },
+        MoneyPart.CARD25 to {
+            val gross by androidx.compose.runtime.produceState<Long?>(null, profile, snapshot, today.year) { value = vm.yearGross(style, profile, snapshot, today.year) }
+            CardGaugeCard(book, today, gross)
+        },
+        MoneyPart.CARDBILL to { CardBillCard(book, today, gate) },
+        MoneyPart.ASK to { LedgerAsksCard(book, today, vm) },
+        MoneyPart.INSTALL to { InstallmentPlanCard(book, today) },
+        MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate) },
+        MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
+        MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
     )
     // [FIT-01][FIT-02] The parts that suit this calendar's kind of work, and those the user added.
     val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
@@ -609,24 +658,25 @@ fun MoneyScreen(
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
-            // and the title gives its room to the month: the 돈 tab below already says where this is.
+            // and the title gives its room to the month: the 가계부 tab below already says where this is.
             val roomy = LocalDensity.current.fontScale < 1.3f
             Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (roomy) {
-                    FitText("돈 관리", MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
+                    FitText(com.bamnat.core.work.moneyTab(style), MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
                 IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
                 }
-                Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
+                com.bamnat.app.ui.calendar.MonthJumpTitle(month, { vm.showMonth(it) }) // 1.32 [WTYP-21]
                 IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
                 }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
                 Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "돈 탭 메뉴") }
+                    com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "가계부 탭 메뉴") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
@@ -656,18 +706,19 @@ fun MoneyScreen(
                 MoneyViewModel.Page.SUMMARY -> if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)) { left(); Spacer(Modifier.height(FabClearance)) }
+                            verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { left(); Spacer(Modifier.height(FabClearance)) }
                         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)) { right(); Spacer(Modifier.height(FabClearance)) }
+                            verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { right(); Spacer(Modifier.height(FabClearance)) }
                     }
                 } else {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) { left(); right(); Spacer(Modifier.height(FabClearance)) }
+                        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { left(); right(); Spacer(Modifier.height(FabClearance)) }
                 }
                 MoneyViewModel.Page.LIST -> LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
                     onAdd = { adding = MoneyKind.EXPENSE })
                 MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
-                    onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month)
+                    onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
+                    snapshot = snapshot, onMessage = vm::message)
             }
         }
         AnimatedVisibility(selection.isEmpty(), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
@@ -705,7 +756,7 @@ fun MoneyScreen(
     if (autoRecording) AutoRecordDialog(onPaste = { pasting = true }, onDismiss = { autoRecording = false },
         onRules = { autoRecording = false; editingRules = true }, onFilter = { autoRecording = false; filtering = true })
     if (editingRules) CategoryRulesDialog(rules, book.categoriesOf(MoneyKind.EXPENSE), onSave = vm::setRule, onDelete = vm::deleteRule,
-        onDismiss = { editingRules = false })
+        onDismiss = { editingRules = false }, entries = book.entries, onApplyPast = vm::recategorizeAll)
     if (filtering) CaptureFilterDialog(autoRecord, onChange = vm::setCaptureFilter, onDismiss = { filtering = false })
     if (pasting) PasteDialog(book.entries, rules, onSave = { vm.saveAll(it); pasting = false }, onDismiss = { pasting = false }, today = today)
     if (addingFixed || editingFixed != null) {
@@ -726,7 +777,7 @@ fun MoneyScreen(
     }
     if (takingHome) takeHome?.let { v ->
         TakeHomeSheet(v, onAdd = vm::savePayRecord, onDelete = vm::deletePayRecord, onNotPay = vm::notPay,
-            onDismiss = { takingHome = false }, today = today)
+            onDismiss = { takingHome = false }, today = today, profile = profile, gate = gate)
     }
     if (bizTax) BusinessTaxSheet(taxSettings.business,
         yearOf = { p -> com.bamnat.core.tax.BusinessTax.year(month.year, today, p, book.jobs, book.sales, book.entries) },
@@ -751,7 +802,8 @@ private fun RecentCard(recent: List<MoneyEntry>, month: YearMonth, onOpen: (Mone
 }
 
 @Composable
-internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit) {
+internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit,
+                        netLine: TaxPlus.NetLine? = null, gate: com.bamnat.app.tier.Gate? = null) {
     val hasProfile = profile != null
     val net = profile?.ledgerTakeHome == true
     SectionCard(title = "수입 내역") {
@@ -766,6 +818,7 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
             }
             if (m.payRecorded > 0 || m.payEstimate != null) {
                 Line(label, Fmt.won(m.payCounted))
+                if (gate != null) NetSummaryLine(netLine, gate)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (hasProfile) "급여 계산을 열면 예상 급여가 들어가요" else "시급·월급을 정하면 근무표로 급여를 계산해요",
@@ -854,12 +907,14 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
 }
 
 /**
- * [DAILY-15] 돈 관리 › 요약's cards the user can order or turn off (화면 꾸미기). [DAILY-04] 결정 1.21 UX: the
+ * [DAILY-15] 가계부 › 요약's cards the user can order or turn off (화면 꾸미기). [DAILY-04] 결정 1.21 UX: the
  * month's sum first, then what waits for a look, then the month's lines; [right] is the unfolded right side.
  */
 internal enum class MoneyPart(val id: String, val label: String, val what: String, val movable: Boolean = true, val right: Boolean = false) {
     HERO("hero", "이번 달 합계", "수입·지출·남은 돈과 예산", movable = false),
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),
+    // 1.32 [LEDX-16][LEDX-19]
+    ASK("ask", "확인할 것", "원래 결제를 못 찾은 환불, 처음 보는 카드", movable = false, right = true),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
     INCOME("income", "수입 내역", "급여 예상과 적은 수입", right = true),
     TAX("tax", "세금·실수령", "세전·세후 예상, 올해 낼 세금", right = true),
@@ -871,6 +926,16 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     UPCOMING("upcoming", "나갈 돈", "고정 지출과 이번 달 남은 것"),
     REPEAT("repeat", "반복 지출 찾기", "매달 나가는 것 같은 지출"),
     ACCOUNTS("accounts", "통장·카드", "계좌와 카드 잔액"),
+    // E 1.32 [LEDX-07][LEDX-09][LEDX-10]
+    PACE("pace", "이번 달 흐름", "이대로면 월말 지출, 오늘 쓸 수 있는 돈"),
+    SUBS("subs", "구독 점검", "매달 나가는 결제와 1년치, 오른 값"),
+    CARD25("card25", "카드 소득공제 문턱", "총급여 25% 문턱과 신용·체크 고르기"),
+    CARDBILL("cardbill", "다음 카드값", "카드별 다음 결제 금액과 이대로면 얼마"),
+    // 1.32 [LEDX-17]
+    INSTALL("install", "할부 청구 기준", "달마다 나갈 할부와 수수료, 남은 잔액"),
+    SHIFTSPEND("shiftspend", "근무별 소비", "야간 다음 날·쉬는 날 하루 소비"),
+    SALESSPLIT("salessplit", "매출 나눠 보기", "카드·현금·이체·배달앱 비율"),
+    FREELANCE("freelance", "3.3% 합계", "일한 곳별 뗀 3.3%와 5월 신고 준비"),
     AUTO("auto", "덜 적는 법", "결제 알림 읽기·문자 붙여넣기", right = true),
 }
 
@@ -892,12 +957,12 @@ internal fun MoneyEditSheet(
         placed.filter { it.part.movable == movable && com.bamnat.core.guide.FitTable.visible(surface, it.part.id, style, added) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
-        title = "돈 관리 화면 꾸미기",
+        title = "가계부 화면 꾸미기",
         groups = listOf(
             com.bamnat.app.ui.components.EditGroup("위쪽", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
-        middle = "요약·내역·분석 탭",
+        middle = "요약·내역·통계 탭",
         others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> MoneyPart.entries.firstOrNull { it.id == id }?.let { it.label to it.what } },
         onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, surface, id, on) },
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },

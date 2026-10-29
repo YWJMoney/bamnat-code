@@ -73,6 +73,17 @@ object ShiftEvents {
         return "${e.title}까지 ${left(now, e.start)} · $day${hm(e.start)}"
     }
 
+    /** G 1.32 [WTYP-05] 607 "다음 오프까지" under the countdown: today off, the next off day in [days], or none in the week. */
+    fun nextOff(days: List<ResolvedDay>, today: java.time.LocalDate): String {
+        fun off(d: ResolvedDay) = d.shiftType == null || d.shiftType.isOff || (d.leave != null && d.scheduledMinutes == 0)
+        days.firstOrNull { it.date == today }?.let { if (off(it)) return "오늘은 쉬는 날이에요" }
+        val next = days.filter { it.date.isAfter(today) }.sortedBy { it.date }.firstOrNull(::off)
+            ?: return "7일 안에 쉬는 날이 없어요"
+        val n = next.date.toEpochDay() - today.toEpochDay()
+        val dow = "월화수목금토일"[next.date.dayOfWeek.value - 1]
+        return if (n == 1L) "내일 쉬어요" else "다음 오프까지 ${n}일 · ${next.date.monthValue}/${next.date.dayOfMonth}($dow)"
+    }
+
     private fun left(from: LocalDateTime, to: LocalDateTime): String {
         // Rounded up to the minute, so "0분" is never said while there is time left.
         val m = ((java.time.Duration.between(from, to).seconds + 59) / 60).toInt()

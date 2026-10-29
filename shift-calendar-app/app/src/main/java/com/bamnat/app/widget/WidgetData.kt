@@ -56,10 +56,20 @@ class WidgetData(
     val nextChange: LocalDateTime? = null,
     /** [WIDG-05] The countdown widget's line; null with nothing booked in the coming week. */
     val countdown: String? = null,
+    /** G 1.32 [WTYP-05] 607 "다음 오프까지" under the countdown; null without a pattern. */
+    val nextOff: String? = null,
     /** [WIDG-05] I 리뷰 N6(b): the teams that could take my shift today, as 대근 찾기 says; null on a day off. */
     val coverTeams: List<String>? = null,
     /** [WIDG-02] Days with a memo on 내 달력 around this month, while 위젯에 메모 보이기 is on. */
     val memoDays: Set<LocalDate> = emptySet(),
+    /** G 1.32 [WTYP-23] A field calendar's mode, 공수 chips and 일당, for the +1건 and 오늘 1공 buttons. */
+    val fieldRules: com.bamnat.core.money.FieldRules? = null,
+    /** G 1.32 [WTYP-23] A platform worker's 건수 today and this week. */
+    val platformDay: WidgetFigures.PlatformDay? = null,
+    /** G 1.32 [WTYP-23] 공무원 (or a 시간외 상한 set): this month's 시간외 against it. */
+    val overtime: WidgetFigures.Overtime? = null,
+    /** G 1.32 [WTYP-23] 자영업: this month's open and closed days. */
+    val shopDays: WidgetFigures.ShopDays? = null,
 ) {
     /** [DAILY-03] One team on the 모든 조 widget: its name, today's and tomorrow's shift (null for a day off). */
     class TeamToday(val name: String, val mine: Boolean, val today: com.bamnat.core.model.ShiftType?, val tomorrow: com.bamnat.core.model.ShiftType?)
@@ -117,8 +127,24 @@ class WidgetData(
             val leaveLeft = if (settings.workStyle == WorkStyle.DAY && container.payStore.profile.value != null) {
                 container.leaveRepository.now().takeIf { it.lots.isNotEmpty() }?.available
             } else null
+            // G 1.32 [WTYP-23] 조사 대조 C14 W29 W38: 배달 건수, 현장 공수 buttons, 공무원 시간외, 자영업 영업일.
+            val fieldRules = if (settings.workStyle == WorkStyle.FIELD) container.calendars.get(PersonalCalendar.MAIN)?.field else null
+            val platformDay = if (fieldRules?.platformMode == true && book != null) {
+                WidgetFigures.platformDay(book.jobs, CalendarGrid.weekStartOf(today, settings.weekStart), today)
+            } else null
+            val overtime = if (settings.workStyle == null || settings.workStyle == WorkStyle.DAY || settings.workStyle == WorkStyle.SHIFT) {
+                com.bamnat.core.work.WorkTypeChecks.capHours(com.bamnat.app.data.WorkTypePrefs.get(context).of(PersonalCalendar.MAIN).overtimeCapHours,
+                    container.payStore.profile.value)?.let { cap ->
+                    WidgetFigures.Overtime(WorkHoursCalculator(snapshot.resolver, settings.weekStart).month(YearMonth.from(today)).extraMinutes, cap)
+                }
+            } else null
+            val shopDays = if (settings.workStyle == WorkStyle.BUSINESS && book != null) {
+                com.bamnat.core.work.WorkStats.shop(YearMonth.from(today), book.sales) { snapshot.resolver.resolve(it).isWorkDay }
+                    .let { WidgetFigures.ShopDays(it.openDays, it.closedDays) }
+            } else null
             // [WIDG-01][WIDG-05] Yesterday's night to a week ahead: what is going on now and what comes next.
             val soon = snapshot.resolver.resolveRange(today.minusDays(1), today.plusDays(7))
+            com.bamnat.app.ui.Fmt.clock12 = settings.clock12 // G 1.32 [WTYP-07]
             return WidgetData(
                 today = now.toLocalDate(),
                 weekStart = settings.weekStart,
@@ -138,8 +164,13 @@ class WidgetData(
                 teams = teamsToday(container, snapshot, today),
                 nextChange = com.bamnat.core.schedule.ShiftEvents.nextChange(soon, now),
                 countdown = com.bamnat.core.schedule.ShiftEvents.countdown(soon, now),
+                nextOff = if (snapshot.isEmpty) null else com.bamnat.core.schedule.ShiftEvents.nextOff(soon, today),
                 coverTeams = coverToday(container, snapshot, today, settings),
                 memoDays = if (settings.widgetMemo) memoDays(container, today) else emptySet(),
+                fieldRules = fieldRules,
+                platformDay = platformDay,
+                overtime = overtime,
+                shopDays = shopDays,
             )
         }
 

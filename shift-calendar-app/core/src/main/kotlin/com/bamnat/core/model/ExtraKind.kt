@@ -102,6 +102,11 @@ data class ExtraEntry(
      * the holiday instead. Null for none.
      */
     val substitute: java.time.LocalDate? = null,
+    /**
+     * 1.32 [WTYP-24] 공무원 시간외: the minutes the office 인정했어요 when fewer than were asked (신청, [paidMinutes]);
+     * null when the user has not said, which counts as all of it.
+     */
+    val approvedMinutes: Int? = null,
 ) {
     val hasTimes: Boolean get() = start != null && end != null
 

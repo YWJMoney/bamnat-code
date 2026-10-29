@@ -52,11 +52,14 @@ test("[PHOTO-10] anything but codes and numbers is refused", async (t) => {
   assert.ok(!DB.dump().includes("기본급"));
 });
 
-test("[PHOTO-10] one network sends at most 30 bundles a day", async (t) => {
+test("[PHOTO-10] one network sends at most 300 bundles a day (R131 1.31 [LIM-01], 30 before)", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call } = server({ plaza: true });
-  for (let i = 1; i <= 30; i++) assert.equal((await call("POST", "/api/photo-wrong", body([row("payslip", "numbers", i)]), from(5))).status, 204);
-  assert.equal((await call("POST", "/api/photo-wrong", body([row("payslip", "numbers", 31)]), from(5))).status, 429);
+  for (let i = 1; i <= 300; i++) assert.ok([200, 204].includes((await call("POST", "/api/photo-wrong", body([row("payslip", "numbers", (i % 99) + 1, i % 2 ? "2026-10-27" : "2026-10-26")]), from(5))).status));
+  const over = await call("POST", "/api/photo-wrong", body([row("payslip", "numbers", 31)]), from(5));
+  assert.equal(over.status, 429);
+  assert.equal(over.data.why, "network");
+  assert.ok(over.data.retryAfter > 0 && Number(over.headers.get("retry-after")) === over.data.retryAfter);
   // Another network still can.
   assert.equal((await call("POST", "/api/photo-wrong", body([row("roster", "other")]), from(6))).status, 204);
 });

@@ -15,14 +15,15 @@ export function bundle() {
   if (!index.includes('import { adminFile, adminBuild } from "./admin-app.js";')) {
     throw new Error("src/index.js no longer imports the developer app the expected way");
   }
-  const done = new Set();
+  // R131 1.31 [SRV-20] The files split out of index.js read from it ("./index.js"): it is the bundle itself, never put in again.
+  const done = new Set(["index.js"]);
   // AX 1.30 [ADMX-12] A file may import from a folder below its own (src/admin/style.js, src/admin/views/*.js);
   // the name is read from that file's folder. Every bundled name still has to be unique across the files.
   const inline = (code, dir = "") => code.replace(IMPORT, (_, name) => {
     const file = dir ? `${dir}/${name}` : name;
     if (done.has(file)) return "";
     done.add(file);
-    const body = inline(readFileSync(join(root, "src", file), "utf8"), dirname(file) === "." ? "" : dirname(file)).replace(/^export (async function|function|const) /gm, "$1 ");
+    const body = inline(readFileSync(join(root, "src", file), "utf8"), dirname(file) === "." ? "" : dirname(file)).replace(/^export (async function|function|const|let|class) /gm, "$1 ");
     return `// ---- src/${file} ----\n${body}\n// ---- end of src/${file} ----`;
   });
   let out = inline(index);

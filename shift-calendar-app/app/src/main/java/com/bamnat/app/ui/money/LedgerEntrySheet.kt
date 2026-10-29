@@ -74,6 +74,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -169,6 +170,10 @@ fun EntryDialog(
     var tagsText by rememberSaveable { mutableStateOf(initial?.tags.orEmpty().joinToString(" ") { "#$it" }) }
     var partsText by rememberSaveable { mutableStateOf(encodeParts(initial?.parts.orEmpty())) }
     var installments by rememberSaveable { mutableIntStateOf(initial?.installments ?: 1) }
+    // 1.32 [LEDX-17] 유이자 할부: the card's 연 수수료율, so each 회차's 수수료 joins the bill.
+    var rateText by rememberSaveable { mutableStateOf(initial?.installmentRate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()) }
+    // 1.32 [LEDX-16] A refund the app could not tie to its payment: the user picks it here.
+    var pickingRefund by remember { mutableStateOf(false) }
     // [FLD-08] 증빙 and a receipt photo, for field and shop costs.
     var proof by rememberSaveable { mutableStateOf(initial?.proof.orEmpty()) }
     var receipt by rememberSaveable { mutableStateOf(initial?.receipt.orEmpty()) }
@@ -203,6 +208,7 @@ fun EntryDialog(
             memo = memo.trim(), tags = Ledger.parseTags(tagsText),
             parts = if (kind == MoneyKind.TRANSFER) emptyList() else parts.filter { it.amount > 0 && it.category != category },
             installments = if (credit) installments else 1,
+            installmentRate = if (credit && installments > 1) rateText.toDoubleOrNull()?.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE) ?: 0.0 else 0.0,
             proof = if (kind == MoneyKind.EXPENSE) proof else "", receipt = if (kind == MoneyKind.EXPENSE) receipt else "",
             time = readTime?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() } ?: base.time,
         )
@@ -340,6 +346,29 @@ fun EntryDialog(
                             Text("+", style = MaterialTheme.typography.titleLarge)
                         }
                     }
+                    if (installments > 1) {
+                        OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) },
+                            label = { Text("할부 수수료 (연 %)") }, placeholder = { Text("무이자면 비워 두세요") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                        val fees = remember(amount, installments, rateText) {
+                            rateText.toDoubleOrNull()?.takeIf { it > 0 && amount > 0 }?.let { r ->
+                                com.bamnat.core.money.LedgerChecks.installmentFees(MoneyEntry(date = onDay, kind = MoneyKind.EXPENSE, amount = amount, category = "",
+                                    installments = installments, installmentRate = r.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE)))
+                            }
+                        }
+                        fees?.let { Text("수수료는 모두 약 ${Fmt.won(it)}이에요. 회차마다 남은 원금에 붙어 카드값에 더해져요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+                // 1.32 [LEDX-16]
+                if (initial != null && com.bamnat.core.money.LedgerChecks.isUnmatchedRefund(initial)) {
+                    OutlinedButton(onClick = { pickingRefund = true }, modifier = Modifier.fillMaxWidth()) { Text("원래 결제 고르기") }
+                }
+                // 1.32 [LEDX-12] The list shows the shop people know; the line keeps what the text said.
+                if (place.isNotBlank()) {
+                    val shown = remember(place) { com.bamnat.core.money.MerchantNames.display(place.trim()) }
+                    if (shown != place.trim()) Text("목록에는 ‘$shown’(으)로 보여요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (kind == MoneyKind.EXPENSE && (proofs || proof.isNotBlank() || receipt.isNotBlank())) {
                     ProofSection(proof, { proof = it }, receipt, { receipt = it })
@@ -413,6 +442,13 @@ fun EntryDialog(
             },
             dismissButton = { TextButton(onClick = { pickingDate = false }) { Text("취소") } },
         ) { DatePicker(state, showModeToggle = false) }
+    }
+    if (pickingRefund && initial != null) {
+        val all = book?.entries.orEmpty()
+        RefundPickDialog(initial, all,
+            onPick = { t -> pickingRefund = false; onSave(com.bamnat.core.money.LedgerChecks.linkRefund(initial, t, all)) },
+            onKeep = { pickingRefund = false; onSave(initial.copy(note = initial.note.split(" · ").filter { it != "환불 받은 돈" && it != "원래 결제를 골라 주세요" }.joinToString(" · "), reviewed = true)) },
+            onDismiss = { pickingRefund = false })
     }
 }
 

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.LocalDate
@@ -50,9 +51,10 @@ class MoneyCaptureTest {
 
     @Test fun unreadableIsKeptAndChatIsNot() = runBlocking {
         assertEquals(MoneyRepository.Outcome.IGNORED, repo.capture("엄마: 저녁 먹었어?", "카카오톡", posted))
-        assertEquals(MoneyRepository.Outcome.KEPT, repo.capture("우리(5678)승인 USD 12.99 10/12 08:00 NETFLIX.COM", "우리카드", posted))
+        // E 1.32 [LEDX-08] A payment abroad is written down at once in rough won (임시), no longer kept to finish by hand.
+        assertEquals(MoneyRepository.Outcome.SAVED, repo.capture("우리(5678)승인 USD 12.99 10/12 08:00 NETFLIX.COM", "우리카드", posted))
         assertEquals(MoneyRepository.Outcome.DUPLICATE, repo.capture("우리(5678)승인 USD 12.99 10/12 08:00 NETFLIX.COM", "우리카드", posted))
-        assertEquals(1, repo.captures.first().size)
+        assertTrue(repo.entries.first().single().note.contains("임시 원화"))
         // Thirty days later the text is gone.
         repo.capture("아무 알림", "앱", posted + MoneyRepository.KEEP_MILLIS + 1)
         assertEquals(0, repo.captures.first().size)

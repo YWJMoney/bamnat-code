@@ -138,7 +138,7 @@ class MoneyScreenshotTest : ScreenshotBase() {
     // Robolectric draws no blur, so this shows the cover Android 11 and older get (ProLock); 12+ blurs under a lighter one.
     @Test fun foldedMoneyStatsLocked() = shoot("379_folded_money_stats_locked", FOLDED, launched {
         org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.VERSION::class.java, "SDK_INT", 30)
-        tab(1, wide = false); tapText("분석", exact = true, scrolls = 0); reveal("돈 통계", exact = true)
+        tab(1, wide = false); tapText("통계", exact = true, scrolls = 0); reveal("가계부 통계", exact = true)
     })
     @Test fun foldedLedgerSummary() = shoot("230_folded_ledger_summary", FOLDED, ledgerPage(null))
     @Test fun foldedLedgerBudgets() = shoot("231_folded_ledger_budgets", FOLDED, ledgerPage(null) { reveal("분류별 예산", exact = true) })
@@ -152,9 +152,9 @@ class MoneyScreenshotTest : ScreenshotBase() {
         longPressText("팀 점심")
         tapText("이마트")
     })
-    @Test fun foldedLedgerReport() = shoot("238_folded_ledger_report", FOLDED, ledgerPage("분석"))
-    @Test fun foldedLedgerReportMore() = shoot("239_folded_ledger_report_more", FOLDED, ledgerPage("분석") { reveal("년 흐름") })
-    @Test fun unfoldedLedgerReport() = shoot("240_unfolded_ledger_report", UNFOLDED, ledgerPage("분석", wide = true))
+    @Test fun foldedLedgerReport() = shoot("238_folded_ledger_report", FOLDED, ledgerPage("통계"))
+    @Test fun foldedLedgerReportMore() = shoot("239_folded_ledger_report_more", FOLDED, ledgerPage("통계") { reveal("년 흐름") })
+    @Test fun unfoldedLedgerReport() = shoot("240_unfolded_ledger_report", UNFOLDED, ledgerPage("통계", wide = true))
     @Test fun foldedLedgerEntry() = shoot("241_folded_ledger_entry", FOLDED, ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
     @Test fun foldedLedgerEntryMore() = shoot("242_folded_ledger_entry_more", FOLDED, ledgerPage("내역") {
         tapText("이마트")
@@ -175,7 +175,7 @@ class MoneyScreenshotTest : ScreenshotBase() {
     @Test fun phoneLedgerEntryHugeText() = shoot("249_phone_ledger_entry_huge_text", PHONE, fontScale = 2f,
         ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
     @Test fun foldedLedgerDark() = shoot("250_folded_ledger_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage(null))
-    @Test fun foldedLedgerReportDark() = shoot("251_folded_ledger_report_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage("분석"))
+    @Test fun foldedLedgerReportDark() = shoot("251_folded_ledger_report_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage("통계"))
     @Test fun foldedLedgerEmpty() = shoot("252_folded_ledger_empty", FOLDED) {
         addedCalendar(show = true)
         tab(1, wide = false)
@@ -198,7 +198,7 @@ class MoneyScreenshotTest : ScreenshotBase() {
         reveal("가계부", exact = true)
     }
     @Test fun unfoldedLedgerEntry() = shoot("254_unfolded_ledger_entry", UNFOLDED, ledgerPage("내역", wide = true) { tapText("팀 점심") })
-    @Test fun phoneLedgerReport() = shoot("255_phone_ledger_report", PHONE, ledgerPage("분석"))
+    @Test fun phoneLedgerReport() = shoot("255_phone_ledger_report", PHONE, ledgerPage("통계"))
     // [LEDG-16] 자동 기록, as settings' 결제 알림 읽기 opens it (the ⋮ menu's popup is out of the test's reach).
     @Test fun foldedLedgerAutoRecord() = shoot("259_folded_ledger_auto_record", FOLDED, ledgerPage(null) {
         com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.AUTO_RECORD)

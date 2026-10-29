@@ -108,6 +108,9 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
 
     private val _ui = MutableStateFlow(Ui())
     val ui: StateFlow<Ui> = _ui.asStateFlow()
+
+    /** 1.32 [WTYP-14] My own record, to set the file beside it. */
+    val snapshot = schedule.snapshot
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
@@ -237,6 +240,8 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                 }
             }
             val days = ui.days
+            // 1.32 [WTYP-14] 조사 대조 W11: 회사 기록 vs 내 기록, nothing written.
+            if (ui.rows.isNotEmpty() && days.isNotEmpty()) item { CompareCard(vm, days) }
             if (ui.rows.isNotEmpty() && days.isNotEmpty()) {
                 item {
                     Text("미리 보기 · ${days.size}일 중 ${ui.todo.size}일을 적어요", style = MaterialTheme.typography.titleSmall)
@@ -257,6 +262,41 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
             label = { if (it < 0) "제목 줄 없음" else "${it + 1}번째 줄" },
             sample = { r -> ui.rows.getOrNull(r)?.filter { it.isNotBlank() }?.joinToString(" · ") },
             onDismiss = { choosingHeader = false }) { vm.setHeaderRow(it); choosingHeader = false }
+    }
+}
+
+/**
+ * 1.32 [WTYP-14] 조사 대조 W11: the company's days beside mine, only where they differ (출근·퇴근·연장·결근·휴가), with what the
+ * company counts less in all. The calendar is not changed; the lines can be copied to send.
+ */
+@Composable
+private fun CompareCard(vm: AttendanceImportViewModel, days: List<AttendanceRow>) {
+    val snap by vm.snapshot.collectAsStateWithLifecycle(initialValue = null)
+    val s = snap ?: return
+    val result = remember(s, days) { com.bamnat.core.imports.AttendanceCompare.compare(days, s.resolver::resolve) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var all by remember { mutableStateOf(false) }
+    SectionCard(title = "내 기록과 비교") {
+        Text(result.summary, style = MaterialTheme.typography.titleSmall,
+            color = if (result.shortMinutes > 0) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else MaterialTheme.colorScheme.primary)
+        if (result.leftEarlierDays > 0) Text("회사 퇴근이 내 기록보다 이른 날 ${result.leftEarlierDays}일: 조퇴로 처리되지 않았는지 확인해 보세요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val shown = if (all) result.diffs else result.diffs.take(10)
+        shown.forEach { d ->
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Text("${Fmt.shortDate(d.date)}(${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
+            d.lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
+        Row {
+            if (result.diffs.size > 10 && !all) TextButton(onClick = { all = true }) { Text("${result.diffs.size - 10}일 더 보기") }
+            if (result.diffs.isNotEmpty()) TextButton(onClick = {
+                clipboard.setText(androidx.compose.ui.text.AnnotatedString(com.bamnat.core.imports.AttendanceCompare.text(result) {
+                    "${Fmt.shortDate(it)}(${Fmt.dayOfWeekShort(it.dayOfWeek)})"
+                }))
+            }) { Text("다른 날 복사") }
+        }
+        Text("비교만 해요. 달력은 그대로이고, 회사 기록대로 고치려면 아래 ‘달력에 넣기’를 눌러요. 내 기록은 휴대폰에만 있어요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

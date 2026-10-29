@@ -359,7 +359,7 @@ function adminApp(L, BUILD, M) {
     installPrompt: null, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
     prefs: readPrefs(),
     // [ADMUX-01] the screen whose data failed to come, [ADMUX-08] a newer build, answers from the phone's copy.
-    failed: "", newBuild: false, stale: false, relogin: false,
+    failed: "", newBuild: false, stale: false, relogin: false, needCode: null,
     // [ADMUX-04] 큐 모드: answering the waiting questions one after another.
     queue: null, cursor: -1,
     // AM 1.28 [ADMUX-21][ADMUX-24][ADMUX-25] 기능 관리: 상태 거르기, 찾기, 목록·일정, 미리 보기의 휴대폰.
@@ -644,6 +644,10 @@ function adminApp(L, BUILD, M) {
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
+      // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
+      if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
+      // R131 1.31 [ADMX-16]
+      if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
       if (name === "server") jobs.push(api("/server").then(keep((d) => { S.server = d; })));
       // AM 1.28 [ADMUX-21][ADMUX-22][ADMUX-25][ADMUX-26] 출시 › 기능 관리 (list, timeline, one flag) and 근무 유형.
@@ -1842,6 +1846,34 @@ function adminApp(L, BUILD, M) {
         : '<p class="hint">연결된 휴대폰이 없어요.</p>'}`;
   }
 
+  /**
+   * S 1.32 [SECX-01] 휴대폰 미리 보기: which flags an approved admin phone sees before everyone. Only here, by role
+   * (the owner for any phone, 기능 관리 바꾸기 for one's own); the phone app shows and changes nothing about flags.
+   */
+  function previewCard() {
+    const p = S.data.myPhones;
+    if (!p || !p.phones.length) return "";
+    const names = new Map(p.flags.map((f) => [f.key, f.name]));
+    return `<section class="card"><h2>휴대폰 미리 보기</h2>
+      <p class="hint">켜기 전인 기능을 이 휴대폰에만 먼저 보여요. 사용자 휴대폰에는 기능 상태나 스위치가 보이지 않고, 여기서만 바꿔요. 바뀐 것은 그 휴대폰이 다음에 이용권을 확인할 때(앱을 열 때) 반영돼요.${p.edit ? "" : " 바꾸려면 기능 관리 ‘바꾸기’ 권한이 있어야 해요."}</p>
+      <ul class="rows">${p.phones.map((d) => `<li class="item">
+        <div class="row-main"><b>${esc(d.adminName)}의 휴대폰${d.mine ? " (내 휴대폰)" : ""}</b>
+          <small>${d.status === "approved" ? "" : "승인 대기 · "}${d.previews.length ? esc(d.previews.map((k) => names.get(k) ?? k).join(", ")) : "미리 보기 없음"}</small></div>
+        ${p.edit ? `<div class="actions"><button class="btn small" data-act="phone-previews" data-id="${d.id}">고르기</button></div>` : ""}</li>`).join("")}</ul></section>`;
+  }
+
+  function openPreviews(id) {
+    const p = S.data.myPhones;
+    const d = p?.phones.find((x) => x.id === id);
+    if (!d) return;
+    const on = new Set(d.previews);
+    openDialog(`<form data-form="phone-previews" data-id="${d.id}"><h2>${esc(d.adminName)}의 휴대폰 미리 보기</h2>
+      <p class="hint">고른 기능은 조건이 아직 안 맞아도 이 휴대폰에서만 켜져요. 법·처리방침 조건이 있는 기능(LEGAL)은 미리 보기로도 서버에 정보를 보내지 않아요.</p>
+      <div class="radios">${p.flags.map((f) => `<label class="radio"><input type="checkbox" name="keys" value="${esc(f.key)}"${on.has(f.key) ? " checked" : ""}>
+        <span>${esc(f.name)}</span></label>`).join("")}</div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
+  }
+
   /** Area by area: nothing, a look, or changes too; presets fill the table in one tap. */
   function permEditor(perms, d) {
     const presets = Object.entries(d.presets ?? {});
@@ -2252,9 +2284,11 @@ function adminApp(L, BUILD, M) {
             <meter id="pw-meter" class="strength" min="0" max="4" low="2" high="3" optimum="4" value="0" aria-label="비밀번호 안전도"></meter>
             <span class="help">10자 이상. 바꾸면 다른 기기의 로그인은 끝나요.</span></div>
           <div class="actions"><button class="btn primary" type="submit">바꾸기</button></div></form>`}
+      ${secondCard()}
       <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
         <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
         <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
+      ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
@@ -2267,6 +2301,32 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>단축키</h2><p class="hint">키보드가 있으면 <span class="kbd">1</span>~<span class="kbd">6</span>으로 허브를, <span class="kbd">[</span> <span class="kbd">]</span>로 허브 안 탭을 옮기고, <span class="kbd">?</span>로 단축키를, <span class="kbd">Ctrl</span>+<span class="kbd">K</span>로 찾기·이동을 열어요.</p>
         <div class="actions start"><button class="btn" data-act="shortcuts">단축키 보기</button></div></section>
       </div>`;
+  }
+
+  /**
+   * R131 1.31 [ADMX-16] 두 번째 확인: on, an authenticator app's six digits are asked after the password. Starting shows the key
+   * (and a link that opens the authenticator app on this phone); the first right code turns it on.
+   */
+  function secondCard() {
+    const v = S.data.second;
+    if (!v) return '<section class="card"><h2>두 번째 확인</h2><p class="hint">불러오는 중…</p></section>';
+    if (v.on) {
+      return `<form class="card" data-form="second-off"><div class="card-head"><h2>두 번째 확인</h2><span class="pill ok">켜짐</span></div>
+        <p class="hint">로그인할 때 비밀번호 다음에 인증 앱의 6자리 코드를 넣어요.${v.resetSet ? " Cloudflare의 ADMIN_2FA_RESET이 1이라 지금은 최고 관리자 로그인에서 코드를 묻지 않아요. 휴대폰을 찾았으면 지워 주세요." : ""}</p>
+        <div class="fieldset"><label for="second-off-code">끄려면 지금 코드</label><input id="second-off-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></div>
+        <div class="actions start"><button class="btn danger" type="submit">끄기</button></div></form>`;
+    }
+    if (v.secret) {
+      return `<form class="card" data-form="second-on"><h2>두 번째 확인 켜기</h2>
+        <ol class="steps"><li>휴대폰의 인증 앱(Google Authenticator, Microsoft Authenticator 등)에서 '키 입력'을 골라요.</li>
+          <li>아래 키를 넣어요. 이 휴대폰이면 <a href="${esc(v.uri)}">인증 앱에 바로 넣기</a>를 눌러도 돼요.</li><li>인증 앱에 나온 6자리를 넣고 켜요.</li></ol>
+        <p class="code-big" aria-label="인증 앱 키">${esc(v.secret.replace(/(.{4})/g, "$1 ").trim())}</p>
+        <div class="fieldset"><label for="second-on-code">인증 앱 코드</label><input id="second-on-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></div>
+        <div class="actions start"><button class="btn primary" type="submit">켜기</button></div></form>`;
+    }
+    return `<section class="card"><h2>두 번째 확인</h2>
+      <p class="hint">비밀번호가 새어도 다른 사람이 들어오지 못하게, 로그인할 때 휴대폰 인증 앱의 6자리 코드를 한 번 더 물어요. 휴대폰을 잃으면 ${S.me?.owner ? "Cloudflare에 ADMIN_2FA_RESET=1을 넣으면 코드 없이 들어와요." : "최고 관리자에게 계정을 다시 만들어 달라고 해요."}</p>
+      <div class="actions start"><button class="btn primary" data-act="second-start">켜기</button></div></section>`;
   }
 
   /** [ADMUX-03] A password box with a 보기 button beside it. */
@@ -2295,12 +2355,15 @@ function adminApp(L, BUILD, M) {
       <div class="brand"><img src="/admin/icon.svg" alt="" width="76" height="76"><h1>밤낮 관리자</h1><p>제보, 문의, 회사 규칙을 관리해요.</p></div>
       <div class="segmented" role="group" aria-label="로그인 방법">${seg("login-mode", "account", S.prefs.loginMode, "관리자 계정")}${seg("login-mode", "owner", S.prefs.loginMode, "최고 관리자")}</div>
       <form class="card" data-form="login">
-        ${owner ? "" : `<div class="fieldset"><label for="email">메일</label><input id="email" name="email" type="email" autocomplete="username" inputmode="email" required></div>`}
-        <div class="fieldset"><label for="password">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>
-          ${pwInput("password", "password", "current-password", usable ? "" : " disabled")}</div>
+        ${owner || S.needCode ? "" : `<div class="fieldset"><label for="email">메일</label><input id="email" name="email" type="email" autocomplete="username" inputmode="email" required></div>`}
+        ${S.needCode ? "" : `<div class="fieldset"><label for="password">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>
+          ${pwInput("password", "password", "current-password", usable ? "" : " disabled")}</div>`}
         ${usable ? "" : '<p class="hint">서버가 비밀번호를 읽으면 입력할 수 있어요. 아래 서버 준비를 마친 뒤 새로 고쳐 주세요.</p>'}
+        ${S.needCode ? `<div class="fieldset"><label for="login-code">인증 앱 코드</label><input id="login-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+          <span class="help">두 번째 확인을 켠 계정이에요. 인증 앱의 6자리 숫자를 넣어요.</span></div>` : ""}
         <p class="error" role="alert">${esc(S.error)}</p>
         <button class="btn primary wide" type="submit"${usable ? "" : " disabled"}>로그인</button>
+        ${S.needCode ? '<button class="btn ghost wide" type="button" data-act="login-restart">비밀번호부터 다시</button>' : ""}
       </form>
       ${owner ? "" : '<p class="alt">계정은 최고 관리자가 보낸 초대 링크로만 만들 수 있어요.</p>'}
       ${owner && h && !(h.database && h.password && h.salt) ? `<section class="card"><h2>서버 준비</h2>${healthList()}</section>` : ""}
@@ -2421,6 +2484,7 @@ function adminApp(L, BUILD, M) {
     openDialog(`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
       ${owner ? "" : `<div class="fieldset"><label for="re-email">메일</label><input id="re-email" name="email" type="email" autocomplete="username" value="${esc(S.me?.email ?? "")}" required></div>`}
       <div class="fieldset"><label for="re-pw">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>${pwInput("re-pw", "password", "current-password")}</div>
+      <div class="fieldset"><label for="re-code">인증 앱 코드(두 번째 확인을 켰을 때만)</label><input id="re-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
       <p class="error" role="alert" id="re-error"></p>
       <div class="actions"><button class="btn" type="button" data-act="relogin-out">로그인 화면으로</button><button class="btn primary" type="submit">로그인</button></div></form>`);
   }
@@ -3852,6 +3916,20 @@ function adminApp(L, BUILD, M) {
       if (key === "remove") confirmBox("이 휴대폰을 끊을까요?", "그 휴대폰은 다음 확인 때부터 무료 등급이 돼요.", "끊기", go);
       else go();
     },
+    "login-restart": () => {
+      S.needCode = null;
+      S.error = "";
+      render();
+    },
+    // R131 1.31 [ADMX-16]
+    "second-start": async () => {
+      const r = await act(() => api("/me/2fa", "POST", { do: "start" }));
+      if (!r) return;
+      S.data.second = { on: false, secret: r.secret, uri: r.uri };
+      render({ keepScroll: true });
+      document.getElementById("second-on-code")?.focus();
+    },
+    "phone-previews": ({ id }) => openPreviews(id),
     "link-code": async () => {
       const r = await act(() => api("/me/link-code", "POST", {}));
       if (!r) return;
@@ -4101,10 +4179,20 @@ function adminApp(L, BUILD, M) {
       S.error = "";
       const data = new FormData(form);
       const body = S.prefs.loginMode === "owner" ? { password: data.get("password") } : { email: data.get("email"), password: data.get("password") };
+      // R131 1.31 [ADMX-16] The code the second time round, with the password typed the first time.
+      if (S.needCode) Object.assign(body, S.needCode, { code: data.get("code") });
       try {
         await api("/login", "POST", body);
+        S.needCode = null;
         await enter();
       } catch (e) {
+        if (e.message === "code_needed" || (e.message === "code_wrong" && S.needCode)) {
+          S.needCode = { password: body.password, ...(body.email ? { email: body.email } : {}) };
+          S.error = e.message === "code_wrong" ? ERRORS.code_wrong : "";
+          render();
+          document.getElementById("login-code")?.focus();
+          return;
+        }
         const left = e.data?.left;
         S.error = e.message === "wrong" ? `${S.prefs.loginMode === "owner" ? "비밀번호가" : "메일이나 비밀번호가"} 달라요. ${left}번 더 틀리면 1시간 동안 잠겨요.`
           : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
@@ -4118,9 +4206,25 @@ function adminApp(L, BUILD, M) {
       }
     },
     // [ADMUX-01] Signed in again over the screen: the box closes and the screen carries on.
+    // R131 1.31 [ADMX-16]
+    "second-on": async (form) => {
+      const r = await act(() => api("/me/2fa", "POST", { do: "confirm", code: new FormData(form).get("code") }));
+      if (!r) return;
+      S.data.second = r;
+      toast("두 번째 확인을 켰어요. 다음 로그인부터 코드를 물어요");
+      render({ keepScroll: true });
+    },
+    "second-off": async (form) => {
+      const r = await act(() => api("/me/2fa", "POST", { do: "off", code: new FormData(form).get("code") }));
+      if (!r) return;
+      S.data.second = r;
+      toast("두 번째 확인을 껐어요");
+      render({ keepScroll: true });
+    },
     relogin: async (form) => {
       const data = new FormData(form);
       const body = S.me?.owner ? { password: data.get("password") } : { email: data.get("email"), password: data.get("password") };
+      if (data.get("code")) body.code = data.get("code");
       try {
         await api("/login", "POST", body);
         S.relogin = false;
@@ -4130,6 +4234,7 @@ function adminApp(L, BUILD, M) {
       } catch (e) {
         const box = document.getElementById("re-error");
         if (box) box.textContent = e.message === "wrong" ? "메일이나 비밀번호가 달라요." : ERRORS[e.message] ?? "로그인하지 못했어요.";
+        if (e.message === "code_needed") document.getElementById("re-code")?.focus();
       }
     },
     confirm: async () => {
@@ -4141,6 +4246,14 @@ function adminApp(L, BUILD, M) {
       } catch (e) {
         fail(e);
       }
+    },
+    // S 1.32 [SECX-01]
+    "phone-previews": async (form) => {
+      const keys = new FormData(form).getAll("keys");
+      dialog.close();
+      const d = await act(() => api(`/devices/${form.dataset.id}/previews`, "POST", { keys }), keys.length ? "저장했어요. 그 휴대폰이 앱을 열면 반영돼요" : "미리 보기를 모두 껐어요");
+      if (d) S.data.myPhones = d;
+      render({ keepScroll: true });
     },
     reject: async (form) => {
       const reason = new FormData(form).get("reason");
@@ -5016,8 +5129,10 @@ function adminApp(L, BUILD, M) {
     if (S.prefs.sound && (S.overview?.inquiries ?? 0) > before) chime();
   }
 
+  // R131 1.31 [ADMX-15] Back to the tab while a reply was being typed: the numbers come again, the screen is left as it is.
+  const typing = () => Boolean(document.activeElement?.closest?.("#main")) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "");
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && S.phase === "app") load({ quiet: true });
+    if (document.visibilityState === "visible" && S.phase === "app") (typing() || dialog.open ? refreshBadges(true) : load({ quiet: true }));
     if (document.visibilityState === "hidden") pingTyping(false);
   });
   window.addEventListener("beforeinstallprompt", (e) => {
@@ -5050,6 +5165,11 @@ function adminApp(L, BUILD, M) {
     schedule();
     loadBasics().then(() => { if (S.phase === "app") render({ keepScroll: true }); }).catch(() => {});
     if ("serviceWorker" in navigator && "PushManager" in window) currentPush();
+    // R131 1.31 [ADMX-14] The morning push (하루 3분 정리) opens here with ?start=queue: straight into 큐 모드.
+    if (new URLSearchParams(location.search).get("start") === "queue") {
+      history.replaceState(null, "", `/admin/${location.hash}`);
+      if (can("inquiries", "edit")) ACTIONS["queue-start"]();
+    }
   }
 
   (async () => {

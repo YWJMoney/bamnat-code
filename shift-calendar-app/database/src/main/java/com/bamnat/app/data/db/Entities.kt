@@ -112,6 +112,8 @@ data class DayExtraEntity(
     @ColumnInfo(defaultValue = "0") val compLeave: Boolean = false,
     /** [PAYX-30] Version 20: 휴일대체, the epoch day that became the holiday instead; null for none. */
     @ColumnInfo(defaultValue = "NULL") val substituteEpochDay: Long? = null,
+    /** [WTYP-24] Version 22: 시간외 인정 시간 when it differs from what was asked (신청); null for not told. */
+    @ColumnInfo(defaultValue = "NULL") val approvedMinutes: Int? = null,
 )
 
 @Entity(tableName = "memos", indices = [Index("epochDay"), Index("updatedAt"), Index("deletedAt")])

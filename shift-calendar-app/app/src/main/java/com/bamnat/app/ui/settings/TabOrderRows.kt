@@ -48,7 +48,7 @@ internal fun tabOrderLine(settings: AppSettings): String {
     return "앱을 켜면 ${tabs.first()} · " + tabs.joinToString(", ") + ". 아래 메뉴를 길게 눌러도 바꿔요"
 }
 
-/** [NAV-07] 설정 › 달력 화면 › 첫 화면·메뉴 순서, the way to the order without a long press (GestureAlternativesTest). */
+/** [NAV-07] 설정 › 화면과 글자 › 첫 화면·메뉴 순서, the way to the order without a long press (GestureAlternativesTest). */
 @Composable
 internal fun TabOrderRow(settings: AppSettings, onChange: (List<String>) -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }

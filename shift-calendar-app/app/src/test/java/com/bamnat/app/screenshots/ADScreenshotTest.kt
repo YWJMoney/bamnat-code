@@ -63,7 +63,7 @@ class ADScreenshotTest : ScreenshotBase() {
         }
     }
 
-    private val barNames = setOf("달력", "돈", "메모", "근무·급여", "설정")
+    private val barNames = setOf("달력", "가계부", "메모", "근무·급여", "설정")
 
     /** The app's tabs (not a screen's own tabs), by name. */
     private fun Screen.barTabs() = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
@@ -109,12 +109,12 @@ class ADScreenshotTest : ScreenshotBase() {
 
     @Test fun longPressDragTapOutsideAndTheAppOpensOnMemos() {
         open(PHONE_393) { scenario ->
-            assertEquals(listOf("달력", "돈", "메모", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "설정"), barOrder())
             assertFalse(shows(TAB_EDIT_HINT_TOP))
             // Held still on 메모, then dragged to the front in the same touch.
             dragTab(2, 0, wide = false, hold = 40)
             assertTrue("the edit says what the first tab is", shows(TAB_EDIT_HINT_TOP))
-            assertEquals(listOf("메모", "달력", "돈", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
             assertEquals("not saved while editing", "", saved())
             // A tab tapped while editing does not open.
             tab(4, wide = false)
@@ -137,7 +137,7 @@ class ADScreenshotTest : ScreenshotBase() {
         // Opened again: on 메모.
         open(PHONE_393) {
             assertEquals("메모", tabNow())
-            assertEquals(listOf("메모", "달력", "돈", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
         }
     }
 
@@ -150,7 +150,7 @@ class ADScreenshotTest : ScreenshotBase() {
             tab(4, wide = false)
             assertEquals("설정", tabNow())
             back()
-            assertEquals("the tab before", "돈", tabNow())
+            assertEquals("the tab before", "가계부", tabNow())
             back()
             assertEquals("then home, the first tab", "메모", tabNow())
             assertFalse(scenario.finishing())
@@ -186,11 +186,11 @@ class ADScreenshotTest : ScreenshotBase() {
             tabAction("메모", TAB_FORWARD_ACTION)
             tabAction("메모", TAB_FORWARD_ACTION)
             assertTrue(shows(TAB_EDIT_HINT_TOP))
-            assertEquals(listOf("메모", "달력", "돈", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
             // What TalkBack reads out after the move, from the hint's live region.
             assertTrue(nodes().any { n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("메모, 1번째") } })
             tabAction("달력", TAB_BACKWARD_ACTION)
-            tabAction("돈", TAB_SAVE_ACTION)
+            tabAction("가계부", TAB_SAVE_ACTION)
             assertFalse(shows(TAB_EDIT_HINT_TOP))
             assertEquals("memos,money,calendar,stats,settings", saved())
             // Outside the edit a tab offers the long press by name.
@@ -200,21 +200,21 @@ class ADScreenshotTest : ScreenshotBase() {
         open(PHONE_393) { assertEquals("메모", tabNow()) }
     }
 
-    // ---- 421 [NAV-07]: 설정 › 달력 화면 › 첫 화면·메뉴 순서 ----
+    // ---- 421 [NAV-07]: 설정 › 화면과 글자 › 첫 화면·메뉴 순서 ----
 
     @Test fun settingsMovesTheTabsAndPutsThemBack() {
         open(PHONE_393) {
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)
-            tapText("돈 위로", exact = true)
+            tapText("가계부 위로", exact = true)
             assertEquals("money,calendar,memos,stats,settings", saved())
             // The bar behind the dialog changed at once, and the screen did not move.
             tapText("완료", exact = true)
-            assertEquals(listOf("돈", "달력", "메모", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("가계부", "달력", "메모", "근무·급여", "설정"), barOrder())
             assertEquals("설정", tabNow())
         }
         open(PHONE_393) {
-            assertEquals("돈", tabNow())
+            assertEquals("가계부", tabNow())
             // Settings is still the last tab.
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)

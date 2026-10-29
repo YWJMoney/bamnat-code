@@ -11,6 +11,7 @@ import com.bamnat.core.invest.FillSheetReader
 import com.bamnat.core.invest.FillVote
 import com.bamnat.core.pay.OcrLine
 import com.bamnat.core.pay.OcrRows
+import com.bamnat.core.pay.PhotoTurn
 import com.bamnat.core.pay.RuleText
 import com.bamnat.core.pay.SlipReading
 import com.bamnat.core.pay.SlipVote
@@ -52,6 +53,8 @@ object PayslipScanner {
         val pages: Int = 1,
     ) {
         val ways: Int get() = texts.size
+        /** A 1.32 [FIX132-01] How far the photo was turned to read it (0, 90, 180, 270), for '돌려서 다시 읽기'. */
+        var turn: Int = 0
     }
 
     /**
@@ -82,27 +85,43 @@ object PayslipScanner {
      * [progress] hears (reading n, of m) for "n/m번째로 읽는 중"; m is 0 until the photo's look is known. [scanned]: the page
      * came through the document scanner, straightened ([PHOTO-20]).
      */
-    suspend fun scan(context: Context, uri: Uri, scanned: Boolean = false, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+    suspend fun scan(
+        context: Context, uri: Uri, scanned: Boolean = false,
+        /** A 1.32 [FIX132-01] '돌려서 다시 읽기': the user's turn (90·180·270), read as it is without looking for a better one. */
+        turn: Int = 0,
+        progress: (Int, Int) -> Unit = { _, _ -> },
+    ): Scan = withContext(Dispatchers.Default) {
         // [PHOTO-24] The company's payslips the user confirmed before (on the phone only).
         val templates = runCatching { com.bamnat.app.data.ReadFixBook.get(context).templates() }.getOrDefault(emptyList())
-        fake?.let { f -> return@withContext put(f(uri), fakeImage?.invoke(), null, fakeBoxes?.invoke() ?: emptyList(), templates) }
+        fake?.let { f -> return@withContext put(f(uri), fakeImage?.invoke(), null, fakeBoxes?.invoke() ?: emptyList(), templates).also { it.turn = turn } }
         var photo = ImagePrep.load(context, uri)
+        if (turn != 0) photo = ImagePrep.turned(photo, turn.toFloat()).also { if (it !== photo) photo.recycle() }
         progress(1, 0)
         var first = OcrModel.read(context, InputImage.fromBitmap(photo, 0))
         var firstLines = lines(first)
-        // [PHOTO-25] 1.30: read on its side (few letters in tall boxes): a quarter turn each way, the one with more words kept.
-        if (OcrRows.sideways(firstLines)) {
-            for (deg in listOf(90f, 270f)) {
-                val turned = runCatching { ImagePrep.turned(photo, deg) }.getOrNull() ?: continue
+        var kept = turn
+        // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads
+        // like a payslip ([PhotoTurn]); the way that read well last time on this phone is tried first, and a good one stops.
+        if (turn == 0 && PhotoTurn.worthTurning(firstLines)) {
+            val memory = TurnMemory(context)
+            val tried = mutableMapOf<Int, Pair<Text, List<OcrLine>>>()
+            for (deg in PhotoTurn.candidates(firstLines, memory.last)) {
+                val turned = runCatching { ImagePrep.turned(photo, deg.toFloat()) }.getOrNull() ?: continue
                 val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(turned, 0)) }.getOrNull()
-                val l = t?.let(::lines).orEmpty()
-                if (t != null && words(l) > words(firstLines) * 2 && !OcrRows.sideways(l)) {
-                    if (photo !== turned) photo.recycle()
-                    photo = turned; first = t; firstLines = l
-                    break
-                }
                 turned.recycle()
+                if (t == null) continue
+                tried[deg] = t to lines(t)
+                if (PhotoTurn.pick(firstLines, mapOf(deg to tried.getValue(deg).second)) == deg && !PhotoTurn.worthTurning(tried.getValue(deg).second)) break
             }
+            val best = PhotoTurn.pick(firstLines, tried.mapValues { it.value.second })
+            if (best != 0) {
+                val turned = ImagePrep.turned(photo, best.toFloat())
+                if (photo !== turned) photo.recycle()
+                photo = turned
+                first = tried.getValue(best).first; firstLines = tried.getValue(best).second
+                kept = best
+            }
+            memory.last = best.takeIf { it != 0 } ?: memory.last
         }
         val texts = mutableListOf(join(first, firstLines))
         // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
@@ -111,9 +130,11 @@ object PayslipScanner {
         val plan = ImagePrep.plan(photo, letter)
         val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
             firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
-        val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }
+        // C 1.32 [STAB-05] A phone short of memory makes at most two other readings, and none once memory runs low.
+        val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }.let { if (ImagePrep.tight(context)) it.take(2) else it }
         more.forEachIndexed { i, kind ->
             progress(i + 2, more.size + 1)
+            if (ImagePrep.low(context)) return@forEachIndexed
             val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: return@forEachIndexed
             val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0)) }.getOrNull()
             if (v.bitmap !== photo) v.bitmap.recycle()
@@ -122,7 +143,15 @@ object PayslipScanner {
         }
         val (tilt, keystone) = OcrRows.lean(firstLines)
         val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
-        put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates)
+        put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
+    }
+
+    /** A 1.32 [FIX132-01] The last turn that made a photo read well on this phone (a phone that always saves them one way). */
+    private class TurnMemory(context: Context) {
+        private val prefs = context.applicationContext.getSharedPreferences("photo_turn", Context.MODE_PRIVATE)
+        var last: Int?
+            get() = prefs.getInt("last", 0).takeIf { it != 0 }
+            set(v) { prefs.edit().putInt("last", v ?: 0).apply() }
     }
 
     private fun words(lines: List<OcrLine>): Int = lines.sumOf { l -> l.text.split(' ').count { it.isNotBlank() } }

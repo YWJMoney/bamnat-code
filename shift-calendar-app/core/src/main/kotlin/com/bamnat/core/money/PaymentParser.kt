@@ -33,12 +33,19 @@ object PaymentParser {
         val merchant: String,
         val category: String,
         val confidence: Double,
+        /** 1.32 [LEDX-13] The pay app the money went through on its way to [merchant] (경로); null when none was named. */
+        val via: String? = null,
+        /** 1.32 [LEDX-19] What the text says the card is: "체크" → [AccountType.CHECK], "신용" → [AccountType.CREDIT]; null for neither. */
+        val cardKind: AccountType? = null,
+        /** 1.32 [LEDX-20] Money put on a pay balance (페이 머니 충전, 포인트 전환, 교통카드 충전): a move, not spending. */
+        val charge: Boolean = false,
     ) {
         val isCard: Boolean get() = type == Type.APPROVAL || type == Type.CANCEL
         val needsWon: Boolean get() = amount == null && foreign != null
-        val kind: MoneyKind get() = when (type) {
-            Type.DEPOSIT -> MoneyKind.INCOME
-            Type.WITHDRAW -> MoneyKind.TRANSFER
+        val kind: MoneyKind get() = when {
+            charge && type != Type.CANCEL -> MoneyKind.TRANSFER
+            type == Type.DEPOSIT -> MoneyKind.INCOME
+            type == Type.WITHDRAW -> MoneyKind.TRANSFER
             else -> MoneyKind.EXPENSE
         }
         /** Ready to save without asking: a won amount and something to call it. */
@@ -164,6 +171,9 @@ object PaymentParser {
         if (merchant.isBlank()) return "기타"
         ruleFor(merchant, rules)?.let { return it }
         for ((re, cat) in CATEGORY_HINTS) if (re.containsMatchIn(merchant)) return cat
+        // 1.32 [LEDX-12] A legal name the hints do not know may be a shop they do (에스씨케이컴퍼니 → 스타벅스).
+        val shop = MerchantNames.display(merchant)
+        if (shop != merchant) for ((re, cat) in CATEGORY_HINTS) if (re.containsMatchIn(shop)) return cat
         return "기타"
     }
 
@@ -181,6 +191,13 @@ object PaymentParser {
     }
 
     /** [LEDG-20] Money leaving the account for a card company is the card bill, not a transfer of one's own. */
+    /** 1.32 [LEDX-20] A pay balance topped up or points turned into pay money; an EV charger's bill is spending. */
+    private val CHARGE = Regex("(페이\\s*머니|머니|포인트|캐시|선불|충전금|교통카드|티머니|캐시비)\\s*(충전|전환)|충전\\s*(완료|되었|금액)")
+    private val NOT_CHARGE = Regex("전기차|충전소|급속|완속|EV|배터리")
+
+    /** 1.32 [LEDX-20] The category a pay top-up is written under. */
+    const val CHARGE_CATEGORY = "페이 충전"
+
     private val CARD_BILL = Regex("카드\\s*(대금|값|결제)|(신한|KB|국민|삼성|현대|롯데|하나|우리|비씨|BC|농협|NH)\\s*카드")
 
     // Absurdly long digit runs are not amounts; toLong would throw on them.
@@ -295,10 +312,23 @@ object PaymentParser {
         val pieces = rest.split(Regex("[|\\n]"))
             .flatMap { it.split(Regex("\\s{2,}")) }
             .map { it.replace(Regex("^[\\s:()·,.\\-]+|[\\s:()·,.\\-]+$"), "").trim() }
+            // 1.32 [LEDX-12] A foreign card's "AMAZON.COM*AB12" is a shop, not a masked number.
+            .map { p -> MerchantNames.foreignStar(p) ?: p }
             .filter { p -> p.isNotEmpty() && !p.contains('*') && !p.endsWith("님") && p !in STOPWORDS && !Regex("^(승인|취소|결제|출금|입금)+$").matches(p) }
         val cleaned = pieces.map { p -> p.split(Regex("\\s+")).filter { w -> w !in STOPWORDS && !w.endsWith("님") }.joinToString(" ") }
             .filter { it.isNotEmpty() }
-        val merchant = cleaned.lastOrNull()?.take(40).orEmpty()
+        // 1.32 [LEDX-12][LEDX-13] No code tails or 온라인·결제 words, and "네이버페이 - 가게" kept as the shop with its 경로.
+        val (routed, shop) = MerchantNames.route(MerchantNames.clean(cleaned.lastOrNull().orEmpty()))
+        val charge = CHARGE.containsMatchIn(src) && !NOT_CHARGE.containsMatchIn(src)
+        // A top-up is named by the balance it went on (카카오페이), not by "머니 충전".
+        val merchant = (if (charge) issuer ?: routed ?: shop else shop).take(40)
+        val via = if (charge) null else routed ?: issuer?.takeIf { i -> MerchantNames.ROUTES.any { it.equals(i, ignoreCase = true) } || i == "토스" }
+            ?.takeIf { merchant.isNotEmpty() }
+        val cardKind = when {
+            Regex("체크").containsMatchIn(src) -> AccountType.CHECK
+            Regex("신용").containsMatchIn(src) -> AccountType.CREDIT
+            else -> null
+        }
 
         var confidence = 0.4
         if (amt != null) confidence += 0.2
@@ -306,14 +336,15 @@ object PaymentParser {
         if (merchant.isNotEmpty()) confidence += 0.15
         if (issuer != null) confidence += 0.1
 
-        val category = when (type) {
-            Type.DEPOSIT -> if (src.contains("급여")) MoneyCategories.SALARY else "부수입"
-            Type.WITHDRAW -> if (CARD_BILL.containsMatchIn(src)) "카드값" else "내 계좌"
+        val category = when {
+            charge && type != Type.CANCEL -> CHARGE_CATEGORY
+            type == Type.DEPOSIT -> if (src.contains("급여")) MoneyCategories.SALARY else "부수입"
+            type == Type.WITHDRAW -> if (CARD_BILL.containsMatchIn(src)) "카드값" else "내 계좌"
             else -> guessCategory(merchant, rules)
         }
         return Result.Ok(
             Parsed(type, amt?.value, fx?.first, issuer, last4, date, time, installments, cum, bal, merchant, category,
-                minOf(1.0, Math.round(confidence * 100) / 100.0)),
+                minOf(1.0, Math.round(confidence * 100) / 100.0), via = via, cardKind = cardKind, charge = charge),
         )
     }
 
@@ -350,15 +381,19 @@ object PaymentParser {
         val notes = buildList {
             if (p.type == Type.CANCEL) add("결제 취소")
             if (p.installments > 1) add("${p.installments}개월 할부")
+            // 1.32 [LEDX-13] The pay app the money went through, when it is not the one that sent the text.
+            p.via?.takeIf { it != p.issuer }?.let { add("$it 결제") }
             if (p.foreign != null) add("${p.foreign.currency} ${p.foreign.amount}")
             p.issuer?.let { add(it + (p.last4?.let { l -> " $l" } ?: "")) }
+            // 1.32 [LEDX-19] What the text said the card is, so a card not added yet still counts as 체크 or 신용.
+            if (p.isCard) p.cardKind?.let { add(it.label) }
         }
         return MoneyEntry(
             date = p.date ?: arrived, kind = p.kind, amount = amount, category = category, note = notes.joinToString(" · "),
             source = source, merchant = p.merchant, time = p.time, cardLast4 = p.last4.orEmpty(),
             reviewed = source != MoneySource.NOTIFICATION,
             // [LEDG-08] Spread over that many card bills; a cancellation comes back at once.
-            installments = if (p.type == Type.APPROVAL) p.installments.coerceIn(1, 60) else 1,
+            installments = if (p.type == Type.APPROVAL && !p.charge) p.installments.coerceIn(1, 60) else 1,
         )
     }
 }

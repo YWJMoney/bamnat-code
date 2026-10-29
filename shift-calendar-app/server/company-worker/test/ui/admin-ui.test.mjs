@@ -1468,3 +1468,26 @@ test("[ADMX-05] n opens the next question waiting for an answer, and the next af
   assert.deepEqual(u.errors, []);
 });
 // ---- AX 1.30 끝 ----
+
+test("[ADMX-15] back to the tab while typing an answer: the menu numbers come again, the typed answer and its box stay", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/inquiries");
+  await t.click("#main .rows .row");
+  await t.type("#reply", "확인하고 있어요");
+  const box = t.$("#reply");
+  box.focus();
+  const asked = [];
+  const real = t.window.fetch;
+  t.window.fetch = async (input, init) => {
+    asked.push(new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname);
+    return real(input, init);
+  };
+  t.window.document.dispatchEvent(new t.window.Event("visibilitychange"));
+  await t.settle();
+  assert.ok(asked.includes("/api/admin/badges"), "the numbers are asked again");
+  assert.ok(!asked.some((p) => /^\/api\/admin\/inquiries\//.test(p)), "the question is not read again under the typing");
+  assert.equal(t.$("#reply"), box, "the same box, not a repainted one");
+  assert.equal(box.value, "확인하고 있어요");
+  assert.deepEqual(t.errors, []);
+});

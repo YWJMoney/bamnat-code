@@ -180,7 +180,7 @@ class ShareGroupViewModel(private val c: AppContainer, private val today: () -> 
             "not_found" -> "그런 모임 코드가 없거나 끝났어요. 코드를 다시 확인해 주세요."
             "full" -> "이 모임은 링크 12개가 다 찼어요."
             "forbidden" -> "이 휴대폰이 만든 링크가 아니라 넣을 수 없어요."
-            "rate_limited" -> "잠깐 사이에 너무 여러 번 했어요. 한 시간쯤 뒤에 다시 해 주세요."
+            "rate_limited" -> com.bamnat.app.company.RateLimits.text("모임 코드 쓰기", 3_600, "device")
             "no_link" -> "먼저 근무표 공유에서 내 링크를 만들어 주세요."
             "unsupported" -> "이 판에서는 모임 코드를 쓸 수 없어요."
             else -> "모임을 불러오지 못했어요 ($code). 잠시 뒤 다시 해 주세요."

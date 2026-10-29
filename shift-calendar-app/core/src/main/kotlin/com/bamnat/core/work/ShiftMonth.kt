@@ -36,8 +36,10 @@ data class ShiftMonth(
 
     companion object {
         /** [types] gives the roster's order; a code not on the calendar this month is left out. */
-        fun of(month: YearMonth, types: List<ShiftType>, resolve: (LocalDate) -> ResolvedDay): ShiftMonth {
-            val days = (1..month.lengthOfMonth()).map { resolve(month.atDay(it)) }
+        // G 1.32 [WTYP-07] 609 [from]..[to] is the pay period when 통계 counts by it (CALX-05); 1일~말일 otherwise.
+        fun of(month: YearMonth, types: List<ShiftType>, resolve: (LocalDate) -> ResolvedDay,
+               from: LocalDate = month.atDay(1), to: LocalDate = month.atEndOfMonth()): ShiftMonth {
+            val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map(resolve).toList()
             val counts = counts(days, types)
             val nights = nightTimes(days)
             val swaps = days.flatMap { d ->

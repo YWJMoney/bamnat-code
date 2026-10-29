@@ -47,8 +47,11 @@ fun ShopMoneySettings(calendarId: String) {
             Text("카드 수수료율", style = MaterialTheme.typography.labelLarge)
             com.bamnat.app.ui.components.QuickDecimalChips(
                 value = rules.cardFeeBp / 100.0, onChange = { p -> update { it.copy(cardFeeBp = (p * 100).roundToInt()) } },
-                name = "카드 수수료율", quick = listOf(0.5, 1.1, 1.5, 2.0), step = 0.05, range = 0.0..10.0, unit = "%",
+                name = "카드 수수료율", quick = listOf(0.4, 1.1, 1.5, 2.0), step = 0.05, range = 0.0..10.0, unit = "%",
             )
+            // 1.32 [TAXP-15]
+            Text("카드사 가맹점 안내의 율을 넣어요(연 매출 3억 원 이하 영세 가맹점은 신용 0.4%). 입금 대조가 이 율보다 더 빠진 날을 알려 줘요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("입금까지 영업일", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 TextButton(enabled = rules.settleDays > 0, onClick = { update { it.copy(settleDays = it.settleDays - 1) } }) {

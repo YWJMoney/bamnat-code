@@ -43,9 +43,12 @@ data class MoneyEntry(
     val proof: String = "",
     /** [FLD-08] A receipt photo kept in the app's own folder, by file name; empty for none. */
     val receipt: String = "",
+    /** 1.32 [LEDX-17] 유이자 할부: the card's yearly 할부 수수료율 in percent (e.g. 15.9); 0 for 무이자. */
+    val installmentRate: Double = 0.0,
 ) {
     /** What a list shows as the line's name. */
-    val title: String get() = merchant.ifBlank { note.ifBlank { memo.ifBlank { category } } }
+    // 1.32 [LEDX-12] A company's legal name shows as the shop people know (우아한형제들 → 배달의민족); [merchant] keeps what the text said.
+    val title: String get() = MerchantNames.display(merchant).ifBlank { note.ifBlank { memo.ifBlank { category } } }
 
     /**
      * [LEDG-11] What each category got of this line, signed like [amount]: the parts of a split
@@ -67,6 +70,11 @@ data class MoneyEntry(
 
     /** Spread over more than one category. */
     val isSplit: Boolean get() = shares().size > 1
+
+    companion object {
+        /** [LEDX-17] Korean cards' 할부 수수료율 stays well under 20%; more is a typing slip. */
+        const val MAX_INSTALLMENT_RATE = 30.0
+    }
 }
 
 /** [LEDG-11] One category's piece of a split payment, in whole won. */
@@ -155,6 +163,8 @@ data class DailySales(
     val cashCounted: Long? = null,
     /** [SHOP-02] The card company has paid this day's card sales into the account. */
     val cardSettled: Boolean = false,
+    /** 1.32 [TAXP-14] Of [cash], how much a 현금영수증 was issued for (현금영수증 발행 확인). */
+    val cashReceipt: Long = 0,
 ) {
     val net: Long get() = sales - costs
     /** [SHOP-01] Sales written by how they were paid. */

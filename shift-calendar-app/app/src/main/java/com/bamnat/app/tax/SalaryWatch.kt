@@ -30,13 +30,20 @@ object SalaryWatch {
     /** What one check did. */
     data class Result(val seen: List<SalaryDeposits.Seen>, val refiled: List<MoneyEntry>)
 
-    suspend fun check(c: AppContainer, calendarId: String, today: LocalDate = Today.date()): Result {
+    suspend fun check(c: AppContainer, calendarId: String, today: LocalDate = Today.date(), notify: Boolean = false): Result {
         val money = c.calendars.money(calendarId)
         val tax = c.tax(calendarId)
         val profile = c.calendars.pay(calendarId).profile.value
         val snapshot = runCatching { c.calendars.repository(calendarId).snapshot.first() }.getOrNull()
         return check(money.allEntries(), tax, profile, snapshot, today) { e -> money.save(e) }
             .also { r -> if (r.seen.isNotEmpty()) c.journal.note(JournalKind.PAY_OBSERVED, count = r.seen.size) }
+            .also { r ->
+                // D 1.32 [PAYA-05] 579: a deposit just read from a notification is set against the estimate right away.
+                if (notify && c.settingsRepository.current.payDepositNotice) r.seen.lastOrNull()?.let { s ->
+                    val expected = expected(profile, snapshot, tax.allObservations(), today).firstOrNull { it.payMonth == s.payMonth }?.net
+                    PayDepositNotice.post(c.appContext, calendarId, s.payMonth, s.entry.amount, expected)
+                }
+            }
     }
 
     /** The check itself, apart from where the data lives, for tests. */

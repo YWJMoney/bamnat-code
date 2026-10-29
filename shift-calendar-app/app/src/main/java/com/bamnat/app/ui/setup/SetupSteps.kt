@@ -83,7 +83,7 @@ internal val STYLE_CHOICES = listOf(
     StyleChoice(WorkStyle.SHIFT, false, "교대 근무 · 순서가 돌아가요", "예: 4조 2교대, 3조 3교대, 24시간 격일제", WorkStyle.SHIFT.icon()),
     StyleChoice(WorkStyle.SHIFT, true, "교대 근무 · 근무표가 매달 나와요", "예: 병원 간호, 매달 짜는 근무표", Icons.Filled.EditCalendar),
     StyleChoice(WorkStyle.DAY, false, "평일 근무", "매주 같은 요일, 같은 시간에 일해요", WorkStyle.DAY.icon()),
-    StyleChoice(WorkStyle.HOURLY, false, "아르바이트 · 시급", "일한 시간만큼 시급으로 받아요", WorkStyle.HOURLY.icon()),
+    StyleChoice(WorkStyle.HOURLY, false, "아르바이트 · 시급", "일한 시간만큼 시급으로 받아요 · 알바 2곳까지 무료", WorkStyle.HOURLY.icon()),
     StyleChoice(WorkStyle.FIELD, false, "현장 · 프리랜서", "일감과 받을 돈을 달력에 적어요 · 고르면 바로 시작", WorkStyle.FIELD.icon()),
     StyleChoice(WorkStyle.BUSINESS, false, "자영업", "매일 매출과 경비를 달력에 적어요 · 고르면 바로 시작", WorkStyle.BUSINESS.icon()),
     // [INV-01] 투자자: trades, 원금 and 수익률 on the calendar.

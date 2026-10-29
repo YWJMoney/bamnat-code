@@ -33,6 +33,15 @@ class SettingsSearchTest {
         assertEquals("이", SearchText.stem("이"))
     }
 
+    /** U 1.32 [UX132-04][UX132-05] 초성 and the new 화면과 글자 rows. */
+    @Test fun initialsAndTextSize() {
+        assertEquals("ㄱㅂㄱ", SearchText.initials("기본급"))
+        assertTrue(SearchText.isInitials("ㅇㄹ"))
+        assertEquals("알람음", first("ㅇㄹㅇ"))
+        assertEquals("글자 크기", first("글씨 크게"))
+        assertEquals("오전/오후로 보기", first("12시간"))
+    }
+
     @Test fun theTitleItselfComesFirst() {
         assertEquals("진동", first("진동"))
         assertEquals("근무 주기", first("근무 주기"))
@@ -86,7 +95,7 @@ class SettingsSearchTest {
 
     @Test fun helpForAScreenPutsItsAnswersFirst() {
         // [ALRM-08][ALRM-09] 1.25 AB adds the buttons and the lock screen.
-        assertEquals(listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"), HelpFaq.about("설정 > 알람").map { it.id })
+        assertEquals(listOf("alarm", "sound", "wake", "watch", "alarmButtons", "alarmLock"), HelpFaq.about("설정 > 알람").map { it.id })
         assertTrue(HelpFaq.about("달력").map { it.id }.containsAll(listOf("share", "oneday", "calendars")))
         assertEquals(listOf("import"), HelpFaq.about("캘린더에서 가져오기").map { it.id })
         assertTrue(HelpFaq.about(null).isEmpty())
@@ -119,15 +128,13 @@ class SettingsSearchTest {
         assertEquals("보낸 문의 1개에 모두 답했어요", standing(listOf(inquiry("a", "answered", 1))) { false })
     }
 
-    // ---- 1.28 통합 [FLAG-39] ----
-    @Test fun featureStateIsFoundAndAnswered() {
-        val hit = SettingsIndex.search("기능 상태").first()
-        assertEquals(com.bamnat.app.ui.diag.FLAG_SECTION, hit.title)
-        assertEquals(SettingPlace.Screen(SettingsGo.DIAGNOSTICS), hit.place)
-        assertEquals("기능 상태", first("결제 언제 켜져요"))
+    // ---- 1.28 통합 [FLAG-39] → S 1.32 [SECX-04] ----
+    @Test fun noDeveloperWordsAndNoFlagScreen() {
+        assertTrue(SettingsIndex.entries().none { "다크머지" in it.keywords || "관리자 미리 보기" in it.keywords || it.title == "기능 상태" })
         assertEquals("기능 켜고 끄기", first("기능 끄기"))
-        assertEquals("flagState", HelpFaq.search("결제는 언제 켜져요").first().id)
-        assertTrue(HelpFaq.about("알람 점검").any { it.id == "flagState" })
-        assertEquals(HelpAction.Go(SettingsGo.DIAGNOSTICS), HelpFaq.topics().single { it.id == "flagState" }.action?.second)
+        val topic = HelpFaq.topics().single { it.id == "flagState" }
+        assertEquals("flagState", HelpFaq.search("결제는 언제 생겨요").first().id)
+        assertEquals(null, topic.action)
+        assertFalse(topic.answer.contains("알람 점검"))
     }
 }

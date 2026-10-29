@@ -90,6 +90,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
@@ -153,7 +154,7 @@ enum class SettingsPage(
     ALARM("알람", Icons.Outlined.Alarm, com.bamnat.app.ui.theme.SettingsKind.ALERT),
     NOTICES("알림과 잠", Icons.Outlined.Notifications, com.bamnat.app.ui.theme.SettingsKind.ALERT),
     PAY("급여와 연차", Icons.Outlined.Payments, com.bamnat.app.ui.theme.SettingsKind.WORK),
-    CALENDAR("달력 화면", Icons.Outlined.CalendarMonth, com.bamnat.app.ui.theme.SettingsKind.SCREEN),
+    CALENDAR("화면과 글자", Icons.Outlined.CalendarMonth, com.bamnat.app.ui.theme.SettingsKind.SCREEN),
     DATA("데이터", Icons.Outlined.SettingsBackupRestore, com.bamnat.app.ui.theme.SettingsKind.DATA),
     PRIVACY("개인정보·앱 정보", Icons.Outlined.PrivacyTip, com.bamnat.app.ui.theme.SettingsKind.DATA),
 }
@@ -277,8 +278,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { container.backupManager.exportFile(it, password) }
                 }
+                // C 1.32 [STAB-06] Read back from where it went and opened, so "저장했어요" means it will restore.
+                val opens = runCatching {
+                    context.contentResolver.openInputStream(uri)!!.use { container.backupManager.verifyFile(it, password) }
+                }.isSuccess
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
-                if (password == null) "백업 파일을 저장했어요" else "암호 건 백업을 저장했어요. 암호를 잊으면 열 수 없어요"
+                if (opens) container.backupNudge.saved() // 1.32 [STAB-08]
+                when {
+                    !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
+                    password == null -> "백업 파일을 저장하고, 다시 열어 확인했어요"
+                    else -> "암호 건 백업을 저장하고 확인했어요. 암호를 잊으면 열 수 없어요"
+                }
             }.getOrElse { "백업을 저장하지 못했어요" })
             password?.fill(' ')
         }
@@ -545,6 +555,17 @@ fun SettingsScreen(
     var focus by remember { mutableStateOf<SettingsFocus?>(null) }
     val openPage: (SettingsPage) -> Unit = { p -> focus = null; page = p }
     val link by SettingsLinks.target.collectAsStateWithLifecycle()
+    // U 1.32 [UX132-04] 🔍 from another tab: the list with the search field focused.
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var searchAsked by remember { mutableStateOf(0) }
+    LaunchedEffect(link) {
+        if (link == SettingsLink.Search) {
+            SettingsLinks.consume(link!!)
+            page = null; focus = null
+            searchAsked++
+        }
+    }
+    LaunchedEffect(searchAsked) { if (searchAsked > 0) { kotlinx.coroutines.delay(150); runCatching { searchFocus.requestFocus() } } }
     LaunchedEffect(link) {
         val l = link as? SettingsLink.Page ?: return@LaunchedEffect
         SettingsLinks.consume(l)
@@ -594,7 +615,7 @@ fun SettingsScreen(
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
         SettingsHub(vm, settings, refresh, askNotifications, selected, hubScroll, modifier,
             onOpen = openPage, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes, onOpenBoard = onOpenBoard,
-            query = query, onQuery = { query = it }, onFound = found, onOpenInquiry = onOpenInquiry)
+            query = query, onQuery = { query = it }, onFound = found, onOpenInquiry = onOpenInquiry, searchFocus = searchFocus)
     }
 
     if (wide) {
@@ -644,7 +665,7 @@ private val HUB_MAX_WIDTH = 360.dp
 private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {
@@ -685,6 +706,7 @@ private fun SettingsHub(
     onQuery: (String) -> Unit = {},
     onFound: (SettingEntry) -> Unit = {},
     onOpenInquiry: () -> Unit = {},
+    searchFocus: androidx.compose.ui.focus.FocusRequester? = null,
 ) {
     val context = LocalContext.current
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -695,7 +717,7 @@ private fun SettingsHub(
     Column(modifier.verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
-        SettingsSearchField(query, onQuery)
+        SettingsSearchField(query, onQuery, searchFocus)
         Spacer(Modifier.size(4.dp))
         if (query.isNotBlank()) {
             val entries = remember(onOpenBoard != null) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn) }
@@ -704,6 +726,8 @@ private fun SettingsHub(
         }
         // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
         if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
+        // 1.32 [PROX-03] 다음 결제일·금액·해지, first, while money is taken.
+        com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
         // AG 1.27 [INVITE-11][INVITE-12] 친구 초대 and '불편한 점 알려 주기' at the top, not only on the 프로 screen.
         com.bamnat.app.ui.grow.GrowSettingsCard()
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
@@ -774,12 +798,12 @@ private fun NewAnswerLine(unread: Int, onOpen: () -> Unit) {
 
 /** [UX-04] The search over every setting, at the top of the list. */
 @Composable
-private fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
+private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusRequester: androidx.compose.ui.focus.FocusRequester? = null) {
     OutlinedTextField(
         value = query,
         onValueChange = { onQuery(it.take(40)) },
         // TalkBack names the field once the example has gone.
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "설정 찾기" },
+        modifier = Modifier.fillMaxWidth().let { m -> focusRequester?.let { m.focusRequester(it) } ?: m }.semantics { contentDescription = "설정 찾기" },
         placeholder = { com.bamnat.app.ui.HintText("설정 찾기 (예: 알람 소리, 백업)", "설정 찾기") },
         leadingIcon = { Icon(Icons.Filled.Search, null) },
         trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
