@@ -79,20 +79,20 @@ class ACScreenshotTest : ScreenshotBase() {
     // ---- 413·414 [SPAT-01][SPAT-02] 첫 설정의 회사 찾기: the public rows, without the company server ----
     @Test fun setupSearchShowsPublicRows() = shoot("1000_ac_setup_search_public", PHONE_393, fresh(null) {
         setupSearch("GS EPS")
-        assertTrue(shows(PublicCycles.BADGE, exact = false))
-        assertTrue(shows("4조 2교대 · 주주휴휴야야휴휴", exact = false))
+        assertTrue(appears(PublicCycles.BADGE, exact = false))
+        assertTrue(appears("4조 2교대 · 주주휴휴야야휴휴", exact = false))
         // D79: never like a coworkers' setup.
-        assertFalse(shows("채택", exact = false) || shows("대표 판", exact = false))
+        assertTrue(gone("채택", exact = false) && gone("대표 판", exact = false))
     })
 
     // ---- 415 [SPAT-03] the row's order, then the rest of the first setup, then the calendar ----
     @Test fun setupPicksAPublicRowAndSavesItsCycle() = shoot("1001_ac_setup_public_saved", PHONE_393, fresh(null) {
         setupSearch("GS EPS")
         tapText("4조 2교대 · 주주휴휴야야휴휴")
-        assertTrue(shows("이 순서가 맞나요?", exact = true))
+        assertTrue(appears("이 순서가 맞나요?", exact = true))
         tapText("이 순서로 설정 이어가기")
         // On to the times: the row's shifts are in the draft.
-        assertTrue(shows("근무 시간이 맞나요?", exact = true))
+        assertTrue(appears("근무 시간이 맞나요?", exact = true))
         finishSetup()
         val p = pattern()
         assertEquals(8, p.steps.size)
@@ -117,13 +117,13 @@ class ACScreenshotTest : ScreenshotBase() {
     // ---- 414·415 사용자 2026-10-25 14:05: nobody has the company → 처음으로 회사 정보를 제공해 주세요! ----
     @Test fun setupFirstProviderGivesTheCycle() = shoot("1003_ac_setup_first_provider", PHONE_393, fresh(null) {
         setupSearch("한별정밀")
-        assertTrue(shows("처음으로 회사 정보를 제공해 주세요!", exact = true))
+        assertTrue(appears("처음으로 회사 정보를 제공해 주세요!", exact = true))
         // Without the company server: no plaza or reward words, only the cycle put in.
-        assertFalse(shows("보상", exact = false))
-        assertTrue(shows("흔한 순서부터 보여 드려요", exact = false))
+        assertTrue(gone("보상", exact = false))
+        assertTrue(appears("흔한 순서부터 보여 드려요", exact = false))
         tapText("4조 2교대", exact = true)
         tapText("‘한별정밀’ 근무주기 넣기")
-        assertTrue(shows("공개 자료에는 순서가 없어요", exact = false))
+        assertTrue(appears("공개 자료에는 순서가 없어요", exact = false))
         tapText("2222 · 주2·휴2·야2·휴2")
         tapText("이 순서로 설정 이어가기")
         finishSetup()
@@ -139,7 +139,7 @@ class ACScreenshotTest : ScreenshotBase() {
     @Test fun firstProviderCard() = shoot("1004_ac_first_provider_card", PHONE_393, fresh(null) {
         companyOn()
         setupSearch("한별정밀")
-        assertTrue(shows("근무주기만 올리면 보상은 없어요", exact = false))
+        assertTrue(appears("근무주기만 올리면 보상은 없어요", exact = false))
     })
 
     // ---- 415 [SPAT-03] 근무 주기 › 회사 이름으로 근무주기 찾기: a row with no public order, today picked, the calendar written ----
@@ -151,12 +151,12 @@ class ACScreenshotTest : ScreenshotBase() {
         typeInto("회사 이름이나 초성 (예: 예시정밀, ㅇㅅㅈㅁ)", "GS칼텍스")
         waitFor(400)
         tapText("공개 순서 없음 · 순서는 직접 골라요")
-        assertTrue(shows("공개 자료에는 순서가 없어요", exact = false))
+        assertTrue(appears("공개 자료에는 순서가 없어요", exact = false))
         tapText("주야비휴")
         tapText("2번째 날 야간", exact = true)
         tapText("달력에 넣기")
-        assertTrue(shows("달력에 넣었어요", exact = false))
-        assertTrue(shows("급여도 넣기", exact = true) || shows("광장에 올리기", exact = true))
+        assertTrue(appears("달력에 넣었어요", exact = false))
+        assertTrue(appears("급여도 넣기", exact = true) || shows("광장에 올리기", exact = true))
         val p = pattern()
         assertEquals(4, p.steps.size)
         assertEquals("야간", nameOn(p, Today.date()))
@@ -174,7 +174,7 @@ class ACScreenshotTest : ScreenshotBase() {
         settle()
         openWayCard("급여도 넣어 볼까요?")
         tapText("급여 넣기", exact = true)
-        assertTrue(shows("‘GS EPS’ 근무주기에 맞춰", exact = false))
+        assertTrue(appears("‘GS EPS’ 근무주기에 맞춰", exact = false))
         tapText("다음", exact = true)
         typeInto("월 기본급", "3000000")
         tapText("다음", exact = true)
@@ -199,9 +199,9 @@ class ACScreenshotTest : ScreenshotBase() {
         applied(gsCaltex, "DDOONNOO")
         settle()
         openWayCard("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?")
-        assertTrue(shows("급여 정보까지 넣어 광장에 올리면 보상을 드려요", exact = false))
+        assertTrue(appears("급여 정보까지 넣어 광장에 올리면 보상을 드려요", exact = false))
         tapText("올리기", exact = true)
-        assertTrue(shows("공개 자료 확인·고침 · GS칼텍스", exact = true))
+        assertTrue(appears("공개 자료 확인·고침 · GS칼텍스", exact = true))
         tapText("보내기", exact = true)
         val (note, setup) = company.reports.last()
         assertTrue(note, note.startsWith("공개 자료 확인·고침 (${gsCaltex.id}): 4조 2교대 · 순서 주주휴휴야야휴휴 (공개 순서 없음, 직접 골랐어요)"))
@@ -213,7 +213,7 @@ class ACScreenshotTest : ScreenshotBase() {
         assertEquals(8, setup.getJSONObject("rotation").getJSONArray("steps").length())
         assertEquals("r9", c.companyStore.publicUse.value!!.sentId)
         tapText("‘GS칼텍스’ 광장 보기")
-        assertTrue(shows("(주)예시정밀", exact = false))
+        assertTrue(appears("(주)예시정밀", exact = false))
     }
 
     // ---- 417 사용자 2026-10-25 14:05: no pay → only the cycle goes, no reward, and it still goes up ----
@@ -224,10 +224,10 @@ class ACScreenshotTest : ScreenshotBase() {
         c.companyStore.updatePublicUse { it.copy(payClosed = true) }
         settle()
         openWayCard("‘한별정밀’ 근무주기를 광장에 올려 주실래요?")
-        assertTrue(shows("급여 정보는 아직 없어서 근무주기만 가요", exact = true))
+        assertTrue(appears("급여 정보는 아직 없어서 근무주기만 가요", exact = true))
         tapText("올리기", exact = true)
-        assertTrue(shows("처음 제공 · 한별정밀", exact = true))
-        assertTrue(shows("급여 설정이 아직 없어서 근무주기만 올라가요. 보상은 없어요", exact = true))
+        assertTrue(appears("처음 제공 · 한별정밀", exact = true))
+        assertTrue(appears("급여 설정이 아직 없어서 근무주기만 올라가요. 보상은 없어요", exact = true))
         tapText("보내기", exact = true)
         val (note, setup) = company.reports.last()
         assertTrue(note, note.startsWith("처음 제공: 4조 2교대 · 순서 주주휴휴야야휴휴"))
@@ -241,11 +241,11 @@ class ACScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.company.CompanyFindViewModel(companyOn()).apply { query.value = "예시" }
         content { com.bamnat.app.ui.company.CompanyFindScreen(vm, setup = false, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
         waitFor(400)
-        assertTrue(shows("(주)예시정밀", exact = false))
+        assertTrue(appears("(주)예시정밀", exact = false))
         vm.query.value = "포스코"
         waitFor(400)
-        assertTrue(shows(PublicCycles.BADGE, exact = false))
-        assertFalse(shows("처음으로 회사 정보를 제공해 주세요!", exact = true))
+        assertTrue(appears(PublicCycles.BADGE, exact = false))
+        assertTrue(gone("처음으로 회사 정보를 제공해 주세요!", exact = true))
     }
 
     // ---- sizes: 320×568, 200% text, dark ----
@@ -293,7 +293,7 @@ class ACScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
         waitFor(400)
         reveal(PublicCycles.BADGE)
-        assertTrue(shows("포스코", exact = true))
+        assertTrue(appears("포스코", exact = true))
     }
 
     // ---- 418 [SPAT-06] 도움말 finds the answer and opens 근무 주기 ----
@@ -304,9 +304,9 @@ class ACScreenshotTest : ScreenshotBase() {
         typeInto("기능과 도움말 찾기", "회사 근무주기")
         tapText("우리 회사 근무주기를 이름으로 찾을 수 있나요?", exact = true)
         reveal("근무 주기 열기", exact = true)
-        assertTrue(shows("처음으로 회사 정보를 제공해 주세요!", exact = false))
+        assertTrue(appears("처음으로 회사 정보를 제공해 주세요!", exact = false))
         tapText("근무 주기 열기", exact = true)
-        assertTrue(shows("회사 이름으로 근무주기 찾기", exact = true))
+        assertTrue(appears("회사 이름으로 근무주기 찾기", exact = true))
     }
 
     private companion object {

@@ -239,7 +239,7 @@ fun ShareDialog(
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
             Text("누구에게 보내요?", style = MaterialTheme.typography.titleSmall)
-            AudienceRows(options.audience, companyWork) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
+            AudienceRows(options.audience, companyWork, setupOpen) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
             // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
@@ -433,7 +433,7 @@ fun ShareDialog(
 
 /** [SHR-20] 1.33 (계획 690): 같은 회사 동료 / 가족·연인 / 다른 회사 친구, one line each with what it sends. */
 @Composable
-private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
+private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, setupOpen: Boolean, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.padding(vertical = 4.dp).selectableGroup()) {
             com.bamnat.app.share.ShareAudience.entries.forEach { a ->
@@ -446,7 +446,7 @@ private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWor
                     androidx.compose.material3.RadioButton(selected = a == picked, onClick = null, modifier = Modifier.padding(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(a.label(companyWork), style = MaterialTheme.typography.bodyLarge)
-                        Text(a.hint(companyWork), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(a.hint(companyWork, setupOpen), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

@@ -123,7 +123,8 @@ internal fun PhotoResultScreen(
                         if (tabs.size > 1) TabRow(selectedTabIndex = tabIndex) {
                             tabs.forEachIndexed { i, t ->
                                 Tab(selected = tabIndex == i, onClick = { tabIndex = i }, modifier = Modifier.heightIn(min = 48.dp), text = {
-                                    Text(t.label + when (t) {
+                                    // [J133-77] 알바: 근무지 규칙.
+                                    Text((if (t == ResultTab.RULES) "${com.bamnat.app.ui.flags.rememberScreenStyle()?.employer ?: "회사"} 규칙" else t.label) + when (t) {
                                         ResultTab.SLIP -> if (read.lines.isNotEmpty()) " ${read.lines.size}" else ""
                                         ResultTab.RULES -> sheet?.sheet?.cells?.size?.takeIf { it > 0 }?.let { " $it" }.orEmpty()
                                     })

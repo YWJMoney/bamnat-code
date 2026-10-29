@@ -101,8 +101,10 @@ enum class ShareAudience(val key: String) {
         FRIEND -> if (companyWork) "다른 회사 친구" else "친구"
     }
 
-    fun hint(companyWork: Boolean): String = when (this) {
-        COWORKER -> if (companyWork) "근무표와 회사 설정까지, 받은 동료는 기본급만 넣으면 돼요" else "근무표와 연장·휴무일 근무를 함께 보여요"
+    /** [setupOpen]: the company setup can go in the link now (정책 3.7 시행 뒤); before, the coworker is told the 근무표 only. */
+    fun hint(companyWork: Boolean, setupOpen: Boolean = true): String = when (this) {
+        COWORKER -> if (companyWork && setupOpen) "근무표와 회사 설정까지, 받은 동료는 기본급만 넣으면 돼요"
+            else if (companyWork) "근무표와 연장·휴무일 근무를 보여요. 회사 설정은 파일로 따로 보내요" else "근무표와 연장·휴무일 근무를 함께 보여요"
         FAMILY -> "근무와 휴가만 보여요. 메모·급여는 안 가요"
         FRIEND -> "근무와 휴가만 보여요. 친구도 바로 자기 근무를 넣을 수 있어요"
     }

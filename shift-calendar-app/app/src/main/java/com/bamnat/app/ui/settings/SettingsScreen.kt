@@ -990,7 +990,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         (if (!notificationsOk) listOf("알림이 꺼져 있어요") else listOfNotNull(
             "브리핑".takeIf { s.briefing }, "퇴근길".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
             "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice && s.workStyle?.usesCompany != false },
-        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck })
+        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && s.workStyle?.usesPayEngine != false })
     ).joinToString(" · ")
     // [J133-71] 1.33: 회사 설정 only where the work has a company; 연차 not for 알바's few hours a week.
     SettingsPage.PAY -> when {
@@ -1102,7 +1102,9 @@ private fun AlarmReadyCard(
                     Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // [SRV-10] N5: the work the next alarm wakes for, against the rest rules.
                     val nudge by androidx.compose.runtime.produceState<String?>(null, next?.plan?.shiftDate, settings.rules, settings.restCheck) {
-                        val date = next?.plan?.shiftDate?.takeIf { next.plan.shiftTypeId != 0L && settings.restCheck } ?: return@produceState
+                        // [J133-77] Rest between shifts is wage work's; a shop's or a freelancer's alarm says none.
+                        val date = next?.plan?.shiftDate?.takeIf { next.plan.shiftTypeId != 0L && settings.restCheck && settings.workStyle?.usesPayEngine != false }
+                            ?: return@produceState
                         value = runCatching {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                                 val snap = context.appContainer.scheduleRepository.snapshot.first()

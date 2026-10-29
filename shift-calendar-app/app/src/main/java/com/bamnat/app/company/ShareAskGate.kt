@@ -19,13 +19,16 @@ object ShareAskGate {
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    /** The time asks may come again (epoch ms), read once from this phone. */
+    /**
+     * The time asks may come again (epoch ms), from this phone's own record each time: a value kept only in
+     * memory outlived the record it came from (a cleared app, another test) and kept asks shut.
+     */
     fun until(context: Context): StateFlow<Long?> {
-        if (until.value == null) until.value = prefs(context).getLong(K_UNTIL, 0)
+        until.value = prefs(context).getLong(K_UNTIL, 0)
         return until.asStateFlow()
     }
 
-    fun open(context: Context, now: Long = Today.millis()): Boolean = now >= (until(context).value ?: 0)
+    fun open(context: Context, now: Long = Today.millis()): Boolean = now >= prefs(context).getLong(K_UNTIL, 0)
 
     /** A no (다음에, 그만 볼게요, 내 달력에만) to one ask. */
     fun declined(context: Context, now: Long = Today.millis()) {

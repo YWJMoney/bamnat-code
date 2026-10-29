@@ -278,7 +278,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
             tapText("허용은 나중에 할게요")
             // The first setup comes next, past the work already told on the first screen [SETUP-15], the screen
             // does not come back, and the recommended features are on.
-            assertTrue("어느 회사 question next", shows("어느 회사"))
+            assertTrue("어느 회사 question next", appears("어느 회사"))
             val c = app.container
             assertTrue(c.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
             assertTrue(c.consentStore.recommendOffered)

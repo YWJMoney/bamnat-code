@@ -286,7 +286,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
  * 내 달력 the way a coworker's file does (kept first, 7일 안에 되돌리기), and the pay screen then asks only for the 기본급.
  */
 @Composable
-private fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Boolean, onDone: () -> Unit) {
+internal fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Boolean, onDone: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val c = context.appContainer
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -359,7 +359,7 @@ private fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Boo
 
 /** [SHR-20] 1.33 (계획 693): 나도 내 근무 넣기, while this phone has no work of its own yet. */
 @Composable
-private fun FriendStart() {
+internal fun FriendStart() {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val mine by androidx.compose.runtime.produceState(true) { value = runCatching { c.calendars.repository(com.bamnat.app.data.PersonalCalendar.MAIN).snapshot.first().hasPattern }.getOrDefault(true) }
     if (mine) return

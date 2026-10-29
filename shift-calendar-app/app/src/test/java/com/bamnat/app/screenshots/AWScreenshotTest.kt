@@ -128,8 +128,8 @@ class AWScreenshotTest : ScreenshotBase() {
     private fun Screen.rulesTab() { tapText("회사 규칙", prefix = true); settle() }
 
     @Test fun resultSlipTab() = shoot("1410_aw_result_slip_tab", FOLDED, result {
-        assertTrue(shows("명세서 줄", exact = false))
-        assertTrue(shows("회사 규칙", exact = false))
+        assertTrue(appears("명세서 줄", exact = false))
+        assertTrue(appears("회사 규칙", exact = false))
         reveal("2,397,500", exact = false)
     })
     @Test fun resultRulesTab() = shoot("1411_aw_result_rules_tab", FOLDED, result {
@@ -140,7 +140,7 @@ class AWScreenshotTest : ScreenshotBase() {
     @Test fun resultLineFixedInPlace() = shoot("1412_aw_slip_line_inline", FOLDED, result {
         tapText("자격수당", exact = false)
         reveal("이 줄 고치기", exact = true)
-        assertTrue("고치는 줄은 목록 안에서 열려야 해요", shows("더 보기", exact = true) || shows("이 줄 빼기", exact = true))
+        assertTrue("고치는 줄은 목록 안에서 열려야 해요", appears("더 보기", exact = true) || shows("이 줄 빼기", exact = true))
     })
     @Test fun resultCellInPlace() = shoot("1413_aw_rule_cell_inline", FOLDED, editor(RULES) {
         tapText("야간 근무", exact = false)
@@ -185,7 +185,7 @@ class AWScreenshotTest : ScreenshotBase() {
         reveal("얼마·언제 주나요?", exact = true)
         typeInto("한 달 금액", "57500")
         reveal("11월 급여에", exact = false)
-        assertTrue("더하기 전에 이번 달에 더해지는 금액이 보여야 해요", shows("57,500", exact = false))
+        assertTrue("더하기 전에 이번 달에 더해지는 금액이 보여야 해요", appears("57,500", exact = false))
     })
     @Test fun addedShowsTheMonth() = shoot("1420_aw_added_preview", FOLDED, editor {
         addCell()
@@ -195,7 +195,7 @@ class AWScreenshotTest : ScreenshotBase() {
         settle()
         waitFor(400)
         reveal("자격수당", exact = false)
-        assertTrue(shows("2,557,500", exact = false))
+        assertTrue(appears("2,557,500", exact = false))
     })
     @Test fun addStepsBigText() = shoot("1421_aw_add_steps_200", FOLDED, 2f, editor {
         addCell()
@@ -242,7 +242,7 @@ class AWScreenshotTest : ScreenshotBase() {
 
     @Test fun cardFromPayslip() = shoot("1424_aw_hourly_from_slip", FOLDED, card(CommonTerms(offers = listOf(READ_HOURS)).take(READ_HOURS)) {
         reveal("명세서에서", exact = false)
-        assertTrue(shows("이 값으로 계산해요", exact = false))
+        assertTrue(appears("이 값으로 계산해요", exact = false))
     })
     @Test fun cardFromRules() = shoot("1425_aw_hourly_from_rules", FOLDED, card(CommonTerms().withHours(226, HourlySource.RULES)) {
         reveal("회사 규칙에서", exact = false)
@@ -260,7 +260,7 @@ class AWScreenshotTest : ScreenshotBase() {
         reveal("통상임금이 기본급의 몇 %인가요?", exact = true)
         tapText("120%", exact = true)
         reveal("이 값으로 계산하기", exact = true)
-        assertTrue(shows("× 120%", exact = false))
+        assertTrue(appears("× 120%", exact = false))
     })
     @Test fun cardBigDark() = shoot("1429_aw_hourly_200_dark", FOLDED_NIGHT, 2f, card(CommonTerms(offers = listOf(READ_HOURS)).take(READ_HOURS)))
 

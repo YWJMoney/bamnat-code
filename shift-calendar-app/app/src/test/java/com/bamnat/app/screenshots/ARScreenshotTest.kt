@@ -87,11 +87,11 @@ class ARScreenshotTest : ScreenshotBase() {
         assertEquals(98_000.0, t.single { it.symbol == "000270" }.price, 0.0)
         assertEquals(1, t.count { it.symbol == "005930" })
         assertTrue(t.none { it.symbol == "000660" })
-        assertFalse(shows("NAVER", exact = true))
-        assertTrue(shows("SK하이닉스", exact = false))
+        assertTrue(gone("NAVER", exact = true))
+        assertTrue(appears("SK하이닉스", exact = false))
         // Below the rows on a small phone: scrolled to.
         reveal("확실한 체결은 묻지 않고 바로 넣어요", exact = false)
-        assertTrue(shows("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
+        assertTrue(appears("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
     }
 
     @Test fun sureRowsGoInOnlyTheRestIsAsked() = shoot("1270_ar_capture_auto", FOLDED, sheet {
@@ -112,10 +112,10 @@ class ARScreenshotTest : ScreenshotBase() {
 
     @Test fun aSharedCaptureOfSureRowsGoesInWithOneLine() = shoot("1271_ar_shared_all_sure", PHONE, shared(SURE) {
         assertEquals(3, trades().size)
-        assertTrue(shows("캡처에서 2건을 바로 넣었어요 · 이미 있음 1건", exact = false))
+        assertTrue(appears("캡처에서 2건을 바로 넣었어요 · 이미 있음 1건", exact = false))
         // The first time it says where to be asked first.
-        assertTrue(shows("넣기 전에 묻게 하려면 투자 탭 ⋮", exact = false))
-        assertFalse(shows("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
+        assertTrue(appears("넣기 전에 묻게 하려면 투자 탭 ⋮", exact = false))
+        assertTrue(gone("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
     })
 
     @Test fun undoTakesBackWhatWentIn() = shoot("1272_ar_shared_undo", PHONE, shared(SURE) {
@@ -140,9 +140,9 @@ class ARScreenshotTest : ScreenshotBase() {
         settle()
         IncomingRoster.put(IncomingRoster.Shared.Photo(SHOT))
         settle()
-        assertTrue(shows("이 사진을 어디에 넣을까요?"))
-        assertTrue(shows("투자 체결 내역", exact = true))
-        assertTrue(shows("근무표", exact = true))
+        assertTrue(appears("이 사진을 어디에 넣을까요?"))
+        assertTrue(appears("투자 체결 내역", exact = true))
+        assertTrue(appears("근무표", exact = true))
     })
 
     @Test fun theChosenInvestorCalendarTakesIt() = shoot("1274_ar_shared_choice_invest", PHONE, {
@@ -159,16 +159,16 @@ class ARScreenshotTest : ScreenshotBase() {
         assertEquals(id, c.calendars.active.value)
         // The 근무 calendar got nothing.
         assertTrue(trades().isEmpty())
-        assertTrue(shows("바로 넣었어요", exact = false))
+        assertTrue(appears("바로 넣었어요", exact = false))
     })
 
     /** Where to have it ask first: settings search finds it (the ⋮ menu is a popup window these shots do not reach). */
     @Test fun settingsSearchSaysWhereToBeAskedFirst() = shoot("1275_ar_search_ask_first", PHONE, style(WorkStyle.INVEST) {
         tab(4, wide = false)
         typeInto("설정 찾기", "넣기 전에 묻기")
-        assertTrue(shows("넣기 전에 묻게 하려면", exact = false))
+        assertTrue(appears("넣기 전에 묻게 하려면", exact = false))
         reveal("캡처로 바로 넣기", exact = false)
-        assertTrue(shows("캡처로 바로 넣기", exact = false))
+        assertTrue(appears("캡처로 바로 넣기", exact = false))
     })
 
     @Test fun sheetDark() = shoot("1276_ar_capture_auto_dark", FOLDED_NIGHT, sheet { sureWentInRestAsked() })
@@ -178,7 +178,7 @@ class ARScreenshotTest : ScreenshotBase() {
     @Test fun sheetHugeText() = shoot("1278_ar_capture_auto_huge_text", PHONE, fontScale = 2f, sheet {
         assertEquals(3, trades().size)
         reveal("확실한 체결은 묻지 않고 바로 넣어요", exact = false)
-        assertTrue(shows("넣기 전에 묻기", exact = true))
+        assertTrue(appears("넣기 전에 묻기", exact = true))
     })
 
     @Test fun askedFirstNothingGoesIn() = shoot("1279_ar_capture_asked_first", FOLDED, style(WorkStyle.INVEST) {
@@ -191,7 +191,7 @@ class ARScreenshotTest : ScreenshotBase() {
         val end = System.currentTimeMillis() + 10_000
         while (!shows("아직 안 적은 체결", exact = false) && System.currentTimeMillis() < end) settle()
         assertEquals(1, trades().size)
-        assertTrue(shows("아직 안 적은 체결 3건", exact = false))
-        assertTrue(shows("넣고, 다음부터 묻지 않고 바로 넣기", exact = false))
+        assertTrue(appears("아직 안 적은 체결 3건", exact = false))
+        assertTrue(appears("넣고, 다음부터 묻지 않고 바로 넣기", exact = false))
     })
 }

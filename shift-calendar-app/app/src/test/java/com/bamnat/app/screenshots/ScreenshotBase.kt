@@ -413,6 +413,26 @@ abstract class ScreenshotBase {
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
+        /**
+         * [J133-45] Whether [text] comes on screen, waiting while it has not yet: a sheet, a saved row or
+         * data from a fake server can land a few frames after the tap on a busy test machine. Returns as
+         * soon as it shows, so a passing check costs nothing; only a real miss waits the whole [ms].
+         */
+        fun appears(text: String, exact: Boolean = false, ms: Long = SOON_MS): Boolean = until(ms) { shows(text, exact) }
+
+        /** [J133-45] Whether [text] leaves the screen (or was never there), waiting the same way. */
+        fun gone(text: String, exact: Boolean = false, ms: Long = SOON_MS): Boolean = until(ms) { !shows(text, exact) }
+
+        private fun until(ms: Long, ok: () -> Boolean): Boolean {
+            val end = System.currentTimeMillis() + ms
+            while (true) {
+                if (ok()) return true
+                if (System.currentTimeMillis() > end) return false
+                Thread.sleep(20)
+                settle()
+            }
+        }
+
         /** Taps what announces [label] as its tap ("오늘의 흐름 펼치기"), for a row whose own words change with the day. */
         fun tapAction(label: String) {
             var at: Offset? = null
@@ -918,6 +938,8 @@ abstract class ScreenshotBase {
 
         /** [QA-05] [settle]: rounds of 10 ms with nothing to do before a screen counts as still, and the cap. */
         const val QUIET_ROUNDS = 5
+        /** [J133-45] How long [Screen.appears] and [Screen.gone] wait before a check fails. */
+        const val SOON_MS = 3_000L
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L

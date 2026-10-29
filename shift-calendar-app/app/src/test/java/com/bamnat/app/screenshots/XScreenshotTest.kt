@@ -69,17 +69,17 @@ class XScreenshotTest : ScreenshotBase() {
     @Test fun diffEditorOpensOnTheCompanysValues() = shoot("870_x_diff_editor", FOLDED) {
         detail()
         tapText(DIFF, exact = true)
-        assertTrue(shows("이 회사 값으로 채워 두었어요", exact = false))
-        assertTrue(shows("아직 바꾼 곳이 없어요", exact = true))
+        assertTrue(appears("이 회사 값으로 채워 두었어요", exact = false))
+        assertTrue(appears("아직 바꾼 곳이 없어요", exact = true))
         // Nothing to send before something is changed, and it says why.
-        assertTrue(shows("우리와 다른 값을 하나 이상 바꾸면 보낼 수 있어요", exact = true))
+        assertTrue(appears("우리와 다른 값을 하나 이상 바꾸면 보낼 수 있어요", exact = true))
         assertTrue(company.posts.isEmpty())
     }
     @Test fun aChangedBreakIsSentAsAProposal() = shoot("871_x_diff_sent", FOLDED) {
         detail()
         tapText(DIFF, exact = true)
         tapText("주간 휴게 10분 늘리기", exact = true)
-        assertTrue(shows("바꾼 곳 1가지", exact = true))
+        assertTrue(appears("바꾼 곳 1가지", exact = true))
         tapText("제안 보내기", exact = true)
         val (fields, setup) = lastProposal()
         assertEquals(listOf("shift"), fields)
@@ -88,7 +88,7 @@ class XScreenshotTest : ScreenshotBase() {
         assertEquals(JSONObject(company.file).shift("야간").toString(), setup.shift("야간").toString())
         assertEquals("다른 점 1가지: 주간", company.posts.last().first)
         // The talk opens on it, so the user sees it went up.
-        assertTrue(shows("토론", exact = true))
+        assertTrue(appears("토론", exact = true))
     }
     @Test fun diffEditorHugeText() = shoot("872_x_diff_editor_huge_text", PHONE, fontScale = 2f) {
         detail()
@@ -100,14 +100,14 @@ class XScreenshotTest : ScreenshotBase() {
         repeat(6) { if (!shows("주간 휴게 10분 늘리기", exact = true)) scrollUp(250, across = 0.5f) }
         tapText("주간 휴게 10분 늘리기", exact = true, scrolls = 0)
         // The count keeps its own line at twice the size.
-        assertTrue(shows("바꾼 곳 1가지", exact = true))
+        assertTrue(appears("바꾼 곳 1가지", exact = true))
     }
     @Test fun anOrderChangeIsAnOrderLineDark() = shoot("873_x_diff_order_dark", FOLDED_NIGHT) {
         detail()
         tapText(DIFF, exact = true)
         // The first day of 주간 주간 야간 야간 휴무 becomes the next shift in the file's own order.
         tapText("1일 주간", exact = true)
-        assertTrue(shows("바꾼 곳 1가지", exact = true))
+        assertTrue(appears("바꾼 곳 1가지", exact = true))
         reveal("바꾼 곳 비교해 보기", exact = true)
         tapText("바꾼 곳 비교해 보기", exact = true)
         tapText("제안 보내기", exact = true)
@@ -121,11 +121,11 @@ class XScreenshotTest : ScreenshotBase() {
         // The company's 주간 starts at 07:00; this phone's own starts at 08:00.
         detail { company.file = SetupEdit.of(company.file)!!.shiftTime("주간", "07:00", "20:00", 60).text }
         tapText(DIFF, exact = true)
-        assertTrue(shows("아직 바꾼 곳이 없어요", exact = true))
+        assertTrue(appears("아직 바꾼 곳이 없어요", exact = true))
         // 내 설정으로 채우기 reads this phone's own (amounts left out) as the starting point.
         tapText("내 설정으로 채우기", exact = true)
-        assertFalse(shows("아직 바꾼 곳이 없어요", exact = true))
-        assertTrue(shows("바꾼 곳 ", exact = false))
+        assertTrue(gone("아직 바꾼 곳이 없어요", exact = true))
+        assertTrue(appears("바꾼 곳 ", exact = false))
     }
 
     // ---- 389 [PLAZA-05] 대표 판 ----
@@ -136,12 +136,12 @@ class XScreenshotTest : ScreenshotBase() {
         val vm = CompanyDetailViewModel(c, "c1")
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
-        assertTrue(shows("대표 판 v2", exact = true))
+        assertTrue(appears("대표 판 v2", exact = true))
         // [PLZD-06] 1.30 BD: the department's other versions fold under the 대표 until asked for.
         tapText("같은 부서 다른 판 2개 보기", exact = true)
         tapText("대표 판과 비교", exact = true)
-        assertTrue(shows("다른 점 1가지: 주간", exact = true))
-        assertTrue(shows("이 판: 08:00~19:00", exact = false))
+        assertTrue(appears("다른 점 1가지: 주간", exact = true))
+        assertTrue(appears("이 판: 08:00~19:00", exact = false))
     }
     @Test fun anEarlierVersionIsPutBack() = shoot("876_x_history_back", FOLDED) {
         company.bodies = true
@@ -154,7 +154,7 @@ class XScreenshotTest : ScreenshotBase() {
         // The line starts with the day it came in.
         reveal("같은 부서의 다른 판을 더 많은 분이 써서 대표 판이 됐어요", exact = false)
         tapText("지금 판과 비교 · 되돌리기", exact = true)
-        assertTrue(shows("v1과 지금 비교", exact = true))
+        assertTrue(appears("v1과 지금 비교", exact = true))
         tapText("이 판으로 되돌리기", exact = true)
         // [PAYF-03] 1.29: a setup with a pay way asks first whether the pay goes in too.
         if (shows("근무주기만 넣을게요", exact = true)) tapText("근무주기만 넣을게요", exact = true)
@@ -170,13 +170,13 @@ class XScreenshotTest : ScreenshotBase() {
         val vm = CompanyDetailViewModel(c, "c1")
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
-        assertTrue(shows("쓰시던 판 대신 새 대표 판이 생겼어요", exact = true))
+        assertTrue(appears("쓰시던 판 대신 새 대표 판이 생겼어요", exact = true))
         tapText("비교하고 바꾸기", exact = true)
-        assertTrue(shows("내 설정과 새 대표 판", exact = true))
+        assertTrue(appears("내 설정과 새 대표 판", exact = true))
         reveal("이 판으로 바꾸기", exact = true)
         back()
         tapText("그대로 둘게요", exact = true)
-        assertFalse(shows("쓰시던 판 대신 새 대표 판이 생겼어요", exact = true))
+        assertTrue(gone("쓰시던 판 대신 새 대표 판이 생겼어요", exact = true))
         assertEquals("s-old", c.companyStore.applied.value?.setup)
     }
 
@@ -192,10 +192,10 @@ class XScreenshotTest : ScreenshotBase() {
     }
     @Test fun theCompanysPayIsAskedFirst() = shoot("878_x_pay_ask", FOLDED) {
         companyPay()
-        assertTrue(shows("이 회사 급여 설정을 쓸까요?", exact = true))
-        assertFalse("amounts wait for the answer", shows("거의 다 됐어요! 내 금액만 넣어요", exact = true))
+        assertTrue(appears("이 회사 급여 설정을 쓸까요?", exact = true))
+        assertTrue("amounts wait for the answer", gone("거의 다 됐어요! 내 금액만 넣어요", exact = true))
         tapText("네, 이 설정으로 할게요", exact = true)
-        assertTrue(shows("거의 다 됐어요! 내 금액만 넣어요", exact = true))
+        assertTrue(appears("거의 다 됐어요! 내 금액만 넣어요", exact = true))
         assertTrue(company.posts.isEmpty())
     }
     @Test fun ourPayDiffersAndIsUsedAndProposed() = shoot("879_x_pay_differs", FOLDED) {
@@ -211,7 +211,7 @@ class XScreenshotTest : ScreenshotBase() {
         assertNotNull(ot(c.companyStore.pendingPay!!))
         assertTrue(vm.edited)
         assertEquals(listOf("overtime"), lastProposal().first)
-        assertTrue(shows("말씀하신 다른 점을 넣은 방식으로 계산해요", exact = false))
+        assertTrue(appears("말씀하신 다른 점을 넣은 방식으로 계산해요", exact = false))
     }
     @Test fun payAskHugeText() = shoot("880_x_pay_ask_huge_text", PHONE, fontScale = 2f) {
         companyPay()
@@ -223,15 +223,15 @@ class XScreenshotTest : ScreenshotBase() {
         val vm = CompanyFindViewModel(companyOn()).apply { query.value = "ㅇㅅㅈㅁ" }
         content { CompanyFindScreen(vm, setup = true, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
         waitFor(400)
-        assertTrue(shows("초성으로 찾았어요. 쓰는 설정이 있는 회사만 보여요.", exact = true))
-        assertTrue(shows("(주)예시정밀", exact = true))
-        assertTrue(shows("쓰는 설정 1개", exact = false))
+        assertTrue(appears("초성으로 찾았어요. 쓰는 설정이 있는 회사만 보여요.", exact = true))
+        assertTrue(appears("(주)예시정밀", exact = true))
+        assertTrue(appears("쓰는 설정 1개", exact = false))
         // [NAV-02] Back clears the search first and the screen stays (its 뒤로 is not called); the search again for the picture.
         back()
         assertEquals("", vm.query.value)
         vm.query.value = "ㅇㅅㅈㅁ"
         waitFor(400)
-        assertTrue(shows("(주)예시정밀", exact = true))
+        assertTrue(appears("(주)예시정밀", exact = true))
     }
 
     // ---- 388 [PLAZA-04] 광장에 올리기 권유 ----
@@ -243,24 +243,24 @@ class XScreenshotTest : ScreenshotBase() {
     }
     @Test fun aHandMadeSetupIsInvitedAndWaitsLonger() = shoot("882_x_invite", FOLDED) {
         invite()
-        assertTrue(shows(ShareAsk.Moment.SETUP.title, exact = true))
+        assertTrue(appears(ShareAsk.Moment.SETUP.title, exact = true))
         val before = Today.millis()
         tapText("다음에", exact = true)
         val due = c.companyStore.inviteDue.value
         assertTrue(due >= ShareAsk.nextDue(1, before))
-        assertFalse(shows(ShareAsk.Moment.SETUP.title, exact = true))
+        assertTrue(gone(ShareAsk.Moment.SETUP.title, exact = true))
     }
     @Test fun whatWouldGoIsShownFirst() = shoot("883_x_invite_preview", FOLDED) {
         invite()
         tapText("보낼 내용 보기", exact = true)
-        assertTrue(shows("· 근무 시각:", exact = false))
-        assertTrue(shows("금액·이름·연락처는 가지 않아요.", exact = true))
+        assertTrue(appears("· 근무 시각:", exact = false))
+        assertTrue(appears("금액·이름·연락처는 가지 않아요.", exact = true))
     }
     @Test fun stopSeeingItForGood() = shoot("884_x_invite_never", FOLDED) {
         invite()
         tapText("그만 볼게요", exact = true)
         assertTrue(c.companyStore.inviteNever.value)
-        assertFalse(shows(ShareAsk.Moment.SETUP.title, exact = true))
+        assertTrue(gone(ShareAsk.Moment.SETUP.title, exact = true))
     }
     @Test fun inviteSmallPhone() = shoot("885_x_invite_small", SMALL_PHONE) {
         invite()
@@ -272,13 +272,13 @@ class XScreenshotTest : ScreenshotBase() {
         val before = runBlocking { c.scheduleRepository.patterns.first() }
         settingsPage("내 근무")
         tapText("처음 설정 다시 받기", exact = true)
-        assertTrue(shows("지금 달력은 그대로예요", exact = false))
+        assertTrue(appears("지금 달력은 그대로예요", exact = false))
         assertNotNull(c.againSetupDrafts.draft.value)
         tapText("다시 받기 그만두기", exact = true)
         settle()
         assertNull(c.againSetupDrafts.draft.value)
         assertEquals(before, runBlocking { c.scheduleRepository.patterns.first() })
-        assertTrue(shows("일하는 방식", exact = true))
+        assertTrue(appears("일하는 방식", exact = true))
     }
     @Test fun setupAgainSavesLikeTheFirstSetup() = shoot("887_x_setup_again_saved", FOLDED) {
         settingsPage("내 근무")
@@ -297,7 +297,7 @@ class XScreenshotTest : ScreenshotBase() {
             // 1.27 AH: more answers above it now, so it is scrolled to further.
             tapText("처음 설정을 놓치셨나요? 처음 설정 다시 받기", exact = true, scrolls = 20)
             settle()
-            assertTrue(shows("지금 달력은 그대로예요", exact = false))
+            assertTrue(appears("지금 달력은 그대로예요", exact = false))
         }
     }
 
@@ -312,6 +312,6 @@ class XScreenshotTest : ScreenshotBase() {
         settle()
         reveal(ShareAsk.Moment.PAY.title, exact = true)
         tapText("다음에", exact = true)
-        assertFalse(shows(ShareAsk.Moment.PAY.title, exact = true))
+        assertTrue(gone(ShareAsk.Moment.PAY.title, exact = true))
     }
 }

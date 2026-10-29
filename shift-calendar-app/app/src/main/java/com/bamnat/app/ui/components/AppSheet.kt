@@ -36,6 +36,8 @@ fun AppSheet(
     sheetState: SheetState = rememberModalBottomSheetState(),
     /** False for a sheet whose own title row has 닫기 already, so there are not two. */
     closeButton: Boolean = true,
+    /** [J133-78] What the X does, when the sheet asks before closing (typed days that would be lost). */
+    onClose: () -> Unit = onDismissRequest,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ModalBottomSheet(
@@ -44,7 +46,7 @@ fun AppSheet(
         // bar, so its handle and X are always where a finger can reach them.
         modifier = modifier.windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
         sheetState = sheetState,
-        dragHandle = if (closeButton) ({ SheetHandle(onDismissRequest) }) else ({ BottomSheetDefaults.DragHandle() }),
+        dragHandle = if (closeButton) ({ SheetHandle(onClose) }) else ({ BottomSheetDefaults.DragHandle() }),
         content = content,
     )
 }

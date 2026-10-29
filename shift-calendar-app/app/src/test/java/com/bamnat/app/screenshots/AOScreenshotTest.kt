@@ -63,7 +63,7 @@ class AOScreenshotTest : ScreenshotBase() {
         for (d in month.minusMonths(1).atDay(1).datesUntil(month.plusMonths(2).atDay(1))) {
             assertEquals("$d", whole.resolver.resolve(d), window.resolver.resolve(d))
         }
-        assertTrue(shows("야간"))
+        assertTrue(appears("야간"))
     })
 
     @Test fun diagnosticsShowsTheLastStart() = shoot("1222_ao_diag_startup", PHONE) {
@@ -72,6 +72,6 @@ class AOScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.diag.DiagnosticsScreen(vm, onBack = {}) }
         settle()
         reveal("마지막 시작")
-        assertTrue(shows("마지막 시작: 첫 달까지"))
+        assertTrue(appears("마지막 시작: 첫 달까지"))
     }
 }

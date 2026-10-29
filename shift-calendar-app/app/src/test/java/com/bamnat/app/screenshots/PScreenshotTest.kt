@@ -91,7 +91,7 @@ class PScreenshotTest : ScreenshotBase() {
     // ---- 344: 빠른 입력 bar and the keypad sheet ----
     @Test fun quickInputBar() = shoot("728_p_quick_input_month_and_half", FOLDED, style(WorkStyle.SHIFT) {
         tapText("빠른 입력", exact = true)
-        assertTrue(shows("이번 달 전부 넣기"))
+        assertTrue(appears("이번 달 전부 넣기"))
     })
     @Test fun quickInputHalfDay() = shoot("729_p_quick_input_half_day", PHONE, style(WorkStyle.SHIFT) {
         tapText("빠른 입력", exact = true)
@@ -106,7 +106,7 @@ class PScreenshotTest : ScreenshotBase() {
         val initial = listOf("주간", "주간", "야간", "야간", "휴무", "휴무").mapIndexed { i, n -> month.atDay(i + 1) to ShiftOverride.Shift(t.getValue(n).id) as ShiftOverride }.toMap()
         content { com.bamnat.app.ui.calendar.DutyTypingSheet(snap, month, onDismiss = {}, onSave = {}, initial = initial) }
         settle()
-        assertTrue(shows("이 순서 반복"))
+        assertTrue(appears("이 순서 반복"))
     })
     @Test fun keypadHugeText() = shoot("731_p_month_input_keypad_huge_text", SMALL_PHONE, fontScale = 2f, monthInput(typed = true))
 

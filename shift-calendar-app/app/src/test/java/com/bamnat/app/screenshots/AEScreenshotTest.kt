@@ -93,7 +93,7 @@ class AEScreenshotTest : ScreenshotBase() {
         openPro()
         tapText("초대 링크 만들기", exact = true)
         reveal("설치 번호와 휴대폰 표시")
-        assertTrue(shows("동의하고 링크 만들기", exact = true))
+        assertTrue(appears("동의하고 링크 만들기", exact = true))
         assertEquals("nothing sent yet", emptyList<String>(), sent())
         assertNull(app.container.invites.store.current.view)
         noCuts("consent")
@@ -114,8 +114,8 @@ class AEScreenshotTest : ScreenshotBase() {
         assertTrue(text!!.contains("https://company.example/i/ABCD2345"))
         assertTrue(text.contains("ABCD-2345"))
         reveal("0/5명")
-        assertTrue(shows("초대한 친구 0명 · 프로 0개월"))
-        assertTrue(shows("초대 링크 보내기", exact = true))
+        assertTrue(appears("초대한 친구 0명 · 프로 0개월"))
+        assertTrue(appears("초대 링크 보내기", exact = true))
     }
 
     @Test fun theInviterSeesFriendsAndMonths() = shoot("1042_ae_invite_counts", PHONE_393) {
@@ -123,8 +123,8 @@ class AEScreenshotTest : ScreenshotBase() {
         runBlocking { app.container.invites.makeLink() }
         openPro()
         reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)
-        assertTrue(shows("초대한 친구 8명 · 프로 1개월", exact = true))
-        assertTrue(shows("내 초대 코드 ABCD-2345"))
+        assertTrue(appears("초대한 친구 8명 · 프로 1개월", exact = true))
+        assertTrue(appears("내 초대 코드 ABCD-2345"))
         // Opening the screen asked the server afresh, once.
         assertTrue("view" in api.calls)
         noCuts("counts")
@@ -135,8 +135,8 @@ class AEScreenshotTest : ScreenshotBase() {
         runBlocking { app.container.invites.makeLink() }
         openPro()
         reveal("올해 받을 수 있는 12개월을 모두 받았어요")
-        assertTrue(shows("초대한 친구 64명 · 프로 12개월"))
-        assertTrue(shows("1년에 12개월까지"))
+        assertTrue(appears("초대한 친구 64명 · 프로 12개월"))
+        assertTrue(appears("1년에 12개월까지"))
     }
 
     // ---- 425 [INVITE-03] ----
@@ -158,9 +158,9 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun theFriendIsAskedOnTheCalendar() = shoot("1044_ae_arrival_card", FOLDED) {
         arrived()
         reachArrival()
-        assertTrue(shows("FRND-2345"))
-        assertTrue(shows("나에게 오는 보상은 없어요"))
-        assertTrue(shows("7일이 지난 뒤 앱을 다시 열면"))
+        assertTrue(appears("FRND-2345"))
+        assertTrue(appears("나에게 오는 보상은 없어요"))
+        assertTrue(appears("7일이 지난 뒤 앱을 다시 열면"))
         assertTrue(sent().isEmpty())
         noCuts("arrival")
     }
@@ -198,7 +198,7 @@ class AEScreenshotTest : ScreenshotBase() {
         arrived()
         reachArrival()
         tapText("괜찮아요", exact = true)
-        assertFalse(shows("친구 초대로 오셨나요?"))
+        assertTrue(gone("친구 초대로 오셨나요?"))
         assertTrue("nothing sent", sent().isEmpty())
         assertTrue(app.container.invites.store.current.offerClosed)
     }
@@ -211,7 +211,7 @@ class AEScreenshotTest : ScreenshotBase() {
         val s = app.container.invites.store.current
         assertTrue(s.referrerRead)
         assertNull(s.found)
-        assertFalse(shows("친구 초대로 오셨나요?"))
+        assertTrue(gone("친구 초대로 오셨나요?"))
         // Read once: Play is not asked again.
         var asked = 0
         app.container.referrerSource = ReferrerSource { asked++; REFERRER }
@@ -227,7 +227,7 @@ class AEScreenshotTest : ScreenshotBase() {
         tapText("동의하고 보내기", exact = true)
         assertEquals(listOf("FRND2345" to "typed"), api.uses)
         reveal("초대한 분께 알렸어요")
-        assertFalse("once only", shows("초대 코드 넣기", exact = true))
+        assertTrue("once only", gone("초대 코드 넣기", exact = true))
     }
 
     @Test fun aWrongCodeIsSaidPlainly() = shoot("1049_ae_typed_wrong", FOLDED) {
@@ -242,13 +242,25 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun afterSevenDaysThereIsNoCodeToType() = shoot("1050_ae_typed_late", FOLDED) {
         app.container.invites.installedAt = { Today.instant().minus(Duration.ofDays(8)) }
         openPro()
-        assertFalse(shows("초대 코드 넣기", exact = true))
-        assertTrue(shows("초대 링크 만들기", exact = true))
+        assertTrue(gone("초대 코드 넣기", exact = true))
+        assertTrue(appears("초대 링크 만들기", exact = true))
     }
 
     // ---- 427 [INVITE-07] ----
     @Test fun settingsHasTheRow() = shoot("1051_ae_settings_row", FOLDED) {
         tab(4, wide = false)
+        // While the 함께 만들어요 card shows, it carries 친구 초대 itself (the row would say it twice).
+        reveal("초대 링크 만들기", exact = true)
+        assertTrue(gone("친구 초대", exact = true))
+        tapText("자세히", exact = true)
+        reveal("초대 링크 만들기", exact = true)
+    }
+
+    @Test fun settingsRowComesBackAfterTheCardCloses() = shoot("1051b_ae_settings_row_card_closed", FOLDED) {
+        tab(4, wide = false)
+        reveal("함께 만들어요", exact = true)
+        tapText("닫기", exact = true)
+        settle()
         reveal("친구 초대", exact = true)
         tapText("친구 초대", exact = true)
         reveal("초대 링크 만들기", exact = true)
@@ -281,7 +293,7 @@ class AEScreenshotTest : ScreenshotBase() {
         runBlocking { app.container.invites.makeLink() }
         openPro(wide = true)
         reveal("1/5명", across = 0.7f)
-        assertTrue(shows("초대한 친구 6명 · 프로 1개월"))
+        assertTrue(appears("초대한 친구 6명 · 프로 1개월"))
     }
 
     @Test fun darkHugeText() = shoot("1055_ae_dark_huge", PHONE_NIGHT, fontScale = 2f) {
@@ -298,8 +310,8 @@ class AEScreenshotTest : ScreenshotBase() {
         api.rulesAnswer = InviteTerms(need = 3, days = 10, months = 2, capMonths = 6)
         openPro()
         reveal("친구 3명이 각자 10일 이상 쓰면 나에게 프로 2개월")
-        assertTrue(shows("10일이 지나 앱을 다시 열면"))
-        assertTrue(shows("1년에 6개월까지"))
+        assertTrue(appears("10일이 지나 앱을 다시 열면"))
+        assertTrue(appears("1년에 6개월까지"))
         assertTrue("rules" in api.calls)
         assertEquals("only the rules, which carry nothing of this phone", emptyList<String>(), sent())
         assertEquals(InviteTerms(3, 10, 2, 6), app.container.invites.store.current.terms)

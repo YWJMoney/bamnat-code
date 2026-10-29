@@ -556,7 +556,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             is SettingsLink.Go -> {
                 SettingsLinks.consume(link)
-                link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
+                // [J133-77] 근무 주기 of the calendar on screen: a shop's is its 영업일·정기휴무.
+                if (link.go == SettingsGo.PATTERN) nav.openPattern(container, companyCalendarOf(container, null))
+                else link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
             }
         }
     }

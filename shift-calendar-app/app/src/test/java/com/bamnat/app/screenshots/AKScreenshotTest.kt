@@ -83,9 +83,9 @@ class AKScreenshotTest : ScreenshotBase() {
 
     @Test fun captureSkipsAsksAndChecksOnlyNew() = shoot("1160_ak_capture_review", FOLDED, capture {
         // [INVA-01] 1.29: what is written already is said in the line on top, not listed.
-        assertTrue(shows("이미 있음 1건. 아래만 확인해 주세요.", exact = false))
-        assertTrue(shows("기록과 다른 체결 1건 · 고칠까요?"))
-        assertTrue(shows("아직 안 적은 체결 2건"))
+        assertTrue(appears("이미 있음 1건. 아래만 확인해 주세요.", exact = false))
+        assertTrue(appears("기록과 다른 체결 1건 · 고칠까요?"))
+        assertTrue(appears("아직 안 적은 체결 2건"))
         // Below 1.27 AJ's scanner button on a folded phone: scrolled to.
         reveal("수량 × 단가가 금액과 안 맞아요", exact = false)
         // NAVER is ticked; the yellow SK하이닉스 is not until looked at; 카카오 stays as written unless ticked.
@@ -102,7 +102,7 @@ class AKScreenshotTest : ScreenshotBase() {
         tapText("카카오 캡처대로 고치기", exact = true)
         // The user looks at SK하이닉스 and fixes the misread amount: 546,000.
         typeInto("금액 확인", "546000")
-        assertTrue(shows("넣기 3건", exact = true))
+        assertTrue(appears("넣기 3건", exact = true))
         tapText("넣고, 다음부터 묻지 않고 바로 넣기")
         val t = trades()
         val k = t.single { it.id == kakao }
@@ -116,13 +116,13 @@ class AKScreenshotTest : ScreenshotBase() {
     @Test fun trustedCapturePutsSureNewAtOnceAndStillAsks() = shoot("1162_ak_capture_trusted", FOLDED, capture(trust = true) {
         // NAVER went in without a question; 카카오 (different) and SK하이닉스 (yellow) are still asked.
         assertEquals(176_300.0, trades().single { it.symbol == "035420" }.price, 0.0)
-        assertTrue(shows("확실한 1건은 묻지 않고 바로 넣었어요", exact = false))
-        assertTrue(shows("기록과 다른 체결 1건 · 고칠까요?"))
-        assertTrue(shows("아직 안 적은 체결 1건"))
-        assertFalse(shows("NAVER", exact = true))
+        assertTrue(appears("확실한 1건은 묻지 않고 바로 넣었어요", exact = false))
+        assertTrue(appears("기록과 다른 체결 1건 · 고칠까요?"))
+        assertTrue(appears("아직 안 적은 체결 1건"))
+        assertTrue(gone("NAVER", exact = true))
         assertEquals(41_000.0, trades().single { it.symbol == "035720" }.price, 0.0)
         assertTrue(trades().none { it.symbol == "000660" })
-        assertTrue(shows("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
+        assertTrue(appears("확실한 체결은 묻지 않고 바로 넣어요", exact = false))
     })
 
     @Test fun trustedCaptureUndo() = shoot("1163_ak_capture_trusted_dark", FOLDED_NIGHT, capture(trust = true) {
@@ -160,21 +160,21 @@ class AKScreenshotTest : ScreenshotBase() {
 
     @Test fun memoChoseongSearch() = shoot("1165_ak_memo_search_choseong", FOLDED, memos {
         typeInto("제목, 내용, #태그 검색", "ㅇㅅㅇㄱ")
-        assertTrue(shows("인수인계", exact = true))
-        assertFalse(shows("준비물", exact = true))
+        assertTrue(appears("인수인계", exact = true))
+        assertTrue(gone("준비물", exact = true))
     })
 
     @Test fun memoShiftSearchAndChip() = shoot("1166_ak_memo_search_shift", FOLDED, memos {
         tapText("필터 펼치기", exact = true, scrolls = 0)
         tapText("야간 날", exact = true, scrolls = 0)
-        assertTrue(shows("야간 특이사항", exact = true))
-        assertFalse(shows("준비물", exact = true))
+        assertTrue(appears("야간 특이사항", exact = true))
+        assertTrue(gone("준비물", exact = true))
     })
 
     @Test fun memoDateSearch() = shoot("1167_ak_memo_search_date", PHONE, memos {
         typeInto("제목, 내용, #태그 검색", "${today.monthValue}월 ${today.dayOfMonth}일")
-        assertTrue(shows("준비물", exact = true))
-        assertFalse(shows("야간 특이사항", exact = true))
+        assertTrue(appears("준비물", exact = true))
+        assertTrue(gone("야간 특이사항", exact = true))
     })
 
     @Test fun longMemoCardShowsTheWord() = shoot("1168_ak_memo_long_search", FOLDED, {
@@ -182,21 +182,21 @@ class AKScreenshotTest : ScreenshotBase() {
         tab(2, wide = false)
         tapText("일반 메모", prefix = true, scrolls = 0)
         typeInto("제목, 내용, #태그 검색", "비상")
-        assertTrue(shows("…여기에 비상 연락처 정리", exact = false))
+        assertTrue(appears("…여기에 비상 연락처 정리", exact = false))
     })
 
     @Test fun memoOffersTheNextNight() = shoot("1169_ak_memo_shift_offer", FOLDED, memos {
         tapText("일반 메모", prefix = true, scrolls = 0)
         tapText("다음 야간 때 열쇠 챙기기")
         // 10/14 is 주간; the next 야간 is 10/16 from 20:00, so an hour before.
-        assertTrue(shows("다음 야간(10/16) 출근 1시간 전", exact = false))
+        assertTrue(appears("다음 야간(10/16) 출근 1시간 전", exact = false))
     })
 
     @Test fun memoScheduleShiftChips() = shoot("1170_ak_memo_shift_chips", FOLDED, memos {
         tapText("일반 메모", prefix = true, scrolls = 0)
         tapText("다음 야간 때 열쇠 챙기기")
         tapText("일정으로 넣기", exact = true)
-        assertTrue(shows("근무에 맞춰", exact = true))
+        assertTrue(appears("근무에 맞춰", exact = true))
         tapText("저장", exact = true)
         back() // the editor saves as it closes
         settle()
@@ -207,7 +207,7 @@ class AKScreenshotTest : ScreenshotBase() {
     @Test fun memoLastSameShift() = shoot("1171_ak_memo_last_same_shift", FOLDED, memos {
         tapText("3번 라인 센서 점검 요청", exact = false)
         tapText("지난 주간(10/9) 메모 1개 보기", exact = false)
-        assertTrue(shows("열쇠는 경비실", exact = false))
+        assertTrue(appears("열쇠는 경비실", exact = false))
     })
 
     @Test fun memosHugeTextDateRows() = shoot("1172_ak_memos_huge_text", PHONE, fontScale = 2f) {

@@ -136,7 +136,7 @@ class AIScreenshotTest : ScreenshotBase() {
         content { CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}, onMatch = { matched = true }) }
         settle()
         reveal("급여 명세서와 맞춰 봤어요", exact = true)
-        assertTrue(shows("이 달력에서 명세서로 맞춰 본 기록이 없어요", exact = false))
+        assertTrue(appears("이 달력에서 명세서로 맞춰 본 기록이 없어요", exact = false))
         tapText("명세서로 맞춰 보기", exact = true)
         assertTrue(matched)
         assertTrue(c.pendingMatch)
@@ -149,8 +149,8 @@ class AIScreenshotTest : ScreenshotBase() {
         content { CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}, onMatch = {}) }
         settle()
         reveal("급여 명세서와 맞춰 봤어요", exact = true)
-        assertTrue(shows("명세서로 맞춰 본 기록이 있어요 · 일치", exact = false))
-        assertFalse(shows("명세서로 맞춰 보기", exact = true))
+        assertTrue(appears("명세서로 맞춰 본 기록이 있어요 · 일치", exact = false))
+        assertTrue(gone("명세서로 맞춰 보기", exact = true))
     }
 
     // ---- 442 [PLAZA-30] the whole way on the real company server ----
@@ -172,7 +172,7 @@ class AIScreenshotTest : ScreenshotBase() {
         server { base ->
             flow(base)
             tapText("올리기", exact = true)
-            assertTrue(shows("공개 자료 확인·고침 · GS칼텍스", exact = true))
+            assertTrue(appears("공개 자료 확인·고침 · GS칼텍스", exact = true))
         }
     }
     @Test fun flowSent() = shoot("1124_ai_flow_sent", PHONE_393) {
@@ -195,7 +195,7 @@ class AIScreenshotTest : ScreenshotBase() {
             tapText("보내기", exact = true)
             tapText("‘GS칼텍스’ 광장 보기", exact = true)
             reveal("GS칼텍스", exact = false)
-            assertTrue(shows("우리 회사 광장", exact = true) || shows("제보 1 · 확인 중", exact = true))
+            assertTrue(appears("우리 회사 광장", exact = true) || shows("제보 1 · 확인 중", exact = true))
         }
     }
     @Test fun flowRoom() = shoot("1126_ai_flow_room", PHONE_393) {
@@ -232,11 +232,11 @@ class AIScreenshotTest : ScreenshotBase() {
         r.others = listOf(RoomVersion("s7", false, "생산팀", null, SetupEdit.of(mine())!!.rate("night", 0.6).text, 3, 3, 1, 3))
         r.seed("c1", 2 to "이번 달 특근 공지 보셨어요? 토요일 두 번이래요", 3 to "야간 끝나고 통근버스 몇 시에 와요?", 1 to "6시 40분에 와요")
         home()
-        assertTrue(shows("‘(주)예시정밀’ 정보 광장", exact = true))
+        assertTrue(appears("‘(주)예시정밀’ 정보 광장", exact = true))
         reveal("근무·급여 정보", exact = true)
         reveal("야간 50% → 60%로 바꾼 사람 3명", exact = false)
         reveal("글 보기·쓰기", exact = true)
-        assertTrue(shows("댓글 1개", exact = true))
+        assertTrue(appears("댓글 1개", exact = true))
     }
     @Test fun theRoomsTalk() = shoot("1128_ai_room_talk", PHONE) {
         val r = rooms()
@@ -245,9 +245,9 @@ class AIScreenshotTest : ScreenshotBase() {
         val vm = home()
         vm.openTalk()
         settle()
-        assertTrue(shows("자유 토의", exact = true))
+        assertTrue(appears("자유 토의", exact = true))
         // A room has no rule to change: no 고치자는 제안.
-        assertFalse(shows("고치자는 제안", exact = true))
+        assertTrue(gone("고치자는 제안", exact = true))
         typeInto("같은 회사 분들께 하고 싶은 말을 적어 주세요", "주차장 자리 요즘 넉넉해요?")
         tapText("보내기", exact = true)
         if (shows("동의하고 쓰기", exact = true)) tapText("동의하고 쓰기", exact = true)
@@ -259,7 +259,7 @@ class AIScreenshotTest : ScreenshotBase() {
         member()
         c.pendingPlazaNote = "‘(주)예시정밀’ 설정을 넣었어요 · 5일 순서. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
         home()
-        assertTrue(shows("이제 같은 회사 분들끼리 이야기하는 정보 광장이에요", exact = false))
+        assertTrue(appears("이제 같은 회사 분들끼리 이야기하는 정보 광장이에요", exact = false))
         assertNull(c.pendingPlazaNote)
     }
     @Test fun thePlazaTopLeadsToACompany() = shoot("1130_ai_board_find", PHONE) {
@@ -268,7 +268,7 @@ class AIScreenshotTest : ScreenshotBase() {
         val vm = CompanyBoardViewModel(c)
         content { CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onFind = { found = true }) }
         settle()
-        assertTrue(shows("회사를 고르면 그 회사 분들끼리 이야기하는 ‘회사 정보 광장’이 열려요", exact = true))
+        assertTrue(appears("회사를 고르면 그 회사 분들끼리 이야기하는 ‘회사 정보 광장’이 열려요", exact = true))
         tapText("회사 찾기", exact = true)
         assertTrue(found)
     }
@@ -277,7 +277,7 @@ class AIScreenshotTest : ScreenshotBase() {
         var opened = false
         content { Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { PlazaRoomLine(onOpen = { opened = true }) } }
         settle()
-        assertFalse(shows("정보 광장", exact = false))
+        assertTrue(gone("정보 광장", exact = false))
         member()
         settle()
         tapText("‘(주)예시정밀’ 정보 광장 · 자유 토의와 고친 점", exact = true)
@@ -290,24 +290,24 @@ class AIScreenshotTest : ScreenshotBase() {
         style(WorkStyle.FIELD)
         r.seed(StylePlaza.FIELD, 2 to "인천 쪽 타일 단가 요즘 어때요?", 3 to "다음 주 비 온다던데 일정 미루셨어요?")
         home()
-        assertTrue(shows("현장 광장", exact = true))
-        assertTrue(shows("지역·직종 일당 시세", exact = true))
-        assertTrue(shows("현장 이야기", exact = true))
+        assertTrue(appears("현장 광장", exact = true))
+        assertTrue(appears("지역·직종 일당 시세", exact = true))
+        assertTrue(appears("현장 이야기", exact = true))
     }
     @Test fun theShopPlaza() = shoot("1133_ai_style_shop", PHONE) {
         val r = rooms()
         style(WorkStyle.BUSINESS)
         r.seed(StylePlaza.SHOP, 2 to "평일 점심 손님이 지난달보다 10% 늘었어요", 3 to "배달앱 리뷰 이벤트 효과 있었어요?")
         home()
-        assertTrue(shows("가게 광장", exact = true))
-        assertTrue(shows("영업·매출 팁", exact = true))
-        assertFalse(shows("시세 보기·올리기", exact = true))
+        assertTrue(appears("가게 광장", exact = true))
+        assertTrue(appears("영업·매출 팁", exact = true))
+        assertTrue(gone("시세 보기·올리기", exact = true))
     }
     @Test fun theHourlyPlaza() = shoot("1134_ai_style_hourly", SMALL_PHONE, 2f) {
         rooms()
         style(WorkStyle.HOURLY)
         home()
-        assertTrue(shows("알바 광장", exact = true))
+        assertTrue(appears("알바 광장", exact = true))
         reveal("지역 시급 시세", exact = true)
     }
     @Test fun theInvestPlazaTakesNoTips() = shoot("1135_ai_style_invest", PHONE_393_NIGHT) {
@@ -317,8 +317,8 @@ class AIScreenshotTest : ScreenshotBase() {
         // Even in a company: 투자 이야기 is a kind's own.
         member()
         home()
-        assertTrue(shows("투자 이야기", exact = true))
-        assertTrue(shows("종목 추천·매수 권유·리딩방 안내 글은 가려요", exact = false))
+        assertTrue(appears("투자 이야기", exact = true))
+        assertTrue(appears("종목 추천·매수 권유·리딩방 안내 글은 가려요", exact = false))
     }
 
     // ---- 445 [PLAZA-34] 바뀐 내용을 나눌까요 ----
@@ -332,10 +332,10 @@ class AIScreenshotTest : ScreenshotBase() {
         content { AutoShareHost(c, onOpen = {}) }
         runBlocking { c.autoShare.check() }
         settle()
-        assertTrue(shows("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
-        assertTrue(shows("• 야간 50% → 60%", exact = true))
-        assertTrue(shows("다음부터 묻지 않고 저절로 나누기 (하루 한 번)", exact = true))
-        assertTrue(shows("다시 묻지 않기", exact = true))
+        assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
+        assertTrue(appears("• 야간 50% → 60%", exact = true))
+        assertTrue(appears("다음부터 묻지 않고 저절로 나누기 (하루 한 번)", exact = true))
+        assertTrue(appears("다시 묻지 않기", exact = true))
         // The same values saved again ask nothing.
         tapText("이번엔 안 할게요", exact = true)
         settle()
@@ -359,7 +359,7 @@ class AIScreenshotTest : ScreenshotBase() {
         }
         runBlocking { c.autoShare.check() }
         settle()
-        assertTrue(shows("(주)예시정밀 광장에 내일 나눠요(하루 한 번) · 야간 50% → 60%", exact = true))
+        assertTrue(appears("(주)예시정밀 광장에 내일 나눠요(하루 한 번) · 야간 50% → 60%", exact = true))
         assertTrue(c.autoShare.waiting)
         tapText("되돌리기", exact = true)
         settle()
@@ -371,11 +371,11 @@ class AIScreenshotTest : ScreenshotBase() {
         c.companyStore.setAutoShare(false)
         content { Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { AutoShareRow() } }
         settle()
-        assertTrue(shows("‘다시 묻지 않기’로 두셨어요", exact = false))
+        assertTrue(appears("‘다시 묻지 않기’로 두셨어요", exact = false))
         tapText("바꿀 때마다 묻기로 되돌리기", exact = true)
         settle()
         assertNull(c.companyStore.autoShare.value)
-        assertTrue(shows("바꿀 때마다 ‘(주)예시정밀 광장에 나눌까요?’ 하고 물어요", exact = false))
+        assertTrue(appears("바꿀 때마다 ‘(주)예시정밀 광장에 나눌까요?’ 하고 물어요", exact = false))
     }
 
     /** The company server on Node (server/company-worker), as PlazaAIAppTest runs it. */

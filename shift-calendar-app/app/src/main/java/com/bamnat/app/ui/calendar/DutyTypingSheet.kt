@@ -99,7 +99,9 @@ fun DutyTypingSheet(
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         v != androidx.compose.material3.SheetValue.Hidden || guard.typed == 0 || false.also { guard.asking = true }
     })
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
+    // [J133-78] The X asks the same as 닫기, back and a swipe: it had closed and thrown typed days away.
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state,
+        onClose = { if (guard.typed == 0) onDismiss() else guard.asking = true }) {
         DutyTypingPanel(snap, month, onDismiss, onSave, rules, initial, doubtful, onRules, onDoubtLeft, weekStart,
             Modifier.navigationBarsPadding(), guard)
     }

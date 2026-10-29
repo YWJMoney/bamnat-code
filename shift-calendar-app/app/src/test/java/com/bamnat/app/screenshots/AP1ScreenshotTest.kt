@@ -144,9 +144,9 @@ class AP1ScreenshotTest : ScreenshotBase() {
         }
         settle()
         // The server's order: starting with it, shorter, then by name.
-        assertTrue(shows("예시물류", exact = true))
-        assertTrue(shows("예시화학", exact = true))
-        assertFalse("no spinner, nothing asked", shows("찾는 중", exact = false))
+        assertTrue(appears("예시물류", exact = true))
+        assertTrue(appears("예시화학", exact = true))
+        assertTrue("no spinner, nothing asked", gone("찾는 중", exact = false))
         assertEquals(emptyList<String>(), f.asked.filter { it == "search" })
     }
 
@@ -158,7 +158,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
             }
         }
         settle()
-        assertTrue(shows("가나다화학", exact = true))
+        assertTrue(appears("가나다화학", exact = true))
         assertEquals(emptyList<String>(), f.asked.filter { it == "search" })
     }
 
@@ -170,7 +170,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
         val vm = detail()
         assertTrue("on screen from the phone, no spinner", vm.state.value is CompanyDetailViewModel.State.Loaded)
         assertTrue(vm.refreshing.value)
-        assertTrue(shows("(주)예시정밀", exact = false))
+        assertTrue(appears("(주)예시정밀", exact = false))
     }
 
     @Test fun noConnectionKeepsWhatWasSeen() = shoot("1453_ap1_detail_stale", PHONE) {
@@ -181,7 +181,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
         assertTrue(vm.state.value is CompanyDetailViewModel.State.Loaded)
         assertTrue(vm.stale.value)
         reveal("최근 본 내용이에요. 인터넷이 되면 새로 불러와요.", exact = true)
-        assertTrue(shows("다시 시도", exact = true))
+        assertTrue(appears("다시 시도", exact = true))
     }
 
     @Test fun aCompanyNeverSeenStillShowsItsSpinnerOnce() = shoot("1454_ap1_detail_first_time", PHONE) {
@@ -210,7 +210,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
         f.offline = true
         val vm = home()
         assertTrue(vm.state.value.stale)
-        assertTrue(shows("최근 본 내용이에요", exact = false))
+        assertTrue(appears("최근 본 내용이에요", exact = false))
     }
 
     // ---- [SPD-16] a post shows at once ----
@@ -225,7 +225,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(vm.talk.open.value!!.talk!!.posts.any { it.body == "다음 주부터 야간이 9시예요" })
         reveal("다음 주부터 야간이 9시예요", exact = true)
-        assertTrue(shows("보내는 중", exact = false))
+        assertTrue(appears("보내는 중", exact = false))
     }
 
     // ---- [SPD-13] 규칙 광장 ----
@@ -237,7 +237,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
         val vm = CompanyBoardViewModel(c)
         content { CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
         settle()
-        assertTrue(shows("최근 본 내용이에요", exact = false))
+        assertTrue(appears("최근 본 내용이에요", exact = false))
     }
 
     // ---- [SPD-17] 자가 점검: 조회 속도 ----
@@ -255,8 +255,8 @@ class AP1ScreenshotTest : ScreenshotBase() {
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { SpeedCheckCard(s) }
         }
         settle()
-        assertTrue(shows("조회 속도", exact = true))
-        assertTrue(shows("기다리지 않고 바로 보인 화면: 77% (9번 중 7번)", exact = true))
+        assertTrue(appears("조회 속도", exact = true))
+        assertTrue(appears("기다리지 않고 바로 보인 화면: 77% (9번 중 7번)", exact = true))
         NetTimings.clear()
     }
 
@@ -266,7 +266,7 @@ class AP1ScreenshotTest : ScreenshotBase() {
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { SpeedCheckCard() }
         }
         settle()
-        assertTrue(shows("아직 잰 것이 없어요. 회사 찾기나 광장을 열면 재요.", exact = true))
+        assertTrue(appears("아직 잰 것이 없어요. 회사 찾기나 광장을 열면 재요.", exact = true))
     }
 
     @Test fun theStaleLineAtLargeText() = shoot("1461_ap1_detail_stale_large", SMALL_PHONE, 2f) {

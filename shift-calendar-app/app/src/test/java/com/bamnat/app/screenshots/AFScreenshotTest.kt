@@ -123,13 +123,13 @@ class AFScreenshotTest : ScreenshotBase() {
         // A phone that read too much today sees the shifts only, and is told why.
         m.limited = true
         detail(m)
-        assertTrue(shows("오늘은 많이 봐서 근무 시각·순서만 보여요", exact = false))
+        assertTrue(appears("오늘은 많이 봐서 근무 시각·순서만 보여요", exact = false))
         m.limited = false
         detail(m)
-        assertTrue(shows("급여 방식 있음 · 확인 3명 · 쓰면 보여요", exact = true))
-        assertTrue(shows("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요", exact = false))
-        assertFalse(shows("급여 계산 방식 보기", exact = false))
-        assertFalse(shows("우리 회사 광장", exact = true))
+        assertTrue(appears("급여 방식 있음 · 확인 3명 · 쓰면 보여요", exact = true))
+        assertTrue(appears("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요", exact = false))
+        assertTrue(gone("급여 계산 방식 보기", exact = false))
+        assertTrue(gone("우리 회사 광장", exact = true))
     }
     @Test fun theSwitchStopsIt() = shoot("1061_af_switch", SMALL_PHONE) {
         members()
@@ -138,7 +138,7 @@ class AFScreenshotTest : ScreenshotBase() {
         assertTrue(c.autoShare.waiting)
         content { Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { AutoShareRow() } }
         settle()
-        assertTrue(shows("(주)예시정밀 광장에 고쳐 올려요", exact = false))
+        assertTrue(appears("(주)예시정밀 광장에 고쳐 올려요", exact = false))
         tapText("회사 광장에 저절로 나누기", exact = true)
         settle()
         // [PLAZA-34] 1.27 AI: off is 바꿀 때마다 묻기 again, not never.
@@ -173,7 +173,7 @@ class AFScreenshotTest : ScreenshotBase() {
         if (shows("급여 계산 방식도 같이 넣을까요?", exact = true)) tapText("네, 같이 넣을게요", exact = true)
         if (shows("이 순서로 쓸게요", exact = true)) tapText("이 순서로 쓸게요", exact = true)
         settle()
-        assertTrue(shows("회사를 바꾼 지 30일이 지나면", exact = false))
+        assertTrue(appears("회사를 바꾼 지 30일이 지나면", exact = false))
         assertNull(c.companyStore.applied.value)
     }
 
@@ -183,9 +183,9 @@ class AFScreenshotTest : ScreenshotBase() {
         m.member = true
         m.first = true
         detail(m)
-        assertTrue(shows("우리 회사 광장", exact = true))
-        assertTrue(shows("처음 알려 준 판이에요", exact = false))
-        assertTrue(shows("제보 1 · 확인 중", exact = true))
+        assertTrue(appears("우리 회사 광장", exact = true))
+        assertTrue(appears("처음 알려 준 판이에요", exact = false))
+        assertTrue(appears("제보 1 · 확인 중", exact = true))
     }
     @Test fun onlyWhatOthersChangedShowsAsCards() = shoot("1065_af_room_cards", UNFOLDED) {
         ownPay()
@@ -198,8 +198,8 @@ class AFScreenshotTest : ScreenshotBase() {
         )
         c.companyStore.setApplied(AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))
         detail(m)
-        assertTrue(shows("야간 50% → 60%로 바꾼 사람 3명", exact = true))
-        assertTrue(shows("바꾼 사람 1명", exact = false))
+        assertTrue(appears("야간 50% → 60%로 바꾼 사람 3명", exact = true))
+        assertTrue(appears("바꾼 사람 1명", exact = false))
     }
     @Test fun oneValueIsTakenAndTheAmountsStay() = shoot("1066_af_take_value", FOLDED) {
         ownPay()
@@ -212,16 +212,16 @@ class AFScreenshotTest : ScreenshotBase() {
         val p = c.payStore.profile.value!!
         assertEquals(0.6, p.rules.nightPremium!!, 1e-9)
         assertEquals(2_500_000L, p.base.on(today).value)
-        assertTrue(shows("야간을 바꿨어요. 내 금액은 그대로예요", exact = true))
-        assertTrue(shows("내 설정과 다르게 쓰는 분이 아직 없어요.", exact = true))
+        assertTrue(appears("야간을 바꿨어요. 내 금액은 그대로예요", exact = true))
+        assertTrue(appears("내 설정과 다르게 쓰는 분이 아직 없어요.", exact = true))
     }
     @Test fun aSettledCompanyStopsNudging() = shoot("1067_af_room_stable", FOLDED_NIGHT) {
         val m = members()
         m.member = true
         m.stable = true
         detail(m)
-        assertTrue(shows("이제 바뀐 값 알림은 보내지 않아요", exact = false))
-        assertTrue(shows("안정", exact = true))
+        assertTrue(appears("이제 바뀐 값 알림은 보내지 않아요", exact = false))
+        assertTrue(appears("안정", exact = true))
     }
 
     // ---- [PLAZA-07] 한 번 묻기와 설정 스위치 ----
@@ -239,11 +239,11 @@ class AFScreenshotTest : ScreenshotBase() {
     @Test fun theOneTimeAskSaysWhatGoesAndWhatNot() = shoot("1068_af_ask", SMALL_PHONE, 2f) {
         members()
         ask()
-        assertTrue(shows("회사 광장에 나눌까요?", exact = true))
-        assertTrue(shows("같은 회사 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", exact = true))
+        assertTrue(appears("회사 광장에 나눌까요?", exact = true))
+        assertTrue(appears("같은 회사 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", exact = true))
         assertEquals(1, c.autoShare.ask.value?.rewardMonths)
         // [PLAZA-34] 1.27 AI: 이번엔 안 할게요 · 다시 묻지 않기 in place of the one no.
-        assertTrue(shows("이번엔 안 할게요", exact = true))
+        assertTrue(appears("이번엔 안 할게요", exact = true))
         reveal("다시 묻지 않기", exact = true)
         assertNull(c.companyStore.autoShare.value)
     }
@@ -251,8 +251,8 @@ class AFScreenshotTest : ScreenshotBase() {
         val m = members()
         var opened: String? = null
         ask { opened = it }
-        assertTrue(shows("(주)예시정밀 광장에 나눠요", exact = false))
-        assertTrue(shows("처음 알려 주는 급여 방식이면 프로 1개월을 드려요.", exact = true))
+        assertTrue(appears("(주)예시정밀 광장에 나눠요", exact = false))
+        assertTrue(appears("처음 알려 주는 급여 방식이면 프로 1개월을 드려요.", exact = true))
         tapText("나눌게요", exact = true)
         repeat(100) { if (opened == null) { Thread.sleep(20); settle() } }
         // [PLAZA-34] 1.27 AI: one yes is for this time; the next change asks again with what changed.
@@ -263,6 +263,6 @@ class AFScreenshotTest : ScreenshotBase() {
         m.member = true
         m.first = true
         detail(m)
-        assertTrue(shows("우리 회사 광장", exact = true))
+        assertTrue(appears("우리 회사 광장", exact = true))
     }
 }

@@ -137,10 +137,10 @@ class BDScreenshotTest : ScreenshotBase() {
         plaza.setups = listOf(shared("s1", withPay(mine)))
         report()
         send()
-        assertTrue(shows("이미 같은 방식이 있어요! 🎉", exact = true))
+        assertTrue(appears("이미 같은 방식이 있어요! 🎉", exact = true))
         // [FIN130-01] The pay way goes in with the 기본급 on the pay screen, never before it.
-        assertTrue(shows("이 규칙의 급여 계산 방식은 급여 화면에서 기본급을 넣으면 같이 들어가요. 그 전에는 내 급여가 그대로예요.", exact = true))
-        assertTrue(shows("맞았다고 알리고 이 방식 쓰기", exact = true))
+        assertTrue(appears("이 규칙의 급여 계산 방식은 급여 화면에서 기본급을 넣으면 같이 들어가요. 그 전에는 내 급여가 그대로예요.", exact = true))
+        assertTrue(appears("맞았다고 알리고 이 방식 쓰기", exact = true))
         assertTrue(company.reports.isEmpty())
     }
 
@@ -152,7 +152,7 @@ class BDScreenshotTest : ScreenshotBase() {
         tapText("맞았다고 알리고 이 방식 쓰기", exact = true)
         reveal("이 규칙을 쓰고 있어요", exact = true)
         // [FIN130-01] No pay yet: the pay screen makes it from the way (its amounts), the way in use once that is saved.
-        assertTrue(shows("급여 계산 방식은 급여 화면에서 기본급을 넣으면 들어가요", exact = false))
+        assertTrue(appears("급여 계산 방식은 급여 화면에서 기본급을 넣으면 들어가요", exact = false))
         // Nothing new went up: the calendar uses the plaza's rule and it counted one more 맞아요.
         assertTrue(company.reports.isEmpty())
         assertEquals("s1", c.companyStore.applied.value?.setup)
@@ -173,7 +173,7 @@ class BDScreenshotTest : ScreenshotBase() {
         send()
         reveal("맞았다고 알리고 이 방식 쓰기", exact = true)
         // My own work, no pay on either: nothing more to take.
-        assertFalse(shows("급여 계산 방식도 같이 넣어요", exact = false))
+        assertTrue(gone("급여 계산 방식도 같이 넣어요", exact = false))
     }
 
     // ---- [PLZD-02] 모양이 다름: 부서 이름 없이는 못 올려요 ----
@@ -182,10 +182,10 @@ class BDScreenshotTest : ScreenshotBase() {
         plaza.setups = listOf(shared("s1", threeShifts(mine)))
         report()
         send()
-        assertTrue(shows("근무 모양이 달라요", exact = true))
-        assertTrue(shows("대표 판은 3교대 · 9일 순서인데, 내 달력은 2교대 · 6일 순서예요", exact = false))
+        assertTrue(appears("근무 모양이 달라요", exact = true))
+        assertTrue(appears("대표 판은 3교대 · 9일 순서인데, 내 달력은 2교대 · 6일 순서예요", exact = false))
         typeInto("부서·공장 이름", "생산 팀")
-        assertTrue(shows("대표 판과 다른 이름을 적어 주세요", exact = true))
+        assertTrue(appears("대표 판과 다른 이름을 적어 주세요", exact = true))
         assertTrue(company.reports.isEmpty())
     }
 
@@ -215,9 +215,9 @@ class BDScreenshotTest : ScreenshotBase() {
         plaza.setups = listOf(shared("s1", SetupEdit.of(withPay(mine))!!.shiftTime("주간", "06:30", "18:30", 60).text))
         report()
         send()
-        assertTrue(shows("대표 판과 다른 점 1가지", exact = true))
-        assertTrue(shows("달라진 점만 제안하기", exact = true))
-        assertTrue(shows("새 판으로 보낼게요", exact = true))
+        assertTrue(appears("대표 판과 다른 점 1가지", exact = true))
+        assertTrue(appears("달라진 점만 제안하기", exact = true))
+        assertTrue(appears("새 판으로 보낼게요", exact = true))
     }
 
     @Test fun theDifferenceGoesAsAProposal() = shoot("1367_bd_differ_proposed", PHONE_393) {
@@ -257,8 +257,8 @@ class BDScreenshotTest : ScreenshotBase() {
         content { CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
         settle()
         send()
-        assertTrue(shows("오늘 보낸 판이 있어요", exact = true))
-        assertTrue(shows("먼저 보낸 판은 이것으로 바뀌어요", exact = false))
+        assertTrue(appears("오늘 보낸 판이 있어요", exact = true))
+        assertTrue(appears("먼저 보낸 판은 이것으로 바뀌어요", exact = false))
         assertTrue(company.reports.isEmpty())
         tapText("바꿔서 보내기", exact = true)
         reveal("보냈어요! 고마워요", exact = true)
@@ -275,7 +275,7 @@ class BDScreenshotTest : ScreenshotBase() {
         settle()
         send()
         reveal("보냈어요. 개발자가 먼저 볼게요", exact = true)
-        assertTrue(shows("모양이 달라 확인 중", exact = true))
+        assertTrue(appears("모양이 달라 확인 중", exact = true))
     }
 
     // ---- [PLZD-06][PLZD-07][PLZD-08] 회사 화면: 부서마다 대표 판 하나 ----
@@ -294,10 +294,10 @@ class BDScreenshotTest : ScreenshotBase() {
         on()
         company.twins = true
         detail()
-        assertTrue(shows("대표 판 v2", exact = true))
+        assertTrue(appears("대표 판 v2", exact = true))
         reveal("같은 부서 다른 판 2개 보기", exact = true)
         // The others are folded: no second 생산팀 card until asked.
-        assertFalse(shows("대표 판과 비교", exact = true))
+        assertTrue(gone("대표 판과 비교", exact = true))
     }
 
     @Test fun theFoldedOnesSayWhatTheyChange() = shoot("1372_bd_company_changes", FOLDED_NIGHT) {
@@ -307,7 +307,7 @@ class BDScreenshotTest : ScreenshotBase() {
         detail()
         tapText("같은 부서 다른 판 2개 보기", exact = true)
         reveal("주간 08:00~20:00 → 08:00~19:00", exact = true)
-        assertTrue(shows("대표 판과 비교", exact = true))
+        assertTrue(appears("대표 판과 비교", exact = true))
     }
 
     @Test fun theVersionInUseIsSaidFirst() = shoot("1373_bd_my_version", PHONE_393) {
@@ -315,8 +315,8 @@ class BDScreenshotTest : ScreenshotBase() {
         company.twins = true
         c.companyStore.setApplied(AppliedSetup("c1", NAME, "생산팀", "s3", null, false, Today.instant()))
         detail()
-        assertTrue(shows("내가 쓰는 판 · 생산팀", exact = true))
-        assertTrue(shows("이 부서 대표 판은 다른 판이에요", exact = false))
+        assertTrue(appears("내가 쓰는 판 · 생산팀", exact = true))
+        assertTrue(appears("이 부서 대표 판은 다른 판이에요", exact = false))
         // The one in use is open; only the other one is folded.
         reveal("같은 부서 다른 판 1개 보기", exact = true)
     }

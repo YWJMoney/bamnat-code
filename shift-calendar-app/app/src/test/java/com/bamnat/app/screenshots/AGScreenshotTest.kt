@@ -105,9 +105,9 @@ class AGScreenshotTest : ScreenshotBase() {
     // ---- 433 [INVITE-10] 결정 AG-D2 ----
     @Test fun theLastSetupScreenSaysTheInvite() = shoot("1080_ag_setup_invite_line", PHONE_393, fresh(null) {
         toSummary()
-        assertTrue(shows("저장하고 초대한 분께 알리기", exact = true))
-        assertTrue(shows("알리지 않고 저장", exact = true))
-        assertTrue(shows("FRND-2345"))
+        assertTrue(appears("저장하고 초대한 분께 알리기", exact = true))
+        assertTrue(appears("알리지 않고 저장", exact = true))
+        assertTrue(appears("FRND-2345"))
         // Play's referrer was read on the phone; nothing about it went anywhere.
         assertEquals("FRND2345", c.invites.store.current.found)
         assertEquals(emptyList<String>(), sent())
@@ -122,9 +122,9 @@ class AGScreenshotTest : ScreenshotBase() {
         assertEquals("FRND2345", c.invites.store.current.reportedCode)
         // [INVITE-13] On the calendar, no question to find: what was said, and the friend's own chance to invite.
         reveal("초대한 분께 알렸어요")
-        assertFalse(shows("친구 초대로 오셨나요?"))
-        assertTrue(shows("당신도 친구 5명이 각자 7일 이상 쓰면"))
-        assertTrue(shows("내 초대 링크 만들기", exact = true))
+        assertTrue(gone("친구 초대로 오셨나요?"))
+        assertTrue(appears("당신도 친구 5명이 각자 7일 이상 쓰면"))
+        assertTrue(appears("내 초대 링크 만들기", exact = true))
     })
 
     @Test fun savingWithoutTellingSendsNothing() = shoot("1082_ag_setup_not_told", PHONE_393, fresh(null) {
@@ -134,7 +134,7 @@ class AGScreenshotTest : ScreenshotBase() {
         assertEquals(emptyList<String>(), sent())
         assertNull(c.invites.store.current.reportedCode)
         assertTrue(c.invites.store.current.offerClosed)
-        assertFalse(shows("친구 초대로 오셨나요?"))
+        assertTrue(gone("친구 초대로 오셨나요?"))
         assertNull(c.invites.relay())
     })
 
@@ -147,7 +147,7 @@ class AGScreenshotTest : ScreenshotBase() {
         settle()
         // First among the notices: seen without opening "알림 n개 더 보기".
         reveal("친구 초대로 오셨나요?")
-        assertTrue(shows("알리기", exact = true))
+        assertTrue(appears("알리기", exact = true))
         // A code from the link is kept: none can be typed over it.
         assertFalse(c.invites.mayType())
     })
@@ -162,10 +162,10 @@ class AGScreenshotTest : ScreenshotBase() {
         settle()
         if (!shows("친구에게 밤낮 알려 주기")) tapText("알림 ", prefix = true, scrolls = 0)
         reveal("친구에게 밤낮 알려 주기")
-        assertTrue(shows("다음 프로까지 2명"))
+        assertTrue(appears("다음 프로까지 2명"))
         assertEquals(Today.date(), c.grow.current.inviteShownOn)
         tapText("그만 보기", exact = true)
-        assertFalse(shows("친구에게 밤낮 알려 주기"))
+        assertTrue(gone("친구에게 밤낮 알려 주기"))
         val f = FeatureRegistry.get("invite.nudge")!!
         assertTrue("off in 기능 켜고 끄기", com.bamnat.app.data.GuideStore.get(app).current.isOff(f, GuideState.ALL))
         // On again in 기능 켜고 끄기: the same day it shows again, and the picture is of the card.
@@ -178,9 +178,9 @@ class AGScreenshotTest : ScreenshotBase() {
     @Test fun settingsStartsWithGrowingTogether() = shoot("1085_ag_settings_top", FOLDED, style(WorkStyle.SHIFT) {
         tab(4, wide = false)
         reveal("함께 만들어요", exact = true)
-        assertTrue(shows("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)."))
-        assertTrue(shows("불편한 점 알려 주기"))
-        assertTrue(shows("개발자가 직접 읽고 답을 드리고"))
+        assertTrue(appears("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)."))
+        assertTrue(appears("불편한 점 알려 주기"))
+        assertTrue(appears("개발자가 직접 읽고 답을 드리고"))
         // The 더 보기 row says the rule as meant, not "다른 날 한 번 더 열면".
         reveal("5명 더 채울 때마다 또 · 초대 코드 넣기")
         scrollDown(2000)
@@ -201,7 +201,7 @@ class AGScreenshotTest : ScreenshotBase() {
         tab(4, wide = false)
         reveal("함께 만들어요", exact = true)
         tapText("닫기", exact = true)
-        assertFalse(shows("함께 만들어요", exact = true))
+        assertTrue(gone("함께 만들어요", exact = true))
         assertEquals(Today.date(), c.grow.current.cardClosedOn)
     })
 
@@ -215,10 +215,10 @@ class AGScreenshotTest : ScreenshotBase() {
         lockedPay().invoke(this)
         tapText("금액 비교하기", scrolls = 30)
         reveal("‘명세서 대조’ · 프로 기능이에요")
-        assertTrue(shows("광고 보고 오늘 하루 열기", exact = true))
-        assertTrue(shows("미리 보기에서는 광고가 나오지 않아요"))
+        assertTrue(appears("광고 보고 오늘 하루 열기", exact = true))
+        assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
         reveal("친구 초대로 프로 이용권 받기", exact = true)
-        assertTrue(shows("친구 5명이 각자 7일 이상 쓰면"))
+        assertTrue(appears("친구 5명이 각자 7일 이상 쓰면"))
         assertTrue(app.container.featureGate.state.value.preview)
         noCuts("sheet")
     }
@@ -254,7 +254,7 @@ class AGScreenshotTest : ScreenshotBase() {
         reveal("친구 초대로 프로 이용권 받기", exact = true)
         tapText("친구 초대로 프로 이용권 받기", exact = true)
         reveal("‘근무·급여 비교’ · 프로 기능이에요")
-        assertTrue(shows("미리 보기에서는 광고가 나오지 않아요"))
+        assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
     }
 
     // ---- 435 [INVITE-12] ----
@@ -286,10 +286,10 @@ class AGScreenshotTest : ScreenshotBase() {
         tapText("프로", exact = true)
         tapText("친구 초대", exact = true, scrolls = 30)
         reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)
-        assertTrue(shows("다음 프로까지 2명", exact = true))
-        assertTrue(shows("5명 더 채울 때마다 또 1개월"))
-        assertTrue(shows("같은 친구·같은 휴대폰은 한 번만"))
-        assertFalse(shows("넘게 쓸 때마다"))
+        assertTrue(appears("다음 프로까지 2명", exact = true))
+        assertTrue(appears("5명 더 채울 때마다 또 1개월"))
+        assertTrue(appears("같은 친구·같은 휴대폰은 한 번만"))
+        assertTrue(gone("넘게 쓸 때마다"))
     })
 
     @Test fun theSheetAtLargeText() = shoot("1091_ag_pro_sheet_200", PHONE_393, fontScale = 2f) {

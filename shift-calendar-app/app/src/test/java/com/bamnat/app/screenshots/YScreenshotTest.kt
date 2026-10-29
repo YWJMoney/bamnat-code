@@ -43,9 +43,9 @@ class YScreenshotTest : ScreenshotBase() {
     // ---- 391 [FIT-01][FIT-02] ----
     @Test fun investToolsHideShiftTools() = shoot("890_y_invest_tools", FOLDED, style(WorkStyle.INVEST) {
         tools()
-        assertFalse("근무 주기 설정 is put away", shows("근무 주기 설정", exact = true))
-        assertFalse(shows("동료 근무표 받기", exact = true))
-        assertTrue("달력 공유, not 근무표", shows("달력 공유", exact = true))
+        assertTrue("근무 주기 설정 is put away", gone("근무 주기 설정", exact = true))
+        assertTrue(gone("동료 근무표 받기", exact = true))
+        assertTrue("달력 공유, not 근무표", appears("달력 공유", exact = true))
         reveal("이 달력에 안 맞아 숨긴 도구")
     })
 
@@ -61,19 +61,19 @@ class YScreenshotTest : ScreenshotBase() {
         val label = mapOf("pattern" to "근무 주기 설정", "typeMonth" to "이번 달 전부 넣기", "receive" to "동료 근무표 받기", "teams" to "모든 조 보기").getValue(id)
         // Closed and opened again (the system back here would not reach the sheet's own window).
         tap(180f, 60f)
-        assertFalse(shows("달력 도구", exact = true))
+        assertTrue(gone("달력 도구", exact = true))
         tools()
-        assertTrue(shows(label, exact = true))
+        assertTrue(appears(label, exact = true))
         // 더 보기 opens by itself on what was added (its rows may sit below the fold; a swipe would move the sheet).
-        assertTrue("더 보기 stays open on what was added", shows("이 달력에 안 맞아 숨긴 도구 3개 · 접기", exact = true))
+        assertTrue("더 보기 stays open on what was added", appears("이 달력에 안 맞아 숨긴 도구 3개 · 접기", exact = true))
     })
 
     @Test fun investCustomizeHasNoShiftParts() = shoot("892_y_invest_customize", FOLDED, style(WorkStyle.INVEST) {
         tools()
         tapText("화면 꾸미기", exact = true)
-        assertFalse(shows("근무 횟수 줄", exact = true))
-        assertFalse(shows("주 근무시간 줄", exact = true))
-        assertFalse(shows("휴식 점검", exact = true))
+        assertTrue(gone("근무 횟수 줄", exact = true))
+        assertTrue(gone("주 근무시간 줄", exact = true))
+        assertTrue(gone("휴식 점검", exact = true))
         tapText("이 달력에 안 맞아 숨긴 기능")
         reveal("근무 횟수 줄", exact = true)
     })
@@ -90,12 +90,12 @@ class YScreenshotTest : ScreenshotBase() {
     @Test fun shiftCalendarKeepsEveryTool() = shoot("894_y_shift_tools", SMALL_PHONE, style(WorkStyle.SHIFT) {
         tools()
         reveal("근무 주기 설정", exact = true)
-        assertFalse("nothing is put away for shift work", shows("숨긴 도구"))
+        assertTrue("nothing is put away for shift work", gone("숨긴 도구"))
     })
 
     @Test fun shopToolsDark() = shoot("895_y_shop_tools_dark", FOLDED_NIGHT, style(WorkStyle.BUSINESS) {
         tools()
-        assertFalse(shows("근무 주기 설정", exact = true))
+        assertTrue(gone("근무 주기 설정", exact = true))
     })
 
     // ---- 392 [FIT-03] ----
@@ -108,7 +108,7 @@ class YScreenshotTest : ScreenshotBase() {
     private val c get() = app.container
 
     @Test fun nurseTypedWithATypoStartsAMonthlyRoster() = shoot("896_y_job_nurse", FOLDED, firstScreen {
-        assertTrue(shows("어떤 일을 하고 계신가요?"))
+        assertTrue(appears("어떤 일을 하고 계신가요?"))
         typeInto("하는 일", "간호샤")
         tapText("간호사 · 교대 근무 · 근무표가 매달 나와요", exact = true)
         tapText(LATER)
@@ -119,9 +119,9 @@ class YScreenshotTest : ScreenshotBase() {
 
     @Test fun anUnknownJobFallsBackToTheCards() = shoot("897_y_job_unknown", FOLDED, firstScreen {
         typeInto("하는 일", "우주비행사아저씨")
-        assertTrue(shows("맞는 일을 찾지 못했어요"))
+        assertTrue(appears("맞는 일을 찾지 못했어요"))
         reveal("또는 일하는 방식으로 고르기")
-        assertTrue(shows("평일 근무", exact = true))
+        assertTrue(appears("평일 근무", exact = true))
     })
 
     @Test fun aChipPicksTheJob() = shoot("898_y_job_chip", PHONE_393, firstScreen {
@@ -144,23 +144,23 @@ class YScreenshotTest : ScreenshotBase() {
         reveal("매일 자동 백업", exact = true)
         tapText("매일 자동 백업", exact = true)
         // Gone to where it lives: 설정 › 데이터, with the badge on its row.
-        assertFalse(shows("프로 기능 모아보기"))
+        assertTrue(gone("프로 기능 모아보기"))
         reveal("매일 자동 백업")
-        assertTrue(shows("프로 기능"))
+        assertTrue(appears("프로 기능"))
     }
 
     @Test fun badgesShowBeforeTheLaunch() = shoot("901_y_pro_badge_data", FOLDED) {
         settingsPage("데이터")
         reveal("매일 자동 백업")
-        assertTrue("프로 shows although everything is free now", shows("프로 기능"))
-        assertFalse(shows("잠겨 있어요"))
+        assertTrue("프로 shows although everything is free now", appears("프로 기능"))
+        assertTrue(gone("잠겨 있어요"))
     }
 
     @Test fun lockedBadgeWhenFree() = shoot("902_y_pro_badge_locked", FOLDED) {
         app.container.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
         settingsPage("데이터")
         reveal("매일 자동 백업")
-        assertTrue(shows("프로 기능, 잠겨 있어요"))
+        assertTrue(appears("프로 기능, 잠겨 있어요"))
     }
 
     @Test fun proCollectionDarkInvest() = shoot("903_y_pro_collection_dark", FOLDED_NIGHT, style(WorkStyle.INVEST) {
@@ -184,7 +184,7 @@ class YScreenshotTest : ScreenshotBase() {
     @Test fun searchFindsTheCollection() = shoot("907_y_search_collection", FOLDED) {
         tab(4, wide = false)
         typeInto("설정 찾기", "모아보기")
-        assertTrue(shows("프로 기능 모아보기"))
+        assertTrue(appears("프로 기능 모아보기"))
     }
     @Test fun investToolsSmallPhone() = shoot("908_y_invest_tools_320", SMALL_PHONE, style(WorkStyle.INVEST) { tools() })
     @Test fun investToolsLandscape() = shoot("909_y_invest_tools_landscape", PHONE_LANDSCAPE, style(WorkStyle.INVEST) { tools() })
