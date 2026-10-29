@@ -273,7 +273,8 @@ internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDis
     var openId by remember { mutableStateOf(initialOpen) }
     // [CALI-05] 1.30 BB: an added calendar's setup looks for that calendar's company (what it already has, its plaza).
     val calendar = vm.calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // [J133-75] The dialog takes the keyboard's insets itself, so the search's imePadding lifts the results above it.
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             val id = openId

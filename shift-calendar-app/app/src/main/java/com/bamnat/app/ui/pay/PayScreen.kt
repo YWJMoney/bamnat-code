@@ -886,9 +886,17 @@ private fun UnknownsSheet(
             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
         ) {
             Text("확인이 필요한 답 ${range.effects.size}개", style = MaterialTheme.typography.headlineSmall)
+            // [J133-74] 중간 빌드 3 확인 ("31만 원을 뺐는데 '금액 변화 없음'·'이번 달 금액은 같아요'"): an allowance whose amount is not
+            // known is out of the month (순번 713); its guess is what it would add.
+            val guesses = range.base.missing.associate { Unknowns.item(it.id) to it.guess }
+            val left = guesses.values.sum()
             Text(
-                if (range.exact) "답을 몰라도 이번 달 금액은 같아요. 아는 대로 골라 두면 다음 달부터 더 정확해져요."
-                else "답에 따라 이번 달이 ${won(range.low)}~${won(range.high)}까지 달라져요. 아는 답을 고르면 범위가 좁아져요.",
+                when {
+                    left > 0 && range.exact -> "금액을 모르는 수당은 이번 달 금액에서 뺐어요. 짐작대로라면 넣을 때 ${won(left)}이 더해져요."
+                    left > 0 -> "답에 따라 이번 달이 ${won(range.low)}~${won(range.high)}까지 달라지고, 금액을 모르는 수당(짐작 ${won(left)})은 빼고 셈했어요."
+                    range.exact -> "답을 몰라도 이번 달 금액은 같아요. 아는 대로 골라 두면 다음 달부터 더 정확해져요."
+                    else -> "답에 따라 이번 달이 ${won(range.low)}~${won(range.high)}까지 달라져요. 아는 답을 고르면 범위가 좁아져요."
+                },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             range.effects.forEach { e ->
@@ -898,8 +906,10 @@ private fun UnknownsSheet(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(e.unknown.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            Text(effectText(e), style = MaterialTheme.typography.labelMedium,
-                                color = if (e.moves) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            val guess = guesses[key] ?: 0L
+                            Text(if (guess > 0) "넣으면 +${manwon(guess)} 원 (짐작)" else if (key in guesses) "금액을 넣으면 더해져요" else effectText(e),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (e.moves || key in guesses) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text(e.unknown.assumed, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         val item = profile.items.firstOrNull { Unknowns.item(it.id) == key || it.id == key }

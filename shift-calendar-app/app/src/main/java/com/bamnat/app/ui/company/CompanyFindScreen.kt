@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -153,14 +154,28 @@ fun CompanyFindScreen(
             )
         },
     ) { padding ->
+        // [J133-75] 중간 빌드 3 확인 ("자판이 결과를 가려 현대제철(3번째)이 안 보여요. 제목을 눌러도 자판이 안 내려가요"): a tap
+        // on the title, or a drag of the list, puts the keyboard away; once a name is typed the picture and the
+        // explanation give their room to the results.
+        val hideOnDrag = remember(keyboard) {
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource):
+                    androidx.compose.ui.geometry.Offset {
+                    if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y != 0f) keyboard?.hide()
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+            }
+        }
         Box(Modifier.fillMaxSize().padding(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                Modifier.widthIn(max = 640.dp).fillMaxWidth().nestedScroll(hideOnDrag).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                HeroIcon(Icons.Outlined.Apartment)
-                Text(if (setup) "다니는 회사를 찾아볼까요?" else "회사 이름으로 찾아요", style = MaterialTheme.typography.headlineSmall)
-                Text(
+                val typed = query.isNotBlank()
+                if (!typed) HeroIcon(Icons.Outlined.Apartment)
+                Text(if (setup) "다니는 회사를 찾아볼까요?" else "회사 이름으로 찾아요", style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.clickable(interactionSource = null, indication = null) { keyboard?.hide() })
+                if (!typed) Text(
                     if (vm.server) "같은 회사 분들이 맞춰 둔 근무표와 급여 계산 방식을 그대로 가져와요. 금액은 각자 넣어요."
                     // [SPAT-02] Without the company server: the public cycles only.
                     else "기사·채용 공고·노무 사이트에 나온 회사 근무주기를 찾아요. 고른 뒤 내 근무와 맞춰 봐요.",

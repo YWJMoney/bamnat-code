@@ -437,5 +437,13 @@ class CalendarI123Test {
         if (lastWork.dayOfMonth < 31) assertEquals(oct, MonthRecap.due(LocalDate.of(2026, 10, 31), 0, last))
         assertEquals(oct, MonthRecap.due(LocalDate.of(2026, 11, 2), 0, last))
         assertNull(MonthRecap.due(LocalDate.of(2026, 11, 2), MonthRecap.key(oct), last))
+        // [J133-76] Mid-month, even past the last day written: not yet.
+        assertNull(MonthRecap.due(LocalDate.of(2026, 10, 29), 0) { LocalDate.of(2026, 10, 20) })
+        assertEquals(oct, MonthRecap.due(LocalDate.of(2026, 10, 30), 0) { LocalDate.of(2026, 10, 20) })
+        // An evening 18~23 reaches past 22:00 but is not a 야간; 22~07 and 18~02 are.
+        fun t(h: Int, m: Int) = java.time.LocalTime.of(h, m)
+        assertEquals(60, com.bamnat.core.model.NightShift.minutes(t(18, 0), t(23, 0)))
+        assertEquals(480, com.bamnat.core.model.NightShift.minutes(t(22, 0), t(7, 0)))
+        assertEquals(240, com.bamnat.core.model.NightShift.minutes(t(18, 0), t(2, 0)))
     }
 }

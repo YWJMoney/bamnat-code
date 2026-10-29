@@ -23,6 +23,14 @@ object NightShift {
         return windows.any { (ws, we) -> minOf(e, we) - maxOf(s, ws) > 0 }
     }
 
+    /** [J133-76] Minutes of [start]..[end] inside 22:00~06:00. */
+    fun minutes(start: LocalTime, end: LocalTime): Int {
+        val s = start.hour * 60 + start.minute
+        val e = s + WorkTime.spanMinutes(start, end)
+        val windows = listOf(NIGHT_START - DAY to NIGHT_END, NIGHT_START to NIGHT_END + DAY, NIGHT_START + DAY to NIGHT_END + 2 * DAY)
+        return windows.sumOf { (ws, we) -> (minOf(e, we) - maxOf(s, ws)).coerceAtLeast(0) }
+    }
+
     /** A kind of work day with times that reach into the night; off types never are. */
     fun of(type: ShiftType): Boolean = type.hasTimes && crosses(type.start!!, type.end!!)
 
