@@ -77,6 +77,38 @@ class SettingsSearchTest {
     }
 
     /** [J133-71] 1.33 (사용자 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아?"): work with no company finds no 회사 things. */
+    /** [J133-77] A shop, a freelancer and an investor search without wages; an 알바 without 연차 촉진; help in each kind's order. */
+    @Test fun eachKindOfWorkFindsItsOwn() {
+        val shop = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.BUSINESS).map { it.title }
+        assertFalse("급여 계산" in shop)
+        assertFalse("연장 휴무일 근무 지정" in shop)
+        assertFalse("연차 사용 촉진 알림" in shop)
+        assertFalse("근태 엑셀 가져오기" in shop)
+        assertTrue("백업 저장" in shop)
+        val hourly = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.HOURLY).map { it.title }
+        assertTrue("급여 계산" in hourly)
+        assertFalse("연차 사용 촉진 알림" in hourly)
+        assertFalse("근태 엑셀 가져오기" in hourly)
+        assertTrue("근태 엑셀 가져오기" in SettingsIndex.entries(style = com.bamnat.core.work.WorkStyle.DAY).map { it.title })
+
+        val all = HelpFaq.topics()
+        val field = all.forStyle(com.bamnat.core.work.WorkStyle.FIELD).map { it.id }
+        assertEquals(listOf("jobOwed", "jobTax", "bizTax"), field.take(3))
+        assertFalse("pattern" in field)
+        assertFalse("plazaEntry" in field)
+        assertFalse("pay" in field)
+        val business = all.forStyle(com.bamnat.core.work.WorkStyle.BUSINESS).map { it.id }
+        assertEquals(listOf("shopCash", "shopVat", "bizTax"), business.take(3))
+        assertFalse("jobOwed" in business)
+        assertFalse("investFee" in business)
+        val hourlyHelp = all.forStyle(com.bamnat.core.work.WorkStyle.HOURLY).map { it.id }
+        assertEquals("hourlyCover", hourlyHelp.first())
+        assertFalse("plazaPayFind" in hourlyHelp)
+        assertFalse("shopCash" in hourlyHelp)
+        assertEquals(all.map { it.id }, all.forStyle(null).map { it.id })
+        assertTrue(all.forStyle(com.bamnat.core.work.WorkStyle.SHIFT).map { it.id }.containsAll(listOf("pattern", "plazaEntry", "pay")))
+    }
+
     @Test fun workWithNoCompanyFindsNoCompanyRows() {
         val entries = SettingsIndex.entries(company = false)
         val titles = entries.map { it.title }

@@ -148,8 +148,9 @@ internal fun PhotoResultScreen(
                                 }
                                 ResultTab.RULES -> if (sheet != null && host != null) {
                                     if (read.lines.isEmpty()) Hint("명세서 없이 회사 계산 방법만으로 계산해요. 기본급·시간처럼 꼭 필요한 값은 급여 화면이 바로 넣게 알려 줘요.")
-                                    HourlyCard(preview?.profile ?: host.profile, host.month, sheet.sheet.common, sheet::terms, plaza = plaza,
-                                        slipBase = read.amount(SlipRole.BASE))
+                                    // [J133-77] 시급·일당 is its own hourly value; the card is for 월급.
+                                    if (host.profile.wageType == com.bamnat.core.pay.WageType.MONTHLY) HourlyCard(preview?.profile ?: host.profile, host.month,
+                                        sheet.sheet.common, sheet::terms, plaza = plaza, slipBase = read.amount(SlipRole.BASE))
                                     RuleSheetCells(sheet, host, empty = "사진에서 규칙을 찾지 못했어요. 아래 ‘칸 더하기’로 직접 넣어도 돼요. 자주 쓰는 수당을 고르면 금액만 넣으면 돼요.")
                                     rulesExtras()
                                 }

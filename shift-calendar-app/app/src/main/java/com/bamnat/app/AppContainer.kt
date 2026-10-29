@@ -353,6 +353,11 @@ class AppContainer(context: Context) {
     var pendingPayCheck: String? = null
 
     /** [SHR-20][695] 1.33: who sent the company setup just put in from a 근무표 링크, said once on the pay screen that follows. */
+    /**
+     * [J133-77] 1.33 (유형별 점검: 가게는 영업일·카드 수수료를 처음에 묻지 않아요): a 자영업 calendar just set up, whose 영업일·정기휴무
+     * (카드 매출 입금 included) open as soon as the setup is gone.
+     */
+    val pendingShopDays = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     @Volatile var pendingSetupFrom: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts waiting to go (only once 처리방침 3.3 lets them). Made on first press. */

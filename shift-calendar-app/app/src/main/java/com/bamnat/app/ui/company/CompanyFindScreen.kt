@@ -157,15 +157,7 @@ fun CompanyFindScreen(
         // [J133-75] 중간 빌드 3 확인 ("자판이 결과를 가려 현대제철(3번째)이 안 보여요. 제목을 눌러도 자판이 안 내려가요"): a tap
         // on the title, or a drag of the list, puts the keyboard away; once a name is typed the picture and the
         // explanation give their room to the results.
-        val hideOnDrag = remember(keyboard) {
-            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource):
-                    androidx.compose.ui.geometry.Offset {
-                    if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y != 0f) keyboard?.hide()
-                    return androidx.compose.ui.geometry.Offset.Zero
-                }
-            }
-        }
+        val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
         Box(Modifier.fillMaxSize().padding(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().nestedScroll(hideOnDrag).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

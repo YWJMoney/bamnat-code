@@ -179,15 +179,20 @@ data class HourlyWeek(val start: LocalDate, val minutes: Int, val absent: Int) {
 data class ClientTotal(val client: String, val jobs: Int, val earned: Long, val owed: Long)
 
 object WorkStats {
-    fun shop(month: YearMonth, sales: List<DailySales>, isOpen: (LocalDate) -> Boolean): ShopMonth {
+    /**
+     * [today]: [J133-77] 1.33 (유형별 점검: 가게 매출 탭이 아직 오지 않은 날까지 '휴무 31일'로 세요) closed days are counted up to it;
+     * null counts the whole month.
+     */
+    fun shop(month: YearMonth, sales: List<DailySales>, today: LocalDate? = null, isOpen: (LocalDate) -> Boolean): ShopMonth {
         val inMonth = sales.filter { YearMonth.from(it.date) == month }
         val sold = inMonth.filter { it.sales > 0 }
         val dates = (1..month.lengthOfMonth()).map { month.atDay(it) }
-        val open = dates.count { isOpen(it) || sold.any { s -> s.date == it } }
+        fun opened(d: LocalDate) = isOpen(d) || sold.any { s -> s.date == d }
+        val open = dates.count(::opened)
         val byWeekday = sold.groupBy { it.date.dayOfWeek }.mapValues { (_, l) -> l.sumOf { it.sales } / l.size }
         return ShopMonth(
             openDays = open,
-            closedDays = dates.size - open,
+            closedDays = dates.count { (today == null || !it.isAfter(today)) && !opened(it) },
             salesDays = sold.size,
             sales = inMonth.sumOf { it.sales },
             net = inMonth.sumOf { it.net },
@@ -224,3 +229,23 @@ object WorkStats {
  * 장부 for a shop's or a field worker's calendar, whose money is the work's own.
  */
 fun moneyTab(style: WorkStyle?): String = if (style == WorkStyle.BUSINESS || style == WorkStyle.FIELD) "장부" else "가계부"
+
+/**
+ * [J133-77] 1.33 (유형별 점검: 가게·현장 달력의 공유 단추가 '근무표 공유'): what sharing the calendar is called for its kind of work.
+ */
+fun shareTitle(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD -> "일정 공유"
+    WorkStyle.BUSINESS -> "영업일 공유"
+    WorkStyle.INVEST -> "달력 공유"
+    else -> "근무표 공유"
+}
+
+/** [J133-77] The kind of work in one word, beside a calendar's name ("내 달력 · 알바"). */
+fun shortLabel(style: WorkStyle): String = when (style) {
+    WorkStyle.SHIFT -> "교대"
+    WorkStyle.DAY -> "일근"
+    WorkStyle.HOURLY -> "알바"
+    WorkStyle.FIELD -> "현장"
+    WorkStyle.BUSINESS -> "가게"
+    WorkStyle.INVEST -> "투자"
+}

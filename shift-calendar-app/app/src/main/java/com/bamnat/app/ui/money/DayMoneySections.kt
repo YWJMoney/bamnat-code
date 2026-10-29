@@ -190,7 +190,8 @@ fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntr
             com.bamnat.app.ui.components.AddButton("지출 적기", onClick = { adding = MoneyKind.EXPENSE })
             com.bamnat.app.ui.components.AddButton("수입 적기", onClick = { adding = MoneyKind.INCOME })
             // [WORK-02] A shift worker's weekend 부업 is a job too.
-            if (style?.usesJobs != true) {
+            // [J133-77] Not a shop's or an investor's: their money is the day's own.
+            if (style?.usesPayEngine != false) {
                 com.bamnat.app.ui.components.AddButton("부업 일감", onClick = { addingJob = true })
             }
         }

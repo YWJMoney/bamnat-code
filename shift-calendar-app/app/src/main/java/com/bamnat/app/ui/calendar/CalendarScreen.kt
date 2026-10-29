@@ -1836,7 +1836,7 @@ private fun CalendarHeader(
         val all = CalendarToolSlots.build(toolFit).map { slot ->
             val label = when (slot.id) {
                 CalendarToolSlots.EDIT -> "‘$calendarName’ 고치기"
-                CalendarToolSlots.SHARE -> if (style?.usesPayEngine != false) "근무표 공유" else "달력 공유"
+                CalendarToolSlots.SHARE -> com.bamnat.core.work.shareTitle(style) // [J133-77]
                 else -> slot.label
             }
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {

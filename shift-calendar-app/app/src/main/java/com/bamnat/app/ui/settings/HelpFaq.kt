@@ -799,6 +799,29 @@ internal object HelpFaq {
             listOf("대타", "대근", "주휴", "주휴 빠짐", "15시간", "휴게 포함 시급", "알바 두 곳"),
             listOf("출근·시급"),
         ),
+        // [J133-77] 1.33 (유형별 점검: 현장 도움말에 교대 순서·동료 근무표가 먼저 나와요): each kind of work's own first answers.
+        HelpTopic(
+            "jobOwed", "일감", "아직 안 받은 일감 값을 놓치지 않고 싶어요",
+            "일감을 적을 때 ‘받을 금액’과 ‘선금’, ‘입금 약속일’을 넣고, 들어오면 ‘돈 받음’을 켜요. 안 받은 돈은 일감·수입 탭의 ‘받을 돈’과 " +
+                "장부 › 받을 돈에 모여요. 입금 약속일 다음 날까지 안 들어오면 알려 드려요.",
+            listOf("받을 돈", "미수금", "안 받은 돈", "입금", "선금", "잔금", "계약금", "입금 약속일", "외상"),
+            listOf("일감·수입", "장부"),
+            "받을 돈 보기" to HelpAction.Tab(NoticeLinks.Target.OWED),
+        ),
+        HelpTopic(
+            "jobTax", "일감", "3.3% 떼고 받는 일은 어떻게 적어요?",
+            "일감을 적을 때 ‘3.3% 떼고 받아요 (사업소득)’을 켜면 세금을 뺀, 실제로 들어올 돈이 보여요. 뗀 세금은 5월 종합소득세 신고 때 정산돼요. " +
+                "이번 달 합계와 거래처별 수입은 일감·수입 탭에 있어요.",
+            listOf("3.3", "3.3%", "원천징수", "사업소득", "프리랜서 세금", "종합소득세", "종소세", "세금 떼고"),
+            listOf("일감·수입", "장부"),
+        ),
+        HelpTopic(
+            "shopVat", "자영업", "부가세가 얼마쯤 나올지 미리 알고 싶어요",
+            "매출·영업 탭의 ‘부가세 예상’이 반년 매출과 증빙 있는 경비로 어림해요. 하루 마감에 카드·현금 매출과 경비를 나눠 적을수록 가까워져요. " +
+                "세금 통장(프로)은 그날 매출에서 부가세·종소세 몫을 따로 보여 줘요.",
+            listOf("부가세", "부가가치세", "간이과세", "일반과세", "세금 통장", "카드 매출", "매출 세금"),
+            listOf("매출·영업", "장부"),
+        ),
         HelpTopic(
             "proToday", "프로", "하루 이용권으로 무엇이 열렸어요? · 다음 결제일은요?",
             "하루 이용권을 쓰면 설정 › 프로에 ‘오늘 열린 것’이 나오고 누르면 그 기능으로 가요. 구독 중이면 설정 맨 위에 다음 결제일·금액과 해지·관리 단추가 있어요. " +
@@ -808,6 +831,40 @@ internal object HelpFaq {
             "프로 보기" to HelpAction.Go(SettingsGo.PRO),
         ),
     )
+
+    /** [J133-77] Answers that only make sense where the work has a company (회사 광장, 근무주기 이름, 듀티표·근태). */
+    private val COMPANY_ONLY = setOf("plazaEntry", "plazaDiff", "plazaShare", "plazaMember", "plazaInfo", "plazaProof", "plazaLead", "plazaVote",
+        "plazaPayFind", "publicCycles", "attendanceCompare", "directInput", "publicPay", "publicHours", "stretch", "selective", "restRules",
+        "wishOff", "rosterPhoto")
+    /** [J133-77] Answers about wages (급여·연차·추가 근무): 교대·일근·알바. */
+    private val WAGES_ONLY = setOf("pay", "takeHome", "leave", "extra", "holidayWork", "payEasySetup", "payGap", "payslipPhotos", "payDeposit",
+        "rulesOnly", "callout", "leaveTime", "roster", "memoShiftRemind")
+    /** [J133-77] Answers about a repeating order of shifts. */
+    private val PATTERN_ONLY = setOf("pattern", "realign")
+    /** [J133-77] Answers about a business's or freelancer's tax, and the jobs' own. */
+    private val JOBS_ONLY = setOf("jobOwed", "jobTax", "platformCut", "unitRules")
+    private val SELF_EMPLOYED = setOf("bizTax")
+
+    internal fun fits(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): Boolean = when {
+        t.id in COMPANY_ONLY -> style.usesCompany
+        t.id in WAGES_ONLY -> style.usesPayEngine
+        t.id in PATTERN_ONLY -> style.usesPattern
+        t.id in JOBS_ONLY -> style == com.bamnat.core.work.WorkStyle.FIELD || (t.id == "unitRules" && style == com.bamnat.core.work.WorkStyle.HOURLY)
+        t.id in SELF_EMPLOYED -> style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS
+        t.tag == "투자" -> style == com.bamnat.core.work.WorkStyle.INVEST
+        t.tag == "자영업" -> style == com.bamnat.core.work.WorkStyle.BUSINESS
+        t.tag == "알바" -> style == com.bamnat.core.work.WorkStyle.HOURLY
+        else -> true
+    }
+
+    /** [J133-77] Each kind's own answers, in this order, before the rest. */
+    internal fun firstFor(style: com.bamnat.core.work.WorkStyle): List<String> = when (style) {
+        com.bamnat.core.work.WorkStyle.HOURLY -> listOf("hourlyCover", "pay", "takeHome", "payDeposit", "roster", "calendars")
+        com.bamnat.core.work.WorkStyle.FIELD -> listOf("jobOwed", "jobTax", "bizTax", "platformCut", "unitRules", "incomeKinds")
+        com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("shopCash", "shopVat", "bizTax", "receiptScan")
+        com.bamnat.core.work.WorkStyle.INVEST -> listOf("investFee", "investCapture", "investCaptureTrust", "investYearEnd")
+        else -> emptyList()
+    }
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
     private val BY_TOPIC = mapOf(
@@ -846,3 +903,14 @@ internal object HelpFaq {
 /** [J133-06] The topics of kinds of work hidden here (tag 투자 while 투자 is hidden) left out. */
 fun List<HelpTopic>.withoutKinds(hidden: Set<com.bamnat.core.work.WorkStyle>): List<HelpTopic> =
     if (hidden.isEmpty()) this else filter { t -> hidden.none { it.label == t.tag } }
+
+/**
+ * [J133-77] 1.33 (사용자 2026-10-29 "다른 유형 모든 근무유형에 적절하게 내용들이 표시되게"): the answers for the calendar's kind of work.
+ * Answers about a company's rules and plaza, a rotation, a wage slip or another kind's tools are left out; the kind's own come first.
+ * No kind chosen yet keeps them all in their usual order.
+ */
+fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpTopic> {
+    if (style == null) return this
+    val first = HelpFaq.firstFor(style)
+    return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
+}

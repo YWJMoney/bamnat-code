@@ -134,6 +134,9 @@ internal fun SlipMatchCard(profile: PayProfile, gate: com.bamnat.app.tier.Gate, 
         val v = profile.verified
         Text(
             if (v != null) "${v.month.year}년 ${v.month.monthValue}월 명세서와 맞춰 봤어요. 새 명세서가 오면 또 맞춰 볼 수 있어요."
+            // [J133-77] An 알바's slip has a 시급, and its rules are the 근무지's (계약서·근무 안내).
+            else if (profile.wageType != com.bamnat.core.pay.WageType.MONTHLY)
+                "명세서가 있으면 실제 입금액·${profile.wageType.baseName()}과 비교해요. 없으면 근로계약서나 근무지 안내문 사진만으로도 계산 방식을 찾아요."
             else "명세서가 있으면 실제 입금액·기본급과 비교해요. 없으면 회사 계산 방법(취업규칙·수당표) 사진만으로도 계산 방식을 찾아요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

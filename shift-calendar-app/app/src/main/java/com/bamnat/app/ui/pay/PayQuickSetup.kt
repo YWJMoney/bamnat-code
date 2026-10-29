@@ -232,12 +232,16 @@ fun PayQuickSetup(
                     }
                 }
                 FORM -> {
-                    StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
+                    // [J133-77] 1.33 (유형별 점검: 알바 급여 첫 질문에 3교대·간호 듀티·당직): an 알바 picks 시급 or 일당 only.
+                    val hourlyWork = style == com.bamnat.core.work.WorkStyle.HOURLY
+                    if (hourlyWork) StepTitle("시급으로 받나요, 일당으로 받나요?", "고르면 주휴수당·세금 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
+                    else StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
-                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }) { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
                     val first = cycleForm?.let { PublicPay.form(it.first, it.second) } ?: guessed
-                    val ordered = listOfNotNull(first) + WorkForm.entries.filter { it != first }
+                    val forms = if (hourlyWork) listOf(WorkForm.PART_TIME, WorkForm.DAILY) else WorkForm.entries
+                    val ordered = (listOfNotNull(first) + forms.filter { it != first }).filter { it in forms }
                     ordered.forEach { f ->
                         val why = when {
                             f != first -> ""
@@ -261,7 +265,7 @@ fun PayQuickSetup(
                     BaseFields(wage, amount, onBase = { fromSlip = null; amount = it }, hours = hours, onHours = { fromSlip = null; hours = it },
                         profile = draft ?: initial, month = thisMonth)
                     if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false) { fromSlip = null; fiveOrMore = it }
-                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }) { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
                 }
                 HOLIDAY -> {
                     StepTitle("빨간날(공휴일)에 일하면 어떻게 받나요?", "회사마다 달라요. 모르면 ‘법대로’로 두고 명세서 사진으로 맞춰요.")
@@ -358,13 +362,13 @@ private fun FromCycleNote(cycle: PublicCycle, codes: String) {
 
 /** 명세서 사진으로 한 번에: the way for a user who does not know the amounts or the company's rules. */
 @Composable
-private fun SlipEntry(onByHand: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun SlipEntry(onByHand: (() -> Unit)? = null, employer: String = "회사", onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Icon(Icons.Filled.ReceiptLong, null, Modifier.size(18.dp))
         Text("  모르겠으면 명세서 사진으로 맞추기")
     }
     // [RULE-ED-01] 1.30 통합: 촬영이 안 되는 회사 — the same 칸 without a photo, one tap from where the photo is offered.
-    onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 회사 규칙을 칸으로 적기") } }
+    onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 ${employer} 규칙을 칸으로 적기") } }
 }
 
 /** [PAYS-12] 이렇게 계산해요: the setup in sentences and this month's estimate, with the ways to change it. */

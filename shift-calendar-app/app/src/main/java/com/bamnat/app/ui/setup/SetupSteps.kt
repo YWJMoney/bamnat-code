@@ -362,7 +362,7 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
             else -> "근무 시간이 맞나요?"
         },
         when (d.style) {
-            WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필을 눌러 지우세요."
+            WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필(이름·색 고치기)을 누르고 맨 아래 ‘이 근무 종류 삭제’로 지워요."
             else -> "회사 근무표와 다르면 시각을 눌러 바로 고쳐요."
         },
     )

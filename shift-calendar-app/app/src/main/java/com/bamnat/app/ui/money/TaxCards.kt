@@ -130,7 +130,7 @@ private fun BusinessTaxLines(y: BusinessTax.Year?) {
         return
     }
     TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
-    TaxLine("  종합소득세 (${y.best.method.label})", Fmt.won(y.incomeTaxDue.coerceAtLeast(0)), muted = true)
+    TaxLine("  종합소득세 · ${y.best.method.label}", Fmt.won(y.incomeTaxDue.coerceAtLeast(0)), muted = true)
     TaxLine("  부가가치세", if (y.vatExempt) "면제" else Fmt.won(y.vat.coerceAtLeast(0)), muted = true)
     // F 1.32 [TAXP-07] 카드 매출 발행세액공제, already taken off the 부가세 above.
     if (y.cardCredit > 0) TaxLine("    카드 매출 발행세액공제 (1.3%)", "−" + Fmt.won(y.cardCredit), muted = true)

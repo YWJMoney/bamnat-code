@@ -560,6 +560,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
         }
     }
+    // [J133-77] A 자영업 calendar just set up opens on its 영업일·정기휴무, once the setup screen is gone.
+    LaunchedEffect(Unit) {
+        container.pendingShopDays.collect { id ->
+            if (id == null) return@collect
+            // The kind of work is saved a moment after the setup closes: wait for it, a few seconds at most.
+            val saved = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+                while (container.calendars.styleOf(id, container.settingsRepository.current.workStyle) != WorkStyle.BUSINESS) kotlinx.coroutines.delay(100)
+                true
+            }
+            container.pendingShopDays.value = null
+            if (saved == true) { kotlinx.coroutines.delay(300); nav.openPattern(container, id) }
+        }
+    }
     // [GUIDE-01] The checklist, a tip, the help search or 기능 켜고 끄기 opens a feature where it lives,
     // for the calendar on screen.
     val featureLink by com.bamnat.app.ui.guide.FeatureLinks.target.collectAsStateWithLifecycle()
@@ -1167,7 +1180,8 @@ private fun AppNavHost(
                     )
                 }) else null,
                 onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
-                onOpenBoard = if (nudges.enabled) ({ nav.navigate(Routes.companyBoard()) { launchSingleTop = true } }) else null,
+                // [J133-77] Every kind of work has its 광장 (알바 광장, 가게 광장 …), not only work with a company.
+                onOpenBoard = if (container.companyApi.enabled) ({ nav.navigate(Routes.companyBoard()) { launchSingleTop = true } }) else null,
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }

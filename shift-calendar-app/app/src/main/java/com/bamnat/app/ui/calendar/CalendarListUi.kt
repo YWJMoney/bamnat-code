@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.appContainer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -191,6 +192,9 @@ fun CalendarIdentityBar(
         maxWidth < 392.dp -> 2
         else -> 3
     }
+    // [J133-77] 공유 said in the calendar's kind of work (근무표·일정·영업일).
+    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val shareName = com.bamnat.core.work.shareTitle(app.calendars.styleOf(home.id, app.settingsRepository.current.workStyle))
     Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         val currentName = (current as? CalendarRow.Got)?.cal?.fullName ?: current.title
         // [UX-03] The name takes all the room the faces and 공유 leave, not half of it.
@@ -239,8 +243,8 @@ fun CalendarIdentityBar(
                 TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - shown}", maxLines = 1, softWrap = false) }
             }
             onShare?.let {
-                if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, "근무표 공유", Modifier.size(20.dp)) }
-                else ShareAction(it, Modifier.padding(start = 4.dp))
+                if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }
+                else ShareAction(it, Modifier.padding(start = 4.dp), shareName)
             }
         } else {
             Surface(onClick = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) },
@@ -260,11 +264,11 @@ fun CalendarIdentityBar(
 
 /** [UX-03] 공유 in words and an icon, so it reads as what it does on every screen; TalkBack hears what is shared. */
 @Composable
-internal fun ShareAction(onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ShareAction(onClick: () -> Unit, modifier: Modifier = Modifier, description: String = "근무표 공유") {
     FilledTonalButton(
         onClick = onClick,
         contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
-        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "근무표 공유" },
+        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = description },
     ) {
         Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
@@ -812,9 +816,17 @@ fun CalendarScopeChips(
                     if (cal.id != active) c.telemetry.event("calendar_switch", if (cal.isMain) "main" else "added")
                     c.calendars.setActive(cal.id)
                 },
-                label = { Text(cal.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                // [J133-77] 1.33 (유형별 점검: 장부·매출 위 칩의 첫 달력이 '내 달력'으로만 보여 어떤 일인지 몰라요): its kind of work beside it.
+                label = { Text(chipName(cal, c.calendars.styleOf(cal.id, c.settingsRepository.current.workStyle)), maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 leadingIcon = { Box(Modifier.size(10.dp).clip(MineShape).background(cal.color.asColor())) },
             )
         }
     }
+}
+
+/** [J133-77] "내 달력 · 알바"; a name that already says the work ("알바", "가게 장부") stays as it is. */
+internal fun chipName(cal: PersonalCalendar, style: com.bamnat.core.work.WorkStyle?): String {
+    val word = style?.let { com.bamnat.core.work.shortLabel(it) } ?: return cal.name
+    return if (cal.name.contains(word)) cal.name else "${cal.name} · $word"
 }

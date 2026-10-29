@@ -665,7 +665,8 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).jobEarned } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
-        { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = "${days}일 일해요") },
+        // [J133-77] '0일 일해요' read oddly: the days only once there are some.
+        { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = if (days > 0) "${days}일 일해요" else "아직 없어요") },
         { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" }) },
         { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
@@ -711,7 +712,8 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
 @Composable
 private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen: (java.time.LocalDate) -> Boolean) {
     val m = remember(book, month) { book.month(month) }
-    val shop = remember(book, month, isOpen) { WorkStats.shop(month, book.sales, isOpen) }
+    val today = com.bamnat.core.time.Today.date()
+    val shop = remember(book, month, isOpen, today) { WorkStats.shop(month, book.sales, today, isOpen) }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).sales } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
@@ -719,7 +721,9 @@ private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen
         { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, warning = m.salesNet < 0) },
         { md -> StatTile("영업일 평균", Fmt.won(shop.perOpenDay), md,
             caption = shop.best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
-        { md -> StatTile("영업일", "${shop.openDays}일", md, caption = "휴무 ${shop.closedDays}일") },
+        // [J133-77] 휴무 up to today; a month with no 영업일 set and nothing sold yet says how to set them instead.
+        { md -> StatTile("영업일", "${shop.openDays}일", md,
+            caption = if (shop.openDays == 0 && m.salesDays == 0) "영업일을 정하면 세어요" else "휴무 ${shop.closedDays}일" + if (!month.isBefore(YearMonth.from(today))) " (오늘까지)" else "") },
         { md -> StatTile("가장 적은 날", shop.worst?.let { wonBrief(it.sales) } ?: "-", md,
             caption = shop.worst?.let { "${it.date.monthValue}/${it.date.dayOfMonth} ${WEEKDAY[it.date.dayOfWeek.ordinal]}" }) },
     )

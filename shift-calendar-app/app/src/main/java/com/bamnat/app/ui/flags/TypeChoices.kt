@@ -55,3 +55,18 @@ fun rememberHiddenKinds(): Set<WorkStyle> {
         WorkStyle.entries.filter { !shown.shows(it) && it !in used }.toSet()
     }
 }
+
+/**
+ * [J133-77] 1.33: the kind of work of the calendar on screen (the one picked on the calendar tab), for screens outside a
+ * calendar's own route (설정, 도움말) that speak in its words. Null before any kind is chosen.
+ */
+@Composable
+fun rememberScreenStyle(): WorkStyle? {
+    val c = LocalContext.current.appContainer
+    val active by c.calendars.active.collectAsStateWithLifecycle()
+    val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    return remember(active, calendars, settings.workStyle) {
+        c.calendars.styleOf(com.bamnat.app.ui.company.companyCalendarOf(c, active), settings.workStyle)
+    }
+}

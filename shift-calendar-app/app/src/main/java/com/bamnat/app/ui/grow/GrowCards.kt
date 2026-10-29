@@ -80,16 +80,23 @@ object GrowAsk {
  * AG 1.27 [INVITE-11][INVITE-12] 설정 맨 위 '함께 만들어요': 친구 초대 (the rules and progress, the link) and '불편한 점 알려
  * 주기' (a 문의, answered by the developer). '닫기' for 30 days; 기능 켜고 끄기 `grow.card` turns it off.
  */
-@OptIn(ExperimentalLayoutApi::class)
+/** [J133-77] Whether 설정's '함께 만들어요' card shows now, so the 친구 초대 row under 더 보기 is not said twice. */
 @Composable
-fun GrowSettingsCard(modifier: Modifier = Modifier) {
+fun rememberGrowCardShown(): Boolean {
     val c = LocalContext.current.appContainer
     val guide = com.bamnat.app.data.GuideStore.get(LocalContext.current)
     val guideState by guide.state.collectAsStateWithLifecycle()
     val grow by c.grow.state.collectAsStateWithLifecycle()
-    val state by c.invites.store.state.collectAsStateWithLifecycle()
     // Both halves go through the company server (an invite, a 문의 that is answered): none without it.
-    if (!c.inviteApi.enabled || GrowAsk.off(guideState, GrowAsk.CARD_ID) || !GrowNudges.card(grow, Today.date())) return
+    return c.inviteApi.enabled && !GrowAsk.off(guideState, GrowAsk.CARD_ID) && GrowNudges.card(grow, Today.date())
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun GrowSettingsCard(modifier: Modifier = Modifier) {
+    val c = LocalContext.current.appContainer
+    val state by c.invites.store.state.collectAsStateWithLifecycle()
+    if (!rememberGrowCardShown()) return
     var said by remember { mutableStateOf<String?>(null) }
     val inviting = true
     LaunchedEffect(Unit) { runCatching { c.invites.refresh() } }

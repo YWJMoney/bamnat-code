@@ -425,17 +425,19 @@ private fun NoticesPage(
             set(on) { it.copy(afterAlarmCard = on) }
         }
     }
-    SectionCard(title = "돈과 휴가") {
+    // [J133-77] 연차 for work with a company; 급여 입금 for work paid wages.
+    val leave = settings.workStyle?.usesCompany != false
+    SectionCard(title = if (leave) "돈과 휴가" else "돈") {
         SwitchRow("나갈 돈·받을 돈", "고정비는 3일 전과 당일에, 못 받은 돈은 다음 날과 7일 뒤에 알려 줘요. 같은 때 온 것은 하나로 묶어요",
             settings.moneyNotices, warning = warning(settings.moneyNotices, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(moneyNotices = on) }
         }
         // D 1.32 [PAYA-05]
-        SwitchRow("급여 입금 비교", "은행 알림으로 급여가 들어온 걸 읽으면 예상 급여와 바로 비교해 알려 줘요(결제 알림 읽기를 켠 경우)",
+        if (settings.workStyle?.usesPayEngine != false) SwitchRow("급여 입금 비교", "은행 알림으로 급여가 들어온 걸 읽으면 예상 급여와 바로 비교해 알려 줘요(결제 알림 읽기를 켠 경우)",
             settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(payDepositNotice = on) }
         }
-        SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
+        if (leave) SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
         }
@@ -465,6 +467,19 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
     val style = vm.workSettings.collectAsStateWithLifecycle().value.workStyle
     val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
     val companyWork = c.companyFits(com.bamnat.app.ui.company.companyCalendarOf(c, null))
+    // [J133-77] 1.33 (유형별 점검: 가게 달력에서 '급여 계산 시작하기'가 나와요): a shop's, a freelancer's or an investor's money is
+    // on its own tab and its days are set up under 내 가게·내 일정; this page says where, in its words.
+    if (style != null && !style.usesPayEngine) {
+        val words = style.words()
+        SectionCard(title = null) {
+            NavRow(words.income, words.incomeHint + " · ${words.tab} 탭에서 적고 봐요") {
+                com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.STATS))
+            }
+            HorizontalDivider()
+            NavRow(words.pattern, words.patternHint) { SettingsLinks.go(SettingsGo.PATTERN) }
+        }
+        return
+    }
     SectionCard(title = null) {
         NavRow("급여 계산", when {
             profile != null && hourly -> "시급·수당·근무지 규칙·주휴수당·급여일"

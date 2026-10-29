@@ -556,7 +556,8 @@ private fun InquiryForm(
         // [UX-05] An answer that fits what is being written, before it is sent.
         val body = bodyOf(text)
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val topics = remember(hiddenKinds) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds) }
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
         val tips = remember(body, kind) {
             if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.forQuestion(body, topics, limit = 2)
         }
@@ -1148,7 +1149,8 @@ private fun HelpHome(
     onIdea: (String) -> Unit = {},
 ) {
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val topics = remember(hiddenKinds) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds) }
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }

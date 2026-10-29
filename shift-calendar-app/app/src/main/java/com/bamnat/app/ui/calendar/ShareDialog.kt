@@ -183,7 +183,7 @@ fun ShareDialog(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("근무표 공유", style = MaterialTheme.typography.titleLarge)
+            Text(com.bamnat.core.work.shareTitle(style), style = MaterialTheme.typography.titleLarge) // [J133-77]
             if (added && calendar != null) {
                 // [MCAL-03] Which calendar this link is for, and that the others keep their own.
                 Text("${calendar.name} 달력만 보내요. 다른 달력은 각자 링크를 따로 만들어요.",

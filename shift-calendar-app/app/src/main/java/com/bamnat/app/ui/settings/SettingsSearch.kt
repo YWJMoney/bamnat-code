@@ -139,7 +139,28 @@ internal object SettingsIndex {
      * [board]: the build has 회사 규칙 광장; [share]: it can make and take links. [company]: [J133-71] the calendar's work has a
      * company (교대·일근, or one already joined), so 회사 찾기·회사 설정 파일 are found; 알바·현장·가게·투자 search without them.
      */
-    fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true): List<SettingEntry> = listOfNotNull(
+    fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): List<SettingEntry> =
+        all(board, share, company).filter { fits(it, style) }
+
+    /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
+    private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,
+        SettingsGo.COMMUTE, SettingsGo.PAY, SettingsGo.PAY_BASE, SettingsGo.PAY_ITEMS, SettingsGo.PAY_PERIOD)
+    /** [J133-77] Rows about shifts, wages and 연차. */
+    private val WAGE_ROWS = setOf("휴식 점검", "근무표 점검 기준", "한 주 근무 경고", "최근 3개월 한 주 평균 경고", "퇴근 시각 알림", "연속 근무 경고",
+        "급여 입금 비교", "연차 사용 촉진 알림", "근무마다 다른 소리", "알람 뒤 오늘 카드")
+
+    /**
+     * [J133-77] 1.33 (유형별 점검: 알바가 '회사'를 찾으면 근태 엑셀이, 가게가 찾으면 연차·급여가 나와요): what the calendar's kind of
+     * work has. No kind chosen keeps everything.
+     */
+    internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): Boolean {
+        if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
+        val place = e.place
+        if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
+        return e.title !in WAGE_ROWS
+    }
+
+    private fun all(board: Boolean, share: Boolean, company: Boolean): List<SettingEntry> = listOfNotNull(
         screen(W.title, "일하는 방식", SettingsGo.WORK_STYLE, "근무 형태", "교대", "일근", "시급", "현장", "프리랜서", "자영업", "가게"),
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
             "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
@@ -150,7 +171,7 @@ internal object SettingsIndex {
             // [IMPORT-03]
             "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동"),
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
-        screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx"),
+        screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
         row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),

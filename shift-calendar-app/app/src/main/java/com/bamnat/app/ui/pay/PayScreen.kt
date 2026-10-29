@@ -480,7 +480,7 @@ private fun PayResult(
             }
         }
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
-        if (closedSnap == null) Estimates.breakNote(result)?.let {
+        if (closedSnap == null) Estimates.breakNote(result, profile.fiveOrMoreEmployees)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
@@ -547,7 +547,8 @@ private fun PayResult(
         RateNewsCard(profile, result.ordinaryHourly)
         } // TOOLS
 
-        if (payTab == PayTab.RESULT) LeaveCard(vm, snapshot, month, onOpenLeave)
+        if (payTab == PayTab.RESULT) LeaveCard(vm, snapshot, month, onOpenLeave,
+            hourly = settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY, fiveOrMore = profile.fiveOrMoreEmployees)
 
         if (payTab == PayTab.TOOLS) {
 
@@ -1307,7 +1308,8 @@ private fun HolidayModes(vm: PayViewModel, profile: PayProfile, totals: List<Pai
 
 /** 연차 usable, planned and lapsing, from the 연차 원장 [FEAT-10][LEAVE-01]; the whole ledger is one tap away. */
 @Composable
-private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearMonth, onOpenLeave: () -> Unit) {
+private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearMonth, onOpenLeave: () -> Unit,
+                      hourly: Boolean = false, fiveOrMore: Boolean = true) {
     val s by vm.leave.collectAsStateWithLifecycle()
     val summary = s ?: return
     val others = remember(snapshot, month.year) {
@@ -1316,8 +1318,12 @@ private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearM
             .groupBy { it.kind }.mapValues { (_, l) -> l.sumOf { it.days } }
     }
     if (summary.lines.isEmpty() && others.isEmpty()) {
+        // [J133-77] 1.33 (유형별 점검: 알바 급여에 연차·입사일): 5명 미만 근무지에는 연차가 없고(근로기준법 제11조), 5명 이상이면 주 15시간
+        // 넘는 알바에게도 생겨요. Nothing written yet, an 알바 is told that, and under 5 nothing shows.
+        if (hourly && !fiveOrMore) return
         SectionCard(title = "연차", trailing = { TextButton(onClick = onOpenLeave) { Text("연차 화면") } }) {
-            Text("입사일을 넣으면 연차를 법대로 세고, 쓴 날과 없어질 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요.",
+            Text((if (hourly) "5명 이상 근무지에서 주 15시간 넘게 일하면 알바도 연차가 생겨요. " else "") +
+                "입사일을 넣으면 연차를 법대로 세고, 쓴 날과 없어질 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return

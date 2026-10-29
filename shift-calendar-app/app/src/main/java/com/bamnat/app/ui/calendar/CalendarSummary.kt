@@ -136,7 +136,7 @@ internal fun MonthSummaryBar(
             else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null, short = "공휴일 ${overview.holidayWorkDays}일"),
         )
         CalendarFocus.JOBS -> listOf(
-            Figure("${month}월 일감", "${overview.jobs}건", "${overview.jobDays}일 일해요"),
+            Figure("${month}월 일감", "${overview.jobs}건", overview.jobDays.takeIf { it > 0 }?.let { "${it}일 일해요" }),
             Figure("번 돈", Fmt.wonShort(overview.jobEarned), overview.jobReceived.takeIf { it > 0 }?.let { "받음 ${Fmt.wonShort(it)}" }, cal.income),
             Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, if (overview.jobOwed > 0) cal.warning else null),
         )

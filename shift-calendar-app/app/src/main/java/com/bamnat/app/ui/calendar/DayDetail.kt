@@ -444,7 +444,9 @@ private fun DayGroups(
             Text("순서 바꾸기")
         }
         // [CAL-05] Shifts, extra work and leave for field or shop work that has them now and then.
-        if (moneyFirst && !shiftData) {
+        // [J133-77] In the kind of work's own words; a 투자 calendar has no hours to write.
+        if (moneyFirst && !shiftData && style != com.bamnat.core.work.WorkStyle.INVEST) {
+            val hours = if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "영업시간" else "일정 시간"
             TextButton(onClick = {
                 val opening = !showShifts
                 groups.toggle(SHIFTS_KEY, false)
@@ -452,7 +454,7 @@ private fun DayGroups(
             }) {
                 Icon(Icons.Outlined.Work, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (showShifts) "근무 시간 숨기기" else "근무 시간도 적기")
+                Text(if (showShifts) "$hours 숨기기" else "${hours}도 적기")
             }
         }
     }
@@ -1004,7 +1006,8 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
         value = text,
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().focusRequester(focus),
-        placeholder = { Text("빠른 메모 (예: 인수인계, 내일 야간 대근)") },
+        // [J133-77] 1.33 (유형별 점검: 가게 날짜 화면에 '인수인계, 내일 야간 대근'): an example of the calendar's own work.
+        placeholder = { Text(quickMemoExample(vm.settings.collectAsStateWithLifecycle().value.workStyle)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { submit() }),
@@ -1341,3 +1344,13 @@ internal fun QuickTextOffer(text: String, onPut: () -> Unit) {
         }
     }
 }
+
+/** [J133-77] The quick memo's example, in the calendar's kind of work. */
+internal fun quickMemoExample(style: com.bamnat.core.work.WorkStyle?): String = "빠른 메모 (예: " + when (style) {
+    com.bamnat.core.work.WorkStyle.HOURLY -> "대타 부탁, 마감 청소"
+    com.bamnat.core.work.WorkStyle.FIELD -> "자재 챙기기, 고객 연락처"
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "재료 주문, 단체 예약 7시"
+    com.bamnat.core.work.WorkStyle.INVEST -> "매수 이유, 다음 확인일"
+    com.bamnat.core.work.WorkStyle.DAY -> "회의 준비, 내일 출장"
+    else -> "인수인계, 내일 야간 대근"
+} + ")"

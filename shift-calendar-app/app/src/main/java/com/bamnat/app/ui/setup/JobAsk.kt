@@ -51,12 +51,14 @@ internal fun JobAsk(
     var text by rememberSaveable { mutableStateOf("") }
     val focus = LocalFocusManager.current
     val matches = remember(text, shown) { JobDictionary.suggest(text, limit = 6).filter { shown.shows(it.job.style) }.take(3) }
+    // [J133-77] 1.33 (유형별 점검: 투자를 숨긴 빌드에서 '주식'을 치면 '맞는 일을 찾지 못했어요'만): a kind not open yet is said so.
+    val waiting = remember(text, shown) { JobDictionary.suggest(text, limit = 6).map { it.job.style }.firstOrNull { !shown.shows(it) } }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = text,
             onValueChange = { text = it.take(30) },
             label = { Text("하는 일") },
-            placeholder = { Text("예: 간호사, 편의점 알바, 택배, 주식") },
+            placeholder = { Text(if (shown.shows(WorkStyle.INVEST)) "예: 간호사, 편의점 알바, 택배, 주식" else "예: 간호사, 편의점 알바, 택배, 식당") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
@@ -69,7 +71,10 @@ internal fun JobAsk(
         }
         if (text.trim().length >= 2) {
             Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (matches.isEmpty()) {
+                if (matches.isEmpty() && waiting != null) {
+                    Text("‘${waiting.label}’ 달력은 준비 중이라 아직 고를 수 없어요. 열리면 앱 업데이트 소식으로 알려 드려요. 지금은 아래에서 다른 일하는 방식을 골라 주세요.",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (matches.isEmpty()) {
                     Text("‘${text.trim()}’에 맞는 일을 찾지 못했어요. 아래에서 가장 비슷한 일하는 방식을 골라 주세요.",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
