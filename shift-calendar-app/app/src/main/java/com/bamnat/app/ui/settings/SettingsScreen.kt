@@ -855,8 +855,15 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusR
 }
 
 /** [UX-04] What the search found: the setting, and where it lives, so the way there is learned too. */
+/** [J133-79] A result's place in the words its page is called by for this kind of work ("급여와 연차" is 가게's "매출과 경비"). */
+internal fun whereFor(where: String, style: com.bamnat.core.work.WorkStyle?): String {
+    val page = SettingsPage.entries.firstOrNull { where == it.title || where.startsWith(it.title + " ›") } ?: return where
+    return page.titleFor(style) + where.removePrefix(page.title)
+}
+
 @Composable
 private fun SearchResults(query: String, results: List<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit) {
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     Text(if (results.isEmpty()) "‘$query’에 맞는 설정이 없어요" else "찾은 설정 ${results.size}개",
         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
@@ -868,7 +875,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         ) {
             Column(Modifier.weight(1f)) {
                 Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                Text(if (e.where == "설정") "설정" else "설정 › ${e.where}", style = MaterialTheme.typography.bodySmall,
+                Text(if (e.where == "설정") "설정" else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -876,7 +883,6 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     val answers = remember(query, share, hiddenKinds, screenStyle) { HelpFaq.search(query, HelpFaq.topics(share).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -899,7 +905,11 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         }
     }
     // [GUIDE-07] Features too: where each is, what it does, whether it is off here.
-    val features = remember(query, hiddenKinds) { com.bamnat.app.ui.guide.FeatureSearch.search(query, limit = 3, hidden = hiddenKinds) }
+    // [J133-79] Only what this calendar's kind of work has: a shop typing 근태 is not shown the 일근 근태 엑셀.
+    val features = remember(query, hiddenKinds, screenStyle) {
+        com.bamnat.app.ui.guide.FeatureSearch.search(query, style = screenStyle, limit = 3, hidden = hiddenKinds,
+            features = com.bamnat.core.guide.FeatureRegistry.all.filter { screenStyle == null || it.fits(screenStyle) })
+    }
     if (features.isNotEmpty()) {
         Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
@@ -981,16 +991,19 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     SettingsPage.WORK -> listOfNotNull(
         s.workStyle?.label ?: "일하는 방식 정하기",
         snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 && style != com.bamnat.core.work.WorkStyle.INVEST }?.let {
-            when (style) { com.bamnat.core.work.WorkStyle.FIELD -> "일정 종류 ${it}가지"; com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간 ${it}가지"; else -> "근무 ${it}가지" }
+            when (style) { com.bamnat.core.work.WorkStyle.FIELD -> "일정 종류 ${it}가지"; com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간 종류 ${it}개"; else -> "근무 ${it}가지" }
         },
     ).joinToString(" · ")
     SettingsPage.ALARM -> if (s.alarmsEnabled) "켜짐 · 다시 울림 ${s.snoozeMinutes}분 · ${s.ringMinutes}분 뒤 꺼짐" else "모두 꺼짐"
     // [SET-02] Notices first (or that they are off), then sleep, in one line.
     SettingsPage.NOTICES -> (
         (if (!notificationsOk) listOf("알림이 꺼져 있어요") else listOfNotNull(
-            "브리핑".takeIf { s.briefing }, "퇴근길".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
-            "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice && s.workStyle?.usesCompany != false },
-        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && s.workStyle?.usesPayEngine != false })
+            // [J133-79] The calendar on screen's kind of work, as the rest of the hub: no 연차 for a shop, no 퇴근길 for trades.
+            "브리핑".takeIf { s.briefing },
+            (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "마감 뒤" else "퇴근길").takeIf { s.commuteNotice && style != com.bamnat.core.work.WorkStyle.INVEST },
+            "잘 준비".takeIf { s.bedtimeNotice },
+            "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice && style?.usesCompany != false },
+        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
     ).joinToString(" · ")
     // [J133-71] 1.33: 회사 설정 only where the work has a company; 연차 not for 알바's few hours a week.
     SettingsPage.PAY -> when {
@@ -1001,7 +1014,15 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     }
     SettingsPage.CALENDAR -> listOf(
         when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
-        "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
+        "날짜 칸 아래 " + when {
+            s.showLunar -> "음력"
+            // [J133-79] The hours under a day in the work's own word.
+            s.showHoursInCells -> when (style) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간"; com.bamnat.core.work.WorkStyle.FIELD -> "일정 시간"
+                com.bamnat.core.work.WorkStyle.INVEST -> "비움"; else -> "근무시간"
+            }
+            else -> "비움"
+        },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "처리방침 · 권한 확인 · 앱 잠금 · 약관 · 밤낮 ${BuildConfig.VERSION_NAME}"

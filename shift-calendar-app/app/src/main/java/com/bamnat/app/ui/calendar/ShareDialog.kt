@@ -21,6 +21,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Description
@@ -180,7 +182,10 @@ fun ShareDialog(
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         // Scrolls so a folded cover screen with a large font still reaches the buttons.
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
+            // [J133-79] 빌드 5: with the keyboard up a drag typed letters into the name (글라이드), and the keyboard hid
+            // 링크 만들어 보내기. A drag now puts the keyboard away first, and the sheet keeps clear of it.
+            Modifier.nestedScroll(com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()).verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding().imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(com.bamnat.core.work.shareTitle(style), style = MaterialTheme.typography.titleLarge) // [J133-77]
@@ -199,9 +204,9 @@ fun ShareDialog(
             fun rosterPdf(year: Boolean) {
                 if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(); return }
                 val name = when {
-                    title.isNotBlank() -> "${title.trim()}의 근무표"
-                    added && calendar != null -> "${calendar.name} 근무표"
-                    else -> "근무표"
+                    title.isNotBlank() -> "${title.trim()}의 ${com.bamnat.core.work.scheduleWord(style)}"
+                    added && calendar != null -> "${calendar.name} ${com.bamnat.core.work.scheduleWord(style)}"
+                    else -> com.bamnat.core.work.scheduleWord(style)
                 }
                 scope.launch {
                     runCatching {
@@ -234,12 +239,12 @@ fun ShareDialog(
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
             Text(
-                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 근무표를 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}을 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
             Text("누구에게 보내요?", style = MaterialTheme.typography.titleSmall)
-            AudienceRows(options.audience, companyWork, setupOpen) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
+            AudienceRows(options.audience, companyWork, setupOpen, style) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
             // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
@@ -257,7 +262,7 @@ fun ShareDialog(
                     Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else "",
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
-                Button(enabled = !busy, onClick = { send(context, made) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
+                Button(enabled = !busy, onClick = { send(context, made, style) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
                 // [SHR-20] Before 3.7, or when the box is off: the company setup as a file the sharer passes on, through no server.
                 if (options.audience == com.bamnat.app.share.ShareAudience.COWORKER && employee && companyWork && !(setupOpen && saved.setup)) {
                     OutlinedButton(enabled = !busy, onClick = {
@@ -288,8 +293,11 @@ fun ShareDialog(
                     }
                 }
             }
+            val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
             OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
-                label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth())
+                label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide() }))
             // [SHR-12] With a link made, the period is what 기간 늘리기 adds from today.
             Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
@@ -351,7 +359,7 @@ fun ShareDialog(
                         val made = client.create(sent)
                         keep(made, sent)
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" } + if (slot > 1) ",slot$slot" else "")
-                        send(context, made)
+                        send(context, made, style)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
@@ -360,7 +368,7 @@ fun ShareDialog(
                 // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.
                 SentLine(store.sentAt, unsent, busy) { run { container.shareSync.resend(store.key) } }
                 if (chosen() != saved || title.trim() != current.title.trim()) {
-                    Text("고른 항목이나 이름이 바뀌었어요. ‘지금 근무표로 고치기’를 누르면 링크에 들어가요.",
+                    Text("고른 항목이나 이름이 바뀌었어요. ‘지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
                 // [SHR-12] Sent the way the automatic update sends it: the end date stays.
@@ -371,7 +379,7 @@ fun ShareDialog(
                             keep(client.update(current, sent), sent)
                         }
                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 근무표로 고치기")
+                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기")
                     }
                 }
                 OutlinedButton(enabled = !busy && !empty, onClick = {
@@ -391,7 +399,7 @@ fun ShareDialog(
                 if (cutting) androidx.compose.material3.AlertDialog(
                     onDismissRequest = { cutting = false },
                     title = { Text("링크를 끊을까요?") },
-                    text = { Text("받은 사람 앱과 브라우저에서도 이 근무표가 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },
+                    text = { Text("받은 사람 앱과 브라우저에서도 이 ${com.bamnat.core.work.scheduleWord(style)}${if (style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST) "이" else "가"} 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },
                     confirmButton = { TextButton(onClick = { cutting = false; run { client.delete(current); store.clear() } }) {
                         Text("끊기", color = MaterialTheme.colorScheme.error) } },
                     dismissButton = { TextButton(onClick = { cutting = false }) { Text("취소") } },
@@ -433,7 +441,8 @@ fun ShareDialog(
 
 /** [SHR-20] 1.33 (계획 690): 같은 회사 동료 / 가족·연인 / 다른 회사 친구, one line each with what it sends. */
 @Composable
-private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, setupOpen: Boolean, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
+private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, setupOpen: Boolean,
+                         style: com.bamnat.core.work.WorkStyle?, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.padding(vertical = 4.dp).selectableGroup()) {
             com.bamnat.app.share.ShareAudience.entries.forEach { a ->
@@ -446,7 +455,7 @@ private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWor
                     androidx.compose.material3.RadioButton(selected = a == picked, onClick = null, modifier = Modifier.padding(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(a.label(companyWork), style = MaterialTheme.typography.bodyLarge)
-                        Text(a.hint(companyWork, setupOpen), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(a.hint(companyWork, setupOpen, style), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -630,8 +639,9 @@ private fun messageFor(e: Exception, options: ShareOptions): String = when (e.me
     else if (e is java.io.IOException) "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요." else "링크를 만들지 못했어요. 다시 해 주세요."
 }
 
-private fun send(context: Context, s: ShareLinkState) {
-    val text = (if (s.title.isNotBlank()) "${s.title}의 근무표" else "근무표") + "\n${s.url}"
+private fun send(context: Context, s: ShareLinkState, style: com.bamnat.core.work.WorkStyle? = null) {
+    val word = com.bamnat.core.work.scheduleWord(style)
+    val text = (if (s.title.isNotBlank()) "${s.title}의 $word" else word) + "\n${s.url}"
     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
-    context.startActivity(Intent.createChooser(send, "근무표 링크 보내기"))
+    context.startActivity(Intent.createChooser(send, "$word 링크 보내기"))
 }

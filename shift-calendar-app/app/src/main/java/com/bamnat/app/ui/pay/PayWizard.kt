@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -573,7 +574,8 @@ fun PayWizard(
         if (preview != null && step != WAGE && step != SUMMARY && s.amountReady) {
             PreviewBar(range, busy, draft)
         }
-        Surface(tonalElevation = 3.dp) {
+        // [J133-80] Above the keypad, so 다음 takes the first tap.
+        Surface(tonalElevation = 3.dp, modifier = Modifier.imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 // [PAYF-01] Inside 급여 방식 찾기 (쓸까요?·없어요·기본급) back goes to the box, and 다음 waits for it.
                 val finding = step == WAGE && payFind != null && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME

@@ -102,11 +102,17 @@ enum class ShareAudience(val key: String) {
     }
 
     /** [setupOpen]: the company setup can go in the link now (정책 3.7 시행 뒤); before, the coworker is told the 근무표 only. */
-    fun hint(companyWork: Boolean, setupOpen: Boolean = true): String = when (this) {
-        COWORKER -> if (companyWork && setupOpen) "근무표와 회사 설정까지, 받은 동료는 기본급만 넣으면 돼요"
-            else if (companyWork) "근무표와 연장·휴무일 근무를 보여요. 회사 설정은 파일로 따로 보내요" else "근무표와 연장·휴무일 근무를 함께 보여요"
-        FAMILY -> "근무와 휴가만 보여요. 메모·급여는 안 가요"
-        FRIEND -> "근무와 휴가만 보여요. 친구도 바로 자기 근무를 넣을 수 있어요"
+    fun hint(companyWork: Boolean, setupOpen: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): String {
+        // [J133-79] A shop's or a field worker's link in its own words (빌드 5: 가게 공유 시트가 '근무표·근무와 휴가').
+        val employee = style?.usesPayEngine != false
+        val days = com.bamnat.core.work.daysWord(style)
+        return when (this) {
+            COWORKER -> if (companyWork && setupOpen) "근무표와 회사 설정까지, 받은 동료는 기본급만 넣으면 돼요"
+                else if (companyWork) "근무표와 연장·휴무일 근무를 보여요. 회사 설정은 파일로 따로 보내요"
+                else if (employee) "근무표와 연장·휴무일 근무를 함께 보여요" else "${com.bamnat.core.work.scheduleWord(style)}을 함께 보며 맞춰요"
+            FAMILY -> "${days}만 보여요. 메모·${if (employee) "급여" else "금액"}는 안 가요"
+            FRIEND -> "${days}만 보여요. 친구도 바로 자기 ${if (employee) "근무" else "달력"}를 넣을 수 있어요"
+        }
     }
 
     companion object {

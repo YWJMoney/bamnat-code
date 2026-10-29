@@ -436,7 +436,8 @@ private fun PayResult(
                 },
                 companyHours = companyWay?.hours, companyName = companyWay?.way?.company)
         } else TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
-            onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+            onEstimate = { estimate = Estimates.forMonth(shown, profile) },
+            monthly = profile.wageType == com.bamnat.core.pay.WageType.MONTHLY)
         // A 1.32 [FIX132-03] A month on an older value says so, with one tap to make every month the same.
         if (closedSnap == null && unlocked) {
             val older = remember(profile, month) { com.bamnat.core.pay.PaySameness.of(profile, month) }
@@ -815,6 +816,8 @@ private fun PayResult(
 private fun TotalCard(
     result: MonthPay, range: PayRange?, unlocked: Boolean, closed: Boolean = false, onChecks: () -> Unit = {},
     onEstimate: (() -> Unit)? = null,
+    /** [J133-79] 통상시급 is a 월급's own figure: 시급·일당 work typed its rate itself. */
+    monthly: Boolean = true,
 ) {
     val checks = range?.effects?.size ?: 0
     Column(
@@ -861,7 +864,7 @@ private fun TotalCard(
         } else if (checks > 0 && unlocked) {
             Text("눌러서 확인 필요 ${checks}개 보기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
         }
-        Text("통상시급 ${if (unlocked) won(result.ordinaryHourly) else "●●,●●●원"}",
+        if (monthly) Text("통상시급 ${if (unlocked) won(result.ordinaryHourly) else "●●,●●●원"}",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
     }
 }

@@ -215,7 +215,9 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             Text(when (audience) {
                 com.bamnat.app.share.ShareAudience.FAMILY -> "가족 근무표 받기"
                 com.bamnat.app.share.ShareAudience.FRIEND -> "친구 근무표 받기"
-                else -> "동료 근무표 받기"
+                com.bamnat.app.share.ShareAudience.COWORKER -> "동료 근무표 받기"
+                // [J133-79] Before the link says who it is for (or from a server before 1.33), no one is called 동료.
+                else -> "받은 근무표 넣기"
             }, style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -400,7 +402,7 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CalendarAvatar(s.title.trim().take(1).ifEmpty { "?" }, color, size = 44.dp)
+                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?", color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "이름 없는 근무표", style = MaterialTheme.typography.titleMedium)

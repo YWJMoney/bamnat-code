@@ -44,7 +44,8 @@ data class PersonalCalendar(
     /** [EASY-01] The example of 우선 둘러볼게요: no alarms, never backed up, shared or counted as an added calendar. */
     val isExample: Boolean get() = id == EXAMPLE
     /** The letter in its avatar. */
-    val initial: String get() = if (isMain) "나" else name.trim().take(1).ifEmpty { "?" }
+    // [J133-79] The first letter, past any bracket or mark.
+    val initial: String get() = if (isMain) "나" else name.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?"
 
     companion object {
         const val MAIN = "main"

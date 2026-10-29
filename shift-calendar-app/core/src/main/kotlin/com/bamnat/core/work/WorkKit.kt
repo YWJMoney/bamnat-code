@@ -240,6 +240,25 @@ fun shareTitle(style: WorkStyle?): String = when (style) {
     else -> "근무표 공유"
 }
 
+/** [J133-79] What a shared calendar holds, in the work's word: 근무표, a field worker's 일정, a shop's 영업일. */
+fun scheduleWord(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD -> "일정"
+    WorkStyle.BUSINESS -> "영업일"
+    WorkStyle.INVEST -> "달력"
+    else -> "근무표"
+}
+
+/** [J133-79] [scheduleWord] with 로/으로 ("근무표로", "일정으로"). */
+fun scheduleWordRo(style: WorkStyle?): String = scheduleWord(style) + if (style == WorkStyle.FIELD) "으로" else "로"
+
+/** [J133-79] The days a family link shows: 근무와 휴가, a shop's 영업일과 쉬는 날. */
+fun daysWord(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD -> "일정과 쉬는 날"
+    WorkStyle.BUSINESS -> "영업일과 쉬는 날"
+    WorkStyle.INVEST -> "달력"
+    else -> "근무와 휴가"
+}
+
 /** [J133-77] The kind of work in one word, beside a calendar's name ("내 달력 · 알바"). */
 fun shortLabel(style: WorkStyle): String = when (style) {
     WorkStyle.SHIFT -> "교대"

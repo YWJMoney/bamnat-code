@@ -64,7 +64,10 @@ internal fun MoneyField(
     onChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "",
+    /** [J133-80] The keypad's 완료: closes the keypad and, when given, goes on (the setup's 다음). */
+    onDone: (() -> Unit)? = null,
 ) {
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     OutlinedTextField(
         value = value?.toString() ?: "",
         onValueChange = { s -> onChange(s.filter(Char::isDigit).take(10).toLongOrNull()) },
@@ -74,7 +77,8 @@ internal fun MoneyField(
         // [PAYS-04] Read back in words (250만 8천원) so a missing or extra zero shows at a glance.
         supportingText = value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
         modifier = modifier.fillMaxWidth(),
     )
 }

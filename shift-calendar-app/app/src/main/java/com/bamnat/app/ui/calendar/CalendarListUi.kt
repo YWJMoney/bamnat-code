@@ -221,8 +221,10 @@ fun CalendarIdentityBar(
             val shown = if (onShare != null) room else 3
             // [J133-66] 1.33 (중간 빌드 확인: '회'·'알' 한 글자 동그라미가 무엇인지 몰랐어요): with one or two other calendars and
             // room for them, each says its name beside its face.
-            val named = faces.size <= 2 && shown >= 2
-            faces.take(shown).forEach { row ->
+            // [J133-79] 빌드 5 (달력이 4개면 다시 한 글자 동그라미): two named faces at most, the rest behind +N.
+            val named = shown >= 2
+            val count = if (named) 2 else shown
+            faces.take(count).forEach { row ->
                 val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
                 if (named) Surface(
                     onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -239,8 +241,8 @@ fun CalendarIdentityBar(
                     contentAlignment = Alignment.Center,
                 ) { row.Avatar(size = 30.dp) }
             }
-            if (faces.size > shown) {
-                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - shown}", maxLines = 1, softWrap = false) }
+            if (faces.size > count) {
+                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - count}", maxLines = 1, softWrap = false) }
             }
             onShare?.let {
                 if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }

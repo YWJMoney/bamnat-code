@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -263,7 +264,9 @@ fun PayQuickSetup(
                     )
                     // [PAYF-06] The base, and folded under it the 통상시급's hours when the user knows them.
                     BaseFields(wage, amount, onBase = { fromSlip = null; amount = it }, hours = hours, onHours = { fromSlip = null; hours = it },
-                        profile = draft ?: initial, month = thisMonth)
+                        profile = draft ?: initial, month = thisMonth,
+                        // [J133-80] 빌드 5: the keypad covered 다음, so its first tap only closed the keypad. 완료 goes on.
+                        onDone = { if ((amount ?: 0) > 0) next() })
                     if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false) { fromSlip = null; fiveOrMore = it }
                     SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
                 }
@@ -294,7 +297,8 @@ fun PayQuickSetup(
                 }
             }
         }
-        Surface(tonalElevation = 3.dp) {
+        // [J133-80] Above the keypad, so 다음 takes the first tap.
+        Surface(tonalElevation = 3.dp, modifier = Modifier.imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val finding = step == COMPANY && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
                 when {

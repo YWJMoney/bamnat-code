@@ -140,7 +140,12 @@ internal object SettingsIndex {
      * company (교대·일근, or one already joined), so 회사 찾기·회사 설정 파일 are found; 알바·현장·가게·투자 search without them.
      */
     fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): List<SettingEntry> =
-        all(board, share, company).filter { fits(it, style) }
+        all(board, share, company).filter { fits(it, style) }.map { inWords(it, style) }
+
+    /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
+    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry =
+        if (style != com.bamnat.core.work.WorkStyle.HOURLY || "회사 계산 방법" !in e.title) e
+        else e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
 
     /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
     private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,

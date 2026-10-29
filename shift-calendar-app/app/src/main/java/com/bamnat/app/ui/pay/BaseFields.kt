@@ -56,12 +56,14 @@ internal fun BaseFields(
     companyHours: Int? = null,
     companyName: String? = null,
     keepBase: Long? = null,
+    onDone: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MoneyField(
             when (wage) { WageType.MONTHLY -> "월 기본급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" },
             base, onChange = onBase,
             placeholder = when (wage) { WageType.MONTHLY -> "명세서 ‘기본급’ 줄의 금액"; WageType.HOURLY -> "계약서의 시급"; WageType.DAILY -> "하루 받는 금액" },
+            onDone = onDone,
         )
         // [PAYG-02] The base the setup has, one tap away and never put in by itself.
         if (keepBase != null && base != keepBase) {

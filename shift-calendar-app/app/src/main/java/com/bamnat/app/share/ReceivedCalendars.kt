@@ -143,7 +143,8 @@ data class ReceivedCalendar(
     /** 민지의 근무표, as the shared page says. */
     val fullName: String get() = title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "이름 없는 근무표"
     /** The letter in its avatar. */
-    val initial: String get() = title.trim().take(1).ifEmpty { "?" }
+    // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
+    val initial: String get() = title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?"
 
     companion object {
         /** Avatar colours, one per calendar in the order they were added. */
