@@ -58,6 +58,7 @@ import com.bamnat.core.work.asksHolidaysOff
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -144,10 +145,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      */
     val snapshot: StateFlow<ScheduleSnapshot?> =
         kotlinx.coroutines.flow.combine(container.calendars.activeSnapshotAround { container.shownMonth.month.value },
-            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }, container.shownMonth.month) { s, p, m ->
+            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }, container.shownMonth.month,
+            container.settingsRepository.settings.map { it.workStyle }.distinctUntilChanged()) { s, p, m, _ ->
             if (!s.covers(m.minusMonths(1)) || !s.covers(m.plusMonths(1))) null
             // [HRLY-05] Hours on the calendar take the legal break off, as pay does.
-            else if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s
+            else (if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s).let { snap ->
+                // [J133B-01] An 알바 calendar's 대근 is its 대타, in the menu, the chip and the day's record.
+                val style = container.calendars.styleOf(container.calendars.active.value, container.settingsRepository.current.workStyle)
+                if (style == com.bamnat.core.work.WorkStyle.HOURLY) snap.kinds.forHourly().let { k -> if (k === snap.kinds) snap else snap.copy(kinds = k) } else snap
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     /**
      * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that

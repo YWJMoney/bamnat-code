@@ -128,6 +128,14 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
 
     fun name(id: Long): String = of(id).name
 
+    /**
+     * [J133B-01] 1.33 빌드 9 확인 ("알바 대타 메뉴와 기록이 '오전 알바 대근'"): an 알바 calendar calls the 대근 a 대타, as its day sheet
+     * does; a name the user gave it stays.
+     */
+    fun forHourly(): ExtraKinds =
+        if (kinds.none { it.id == ExtraKind.COVER_ID && it.name == "대근" }) this
+        else ExtraKinds(kinds.map { if (it.id == ExtraKind.COVER_ID && it.name == "대근") it.copy(name = "대타") else it })
+
     /** Kinds offered when marking a day; kinds already on the day show anyway so they can be cleared. */
     fun visible(current: Collection<Long> = emptyList()): List<ExtraKind> = kinds.filter { !it.hidden || it.id in current }
 

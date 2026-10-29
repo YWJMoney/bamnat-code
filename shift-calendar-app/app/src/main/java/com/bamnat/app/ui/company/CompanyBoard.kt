@@ -377,11 +377,13 @@ fun TalkSheet(holder: TalkHolder) {
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     // [J133-99] 1.33 빌드 8 확인 ("고치자는 제안에 글을 쓰고 뒤로 키 두 번이면 묻지 않고 사라져요"): words or a change not sent yet
     // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).
-    val typed = text.isNotBlank() || (kind == "proposal" && change != listOf(blankChange()))
+    // [J133-99] 빌드 9 확인 ("X·끌어내리기는 묻는데 뒤로 키는 묻지 않고 닫혀요"): read through one held value, so the sheet's state
+    // and its back are made once and see the words as they are now (a plain value made a new sheet state at every letter).
+    val typedNow = androidx.compose.runtime.rememberUpdatedState(text.isNotBlank() || (kind == "proposal" && change != listOf(blankChange())))
     var leaving by remember { mutableStateOf(false) }
     val talkScope = androidx.compose.runtime.rememberCoroutineScope()
     val talkState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
-        v != androidx.compose.material3.SheetValue.Hidden || !typed || false.also { leaving = true }
+        v != androidx.compose.material3.SheetValue.Hidden || !typedNow.value || false.also { leaving = true }
     })
     if (leaving) com.bamnat.app.ui.components.ConfirmDialog(
         title = "쓴 글을 버릴까요?",
@@ -392,8 +394,8 @@ fun TalkSheet(holder: TalkHolder) {
         destructive = true,
     )
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
-        if (typed) { leaving = true; talkScope.launch { talkState.show() } } else holder.close()
-    }, sheetState = talkState, onClose = { if (typed) leaving = true else holder.close() }) {
+        if (typedNow.value) { leaving = true; talkScope.launch { talkState.show() } } else holder.close()
+    }, sheetState = talkState, onClose = { if (typedNow.value) leaving = true else holder.close() }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
             // [PLAZA-32] 1.27 AI: a room's talk is free talk under its own name.
             Text(if (o.room) "자유 토의" else "토론", style = MaterialTheme.typography.titleLarge)

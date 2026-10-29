@@ -41,4 +41,13 @@ class J133ShopDayTest {
             DayOfWeek.MONDAY, AppSettings(workStyle = WorkStyle.SHIFT, weeklyLimitHours = 64).limits,
         ).week(monday).overLimit)
     }
+
+    /** [J133B-01] 빌드 9 확인: an 알바 calendar's 대근 is called 대타; a name the user gave it stays. */
+    @Test fun aPartTimersCoverIsADaeta() {
+        val k = com.bamnat.core.model.ExtraKinds()
+        assertEquals("대타", k.forHourly().name(com.bamnat.core.model.ExtraKind.COVER_ID))
+        assertEquals("잔업", k.forHourly().name(com.bamnat.core.model.ExtraKind.OVERTIME_ID))
+        val mine = com.bamnat.core.model.ExtraKinds(k.kinds.map { if (it.id == com.bamnat.core.model.ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it })
+        assertTrue(mine.forHourly() === mine)
+    }
 }

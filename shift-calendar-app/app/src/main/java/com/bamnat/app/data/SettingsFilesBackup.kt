@@ -35,7 +35,9 @@ class SettingsFilesBackup(
                 if (part.keys != null && k !in part.keys) continue
                 encode(v)?.let { o.put(k, it) }
             }
-            if (o.length() > 0) prefs.put(part.name, o)
+            // [J133B-05] 1.33 빌드 9 확인 ("복원했는데 회사 적용이 그대로예요"): an empty part is written too, so a restore knows the
+            // backup had none of it (no company applied) and takes away what came after, instead of keeping it.
+            prefs.put(part.name, o)
         }
         val marks = JSONObject()
         val added = calendarIds().filter { it != PersonalCalendar.MAIN && it != PersonalCalendar.EXAMPLE }
@@ -54,7 +56,7 @@ class SettingsFilesBackup(
                 val keys = PARTS.first { it.name == part.key }.keys
                 val values = JSONObject()
                 for ((k, v) in p.all) if (keys == null || k in keys) encode(v)?.let { values.put(k, it) }
-                if (values.length() > 0) o.put(part.key, values)
+                o.put(part.key, values)
             }
             if (o.length() > 0) companies.put(id, o)
         }
@@ -67,7 +69,10 @@ class SettingsFilesBackup(
         o.optJSONObject("prefs")?.let { prefs ->
             for (part in PARTS) {
                 val saved = prefs.optJSONObject(part.name) ?: continue
-                val edit = context.getSharedPreferences(part.name, Context.MODE_PRIVATE).edit()
+                val file = context.getSharedPreferences(part.name, Context.MODE_PRIVATE)
+                val edit = file.edit()
+                // [J133B-05] What the part had then, and nothing it did not: a key of the part written after the backup goes.
+                for (k in file.all.keys) if ((part.keys == null || k in part.keys) && !saved.has(k)) edit.remove(k)
                 for (k in saved.keys()) {
                     if (part.keys != null && k !in part.keys) continue
                     decode(edit, k, saved.optJSONObject(k) ?: continue)
@@ -84,7 +89,9 @@ class SettingsFilesBackup(
                 for (part in CALENDAR_PARTS) {
                     val saved = parts.optJSONObject(part.key) ?: continue
                     val keys = PARTS.first { it.name == part.key }.keys
-                    val edit = com.bamnat.app.company.CompanyScopeStorage.prefs(context, id, part.value).edit()
+                    val file = com.bamnat.app.company.CompanyScopeStorage.prefs(context, id, part.value)
+                    val edit = file.edit()
+                    for (k in file.all.keys) if ((keys == null || k in keys) && !saved.has(k)) edit.remove(k)
                     for (k in saved.keys()) {
                         if (keys != null && k !in keys) continue
                         decode(edit, k, saved.optJSONObject(k) ?: continue)
