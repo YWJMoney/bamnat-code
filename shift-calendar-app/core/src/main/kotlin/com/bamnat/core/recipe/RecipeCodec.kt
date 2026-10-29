@@ -100,6 +100,8 @@ object RecipeCodec {
                 color(c["a"], "cover.a"), color(c["b"], "cover.b"),
                 ((c["dir"] as? Long) ?: 0L).toInt().also { if (it !in 0..3) throw RecipeException("cover", "cover.dir") },
                 (c["emoji"] as? String)?.let(RecipeText::oneEmoji) ?: throw RecipeException("emoji", "cover.emoji"),
+                // [RCX-15] 1.35 그림 표지: the id of a picture the server keeps (re-encoded on the phone, looked at before it shows).
+                (c["image"] as? String)?.also { if (!Cover.IMAGE.matches(it)) throw RecipeException("cover", "cover.image") },
             )
         } ?: Cover()
         val parent = (m["parent"] as? String)?.also { if (!CODE.matches(it)) throw RecipeException("parent", "parent") }
@@ -260,7 +262,8 @@ object RecipeCodec {
         if (r.summary.isNotEmpty()) put("summary", r.summary)
         if (r.desc.isNotEmpty()) put("desc", r.desc)
         put("styles", WorkStyle.entries.filter { it in r.styles }.map { it.name })
-        put("cover", mapOf("a" to r.cover.a, "b" to r.cover.b, "dir" to r.cover.dir.toLong(), "emoji" to r.cover.emoji))
+        put("cover", mapOf("a" to r.cover.a, "b" to r.cover.b, "dir" to r.cover.dir.toLong(), "emoji" to r.cover.emoji) +
+            (r.cover.image?.let { mapOf("image" to it) } ?: emptyMap()))
         if (r.tokens.isNotEmpty()) put("tokens", r.tokens.map { mapOf("name" to it.name, "light" to it.light, "dark" to it.dark) })
         if (r.inputs.isNotEmpty()) put("inputs", r.inputs.map { i ->
             buildMap {

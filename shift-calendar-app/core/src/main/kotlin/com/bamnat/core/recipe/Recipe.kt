@@ -42,8 +42,15 @@ data class Recipe(
     }
 }
 
-/** 표지: two colours in a gradient ([dir] 0 위→아래, 1 왼→오, 2 대각선 ↘, 3 대각선 ↙) and one big emoji. */
-data class Cover(val a: Long = 0xFF3F51B5L, val b: Long = 0xFF9C27B0L, val dir: Int = 0, val emoji: String = "🗓️")
+/**
+ * 표지: two colours in a gradient ([dir] 0 위→아래, 1 왼→오, 2 대각선 ↘, 3 대각선 ↙) and one big emoji; from 1.35 [image] too, a
+ * picture the server keeps by id ([RCX-15]), drawn over the gradient once the operator let it show.
+ */
+data class Cover(val a: Long = 0xFF3F51B5L, val b: Long = 0xFF9C27B0L, val dir: Int = 0, val emoji: String = "🗓️", val image: String? = null) {
+    companion object {
+        val IMAGE = Regex("[0-9a-f]{16}")
+    }
+}
 
 /**
  * 테마 토큰 (KWGT 전역처럼): a named colour for light and dark screens. A colour field anywhere in the recipe may point at a

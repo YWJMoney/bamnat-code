@@ -56,6 +56,9 @@ const NS = (key, max, lo, hi, o = {}) => ({ t: "nums", key, max, lo, hi, decimal
 const D = (key, o = {}) => ({ t: "days", key, optional: true, ...o });
 const I = (key, max, fields, o = {}) => ({ t: "items", key, max, fields, min: 0, optional: false, ...o });
 
+const LAYOUT_LINE = /^-?[A-Za-z][A-Za-z0-9]{0,23}(,-?[A-Za-z][A-Za-z0-9]{0,23}){0,39}$/;
+const layoutLine = (s) => (s === "" || LAYOUT_LINE.test(s) ? null : "layout");
+
 const companyCheck = (text) => {
   try {
     const v = JSON.parse(text);
@@ -89,6 +92,13 @@ export const RECIPE_PIECES = {
   invest: { styles: ["INVEST"], fields: [I("rules", 10, [T("text", 80, { min: 2, check: (s) => (investAdvice(s) ? "invest_advice" : null) })], { min: 1 }),
     TS("journal", 8, 20)] },
   company: { styles: ["SHIFT", "DAY"], fields: [T("setup", 24_000, { min: 2, lines: true, guard: false, check: companyCheck })] },
+  // 1.35 [RCX-11]..[RCX-14]
+  bundle: { styles: STYLES, fields: [I("items", 8, [T("code", 8, { min: 8, guard: false, check: (s) => (CODE.test(s) ? null : "code") }),
+    T("note", 40, { optional: true })], { min: 2 })] },
+  layout: { styles: STYLES, fields: [TS("tabs", 5, 10), T("calendar", 400, { optional: true, guard: false, check: layoutLine })] },
+  cards: { styles: STYLES, fields: [T("stats", 400, { optional: true, guard: false, check: layoutLine }),
+    T("money", 400, { optional: true, guard: false, check: layoutLine }), T("memo", 400, { optional: true, guard: false, check: layoutLine })] },
+  widget: { styles: STYLES, fields: [N("alpha", 30, 100, { optional: true }), P("theme", ["system", "light", "dark"], { optional: true }), F("memo")] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
@@ -493,6 +503,11 @@ export function cleanRecipeObject(raw) {
     const emoji = typeof c.emoji === "string" ? oneEmoji(c.emoji) : null;
     if (!emoji) fail("emoji", "cover.emoji");
     cover = { a, b, dir, emoji };
+    // [RCX-15] 1.35 그림 표지: an id of recipe_images.
+    if (c.image !== undefined && c.image !== null) {
+      if (typeof c.image !== "string" || !/^[0-9a-f]{16}$/.test(c.image)) fail("cover", "cover.image");
+      cover.image = c.image;
+    }
   }
   let parent = null;
   if (typeof raw.parent === "string") {

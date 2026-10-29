@@ -187,6 +187,49 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     COMPANY(
         "company", "근무 주기·급여 방식", setOf(WorkStyle.SHIFT, WorkStyle.DAY),
         listOf(Field.Text("setup", 24_000, min = 2, lines = true, guard = false, check = { CompanyPiece.check(it) })),
+    ),
+
+    /** [RCX-11] 1.35 묶음: other recipes by their codes, put in one after another (each piece still chosen on its own). */
+    BUNDLE(
+        "bundle", "레시피 묶음", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Items(
+                "items", 8, min = 2,
+                fields = listOf(
+                    Field.Text("code", 8, min = 8, guard = false, check = { if (RecipeCodec.CODE.matches(it)) null else "code" }),
+                    Field.Text("note", 40, optional = true),
+                ),
+            ),
+        ),
+    ),
+
+    /** [RCX-12] 1.35 화면 배치: the bottom tabs' order ([com.bamnat.core.layout.TabOrder]) and the calendar page's parts. */
+    LAYOUT(
+        "layout", "화면 배치", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Texts("tabs", 5, 10),
+            Field.Text("calendar", 400, optional = true, guard = false, check = ::layoutLine),
+        ),
+    ),
+
+    /** [RCX-13] 1.35 통계·가계부·메모 카드: each page's parts in order and shown or not ([com.bamnat.core.layout.PageLayout]). */
+    CARDS(
+        "cards", "통계·가계부 카드", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Text("stats", 400, optional = true, guard = false, check = ::layoutLine),
+            Field.Text("money", 400, optional = true, guard = false, check = ::layoutLine),
+            Field.Text("memo", 400, optional = true, guard = false, check = ::layoutLine),
+        ),
+    ),
+
+    /** [RCX-14] 1.35 위젯 모양: how see-through the widgets are, light or dark, and the memo line. */
+    WIDGET(
+        "widget", "위젯 모양", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Num("alpha", 30.0, 100.0, optional = true),
+            Field.Pick("theme", listOf("system", "light", "dark"), optional = true),
+            Field.Flag("memo"),
+        ),
     );
 
     companion object {
@@ -200,6 +243,10 @@ val WEEK_DAYS = listOf("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "
 
 /** A memo template's 반복: M<day of month> or W<1 Monday..7 Sunday> (Memo.repeat), or none. */
 private val REPEAT = Regex("^(M([1-9]|[12][0-9]|3[01])|W[1-7])$")
+
+/** A page's parts as [com.bamnat.core.layout.PageLayout] writes them ("hours,-rest,memos"): ids only, at most 40. */
+private val LAYOUT_LINE = Regex("^-?[A-Za-z][A-Za-z0-9]{0,23}(,-?[A-Za-z][A-Za-z0-9]{0,23}){0,39}$")
+internal fun layoutLine(s: String): String? = if (s.isEmpty() || LAYOUT_LINE.matches(s)) null else "layout"
 
 /**
  * [RCP-08] What a kind of day is, so a recipe's 근무 꾸미기 meets the receiver's own (주간 ↔ 데이 ↔ D): its name first, then this.

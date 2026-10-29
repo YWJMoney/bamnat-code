@@ -69,6 +69,30 @@ object RecipeDescribe {
         ).joinToString(" · ")
         PieceKind.INVEST -> "원칙 ${items(p, "rules").size}개" + texts(p, "journal").takeIf { it.isNotEmpty() }?.let { " · 일지 칸 ${it.size}개" }.orEmpty()
         PieceKind.COMPANY -> "근무 주기와 급여 방식 (회사 설정 파일)"
+        PieceKind.BUNDLE -> "레시피 ${items(p, "items").size}개 묶음"
+        PieceKind.LAYOUT -> listOfNotNull(
+            texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { TABS[it] ?: it } },
+            (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },
+        ).joinToString(" · ").ifEmpty { "화면 배치" }
+        PieceKind.CARDS -> listOfNotNull(
+            (p.values["stats"] as? String)?.let { "통계 카드 ${parts(it)}" },
+            (p.values["money"] as? String)?.let { "가계부 카드 ${parts(it)}" },
+            (p.values["memo"] as? String)?.let { "메모 카드 ${parts(it)}" },
+        ).joinToString(" · ").ifEmpty { "카드 순서" }
+        PieceKind.WIDGET -> listOfNotNull(
+            (p.values["alpha"] as? Number)?.let { "불투명 ${it}%" },
+            (p.values["theme"] as? String)?.let { mapOf("system" to "휴대폰 화면 따라", "light" to "밝게", "dark" to "어둡게")[it] },
+            (p.values["memo"] as? Boolean)?.let { if (it) "메모 한 줄 보임" else "메모 숨김" },
+        ).joinToString(" · ").ifEmpty { "위젯 모양" }
+    }
+
+    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "settings" to "설정")
+
+    /** "보이는 카드 n개, 숨긴 카드 m개" of a layout line. */
+    private fun parts(line: String): String {
+        val bits = line.split(',').filter { it.isNotEmpty() }
+        val hidden = bits.count { it.startsWith("-") }
+        return "${bits.size - hidden}개 보임" + if (hidden > 0) ", ${hidden}개 숨김" else ""
     }
 
     /** The receiver's own words for the kinds of work a recipe fits. */
