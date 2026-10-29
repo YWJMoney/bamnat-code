@@ -16,6 +16,8 @@ data class WorkTypeChoices(
     val selectiveMonths: Int? = null,
     /** 1.32 [WTYP-15] The month a 3개월 정산 기간 starts in (1~12). */
     val selectiveStart: Int = 1,
+    /** 1.32 [WTYP-19] 소득 종류 the user picked ([com.bamnat.core.money.IncomeType] name); null follows the kind of work. */
+    val incomeType: String? = null,
 )
 
 /**
@@ -36,6 +38,9 @@ class WorkTypePrefs private constructor(context: Context) {
 
     fun setTaxMode(calendarId: String, mode: TaxMode) = write(calendarId) { it.copy(taxMode = mode) }
 
+    /** 1.32 [WTYP-19] */
+    fun setIncomeType(calendarId: String, type: String?) = write(calendarId) { it.copy(incomeType = type) }
+
     /** 1.32 [WTYP-15] */
     fun setSelective(calendarId: String, months: Int?, start: Int = 1) =
         write(calendarId) { it.copy(selectiveMonths = months?.takeIf { m -> m in com.bamnat.core.hours.SelectiveWork.MONTHS }, selectiveStart = start.coerceIn(1, 12)) }
@@ -47,18 +52,20 @@ class WorkTypePrefs private constructor(context: Context) {
             .putString(K_TAX + calendarId, next.taxMode.name)
             .putInt(K_SEL + calendarId, next.selectiveMonths ?: 0)
             .putInt(K_SEL_START + calendarId, next.selectiveStart)
+            .putString(K_INCOME + calendarId, next.incomeType ?: "")
             .apply()
         state.value = state.value + (calendarId to next)
     }
 
     private fun read(): Map<String, WorkTypeChoices> {
-        val ids = prefs.all.keys.mapNotNull { k -> listOf(K_SEL_START, K_SEL, K_CAP, K_TAX).firstOrNull { k.startsWith(it) }?.let { k.removePrefix(it) } }.toSet()
+        val ids = prefs.all.keys.mapNotNull { k -> listOf(K_SEL_START, K_SEL, K_INCOME, K_CAP, K_TAX).firstOrNull { k.startsWith(it) }?.let { k.removePrefix(it) } }.toSet()
         return ids.associateWith { id ->
             WorkTypeChoices(
                 overtimeCapHours = prefs.getInt(K_CAP + id, 0).takeIf { it > 0 },
                 taxMode = runCatching { TaxMode.valueOf(prefs.getString(K_TAX + id, null) ?: "") }.getOrDefault(TaxMode.INSURANCE_4),
                 selectiveMonths = prefs.getInt(K_SEL + id, 0).takeIf { it in com.bamnat.core.hours.SelectiveWork.MONTHS },
                 selectiveStart = prefs.getInt(K_SEL_START + id, 1).coerceIn(1, 12),
+                incomeType = prefs.getString(K_INCOME + id, null)?.takeIf { it.isNotEmpty() },
             )
         }
     }
@@ -68,6 +75,7 @@ class WorkTypePrefs private constructor(context: Context) {
         private const val K_TAX = "tax_"
         private const val K_SEL = "sel_"
         private const val K_SEL_START = "selstart_"
+        private const val K_INCOME = "income_"
 
         @Volatile private var instance: WorkTypePrefs? = null
 
