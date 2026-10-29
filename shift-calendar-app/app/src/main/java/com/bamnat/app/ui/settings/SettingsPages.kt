@@ -395,6 +395,11 @@ private fun NoticesPage(
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(todayShiftNotice = on) }
         }
+        // 1.32 [WTYP-16] 사무직(일반 근무) 달력의 퇴근 시각에 지금 퇴근 버튼.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY) SwitchRow(LEAVE_TIME_ROW, "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요",
+            settings.leaveTimeNotice, warning = warning(settings.leaveTimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+            set(on) { it.copy(leaveTimeNotice = on) }
+        }
         // [ALRM-16] 1.31 N3
         SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -1013,6 +1018,8 @@ internal const val SPEND_HEAT_ROW = "지출 히트맵"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 /** 1.32 [WTYP-12] */
 internal const val STRETCH_ROW = "연속 근무 경고"
+/** 1.32 [WTYP-16] */
+internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"

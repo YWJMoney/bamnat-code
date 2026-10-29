@@ -877,6 +877,11 @@ class AppContainer(context: Context) {
                 com.bamnat.app.invest.InvestNotices.plans(this@AppContainer).map { it.isNotEmpty() }.distinctUntilChanged()
                     .collect { com.bamnat.app.invest.InvestMonthNotice.schedule(appContext, it) }
             }
+            // 1.32 [WTYP-16] 퇴근 시각 알림 follows the roster and its switch.
+            keep("leavetime") {
+                combine(scheduleRepository.snapshot, settingsRepository.settings.map { it.leaveTimeNotice to it.workStyle }.distinctUntilChanged()) { _, _ -> Unit }
+                    .debounce(500).collect { com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext) }
+            }
             // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감 and 코인 12월 31일, the next of them.
             keep("datenotices") { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.

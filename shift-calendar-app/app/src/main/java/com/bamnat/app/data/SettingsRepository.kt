@@ -160,6 +160,8 @@ data class AppSettings(
     val spendHeat: Boolean = false,
     /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
     val backupNudge: Boolean = true,
+    /** 1.32 [WTYP-16] 퇴근 시각 알림: at a day calendar's end of work, a quiet notice with 지금 퇴근 (off by default). */
+    val leaveTimeNotice: Boolean = false,
     /** 1.32 [WTYP-12] 연속 근무 경고: a stretch of work (shifts and extras with under an hour between) longer than this; 0 is not checked. */
     val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
@@ -333,6 +335,7 @@ class SettingsRepository(context: Context) {
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
             spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
             backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
+            leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
@@ -424,6 +427,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
             .putBoolean(K_SPEND_HEAT, s.spendHeat)
             .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
+            .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
@@ -465,6 +469,7 @@ class SettingsRepository(context: Context) {
         const val K_SPEND_IN_CELLS = "spend_in_cells"
         const val K_SPEND_HEAT = "spend_heat"
         const val K_BACKUP_NUDGE = "backup_nudge"
+        const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_CAL_ONLY = "calendar_only"

@@ -107,7 +107,7 @@ object FeatureSwitches {
         // 1.32 [WTYP-08] 가계부 cards turned off in 가계부 화면 꾸미기, and the two settings rows they live in.
         "money.cardBill", "money.shiftSpend", "money.subscriptions", "money.cardThreshold", "money.inCells", "pay.depositCompare",
         // 1.32 조사 대조 [LEDX-16][LEDX-17][LEDX-23]
-        "money.asks", "money.installPlan", "money.heat", "backup.nudge")
+        "money.asks", "money.installPlan", "money.heat", "backup.nudge", "day.leaveTime")
 
     /** 1.32 [WTYP-08] The 가계부 card each of these features is ([com.bamnat.app.ui.money.MoneyPart]). */
     private val MONEY_CARDS = mapOf("money.cardBill" to "cardbill", "money.shiftSpend" to "shiftspend",
@@ -140,6 +140,7 @@ object FeatureSwitches {
             "pay.depositCompare" -> c.settingsRepository.current.payDepositNotice
             "money.heat" -> c.settingsRepository.current.spendHeat
             "backup.nudge" -> c.settingsRepository.current.backupNudge
+            "day.leaveTime" -> c.settingsRepository.current.leaveTimeNotice
             in MONEY_CARDS -> moneyCardShown(c, MONEY_CARDS.getValue(feature.id))
             else -> true
         }
@@ -176,6 +177,7 @@ object FeatureSwitches {
                 "pay.depositCompare" -> c.settingsRepository.update { it.copy(payDepositNotice = on) }
                 "money.heat" -> c.settingsRepository.update { it.copy(spendHeat = on) }
                 "backup.nudge" -> c.settingsRepository.update { it.copy(backupNudge = on) }
+                "day.leaveTime" -> c.settingsRepository.update { it.copy(leaveTimeNotice = on) }
                 in MONEY_CARDS -> showMoneyCard(c, MONEY_CARDS.getValue(feature.id), on)
                 else -> { FeatureLinks.open(feature); return false }
             }

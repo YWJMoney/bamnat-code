@@ -149,6 +149,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 // [INV-08] The investor's alarms too.
                 com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
                 com.bamnat.app.invest.InvestMonthNotice.schedule(context, container.investCalendars().isNotEmpty())
+                // 1.32 [WTYP-16] 퇴근 시각 알림.
+                LeaveTimeNotice.reschedule(context)
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.
                 com.bamnat.app.calendar.DateNoticeAlarm.reschedule(context, com.bamnat.app.calendar.DateNoticeAlarm.gather(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)

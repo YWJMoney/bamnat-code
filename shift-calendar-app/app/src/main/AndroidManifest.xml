@@ -198,6 +198,11 @@
             android:name=".invest.InvestMonthReceiver"
             android:exported="false" />
 
+        <!-- 1.32 [WTYP-16] 퇴근 시각 알림 and its 지금 퇴근 button. -->
+        <receiver
+            android:name=".alarm.LeaveTimeReceiver"
+            android:exported="false" />
+
         <!-- 1.32 [WTYP-11][WTYP-29] 희망 오프 신청 마감, 코인 12월 31일 시가 기록. -->
         <receiver
             android:name=".calendar.DateNoticeReceiver"
