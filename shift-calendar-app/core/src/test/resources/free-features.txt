@@ -22,6 +22,7 @@ day.bridges
 day.commute
 day.firstCard
 day.leaveNow
+day.leaveTime
 day.overtimeCap
 day.selective
 extra.kinds
@@ -31,12 +32,14 @@ field.due
 field.mayPack
 field.mode
 field.platform
+field.platformCut
 field.quote
 field.rateFrom
 field.receipt
 field.statement
 field.status
 field.tradeWage
+field.unitRules
 field.units
 field.year
 grow.card
@@ -195,6 +198,7 @@ view.clock12
 view.compact
 view.textSize
 widget.countdown
+widget.fieldActions
 widget.lines
 widget.memo
 widget.nextOff

@@ -134,18 +134,24 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
 @Composable
 private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBook, rules: FieldRules, today: LocalDate) {
     val month = java.time.YearMonth.from(today)
-    val m = remember(book, month) { com.bamnat.core.money.PlatformWork.month(month, book.jobs, book.entries) }
+    val m = remember(book, month, rules) { com.bamnat.core.money.PlatformWork.month(month, book.jobs, book.entries, rules) }
     val payouts = remember(book, rules) { com.bamnat.core.money.PlatformWork.payouts(book.jobs, rules) }
     if (m.rows.isEmpty() && payouts.isEmpty()) return
     SectionCard(title = "${month.monthValue}월 플랫폼 수입") {
         m.rows.forEach { r ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                Text("${r.platform} ${r.count}건", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text("${r.platform} ${r.count}건", style = MaterialTheme.typography.bodyLarge)
+                    // G 1.32 [WTYP-23] 콜 출처마다 수수료·보험료.
+                    if (r.fees > 0) Text("수수료·보험 ${Fmt.won(r.fees)} 빼면 ${Fmt.won(r.amount - r.fees)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Text(Fmt.won(r.amount), style = MaterialTheme.typography.bodyLarge)
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text("쓴 돈 ${Fmt.won(m.costs)} (유류비·정비·보험 포함) · 남은 돈 ${Fmt.won(m.net)}", style = MaterialTheme.typography.bodyMedium)
+        Text("쓴 돈 ${Fmt.won(m.costs)} (유류비·정비·보험 포함)" + (if (m.fees > 0) " · 수수료 ${Fmt.won(m.fees)}" else "") + " · 남은 돈 ${Fmt.won(m.net)}",
+            style = MaterialTheme.typography.bodyMedium)
         m.perHour?.let { Text("시간당 순수익 ${Fmt.won(it)} · 한 건 ${m.perCount?.let(Fmt::won) ?: "-"}", style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary) }
         payouts.take(4).forEach { p ->
@@ -153,7 +159,7 @@ private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBo
             val dep = remember(p, book.entries) { com.bamnat.core.money.PlatformWork.depositFor(p, book.entries) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${p.platform} ${Fmt.shortDate(p.payDate)} 정산 ${Fmt.won(p.amount)}", style = MaterialTheme.typography.bodyLarge,
+                    Text("${p.platform} ${Fmt.shortDate(p.payDate)} 정산 ${Fmt.won(p.expected)}", style = MaterialTheme.typography.bodyLarge,
                         color = if (p.payDate.isBefore(today.minusDays(2)) && dep == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface)
                     Text("${Fmt.shortDate(p.from)}~${Fmt.shortDate(p.to)} 일한 몫" + (dep?.let { " · ${Fmt.shortDate(it.date)} ${Fmt.won(it.amount)} 들어온 것 같아요" } ?: ""),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

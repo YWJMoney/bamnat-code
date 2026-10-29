@@ -43,7 +43,8 @@ import java.time.LocalDate
  * G 1.32 [WTYP-02] 604 플랫폼(배달·운전)형's day chips: each platform written today ("배민 23건"), then the platforms used in
  * the last 60 days, then 추가. A tap opens the day's 건수·금액·운행 시간·유류비 for that platform, big buttons first (장갑 낀 손).
  */
-internal fun LazyListScope.platformChips(date: LocalDate, book: MoneyBook, rules: FieldRules, onSave: (Job) -> Unit, onDelete: (Job) -> Unit) {
+internal fun LazyListScope.platformChips(date: LocalDate, book: MoneyBook, rules: FieldRules, onSave: (Job) -> Unit, onDelete: (Job) -> Unit,
+                                         onCut: (String, PlatformWork.Cut) -> Unit = { _, _ -> }) {
     val today = book.jobs.filter { it.date == date && PlatformWork.isPlatform(it) }
     val used = book.jobs.filter { PlatformWork.isPlatform(it) && !it.date.isBefore(date.minusDays(60)) }.groupBy { it.client }
         .entries.sortedByDescending { it.value.size }.map { it.key }
@@ -53,20 +54,20 @@ internal fun LazyListScope.platformChips(date: LocalDate, book: MoneyBook, rules
         val job = today.firstOrNull { it.client == name }
         FilterChip(selected = job != null, onClick = { open = true },
             label = { Text(job?.let { "$name ${PlatformWork.count(it)}건" } ?: name, maxLines = 1) })
-        if (open) PlatformDayDialog(date, name, job, rules, onDismiss = { open = false }, onDelete = { onDelete(it); open = false }) { onSave(it); open = false }
+        if (open) PlatformDayDialog(date, name, job, rules, onDismiss = { open = false }, onDelete = { onDelete(it); open = false }, onCut = onCut) { onSave(it); open = false }
     }
     item {
         var open by rememberSaveable { mutableStateOf(false) }
         AssistChip(onClick = { open = true }, label = { Text(if (names.isEmpty()) "플랫폼 기록" else "다른 플랫폼", maxLines = 1) },
             leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) })
-        if (open) PlatformDayDialog(date, null, null, rules, onDismiss = { open = false }, onDelete = {}) { onSave(it); open = false }
+        if (open) PlatformDayDialog(date, null, null, rules, onDismiss = { open = false }, onDelete = {}, onCut = onCut) { onSave(it); open = false }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PlatformDayDialog(date: LocalDate, platform: String?, existing: Job?, rules: FieldRules, onDismiss: () -> Unit,
-                               onDelete: (Job) -> Unit, onSave: (Job) -> Unit) {
+                               onDelete: (Job) -> Unit, onCut: (String, PlatformWork.Cut) -> Unit = { _, _ -> }, onSave: (Job) -> Unit) {
     var name by rememberSaveable { mutableStateOf(platform ?: PlatformWork.Platform.BAEMIN.label) }
     var count by rememberSaveable { mutableIntStateOf(existing?.let(PlatformWork::count) ?: 0) }
     var amount by rememberSaveable { mutableStateOf(amountDigits(existing?.amount ?: 0)) }
@@ -96,7 +97,17 @@ internal fun PlatformDayDialog(date: LocalDate, platform: String?, existing: Job
                     OutlinedTextField(minutes, { minutes = it.filter(Char::isDigit).take(2) }, label = { Text("분") }, singleLine = true, modifier = Modifier.weight(1f))
                 }
                 AmountField("오늘 쓴 돈 (유류비·소모품)", costs, { costs = it })
-                val net = amount.toAmount() - costs.toAmount()
+                // G 1.32 [WTYP-23] 조사 대조 W28: 콜 출처마다 수수료·건당 보험료.
+                val taken = rules.cutOf(name)
+                val fee = taken.of(amount.toAmount(), count)
+                var cutting by rememberSaveable { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (taken.isEmpty) "수수료·보험료 안 정함" else "${taken.line(Fmt::won)} · ${Fmt.won(fee)} 빠져요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { cutting = true }) { Text(if (taken.isEmpty) "정하기" else "바꾸기") }
+                }
+                if (cutting) PlatformCutDialog(name, taken, onDismiss = { cutting = false }) { onCut(name, it); cutting = false }
+                val net = amount.toAmount() - costs.toAmount() - fee
                 if (drive > 0 && amount.toAmount() > 0) Text("시간당 순수익 ${Fmt.won(net * 60 / drive)}", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 val (cut, pay) = PlatformWork.payOf(name, rules)

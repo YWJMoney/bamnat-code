@@ -101,4 +101,65 @@ class WorkTypeAudit132Test {
         assertEquals(9_173, stay.copy(paidMinutes = 480, breakMinutes = 60).rate)
         assertTrue(stay.breakMinutes > 0)
     }
+
+    @Test fun aCallSourceTakesItsOwnFeeAndInsurance() {
+        val mon = LocalDate.of(2026, 10, 26)
+        val cut = com.bamnat.core.money.PlatformWork.Cut(feePermille = 200, perCall = 1_000)
+        assertEquals(20_000L + 5_000L, cut.of(100_000, 5))
+        assertEquals("20%", com.bamnat.core.money.PlatformWork.Cut.percent(200))
+        assertEquals("12.5%", com.bamnat.core.money.PlatformWork.Cut.percent(125))
+        assertEquals(125, com.bamnat.core.money.PlatformWork.Cut.parsePercent("12.5"))
+        assertEquals(null, com.bamnat.core.money.PlatformWork.Cut.parsePercent("120"))
+        val rules = com.bamnat.core.money.FieldRules(mode = com.bamnat.core.money.FieldMode.PLATFORM, platformCosts = mapOf("로지" to cut))
+        val j = com.bamnat.core.money.PlatformWork.job(mon, "로지", 5, 100_000, 300, 0)
+        assertTrue(com.bamnat.core.money.PlatformWork.isPlatform(j))
+        val m = com.bamnat.core.money.PlatformWork.month(YearMonth.from(mon), listOf(j), rules = rules)
+        assertEquals(25_000L, m.fees)
+        assertEquals(75_000L, m.net)
+        // Without a cut set nothing comes off, as before.
+        assertEquals(100_000L, com.bamnat.core.money.PlatformWork.month(YearMonth.from(mon), listOf(j)).net)
+        // The deposit that comes is the amount after 3.3% and the cut.
+        val p = com.bamnat.core.money.PlatformWork.payouts(listOf(j), rules).single()
+        assertEquals(96_700L - 25_000L, p.expected)
+        val dep = com.bamnat.core.money.MoneyEntry(date = p.payDate, kind = com.bamnat.core.money.MoneyKind.INCOME, amount = 71_700,
+            category = "급여", merchant = "로지 정산")
+        assertEquals(dep, com.bamnat.core.money.PlatformWork.depositFor(p, listOf(dep)))
+    }
+
+    @Test fun plusOneCountsOnTodaysJobForTheUsualPlatform() {
+        val today = LocalDate.of(2026, 10, 29)
+        val old = com.bamnat.core.money.PlatformWork.job(today.minusDays(3), "배민", 20, 90_000, 0, 0).copy(id = 1)
+        val other = com.bamnat.core.money.PlatformWork.job(today.minusDays(2), "쿠팡이츠", 10, 40_000, 0, 0).copy(id = 2)
+        val old2 = old.copy(id = 3, date = today.minusDays(1))
+        val jobs = listOf(old, other, old2)
+        assertEquals("배민", com.bamnat.core.money.PlatformWork.usual(today, jobs))
+        val first = com.bamnat.core.money.PlatformWork.plusOne(today, "배민", jobs)
+        assertEquals(1, com.bamnat.core.money.PlatformWork.count(first))
+        assertEquals(0L, first.amount)
+        val again = com.bamnat.core.money.PlatformWork.plusOne(today, "배민", jobs + first.copy(id = 4, amount = 5_000))
+        assertEquals(2, com.bamnat.core.money.PlatformWork.count(again))
+        assertEquals(5_000L, again.amount)
+        // Today's platform wins over the most used one.
+        assertEquals("쿠팡이츠", com.bamnat.core.money.PlatformWork.usual(today, jobs + other.copy(id = 5, date = today)))
+        val week = com.bamnat.core.work.WidgetFigures.platformDay(jobs + again.copy(id = 4), LocalDate.of(2026, 10, 26), today)
+        assertEquals(2, week.today)
+        assertEquals(20 + 10 + 20 + 2, week.week)
+        assertEquals(null, com.bamnat.core.money.PlatformWork.usual(today, emptyList()))
+    }
+
+    @Test fun theEndTimeGivesTheUnits() {
+        val rules = com.bamnat.core.money.DayRate.SAMPLE_RULES
+        assertEquals(1.0, com.bamnat.core.money.DayRate.byEnd(LocalTime.of(16, 30), rules)!!, 0.0)
+        assertEquals(1.0, com.bamnat.core.money.DayRate.byEnd(LocalTime.of(17, 0), rules)!!, 0.0)
+        assertEquals(1.5, com.bamnat.core.money.DayRate.byEnd(LocalTime.of(17, 1), rules)!!, 0.0)
+        assertEquals(2.0, com.bamnat.core.money.DayRate.byEnd(LocalTime.of(20, 30), rules)!!, 0.0)
+        // Past the last rule, the last rule's 공수.
+        assertEquals(2.0, com.bamnat.core.money.DayRate.byEnd(LocalTime.of(23, 0), rules)!!, 0.0)
+        assertEquals(null, com.bamnat.core.money.DayRate.byEnd(LocalTime.of(17, 0), emptyList()))
+        assertEquals("17:00까지 1공 · 19:00까지 1.5공 · 21:00까지 2공", com.bamnat.core.money.DayRate.rulesLine(rules))
+        // Own chips: distinct, at most five, in 0..5; none means the first ones.
+        assertEquals(listOf(1.0, 0.5, 1.5), com.bamnat.core.money.FieldRules().chips)
+        assertEquals(listOf(1.0, 1.25, 2.0, 0.5, 3.0), com.bamnat.core.money.DayRate.cleanChips(listOf(1.0, 1.25, 1.0, 2.0, 0.0, 6.0, 0.5, 3.0, 4.0)))
+        assertEquals(listOf(1.25), com.bamnat.core.money.FieldRules(unitChips = listOf(1.25)).chips)
+    }
 }

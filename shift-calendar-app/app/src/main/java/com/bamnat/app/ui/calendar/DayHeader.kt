@@ -474,11 +474,12 @@ private fun QuickChips(
     val platform = focus == CalendarFocus.JOBS && fieldRules.platformMode
     ChipRow(modifier, start = 12.dp, end = endSpace) {
         if (dayRate) dayRateChips(day.date, book, fieldRules, onDelete = vm::deleteJob, onSave = { job, r ->
-            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient, rateFrom = r.rateFrom) }
+            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient, rateFrom = r.rateFrom, unitRules = r.unitRules) }
             vm.saveJob(job)
         }, onReprice = { list -> list.forEach(vm::saveJob) })
         // G 1.32 [WTYP-02] 플랫폼형: 오늘 플랫폼마다 건수·금액·운행 시간.
-        if (platform) platformChips(day.date, book, fieldRules, onSave = vm::saveJob, onDelete = vm::deleteJob)
+        if (platform) platformChips(day.date, book, fieldRules, onSave = vm::saveJob, onDelete = vm::deleteJob,
+            onCut = { p, c -> calendars.updateField(calendar.id) { it.copy(platformCosts = it.platformCosts + (p to c)) } })
         // [CAL-05] Field and shop work: the day's job or sales is the first chip.
         focus.addLabel?.takeIf { !dayRate && !platform }?.let { label ->
             val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null

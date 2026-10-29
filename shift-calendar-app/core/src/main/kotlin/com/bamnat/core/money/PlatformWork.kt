@@ -22,14 +22,52 @@ object PlatformWork {
         COUPANG("쿠팡이츠", DayOfWeek.TUESDAY, DayOfWeek.FRIDAY, true, true),
         YOGIYO("요기요", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
         DAERI("대리운전", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
+        // G 1.32 [WTYP-23] 조사 대조 W28: 대리 콜 출처 (대리가계부 리뷰 "로지·콜마너·티맵 콜도 표기", "프로그램마다 건당 보험료를 다르게").
+        KAKAO_DAERI("카카오T 대리", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
+        LOGI("로지", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
+        CALLMANNER("콜마너", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
+        TMAP_DAERI("티맵 대리", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
         TAXI("택시", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, false, false),
         OTHER("기타 플랫폼", DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY, true, false),
         ;
+
+        /** G 1.32 [WTYP-23] A 대리 call source, which most often has its own 수수료 and 건당 보험료. */
+        val daeri: Boolean get() = this == DAERI || this == KAKAO_DAERI || this == LOGI || this == CALLMANNER || this == TMAP_DAERI
 
         companion object {
             fun of(name: String): Platform? = entries.firstOrNull { it.label == name.trim() }
         }
     }
+
+    /**
+     * G 1.32 [WTYP-23] 조사 대조 W28: what a platform or 대리 콜 출처 takes off the amount it shows, as the user set it:
+     * 수수료 in tenths of a percent (200 = 20%) and 보험료 per 건. Nothing is assumed: rates differ by program and change.
+     */
+    data class Cut(val feePermille: Int = 0, val perCall: Long = 0) {
+        val isEmpty: Boolean get() = feePermille <= 0 && perCall <= 0
+
+        /** What comes off [amount] for [count] 건. */
+        fun of(amount: Long, count: Int): Long =
+            ((amount.coerceAtLeast(0) * feePermille.coerceIn(0, 1000)) / 1000.0).roundToLong() + perCall.coerceAtLeast(0) * count.coerceAtLeast(0)
+
+        /** "수수료 20% · 건당 보험 1,000원"; empty when nothing is set. */
+        fun line(won: (Long) -> String): String = listOfNotNull(
+            feePermille.takeIf { it > 0 }?.let { "수수료 ${percent(it)}" },
+            perCall.takeIf { it > 0 }?.let { "건당 보험 ${won(it)}" },
+        ).joinToString(" · ")
+
+        companion object {
+            /** "20%", "12.5%". */
+            fun percent(permille: Int): String = if (permille % 10 == 0) "${permille / 10}%" else "${permille / 10}.${permille % 10}%"
+
+            /** A typed rate ("20", "12.5") in tenths of a percent; null outside 0..100%. */
+            fun parsePercent(text: String): Int? = text.trim().replace(',', '.').toDoubleOrNull()
+                ?.let { Math.round(it * 10).toInt() }?.takeIf { it in 0..1000 }
+        }
+    }
+
+    /** G 1.32 [WTYP-23] What [j]'s platform took that day under [rules]. */
+    fun cutOf(j: Job, rules: FieldRules): Long = rules.cutOf(j.client).of(j.amount, count(j))
 
     /** A job written by the platform sheet: its title is its 업체 and a platform's name. */
     fun isPlatform(j: Job): Boolean = j.title.isNotBlank() && j.title == j.client && Platform.of(j.client) != null
@@ -56,14 +94,34 @@ object PlatformWork {
 
     fun count(j: Job): Int = j.units?.roundToLong()?.toInt() ?: 0
 
-    data class Row(val platform: String, val count: Int, val amount: Long, val minutes: Int, val costs: Long)
+    /**
+     * G 1.32 [WTYP-23] 조사 대조 W29: the widget's +1건, one more 건 on [today] for [platform]. Today's job for it counts one more
+     * (its amount stays, filled at 하루 마감); with none, a new one of 1건.
+     */
+    fun plusOne(today: LocalDate, platform: String, jobs: List<Job>): Job {
+        val there = jobs.firstOrNull { it.date == today && isPlatform(it) && it.client == platform && !it.cancelled }
+        return there?.copy(units = (count(there) + 1).coerceAtMost(999).toDouble())
+            ?: job(today, platform, 1, 0, 0, 0)
+    }
+
+    /** G 1.32 [WTYP-23] The platform +1건 adds to: today's busiest, else the one used most in the last 60 days; null when none. */
+    fun usual(today: LocalDate, jobs: List<Job>): String? {
+        val live = jobs.filter { isPlatform(it) && !it.cancelled }
+        live.filter { it.date == today }.maxByOrNull(::count)?.let { return it.client }
+        return live.filter { !it.date.isBefore(today.minusDays(60)) && !it.date.isAfter(today) }.groupBy { it.client }
+            .maxByOrNull { (_, l) -> l.size }?.key
+    }
+
+    /** [fees] G 1.32 [WTYP-23]: the 수수료·보험료 the platform took, when the user set them. */
+    data class Row(val platform: String, val count: Int, val amount: Long, val minutes: Int, val costs: Long, val fees: Long = 0)
 
     data class Month(val month: YearMonth, val rows: List<Row>, val ledgerCosts: Long) {
         val count: Int get() = rows.sumOf { it.count }
         val amount: Long get() = rows.sumOf { it.amount }
         val minutes: Int get() = rows.sumOf { it.minutes }
         val costs: Long get() = rows.sumOf { it.costs } + ledgerCosts
-        val net: Long get() = amount - costs
+        val fees: Long get() = rows.sumOf { it.fees }
+        val net: Long get() = amount - costs - fees
         /** 시간당 순수익; null without 운행 시간. */
         val perHour: Long? get() = if (minutes <= 0) null else (net * 60.0 / minutes).roundToLong()
         val perCount: Long? get() = if (count <= 0) null else amount / count
@@ -72,18 +130,22 @@ object PlatformWork {
     /** Categories of the ledger counted as a rider's or driver's costs (유류비·정비·보험). */
     val COST_CATEGORIES = setOf("자동차", "교통")
 
-    /** The month by platform, with the ledger's 자동차·교통 spending as costs besides each day's own. */
-    fun month(month: YearMonth, jobs: List<Job>, entries: List<MoneyEntry> = emptyList()): Month {
+    /** The month by platform, with the ledger's 자동차·교통 spending as costs besides each day's own, and [rules]' 수수료·보험료. */
+    fun month(month: YearMonth, jobs: List<Job>, entries: List<MoneyEntry> = emptyList(), rules: FieldRules = FieldRules()): Month {
         val list = jobs.filter { YearMonth.from(it.date) == month && isPlatform(it) && !it.cancelled }
-        val rows = list.groupBy { it.client }.map { (p, l) -> Row(p, l.sumOf(::count), l.sumOf { it.amount }, l.sumOf(::minutes), l.sumOf { it.costs }) }
+        val rows = list.groupBy { it.client }.map { (p, l) ->
+            Row(p, l.sumOf(::count), l.sumOf { it.amount }, l.sumOf(::minutes), l.sumOf { it.costs }, l.sumOf { cutOf(it, rules) })
+        }
             .sortedByDescending { it.amount }
         val ledger = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month && it.category in COST_CATEGORIES }.sumOf { it.amount }
         return Month(month, rows, ledger)
     }
 
-    /** One week of one platform still to be paid. */
-    data class Payout(val platform: String, val from: LocalDate, val to: LocalDate, val payDate: LocalDate, val jobs: List<Job>) {
+    /** One week of one platform still to be paid; [fees] (G 1.32 [WTYP-23]) are taken off before it comes. */
+    data class Payout(val platform: String, val from: LocalDate, val to: LocalDate, val payDate: LocalDate, val jobs: List<Job>, val fees: Long = 0) {
         val amount: Long get() = jobs.sumOf { it.unpaid }
+        /** What should come into the account. */
+        val expected: Long get() = (amount - fees).coerceAtLeast(0)
     }
 
     fun payOf(platform: String, rules: FieldRules): Pair<DayOfWeek, DayOfWeek> =
@@ -97,7 +159,7 @@ object PlatformWork {
         }.map { (k, l) ->
             val (p, end) = k
             val pay = end.with(TemporalAdjusters.next(payOf(p, rules).second))
-            Payout(p, end.minusDays(6), end, pay, l.sortedBy { it.date })
+            Payout(p, end.minusDays(6), end, pay, l.sortedBy { it.date }, l.sumOf { cutOf(it, rules) })
         }.sortedBy { it.payDate }
 
     /** The week's jobs marked paid, when its money came. */
@@ -108,10 +170,16 @@ object PlatformWork {
      * between 85% and 101% of what is owed (보험료·수수료 are taken off before it comes).
      */
     fun depositFor(p: Payout, entries: List<MoneyEntry>): MoneyEntry? {
-        val names = listOf(p.platform, if (p.platform == "배민") "우아한" else p.platform, if (p.platform == "쿠팡이츠") "쿠팡" else p.platform)
+        val names = listOf(p.platform, when (p.platform) {
+            "배민" -> "우아한"
+            "쿠팡이츠" -> "쿠팡"
+            "카카오T 대리" -> "카카오"
+            "티맵 대리" -> "티맵"
+            else -> p.platform
+        })
         return entries.filter { e ->
             e.kind == MoneyKind.INCOME && kotlin.math.abs(e.date.toEpochDay() - p.payDate.toEpochDay()) <= 3 &&
-                names.any { (e.merchant + " " + e.note).contains(it) } && e.amount in (p.amount * 85 / 100)..(p.amount * 101 / 100 + 1_000)
-        }.minByOrNull { kotlin.math.abs(it.amount - p.amount) }
+                names.any { (e.merchant + " " + e.note).contains(it) } && e.amount in (p.expected * 85 / 100)..(p.expected * 101 / 100 + 1_000)
+        }.minByOrNull { kotlin.math.abs(it.amount - p.expected) }
     }
 }

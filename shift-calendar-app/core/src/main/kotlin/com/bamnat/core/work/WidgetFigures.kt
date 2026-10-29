@@ -39,6 +39,26 @@ object WidgetFigures {
         return FieldWeek(days, units, unpaid)
     }
 
+    /** G 1.32 [WTYP-23] A platform worker's 건수 today and this week (no amounts: a home screen is seen by others). */
+    data class PlatformDay(val today: Int, val week: Int, val platform: String?)
+
+    fun platformDay(jobs: List<Job>, weekStart: LocalDate, today: LocalDate): PlatformDay {
+        val live = jobs.filter { com.bamnat.core.money.PlatformWork.isPlatform(it) && !it.cancelled }
+        val week = weekStart..weekStart.plusDays(6)
+        return PlatformDay(live.filter { it.date == today }.sumOf(com.bamnat.core.money.PlatformWork::count),
+            live.filter { it.date in week }.sumOf(com.bamnat.core.money.PlatformWork::count),
+            com.bamnat.core.money.PlatformWork.usual(today, jobs))
+    }
+
+    /** G 1.32 [WTYP-23] 조사 대조 C14: 공무원 "10월 시간외 41/57시간", without pay. */
+    data class Overtime(val minutes: Int, val capHours: Int) {
+        val progress: Float get() = if (capHours <= 0) 0f else (minutes / 60f / capHours).coerceIn(0f, 1f)
+        val over: Boolean get() = minutes > capHours * 60
+    }
+
+    /** G 1.32 [WTYP-23] 조사 대조 C14: 자영업 "이번 달 영업 22일 · 휴무 8일". */
+    data class ShopDays(val open: Int, val closed: Int)
+
     /** "1.5공수", "2공수". */
     fun units(value: Double): String =
         if (value == Math.floor(value)) "${value.toLong()}공수" else "${String.format(java.util.Locale.ROOT, "%.2f", value).trimEnd('0').trimEnd('.')}공수"

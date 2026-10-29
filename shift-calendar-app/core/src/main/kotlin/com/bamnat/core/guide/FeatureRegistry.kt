@@ -423,8 +423,15 @@ object FeatureRegistry {
             ALL, "설정 › 알림과 잠 › 밤낮 소식", at(Place.SETTINGS_NOTICES, "밤낮 소식"), "광장 소식", "문의 답", "광장", "규칙 바뀜", "채택", "회사 소식", "알림 끄기", off = Off.ELSEWHERE),
         f("lock.today", "FEAT-18", "잠금 화면 오늘 근무", "오늘·내일 근무를 소리 없는 알림으로 잠금 화면에 늘 보여 줘요",
             PAID, "설정 › 알림과 잠 › 잠금 화면 오늘 근무", at(Place.SETTINGS_NOTICES, "잠금 화면 오늘 근무"), "잠금 화면", "상시 알림", off = Off.ELSEWHERE),
-        f("widget.lines", "COMN-05", "위젯 일하는 방식 줄", "오늘 위젯에 알바 주 시간·주휴, 일근 남은 연차·야근, 현장 이번 주 공수를 한 줄 더 보여 줘요",
-            setOf(DAY, HOURLY, FIELD), "홈 화면 › 밤낮 오늘 위젯", at(Place.FEATURES), "위젯", "홈 화면", off = Off.APP),
+        f("widget.lines", "COMN-05", "위젯 일하는 방식 줄", "오늘 위젯에 알바 주 시간·주휴, 일근 남은 연차·야근, 현장 이번 주 공수, 배달 오늘·이번 주 건수, 공무원 이번 달 시간외/57시간, 자영업 영업·휴무 일수를 한 줄 더 보여 줘요",
+            setOf(DAY, HOURLY, FIELD, SHIFT, SHOP), "홈 화면 › 밤낮 오늘 위젯", at(Place.FEATURES), "위젯", "홈 화면", "시간외 위젯", "영업일", "건수", off = Off.APP),
+        // G 1.32 [WTYP-23] 조사 대조 W29 W38.
+        f("widget.fieldActions", "WTYP-23", "위젯 +1건·오늘 1공", "오늘 위젯에서 배달·대리는 ‘+1건’으로 오늘 건수를 하나 올리고, 현장은 ‘오늘 1공’으로 오늘 공수를 바로 적어요",
+            setOf(FIELD), "홈 화면 › 밤낮 오늘 위젯", at(Place.FEATURES), "+1건", "오늘 1공", "위젯 버튼", "한 손 입력", off = Off.APP),
+        f("field.platformCut", "WTYP-23", "콜 출처별 수수료·보험료", "카카오T 대리·로지·콜마너·티맵 대리처럼 콜 출처마다 수수료 %와 건당 보험료를 정하면 남은 돈·시간당 순수익·입금 확인에서 빼고 셈해요",
+            setOf(FIELD), "$DAY_SHEET › 플랫폼 기록 › 수수료·보험료", at(Place.TODAY), "수수료", "보험료", "대리", "로지", "콜마너", "카카오T 대리", "티맵 대리", "콜 출처"),
+        f("field.unitRules", "WTYP-27", "자주 쓰는 공수 버튼·끝난 시각 규칙", "날짜에 나오는 공수 버튼을 내 것으로 바꾸고, ‘17시까지 1공, 19시까지 1.5공’처럼 정해 두면 끝난 시각만 골라 공수를 적어요",
+            setOf(FIELD), "달력 고치기 › 일 세는 방법", at(Place.TODAY), "공수 버튼", "공수 칩", "끝난 시각", "공수 규칙", "잔업 공수", "1.5공"),
         // 1.22 묶음 E: on by default (S10); each says where it turns off.
         f("widget.memo", "DAILY-01", "위젯에 메모 줄", "오늘·이번 주 위젯에 그날 메모 첫 줄이 보여요. 날짜를 누르면 그날이 열려요",
             ALL, "설정 › 화면과 글자 › 위젯에 메모 보이기", at(Place.SETTINGS_CALENDAR, "위젯에 메모 보이기"), "위젯", "메모", "홈 화면", "끄기"),

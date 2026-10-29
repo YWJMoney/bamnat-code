@@ -9,9 +9,9 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -19,14 +19,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.ClientField
 import com.bamnat.app.ui.money.amountDigits
@@ -52,7 +53,8 @@ internal fun LazyListScope.dayRateChips(
     onReprice: (List<Job>) -> Unit = {},
 ) {
     val existing = DayRate.on(date, book.jobs)
-    for (u in DayRate.UNITS) item {
+    // G 1.32 [WTYP-27] The user's own chips, else 1공·0.5·1.5.
+    for (u in rules.chips) item {
         var asking by rememberSaveable { mutableStateOf(false) }
         val on = existing?.units == u
         FilterChip(
@@ -72,13 +74,32 @@ internal fun LazyListScope.dayRateChips(
     }
     item {
         var asking by rememberSaveable { mutableStateOf(false) }
-        val custom = existing?.units?.takeIf { it !in DayRate.UNITS }
+        val custom = existing?.units?.takeIf { it !in rules.chips }
         AssistChip(
             onClick = { asking = true },
             label = { Text(custom?.let { DayRate.label(it) } ?: "직접", maxLines = 1) },
             leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) },
         )
         if (asking) DayRateDialog(date, existing?.units ?: 1.0, rules, existing, book.jobs, onDismiss = { asking = false }, onReprice = onReprice) { job, r -> asking = false; onSave(job, r) }
+    }
+    // G 1.32 [WTYP-27] 조사 대조 W35: 끝난 시각 → 공수.
+    item {
+        var asking by rememberSaveable { mutableStateOf(false) }
+        var needRate by rememberSaveable { mutableStateOf<Double?>(null) }
+        var kept by remember { mutableStateOf(rules) }
+        AssistChip(
+            onClick = { asking = true },
+            label = { Text("끝난 시각으로", maxLines = 1) },
+            leadingIcon = { Icon(Icons.Filled.Schedule, null, Modifier.size(18.dp)) },
+        )
+        if (asking) EndTimeDialog(date, rules, onDismiss = { asking = false }) { u, r ->
+            asking = false
+            if (r.rateOn(date) <= 0 && existing == null) { kept = r; needRate = u }
+            else onSave(DayRate.job(date, u, existing?.let(DayRate::rateOf) ?: r.rateOn(date), r.lastClient, existing), r)
+        }
+        needRate?.let { u ->
+            DayRateDialog(date, u, kept, existing, book.jobs, onDismiss = { needRate = null }, onReprice = onReprice) { job, r -> needRate = null; onSave(job, r) }
+        }
     }
 }
 
@@ -206,11 +227,24 @@ internal fun FieldModeSetting(calendar: com.bamnat.app.data.PersonalCalendar) {
                     TextButton(onClick = { calendars.updateField(calendar.id) { it.copy(platformPay = it.platformPay + (p.label to (cut to pay.plus(1)))) } }) {
                         Text("${Fmt.dayOfWeekShort(pay)} 입금")
                     }
+                    // G 1.32 [WTYP-23] 수수료·건당 보험료.
+                    var cutting by rememberSaveable { mutableStateOf(false) }
+                    val taken = rules.cutOf(p.label)
+                    TextButton(onClick = { cutting = true }) {
+                        Text(if (taken.isEmpty) "수수료" else taken.feePermille.takeIf { it > 0 }?.let { com.bamnat.core.money.PlatformWork.Cut.percent(it) } ?: "보험료")
+                    }
+                    if (cutting) PlatformCutDialog(p.label, taken, onDismiss = { cutting = false }) { c ->
+                        cutting = false
+                        calendars.updateField(calendar.id) { it.copy(platformCosts = it.platformCosts + (p.label to c)) }
+                    }
                 }
             }
-            Text("누를 때마다 다음 요일로 바뀌어요. 배민·요기요·대리는 확인 필요라 받는 날에 맞게 고쳐 주세요.",
+            Text("누를 때마다 다음 요일로 바뀌어요. 배민·요기요·대리는 확인 필요라 받는 날에 맞게 고쳐 주세요. " +
+                "수수료는 콜 출처(카카오T 대리·로지·콜마너·티맵 대리)마다 따로 정해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // G 1.32 [WTYP-27] 자주 쓰는 공수 버튼과 끝난 시각 규칙.
+        if (mode == FieldMode.DAY_RATE) DayRateUnitsSetting(calendar.id, calendar.field ?: FieldRules())
         val rate = calendar.field?.rateOn(com.bamnat.core.time.Today.date()) ?: 0
         if (mode == FieldMode.DAY_RATE && rate > 0) {
             Text("일당 ${Fmt.won(rate)}" + (calendar.field?.lastClient?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),

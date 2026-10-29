@@ -272,6 +272,8 @@ private fun JobsToday(data: WidgetData) {
     }
     // [COMN-05] The week's days or 공수, and what is still owed.
     if (data.style == WorkStyle.FIELD) FieldWeekLine(data)
+    // G 1.32 [WTYP-23] +1건 (플랫폼형), 오늘 1공 (공수형).
+    if (data.style == WorkStyle.FIELD) FieldWidgetButtons(data)
 }
 
 /** [CAL-11] A shop's own day and month; the amounts are the user's, on their own screen, as in the calendar's cells. */
@@ -288,6 +290,8 @@ private fun SalesToday(data: WidgetData) {
     val month = YearMonth.from(data.today)
     Text("${month.monthValue}월 매출", style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
     Text(Fmt.wonShort(data.monthSales(month)), style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+    // G 1.32 [WTYP-23] 이번 달 영업·휴무 일수.
+    ShopDaysLine(data)
 }
 
 /** [INV-16] The investor's today: what today earned and the total return; no amounts while they are hidden. */

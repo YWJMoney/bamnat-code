@@ -534,6 +534,11 @@ class CalendarBook(
             // G 1.32 [WTYP-04][WTYP-02]
             .putOpt("rateFrom", r.rateFrom.takeIf { it.isNotEmpty() }?.joinToString(",") { "${it.first}:${it.second}" })
             .putOpt("platformPay", r.platformPay.takeIf { it.isNotEmpty() }?.entries?.joinToString("|") { "${it.key}:${it.value.first}:${it.value.second}" })
+            // G 1.32 [WTYP-23][WTYP-27]
+            .putOpt("platformCosts", r.platformCosts.filterValues { !it.isEmpty }.takeIf { it.isNotEmpty() }?.entries
+                ?.joinToString("|") { "${it.key}:${it.value.feePermille}:${it.value.perCall}" })
+            .putOpt("unitChips", r.unitChips.takeIf { it.isNotEmpty() }?.joinToString(",") { com.bamnat.core.money.DayRate.trim(it) })
+            .putOpt("unitRules", r.unitRules.takeIf { it.isNotEmpty() }?.joinToString(",") { "${it.until}=${com.bamnat.core.money.DayRate.trim(it.units)}" })
 
         fun fieldOf(o: JSONObject): com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(
             mode = o.optString("mode").takeIf { it.isNotEmpty() }?.let { m -> runCatching { com.bamnat.core.money.FieldMode.valueOf(m) }.getOrNull() },
@@ -548,6 +553,18 @@ class CalendarBook(
                 val parts = p.split(':').takeIf { it.size == 3 } ?: return@mapNotNull null
                 runCatching { parts[0] to (java.time.DayOfWeek.valueOf(parts[1]) to java.time.DayOfWeek.valueOf(parts[2])) }.getOrNull()
             }.toMap(),
+            platformCosts = o.optString("platformCosts").split('|').mapNotNull { p ->
+                val parts = p.split(':').takeIf { it.size == 3 && it[0].isNotBlank() } ?: return@mapNotNull null
+                val fee = parts[1].toIntOrNull()?.coerceIn(0, 1000) ?: return@mapNotNull null
+                val call = parts[2].toLongOrNull()?.coerceIn(0, 1_000_000) ?: return@mapNotNull null
+                parts[0].take(20) to com.bamnat.core.money.PlatformWork.Cut(fee, call)
+            }.toMap(),
+            unitChips = com.bamnat.core.money.DayRate.cleanChips(o.optString("unitChips").split(',').mapNotNull { com.bamnat.core.money.DayRate.parse(it) }),
+            unitRules = o.optString("unitRules").split(',').mapNotNull { p ->
+                val (t, u) = p.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+                val at = runCatching { java.time.LocalTime.parse(t) }.getOrNull() ?: return@mapNotNull null
+                com.bamnat.core.money.DayRate.parse(u)?.let { com.bamnat.core.money.DayRate.EndRule(at, it) }
+            }.distinctBy { it.until }.sortedBy { it.until }.take(com.bamnat.core.money.FieldRules.MAX_RULES),
         )
 
         /** [SHOP-02] */
