@@ -249,6 +249,8 @@ private object Routes {
     const val RECIPE_MINE = "recipe_mine"
     /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
     const val COMPANY_BOARD_ALL = "company_board_all"
+    /** [RCP-34] 1.34: 교대 광장·일근 광장, the plaza of the calendar's kind of work itself. */
+    const val STYLE_PLAZA = "style_plaza?calendar={calendar}"
     /** [ADMIN-02] 설정 > 문의하기. */
     const val INQUIRY = "inquiry"
     /** [SHR-14] 우리 조 모아 보기: links put together under a 6-letter code. */
@@ -285,6 +287,7 @@ private object Routes {
     fun company(id: String, setup: Boolean, weekdays: Boolean, calendar: String = "") =
         "company/$id?setup=$setup&weekdays=$weekdays&calendar=$calendar"
     fun companyBoard(calendar: String = "") = "company_board?calendar=$calendar"
+    fun stylePlaza(calendar: String = "") = "style_plaza?calendar=$calendar"
     fun companyReport(calendar: String = "") = "company_report?calendar=$calendar"
     fun companySent(calendar: String = "") = "company_sent?calendar=$calendar"
 }
@@ -1406,9 +1409,10 @@ private fun AppNavHost(
                 com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
                     Modifier.padding(horizontal = 16.dp))
                 // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
-                if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.RecipeEntryCard(
+                if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
                     onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
                     onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+                    onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
                 )
             }
             // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
@@ -1433,9 +1437,38 @@ private fun AppNavHost(
                     onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
                     onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
                     onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
-                    header = chips,
+                    header = {
+                        Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+                            chips()
+                            // [RCP-34] 1.34: 교대·일근 have a plaza of their own, one tap from the rule plaza.
+                            if (container.companyApi.enabled) plan.alsoRoom?.let { room ->
+                                com.bamnat.app.ui.company.StylePlazaLink(room) {
+                                    nav.navigate(Routes.stylePlaza(calendar)) { launchSingleTop = true }
+                                }
+                            }
+                        }
+                    },
                 )
             }
+            }
+        }
+        composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
+            val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val recipesOn by container.recipes.on.collectAsStateWithLifecycle()
+            val home = appViewModel(key = "style-plaza-$calendar") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar, own = true) }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
+                com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = { nav.popFrom(Routes.STYLE_PLAZA) },
+                    onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
+                    onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
+                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                    onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+                    header = {
+                        if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
+                            onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
+                            onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+                            onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
+                        )
+                    })
             }
         }
         // [PLAZA-32] 1.27 AI: every company's rules, from a company's or a kind of work's plaza.

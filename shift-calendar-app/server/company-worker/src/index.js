@@ -2107,17 +2107,18 @@ const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : 
 
 // ---- [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work ----
 //
-// The talk of a company's people among themselves, and of the kinds of work with no company (현장, 가게, 알바, 투자), in the
+// The talk of a company's people among themselves, and of the kinds of work with no company (교대·일근 since 1.34 [RCP-34],
+// 현장, 가게, 알바, 투자), in the
 // posts table that rule talks use (결정 AI-D5): grp 'room', so 신고 3번 가림, the developer's 가리기·지우기·30일 막기,
 // 이 사람 글 안 보기, 내 것 지우기 and 광장 소식 are the same. A company's room is for the phones that joined it (AI-D6),
 // counted like its pay reads; a kind's room for any phone with the app, held to the public reads an hour (AI-D7).
 
 export const ROOM = "room";
-export const STYLE_ROOMS = { "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
+export const STYLE_ROOMS = { "style-shift": "교대 광장", "style-day": "일근 광장", "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
 const ROOM_LIMITS = { perDay: 10, perNetworkDay: 300, shown: 100 };
 /** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
-export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:field|shop|hourly|invest))\/setups\/room\/posts$/;
+export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:shift|day|field|shop|hourly|invest))\/setups\/room\/posts$/;
 
 /** The place of a room: a company (not hidden) or a kind of work's plaza; null when there is none. */
 async function roomPlace(env, id) {

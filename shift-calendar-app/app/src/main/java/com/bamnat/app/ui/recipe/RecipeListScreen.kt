@@ -81,20 +81,52 @@ fun RecipeCover(cover: Cover, size: Dp = 56.dp, modifier: Modifier = Modifier) {
     }
 }
 
-/** [RCP-19] The way into 나눔 판 on every kind of work's 광장: what it is, in one line, and the button. */
+/**
+ * [RCP-19] The way into 나눔 판 on every kind of work's 광장: what it is, in one line, and the button.
+ * [RCP-34] 1.34: with the plaza's front blocks under it, 요즘 뜨는 and 새로 (three each) of this kind of work.
+ */
 @Composable
-fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier = Modifier) {
+fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier = Modifier,
+    hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("나눔 판 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text("다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 미리 보고, 고른 것만 내 달력에 넣어요. 7일 안에 되돌릴 수 있어요",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            for ((label, list) in listOf("요즘 뜨는" to hot, "새로 올라온" to fresh.filter { f -> hot.none { it.code == f.code } })) {
+                if (list.isEmpty()) continue
+                Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                list.take(3).forEach { item ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RecipeCover(item.cover, size = 32.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("좋아요 ${item.likes} · 쓰는 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text("레시피 보기") }
                 OutlinedButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 설정 나누기") }
             }
         }
     }
+}
+
+/** [RCP-34] The 나눔 판 block of a 광장, with its 요즘 뜨는·새로 read once for the calendar's kind of work (quietly empty offline). */
+@Composable
+fun PlazaRecipeBlock(c: com.bamnat.app.AppContainer, calendar: String, onOpen: () -> Unit, onMake: () -> Unit, onItem: (String) -> Unit,
+    modifier: Modifier = Modifier) {
+    val lists by androidx.compose.runtime.produceState(emptyList<RecipeItem>() to emptyList<RecipeItem>(), calendar) {
+        if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)) return@produceState
+        val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+        value = runCatching { c.recipeApi.list(style, "hot").items to c.recipeApi.list(style, "new").items }.getOrDefault(value)
+    }
+    RecipeEntryCard(onOpen, onMake, modifier, lists.first, lists.second, onItem)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
