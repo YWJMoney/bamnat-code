@@ -558,12 +558,14 @@ private fun PostRow(
             Spacer(Modifier.weight(1f))
             Text(ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(18.dp)) }
+                // [J133-70] 1.33 (실사용 테스트: 손가락에 작은 단추, 메뉴를 그냥 닫는 줄이 없었어요): a finger-sized button and a 닫기 line.
+                IconButton(onClick = { menu = true }, modifier = Modifier.size(44.dp)) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(20.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; deleting = true })
                     else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; onFlag() })
                     // [COMM-09] Play's UGC rule: users can block one another.
                     if (!p.mine && p.author != null) DropdownMenuItem(text = { Text("이 사람 글 안 보기") }, onClick = { menu = false; onHide() })
+                    DropdownMenuItem(text = { Text("닫기", color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = { menu = false })
                 }
             }
         }

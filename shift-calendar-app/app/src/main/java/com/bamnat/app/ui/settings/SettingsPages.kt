@@ -842,6 +842,17 @@ private fun PrivacyPage(
                 if (Build.VERSION.SDK_INT >= 31) SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
             }
         }
+        // [J133-44] 순번 724 (1.32 실사용 테스트: 첫 설정에서 받은 캘린더 권한이 이 목록에 없었어요): a choice too, said with why it is
+        // asked; the phone's app settings take it back or give it.
+        HorizontalDivider()
+        val calendarOk = remember(refresh) {
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CALENDAR) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        NavRow("휴대폰 캘린더 읽기", if (calendarOk) "허용됨 · 삼성·Google 캘린더 일정을 근무와 메모로 옮길 때 써요"
+            else "허용 안 함 · 캘린더에서 가져오기나 휴대폰 캘린더에 쓰기를 켤 때만 필요해요") {
+            SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
+        }
         // Reading sleep is a choice, not something missing: it says where it is turned on.
         HorizontalDivider()
         NavRow("워치·휴대폰 수면 기록", if (settings.healthSleep) "헬스 커넥트에서 읽고 있어요" else "읽지 않아요 · 알림과 잠에서 켜요") {

@@ -811,7 +811,7 @@ private fun DayCell(
             }
             if (day.source == DaySource.OVERRIDE) {
                 DropdownMenuItem(
-                    text = { Text("패턴대로") },
+                    text = { Text("근무 주기대로") },
                     leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Shift(ShiftOverride.None)) },
                 )

@@ -43,10 +43,10 @@ internal fun AutoBackupRows(vm: SettingsViewModel) {
     val open = gate.allows(Feature.AUTO_BACKUP)
     var asking by remember { mutableStateOf(false) }
     var confirmOff by remember { mutableStateOf(false) }
-    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE)) { uri ->
+    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
         if (uri != null) vm.startAutoBackup(context, uri) else vm.prepareAutoBackup(null)
     }
-    val move = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE)) { uri ->
+    val move = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
         uri?.let(vm::moveAutoBackup)
     }
     SwitchRow(

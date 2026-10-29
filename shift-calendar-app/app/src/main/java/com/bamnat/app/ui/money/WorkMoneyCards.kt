@@ -14,6 +14,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -93,6 +95,7 @@ private fun DepositMatchCard(c: AppContainer, calendarId: String, book: MoneyBoo
 }
 
 /** [SHOP-02] 카드 입금 예정: each day's card sales less the fee, due a few business days later, with 입금 확인. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBook, rules: ShopMoney, today: LocalDate) {
     val waiting = remember(book.sales, rules, today) {
@@ -119,8 +122,18 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
             }
         }
         val total = waiting.sumOf { it.amount }
-        Text("들어올 카드 매출 ${Fmt.won(total)} · 수수료 ${rules.feeLabel}, ${rules.settleDays}영업일 뒤로 셌어요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        // [J133-41] 순번 721 (1.32 실사용 테스트: 정한 적 없는 1.5%로 셌는데 어디서 바꾸는지 카드에 없었어요): the rate is changed right here.
+        var feeOpen by remember { androidx.compose.runtime.mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("들어올 카드 매출 ${Fmt.won(total)} · 수수료 ${rules.feeLabel}, ${rules.settleDays}영업일 뒤로 셌어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            TextButton(onClick = { feeOpen = true }) { Text("수수료율 바꾸기") }
+        }
+        if (feeOpen) com.bamnat.app.ui.components.AppSheet(onDismissRequest = { feeOpen = false }) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                com.bamnat.app.ui.work.ShopMoneySettings(calendarId)
+            }
+        }
         // F 1.32 [TAXP-08] The deposits that came, set against the days they pay.
         val gate by c.featureGate.state.collectAsStateWithLifecycle()
         CardMatchLines(calendarId, book, today, gate)

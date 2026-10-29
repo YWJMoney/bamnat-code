@@ -1117,6 +1117,12 @@ class BackupManager(
         /** 2: extra work as its own list [EXTRA-01]. 1.8 and earlier refuse it rather than drop it. */
         const val FORMAT_VERSION = 2
         const val MIME_TYPE = "application/json"
+        /**
+         * [J133-36] 순번 716 (1.32 실사용 테스트: 압축 파일인데 이름이 .json이라 다른 앱이 열려다 깨진 글자를 보였어요): a backup is
+         * saved as a `.bamnat` file of this type; files saved before (.json) open as before.
+         */
+        const val FILE_MIME = "application/octet-stream"
+        const val EXTENSION = "bamnat"
         const val SEALED_FORMAT = "bamnat-enc"
         /** [SLP-14] The longest way home a backup may set. */
         const val MAX_COMMUTE_MINUTES = 180

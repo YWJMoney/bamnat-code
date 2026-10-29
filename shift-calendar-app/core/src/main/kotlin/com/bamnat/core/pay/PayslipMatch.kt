@@ -165,6 +165,8 @@ object PayslipMatcher {
             settled += Unknowns.item(item.id)
             settled += item.id
         }
+        // [J133-33] An amount the payslip gave is known from here on: the runs below count it (a 확인 필요 one is left out).
+        p = p.copy(estimatedFields = p.estimatedFields - settled)
 
         // 2. The 통상시급 behind the payslip's premiums, and the 월 소정근로시간 it gives.
         val premiumsOn = p.fiveOrMoreEmployees && !p.rules.supervisoryApproved

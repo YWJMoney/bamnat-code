@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +36,7 @@ import com.bamnat.core.work.WorkStyle
 
 /**
  * [GUIDE-20] 1.31 P2: the first week's 시작 단계 card over the calendar. While it shows, the question card waits
- * ([CalendarScreen] leaves it out), so a new user sees one thing to do at a time. 그만 보기 hides it for good; each step
+ * ([CalendarScreen] leaves it out), so a new user sees one thing to do at a time. X hides it for good; each step
  * can also be found later (설정 › 알람, 처음 설정 다시 받기, 회사 규칙 광장).
  */
 object StartStepsState {
@@ -80,6 +81,10 @@ fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: 
                 Text(StartSteps.title(rows), style = if (expanded) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f))
                 TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (expanded) "접기" else "모두 보기") }
+                // [J133-68] 1.33 (중간 빌드 확인: 카드마다 닫는 모양이 달랐어요): the same X as the other calendar cards, folded or not.
+                androidx.compose.material3.IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, "시작 단계 닫기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             if (!expanded) {
                 next?.let { row ->
@@ -103,7 +108,6 @@ fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: 
                     if (!row.done) FilledTonalButton(onClick = { open(row.step) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(row.step.action) }
                 }
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("그만 보기") }
         }
     }
 }

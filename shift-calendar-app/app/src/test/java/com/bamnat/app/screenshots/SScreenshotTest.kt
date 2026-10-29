@@ -174,7 +174,7 @@ class SScreenshotTest : ScreenshotBase() {
     // ---- 360 [INQ-06][INQ-07] ----
     @Test fun inquiryShareSwitch() {
         inquiriesOn()
-        shoot("797_s_inquiry_share_off", FOLDED) {
+        shoot("797_s_inquiry_share_on", FOLDED) {
             askFromScreen(InquiryStart(about = "달력", kind = InquiryKind.QUESTION))
             tapText("모두의 문의에 올리기", exact = true)
             reveal("모두의 문의에 올리기", exact = true)

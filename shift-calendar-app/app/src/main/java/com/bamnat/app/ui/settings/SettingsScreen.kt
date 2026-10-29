@@ -740,12 +740,7 @@ private fun SettingsHub(
         if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
         // 1.32 [PROX-03] 다음 결제일·금액·해지, first, while money is taken.
         com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
-        // AG 1.27 [INVITE-11][INVITE-12] 친구 초대 and '불편한 점 알려 주기' at the top, not only on the 프로 screen.
-        com.bamnat.app.ui.grow.GrowSettingsCard()
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
-        Spacer(Modifier.size(4.dp))
-        // [EASY-08][OBS-03] 내 정보 (알고 있는 것·추정·모르는 것) and 밤낮이 한 일, before the groups.
-        com.bamnat.app.ui.guide.EasyStatusCard()
         Spacer(Modifier.size(4.dp))
         Shortcuts(onFound)
         Spacer(Modifier.size(4.dp))
@@ -754,6 +749,14 @@ private fun SettingsHub(
             GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
+        // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
+        // 보였어요): the groups come first; 내 정보 and 함께 만들어요 under them.
+        Spacer(Modifier.size(8.dp))
+        // [EASY-08][OBS-03] 내 정보 (알고 있는 것·추정·모르는 것) and 밤낮이 한 일.
+        com.bamnat.app.ui.guide.EasyStatusCard()
+        Spacer(Modifier.size(4.dp))
+        // AG 1.27 [INVITE-11][INVITE-12] 친구 초대 and '불편한 점 알려 주기', not only on the 프로 screen.
+        com.bamnat.app.ui.grow.GrowSettingsCard()
         // [SET-02] The seven groups, then the rows that are not settings of their own under a small heading,
         // so the list reads as the "7묶음" the 1.22 notice names.
         Text("더 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -941,7 +944,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
 
 /** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
 internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
-    !gate.live -> "정식 출시 전이라 모든 기능이 무료예요"
+    !gate.live -> "지금은 모든 기능 무료 · 출시 소식은 앱에서 알려 드려요" // [J133-43] 순번 723
     gate.access.pro -> gate.access.reason.words
     else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
 }
@@ -1105,7 +1108,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE)) { uri ->
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
         if (uri != null) vm.exportTo(context, uri, sealedExport)
     }
     val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
@@ -1125,7 +1128,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
                 askingPassword = false
                 vm.prepareExport(password)
                 sealedExport = password != null
-                exportLauncher.launch("밤낮-백업-${Today.date()}.json")
+                exportLauncher.launch("밤낮-백업-${Today.date()}.${BackupManager.EXTENSION}")
             },
         )
     }

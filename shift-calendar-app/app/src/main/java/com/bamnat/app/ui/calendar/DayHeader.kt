@@ -643,7 +643,8 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content:
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         LazyRow(
             state = state,
-            modifier = Modifier.weight(1f).fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }),
+            // [J133-67] A narrower fade: a chip's words at the edge were too faint to read.
+            modifier = Modifier.weight(1f).fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }, width = 16.dp),
             contentPadding = PaddingValues(start = start, end = if (more > 0) 8.dp else end),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -651,7 +652,8 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content:
         )
         if (more > 0) {
             MoreButton(more, Modifier.padding(start = 4.dp, end = maxOf(end, 4.dp))) {
-                scope.launch { state.animateScrollBy(state.layoutInfo.viewportSize.width * 0.6f) }
+                // [J133-67] 1.33 (중간 빌드 확인: '+6'이 조금만 넘겨 또 눌러야 했어요): one tap brings the rest in, to the row's end.
+                scope.launch { state.animateScrollToItem((state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
             }
         }
     }

@@ -241,7 +241,7 @@ fun DutyTypingPanel(
                 if (offType == null) FilledTonalButton(onClick = { put(ShiftOverride.Off) }, modifier = Modifier.heightIn(min = 52.dp)) { Text("쉬는 날") }
                 OutlinedButton(onClick = { put(ShiftOverride.None) }, modifier = Modifier.heightIn(min = 52.dp)) {
                     Icon(Icons.Filled.Autorenew, null)
-                    Text(" 패턴대로")
+                    Text(" 근무 주기대로")
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

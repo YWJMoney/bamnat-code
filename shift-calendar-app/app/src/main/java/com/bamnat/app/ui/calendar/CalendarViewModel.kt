@@ -754,7 +754,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val before = schedule.updateDays(dates.distinct()) { entry -> nextShift(entry, target) }
             val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "을" else "${before.size}일을"
             _lastPaint.value = PaintUndo(
-                if (name == null) "$what 패턴대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요",
+                if (name == null) "$what 근무 주기대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요",
                 // Only the shift goes back: a memo or alarm changed on those days since stays.
                 undo = {
                     schedule.updateDays(before.keys.toList()) { now ->
@@ -865,7 +865,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val beforePatterns = snap.patterns
             schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
             val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
-            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 패턴대로"
+            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 근무 주기대로"
             _messages.emit(
                 UndoMessage("${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요$cleared") {
                     schedule.restorePatterns(beforePatterns)
@@ -887,7 +887,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val name = (override as? ShiftOverride.Shift)?.let { snapshot.value?.typesById?.get(it.shiftTypeId)?.name }
                 ?: if (override == ShiftOverride.Off) "쉬는 날" else null
             _messages.emit(
-                UndoMessage(if (name == null) "${Fmt.monthDay(date)}을 패턴대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") {
+                UndoMessage(if (name == null) "${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") {
                     schedule.restoreDay(date, before)
                 },
             )
@@ -913,7 +913,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                         schedule.restoreDay(date, before)
                         schedule.addExtra(date, ExtraText.cover(cover, type))
                     }
-                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요", undo = restore)
+                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요", undo = restore)
                     else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요", undo = restore)
                 },
             )
@@ -1254,7 +1254,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.resetDay(date)
             if (before != null && !before.isEmpty) {
-                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요") {
+                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요") {
                     schedule.restoreDay(date, before)
                 })
             }

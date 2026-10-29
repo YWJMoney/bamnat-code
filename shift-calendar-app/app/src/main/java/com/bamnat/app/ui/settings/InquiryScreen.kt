@@ -476,8 +476,9 @@ private fun InquiryForm(
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var openTip by rememberSaveable { mutableStateOf<String?>(null) }
-    // [INQ-06] 모두의 문의에 올리기: on as before, said and changed right above 보내기 (점검 보고서 중-13).
-    var share by rememberSaveable { mutableStateOf(true) }
+    // [INQ-06] 모두의 문의에 올리기, said and changed right above 보내기 (점검 보고서 중-13). [J133-35] 순번 715 (1.32 실사용 테스트):
+    // off unless the user turns it on; a question about one's own pay or phone is not for everyone by default.
+    var share by rememberSaveable { mutableStateOf(false) }
     // [SRV-06] Up to two photos, made small and stripped on the phone; the developer's switch can pause them.
     var photos by remember { mutableStateOf<List<ByteArray>>(emptyList()) }
     val photosOpen = !mail && !context.appContainer.flags.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)

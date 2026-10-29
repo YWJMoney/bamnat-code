@@ -69,6 +69,9 @@ class TodayWidget : GlanceAppWidget() {
 }
 
 class WeekWidget : GlanceAppWidget() {
+    // [J133-32] 순번 712: laid out for its real size, so the 4×1 it is put down at keeps its marks whole.
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent { GlanceTheme { WidgetFrame { WeekContent(data) } } }
@@ -372,8 +375,11 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
 private fun WeekContent(data: WidgetData) {
     // "이번 주" starts on the user's first day of the week, like the calendar.
     val days = CalendarGrid.week(CalendarGrid.weekStartOf(data.today, data.weekStart))
+    // [J133-32] 순번 712 (1.32 실사용 테스트: 기본 4×1에서 근무 칩이 아래로 반쯤 잘렸어요): one cell high, no title and the day on one
+    // line ("월 3"), so the mark fits.
+    val short = LocalSize.current.height < 100.dp
     Column(GlanceModifier.fillMaxSize()) {
-        Text(
+        if (!short) Text(
             when (data.focus) {
                 CalendarFocus.SHIFTS -> "이번 주 근무"
                 CalendarFocus.JOBS -> "이번 주 일감"
@@ -382,12 +388,22 @@ private fun WeekContent(data: WidgetData) {
             },
             style = small(GlanceTheme.colors.onSurfaceVariant),
         )
-        Spacer(GlanceModifier.height(6.dp))
+        if (!short) Spacer(GlanceModifier.height(6.dp))
         Row(GlanceModifier.fillMaxWidth()) {
             for (date in days) {
                 val day = data.day(date)
                 // [DAILY-06] Each day opens itself.
                 Column(GlanceModifier.defaultWeight().clickable(openDay(androidx.glance.LocalContext.current, date)), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (short) {
+                        Text(
+                            (if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek)) + " ${date.dayOfMonth}",
+                            style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),
+                            maxLines = 1,
+                        )
+                        Spacer(GlanceModifier.height(2.dp))
+                        WeekMark(data, day, 20)
+                        return@Column
+                    }
                     Text(
                         if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek),
                         style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),

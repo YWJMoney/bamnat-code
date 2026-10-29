@@ -537,7 +537,10 @@ fun CalendarScreen(
         val again = date == selected
         // [CAL-17] Changing one day in place is a long press away, which nothing on screen shows: the
         // first plain tap on a date says so once.
-        if (!painting && mark == null && rangeFrom == null && !longPressHintDone) {
+        // [J133-64] 1.33 (중간 빌드 확인): not in the first two days, when setup's own cards and questions are still about; a tip
+        // over the 돈 line on the first tap of a new phone was one more thing in the way.
+        val settled = context.appContainer.installedAt?.let { java.time.Duration.between(it, com.bamnat.core.time.Today.instant()).toDays() >= 2 } ?: true
+        if (!painting && mark == null && rangeFrom == null && !longPressHintDone && settled) {
             longPressSeen()
             val tip = focus.longPressTip()
             scope.launch { delay(TIP_DELAY_MILLIS); vm.tip(tip) }
@@ -1174,7 +1177,9 @@ fun CalendarScreen(
             })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
-            if (guideHere) add(Notice("guide", "오늘의 팁") {
+            // [J133-68] 1.33 (중간 빌드 확인: 첫 화면이 시작 단계와 '할 수 있는 것' 카드로 다 덮였어요): while the 시작 단계 card is up it is
+            // the one guide on the calendar; '할 수 있는 것' and the day's tip come after it.
+            if (guideHere && startRows == null) add(Notice("guide", "오늘의 팁") {
                 val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
                 val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
                 com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
@@ -2253,9 +2258,9 @@ private fun PaintBar(
                 FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
-                    label = { Text("패턴대로") },
+                    label = { Text("근무 주기대로") },
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
-                    modifier = Modifier.semantics { contentDescription = "패턴대로 되돌리기" },
+                    modifier = Modifier.semantics { contentDescription = "근무 주기대로 되돌리기" },
                 )
                 // [CAL-09] Leave and 알람 끄기 painted like shifts, for work kept in shifts.
                 if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern) {

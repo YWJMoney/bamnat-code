@@ -42,6 +42,15 @@ class SettingsSearchTest {
         assertEquals("오전/오후로 보기", first("12시간"))
     }
 
+    // [J133-34] 순번 714: the 새 기능 안내's own example lands on the 기본급, and the pay values are found by their names.
+    @Test fun payValuesAreFoundDirectly() {
+        assertEquals("기본급·시급 바꾸기", first("ㄱㅂㄱ"))
+        assertEquals("기본급·시급 바꾸기", first("기본급"))
+        assertEquals("기본급·시급 바꾸기", first("시급"))
+        assertEquals("수당 넣기·고치기", first("수당"))
+        assertEquals("월급날·정산 기간", first("월급날"))
+    }
+
     @Test fun theTitleItselfComesFirst() {
         assertEquals("진동", first("진동"))
         assertEquals("근무 주기", first("근무 주기"))

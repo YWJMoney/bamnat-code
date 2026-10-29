@@ -1081,7 +1081,7 @@ internal fun PayslipPreview(range: PayRange, expandedByDefault: Boolean = false)
                     Row(Modifier.fillMaxWidth()) {
                         Text(m.name + (m.times?.let { " · ${it}회" } ?: ""), style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        Text("금액 모름", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+                        Text(if (m.guess > 0) "확인 필요 (+${won(m.guess)})" else "금액 모름", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
                     }
                 }
                 if (!range.exact) {

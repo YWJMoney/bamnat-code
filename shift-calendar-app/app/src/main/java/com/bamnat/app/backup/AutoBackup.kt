@@ -48,7 +48,7 @@ class AutoBackup(
 
     data class State(
         val on: Boolean = false,
-        /** The file's name as its app shows it, e.g. 밤낮-자동백업.json. */
+        /** The file's name as its app shows it, e.g. 밤낮-자동백업.bamnat. */
         val name: String? = null,
         val lastOk: Instant? = null,
         /** When the first of the failures since the last good backup was, null while it works. */
@@ -279,7 +279,7 @@ class AutoBackup(
 
     companion object {
         /** What the file picker suggests. */
-        const val FILE_NAME = "밤낮-자동백업.json"
+        const val FILE_NAME = "밤낮-자동백업.bamnat" // [J133-36] 순번 716
         const val FAIL_DAYS = 3L
         /** The same work per password as a backup saved by hand. */
         val ITERATIONS = BackupCrypto.ITERATIONS

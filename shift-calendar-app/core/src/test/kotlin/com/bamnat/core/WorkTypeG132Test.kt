@@ -113,6 +113,12 @@ class WorkTypeG132Test {
         assertEquals("다음 오프까지 3일 · 10/29(목)", ShiftEvents.nextOff(soon, mon))
         assertEquals("내일 쉬어요", ShiftEvents.nextOff(soon, mon.plusDays(2)))
         assertEquals("오늘은 쉬는 날이에요", ShiftEvents.nextOff(soon, mon.plusDays(3)))
+        // [J133-32] 순번 712: a 대근 on the day off makes it a working day; the next 오프 is the one after.
+        val covered = listOf(com.bamnat.core.model.DayEntry(mon.plusDays(3),
+            extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID, minutes = 8 * 60))))
+        val withCover = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(mon, listOf(day.id, day.id, day.id, null)), covered)
+            .resolveRange(mon.minusDays(1), mon.plusDays(7))
+        assertEquals("다음 오프까지 7일 · 11/2(월)", ShiftEvents.nextOff(withCover, mon))
 
         val t = WorkTypeChecks.tenure(LocalDate.of(2025, 11, 1), mon)!!
         assertFalse(t.oneYear)

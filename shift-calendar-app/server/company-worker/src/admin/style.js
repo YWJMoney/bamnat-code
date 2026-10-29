@@ -131,7 +131,7 @@ font-weight:700;text-decoration:none}
 .icon-btn{display:inline-grid;place-items:center;width:2.75rem;height:2.75rem;border:0;border-radius:var(--r-sm);background:none;cursor:pointer;flex:none;color:inherit}
 .icon-btn:hover{background:var(--hover)}
 .icon-btn svg{width:1.4rem;height:1.4rem}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:2.75rem;padding:0 1.05rem;border-radius:var(--r-sm);
+.btn{white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:2.75rem;padding:0 1.05rem;border-radius:var(--r-sm);
 border:1px solid var(--line-strong);background:var(--surface);font-weight:800;font-size:.94rem;cursor:pointer;text-decoration:none;color:var(--fg);
 transition:transform .1s,background .15s,border-color .15s;white-space:nowrap}
 .btn:hover{background:var(--hover)}
@@ -294,6 +294,9 @@ a.tile:hover{border-color:var(--accent)}
 .composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
 padding:.75rem;box-shadow:var(--shadow)}
 @media (min-width:600px){.composer{bottom:1rem}}
+/* [J133-40] 순번 720 (1.32 실사용 테스트, 관리자 휴대폰 화면): on a phone the reply box stays in the page, under the talk, instead of
+   floating over the last bubbles; the actions under it are never behind the bottom tabs. */
+@media (max-width:599px){.composer{position:static;margin-bottom:1rem}}
 .composer textarea{min-height:5.5rem;border:0;padding:.25rem;box-shadow:none;background:none}
 .composer .actions{margin-top:.5rem;align-items:center}
 .composer .count{margin-right:auto;font-size:.75rem;color:var(--muted)}

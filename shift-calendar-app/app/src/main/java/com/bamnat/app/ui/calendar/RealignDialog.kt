@@ -89,7 +89,7 @@ internal fun RealignDialog(
                     }
                 }
                 if (handChanged.isNotEmpty()) {
-                    Text("직접 바꾼 날이 있어요. 패턴대로 돌릴 날을 고르세요.", style = MaterialTheme.typography.titleSmall)
+                    Text("직접 바꾼 날이 있어요. 근무 주기대로 돌릴 날을 고르세요.", style = MaterialTheme.typography.titleSmall)
                     for (d in handChanged) {
                         val day = snap.resolver.resolve(d)
                         val on = d.toEpochDay() !in keep

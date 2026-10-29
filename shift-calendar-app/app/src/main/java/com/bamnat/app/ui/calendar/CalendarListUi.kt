@@ -215,9 +215,21 @@ fun CalendarIdentityBar(
             // Faces to switch with one tap, in the list's order.
             val faces = rows.filter { it.key != current.key }
             val shown = if (onShare != null) room else 3
+            // [J133-66] 1.33 (중간 빌드 확인: '회'·'알' 한 글자 동그라미가 무엇인지 몰랐어요): with one or two other calendars and
+            // room for them, each says its name beside its face.
+            val named = faces.size <= 2 && shown >= 2
             faces.take(shown).forEach { row ->
                 val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
-                Box(
+                if (named) Surface(
+                    onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "$name 보기" },
+                ) {
+                    Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        row.Avatar(size = 24.dp)
+                        Spacer(Modifier.width(4.dp))
+                        Text(row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    }
+                } else Box(
                     Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) }
                         .semantics { contentDescription = "$name 보기" },
                     contentAlignment = Alignment.Center,
@@ -418,7 +430,7 @@ fun NewCalendarDialog(
 /** [MCAL-07] What a calendar past the free ones is, before and after the 정식 출시 switch. */
 internal fun proNote(live: Boolean): String =
     if (live) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
-    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요. 지금은 모든 기능이 무료예요."
+    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요."
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

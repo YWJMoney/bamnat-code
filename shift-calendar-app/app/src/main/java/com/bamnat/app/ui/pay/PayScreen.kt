@@ -491,9 +491,14 @@ private fun PayResult(
             SectionCard(title = "합계에 넣지 않은 수당") {
                 result.missing.forEach { m ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${m.name} · 금액 모름" + (m.times?.let { " · ${it}회" } ?: ""), style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f))
-                        TextButton(onClick = { amountFor = m }, enabled = unlocked) { Text("금액 넣기") }
+                        // [J133-33] 순번 713: a guessed amount is said as what it would add, not counted.
+                        Column(Modifier.weight(1f)) {
+                            Text("${m.name} · " + (if (m.guess > 0) "금액 확인 필요" else "금액 모름") + (m.times?.let { " · ${it}회" } ?: ""),
+                                style = MaterialTheme.typography.bodyLarge)
+                            if (m.guess > 0) Text("짐작대로라면 넣으면 +${com.bamnat.app.ui.Fmt.won(m.guess)}", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                        TextButton(onClick = { amountFor = m }, enabled = unlocked) { Text(if (m.guess > 0) "금액 확인" else "금액 넣기") }
                     }
                 }
                 Text("금액을 넣으면 합계에 더해요. 명세서로 맞춰 보면 한 번에 채울 수도 있어요.",

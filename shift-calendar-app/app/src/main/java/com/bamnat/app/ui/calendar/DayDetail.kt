@@ -374,8 +374,9 @@ private fun DayGroups(
                             profile == null -> "급여 설정 전"
                             pay == null -> null
                             pay.amount == 0L -> "더해지는 급여 없음"
-                            profile?.wageType == WageType.MONTHLY -> "급여 +${Fmt.won(pay.amount)}"
-                            else -> "급여 ${Fmt.won(pay.amount)}"
+                            // [J133-65] 1.33 (중간 빌드 확인: '급여 +57,056원'이 무슨 돈인지 몰랐어요): a 월급 day's plus is the 수당 on top.
+                            profile?.wageType == WageType.MONTHLY -> "월급에 더해지는 수당 +${Fmt.won(pay.amount)}"
+                            else -> "이날 번 돈 ${Fmt.won(pay.amount)}"
                         }
                         val moneyText = listOfNotNull(
                             payText,
@@ -544,7 +545,7 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
         }
         day.hasCustomTimes -> "$name$time · 이 날만 시간 바꿈"
-        day.source == DaySource.PATTERN -> "$name$time · 패턴대로"
+        day.source == DaySource.PATTERN -> "$name$time · 근무 주기대로"
         else -> "$name$time"
     }
 }
@@ -602,7 +603,7 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(if (snapshot.hasPattern) "패턴대로" else "지우기")
+                Text(if (snapshot.hasPattern) "근무 주기대로" else "지우기")
             }
         }
     }
@@ -1130,12 +1131,12 @@ private fun RecordContent(day: ResolvedDay, changes: List<com.bamnat.app.data.Da
         TextButton(onClick = { confirm = true }) {
             Icon(Icons.Filled.RestartAlt, contentDescription = null)
             Spacer(Modifier.width(6.dp))
-            Text("이 날을 패턴대로 되돌리기")
+            Text("이 날을 근무 주기대로 되돌리기")
         }
     }
     if (confirm) {
         ConfirmDialog(
-            title = "이 날을 패턴대로 되돌릴까요?",
+            title = "이 날을 근무 주기대로 되돌릴까요?",
             message = "근무 변경, 시간, 추가 근무·휴가, 알람 설정이 지워져요. 메모와 가계부는 남아요.",
             confirmLabel = "되돌리기",
             destructive = true,
