@@ -277,8 +277,9 @@ class AppContainer(context: Context) {
      * calendar [calendarId] is offered company things (회사 찾기·고르기, 같은 회사 설정, 광장에 올리기 권유): 교대·일근 always, any other
      * kind only once that calendar already joined or took a company's setup, so nothing it has goes out of reach.
      */
-    fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN): Boolean {
-        if (!companyApi.enabled) return false
+    fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN, needsServer: Boolean = true): Boolean {
+        // [SHR-20] A company setup passed as a file or in a link needs no company server ([needsServer] false).
+        if (needsServer && !companyApi.enabled) return false
         if (scopeOf(calendarId).currentSettings().workStyle?.usesCompany != false) return true
         val store = companyOf(calendarId).store
         return store.applied.value != null || store.member.value != null
@@ -350,6 +351,9 @@ class AppContainer(context: Context) {
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
     var pendingPayCheck: String? = null
+
+    /** [SHR-20][695] 1.33: who sent the company setup just put in from a 근무표 링크, said once on the pay screen that follows. */
+    @Volatile var pendingSetupFrom: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts waiting to go (only once 처리방침 3.3 lets them). Made on first press. */
     val photoWrong by lazy { com.bamnat.app.diag.PhotoWrongStore(appContext) }

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -139,6 +141,12 @@ fun ShareDialog(
         value = orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind, calendarId) }
     }
     val hasPay = money?.isNotEmpty() == true
+    // [SHR-20][J133-71] 1.33: the 동료 way's words and setup only for work with a company; the setup in the link from 3.7's date.
+    val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
+    val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
+    val setupFrom = remember {
+        container.remoteConfig.config.value.calendar.of("3.7")?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "처리방침 3.7 시행일"
+    }
 
     fun run(action: suspend () -> Unit) {
         busy = true; error = null
@@ -150,6 +158,7 @@ fun ShareDialog(
         options.copy(
             pay = options.pay && hasPay, jobs = options.jobs && field,
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
+            setup = options.setup && setupOpen && employee && companyWork,
         )
     }
     // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
@@ -228,6 +237,9 @@ fun ShareDialog(
                 "받는 사람은 ${linkMonth.monthValue}월부터 3개월 근무표를 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
+            Text("누구에게 보내요?", style = MaterialTheme.typography.titleSmall)
+            AudienceRows(options.audience, companyWork) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
             // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
@@ -246,6 +258,12 @@ fun ShareDialog(
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
                 Button(enabled = !busy, onClick = { send(context, made) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
+                // [SHR-20] Before 3.7, or when the box is off: the company setup as a file the sharer passes on, through no server.
+                if (options.audience == com.bamnat.app.share.ShareAudience.COWORKER && employee && companyWork && !(setupOpen && saved.setup)) {
+                    OutlinedButton(enabled = !busy, onClick = {
+                        scope.launch { sendSetupFile(context, container, calendarId) { error = it } }
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("회사 설정 파일도 보내기") }
+                }
             }
 
             Text("보여 줄 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
@@ -261,6 +279,13 @@ fun ShareDialog(
                     }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
                     PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { options = options.copy(pay = it) }
+                    // [SHR-20] 1.33 (계획 691·694): a coworker's link with the company setup, from 처리방침 3.7's date.
+                    if (options.audience == com.bamnat.app.share.ShareAudience.COWORKER && employee && companyWork) {
+                        PartRow("회사 설정",
+                            if (setupOpen) "근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름. 기본급·입사일·연차·금액은 빼요"
+                            else "${setupFrom}부터 링크에 함께 담겨요. 지금은 링크를 만든 뒤 ‘회사 설정 파일도 보내기’로 보내 주세요",
+                            options.setup && setupOpen, enabled = setupOpen) { options = options.copy(setup = it) }
+                    }
                 }
             }
             OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
@@ -303,7 +328,8 @@ fun ShareDialog(
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
                 // [FEAT-15] The feed also sends the phone's time zone name (처리방침 2.6, 1항).
-                "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("휴대폰 시간대 이름".takeIf { feed && feedOpen }))
+                "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("회사 설정(금액 없이)".takeIf { chosen().sendsSetup },
+                    "휴대폰 시간대 이름".takeIf { feed && feedOpen }))
                     .joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -403,6 +429,36 @@ fun ShareDialog(
             }
         }
     }
+}
+
+/** [SHR-20] 1.33 (계획 690): 같은 회사 동료 / 가족·연인 / 다른 회사 친구, one line each with what it sends. */
+@Composable
+private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Column(Modifier.padding(vertical = 4.dp).selectableGroup()) {
+            com.bamnat.app.share.ShareAudience.entries.forEach { a ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .selectable(selected = a == picked, role = Role.RadioButton, onClick = { onPick(a) })
+                        .padding(start = 4.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.RadioButton(selected = a == picked, onClick = null, modifier = Modifier.padding(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(a.label(companyWork), style = MaterialTheme.typography.bodyLarge)
+                        Text(a.hint(companyWork), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [SHR-20] The company setup as a file (금액 없이) through the share sheet, the way 설정 › 급여 › 회사 설정 보내기 sends it. */
+private suspend fun sendSetupFile(context: Context, c: com.bamnat.app.AppContainer, calendar: String, onError: (String) -> Unit) {
+    val name = ShareContent.companyName(c, calendar)
+    val text = ShareContent.setupFile(c, calendar) ?: return onError("회사 설정 파일을 만들지 못했어요")
+    runCatching { com.bamnat.app.data.CompanyShare.send(context, name, text) }.onFailure { onError("회사 설정 파일을 만들지 못했어요") }
 }
 
 /** [SHR-13] 마지막으로 보낸 때, and 보내지 못한 변경 with a button that sends it now. */

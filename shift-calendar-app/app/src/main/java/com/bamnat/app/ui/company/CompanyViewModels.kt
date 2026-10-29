@@ -1136,7 +1136,10 @@ class CompanyPayViewModel(
     /** The company's setup the pay is made from; [PLAZA-03] the user's own corrections replace it ([useEdited]). */
     var text: String? by androidx.compose.runtime.mutableStateOf(scope.store.pendingPay)
         private set
-    val company: String = scope.store.applied.value?.company.orEmpty()
+    // [695] A setup from a file or a coworker's link names its company in the file.
+    val company: String = scope.store.applied.value?.company
+        ?: text?.let { t -> runCatching { org.json.JSONObject(t).optString("company").trim() }.getOrNull() }.orEmpty()
+    internal val app: AppContainer get() = c
     /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
     private val applied: AppliedSetup? = scope.store.applied.value
     val canPropose: Boolean get() = applied != null

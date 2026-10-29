@@ -344,4 +344,27 @@ class LegalPagesTest {
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.6" })
         assertFalse(flag.default)
     }
+
+    /**
+     * 1.33 [SHR-20] 3.7: the `share.setup` flag waits for 3.7's date, which is the page's date; the page names the link's
+     * 받는 사람 갈래 and the coworker's 회사 설정, what never goes in it, and the file before the date.
+     */
+    @Test fun policy37NamesTheCoworkerSetupAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.7")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29) && v.heldUntil == null)
+        assertTrue(text.contains("처리방침 3.7 · 앱 버전 1.33.0 기준 · 게시일 2026년 10월 30일 · 시행일 2026년 11월 29일"))
+        assertTrue("3.7 is the newest version line", text.indexOf("처리방침 3.7 ·") < text.indexOf("처리방침 3.6 ·"))
+        assertTrue(text.contains("같은 회사 동료"))
+        assertTrue(text.contains("‘회사 설정 파일도 보내기’"))
+        assertTrue(text.contains("기본급, 입사일, 연차, 알람, 메모, 사람마다 다른 수당 금액은 넣지 않음"))
+        val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP)!!
+        assertTrue(flag.basis.policy.orEmpty().startsWith("3.7 1항"))
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.7" })
+        assertFalse(flag.default)
+        // The sheet's words match the page's.
+        assertTrue(text.contains(com.bamnat.app.share.ShareAudience.COWORKER.label(true)))
+    }
 }

@@ -48,6 +48,10 @@ data class SharedSchedule(
     val shows: Set<String>,
     /** [SHR-11] What [pay] is: 급여, 일감 수입 or 매출. */
     val payKind: com.bamnat.core.work.MoneyShare = com.bamnat.core.work.MoneyShare.PAY,
+    /** [SHR-20] 1.33: who the sharer made it for; null for a link from before 1.33. */
+    val audience: ShareAudience? = null,
+    /** [SHR-20] A coworker's company setup file (no amounts), to put in with 같은 조예요·다른 조예요. */
+    val setup: String? = null,
 ) {
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
@@ -100,7 +104,10 @@ data class SharedSchedule(
                 SharedPay(month, p.optLong("amount"), p.optString("label"))
             }
             val shows = o.optJSONArray("shows")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty()
-            return SharedSchedule(o.optString("title"), types, days, pay, shows, com.bamnat.core.work.MoneyShare.ofKey(o.str("payKind")))
+            // [SHR-20] Only a company file is taken as a setup.
+            val setup = o.str("setup")?.takeIf { com.bamnat.app.data.CompanyShare.isCompanyFile(it) }
+            return SharedSchedule(o.optString("title"), types, days, pay, shows, com.bamnat.core.work.MoneyShare.ofKey(o.str("payKind")),
+                ShareAudience.of(o.str("audience")), setup)
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.CompanySummary
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
 
 /**
@@ -30,7 +31,9 @@ import com.bamnat.app.ui.Fmt
  */
 @Composable
 fun CompanyShareDialog(hasPay: Boolean, hasRotation: Boolean, onDismiss: () -> Unit, onShare: (String, Boolean, String) -> Unit) {
-    var name by rememberSaveable { mutableStateOf("") }
+    // [695] 1.33 (계획 "'회사 설정 보내기' 회사 이름 미리 채우기"): the company the calendar is in, or the name typed in the first setup.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var name by rememberSaveable { mutableStateOf(runCatching { com.bamnat.app.share.ShareContent.companyName(context.appContainer) }.getOrDefault("")) }
     var team by rememberSaveable { mutableStateOf("") }
     var amounts by rememberSaveable { mutableStateOf(false) }
     AlertDialog(

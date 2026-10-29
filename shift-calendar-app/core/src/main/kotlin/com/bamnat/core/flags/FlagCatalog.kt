@@ -27,6 +27,8 @@ object FlagCatalog {
     const val STATS_LOOKUP = "stats.lookup"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
+    /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
+    const val SHARE_SETUP = "share.setup"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -196,6 +198,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.32.1", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.33 [SHR-20] (계획 690~694, 사용자 2026-10-29 "보고서에 적힌 전체 진행"): the 같은 회사 동료 way of a 근무표 링크 puts the
+     * company setup in the link (근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름, 금액 없이) only from 처리방침 3.7's date; before
+     * it, the sheet sends the same setup as a file the sharer passes on themselves, which goes through no server.
+     */
+    val SHARE_SETUP_FLAG = Flag(
+        SHARE_SETUP, "동료 링크에 회사 설정 담기",
+        what = "근무표 링크를 ‘같은 회사 동료’에게 보낼 때 회사 설정(근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름)도 링크에 함께 담아요. 받은 동료는 앱에서 기본급만 넣으면 돼요. 기본급·입사일·연차·알람·메모·금액은 담지 않아요(회사 공통 정액만 1-2항처럼).",
+        whyOff = "처리방침 3.7(1항)이 시행된 날부터 저절로 켜져요. 그 전에는 링크에 담지 않고, 공유 창의 ‘회사 설정 파일도 보내기’로 파일을 직접 보내요(서버를 거치지 않음).",
+        basis = Basis(policy = "3.7 1항", decision = "D105", requirement = "SHR-20", note = "1.33 공유 세 갈래(계획 690~694)"),
+        conditions = listOf(Condition.Date(policy = "3.7")),
+        default = false, risk = Risk.LEGAL, since = "1.33.0", group = FlagGroup.LAW,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -208,7 +224,7 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

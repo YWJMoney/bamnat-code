@@ -59,6 +59,8 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
             PolicyVersion("3.5", LocalDate.of(2026, 10, 29), LocalDate.of(2026, 11, 28)),
             // [STAB-10] 1.32.1: 멈춤 관찰 기록 in an inquiry's 점검 기록 (1-3항); posted with 1.32.1, 30 days as items are added.
             PolicyVersion("3.6", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
+            // [SHR-20] 1.33: 동료 링크의 회사 설정 (1항); posted with 1.33 the same day as 3.6, 30 days as an item is added.
+            PolicyVersion("3.7", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
         ))
 
         /** "3.10" after "3.9": compared part by part as numbers. */

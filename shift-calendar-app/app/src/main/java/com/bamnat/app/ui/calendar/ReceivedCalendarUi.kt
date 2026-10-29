@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.calendar
 
+import kotlinx.coroutines.flow.first
+import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -208,7 +210,13 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("동료 근무표 받기", style = MaterialTheme.typography.titleLarge)
+            // [SHR-20] 1.33 (계획 692·693): the sheet says whose it is once the link says who it was made for.
+            val audience = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.audience
+            Text(when (audience) {
+                com.bamnat.app.share.ShareAudience.FAMILY -> "가족 근무표 받기"
+                com.bamnat.app.share.ShareAudience.FRIEND -> "친구 근무표 받기"
+                else -> "동료 근무표 받기"
+            }, style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (startId == null) {
@@ -255,9 +263,15 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                         val color = calendars.firstOrNull { it.id == p.id }?.color
                             ?: ReceivedCalendar.COLORS[calendars.size % ReceivedCalendar.COLORS.size]
                         PreviewCard(p.schedule, color.asColor(), p.share.expiresAt, today)
-                        Button(onClick = { if (vm.add(p)) onAdded() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        // [SHR-20] 1.33 (계획 691): a coworker's link with the company setup: 같은 조예요 puts it in on the sender's
+                        // 조 at once, 다른 조예요 asks which; then only the 기본급 is left on the pay screen.
+                        val setup = p.schedule.setup?.takeIf { p.schedule.audience == com.bamnat.app.share.ShareAudience.COWORKER }
+                        if (setup != null) CoworkerSetupCard(p.schedule.title, setup, onBefore = { vm.add(p) }, onDone = onAdded)
+                        if (setup == null || p.existing) Button(onClick = { if (vm.add(p)) onAdded() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Text(if (p.existing) "새로 받아 보기" else "내 달력 옆에 두고 보기")
                         }
+                        // [SHR-20] 1.33 (계획 693): a friend's link leads on to the receiver's own calendar; nothing of the friend's setup goes.
+                        if (p.schedule.audience == com.bamnat.app.share.ShareAudience.FRIEND) FriendStart()
                         Text("읽기 전용이에요. 보낸 분이 근무표를 고치면 열 때마다 새로 받아요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -265,6 +279,92 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             }
         }
     }
+}
+
+/**
+ * [SHR-20] 1.33 (계획 691·695): "○○ 님이 ○○ 근무표와 급여 계산 방식을 보냈어요" with 같은 조예요 / 다른 조예요. The setup goes into
+ * 내 달력 the way a coworker's file does (kept first, 7일 안에 되돌리기), and the pay screen then asks only for the 기본급.
+ */
+@Composable
+private fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Boolean, onDone: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val c = context.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val company = remember(setup) { runCatching { org.json.JSONObject(setup).optString("company").trim() }.getOrDefault("") }
+    var phases by remember { mutableStateOf<com.bamnat.app.ui.company.Phases?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val hasPattern by androidx.compose.runtime.produceState(false) { value = runCatching { c.calendars.repository(com.bamnat.app.data.PersonalCalendar.MAIN).snapshot.first().hasPattern }.getOrDefault(false) }
+    var confirm by remember { mutableStateOf<Boolean?>(null) }
+    fun put(step: Int?) {
+        busy = true
+        scope.launch {
+            val ok = runCatching {
+                onBefore()
+                c.importUndo.save()
+                val done = c.companyShare.apply(setup, rotation = true, todayStep = step)
+                if (done.pendingPay) c.companyStore.pendingPay = setup
+                // [695] Chosen here already: the pay screen does not ask "이 회사 급여 설정을 쓸까요?" again, and says whose it is.
+                c.companyOf(com.bamnat.app.data.PersonalCalendar.MAIN).payWays.decided = true
+                c.pendingSetupFrom = sender.trim().ifEmpty { "동료" }
+                c.telemetry.event(com.bamnat.core.diag.DiagEvents.COMPANY_IMPORT)
+            }.isSuccess
+            busy = false
+            if (!ok) { error = "회사 설정을 넣지 못했어요. 다시 해 주세요."; return@launch }
+            onDone()
+            // The 기본급 is all that is left: the pay screen asks it at once.
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PAY)
+        }
+    }
+    fun go(same: Boolean) {
+        scope.launch {
+            val p = runCatching { com.bamnat.app.ui.company.rotationPhases(c, setup, fromSender = true) }.getOrNull()
+            when {
+                p == null -> put(null)
+                same -> put(p.sent ?: 0)
+                p.options.size > 1 -> phases = p
+                else -> put(0)
+            }
+        }
+    }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val who = sender.trim().ifEmpty { "동료" }
+            Text("$who 님이 ${company.ifEmpty { "회사" }} 근무표와 급여 계산 방식을 보냈어요.", style = MaterialTheme.typography.titleSmall)
+            Text("같은 조면 기본급만 넣으면 이번 달 예상 급여가 바로 보여요. 기본급·입사일·연차는 받지 않았어요.",
+                style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !busy, onClick = { if (hasPattern) confirm = true else go(true) },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("같은 조예요") }
+                OutlinedButton(enabled = !busy, onClick = { if (hasPattern) confirm = false else go(false) },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("다른 조예요") }
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+    confirm?.let { same ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("내 근무를 이 설정으로 바꿀까요?") },
+            text = { Text("내 달력의 근무 종류와 순서가 ${company.ifEmpty { "받은" }} 설정으로 바뀌어요. 지금 것은 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요.") },
+            confirmButton = { TextButton(onClick = { confirm = null; go(same) }) { Text("바꾸기") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("취소") } },
+        )
+    }
+    phases?.let { rows ->
+        com.bamnat.app.ui.company.PhaseSheet(rows, replacing = hasPattern, busy = busy, onDismiss = { phases = null },
+            onPick = { step -> phases = null; put(step) })
+    }
+}
+
+/** [SHR-20] 1.33 (계획 693): 나도 내 근무 넣기, while this phone has no work of its own yet. */
+@Composable
+private fun FriendStart() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val mine by androidx.compose.runtime.produceState(true) { value = runCatching { c.calendars.repository(com.bamnat.app.data.PersonalCalendar.MAIN).snapshot.first().hasPattern }.getOrDefault(true) }
+    if (mine) return
+    OutlinedButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN) },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나도 내 근무 넣기") }
 }
 
 /**
