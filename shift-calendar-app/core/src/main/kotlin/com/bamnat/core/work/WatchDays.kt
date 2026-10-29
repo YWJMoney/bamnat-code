@@ -63,6 +63,42 @@ data class WatchPayload(
 object WatchDays {
     /** Days ahead the phone sends at least, so a watch away from the phone a while still knows. */
     const val DAYS = 45
+
+    /**
+     * 1.32 [WEAR-04] 조사 대조 C16 (조사 11-4 "컴플리케이션에 다음 근무까지 n시간"): one stretch the complication shows one thing
+     * in: before a shift, the time to its start; on it, the time to its end. [to] is the moment counted to.
+     */
+    data class Countdown(val from: LocalDateTime, val to: LocalDateTime, val onShift: Boolean, val name: String)
+
+    /** The stretches from [now] over the next [max] shifts of [days] (days off and leave are passed over). */
+    fun countdowns(days: List<WatchDay>, now: LocalDateTime, max: Int = 14): List<Countdown> {
+        val shifts = days.filter { it.start != null && it.end != null && !it.off }.map { d ->
+            val s = d.date.atTime(d.start!!)
+            val e = if (d.end!!.isAfter(d.start)) d.date.atTime(d.end) else d.date.plusDays(1).atTime(d.end)
+            Triple(s, e, d.name)
+        }.sortedBy { it.first }.filter { it.second.isAfter(now) }.take(max)
+        var cursor = now
+        val out = mutableListOf<Countdown>()
+        for ((s, e, name) in shifts) {
+            if (s.isAfter(cursor)) out += Countdown(cursor, s, onShift = false, name = name)
+            val from = if (s.isAfter(cursor)) s else cursor
+            if (e.isAfter(from)) out += Countdown(from, e, onShift = true, name = name)
+            cursor = maxOf(cursor, e)
+        }
+        return out
+    }
+
+    /** "주간까지 5시간 20분", "근무 끝까지 2시간"; null with no shift ahead. */
+    fun countdownLine(c: Countdown?, now: LocalDateTime): String? {
+        c ?: return null
+        val m = java.time.Duration.between(now, c.to).toMinutes().coerceAtLeast(0)
+        val left = when {
+            m >= 48 * 60 -> "${m / (24 * 60)}일"
+            m >= 60 -> "${m / 60}시간" + if (m % 60 > 0 && m < 10 * 60) " ${m % 60}분" else ""
+            else -> "${m}분"
+        }
+        return if (c.onShift) "근무 끝까지 $left" else "${c.name}까지 $left"
+    }
     const val PATH = "/bamnat/days"
     const val KEY = "payload"
     private const val OFF_COLOR = 0xFF8E9AAFL

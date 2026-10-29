@@ -83,6 +83,24 @@
                 android:value="0" />
         </service>
 
+        <!-- 1.32 [WEAR-04] 다음 근무까지 (근무 중이면 끝까지). -->
+        <service
+            android:name=".NextShiftComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_monochrome"
+            android:label="@string/next_complication_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
         <!-- The phone's days arriving; only Google Play services binds it. -->
         <service
             android:name=".DaysListenerService"

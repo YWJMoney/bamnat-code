@@ -62,6 +62,10 @@ object WatchStore {
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, WeekHoursComplicationService::class.java)).requestUpdateAll()
         }
+        // 1.32 [WEAR-04]
+        runCatching {
+            ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, NextShiftComplicationService::class.java)).requestUpdateAll()
+        }
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = Today.zone()
         val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000

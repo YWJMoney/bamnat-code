@@ -199,6 +199,7 @@ trash.records
 view.clock12
 view.compact
 view.textSize
+wear.nextShift
 widget.countdown
 widget.fieldActions
 widget.lines
