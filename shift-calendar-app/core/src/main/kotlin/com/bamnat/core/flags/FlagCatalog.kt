@@ -29,6 +29,14 @@ object FlagCatalog {
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
     const val SHARE_SETUP = "share.setup"
+    /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
+    const val RECIPE_BROWSE = "recipe.browse"
+    /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
+    const val RECIPE_PUBLISH = "recipe.publish"
+    /** 1.34 [RCP-37] 좋아요·안좋아요 (with a reason) on recipes and their talk, once 3.8 names it. */
+    const val RECIPE_VOTE = "recipe.vote"
+    /** 1.34 [RCP-37] Writing in a recipe's talk, and (1.35) 요청 판·구독, once 3.8 names it. */
+    const val RECIPE_TALK = "recipe.talk"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -212,6 +220,43 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.33.0", group = FlagGroup.LAW,
     )
 
+    /**
+     * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
+     * and read the public list only, so they are open from 1.34 (the server can still rest them). Sending — a recipe, a vote with
+     * its reason, a post in a recipe's talk — waits for 처리방침 3.8 (게시 2026-10-30, 시행 2026-11-29, 1-4항).
+     */
+    val RECIPE_BROWSE_FLAG = Flag(
+        RECIPE_BROWSE, "나눔 판 보기·적용",
+        what = "유형별 광장의 레시피를 찾아보고, 내 달력에서 미리 보고, 골라 적용하고, 7일 안에 되돌려요. 휴대폰 안에서 하고 공개 목록을 읽기만 해요.",
+        whyOff = "기본으로 켜 둬요. 레시피에 문제가 생기면 관리자가 잠시 강제로 끌 수 있고, 그동안 앱은 ‘잠시 쉬고 있어요’로 보여요.",
+        basis = Basis(policy = "3.8 1-4항", decision = "D109", requirement = "RCP-21", note = "1.34 나눔 판"),
+        conditions = emptyList(), default = true, since = "1.34.0", group = FlagGroup.SERVER,
+    )
+
+    private fun recipeLegal(key: String, name: String, what: String, req: String) = Flag(
+        key, name, what = what,
+        whyOff = "처리방침 3.8(1-4항)이 시행된 날(2026-11-29)부터 저절로 켜져요. 그 전에는 레시피를 보고 적용하는 것만 돼요.",
+        basis = Basis(policy = "3.8 1-4항", decision = "D109", requirement = req, note = "1.34 나눔 판"),
+        conditions = listOf(Condition.Date(policy = "3.8")),
+        default = false, risk = Risk.LEGAL, since = "1.34.0", group = FlagGroup.LAW,
+    )
+
+    val RECIPE_PUBLISH_FLAG = recipeLegal(
+        RECIPE_PUBLISH, "레시피 올리기",
+        "내 설정으로 만든 레시피를 광장에 공개하거나 링크로 나눠요. 시급·일당 같은 금액은 받는 사람이 정할 칸으로 바뀌고, 이름·연락처·링크는 담지 않아요.",
+        "RCP-29",
+    )
+    val RECIPE_VOTE_FLAG = recipeLegal(
+        RECIPE_VOTE, "레시피 좋아요·안좋아요",
+        "레시피와 이야기 글에 좋아요·안좋아요를 눌러요. 안좋아요는 이유(고르기와 짧은 의견)를 꼭 적고, 이유는 누가 적었는지 없이 만든 사람에게만 보여요.",
+        "RCP-31",
+    )
+    val RECIPE_TALK_FLAG = recipeLegal(
+        RECIPE_TALK, "레시피 이야기",
+        "레시피마다 질문·의견·아이디어·고친 후기를 써요. 1.35부터 요청 판과 구독도 이 조건을 따라요.",
+        "RCP-35",
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -224,7 +269,7 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

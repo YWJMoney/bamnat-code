@@ -61,6 +61,8 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
             PolicyVersion("3.6", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
             // [SHR-20] 1.33: 동료 링크의 회사 설정 (1항); posted with 1.33 the same day as 3.6, 30 days as an item is added.
             PolicyVersion("3.7", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
+            // [RCP-37] 1.34: 나눔 판 (1-4항), merged 2026-10-29 on the public site repository; 30 days as the information grows.
+            PolicyVersion("3.8", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
         ))
 
         /** "3.10" after "3.9": compared part by part as numbers. */
