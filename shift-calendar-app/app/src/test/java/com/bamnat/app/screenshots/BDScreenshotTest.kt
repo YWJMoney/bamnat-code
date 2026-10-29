@@ -82,6 +82,10 @@ class BDScreenshotTest : ScreenshotBase() {
             return if (!held) s else s.copy(reasonCode = "shape", reason = "근무 모양이 이 부서 대표 판과 달라 개발자가 확인한 뒤 보여요. 다른 부서라면 부서 이름을 넣어 다시 보내 주세요")
         }
 
+        // [J133-93] The form now starts with the calendar's job, so a send names its job plaza; it is the same send here.
+        override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
+            region: String, topic: Boolean): ReportStatus = report(device, company, dept, verified, note, setup, false)
+
         override suspend fun history(company: String, setup: String): List<RuleVersion> =
             base.history(company, setup).mapIndexed { i, v -> if (i == 0) v.copy(changes = historyChanges) else v }
     }
