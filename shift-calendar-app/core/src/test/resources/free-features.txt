@@ -23,6 +23,7 @@ day.commute
 day.firstCard
 day.leaveNow
 day.overtimeCap
+day.selective
 extra.kinds
 field.dailyTax
 field.deposit
@@ -51,6 +52,7 @@ hourly.quit
 hourly.takeHome
 hourly.tools
 hourly.weeks
+hours.stretch
 invest.accounts
 invest.alarms
 invest.alerts

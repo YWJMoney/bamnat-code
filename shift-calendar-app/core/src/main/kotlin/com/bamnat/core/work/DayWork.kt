@@ -183,4 +183,11 @@ object DayWork {
 
     /** [DAYW-05] A cap people often have (공무원 시간외근무 월 57시간). */
     const val DEFAULT_CAP_HOURS = 57
+
+    /**
+     * 1.32 [WTYP-26] (근무유형 조사 8장, 인사혁신처·행정안전부 2026-07-21 입법예고 '공무원 수당 등에 관한 규정' 개정안) said under
+     * the 57시간 bar. The 시행일 was not confirmed when this was written, so it is not given; 밤낮 already counts no 하루 상한.
+     */
+    const val PUBLIC_RULE_NOTE = "2026년 7월 입법예고된 개정안: 하루 4시간 인정 상한은 없어지고 월 57시간 상한은 그대로예요(시행일은 인사혁신처 발표로 확인). " +
+        "밤낮은 하루 상한 없이 월 상한까지 계산해요."
 }
