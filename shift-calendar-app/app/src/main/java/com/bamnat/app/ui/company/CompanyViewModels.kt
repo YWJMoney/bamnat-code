@@ -1232,6 +1232,9 @@ class CompanyReportViewModel(
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
 
+    /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
+    fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+
     sealed interface Sending {
         data object Idle : Sending
         data object Busy : Sending
@@ -1284,7 +1287,10 @@ class CompanyReportViewModel(
      * [SPAT-05] The public row this phone's cycle came from, while nothing went up from it: the form starts from its
      * company and goes as '공개 자료 확인·고침' with the order the user chose (or '처음 제공' for a company not in it).
      */
-    val publicUse: PublicUse? = scope.store.publicUse.value?.takeIf { it.sentId == null }
+    val publicUse: PublicUse? = scope.store.publicUse.value?.takeIf { u ->
+        // [J133-92] One kept from before another company's setup went in is not this form's (a phone from build 7 has one).
+        u.sentId == null && scope.store.applied.value.let { a -> a == null || CompanyText.norm(a.company) == CompanyText.norm(u.company) }
+    }
     /** Whether a pay setup is there to go with the cycle; without one only the cycle can go. */
     val hasPay: Boolean get() = scope.pay.profile.value != null
     private val _cycleOnly = MutableStateFlow(!hasPay)

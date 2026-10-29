@@ -3429,6 +3429,16 @@ async function talkData(request, env, companyId, grp, known = null) {
   }
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
   if (member && !room) await withProposalTexts(all, env, c, posts); // BC 1.30 [PROP-01]
+  // [J133-91] 1.33 빌드 7 확인 ("고쳐 다시 올리기를 열면 전에 바꾼 값이 비어 있어요"): the writer's own proposals come with their
+  // setup to anyone, so it opens as it was sent; without the pay part when this version has a pay way they may not see (결정 D79).
+  else if (!room) {
+    const own = posts.filter((p) => p.mine && p.kind === "proposal");
+    if (own.length) {
+      const base = await one(env, `SELECT setup FROM rules WHERE company_id = ?1 AND grp = ?2
+        UNION ALL SELECT setup FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, grp);
+      await withProposalTexts(all, env, c, own, { withoutPay: !base || JSON.parse(base.setup).pay !== undefined });
+    }
+  }
   const past = !room && !(live.current || live.pending);
   const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),

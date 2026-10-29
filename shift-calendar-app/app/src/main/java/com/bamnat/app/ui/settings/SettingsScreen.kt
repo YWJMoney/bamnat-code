@@ -267,8 +267,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<SettingsMessage?>(null)
     /** Result of the last backup, import or undo, shown once. */
     val message: StateFlow<SettingsMessage?> = _message.asStateFlow()
-    fun consumeMessage() {
-        _message.value = null
+    /** [J133-95] Lets [shown] go, not a newer one that came while it was on screen. */
+    fun consumeMessage(shown: SettingsMessage? = _message.value) {
+        _message.compareAndSet(shown, null)
     }
 
     /** [SET-01] When the data before the last import was kept, while it can still be put back. */
@@ -619,13 +620,16 @@ fun SettingsScreen(
     val message by vm.message.collectAsStateWithLifecycle()
     LaunchedEffect(message) {
         val m = message ?: return@LaunchedEffect
-        vm.consumeMessage()
         if (snackbar == null) {
+            vm.consumeMessage()
             android.widget.Toast.makeText(context, m.text, android.widget.Toast.LENGTH_SHORT).show()
             return@LaunchedEffect
         }
+        // [J133-95] 1.33 빌드 7 확인 (복원 뒤 완료 알림이 이번에도 안 보여요): a restore draws the screen again, and a message taken
+        // before it was shown went with the screen it was taken by. It is let go only once shown, so the new screen shows it.
         val result = snackbar.showSnackbar(m.text, actionLabel = if (m.undo) "되돌리기" else null,
             duration = if (m.undo) SnackbarDuration.Long else SnackbarDuration.Short)
+        vm.consumeMessage(m)
         if (result == SnackbarResult.ActionPerformed) vm.undoImport()
     }
 

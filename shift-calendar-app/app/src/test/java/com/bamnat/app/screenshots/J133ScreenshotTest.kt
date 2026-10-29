@@ -7,6 +7,8 @@ import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -76,5 +78,26 @@ class J133ScreenshotTest : ScreenshotBase() {
         org.junit.Assert.assertTrue(appears("공개 규정 · 서울교통공사(시험) 보수규정", exact = true))
         org.junit.Assert.assertTrue(appears("원문 표를 다 읽지 못한 줄이에요", exact = false))
         reveal("국민연금 가입 16,000명", exact = false)
+    }
+
+    /**
+     * [J133-92][J133-93] 1.33 빌드 7: 내 설정 나누기 on a calendar that took another company's setup over a public cycle shows only the
+     * company in use, and the job the pay setup names as one line (the 13 chips behind 바꾸기).
+     */
+    @Test fun foldedReportOneCompany() = shoot("j133_08_folded_report_one_company", FOLDED) {
+        val c = companyOn()
+        withPay()
+        c.companyStore.setPublicUse(com.bamnat.app.company.PublicUse("hyundai", "현대제철", "4-2", "DDOONNOO", true, Today.millis()))
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("AAAAAAAAAAAA", "GS칼텍스", "", "0123456789abcdef", null, false,
+            java.time.Instant.now()))
+        assertNull("the public cycle of another company ends with the setup put in", c.companyStore.publicUse.value)
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
+        content { com.bamnat.app.ui.company.CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
+        settle()
+        assertTrue(appears("어떤 일: ", exact = false))
+        assertTrue("the chips wait behind 바꾸기", !appears("어떤 일인가요? (선택)", exact = true))
+        assertTrue(!appears("현대제철", exact = false))
+        tapText("바꾸기", exact = true)
+        reveal("어떤 일인가요? (선택)", exact = true)
     }
 }

@@ -179,7 +179,6 @@ fun DiffEditorSheet(
         v != androidx.compose.material3.SheetValue.Hidden || (!busy && (!touched || false.also { asking = true }))
     })
     val close = { if (busy) Unit else if (touched) asking = true else onDismiss() }
-    androidx.activity.compose.BackHandler(enabled = touched) { close() }
     if (asking) com.bamnat.app.ui.components.ConfirmDialog(
         title = "바꾼 곳을 버릴까요?",
         message = "보내지 않고 닫으면 지금 바꾼 값이 사라져요.",
@@ -189,6 +188,8 @@ fun DiffEditorSheet(
         destructive = true,
     )
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = state, onClose = close) {
+        // [J133-90] 빌드 7 확인 ("뒤로 키는 묻지 않고 닫혀 값이 사라져요"): back goes to the sheet's own window, so it is caught in here.
+        androidx.activity.compose.BackHandler(enabled = touched || busy) { close() }
         val e = edit
         if (start == null || e == null) {
             Text("이 설정은 고칠 수 없어요. 토론에 글로 적어 주세요.", Modifier.padding(24.dp))

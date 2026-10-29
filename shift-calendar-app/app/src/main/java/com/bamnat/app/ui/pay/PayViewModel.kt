@@ -104,7 +104,19 @@ class PayViewModel(
     val settings: StateFlow<com.bamnat.app.data.AppSettings> =
         scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
 
-    init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
+    init {
+        container.telemetry.event(DiagEvents.SCREEN, "pay")
+        // [J133-94] Also when the pay was there before the 광장 version went in: the card waits on the pay screen.
+        viewModelScope.launch { if (payStore.profile.value != null) offerFirstPay() }
+    }
+
+    /** [J133-85][J133-94] The card to be the first pay way of the 광장 version in use, once for each version. */
+    private suspend fun offerFirstPay() {
+        val company = container.companyOf(calendarId)
+        val applied = company.store.applied.value ?: return
+        if (company.payWays.way.value != null || com.bamnat.app.ui.company.FirstPayAsked.was(container.appContext, applied)) return
+        if (container.companyApi.enabled) _firstPay.value = com.bamnat.app.ui.company.firstPayOf(container, applied)
+    }
 
     val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = payStore.closed
 
@@ -153,10 +165,7 @@ class PayViewModel(
             com.bamnat.app.company.ShareAskGate.open(container.appContext)) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [J133-85] The calendar uses a company's shifts from the 광장 and that version has no pay way: the first one, offered.
-        val applied = company.store.applied.value
-        if (invite && applied != null && company.payWays.way.value == null && com.bamnat.app.company.ShareAskGate.open(container.appContext)) {
-            _firstPay.value = com.bamnat.app.ui.company.firstPayOf(container, applied)
-        }
+        if (invite) offerFirstPay()
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
         read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }

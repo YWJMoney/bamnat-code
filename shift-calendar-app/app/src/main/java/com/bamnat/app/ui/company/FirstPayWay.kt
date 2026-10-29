@@ -32,6 +32,21 @@ import com.bamnat.core.plaza.SetupEdit
  * in it (no amounts), so 올리기 is a single press. It goes as a proposal on that version, where coworkers say 맞아요.
  */
 
+/**
+ * [J133-94] 1.33 빌드 7 확인 (첫 설정의 '내 달력에만 쓸게요' 뒤로 첫 급여 방식 카드가 2주 동안 안 떠요): being a version's first pay way
+ * is not the share ask a no quiets ([com.bamnat.app.company.ShareAskGate], J133-17). It is offered once for each version, with its
+ * own 다음에, and that 다음에 still quiets the other asks.
+ */
+internal object FirstPayAsked {
+    private const val FILE = "first_pay_asked"
+
+    private fun key(a: AppliedSetup) = "${a.companyId}/${a.setup}"
+    private fun prefs(c: android.content.Context) = c.applicationContext.getSharedPreferences(FILE, android.content.Context.MODE_PRIVATE)
+
+    fun was(c: android.content.Context, a: AppliedSetup): Boolean = prefs(c).getBoolean(key(a), false)
+    fun mark(c: android.content.Context, a: AppliedSetup) = prefs(c).edit().putBoolean(key(a), true).apply()
+}
+
 /** The version the calendar uses, from the 광장, that has no pay way at all (not one hidden from this phone). */
 data class FirstPay(val applied: AppliedSetup, val text: String)
 
@@ -61,11 +76,15 @@ fun FirstPayCard(first: FirstPay, calendar: String, modifier: Modifier = Modifie
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { open = true }, modifier = Modifier.weight(1f)) { Text("보고 올리기") }
-                TextButton(onClick = { com.bamnat.app.company.ShareAskGate.declined(context); onClosed() }) { Text("다음에") }
+                TextButton(onClick = {
+                    FirstPayAsked.mark(context, first.applied)
+                    com.bamnat.app.company.ShareAskGate.declined(context)
+                    onClosed()
+                }) { Text("다음에") }
             }
         }
     }
-    if (open) FirstPaySheet(first, calendar, onDismiss = { open = false }, onSent = { open = false; onClosed() })
+    if (open) FirstPaySheet(first, calendar, onDismiss = { open = false }, onSent = { open = false; FirstPayAsked.mark(context, first.applied); onClosed() })
 }
 
 /** [J133-85] 다른 점 말하기 opened on the version with the user's pay way in it and the reason written: one press sends it. */

@@ -166,6 +166,9 @@ class CalendarScreenshotTest : ScreenshotBase() {
         val shots = listOf(
             Triple("23_widget_today", com.bamnat.app.widget.TodayWidget() as androidx.glance.appwidget.GlanceAppWidget, 180 to 150),
             Triple("24_widget_week", com.bamnat.app.widget.WeekWidget(), 340 to 110),
+            // [J133-96] Pixel 런처의 기본 4×1 (빌드 7: 약 105dp) and a taller one.
+            Triple("24b_widget_week_pixel_4x1", com.bamnat.app.widget.WeekWidget(), 330 to 105),
+            Triple("24c_widget_week_4x2", com.bamnat.app.widget.WeekWidget(), 330 to 170),
             Triple("25_widget_month", com.bamnat.app.widget.MonthWidget(), 340 to 330),
         )
         for ((name, widget, dims) in shots) {

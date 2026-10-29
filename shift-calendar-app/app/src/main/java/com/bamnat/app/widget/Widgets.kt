@@ -377,9 +377,13 @@ private fun WeekContent(data: WidgetData) {
     val days = CalendarGrid.week(CalendarGrid.weekStartOf(data.today, data.weekStart))
     // [J133-32] 순번 712 (1.32 실사용 테스트: 기본 4×1에서 근무 칩이 아래로 반쯤 잘렸어요): one cell high, no title and the day on one
     // line ("월 3"), so the mark fits.
-    val short = LocalSize.current.height < 100.dp
+    // [J133-96] 1.33 빌드 7 확인 (Pixel 런처의 4×1은 약 105dp 높이라 제목·요일·날짜·칩이 다 들어가지 않아 칩 아래가 잘렸어요): under
+    // 140dp the day stays on one line under the title; under 90dp the title goes too.
+    val height = LocalSize.current.height
+    val tiny = height < 90.dp
+    val short = height < 140.dp
     Column(GlanceModifier.fillMaxSize()) {
-        if (!short) Text(
+        if (!tiny) Text(
             when (data.focus) {
                 CalendarFocus.SHIFTS -> "이번 주 근무"
                 CalendarFocus.JOBS -> "이번 주 일감"
@@ -388,7 +392,7 @@ private fun WeekContent(data: WidgetData) {
             },
             style = small(GlanceTheme.colors.onSurfaceVariant),
         )
-        if (!short) Spacer(GlanceModifier.height(6.dp))
+        if (!tiny) Spacer(GlanceModifier.height(if (short) 4.dp else 6.dp))
         Row(GlanceModifier.fillMaxWidth()) {
             for (date in days) {
                 val day = data.day(date)
@@ -401,7 +405,7 @@ private fun WeekContent(data: WidgetData) {
                             maxLines = 1,
                         )
                         Spacer(GlanceModifier.height(2.dp))
-                        WeekMark(data, day, 20)
+                        WeekMark(data, day, if (tiny) 20 else 24)
                         return@Column
                     }
                     Text(

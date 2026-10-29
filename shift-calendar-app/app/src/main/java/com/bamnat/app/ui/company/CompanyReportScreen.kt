@@ -109,6 +109,13 @@ fun CompanyReportScreen(
     val public = vm.publicUse
     // [J133-84] 1.33 광장 급여 써 보기 ("급여 설정에서 고른 직종을 또 물어요"): the job the pay setup already has, picked to start.
     var job by rememberSaveable { mutableStateOf(payProfile?.occupation?.let(com.bamnat.core.pay.RateHint::jobOf).orEmpty()) }
+    // [J133-93] 1.33 빌드 7 확인 ("직종 칩 13개가 그대로"): the pay setup is read after the first frame, and 직접 설정 has no job of its
+    // own, so the job is filled once it is known (from the pay, else the calendar's kind of work) and shown as one line to change.
+    var jobTouched by rememberSaveable { mutableStateOf(false) }
+    val styleJob = remember(vm.calendar) { jobOfStyle(vm.styleOf()) }
+    LaunchedEffect(payProfile, styleJob) {
+        if (!jobTouched && job.isEmpty()) job = payProfile?.occupation?.let(com.bamnat.core.pay.RateHint::jobOf) ?: styleJob.orEmpty()
+    }
     var region by rememberSaveable { mutableStateOf("") }
     var topic by rememberSaveable { mutableStateOf(false) }
 
@@ -151,7 +158,8 @@ fun CompanyReportScreen(
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         // [PLZ-12][PLZ-13] Which plaza it goes to, and where; a hospital is a place like a company.
-                        PlazaPicker(job, region, topic, onJob = { job = it }, onRegion = { region = it }, onTopic = { topic = it })
+                        PlazaPicker(job, region, topic, onJob = { job = it; jobTouched = true }, onRegion = { region = it }, onTopic = { topic = it },
+                            known = !jobTouched && job.isNotEmpty())
                         if (!topic) OutlinedTextField(
                             value = company, onValueChange = { company = it.take(40) },
                             label = { Text(if (job == "nurse") "병원 이름" else "회사 이름") }, singleLine = true,
@@ -497,12 +505,22 @@ private fun SentCard(r: SentReport, status: ReportStatus?, looked: Boolean, onTa
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (String) -> Unit, onRegion: (String) -> Unit, onTopic: (Boolean) -> Unit) {
+private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (String) -> Unit, onRegion: (String) -> Unit, onTopic: (Boolean) -> Unit,
+    /** [J133-93] The job came from the pay setup or the calendar: one line with 바꾸기, the 13 chips only when asked for. */
+    known: Boolean = false) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            com.bamnat.app.company.Plaza.JOBS.forEach { (key, name) ->
-                com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
+        var choosing by rememberSaveable { mutableStateOf(false) }
+        if (known && !choosing) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("어떤 일: ${com.bamnat.app.company.Plaza.job(job)}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = { choosing = true }) { Text("바꾸기") }
+            }
+        } else {
+            Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.app.company.Plaza.JOBS.forEach { (key, name) ->
+                    com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
+                }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -532,4 +550,13 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
             }
         }
     }
+}
+
+/** [J133-93] The 광장 job a kind of work stands for, when the pay setup names none (직접 설정, or no pay yet). */
+internal fun jobOfStyle(style: com.bamnat.core.work.WorkStyle?): String? = when (style) {
+    com.bamnat.core.work.WorkStyle.SHIFT -> "shift"
+    com.bamnat.core.work.WorkStyle.HOURLY -> "hourly"
+    com.bamnat.core.work.WorkStyle.FIELD -> "field"
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "shop"
+    else -> null
 }
