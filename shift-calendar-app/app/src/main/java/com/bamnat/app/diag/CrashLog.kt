@@ -41,6 +41,8 @@ object CrashLog {
         val before = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching { write(app, thread.name, error, Today.millis()) }
+            // 1.32.1 [STAB-10] The stop on the 멈춤 관찰 trail too, with the memory then, written before the process ends.
+            runCatching { Trail.addNow(com.bamnat.core.diag.StopTrail.Kind.CRASH, "sig=${signature(error)} ${Trail.memoryNow()}") }
             runCatching { noticeOnce(app, signature(error), Today.millis()) }
             before?.uncaughtException(thread, error)
         }
@@ -61,6 +63,8 @@ object CrashLog {
         appendLine("app ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         appendLine("android ${Build.VERSION.SDK_INT} · ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLine("thread ${Telemetry.cleanDetail(thread)}")
+        // 1.32.1 [STAB-12] The memory when it stopped: an OutOfMemoryError on a Fold says how full the heap was.
+        appendLine("memory ${Trail.memoryNow()}")
         var cause: Throwable? = error
         val seen = HashSet<Throwable>()
         while (cause != null && seen.add(cause)) {
@@ -79,6 +83,7 @@ object CrashLog {
         notes(context).forEach { it.delete() }
         context.getSharedPreferences(NOTICE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
         MainStall.clear(context)
+        Trail.clear(context)
     }
 
     /**
@@ -155,7 +160,8 @@ object CrashLog {
             else -> "시작 실패"
         }
         val front = if (e.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) "화면에 있을 때" else "뒤에 있을 때"
-        val mem = "${e.pss / 1024}MB"
+        // 1.32.1 [STAB-12] Some phones leave pss at 0 ("0MB" in 1.32): rss then.
+        val mem = "${(if (e.pss > 0) e.pss else e.rss) / 1024}MB"
         val trace = if (e.reason == ApplicationExitInfo.REASON_ANR) runCatching {
             e.traceInputStream?.bufferedReader()?.useLines { lines ->
                 lines.dropWhile { !it.startsWith("\"main\"") }.drop(1).filter { it.trimStart().startsWith("at ") }
@@ -185,9 +191,11 @@ object CrashLog {
         val notification = NotificationCompat.Builder(context, Notifications.STATUS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("밤낮이 멈췄어요. 불편을 드려 죄송해요")
-            .setContentText(if (times > 1) "같은 곳에서 ${times}번 멈췄어요. 알람 점검에서 기록을 보내 주시면 바로 고칠게요"
-                else "알람 점검에서 무엇이 멈췄는지 보고, 원하면 보낼 수 있어요. 알람은 그대로 울려요")
-            .setContentIntent(Notifications.open(context, NoticeLinks.Target.ALARM_CHECK, 2104))
+            // 1.32.1 [STAB-13] (사용자 2026-10-29 "멈출 때마다 알람 멈춤이라고 뜨는데 실제로는 다른 원인 같아"): it opens a
+            // 앱 멈춤 문의 with the stop's record, not 알람 점검, so it is not read as an alarm problem.
+            .setContentText(if (times > 1) "같은 곳에서 ${times}번 멈췄어요. 눌러서 멈춤 기록을 보내 주시면 원인을 찾아 고칠게요"
+                else "눌러서 멈춤 기록을 보고, 원하면 문의로 보낼 수 있어요. 알람은 그대로 울려요")
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.STOP_REPORT, 2104))
             .setAutoCancel(true)
             .build()
         Notifications.post(context, NOTICE_ID, notification)

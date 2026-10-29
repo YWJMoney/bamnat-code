@@ -78,6 +78,12 @@
         "posted": "2026-10-29",
         "effective": "2026-11-28",
         "heldUntil": null
+      },
+      {
+        "version": "3.6",
+        "posted": "2026-10-30",
+        "effective": "2026-11-29",
+        "heldUntil": null
       }
     ],
     "serverTime": "2026-11-12T03:00:00.000Z"

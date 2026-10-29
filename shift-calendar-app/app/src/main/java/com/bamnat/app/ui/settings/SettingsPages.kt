@@ -262,7 +262,8 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         }
     }
     SectionCard(title = null) {
-        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
+        // 1.32.1 [STAB-13] It also holds 앱 멈춤 and 앱 멈춤 관찰, so it says so.
+        NavRow("알람 점검", "알람이 안 울리거나 늦을 때, 앱이 멈췄을 때 원인을 찾아요") { onOpenDiagnostics(false) }
     }
 }
 

@@ -108,6 +108,18 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
     /** [NXT-12] The same report without the dark-merge rows, for what leaves the phone with an inquiry. */
     fun withoutFlags(): DiagReport = copy(sections = sections.filter { it.first != OLD_FLAG_SECTION })
 
+    /** 1.32.1 [STAB-10] Without the 멈춤 관찰 기록, for an inquiry before 처리방침 3.6 lists it (flag `diag.observe` off). */
+    fun withoutObserve(): DiagReport = copy(sections = sections.filter { it.first != STOP_TRAIL_SECTION })
+
+    /**
+     * 1.32.1 [STAB-14] 앱 멈춤 and 멈춤 관찰 first, for an inquiry about the app stopping: what the server cuts at
+     * [com.bamnat.app.company.InquiryClient.DIAG_MAX] is then the alarm part, and the server reads it as 앱 동작.
+     */
+    fun stopFirst(): DiagReport {
+        val first = sections.filter { it.first == STOP_SECTION || it.first == STOP_TRAIL_SECTION }
+        return copy(sections = first + (sections - first.toSet()))
+    }
+
     companion object {
         /** S 1.32 [SECX-02] 1.28~1.31's 기능 상태 section; never written now, dropped if an old text holds it. */
         const val OLD_FLAG_SECTION = "기능 상태"
@@ -118,6 +130,10 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
 const val USAGE_SECTION = "최근 30일 사용량"
 const val EVENTS_SECTION = "최근 이벤트"
 const val SENT_RECORDS = "문의할 때 함께 보내는 기록"
+/** [MEAS-08] What stopped; 1.32.1 [STAB-14] the server reads a 점검 기록 that starts with it as 앱 동작, not 알람. */
+const val STOP_SECTION = "앱 멈춤"
+/** 1.32.1 [STAB-10] 멈춤 관찰 기록: the phone's screen and the app's memory before a stop ([com.bamnat.app.diag.Trail]). */
+const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
 
 class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     val upcoming = container.alarmScheduler.upcoming
@@ -236,11 +252,14 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     // [STAB-01] The log waits for queued writes and reads the whole file, so never on the main thread.
     suspend fun events(): List<DiagEvent> = withContext(Dispatchers.IO) {
         crashLines = CrashLog.reportLines(container.appContext)
+        trailLines = com.bamnat.app.diag.Trail.lines(container.appContext)
         container.telemetry.log.read()
     }
 
     /** [MEAS-08] Read with the log, off the main thread; [report] shows them. */
     @Volatile private var crashLines: List<String>? = null
+    /** 1.32.1 [STAB-10] Read with the log, off the main thread. */
+    @Volatile private var trailLines: List<com.bamnat.core.diag.StopTrail.Line>? = null
     fun clearLog(then: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -308,6 +327,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         val recent = events.takeLast(RECENT).asReversed().map { "${stamp(it.atMillis)}  ${it.name}  ${readable(it.detail)}" }
             .ifEmpty { listOf("기록 없음") }
         val crashes = crashLines ?: listOf("기록 없음")
+        // 1.32.1 [STAB-10] A summary, then the newest lines first, in words.
+        val trail = trailLines.orEmpty().let { t ->
+            com.bamnat.core.diag.StopTrail.summary(t) + if (t.isEmpty()) emptyList() else listOf("최근 기록(새것부터):") +
+                t.takeLast(com.bamnat.core.diag.StopTrail.REPORT_LINES).asReversed().map { "  " + com.bamnat.core.diag.StopTrail.readable(it, Today.zone()) }
+        }
         return DiagReport(
             listOf(
                 "알람 상태" to alarm,
@@ -315,7 +339,8 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
                 "기기" to device,
                 USAGE_SECTION to usage,
                 // [MEAS-08] 328: the person sees what stopped before "점검 내용과 함께 문의하기" sends it.
-                "앱 멈춤" to crashes,
+                STOP_SECTION to crashes,
+                STOP_TRAIL_SECTION to trail,
                 "$EVENTS_SECTION ${minOf(events.size, RECENT)}개" to recent,
                 // S 1.32 [SECX-02] No 기능 상태 (flag rows, conditions, 관리자 미리 보기) any more: not on the screen, not in a report.
             ),

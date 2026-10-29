@@ -125,9 +125,14 @@ fun GrowSettingsCard(modifier: Modifier = Modifier) {
 /** AG 1.27 [INVITE-12] What a 문의 is for, said where it is offered. */
 const val FEEDBACK_WORDS = "버그·오류·불편한 점·바라는 점을 남겨 주세요. 개발자가 직접 읽고 답을 드리고, 고친 것은 새 판 소식에 적어요."
 
+/** 1.32.1 [STAB-13] What a 문의 about the app freezing or closing starts with; its 점검 기록 puts 앱 멈춤 first. */
+const val STOP_ABOUT = "앱이 멈췄어요"
+
 /**
  * AG 1.27 [INVITE-12] On the calendar after the app stopped by itself (diag/CrashLog kept a note): one card asking
  * what happened, opening a 문의 with the check attached (the note leaves the phone only then, as before), once a note.
+ * 1.32.1 [STAB-13] Also after the app was seen frozen (멈춤 관찰: it ended while not answering, or the screen was not
+ * drawn again), which no crash note catches.
  */
 @Composable
 fun CrashAskNotice(modifier: Modifier = Modifier) {
@@ -135,23 +140,31 @@ fun CrashAskNotice(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val grow by c.grow.state.collectAsStateWithLifecycle()
     var last by remember { mutableLongStateOf(0L) }
+    var frozen by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        last = withContext(Dispatchers.IO) {
-            CrashLog.notes(context).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
+        val (crashAt, stuckAt) = withContext(Dispatchers.IO) {
+            val crash = CrashLog.notes(context).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
+            val lines = com.bamnat.app.diag.Trail.lines(context)
+            val stuck = (com.bamnat.core.diag.StopTrail.stuckEnds(lines) + lines.filter { it.kind == com.bamnat.core.diag.StopTrail.Kind.NO_DRAW })
+                .maxOfOrNull { it.atMillis } ?: 0L
+            crash to stuck
         }
+        frozen = stuckAt > crashAt
+        last = maxOf(crashAt, stuckAt)
     }
     if (!GrowNudges.crash(grow, last, Today.millis())) return
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("앱이 갑자기 닫혔어요", style = MaterialTheme.typography.titleMedium)
-            Text("어떤 화면에서 무엇을 하다 그랬는지 알려 주시면 고칠게요. 보내기 전에 점검 내용을 보고 고를 수 있어요.",
+            Text(if (frozen) "앱이 멈춰 있던 적이 있어요" else "앱이 갑자기 닫혔어요", style = MaterialTheme.typography.titleMedium)
+            Text(if (frozen) "화면이 움직이지 않았던 때의 기록이 남아 있어요. 그때 무엇을 하고 있었는지 알려 주시면 원인을 찾아 고칠게요. 보내기 전에 기록을 보고 고를 수 있어요."
+                else "어떤 화면에서 무엇을 하다 그랬는지 알려 주시면 고칠게요. 보내기 전에 점검 내용을 보고 고를 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             @OptIn(ExperimentalLayoutApi::class)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = {
                     c.grow.crashSeen(last)
-                    GrowAsk.feedback("앱이 갑자기 닫힘", kind = InquiryKind.BUG, withCheck = true)
-                }) { Text("점검 내용과 함께 알려 주기") }
+                    GrowAsk.feedback(if (frozen) STOP_ABOUT else "앱이 갑자기 닫힘", kind = InquiryKind.BUG, withCheck = true)
+                }) { Text("멈춤 기록과 함께 알려 주기") }
                 TextButton(onClick = { c.grow.crashSeen(last) }) { Text("괜찮아요") }
             }
         }

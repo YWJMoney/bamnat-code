@@ -206,9 +206,13 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
      * The alarm check as the 알람 점검 screen copies it, cut to what the server takes. [NXT-12] 1.29: without the
      * '기능 상태' rows, which 처리방침 3.2 §1-3 does not list for an inquiry (the screen and its own copy keep them).
      */
-    suspend fun alarmCheck(context: Context): String = withContext(Dispatchers.IO) {
+    suspend fun alarmCheck(context: Context, stop: Boolean = false): String = withContext(Dispatchers.IO) {
         val diag = DiagnosticsViewModel(c)
-        diag.report(context, diag.events()).withoutFlags().asText().take(InquiryClient.DIAG_MAX)
+        var report = diag.report(context, diag.events()).withoutFlags()
+        // 1.32.1 [STAB-10] 멈춤 관찰 기록 only once 처리방침 3.6 lists it; [STAB-14] a stop's inquiry starts with the stop.
+        if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.DIAG_OBSERVE)) report = report.withoutObserve()
+        if (stop) report = report.stopFirst()
+        report.asText().take(InquiryClient.DIAG_MAX)
     }
 
     /** Why [text] cannot go yet, in words; null when it can. */

@@ -25,6 +25,8 @@ object FlagCatalog {
     const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
     /** [STAT-08] 1.31 N4: how long lookups took (정해진 구간 값만), sent with 사용 통계 once 처리방침 3.5 names it. */
     const val STATS_LOOKUP = "stats.lookup"
+    /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
+    const val DIAG_OBSERVE = "diag.observe"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -180,6 +182,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.31.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.32.1 [STAB-10] (사용자 2026-10-29 "멈춘 상태를 어플이 인지해서 문의로 보고하면 해결할 수 있게"): the 멈춤 관찰 기록
+     * (화면 꺼짐·켜짐·잠금 풀림 시각, 앱 앞·뒤, 화면 크기, 메모리 수치, 화면 멈춤·안 그려짐) goes in an inquiry's 점검 기록 only
+     * from 처리방침 3.6's date, and only when the person ticks 점검 기록 and sends. The phone keeps it from 1.32.1 on.
+     */
+    val DIAG_OBSERVE_FLAG = Flag(
+        DIAG_OBSERVE, "문의에 멈춤 관찰 기록 붙이기",
+        what = "문의할 때 ‘점검 기록도 보내기’를 고르면, 앱이 멈추기 전 3일 동안의 화면 꺼짐·켜짐·잠금 풀림 시각, 앱이 앞·뒤로 간 때, 화면 크기, 앱이 쓴 메모리, 화면이 멈추거나 그려지지 않은 때도 함께 보내요. 적은 글·금액·메모는 들어가지 않아요.",
+        whyOff = "처리방침 3.6(1-3항)이 시행된 날부터 저절로 켜져요. 그 전에는 이 기록을 휴대폰 안(알람 › 알람 점검 › 앱 멈춤 관찰)에만 두고 문의에는 앱 멈춤 기록만 가요.",
+        basis = Basis(policy = "3.6 1-3항", decision = "D104", requirement = "STAB-10", note = "1.32.1 멈춤 관측"),
+        conditions = listOf(Condition.Date(policy = "3.6")),
+        default = false, risk = Risk.LEGAL, since = "1.32.1", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -191,7 +207,8 @@ object FlagCatalog {
         )
     }
 
-    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG) +
+    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
+        DIAG_OBSERVE_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

@@ -10,6 +10,13 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.32.1 (docs/plans/1.32.1-멈춤관측.md, 사용자 2026-10-29 멈춤 관측).
+        Release(44, "1.32.1", listOf(
+            // [STAB-10][STAB-11][STAB-12]
+            Line("앱이 멈추거나 화면이 움직이지 않으면 그때 상황을 휴대폰에 기록해 두고, 다음에 달력에서 알려 줄지 여쭤봐요"),
+            // [STAB-13][STAB-14]
+            Line("앱이 멈췄다는 알림을 누르면 ‘알람 점검’ 대신 앱 멈춤 문의가 열려요. 알람은 그대로 울려요"),
+        )),
         // 1.32.0 (계획/1.32-개발계획.md, 사용성 조사; S 보안 has no line: what went is not for users).
         Release(43, "1.32.0", listOf(
             // [UX132-05][UX132-06]

@@ -323,4 +323,25 @@ class LegalPagesTest {
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.5" })
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Consent && it.key == "usage.stats.lookup" })
     }
+    /**
+     * 1.32.1 [STAB-10] 3.6: the `diag.observe` flag waits for 3.6's date, which is the page's date, and the page says what
+     * the 멈춤 관찰 기록 holds, that it goes only with a ticked 점검 기록, and what never goes.
+     */
+    @Test fun policy36NamesTheStopTrailAndItsDates() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.6")!!
+        assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29) && v.heldUntil == null)
+        assertTrue(text.contains("처리방침 3.6 · 앱 버전 1.32.1 기준 · 게시일 2026년 10월 30일 · 시행일 2026년 11월 29일"))
+        assertTrue("3.6 is the newest version line", text.indexOf("처리방침 3.6 ·") < text.indexOf("처리방침 3.5 ·"))
+        assertTrue(text.contains("멈춤 관찰 기록"))
+        assertTrue(text.contains("‘점검 기록도 보내기’"))
+        assertTrue(text.contains("적은 글, 금액, 메모, 위치는 들어가지 않으며"))
+        assertTrue(text.contains("${com.bamnat.core.diag.StopTrail.KEEP_DAYS}일, 최대 ${com.bamnat.core.diag.StopTrail.KEEP_LINES}줄"))
+        val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.DIAG_OBSERVE)!!
+        assertTrue(flag.basis.policy.orEmpty().startsWith("3.6 1-3항"))
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.6" })
+        assertFalse(flag.default)
+    }
 }

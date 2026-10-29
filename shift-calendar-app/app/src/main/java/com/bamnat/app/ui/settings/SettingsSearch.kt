@@ -163,6 +163,8 @@ internal object SettingsIndex {
         row(A, WATCH_ALARM_ROW, "워치", "워치 알람", "시계 진동", "Wear OS", "워치 진동"), // [WEAR-06] 1.31
         row(A, PHOTO_ROW, "증명 사진", "사진 미션", "사진 찍어 끄기", "욕실 거울", "기준 사진"), // [ALRM-04] O 1.23 (L)
         screen(A.title, "알람 점검", SettingsGo.DIAGNOSTICS, "알람이 안 울려요", "늦게 울려요", "원인", "진단", "점검"),
+        // 1.32.1 [STAB-13] 앱 멈춤 기록 and 멈춤 관찰 are found by what people say when the app froze.
+        screen(A.title, "앱 멈춤 기록", SettingsGo.DIAGNOSTICS, "멈춤", "멈췄어요", "화면 멈춤", "앱이 닫혀요", "튕겨요", "렉", "먹통", "잠금 풀면 멈춤"),
         row(N, "오늘의 흐름 보기", "잘 시간", "수면 제안", "카페인", "낮잠", "오늘 카드"),
         row(N, "목표 수면 시간", "잠", "수면 목표"),
         row(N, "퇴근 후 잠들기까지", "출퇴근", "씻는 시간", "퇴근"),

@@ -264,7 +264,7 @@ class AGScreenshotTest : ScreenshotBase() {
         tab(1, wide = false); tab(0, wide = false)
         if (!shows("앱이 갑자기 닫혔어요")) tapText("알림 ", prefix = true, scrolls = 0)
         reveal("앱이 갑자기 닫혔어요")
-        tapText("점검 내용과 함께 알려 주기")
+        tapText("멈춤 기록과 함께 알려 주기")
         assertTrue(c.grow.current.crashSeenAt > 0)
         com.bamnat.app.diag.CrashLog.clear(app)
     })

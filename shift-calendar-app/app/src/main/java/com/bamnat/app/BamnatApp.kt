@@ -49,6 +49,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         StartupTrace.begin()
         super.onCreate()
         CrashLog.install(this)
+        // 1.32.1 [STAB-10] 멈춤 관찰 기록: the screen, the memory and how the app ended last time.
+        com.bamnat.app.diag.Trail.install(this)
         // [QA130-01] Only the context; whether this is a Play pre-launch robot is read at the first server request.
         com.bamnat.app.diag.TestLab.attach(this)
         watchMainThread()
