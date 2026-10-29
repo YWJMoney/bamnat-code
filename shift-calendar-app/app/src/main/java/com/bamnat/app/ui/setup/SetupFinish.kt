@@ -221,7 +221,8 @@ private fun SummaryCard(title: String, text: String, onFix: () -> Unit, extra: (
 }
 
 private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList {
-    if (d.companyName.isNotBlank()) add(d.companyName.trim())
+    // [J133-26] Said once: the name is the company picked, so its line says it already.
+    if (d.companyName.isNotBlank() && (source == null || source.kind == SetupSource.Kind.TEMPLATE || source.name.trim() != d.companyName.trim())) add(d.companyName.trim())
     when (source?.kind) {
         SetupSource.Kind.TEMPLATE -> add("${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
         SetupSource.Kind.SERVER -> add("같은 회사 설정: ${source.name}${source.dept.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}")

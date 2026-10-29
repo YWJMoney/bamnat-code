@@ -176,7 +176,8 @@ class BackupManager(
                     // [SHOP-01][SHOP-02][SHOP-03] Version 17.
                     .put("card", d.card).put("cash", d.cash).put("transfer", d.transfer).put("delivery", d.delivery)
                     .putOpt("counted", d.cashCounted).put("settled", d.cardSettled)
-                    .putOpt("cashReceipt", d.cashReceipt.takeIf { it > 0 })) // [TAXP-14] Version 22.
+                    .putOpt("cashReceipt", d.cashReceipt.takeIf { it > 0 }) // [TAXP-14] Version 22.
+                    .putOpt("costsProven", d.costsProven.takeIf { it > 0 })) // [J133-29] Version 23.
             }
         })
         // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
@@ -777,6 +778,7 @@ class BackupManager(
                 card = o.optLong("card"), cash = o.optLong("cash"), transfer = o.optLong("transfer"), delivery = o.optLong("delivery"),
                 cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
                 cashReceipt = o.optLong("cashReceipt").coerceAtLeast(0),
+                costsProven = o.optLong("costsProven").coerceAtLeast(0),
             )
         }
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)

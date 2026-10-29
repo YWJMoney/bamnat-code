@@ -348,7 +348,10 @@ class SetupViewModel(
         // [PLAZA-01] A company whose file says its roster comes every month is painted, not repeated.
         val monthly = roster ?: shared.roster.takeIf { it && current.style == WorkStyle.SHIFT }
         val base = monthly?.let { current.copy(rosterMonthly = it) } ?: current
-        val d = base.withShared(source.copy(team = null, anchor = null), shared.types, shared.order, shared.weekly)
+        val d = base.withShared(source.copy(team = null, anchor = null), shared.types, shared.order, shared.weekly).let { d ->
+            // [J133-26] 1.33 (실사용 테스트 "회사 이름이 고른 회사 대신 검색어('현대')로 저장돼요"): the company picked is its name.
+            if (source.kind != SetupSource.Kind.TEMPLATE && source.name.isNotBlank()) d.copy(companyName = source.name.take(40)) else d
+        }
         // New shifts are a new setup from here on, not a fix of one answer.
         _fixing.value = false
         store.save(d.copy(step = d.steps.dropWhile { it != SetupStep.COMPANY }.getOrElse(1) { SetupStep.SUMMARY }))

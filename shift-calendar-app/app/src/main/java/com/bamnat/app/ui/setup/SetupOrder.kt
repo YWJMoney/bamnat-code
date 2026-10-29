@@ -264,7 +264,8 @@ private fun WeekDays(d: SetupDraft, onSet: (Int, Long?) -> Unit) {
                         .clip(CircleShape)
                         .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
                         .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
-                        .semantics { contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${t.name}" },
+                        // [J133-39] 순번 719: an off day reads as 쉼, not as the shift it would be.
+                        .semantics { contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${if (on) t.name else "쉼"}" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

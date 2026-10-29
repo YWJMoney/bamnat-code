@@ -105,8 +105,11 @@ object CoverFinder {
                 today != null -> Verdict.ALSO_WORKS to "그날 ${today.name}도 해요(연달아 근무)"
                 else -> Verdict.CAN to (if (restBefore == null) "앞뒤로 근무가 없어요" else "${hours(restBefore)} 쉬고 와요")
             }
+            // [J133-57] 1.33 (직접 써 보기): a team with its own shift that day says that first; "어제 야간 뒤 0시간" alone read
+            // as if only the rest were short.
+            val told = if (today != null && verdict == Verdict.SHORT_REST) "그날 ${today.name} 근무가 있어요 · $reason" else reason
             // The team on my shift yesterday is who people think of first; say so whatever the verdict.
-            val why = if (same) "어제 같은 근무(${mine.name})를 한 조 · $reason" else reason
+            val why = if (same) "어제 같은 근무(${mine.name})를 한 조 · $told" else told
             Option(team, yesterday, today, tomorrow, verdict, restBefore, restAfter, same, why)
         }
         val sorted = options.sortedWith(

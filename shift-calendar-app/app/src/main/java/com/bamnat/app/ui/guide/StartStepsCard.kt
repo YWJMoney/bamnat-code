@@ -51,13 +51,15 @@ object StartStepsState {
     fun companyPicked(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_COMPANY, true).apply()
 
     /** Today's rows for this phone, or null for no card. [hasShifts]: the calendar on screen has days. */
-    fun rows(c: AppContainer, hasShifts: Boolean): List<StartSteps.Row>? {
+    fun rows(c: AppContainer, hasShifts: Boolean, style: WorkStyle? = c.settingsRepository.current.workStyle): List<StartSteps.Row>? {
         val s = c.settingsRepository.current
-        val companyApplies = c.companyApi.enabled && s.workStyle != WorkStyle.INVEST && s.workStyle != WorkStyle.BUSINESS
+        // [J133-26] 1.33 (실사용 테스트 "식당·현장 달력에 '근무 넣기'·'우리 회사 고르기'"): steps of the calendar on screen's own work.
+        val companyApplies = c.companyApi.enabled && style != WorkStyle.INVEST && style != WorkStyle.BUSINESS && style != WorkStyle.FIELD
+        val ownDays = style == WorkStyle.INVEST || style == WorkStyle.BUSINESS || style == WorkStyle.FIELD
         val store = c.companyStore
         return StartSteps.rows(
             installed = c.installedAt?.atZone(Today.zone())?.toLocalDate(), today = Today.date(), dismissed = dismissed(c),
-            alarmsOn = s.alarmsEnabled, hasShifts = hasShifts,
+            alarmsOn = s.alarmsEnabled, hasShifts = hasShifts || ownDays,
             companyLinked = store.applied.value != null || store.member.value != null ||
                 c.appContext.getSharedPreferences(FILE, 0).getBoolean(K_COMPANY, false), companyApplies = companyApplies,
         )

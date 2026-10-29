@@ -157,7 +157,8 @@ object VatEstimate {
         val s = sales.filter { inHalf(it.date) }
         val spent = entries.filter { inHalf(it.date) && it.kind == MoneyKind.EXPENSE }
         val total = s.sumOf { it.sales }
-        val proven = spent.filter { it.proof in DEDUCTIBLE }.sumOf { it.amount }
+        // [J133-29] 1.33: a day's costs marked as proven at 하루 마감 count too.
+        val proven = spent.filter { it.proof in DEDUCTIBLE }.sumOf { it.amount } + s.sumOf { it.costsProven.coerceIn(0, it.costs.coerceAtLeast(0)) }
         val exempt = rules.simpleTax && total < SIMPLE_EXEMPT
         val vat = if (exempt) 0 else if (rules.simpleTax) total * rules.valueAddedPercent.coerceIn(0, 100) / 1_000
         else ((total - proven).coerceAtLeast(0)) * 10 / 110

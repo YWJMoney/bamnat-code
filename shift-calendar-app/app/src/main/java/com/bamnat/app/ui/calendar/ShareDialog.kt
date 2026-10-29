@@ -152,11 +152,14 @@ fun ShareDialog(
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
         )
     }
-    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen(), calendarId, feed)
+    // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
+    // further ahead is on screen.
+    val linkMonth = YearMonth.from(Today.date()).let { now -> if (month.isAfter(now.plusMonths(1))) month else now }
+    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, linkMonth.atDay(1), title, ttlDays, chosen(), calendarId, feed)
     /** [SHR-12] Keeps what was sent, so the automatic update sends only what changes after it. */
     fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
         store.saveOptions(chosen()); saved = chosen()
-        store.save(made.copy(from = month), ShareLinkPayload.fingerprint(sent))
+        store.save(made.copy(from = linkMonth), ShareLinkPayload.fingerprint(sent))
         store.sendResult(Today.instant())
     }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
@@ -222,7 +225,7 @@ fun ShareDialog(
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
             Text(
-                "받는 사람은 ${month.monthValue}월부터 3개월 근무표를 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 근무표를 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
@@ -357,9 +360,19 @@ fun ShareDialog(
                     else Text("오늘부터 ${ShareLinkPayload.ttlLabel(ttl)} 열어 두기")
                     if (extraLocked) { Spacer(Modifier.width(8.dp)); com.bamnat.app.ui.money.ProPill() }
                 }
-                TextButton(enabled = !busy, onClick = {
-                    run { client.delete(current); store.clear() }
-                }, modifier = Modifier.fillMaxWidth()) { Text(if (slot > 1) "이 링크 끊기" else "링크 끊기", color = MaterialTheme.colorScheme.error) }
+                // [J133-30] Cutting it takes the schedule away from everyone who has the link: asked once.
+                var cutting by remember { mutableStateOf(false) }
+                if (cutting) androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { cutting = false },
+                    title = { Text("링크를 끊을까요?") },
+                    text = { Text("받은 사람 앱과 브라우저에서도 이 근무표가 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },
+                    confirmButton = { TextButton(onClick = { cutting = false; run { client.delete(current); store.clear() } }) {
+                        Text("끊기", color = MaterialTheme.colorScheme.error) } },
+                    dismissButton = { TextButton(onClick = { cutting = false }) { Text("취소") } },
+                )
+                TextButton(enabled = !busy, onClick = { cutting = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (slot > 1) "이 링크 끊기" else "링크 끊기", color = MaterialTheme.colorScheme.error)
+                }
             }
             error?.let { why ->
                 Text(why, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

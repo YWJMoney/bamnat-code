@@ -138,7 +138,10 @@ fun PayQuickSetup(
     val payFind = com.bamnat.app.ui.company.rememberPayFindState(usingStep = initial != null)
     var holiday by remember { mutableStateOf(initial?.rules?.holidayWork) }
     // [J133-01] 1.33 (보고서 A3, 사용자 승인 2026-10-29): the tax way on the last page, 4대보험·소득세 picked unless set before.
-    var tax by remember { mutableStateOf(initial?.takeIf { it.taxKnown }?.taxMode ?: com.bamnat.core.pay.TaxMode.INSURANCE_4) }
+    // [J133-59] 1.33 (중간 빌드 확인): a part-timer starts on 떼지 않음 (주 15시간·월 60시간 미만은 4대보험을 떼지 않는 곳이 많아요)
+    // until the user picks; a pick stays whatever form comes next.
+    var taxPicked by remember { mutableStateOf(initial?.takeIf { it.taxKnown }?.taxMode) }
+    val tax = taxPicked ?: if (form?.wageType == WageType.HOURLY) com.bamnat.core.pay.TaxMode.NONE else com.bamnat.core.pay.TaxMode.INSURANCE_4
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
     var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
     // [PAYF-07] Opened from a public cycle just put in, the company was already looked up (CompanyPayOffer asked "급여 계산
@@ -158,7 +161,9 @@ fun PayQuickSetup(
             .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
-    val draft = draftOf(form, amount, holiday)?.copy(taxMode = tax, taxChosen = true)
+    // [J133-60] 1.33 (중간 빌드 확인: 가계부 '남은 돈'이 세전으로 셈해졌어요): a new setup counts the pay in the 가계부 as what reaches
+    // the account on the pay day; one set up before keeps its pick (가계부 수입 내역의 '그달 일한 세전·지급일 실수령').
+    val draft = draftOf(form, amount, holiday)?.copy(taxMode = tax, taxChosen = true, ledgerTakeHome = initial?.ledgerTakeHome ?: true)
         ?.let { p -> if (form?.wageType == WageType.HOURLY) p.copy(fiveOrMoreEmployees = fiveOrMore ?: false) else p }
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
@@ -280,7 +285,7 @@ fun PayQuickSetup(
                             fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, h) }
                         })
                     } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
-                        onDetailed = { onDetailed(p) }, onTax = { tax = it })
+                        onDetailed = { onDetailed(p) }, onTax = { taxPicked = it })
                 }
             }
         }
@@ -411,7 +416,9 @@ private fun ConfirmPage(
     }
     Text("월급에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
     com.bamnat.app.tax.TaxWayChips(p.taxMode, onPick = onTax)
-    Text("대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 근무·급여에서 바꿀 수 있어요.",
+    Text(if (p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE)
+        "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 근무·급여에서도 바꿀 수 있어요."
+        else "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 근무·급여에서 바꿀 수 있어요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedButton(onClick = onSlip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("명세서·회사 계산 방법 사진으로 맞추기")

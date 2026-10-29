@@ -48,8 +48,20 @@ import com.bamnat.core.time.Today
  */
 @Composable
 internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, calendarId: String? = null) {
-    if (profile.taxMode != TaxMode.INSURANCE_4) return
     val c = LocalContext.current.appContainer
+    // [J133-31] 1.33 (실사용 테스트 "안내는 '연말정산은 도구에'인데 도구에 없어요"): the card is always here; a pay without
+    // 4대보험 says why it cannot be worked out, with the way to change it.
+    if (profile.taxMode != TaxMode.INSURANCE_4) {
+        val scope = rememberCoroutineScope()
+        SectionCard(title = "${month.year}년 연말정산 미리보기") {
+            Text("연말정산은 4대보험과 소득세를 떼는 월급에서 미리 볼 수 있어요. 지금 세금 방식은 ‘${profile.taxMode.label}’이에요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (calendarId != null) TextButton(onClick = { scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, TaxMode.INSURANCE_4) } }) {
+                Text("4대보험으로 바꾸기")
+            }
+        }
+        return
+    }
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val pro = gate.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)
     val tax = remember(calendarId) { calendarId?.let(c::tax) }

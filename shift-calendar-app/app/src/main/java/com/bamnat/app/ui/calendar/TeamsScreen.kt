@@ -244,7 +244,8 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
                             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                             shadowElevation = 6.dp,
-                            modifier = Modifier.fillMaxWidth().heightIn(max = panelMax),
+                            // [J133-58] 1.33 (중간 빌드 확인): a sideways swipe anywhere on the panel steps the day, not only on its title.
+                            modifier = Modifier.fillMaxWidth().heightIn(max = panelMax).daySwipe(day) { step -> picked = day.plusDays(step.toLong()) },
                         ) {
                             Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
                                 CoverPanel(day, roster, rotation, snap, restMinutes, vm::setRest, onClose = { picked = null },
@@ -417,8 +418,12 @@ private fun TeamTable(
     LaunchedEffect(picked) {
         val i = picked?.let { days.indexOf(it) } ?: -1
         if (i < 0) return@LaunchedEffect
-        val seen = list.layoutInfo.visibleItemsInfo
-        if (seen.none { it.index == i } || seen.lastOrNull()?.index == i) list.animateScrollToItem((i - 2).coerceAtLeast(0))
+        // [J133-58] 1.33 (중간 빌드 확인): a row only partly above the panel counts as hidden too.
+        val info = list.layoutInfo
+        val row = info.visibleItemsInfo.firstOrNull { it.index == i }
+        if (row == null || row.offset < info.viewportStartOffset || row.offset + row.size > info.viewportEndOffset) {
+            list.animateScrollToItem((i - 2).coerceAtLeast(0))
+        }
     }
     val mineTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -509,12 +514,7 @@ internal fun CoverPanel(
             if (onStep != null) IconButton(onClick = { onStep(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "전날") }
             Text("$label 대근 찾기", style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f).semantics { heading() }.then(
-                    if (onStep == null) Modifier else Modifier.pointerInput(day) {
-                        var dx = 0f
-                        detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = {
-                            if (dx < -60f) onStep(1) else if (dx > 60f) onStep(-1)
-                        }) { _, amount -> dx += amount }
-                    },
+                    if (onStep == null) Modifier else Modifier.daySwipe(day, onStep),
                 ))
             if (onStep != null) IconButton(onClick = { onStep(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 날") }
             TextButton(onClick = onClose) { Text("닫기") }
@@ -595,6 +595,14 @@ internal fun CoverPanel(
             }
         }
     }
+}
+
+/** [J133-46] A sideways swipe: left for the next day, right for the day before. */
+private fun Modifier.daySwipe(day: LocalDate, onStep: (Int) -> Unit): Modifier = pointerInput(day) {
+    var dx = 0f
+    detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = {
+        if (dx < -60f) onStep(1) else if (dx > 60f) onStep(-1)
+    }) { _, amount -> dx += amount }
 }
 
 @Composable

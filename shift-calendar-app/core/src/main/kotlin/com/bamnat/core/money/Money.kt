@@ -165,6 +165,8 @@ data class DailySales(
     val cardSettled: Boolean = false,
     /** 1.32 [TAXP-14] Of [cash], how much a 현금영수증 was issued for (현금영수증 발행 확인). */
     val cashReceipt: Long = 0,
+    /** 1.33 [J133-29] Of [costs], how much came with a proof that carries VAT (세금계산서·카드·현금영수증). */
+    val costsProven: Long = 0,
 ) {
     val net: Long get() = sales - costs
     /** [SHOP-01] Sales written by how they were paid. */

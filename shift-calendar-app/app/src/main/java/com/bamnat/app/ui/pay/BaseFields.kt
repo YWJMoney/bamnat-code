@@ -74,6 +74,15 @@ internal fun BaseFields(
                 else "${wage.baseName()}만 넣으면 이번 달 예상 급여가 바로 보여요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // [J133-28] 1.33 (실사용 테스트 "시급 화면에 최저시급 안내가 없어요"): this year's minimum, and a word when the 시급 is under it.
+        if (wage == WageType.HOURLY) {
+            val minimum = com.bamnat.core.pay.RateTable.on(com.bamnat.core.time.Today.date()).minimumHourlyWage
+            val under = base != null && base > 0 && base < minimum
+            Text(if (under) "${com.bamnat.core.time.Today.date().year}년 최저시급 ${won(minimum)}보다 적어요. 계약서를 한 번 더 봐 주세요."
+                else "${com.bamnat.core.time.Today.date().year}년 최저시급은 ${won(minimum)}이에요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (under) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (wage != WageType.MONTHLY) return@Column
         val company = companyHours?.takeIf { it in BaseAsk.HOURS_RANGE }
         // [PAYG-08] The company's hours are shown, not folded away: they are what the pay is counted on.

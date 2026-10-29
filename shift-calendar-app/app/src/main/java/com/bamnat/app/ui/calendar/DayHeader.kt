@@ -523,7 +523,12 @@ private fun QuickChips(
                     if (i < 0 && covered != null && day.isWorkDay && day.shiftType != null && day.shiftType?.id != covered) coverAsk = c
                     else vm.toggleExtra(day, c)
                 },
-                label = { ChipText(if (i >= 0) ExtraText.name(day.extras[i]) else c.label) },
+                label = {
+                    // [J133-27] 1.33 (실사용 테스트 "직장인 말은 '야근'인데 칩은 '잔업'"): a weekday worker's own word for it.
+                    val text = if (i >= 0) ExtraText.name(day.extras[i]) else c.label
+                    ChipText(if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && c.kind.id == com.bamnat.core.model.ExtraKind.OVERTIME_ID)
+                        text.replace("잔업", "야근") else text)
+                },
                 leadingIcon = {
                     if (i >= 0) Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) else ExtraKindMark(c.kind, size = 18.dp)
                 },

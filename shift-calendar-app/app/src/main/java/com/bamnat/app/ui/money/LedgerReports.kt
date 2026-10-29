@@ -135,7 +135,10 @@ fun LedgerReportsPane(
 private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
     SectionCard(title = "${m.month.monthValue}월 한눈에") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("들어온 돈", Fmt.won(m.income), Modifier.weight(1f), caption = changeText(m.income, r.previousIncome, "많이", "적게")?.let { "지난달보다 $it" })
+            // [J133-62] 1.33 (중간 빌드 확인): the pay still to come is not money that came in; it is said under the tile.
+            StatTile("들어온 돈", Fmt.won(m.received), Modifier.weight(1f),
+                caption = m.payExpected?.let { "들어올 급여(예상) ${wonBrief(it)} 별도" }
+                    ?: changeText(m.income, r.previousIncome, "많이", "적게")?.let { "지난달보다 $it" })
             StatTile("나간 돈", Fmt.won(m.spent), Modifier.weight(1f), caption = changeText(m.spent, r.previousSpent)?.let { "지난달보다 $it" })
         }
         Spacer(Modifier.height(8.dp))

@@ -213,7 +213,7 @@ fun EntryDialog(
         )
     }
 
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             // Title row: what this is, and the line's own actions while editing.
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {

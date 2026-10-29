@@ -226,7 +226,7 @@ object FeatureRegistry {
         f("day.firstCard", "DAYW-02", "이번 달 한눈에", "이번 달 야근 시간, 연차 사용·잔여, 간이세액표로 계산한 예상 실수령을 한 카드로 보여 줘요",
             setOf(DAY), "${tab(DAY)} › ○월 한눈에", at(Place.STATS), "야근 시간", "연차 잔여", "실수령", "간이세액표", "부양가족", "자녀 수",
             off = Off.CALENDAR),
-        f("day.leaveNow", "DAYW-03", "지금 퇴근", "누르면 퇴근 시각까지 남은 시간을 야근으로 적어요. 위젯에도 있어요",
+        f("day.leaveNow", "DAYW-03", "지금 퇴근", "정해진 퇴근 시각을 넘겨 지금까지 일한 시간을 야근으로 적어요. 위젯에도 있어요",
             setOf(DAY), "$DAY_SHEET › 지금 퇴근", at(Place.TODAY), "퇴근", "야근 적기", "칼퇴", "퇴근 버튼",
             moment = Moment.PAST_END_TIME, tip = "퇴근 시간이 지났어요. ‘지금 퇴근’을 누르면 더 일한 시간이 야근으로 적혀요"),
         f("day.overtimeCap", "DAYW-05", "월 시간외 상한", "한 달 시간외 상한을 정하면 남은 시간과 넘었을 때 알려 줘요",

@@ -163,6 +163,8 @@ data class DailySalesEntity(
     @ColumnInfo(defaultValue = "0") val cardSettled: Boolean = false,
     /** Version 22 [TAXP-14]: of [cash], how much a 현금영수증 was issued for. */
     @ColumnInfo(defaultValue = "0") val cashReceipt: Long = 0,
+    /** Version 23 [J133-29]: of [costs], how much came with a proof that carries VAT (세금계산서·카드·현금영수증). */
+    @ColumnInfo(defaultValue = "0") val costsProven: Long = 0,
 )
 
 @Dao
@@ -442,11 +444,11 @@ fun Job.toEntity() = JobEntity(
 fun DailySalesEntity.toModel() = DailySales(
     LocalDate.ofEpochDay(epochDay), sales, costs, note,
     card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
-    cashReceipt = cashReceipt.coerceAtLeast(0),
+    cashReceipt = cashReceipt.coerceAtLeast(0), costsProven = costsProven.coerceIn(0, costs.coerceAtLeast(0)),
 )
 
 fun DailySales.toEntity() = DailySalesEntity(
     date.toEpochDay(), sales, costs, note,
     card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
-    cashReceipt = cashReceipt.coerceAtLeast(0),
+    cashReceipt = cashReceipt.coerceAtLeast(0), costsProven = costsProven.coerceIn(0, costs.coerceAtLeast(0)),
 )

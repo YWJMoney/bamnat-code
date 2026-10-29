@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // [TAX-01][TAX-06] Version 21: 월급 관측과 세금 설정.
         PayObservationEntity::class, TaxSettingEntity::class,
     ],
-    version = 22,
+    version = 23,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -60,7 +60,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                MIGRATION_21_22,
+                MIGRATION_21_22, MIGRATION_22_23,
             )
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -350,6 +350,13 @@ abstract class AppDatabase : RoomDatabase() {
          * Version 22 (1.32 조사 대조): 할부 수수료율 [LEDX-17], 현금영수증 발행한 현금 매출 [TAXP-14] and 시간외 인정 시간
          * [WTYP-24]. Only new columns with defaults: every row of version 21 keeps its meaning (무이자, 0원, 인정 시간 없음).
          */
+        /** Version 23 [J133-29]: a shop day's costs with a VAT proof, so 부가세 예상 takes them off. */
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE daily_sales ADD COLUMN costsProven INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE money_entries ADD COLUMN installmentRate REAL NOT NULL DEFAULT 0")

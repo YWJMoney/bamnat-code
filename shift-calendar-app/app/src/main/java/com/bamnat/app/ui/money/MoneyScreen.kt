@@ -257,10 +257,19 @@ class MoneyViewModel(
     suspend fun analysis(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?,
                          month: YearMonth, today: LocalDate): LedgerAnalysis = withContext(Dispatchers.Default) {
         val now = YearMonth.from(today)
+        // [J133-37] 순번 717 (중간 빌드 확인: 오늘 깐 앱인데 '올해 들어온 돈 4천만 원'): no estimate for months before the app was in
+        // use (installed, or the first line written, whichever is earlier: a backup brought over keeps its months).
+        val since = listOfNotNull(
+            container.installedAt?.atZone(Today.zone())?.let { YearMonth.from(it) },
+            book.entries.minOfOrNull { it.date }?.let { YearMonth.from(it) },
+        ).minOrNull()
         val pays = HashMap<YearMonth, Long?>()
-        val at = { m: YearMonth -> book.month(m, if (m.isAfter(now)) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) }) }
+        val at = { m: YearMonth ->
+            book.month(m, if (m.isAfter(now) || (since != null && m.isBefore(since))) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) })
+        }
         val current = at(month)
-        val year = (1..12).map { at(YearMonth.of(month.year, it)) }
+        // [J133-62] 올해 들어온 돈 is money that came in: this month's pay still to come stays out of it.
+        val year = (1..12).map { YearMonth.of(month.year, it) }.map { m -> if (m == now) book.month(m, null) else at(m) }
         LedgerAnalysis(current, Reports.month(current, at(month.minusMonths(1)), book, today), Reports.year(month.year, year))
     }
 

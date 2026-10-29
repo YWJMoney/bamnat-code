@@ -382,7 +382,7 @@ fun CalendarScreen(
             val result = messageHost.showSnackbar(
                 message = msg.message,
                 actionLabel = if (msg.undo != null) msg.actionLabel else null,
-                duration = if (msg.long || msg.undo != null && msg.actionLabel != "되돌리기") SnackbarDuration.Long else SnackbarDuration.Short,
+                duration = if (msg.long || msg.undo != null) SnackbarDuration.Long else SnackbarDuration.Short, // [J133-63] 되돌리기 stays 10 s, not 4.
             )
             if (result == SnackbarResult.ActionPerformed) {
                 vm.runUndo(msg)
@@ -1045,8 +1045,8 @@ fun CalendarScreen(
         // [GUIDE-20] 1.31 P2: the first week's 시작 단계, read again when the settings or the days change.
         val c31 = LocalContext.current.appContainer
         var startHidden by remember { mutableStateOf(false) }
-        val startRows = remember(settings.alarmsEnabled, settings.workStyle, snap.isEmpty, startHidden, today) {
-            if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty)
+        val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today) {
+            if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
