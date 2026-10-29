@@ -152,6 +152,11 @@ class PayViewModel(
         if (invite && !asked && company.store.applied.value == null && company.payWays.way.value == null &&
             com.bamnat.app.company.ShareAskGate.open(container.appContext)) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
+        // [J133-85] The calendar uses a company's shifts from the 광장 and that version has no pay way: the first one, offered.
+        val applied = company.store.applied.value
+        if (invite && applied != null && company.payWays.way.value == null && com.bamnat.app.company.ShareAskGate.open(container.appContext)) {
+            _firstPay.value = com.bamnat.app.ui.company.firstPayOf(container, applied)
+        }
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
         read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
@@ -173,6 +178,14 @@ class PayViewModel(
 
     fun shareShown() {
         _shareMoment.value = null
+    }
+
+    private val _firstPay = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.FirstPay?>(null)
+    /** [J133-85] The pay was just set by hand on a 광장 version without a pay way: the card to be its first. */
+    val firstPay: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.ui.company.FirstPay?> = _firstPay
+
+    fun firstPayShown() {
+        _firstPay.value = null
     }
 
     /** [TAX-02] The calendar's pay records, so 세후 예상 under the total follows a newly read or typed month. */

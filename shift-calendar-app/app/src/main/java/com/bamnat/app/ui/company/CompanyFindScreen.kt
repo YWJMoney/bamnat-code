@@ -566,6 +566,7 @@ fun CompanyDetailScreen(
             title = "${page?.name.orEmpty()} · ${su.dept.ifEmpty { "회사 전체" }}",
             base = su.text, mine = mine, busy = sending, error = sendError,
             alsoMine = payWay?.setup == su.id,
+            payHidden = su.payHidden,
             onSend = { lines, text, why ->
                 val p = page ?: return@DiffEditorSheet
                 sending = true
@@ -837,7 +838,7 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val trial by androidx.compose.runtime.produceState<Trial?>(null, setup.id, calendar) {
         value = if (c.companyOf(calendar).pay.profile.value == null) null
-            else runCatching { payTrial(c, setup.text, setup.id, Today.month(), calendar) }.getOrNull()
+            else runCatching { payTrial(c, setup.text, setup.id, Today.month(), calendar, setup.payHidden) }.getOrNull()
     }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -848,21 +849,26 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
                     style = MaterialTheme.typography.bodyMedium)
                 Text("넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요. 금액은 가져오지 않아요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                trial?.takeIf { it.note == null && !it.loading && (it.now > 0 || it.then > 0) }?.let { t ->
-                    val d = t.diff
-                    Text("이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
-                        if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
-                        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                    t.lines.filter { it.now != it.then }.take(3).forEach { l ->
-                        Text("· ${l.label} ${com.bamnat.app.ui.pay.won(l.now)} → ${com.bamnat.app.ui.pay.won(l.then)}",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                TrialBeforeAfter(trial)
             }
         },
         confirmButton = { Button(onClick = { onAnswer(true) }) { Text("네, 같이 넣을게요") } },
         dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("근무주기만 넣을게요") } },
     )
+}
+
+/** [J133-54] This month before and after on the user's own pay, with the three lines that move most; nothing until it is read. */
+@Composable
+internal fun TrialBeforeAfter(trial: Trial?) {
+    val t = trial?.takeIf { it.note == null && !it.loading && (it.now > 0 || it.then > 0) } ?: return
+    val d = t.diff
+    Text("이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
+        if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
+        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    t.lines.filter { it.now != it.then }.sortedByDescending { kotlin.math.abs(it.then - it.now) }.take(3).forEach { l ->
+        Text("· ${l.label} ${com.bamnat.app.ui.pay.won(l.now)} → ${com.bamnat.app.ui.pay.won(l.then)}",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 /**

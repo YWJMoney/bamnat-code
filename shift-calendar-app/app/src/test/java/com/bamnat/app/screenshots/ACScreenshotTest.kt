@@ -204,7 +204,7 @@ class ACScreenshotTest : ScreenshotBase() {
         assertTrue(appears("공개 자료 확인·고침 · GS칼텍스", exact = true))
         tapText("보내기", exact = true)
         val (note, setup) = company.reports.last()
-        assertTrue(note, note.startsWith("공개 자료 확인·고침 (${gsCaltex.id}): 4조 2교대 · 순서 주주휴휴야야휴휴 (공개 순서 없음, 직접 골랐어요)"))
+        assertTrue(note, note.startsWith("공개 자료 확인·고침: 4조 2교대 · 순서 주주휴휴야야휴휴 (공개 순서 없음, 직접 골랐어요)"))
         // No amount goes: the base is not in it and every item's value is left out.
         val base = c.payStore.profile.value!!.base.on(Today.month()).value
         assertFalse(setup.toString().contains(base.toString()))

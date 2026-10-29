@@ -487,7 +487,7 @@ class CompanyDetailViewModel(
 
     fun tryPay(setup: SharedSetup, month: YearMonth = Today.month()) {
         _trial.value = Trial(setup.id, month, loading = true)
-        viewModelScope.launch { _trial.value = payTrial(c, setup.text, setup.id, month, calendar) }
+        viewModelScope.launch { _trial.value = payTrial(c, setup.text, setup.id, month, calendar, setup.payHidden) }
     }
 
     fun closeTrial() {
@@ -552,14 +552,17 @@ data class TrialLine(val label: String, val now: Long, val then: Long)
 
 internal suspend fun payTrial(c: AppContainer, text: String, setup: String, month: YearMonth,
     /** [CALI-03] Whose pay and shifts it is tried on. */
-    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN): Trial {
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    /** [J133-82] The setup has a pay way this phone may not see yet (결정 D79), not none. */
+    payHidden: Boolean = false): Trial {
     val scope = c.companyOf(calendar)
     val mine = scope.pay.profile.value ?: return Trial(setup, month, note = "내 급여 설정이 없어 비교할 수 없어요. 급여 설정을 먼저 해 주세요")
     val trial = try {
         scope.share.trial(text)
     } catch (e: Exception) {
         null
-    } ?: return Trial(setup, month, note = "이 규칙에는 급여 계산 방식이 없어 근무표만 비교할 수 있어요")
+    } ?: return Trial(setup, month, note = if (payHidden) "이 회사의 급여 계산 방식은 ‘이 설정 쓰기’로 이 회사를 쓰면 보여요. 지금은 근무표만 비교해요"
+        else "이 규칙에는 급여 계산 방식이 없어 근무표만 비교할 수 있어요")
     val snapshot = scope.schedule.snapshot.first()
     val settings = c.settingsRepository.current
     val calc = com.bamnat.core.pay.PayCalculator()
@@ -676,6 +679,8 @@ class TalkHolder(
         change: List<com.bamnat.app.company.ChangeLine> = emptyList(),
         withSetup: Boolean = false,
         setupText: String? = null,
+        /** [J133-83] The user's own proposal this one is sent in place of: taken down once this one is in. */
+        replacing: String? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
@@ -684,7 +689,7 @@ class TalkHolder(
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
         val talkKey = "${o.company}/${o.setup}"
         val now = com.bamnat.core.time.Today.instant()
-        if (!com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
+        if (replacing == null && !com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         // [SPD-16] 1.30 AP1: the post shows in the talk at once ("나 (보내는 중)") and the server's talk takes its place after.
         val pending = com.bamnat.app.company.TalkPost("local-${now.toEpochMilli()}", 0, null, false, text.trim(), now, mine = true, nick = SENDING,
             parent = parent, kind = kind, change = change)
@@ -701,6 +706,8 @@ class TalkHolder(
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
                 // [FIN130-06] A proposal is a version of the company's page: the page kept on the phone is read again next time.
                 if (kind == "proposal") c.companySearch.forgetPage(o.company)
+                // [J133-83] 고쳐 다시 올리기: the old one goes only after the new one is in, so a refused send loses nothing.
+                replacing?.let { old -> runCatching { c.companyApi.deletePost(c.companyStore.device, old) } }
                 sentHere = com.bamnat.core.plaza.RepeatGuard.record(sentHere, talkKey, text, now)
                 changed = true
                 null

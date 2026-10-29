@@ -463,6 +463,12 @@ internal fun PendingDone(
     Text("‘${way.title}’ 수당과 계산 방식이 준비됐어요. ‘이대로 계산’을 누르면 한 번에 들어가요. 그 전에 닫으면 급여는 그대로예요.",
         style = MaterialTheme.typography.bodyMedium)
     CommonItemLines(way.text)
+    // [J133-86] 1.33 광장 급여 써 보기: a pay already set up sees what this way does to this month before 이대로 계산.
+    val calendar = LocalCompanyCalendar.current
+    val trial by androidx.compose.runtime.produceState<Trial?>(null, way.text, had != null) {
+        value = if (had == null) null else runCatching { payTrial(c, way.text, way.setup, month, calendar) }.getOrNull()
+    }
+    TrialBeforeAfter(trial)
     val wage = had?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY
     BaseFields(wage, base, { base = it }, hours, { hours = it }, had, month,
         companyHours = way.hours, companyName = way.title, keepBase = BaseAsk.keepChip(had, month))

@@ -107,7 +107,8 @@ fun CompanyReportScreen(
     var note by rememberSaveable { mutableStateOf(vm.startNote) }
     val cycleOnly by vm.cycleOnly.collectAsStateWithLifecycle()
     val public = vm.publicUse
-    var job by rememberSaveable { mutableStateOf("") }
+    // [J133-84] 1.33 광장 급여 써 보기 ("급여 설정에서 고른 직종을 또 물어요"): the job the pay setup already has, picked to start.
+    var job by rememberSaveable { mutableStateOf(payProfile?.occupation?.let(com.bamnat.core.pay.RateHint::jobOf).orEmpty()) }
     var region by rememberSaveable { mutableStateOf("") }
     var topic by rememberSaveable { mutableStateOf(false) }
 

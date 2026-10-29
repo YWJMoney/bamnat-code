@@ -479,6 +479,10 @@ fun ColumnScope.CompanySettingsRows(
     }
     CompanyNudgeCards(vm, onShare = onShare, onFix = onFix)
     com.bamnat.app.ui.settings.NavRow("회사 찾기", "같은 회사 분들이 맞춘 근무표와 계산 방식을 가져와요", onFind)
+    // [J133-86] 1.33 광장 급여 써 보기 ("급여 방식 찾기는 처음부터 설정 안에만 있어요"): the pay way alone, any time.
+    var findingPay by rememberSaveable { mutableStateOf(false) }
+    com.bamnat.app.ui.settings.NavRow("우리 회사 급여 방식 찾기", "근무표는 그대로 두고 급여 계산 방식만 가져와요. 넣기 전에 내 월급이 어떻게 바뀌는지 보여요") { findingPay = true }
+    if (findingPay) PayFindSheet(onDismiss = { findingPay = false })
     // [COMM-07]
     com.bamnat.app.ui.settings.NavRow("회사 규칙 광장", "여러 회사가 올린 근무표·급여 규칙을 보고, 맞는지 투표하고 토론해요", onBoard)
     com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "내 급여 금액 없이 보내요. 채택되면 보상을 드려요", onShare)

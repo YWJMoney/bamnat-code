@@ -3475,15 +3475,20 @@ async function post(request, env) {
   let proposal = null;
   if (kind === "proposal" && given(body.proposal)) {
     const texts = [];
-    const setup = cleanSetup(body.proposal, texts);
+    const base = await one(env, `SELECT dept, dept_norm, setup FROM rules WHERE company_id = ?1 AND grp = ?2
+      UNION ALL SELECT dept, dept_norm, setup FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
+    // [J133-82] 1.33: someone who does not use this company sees its shifts only (결정 D79), so their proposal comes without the
+    // pay part; the pay they never saw stays as it is instead of going with the next version.
+    const was = base ? JSON.parse(base.setup).pay : undefined;
+    const raw = body.proposal && typeof body.proposal === "object" && !given(body.proposal.pay) && was !== undefined
+      ? { ...body.proposal, pay: was } : body.proposal;
+    const setup = cleanSetup(raw, texts);
     for (const [field, t] of texts) {
       const why = personal(t);
       if (why) refuse(why, field);
     }
     // [FIN130-15] As a report: no company amount before 처리방침 3.4 is in force.
     if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(setup);
-    const base = await one(env, `SELECT dept, dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
-      UNION ALL SELECT dept, dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
     const grp = (await sha256(`${base.dept_norm}|${await fingerprint(setup)}`)).slice(0, 16);
     if (grp === body.setup) refuse("same", "proposal");
     const active = await activeRule(env, c.id, base.dept_norm);

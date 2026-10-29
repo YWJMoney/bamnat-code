@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import com.bamnat.app.appContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -369,6 +370,8 @@ fun TalkSheet(holder: TalkHolder) {
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
     var withSetup by rememberSaveable(o.setup) { mutableStateOf(false) }
     var hiding by remember { mutableStateOf<TalkPost?>(null) }
+    var redoing by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
+    redoing?.let { post -> ProposalRedoSheet(holder, o.company, o.setup, o.title, post) { redoing = null } }
     val rules = rememberPlazaRules()
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -398,7 +401,8 @@ fun TalkSheet(holder: TalkHolder) {
                         tops.forEach { p ->
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
-                                company = o.company, setup = o.setup)
+                                company = o.company, setup = o.setup,
+                                onRedo = if (talk.past || o.room) null else ({ redoing = p }))
                             talk.posts.filter { it.parent == p.id }.forEach { r ->
                                 Row {
                                     Spacer(Modifier.width(20.dp))
@@ -518,11 +522,46 @@ fun TalkSheet(holder: TalkHolder) {
     }
 }
 
+/**
+ * [J133-83] 1.33 광장 급여 써 보기: the user's own proposal opened again in 다른 점 말하기, as it was sent (a member sees its
+ * setup; anyone else starts from the version and its reason), and sent in its place: the old one is taken down once the new one is in.
+ */
+@Composable
+private fun ProposalRedoSheet(holder: TalkHolder, company: String, setup: String, title: String, post: TalkPost, onDismiss: () -> Unit) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val base by androidx.compose.runtime.produceState<String?>(null, company, setup) { value = keptSetupText(c, company, setup) }
+    val hidden = remember(company, setup, base) { c.companySearch.page(company)?.setups?.firstOrNull { it.id == setup }?.payHidden == true }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val b = base ?: return
+    val draft = remember(b, post.id) {
+        val text = post.proposal?.text?.takeIf { com.bamnat.core.plaza.SetupEdit.of(it) != null } ?: b
+        com.bamnat.core.plaza.ProposalDraft(b, text, com.bamnat.core.plaza.SetupCompare.proposalLines(com.bamnat.core.plaza.SetupCompare.rows(b, text)), post.body)
+    }
+    DiffEditorSheet(
+        title = title, base = b, mine = null, busy = busy, error = error, draft = draft, payHidden = hidden,
+        onSend = { lines, text, why ->
+            busy = true
+            holder.send(proposalBody(com.bamnat.core.plaza.SetupCompare.rows(b, text), why), kind = "proposal", change = lines, setupText = text,
+                replacing = post.id) { e ->
+                busy = false
+                if (e == null) {
+                    c.telemetry.event("plaza_diff", "redo")
+                    onDismiss()
+                } else error = e
+            }
+        },
+        onDismiss = onDismiss,
+    )
+}
+
 @Composable
 private fun PostRow(
     p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null,
     /** [PROP-02] The talk's company and version, for 이 제안으로 내 월급 계산해 보기 on a proposal. */
     company: String = "", setup: String = "",
+    /** [J133-83] The user's own proposal, fixed and sent again in its place. */
+    onRedo: (() -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     // [J133-55] A post goes for good: asked once before it does.
@@ -561,6 +600,10 @@ private fun PostRow(
                 // [J133-70] 1.33 (실사용 테스트: 손가락에 작은 단추, 메뉴를 그냥 닫는 줄이 없었어요): a finger-sized button and a 닫기 line.
                 IconButton(onClick = { menu = true }, modifier = Modifier.size(44.dp)) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(20.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    // [J133-83] 1.33 광장 급여 써 보기 ("올린 제안을 고칠 수가 없어요, 지우고 처음부터 다시"): fixed in the same form.
+                    if (p.mine && p.kind == "proposal" && p.proposal?.adopted != true && p.hidden == null && onRedo != null) {
+                        DropdownMenuItem(text = { Text("고쳐 다시 올리기") }, onClick = { menu = false; onRedo() })
+                    }
                     if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; deleting = true })
                     else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; onFlag() })
                     // [COMM-09] Play's UGC rule: users can block one another.
