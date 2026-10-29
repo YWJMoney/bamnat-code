@@ -176,6 +176,38 @@ internal val DarkCalendarColors = CalendarColors(
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }
 
 /**
+ * [RCP-09] 1.34 달력 테마 as the calendar draws it: the user's (or a recipe's) colours for today and 토·일·공휴일, lifted for the
+ * dark calendar, and the cell style. A null colour keeps the app's own ([CalendarColors]).
+ */
+data class CalendarLook(
+    val today: Color? = null,
+    val sat: Color? = null,
+    val sun: Color? = null,
+    val holiday: Color? = null,
+    val cell: String = "tint",
+) {
+    fun sunday(cal: CalendarColors): Color = sun ?: cal.sunday
+    fun saturday(cal: CalendarColors): Color = sat ?: cal.saturday
+    fun holiday(cal: CalendarColors): Color = holiday ?: sun ?: cal.sunday
+
+    /** How strong a working day's wash is: 0 for none ("dot"). */
+    fun washAlpha(dark: Boolean): Float = when (cell) {
+        "fill" -> if (dark) 0.40f else 0.32f
+        "dot" -> 0f
+        else -> if (dark) 0.22f else 0.13f
+    }
+
+    companion object {
+        fun of(theme: com.bamnat.core.recipe.CalendarTheme, dark: Boolean): CalendarLook {
+            fun c(v: Long?) = v?.let { Color((if (dark) com.bamnat.core.layout.Contrast.onBlack(it) else it).toInt()) }
+            return CalendarLook(c(theme.today), c(theme.sat), c(theme.sun), c(theme.holiday), theme.cell ?: "tint")
+        }
+    }
+}
+
+val LocalCalendarLook = staticCompositionLocalOf { CalendarLook() }
+
+/**
  * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
  * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions
  * wrap as before). Titles also even out their lines.

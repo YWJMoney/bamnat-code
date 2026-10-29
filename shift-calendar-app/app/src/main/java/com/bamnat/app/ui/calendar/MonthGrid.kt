@@ -128,6 +128,7 @@ internal val FooterTrim = androidx.compose.ui.text.TextStyle(
 @Composable
 fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
     val cal = LocalCalendarColors.current
+    val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     Row(modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         for (i in 0 until 7) {
             val dow = weekStart.plus(i.toLong())
@@ -137,8 +138,8 @@ fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 style = MaterialTheme.typography.labelMedium,
                 color = when (dow) {
-                    DayOfWeek.SUNDAY -> cal.sunday
-                    DayOfWeek.SATURDAY -> cal.saturday
+                    DayOfWeek.SUNDAY -> look.sunday(cal)
+                    DayOfWeek.SATURDAY -> look.saturday(cal)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
@@ -531,12 +532,14 @@ private fun DayCell(
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
+    // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
+    val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     val numberColor = when {
         // Public holidays are red like Sundays [FEAT-05].
-        holidayName != null -> cal.sunday
+        holidayName != null -> look.holiday(cal)
         else -> when (date.dayOfWeek) {
-        DayOfWeek.SUNDAY -> cal.sunday
-        DayOfWeek.SATURDAY -> cal.saturday
+        DayOfWeek.SUNDAY -> look.sunday(cal)
+        DayOfWeek.SATURDAY -> look.saturday(cal)
         else -> scheme.onSurface
         }
     }
@@ -544,7 +547,7 @@ private fun DayCell(
     // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
     val dark = isDarkSurface()
     val tint = invest?.tint(date, cal.sunday, cal.saturday, dark) ?: (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
-        ?.colorArgb?.asColor()?.copy(alpha = if (dark) 0.22f else 0.13f)
+        ?.colorArgb?.asColor()?.takeIf { look.washAlpha(dark) > 0f }?.copy(alpha = look.washAlpha(dark))
         ?: cal.income.takeIf { heat > 0f }?.copy(alpha = heat * if (dark) 0.30f else 0.20f)
     val jobs = money?.jobs ?: 0
     // [VIS-01] What the cell shows, read out in the same order.
@@ -651,14 +654,14 @@ private fun DayCell(
                         .align(Alignment.Center)
                         .size(20.dp)
                         .clip(CircleShape)
-                        .background(if (isToday) scheme.primary else Color.Transparent),
+                        .background(if (isToday) look.today ?: scheme.primary else Color.Transparent),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         date.dayOfMonth.toString(),
                         style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
                         fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
-                        color = if (isToday) scheme.onPrimary else numberColor,
+                        color = if (isToday) look.today?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: scheme.onPrimary else numberColor,
                         fontSize = dateSize,
                         lineHeight = dateSize,
                     )

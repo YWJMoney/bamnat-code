@@ -128,6 +128,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var answering by remember { mutableStateOf<com.bamnat.core.memo.MemoTime.Found?>(null) }
 
     var showColors by remember { mutableStateOf(false) }
+    // [RCP-11] 1.34 메모 틀.
+    val templates by vm.templates.collectAsStateWithLifecycle()
+    var pickTemplate by remember { mutableStateOf(false) }
+    if (pickTemplate) MemoTemplateDialog(templates, onPick = { vm.startFrom(it); pickTemplate = false }, onRemove = vm::removeTemplate,
+        onDismiss = { pickTemplate = false })
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -187,6 +192,15 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 text = { Text(if (memo.isChecklist) "일반 메모로 바꾸기" else "체크리스트로 바꾸기") },
                                 leadingIcon = { Icon(Icons.Filled.Checklist, null) },
                                 onClick = { menu = false; vm.toggleChecklist() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("이 메모를 틀로 저장") },
+                                leadingIcon = { Icon(Icons.Filled.Checklist, null) },
+                                onClick = {
+                                    menu = false
+                                    if (vm.saveAsTemplate()) Toast.makeText(context, "틀로 저장했어요. 새 메모에서 '틀에서 시작'을 누르세요", Toast.LENGTH_LONG).show()
+                                },
+                                enabled = !memo.isBlank,
                             )
                             DropdownMenuItem(
                                 text = { Text("색상") },
@@ -281,6 +295,12 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
+                // [RCP-11] 1.34: a memo not written yet can start from a 틀.
+                if (memo.isBlank && templates.isNotEmpty()) AssistChip(
+                    onClick = { pickTemplate = true },
+                    label = { Text("틀에서 시작") },
+                    leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
+                )
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
@@ -766,6 +786,40 @@ private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> U
                     if (m.title.isNotBlank()) Text(m.title, style = MaterialTheme.typography.titleSmall)
                     val body = if (m.isChecklist) m.checklist.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.checked) "☑ " else "☐ ") + it.text } else m.body
                     Text(com.bamnat.core.memo.MemoSearch.excerpt(body, ""), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
+/** [RCP-11] 1.34 메모 틀 고르기: a tap starts the memo from it; 지우기 takes the template away (memos made from it stay). */
+@Composable
+private fun MemoTemplateDialog(
+    templates: List<com.bamnat.core.memo.MemoTemplate>,
+    onPick: (com.bamnat.core.memo.MemoTemplate) -> Unit,
+    onRemove: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("틀에서 시작") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                templates.forEach { t ->
+                    Row(Modifier.fillMaxWidth().clickable(onClickLabel = "이 틀로 시작") { onPick(t) }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(listOfNotNull(t.emoji, t.title).joinToString(" "), style = MaterialTheme.typography.bodyLarge)
+                            val what = buildList {
+                                if (t.check.isNotEmpty()) add("체크 ${t.check.size}개")
+                                com.bamnat.core.memo.MemoRepeat.label(t.repeat).takeIf { it.isNotEmpty() }?.let { add(it) }
+                                if (t.from != null) add("나눔 판에서 받음")
+                            }.joinToString(" · ")
+                            if (what.isNotEmpty()) Text(what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { onRemove(t.id) }) { Icon(Icons.Filled.Delete, "이 틀 지우기") }
+                    }
                 }
             }
         },

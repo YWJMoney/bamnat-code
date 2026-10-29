@@ -43,7 +43,7 @@ class ZFullBackupTest {
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", rateHint = false, alarmSuggest = false,
+        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", calTheme = "sat=FF2F5BEA;cell=fill", rateHint = false, alarmSuggest = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
         // 1.26 AD.

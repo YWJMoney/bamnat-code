@@ -227,6 +227,8 @@ class BackupManager(
         into.put("invest", InvestBackup.put(source))
         // [TAX-07] 월급 관측 and tax answers (version 21). Older apps ignore the key.
         into.put("tax", TaxBackup.put(source))
+        // [RCP-17][RCP-25] 1.34 나눔 판 (version 24). Older apps ignore the key.
+        into.put("recipes", RecipeBackup.put(source))
     }
 
     /** [MCAL-06] A calendar's pay setup and closed months. */
@@ -506,7 +508,7 @@ class BackupManager(
                 .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
-                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("rateHint", s.rateHint)
+                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("calTheme", s.calTheme).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
@@ -712,6 +714,8 @@ class BackupManager(
         val invest: InvestBackup.Rows? = null,
         /** [TAX-07] Null for a backup without "tax" (before 1.25): the phone's then stay. */
         val tax: TaxBackup.Rows? = null,
+        /** [RCP-25] Null for a backup without "recipes" (before 1.34): the phone's then stay. */
+        val recipes: RecipeBackup.Rows? = null,
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -783,7 +787,8 @@ class BackupManager(
         }
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
         val tax = from.optJSONObject("tax")?.let(TaxBackup::read)
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax)
+        val recipes = from.optJSONObject("recipes")?.let { RecipeBackup.read(it, com.bamnat.core.time.Today.millis()) }
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -809,6 +814,7 @@ class BackupManager(
         // [INV-10] Backups without "invest" (before version 18, or with none before 1.17) leave the phone's; `{}` empties it.
         rows.invest?.let { InvestBackup.write(target, it) }
         rows.tax?.let { TaxBackup.write(target, it) }
+        rows.recipes?.let { RecipeBackup.write(target, it) }
     }
 
     /** [REL-15] The photos [read] left waiting, when they came with this very backup. */
@@ -988,6 +994,7 @@ class BackupManager(
                     widgetMemo = o.optBoolean("widgetMemo", s.widgetMemo),
                     backupPhotos = o.optBoolean("backupPhotos", s.backupPhotos),
                     moneyLayout = o.optString("moneyLayout", s.moneyLayout),
+                    calTheme = o.optString("calTheme", s.calTheme),
                     memoLayout = o.optString("memoLayout", s.memoLayout),
                     rateHint = o.optBoolean("rateHint", s.rateHint),
                     alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),

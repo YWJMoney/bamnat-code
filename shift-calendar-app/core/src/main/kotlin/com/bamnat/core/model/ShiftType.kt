@@ -108,6 +108,13 @@ enum class ShiftIcon(val key: String, val label: String) {
     companion object {
         fun of(key: String?): ShiftIcon? = key?.let { k -> entries.firstOrNull { it.key == k } }
 
+        /** [RCP-08] 1.34: an emoji in place of a drawn icon, kept as "e:<emoji>" in [ShiftType.icon]; null for a drawn icon or none. */
+        fun emoji(key: String?): String? = key?.takeIf { it.startsWith(EMOJI) }?.removePrefix(EMOJI)?.takeIf { it.isNotEmpty() }
+
+        fun emojiKey(emoji: String): String = EMOJI + emoji
+
+        const val EMOJI = "e:"
+
         /** A sensible icon for a new type from its times. */
         fun suggest(type: ShiftType): ShiftIcon? {
             if (type.isOff) return BED

@@ -1,5 +1,6 @@
 package com.bamnat.app
 
+import androidx.compose.ui.graphics.luminance
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -109,7 +110,13 @@ class MainActivity : ComponentActivity() {
         // G 1.32 [WTYP-07] 오전/오후로 보기: every time on screen is written by Fmt, so the root is drawn again on a change.
         com.bamnat.app.ui.Fmt.clock12 = settings.clock12
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact) {
-            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
+            // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
+            val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val look = androidx.compose.runtime.remember(settings.calTheme, darkSurface) {
+                com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(settings.calTheme), darkSurface)
+            }
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds,
+                com.bamnat.app.ui.theme.LocalCalendarLook provides look) {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.

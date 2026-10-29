@@ -234,10 +234,39 @@ enum class ShiftRole(val key: String, val label: String) {
     }
 }
 
-/** [RCP-09] The calendar theme's cell styles. */
-object CalendarTheme {
-    /** fill: the shift's colour fills the cell; tint: a light wash with a coloured letter; dot: a dot under the date. */
-    val CELLS = listOf("fill", "tint", "dot")
+/**
+ * [RCP-09] 달력 테마 (1.34 새 기능): the calendar's own colours for today, 토·일·공휴일 and how a working day's cell is drawn. Kept
+ * in 설정 as one line ([encode]); empty is the app's own look. The colours are as chosen for the light calendar; the dark one lifts
+ * them itself so they read on black.
+ */
+data class CalendarTheme(
+    val today: Long? = null,
+    val sat: Long? = null,
+    val sun: Long? = null,
+    val holiday: Long? = null,
+    /** One of [CELLS]; null is the app's own (tint). */
+    val cell: String? = null,
+) {
+    val isDefault: Boolean get() = this == CalendarTheme()
+
+    fun encode(): String = if (isDefault) "" else listOfNotNull(
+        today?.let { "today=" + hex(it) }, sat?.let { "sat=" + hex(it) }, sun?.let { "sun=" + hex(it) },
+        holiday?.let { "holiday=" + hex(it) }, cell?.let { "cell=$it" },
+    ).joinToString(";")
+
+    companion object {
+        /** tint: a light wash with the shift's badge (the app's own); fill: a stronger wash; dot: no wash, the badge only. */
+        val CELLS = listOf("fill", "tint", "dot")
+
+        private fun hex(c: Long) = "%08X".format(c and 0xFFFFFFFFL)
+
+        fun decode(s: String): CalendarTheme {
+            if (s.isBlank()) return CalendarTheme()
+            val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+            fun color(k: String) = m[k]?.toLongOrNull(16)?.let { it or 0xFF000000L }
+            return CalendarTheme(color("today"), color("sat"), color("sun"), color("holiday"), m["cell"]?.takeIf { it in CELLS })
+        }
+    }
 }
 
 /** [RCP-16] The company file inside a recipe: the phone's own reader checks it whole when it is previewed. */

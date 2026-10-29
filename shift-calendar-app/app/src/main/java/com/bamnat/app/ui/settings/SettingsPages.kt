@@ -572,6 +572,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
+        // [RCP-09] 1.34 달력 테마.
+        HorizontalDivider()
+        CalendarThemeRows(settings.calTheme) { t -> vm.update { it.copy(calTheme = t) } }
+        HorizontalDivider()
         // E 1.32 [LEDX-07] The day's spending in its cell; memo first-letters and work money come before it.
         SwitchRow("날짜 밑에 그날 쓴 돈", "가계부에 적은 그날 지출이 날짜 밑에 작게 보여요(메모 첫 글자를 켜면 메모가 먼저예요)", settings.spendInCells) { on ->
             vm.update { it.copy(spendInCells = on) }

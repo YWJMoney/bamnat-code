@@ -88,6 +88,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -814,6 +815,17 @@ fun ShiftTypeEditorDialog(
                                             Icon(icon.vector, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
                                         }
                                     }
+                                    // [RCP-18] 1.34: any emoji in place of a drawn icon.
+                                    var pickEmoji by remember { mutableStateOf(false) }
+                                    val chosen = ShiftIcon.emoji(draft.icon)
+                                    IconChoice(selected = chosen != null, label = "이모지", onClick = { pickEmoji = true }) {
+                                        Text(chosen ?: "😀", fontSize = 20.sp)
+                                    }
+                                    if (pickEmoji) com.bamnat.app.ui.recipe.EmojiPickerDialog(
+                                        onPick = { draft = draft.copy(icon = ShiftIcon.emojiKey(it)); pickEmoji = false },
+                                        onDismiss = { pickEmoji = false },
+                                        onClear = if (chosen != null) ({ draft = draft.copy(icon = null); pickEmoji = false }) else null,
+                                    )
                                 }
                             }
                         }

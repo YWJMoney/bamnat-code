@@ -219,6 +219,8 @@ class AppContainer(context: Context) {
                 autoRecordPrefs.reload()
                 shareGroup.reload()
                 wishOff.reload()
+                memoTemplates.reload()
+                recipes.reload()
             }
         })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
@@ -240,6 +242,10 @@ class AppContainer(context: Context) {
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
         proof = { slipProof() })
+    /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
+    val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
+    /** [RCP-11] 1.34 메모 틀. */
+    val memoTemplates by lazy { com.bamnat.app.data.MemoTemplateStore(appContext) }
     /** [RCP-10] 1.34 나눔 판: the recipe server (the same worker); screenshots and tests put a fake in its place. */
     var recipeApi: com.bamnat.app.recipe.RecipeApi = com.bamnat.app.recipe.RecipeClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })

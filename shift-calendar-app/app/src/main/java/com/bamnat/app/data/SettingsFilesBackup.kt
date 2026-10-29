@@ -152,6 +152,10 @@ class SettingsFilesBackup(
         /** What travels, file by file. Keys left out of a listed file stay on the phone. */
         internal val PARTS = listOf(
             Part("work_type_prefs"),
+            // [RCP-11] 1.34 메모 틀.
+            Part("memo_templates"),
+            // [RCP-38] 나눔 판 쓰기 and the rules agreed to.
+            Part("recipe"),
             Part("company", keys = setOf("applied", "sent", "pending_pay", "draft", "plaza_entry_closed", "invite_closed")),
             Part("plaza_rate_hint", keys = setOf("own")),
             Part("calendar_view"),
