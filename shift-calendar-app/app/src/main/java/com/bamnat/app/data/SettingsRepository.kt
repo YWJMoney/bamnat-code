@@ -217,9 +217,15 @@ data class AppSettings(
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
     val alarmSuggestMemory: String = "",
 ) {
-    val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
+    val limits: HourLimits get() = if (workStyle == com.bamnat.core.work.WorkStyle.BUSINESS) OWNER_HOURS
+        else HourLimits(weeklyLimitHours, averageLimitHours)
 
     companion object {
+        /**
+         * [J133B-02] 1.33 빌드 8 확인 ("가게 하루 시트에 '이 주 72시간 · 64시간 넘음'"): a shop's own hours are the owner's, not
+         * an employee's under 근로기준법, so a 가게 calendar flags no week, average or 52시간 (a week has 168 hours).
+         */
+        val OWNER_HOURS = HourLimits(weeklyLimitHours = 168, threeMonthAverageLimitHours = 168, legalWeeklyHours = 168)
         const val SILENT_SOUND = "silent"
         const val WATCH_ALARM_OFF = "off"
         const val WATCH_ALARM_BOTH = "both"

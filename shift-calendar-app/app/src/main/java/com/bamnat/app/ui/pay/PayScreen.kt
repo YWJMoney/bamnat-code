@@ -167,6 +167,9 @@ fun PayScreen(
     val rulesTitle = PayTab.RULES.labelFor(workStyle)
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
+    // [J133-97] 1.33 빌드 8 확인 ("회사 규칙 칩으로 들어가면 ←·뒤로·취소로 못 나가요", 1.32부터): the result leaves the screen while
+    // the rules editor is open, so a 'done' kept inside it started again on the way back and opened the editor once more.
+    var focusUsed by rememberSaveable { mutableStateOf(false) }
     // [PAYS-12] 자세히 고치기 from the easy setup; [PAYS-15] the 광장 ask after a payslip set the rules.
     var detailedFrom by remember { mutableStateOf<DetailedStart?>(null) }
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
@@ -292,7 +295,7 @@ fun PayScreen(
                 else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, startMatching = startMatching,
-                    focus = focus)
+                    focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
             }
         }
     }
@@ -316,6 +319,8 @@ private fun PayResult(
     onOpenLeave: () -> Unit = {},
     startMatching: Boolean = false,
     focus: PayFocus? = null,
+    focusUsed: Boolean = false,
+    onFocusUsed: () -> Unit = {},
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     // U 1.32 [UX132-03] 결과 · 내 급여 값 · 회사 규칙 · 도구.
@@ -382,10 +387,9 @@ private fun PayResult(
     var timesFor by remember { mutableStateOf<com.bamnat.core.model.ShiftType?>(null) }
     val needs = remember(profile, snapshot, result.month) { payNeeds(profile, snapshot, result.month) }
     // U 1.32 [UX132-02] A chip for one value opens it at once; the rules' chips open the rules editor.
-    var focusDone by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(focus) {
-        if (focusDone || focus == null) return@LaunchedEffect
-        focusDone = true
+        if (focusUsed || focus == null) return@LaunchedEffect
+        onFocusUsed()
         when (focus) {
             PayFocus.BASE -> editTarget = ValueTarget.Base
             PayFocus.HOURS, PayFocus.PERIOD, PayFocus.RULES -> onEditRules()
@@ -465,6 +469,9 @@ private fun PayResult(
             FitMonthsCard(vm, profile, snapshot, allowed = gate.allows(Feature.PAYSLIP_MATCH), onPro = { openPro(Feature.PAYSLIP_MATCH) })
         // A 1.32 [FIX132-04] Just matched: offer the plaza once, the 명세서 tick on.
         if (unlocked) ShareAfterMatchCard(profile)
+        // [J133-98] 1.33 빌드 8 확인 ("첫 급여 방식 카드가 '내 급여 값' 탭 안에만 있어요"): on 결과, where the pay screen opens.
+        val first by vm.firstPay.collectAsStateWithLifecycle()
+        first?.let { f -> com.bamnat.app.ui.company.FirstPayCard(f, vm.calendarId, onClosed = vm::firstPayShown) }
         } // RESULT
         // [PAYG-04] The figures below all come from the 기본급: shown once it is in.
         if (!noBase) {
@@ -602,8 +609,6 @@ private fun PayResult(
             // [PLAZA-04] Pay set up by hand a moment ago: offered to coworkers once, with the plaza's spacing after "다음에".
             val moment by vm.shareMoment.collectAsStateWithLifecycle()
             moment?.let { m -> com.bamnat.app.ui.company.ShareWayCard(m, onShare = onShareWay, modifier = Modifier.padding(vertical = 8.dp), onClosed = vm::shareShown) }
-            val first by vm.firstPay.collectAsStateWithLifecycle()
-            first?.let { f -> com.bamnat.app.ui.company.FirstPayCard(f, vm.calendarId, Modifier.padding(vertical = 8.dp), onClosed = vm::firstPayShown) }
             // [PAYS-07][PAYS-09] What was just made, and then the invitation to share the company's way.
             justMade?.let { made ->
                 MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null)

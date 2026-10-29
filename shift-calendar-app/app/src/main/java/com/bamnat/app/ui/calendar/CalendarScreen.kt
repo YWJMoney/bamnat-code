@@ -780,12 +780,12 @@ fun CalendarScreen(
         if (received.enabled) adding = ""
     }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
-    val weekNote = remember(calculator, selected, settings.weeklyLimitHours, settings.stretchLimitHours, snap) {
+    val weekNote = remember(calculator, selected, settings.weeklyLimitHours, settings.stretchLimitHours, settings.workStyle, snap) {
         val week = calculator.week(selected).takeIf { it.overLimit }?.let {
-            "이 주 ${HoursFormat.korean(it.totalMinutes)} · ${settings.weeklyLimitHours}시간 넘음"
+            "이 주 ${HoursFormat.korean(it.totalMinutes)} · ${settings.limits.weeklyLimitHours}시간 넘음"
         }
         // 1.32 [WTYP-12] 연속 근무 경고: a stretch that starts on the picked day and runs past the limit.
-        val stretch = com.bamnat.core.hours.Stretches.over(com.bamnat.core.hours.Stretches.of(selected, selected, snap.resolver::resolve), settings.stretchLimitHours)
+        val stretch = if (settings.workStyle == com.bamnat.core.work.WorkStyle.BUSINESS) null else com.bamnat.core.hours.Stretches.over(com.bamnat.core.hours.Stretches.of(selected, selected, snap.resolver::resolve), settings.stretchLimitHours)
             .firstOrNull()?.let { com.bamnat.core.hours.Stretches.line(it, settings.stretchLimitHours) }
         listOfNotNull(week, stretch).joinToString(" · ").ifEmpty { null }
     }

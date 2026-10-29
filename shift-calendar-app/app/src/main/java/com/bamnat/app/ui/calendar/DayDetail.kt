@@ -471,6 +471,7 @@ private fun DayGroups(
         RestDayShiftDialog(
             date = date,
             type = type,
+            hourly = style == com.bamnat.core.work.WorkStyle.HOURLY,
             onCover = { restShift = null; vm.coverInstead(date, type, snapshot) },
             onRoster = { restShift = null; vm.assign(date, ShiftOverride.Shift(type.id)) },
             onDismiss = { restShift = null },
@@ -567,8 +568,10 @@ private fun alarmSummary(day: ResolvedDay, alarms: List<PlannedAlarm>, settings:
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onRestShift: (ShiftType) -> Unit) {
+    val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
+    val types = remember(snapshot, style, day.shiftType?.id) { dayTypes(snapshot, style, day.shiftType?.id) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (type in snapshot.shiftTypes) {
+        for (type in types) {
             FilterChip(
                 selected = day.shiftType?.id == type.id,
                 onClick = {
@@ -591,8 +594,21 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             )
         }
     }
+    // [J133B-03] 1.33 빌드 8 확인 ("11시간 휴식 경고가 월 카드에만, 근무를 넣는 순간에는 없어요"): the rest rules the day and the
+    // next day break, said right under the shift just put in, as the month card and the alarm line count them.
+    val settings = vm.settings.collectAsStateWithLifecycle().value
+    val rest = remember(snapshot, day.date, settings.rules, settings.restCheck, style) {
+        if (!settings.restCheck || style?.usesPayEngine == false || !settings.rules.on) null else runCatching {
+            val until = day.date.plusDays(1)
+            val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(day.date, settings.rules)) { it.plusDays(1) }
+                .takeWhile { !it.isAfter(until) }.map(snapshot.resolver::resolve).toList()
+            (com.bamnat.core.schedule.RestNudge.on(days, day.date, settings.rules) + com.bamnat.core.schedule.RestNudge.on(days, until, settings.rules))
+                .distinctBy { it.kind to it.date }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+    }
+    rest?.let { issues -> WeekNoteLine(issues.joinToString(" · ") { i -> (if (i.date == day.date) "" else "다음 날 ") + "${i.kind.label}: ${i.text}" }, Modifier.padding(top = 6.dp)) }
     // [DAILY-02] Whose shift the 대근 covers, kept as the day's memo.
-    day.coveredShift?.let { DayNoteField(day.date, "${it.name} 대근", vm) }
+    day.coveredShift?.let { DayNoteField(day.date, "${it.name} ${if (style == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"}", vm) }
     if (day.source == DaySource.OVERRIDE) {
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -694,19 +710,22 @@ internal fun TimeBox(label: String, time: LocalTime, onClick: () -> Unit, modifi
  * 특근) paid as work on a day off; changing the roster means the company moved the day off.
  */
 @Composable
-private fun RestDayShiftDialog(date: LocalDate, type: ShiftType, onCover: () -> Unit, onRoster: () -> Unit, onDismiss: () -> Unit) {
+private fun RestDayShiftDialog(date: LocalDate, type: ShiftType, onCover: () -> Unit, onRoster: () -> Unit, onDismiss: () -> Unit,
+    /** [J133B-01] 1.33 빌드 8 확인 ("같은 일을 대타·대근·잔업 세 이름으로 불러요"): an 알바 calendar says 대타 and 근무지, as its day sheet does. */
+    hourly: Boolean = false) {
     val span = if (type.start != null && type.end != null) " ${ExtraText.span(type.start!!, type.end!!)}" else ""
+    val cover = if (hourly) "대타" else "대근"
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("원래 쉬는 날이에요") },
         text = {
             Text(
-                "${Fmt.monthDay(date)}에 쉬는 날인데 ${type.name} 근무를 했다면 대근으로 넣어 주세요. 근무표는 그대로 두고 " +
+                "${Fmt.monthDay(date)}에 쉬는 날인데 ${type.name} 근무를 했다면 ${cover}로 넣어 주세요. 근무표는 그대로 두고 " +
                     "${type.name}$span 시간이 추가 근무로 들어가 급여가 맞게 계산돼요.\n\n" +
-                    "회사가 근무표 자체를 바꿨다면 ‘근무표 변경’을 고르세요.",
+                    "${if (hourly) "근무지가" else "회사가"} 근무표 자체를 바꿨다면 ‘근무표 변경’을 고르세요.",
             )
         },
-        confirmButton = { TextButton(onClick = onCover) { Text("대근으로 넣기") } },
+        confirmButton = { TextButton(onClick = onCover) { Text("${cover}로 넣기") } },
         dismissButton = { TextButton(onClick = onRoster) { Text("근무표 변경") } },
     )
 }
@@ -1354,3 +1373,24 @@ internal fun quickMemoExample(style: com.bamnat.core.work.WorkStyle?): String = 
     com.bamnat.core.work.WorkStyle.DAY -> "회의 준비, 내일 출장"
     else -> "인수인계, 내일 야간 대근"
 } + ")"
+
+/**
+ * [J133B-02] 1.33 빌드 8 확인 ("가게 하루 시트 근무 칸에 주간·오후·야간 교대 이름이 나와요"): a 가게 calendar offers the kinds of
+ * day its 영업일 use (in its order or put on a day) and its days off, not the 교대 names every new calendar starts with; with
+ * nothing used yet, all of them.
+ */
+internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?): List<ShiftType> {
+    if (style != com.bamnat.core.work.WorkStyle.BUSINESS) return snapshot.shiftTypes
+    val used = buildSet {
+        snapshot.patterns.forEach { p ->
+            when (p) {
+                is com.bamnat.core.model.WorkPattern.Rotation -> p.steps.forEach { it?.let(::add) }
+                is com.bamnat.core.model.WorkPattern.Weekly -> p.steps.forEach { it?.let(::add) }
+            }
+        }
+        snapshot.entries.forEach { e -> (e.override as? ShiftOverride.Shift)?.let { add(it.shiftTypeId) } }
+        current?.let(::add)
+    }
+    val shown = snapshot.shiftTypes.filter { it.isOff || it.id in used }
+    return if (shown.any { !it.isOff }) shown else snapshot.shiftTypes
+}

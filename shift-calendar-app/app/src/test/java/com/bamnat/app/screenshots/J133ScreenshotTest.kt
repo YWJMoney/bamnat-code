@@ -112,4 +112,32 @@ class J133ScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("급여", exact = false))
     }
+
+    /** [J133-97] 빌드 8: the rules editor opened from a 회사 규칙 chip goes back to the pay screen and stays there. */
+    @Test fun rulesChipEditorCloses() = shoot("j133_10_folded_pay_rules_closed", FOLDED) {
+        val c = companyOn()
+        withPay()
+        val vm = com.bamnat.app.ui.pay.PayViewModel(c)
+        content { com.bamnat.app.ui.pay.PayScreen(vm = vm, onBack = {}, focus = com.bamnat.app.ui.pay.PayFocus.RULES) }
+        settle()
+        assertTrue("the editor opened", !shows("결과", exact = true))
+        back()
+        assertTrue("back on the pay screen", appears("결과", exact = true))
+        settle()
+        assertTrue("and it stays", shows("결과", exact = true))
+    }
+
+    /** [J133-99] 빌드 8: words typed in the talk are asked about before back closes it. */
+    @Test fun talkAsksBeforeTypedWordsGo() = shoot("j133_11_folded_talk_back_asks", FOLDED) {
+        val c = companyOn()
+        val holder = com.bamnat.app.ui.company.TalkHolder(c, kotlinx.coroutines.MainScope())
+        content { com.bamnat.app.ui.company.TalkSheet(holder) }
+        holder.show("c1", "s1", "생산팀")
+        settle()
+        typeInto("이 규칙에 대해 적어 주세요", "야간 수당 계산이 달라요")
+        back()
+        reveal("쓴 글을 버릴까요?", exact = true)
+        tapText("취소", exact = true)
+        assertTrue(appears("야간 수당 계산이 달라요", exact = true))
+    }
 }

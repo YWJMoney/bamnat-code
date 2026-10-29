@@ -126,7 +126,9 @@ internal fun LazyListScope.hourlyChips(
             )
         }
     }
-    for (a in Attendance.entries) item {
+    // [J133B-01] 1.33 빌드 8 확인 ("쉬는 날에 대타는 막히고 지각·조퇴·결근은 적혀요"): late, early and absent belong to a day
+    // with work; on a day off only one already written shows, so it can be taken off.
+    for (a in Attendance.entries) if (works || day.entry?.attendance == a) item {
         val on = day.entry?.attendance == a
         FilterChip(
             selected = on,
@@ -184,7 +186,14 @@ private fun CoverChip(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     var menu by remember { mutableStateOf(false) }
     val i = day.extras.indexOfFirst { it.kind.timing is ExtraTiming.AsShift }
     val choices = remember(snapshot, day) {
-        ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).filter { it.kind.timing is ExtraTiming.AsShift }
+        ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).filter { it.kind.timing is ExtraTiming.AsShift }.ifEmpty {
+            // [J133B-01] No cover kind left visible (a calendar's kinds changed): each shift with hours as the plain 대근, so
+            // 대타 is never the one chip that cannot be used.
+            snapshot.shiftTypes.filter { !it.isOff && it.hasTimes && it.id != day.shiftType?.id }.map { s ->
+                val k = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, s)
+                ExtraChoice(k, "${ExtraText.coverName(k, s)} ${ExtraText.span(s.start!!, s.end!!)}", ExtraText.coverName(k, s), ExtraText.cover(k, s))
+            }
+        }
     }
     Box {
         FilterChip(
