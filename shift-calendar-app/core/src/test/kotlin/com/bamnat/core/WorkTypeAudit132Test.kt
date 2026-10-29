@@ -79,4 +79,26 @@ class WorkTypeAudit132Test {
         assertEquals("10/5 22:00부터 25시간 연속 · 24시간 넘음", com.bamnat.core.hours.Stretches.line(s[0], 24))
         assertTrue(com.bamnat.core.hours.Stretches.Preset.RESIDENT.matches(80, 72, 24))
     }
+
+    /** 1.32 [WTYP-17] 대타(대근)는 소정근로가 아니라 주휴 계산에 넣지 않아요: 월요일 8시간 + 화요일 대타 8시간 = 주휴 없음. */
+    @Test fun aCoverDoesNotMakeTheWeekEarnHolidayPay() {
+        val monday = LocalDate.of(2026, 11, 2)
+        val hourly = com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, com.bamnat.core.pay.WageType.HOURLY,
+            com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(LocalDate.of(2026, 1, 1), 10_320))))
+        val cover = com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID, coveredShiftId = 1)
+        val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, listOf(1L, null, null, null, null, null, null)),
+            listOf(com.bamnat.core.model.DayEntry(monday.plusDays(1), extras = listOf(cover))))
+        val pay = com.bamnat.core.pay.PayCalculator().calculate(hourly, YearMonth.of(2026, 11), r::resolve)
+        val week = pay.holidayWeeks.first { it.from == monday }
+        assertEquals(8 * 60, week.workedMinutes)
+        assertTrue(!week.earned)
+        val c = com.bamnat.core.work.HourlyLines.covers(YearMonth.of(2026, 11), r::resolve)
+        assertEquals(1, c.count)
+        assertEquals(8 * 60, c.minutes)
+        assertTrue(com.bamnat.core.work.HourlyLines.coverLine(c)!!.contains("주휴 계산에 넣지 않았어요"))
+        // 휴게 포함 시급: 8시간 일하고 1시간 쉬면 10,320 × 8/9.
+        val stay = com.bamnat.core.work.HourlyLines.stay(YearMonth.of(2026, 11), 10_320, r::resolve)
+        assertEquals(9_173, stay.copy(paidMinutes = 480, breakMinutes = 60).rate)
+        assertTrue(stay.breakMinutes > 0)
+    }
 }
