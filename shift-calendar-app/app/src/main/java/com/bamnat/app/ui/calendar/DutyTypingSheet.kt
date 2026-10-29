@@ -62,6 +62,7 @@ import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.DutyCheck
 import com.bamnat.core.schedule.RestRules
 import java.time.DayOfWeek
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -100,7 +101,11 @@ fun DutyTypingSheet(
         v != androidx.compose.material3.SheetValue.Hidden || guard.typed == 0 || false.also { guard.asking = true }
     })
     // [J133-78] The X asks the same as 닫기, back and a swipe: it had closed and thrown typed days away.
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state,
+    // [J133-90] Back (predictive back too) hides the sheet without the swipe's check: it comes back up and asks.
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
+        if (guard.typed == 0) onDismiss() else { guard.asking = true; scope.launch { state.show() } }
+    }, sheetState = state,
         onClose = { if (guard.typed == 0) onDismiss() else guard.asking = true }) {
         DutyTypingPanel(snap, month, onDismiss, onSave, rules, initial, doubtful, onRules, onDoubtLeft, weekStart,
             Modifier.navigationBarsPadding(), guard)

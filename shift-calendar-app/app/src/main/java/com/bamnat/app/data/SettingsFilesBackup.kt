@@ -239,6 +239,7 @@ class SettingsFilesBackup(
             "lookup_stats" to "조회에 걸린 시간 중 아직 보내지 않은 것(처리방침 3.5 시행 뒤, 동의한 경우), 이 휴대폰에서만",
             "start_steps" to "첫 주 ‘시작 3단계’ 카드를 그만 보기로 했는지, 이 휴대폰에서만",
             "share_ask_gate" to "나누기 부탁을 거절한 뒤 다시 묻지 않는 날짜, 이 휴대폰에서만 (J133-17)",
+            "first_pay_asked" to "광장 판마다 '첫 급여 방식이 되어 주세요'를 이미 보여 준 기록, 이 휴대폰에서만 (J133-94)",
             "inquiry_reply" to "문의 답을 바로 알린 개수, 같은 답을 두 번 알리지 않으려고 (J133-24)",
             // 1.32 [PROX-02]: when this phone was offered a free day on a money day (끄기는 기능 스위치로 백업).
             "pro_moments" to "급여일·신고 달의 하루 무료 권유를 이 휴대폰에서 본 날과 닫은 날",

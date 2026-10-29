@@ -187,9 +187,15 @@ fun DiffEditorSheet(
         onConfirm = { asking = false; touched = false; onDismiss() },
         destructive = true,
     )
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = state, onClose = close) {
-        // [J133-90] 빌드 7 확인 ("뒤로 키는 묻지 않고 닫혀 값이 사라져요"): back goes to the sheet's own window, so it is caught in here.
-        androidx.activity.compose.BackHandler(enabled = touched || busy) { close() }
+    // [J133-90] 빌드 7·8 확인 ("뒤로 키·뒤로 제스처는 묻지 않고 닫혀 값이 사라져요"): the sheet's own back (predictive back too) hides
+    // it and then asks to be dismissed without the swipe's check, so here the sheet comes back up and the question is asked.
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
+        when {
+            busy -> scope.launch { state.show() }
+            touched -> { asking = true; scope.launch { state.show() } }
+            else -> onDismiss()
+        }
+    }, sheetState = state, onClose = close) {
         val e = edit
         if (start == null || e == null) {
             Text("이 설정은 고칠 수 없어요. 토론에 글로 적어 주세요.", Modifier.padding(24.dp))

@@ -100,4 +100,16 @@ class J133ScreenshotTest : ScreenshotBase() {
         tapText("바꾸기", exact = true)
         reveal("어떤 일인가요? (선택)", exact = true)
     }
+
+    /** [J133-94] 빌드 8: the pay screen of a calendar on a 광장 version, its pay set up, opens (it closed the app). */
+    @Test fun payScreenOnAPlazaVersionOpens() = shoot("j133_09_folded_pay_plaza_version", FOLDED) {
+        val c = companyOn()
+        withPay()
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("AAAAAAAAAAAA", "GS칼텍스", "", "0123456789abcdef", null, false,
+            java.time.Instant.now()))
+        val vm = com.bamnat.app.ui.pay.PayViewModel(c)
+        content { com.bamnat.app.ui.pay.PayScreen(vm = vm, onBack = {}) }
+        settle()
+        assertTrue(appears("급여", exact = false))
+    }
 }

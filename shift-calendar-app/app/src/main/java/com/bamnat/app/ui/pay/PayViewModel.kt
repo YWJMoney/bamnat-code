@@ -104,11 +104,7 @@ class PayViewModel(
     val settings: StateFlow<com.bamnat.app.data.AppSettings> =
         scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
 
-    init {
-        container.telemetry.event(DiagEvents.SCREEN, "pay")
-        // [J133-94] Also when the pay was there before the 광장 version went in: the card waits on the pay screen.
-        viewModelScope.launch { if (payStore.profile.value != null) offerFirstPay() }
-    }
+    init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
 
     /** [J133-85][J133-94] The card to be the first pay way of the 광장 version in use, once for each version. */
     private suspend fun offerFirstPay() {
@@ -196,6 +192,10 @@ class PayViewModel(
     fun firstPayShown() {
         _firstPay.value = null
     }
+
+    // [J133-94] Also when the pay was there before the 광장 version went in: the card waits on the pay screen. After [_firstPay]:
+    // the launch runs at once on the main thread (빌드 8: an init above it met the flow not made yet and closed the app).
+    init { viewModelScope.launch { if (payStore.profile.value != null) offerFirstPay() } }
 
     /** [TAX-02] The calendar's pay records, so 세후 예상 under the total follows a newly read or typed month. */
     val payRecords = container.tax(calendarId).observations
