@@ -1316,10 +1316,13 @@ class PayCalculator(
             // [ITEM-01] A company amount or a percent allowance in 통상임금 counts at what it pays this month.
             val profile = ItemShares.resolve(given, month)
             val base = profile.base.on(month).value
-            val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() }
+            // [J133-81] 1.33 (광장 급여 써 보기: 합계에서 뺀 교대수당이 통상시급에는 들어가 12,679원): an amount still 확인 필요 is in no
+            // figure, the 통상시급 either, until the user says it.
+            fun known(item: PayItem) = Unknowns.item(item.id) !in profile.estimatedFields
+            val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() && known(it) }
                 .sumOf { it.amount.on(month).value }
             val bonuses = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
-            else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }.sumOf { it.bonusMonthlyShare(profile.bonusBase(it, month), month) }
+            else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS && known(it) }.sumOf { it.bonusMonthlyShare(profile.bonusBase(it, month), month) }
             return OrdinaryWage(base, allowances, bonuses)
         }
 
