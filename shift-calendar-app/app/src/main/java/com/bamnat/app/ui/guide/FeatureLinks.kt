@@ -141,6 +141,7 @@ object FeatureSwitches {
             "money.heat" -> c.settingsRepository.current.spendHeat
             "backup.nudge" -> c.settingsRepository.current.backupNudge
             "day.leaveTime" -> c.settingsRepository.current.leaveTimeNotice
+            "recipe.browse" -> c.recipes.on.value
             in MONEY_CARDS -> moneyCardShown(c, MONEY_CARDS.getValue(feature.id))
             else -> true
         }
@@ -178,6 +179,7 @@ object FeatureSwitches {
                 "money.heat" -> c.settingsRepository.update { it.copy(spendHeat = on) }
                 "backup.nudge" -> c.settingsRepository.update { it.copy(backupNudge = on) }
                 "day.leaveTime" -> c.settingsRepository.update { it.copy(leaveTimeNotice = on) }
+                "recipe.browse" -> c.recipes.setOn(on)
                 in MONEY_CARDS -> showMoneyCard(c, MONEY_CARDS.getValue(feature.id), on)
                 else -> { FeatureLinks.open(feature); return false }
             }

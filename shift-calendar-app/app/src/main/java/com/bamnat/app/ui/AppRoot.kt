@@ -1781,6 +1781,8 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.LEAVE -> screen(Routes.leave(cal))
         Place.PROFILE -> screen(Routes.PROFILE)
         Place.JOURNAL -> screen(Routes.JOURNAL)
+        Place.RECIPES -> screen(if (c.recipes.on.value) Routes.recipes(cal) else Routes.RECIPE_MINE)
+        Place.RECIPE_MINE -> screen(Routes.RECIPE_MINE)
         Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }

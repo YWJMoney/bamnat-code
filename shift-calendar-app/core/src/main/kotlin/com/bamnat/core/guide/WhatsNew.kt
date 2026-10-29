@@ -10,6 +10,19 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.34.0 나눔 판 (계획/1.34-나눔판-설계서.md).
+        Release(46, "1.34.0", listOf(
+            // [RCP-21][RCP-23..26]
+            Line("광장에 ‘나눔 판’이 생겼어요. 다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 내 달력에서 미리 보고 고른 것만 넣어요. 7일 안에 되돌려요", "recipe.browse"),
+            // [RCP-17][RCP-19]
+            Line("내 설정도 레시피로 나눠요. 금액·이름은 받는 분이 넣는 칸으로 바뀌어 보이지 않아요", "recipe.make"),
+            // [RCP-08][RCP-09][RCP-18]
+            Line("근무에 이모지를 달고, 달력의 오늘·주말·공휴일 색을 색상환으로 골라요", "calendar.theme"),
+            // [RCP-11]
+            Line("자주 쓰는 메모를 틀로 저장하고 ‘틀에서 시작’으로 바로 써요", "memo.template"),
+            // [RCP-34]
+            Line("교대·일근에도 같은 일 하는 분들끼리 이야기하는 광장이 생겼어요", "plaza.shiftRoom"),
+        )),
         // 1.33.0 (docs/plans/1.33-개발계획.md, 1.32 실사용 테스트 보고서와 직접 써 보기).
         Release(45, "1.33.0", listOf(
             // [J133-46][J133-50]

@@ -222,3 +222,11 @@ widget.lines
 widget.memo
 widget.nextOff
 widget.teams
+recipe.browse
+recipe.make
+recipe.link
+recipe.mine
+calendar.theme
+shift.emoji
+memo.template
+plaza.shiftRoom

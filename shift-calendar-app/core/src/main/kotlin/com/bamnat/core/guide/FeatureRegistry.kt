@@ -19,6 +19,8 @@ enum class Place {
     LEAVE,
     // [EASY-08][OBS-02] 1.23 묶음 N: 내 정보 and 밤낮이 한 일.
     PROFILE, JOURNAL,
+    // [RCP-38] 1.34 나눔 판: the recipes of the calendar's kind of work, and 설정 › 나눔 판.
+    RECIPES, RECIPE_MINE,
     SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
@@ -736,6 +738,25 @@ object FeatureRegistry {
         f("field.daysProof", "WTYP-28", "근무일 증빙 PDF", "최근 18개월 일한 날을 날짜별 표 PDF로 만들어 실업급여·퇴직공제 신청 때 보여 줘요(프로)",
             setOf(FIELD), "${tab(FIELD)} › 출역일 › 근무일 증빙 PDF", at(Place.STATS), "실업급여", "퇴직공제", "근무일 증빙", "고용센터", "공제회", "18개월",
             under = "field.year"),
+        // ---- 1.34 나눔 판 (계획/1.34-나눔판-설계서.md, 순번 743~787) ----
+        f("recipe.browse", "RCP-21", "나눔 판 레시피 받기", "다른 분이 꾸민 근무 색·알람·메모 틀·급여 규칙을 내 달력에서 미리 보고, 고른 것만 넣어요. 넣은 지 7일 안에는 그대로 되돌려요",
+            ALL, "광장 › 나눔 판 · 레시피", at(Place.RECIPES), "레시피", "나눔 판", "템플릿", "테마", "남의 설정", "설정 받기", "되돌리기",
+            off = Off.ELSEWHERE),
+        f("recipe.make", "RCP-17", "내 설정 나누기", "근무 색·알람·메모 틀·규칙 중 고른 것만 레시피로 묶어 광장이나 링크로 나눠요. 금액·이름은 받는 분이 넣는 칸으로 바뀌어요",
+            ALL, "광장 › 나눔 판 › 만들기 (또는 설정 화면의 ‘이 설정 나누기’)", at(Place.RECIPES), "레시피 만들기", "설정 공유", "내 설정 나누기", "공유하기",
+            under = "recipe.browse"),
+        f("recipe.link", "RCP-22", "링크·코드로 레시피 받기", "친구가 보낸 링크를 누르거나 8글자 코드를 넣으면 그 레시피가 바로 열려요",
+            ALL, "광장 › 나눔 판 › 코드로 받기", at(Place.RECIPES), "레시피 코드", "링크로 받기", "코드 넣기", "친구 설정", under = "recipe.browse"),
+        f("recipe.mine", "RCP-38", "받은 레시피·내 레시피", "넣은 레시피를 7일 안에 되돌리고, 내가 올린 레시피의 좋아요·안좋아요 의견과 검토 상태를 봐요. 나눔 판을 끄는 곳도 여기예요",
+            ALL, "설정 › 나눔 판", at(Place.RECIPE_MINE), "내 레시피", "받은 레시피", "레시피 되돌리기", "나눔 판 끄기", "안좋아요 의견", under = "recipe.browse"),
+        f("calendar.theme", "RCP-09", "달력 색", "오늘·토요일·일요일·공휴일 색과 근무 칸을 채울지 옅게 칠할지 골라요. 어두운 화면 색은 알아서 맞춰요",
+            ALL, "설정 › 달력 › 달력 색", at(Place.SETTINGS_CALENDAR, "달력 색"), "달력 색", "테마", "오늘 색", "토요일 색", "일요일 색", "칸 색", "꾸미기"),
+        f("shift.emoji", "RCP-08", "근무 이모지", "근무마다 글자 대신 ☀️·🌙 같은 이모지를 달력 칸에 보여요. 한글로 찾아 고르고, 색도 색상환으로 골라요",
+            ALL, "설정 › 내 근무 › 근무 종류 › 근무 누르기 › 이모지", at(Place.SHIFT_TYPES), "이모지", "아이콘", "근무 색", "색상환", "꾸미기"),
+        f("memo.template", "RCP-11", "메모 틀", "자주 쓰는 체크 목록을 틀로 저장하고 ‘틀에서 시작’으로 바로 써요. 매주·매달 되풀이도 돼요",
+            ALL, "메모 › 메모 쓰기 › 틀에서 시작", at(Place.MEMOS), "메모 틀", "템플릿", "체크리스트", "되풀이 메모", "틀로 저장"),
+        f("plaza.shiftRoom", "RCP-34", "교대·일근 광장", "회사와 상관없이 같은 교대·일근 분들과 이야기를 나누는 광장이 생겼어요. 회사 규칙 광장 위에서 들어가요",
+            setOf(SHIFT, DAY), "광장 › 교대 광장(일근 광장) 가기", at(Place.PAY), "교대 광장", "일근 광장", "교대 이야기", "수면", "야간 팁"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

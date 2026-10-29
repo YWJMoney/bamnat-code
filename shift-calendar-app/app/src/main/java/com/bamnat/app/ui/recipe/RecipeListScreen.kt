@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import com.bamnat.core.work.WorkStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -87,11 +88,11 @@ fun RecipeCover(cover: Cover, size: Dp = 56.dp, modifier: Modifier = Modifier) {
  */
 @Composable
 fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier = Modifier,
-    hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}) {
+    hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}, style: WorkStyle? = null) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("나눔 판 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-            Text("다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 미리 보고, 고른 것만 내 달력에 넣어요. 7일 안에 되돌릴 수 있어요",
+            Text(entryLine(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             for ((label, list) in listOf("요즘 뜨는" to hot, "새로 올라온" to fresh.filter { f -> hot.none { it.code == f.code } })) {
                 if (list.isEmpty()) continue
@@ -126,8 +127,20 @@ fun PlazaRecipeBlock(c: com.bamnat.app.AppContainer, calendar: String, onOpen: (
         val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
         value = runCatching { c.recipeApi.list(style, "hot").items to c.recipeApi.list(style, "new").items }.getOrDefault(value)
     }
-    RecipeEntryCard(onOpen, onMake, modifier, lists.first, lists.second, onItem)
+    val style = remember(calendar) { c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle) }
+    RecipeEntryCard(onOpen, onMake, modifier, lists.first, lists.second, onItem, style)
 }
+
+/** [RCP-38] The first line of 나눔 판 in the words of each kind of work: what is worth taking there. */
+internal fun entryLine(style: WorkStyle?): String = when (style) {
+    WorkStyle.SHIFT -> "다른 교대 분들이 꾸민 근무 색·이모지, 근무별 알람, 인수인계 메모 틀을 미리 보고 고른 것만 넣어요"
+    WorkStyle.DAY -> "다른 일근 분들이 쓰는 달력 색, 출근 알람, 업무 메모 틀을 미리 보고 고른 것만 넣어요"
+    WorkStyle.HOURLY -> "다른 알바 분들이 쓰는 주휴·야간·휴게 규칙과 알람을 미리 보고 넣어요. 시급은 내가 넣어요"
+    WorkStyle.FIELD -> "다른 현장 분들이 쓰는 공수 칩, 경비 항목, 단가표 틀을 미리 보고 넣어요. 일당은 내가 넣어요"
+    WorkStyle.BUSINESS -> "다른 사장님들이 쓰는 영업일, 마감 체크 목록, 경비 분류를 미리 보고 넣어요"
+    WorkStyle.INVEST -> "다른 분들이 쓰는 투자 원칙과 일지 틀을 미리 보고 넣어요. 종목 추천은 올라오지 않아요"
+    null -> "다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 미리 보고, 고른 것만 내 달력에 넣어요"
+} + ". 7일 안에 되돌릴 수 있어요"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
