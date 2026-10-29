@@ -48,7 +48,7 @@ class ProfileAnswers(private val c: AppContainer, private val today: () -> Local
             FactKey.TAX_MODE -> {
                 val mode = TaxMode.valueOf(value)
                 prefs.setTaxMode(scope.id, mode)
-                if (scope.pay.profile.value != null) scope.pay.update { it.copy(taxMode = mode) }
+                if (scope.pay.profile.value != null) scope.pay.update { it.copy(taxMode = mode, taxChosen = true) }
                 true
             }
             FactKey.ALARM_LEAD -> {

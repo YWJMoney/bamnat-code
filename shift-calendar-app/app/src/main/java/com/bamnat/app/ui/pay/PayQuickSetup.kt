@@ -60,6 +60,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.YearMonth
+import com.bamnat.core.pay.taxKnown
 
 private const val COMPANY = "company"
 private const val FORM = "form"
@@ -122,6 +123,8 @@ fun PayQuickSetup(
     // [PAYG-06] Opens on the company the user works for: "쓰고 있어요", its way at once, or 직접 만들기 when it has none.
     val payFind = com.bamnat.app.ui.company.rememberPayFindState(usingStep = initial != null)
     var holiday by remember { mutableStateOf(initial?.rules?.holidayWork) }
+    // [J133-01] 1.33 (보고서 A3, 사용자 승인 2026-10-29): the tax way on the last page, 4대보험·소득세 picked unless set before.
+    var tax by remember { mutableStateOf(initial?.takeIf { it.taxKnown }?.taxMode ?: com.bamnat.core.pay.TaxMode.INSURANCE_4) }
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
     var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
     // [PAYF-07] Opened from a public cycle just put in, the company was already looked up (CompanyPayOffer asked "급여 계산
@@ -141,7 +144,7 @@ fun PayQuickSetup(
             .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
-    val draft = draftOf(form, amount, holiday)
+    val draft = draftOf(form, amount, holiday)?.copy(taxMode = tax, taxChosen = true)
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
 
@@ -261,7 +264,7 @@ fun PayQuickSetup(
                             fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, h) }
                         })
                     } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
-                        onDetailed = { onDetailed(p) })
+                        onDetailed = { onDetailed(p) }, onTax = { tax = it })
                 }
             }
         }
@@ -333,6 +336,7 @@ private fun ConfirmPage(
     fromSlip: Boolean,
     onSlip: () -> Unit,
     onDetailed: () -> Unit,
+    onTax: (com.bamnat.core.pay.TaxMode) -> Unit = {},
 ) {
     var range by remember { mutableStateOf<PayRange?>(null) }
     LaunchedEffect(p) {
@@ -358,7 +362,22 @@ private fun ConfirmPage(
     if (r == null) Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
         Text("  이번 달을 계산하고 있어요", style = MaterialTheme.typography.bodyMedium)
-    } else PayslipPreview(r)
+    } else {
+        PayslipPreview(r)
+        // [J133-01] 이번 달 통장에 들어올 돈: the 세후 on the first setup's last page, with the way it is worked out.
+        val net = remember(r.total, p.taxMode, p.taxFamily, p.taxChildren) {
+            com.bamnat.core.pay.TakeHome.estimate(r.total, p.taxMode, p.taxFamily, month.atDay(1), p.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(p, month))
+        }
+        Text("통장에 들어올 돈 (세후 예상)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(com.bamnat.app.ui.Fmt.won(net.net), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+        if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} (간이세액표·4대 보험 요율 참고값)",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Text("월급에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+    com.bamnat.app.tax.TaxWayChips(p.taxMode, onPick = onTax)
+    Text("대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 근무·급여에서 바꿀 수 있어요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedButton(onClick = onSlip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("명세서·회사 계산 방법 사진으로 맞추기")
     }

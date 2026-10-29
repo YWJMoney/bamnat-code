@@ -212,6 +212,8 @@ object PayCodec {
         .apply { if (p.customRules.isNotEmpty()) put("customRules", JSONArray(p.customRules.map(::customRule))) }
         // [HRLY-04..HRLY-07] 알바 settings, left out at their defaults so older files stay the same.
         .apply { if (p.taxMode != com.bamnat.core.pay.TaxMode.NONE) put("taxMode", p.taxMode.name) }
+        // [J133-01] 1.33: the tax way was picked (떼지 않음 too), left out when not.
+        .apply { if (p.taxChosen) put("taxChosen", true) }
         // [PAYR-04] 간이세액표 가족·자녀 수, left out at 1·0.
         .apply { if (p.taxFamily != 1) put("taxFamily", p.taxFamily) }
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
@@ -259,6 +261,7 @@ object PayCodec {
         checks = o.optJSONArray("checks")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(::verifiedFrom) } }.orEmpty(),
         customRules = o.optJSONArray("customRules").objects().mapNotNull(::customRuleFrom).take(CustomRule.MAX),
         taxMode = com.bamnat.core.pay.TaxMode.entries.firstOrNull { it.name == o.optString("taxMode") } ?: com.bamnat.core.pay.TaxMode.NONE,
+        taxChosen = o.optBoolean("taxChosen", false),
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
         taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
         ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },

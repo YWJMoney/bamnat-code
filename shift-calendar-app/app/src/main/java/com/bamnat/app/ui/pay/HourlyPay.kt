@@ -104,7 +104,7 @@ internal fun HourlyPayCard(
         Text("세금 떼는 방식", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TaxMode.entries.forEach { m ->
-                FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m) } }, label = { Text(m.label) })
+                FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m, taxChosen = true) } }, label = { Text(m.label) })
             }
         }
         // [PAYR-04] The same 가족·자녀 the stats card sets, so both screens show one take-home.

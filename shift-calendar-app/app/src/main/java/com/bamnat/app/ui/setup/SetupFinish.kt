@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -275,7 +274,7 @@ fun SetupPaySheet(
     }
     if (way != null) {
         androidx.compose.runtime.LaunchedEffect(way) { company.pendingWays.offer(way) }
-        ModalBottomSheet(onDismissRequest = onLater, sheetState = state) {
+        com.bamnat.app.ui.components.AppSheet(onDismissRequest = onLater, sheetState = state) {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -293,7 +292,7 @@ fun SetupPaySheet(
         }
         return
     }
-    ModalBottomSheet(onDismissRequest = onLater, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onLater, sheetState = state) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

@@ -61,7 +61,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -642,7 +641,7 @@ private fun FilterTitle(text: String) {
 private fun FilterSheet(book: MoneyBook, view: LedgerView, month: YearMonth, onApply: (LedgerView) -> Unit, onDismiss: () -> Unit) {
     var f by remember { mutableStateOf(view.filter) }
     val count = remember(book, f, view.period, month) { Ledger.search(book.entries, view.copy(filter = f).applied(month), view.sort, book.accounts).size }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("거르기", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })

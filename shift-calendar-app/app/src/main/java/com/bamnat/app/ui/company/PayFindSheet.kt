@@ -29,7 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -554,7 +553,7 @@ fun PayFindEntry(modifier: Modifier = Modifier, open: Boolean = false) {
 @Composable
 fun PayFindSheet(onDismiss: () -> Unit, onSaved: ((PayProfile) -> Unit)? = null) {
     val state = rememberPayFindState()
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState())) {
             PayFindFlow(state, onByHand = { _, _ -> onDismiss() }, onDone = onDismiss, onSaved = onSaved)
         }

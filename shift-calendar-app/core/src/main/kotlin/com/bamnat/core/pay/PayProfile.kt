@@ -284,6 +284,11 @@ data class PayProfile(
     val customRules: List<CustomRule> = emptyList(),
     /** [HRLY-04] How tax comes off this pay, for 예상 실수령; nothing by default. */
     val taxMode: TaxMode = TaxMode.NONE,
+    /**
+     * [J133-01] 1.33: the user picked [taxMode] (4대보험·3.3%·떼지 않음). A setup that never asked keeps NONE without it, and
+     * then 세후 is not said at all ("세후는 세금 방식을 고르면 보여요") instead of the 세전 called 실수령.
+     */
+    val taxChosen: Boolean = false,
     /** [PAYR-04] 간이세액표 공제대상가족 수 (본인·배우자 포함, 1~20), for 예상 실수령's 근로소득세. */
     val taxFamily: Int = 1,
     /** [PAYR-04] Of [taxFamily], 8세 이상 20세 이하 자녀 (간이세액표 제3호). */
@@ -368,3 +373,6 @@ enum class HourlySource(val label: String) {
     PLAZA("광장"),
     TYPED("직접"),
 }
+
+/** [J133-01] Whether 세후 can be said: a tax way the user picked, or one set before 1.33 asked (anything but NONE). */
+val PayProfile.taxKnown: Boolean get() = taxChosen || taxMode != TaxMode.NONE

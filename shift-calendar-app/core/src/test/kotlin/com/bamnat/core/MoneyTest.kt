@@ -78,14 +78,20 @@ class MoneyTest {
 
     @Test
     fun recordedSalaryIsAnObservationBesideTheEstimate() {
-        // [TAX-01] 결정 W-D1: the estimate counts once; the salary that came in is kept as 관측, never added on top.
+        // [TAX-01] 결정 W-D1: the pay counts once, never added on top. [J133-02] 1.33: the salary that came in is the one.
         val paid = listOf(MoneyEntry(date = d(10), kind = MoneyKind.INCOME, amount = 2_150_000, category = "급여"))
         val m = MoneyCalculator.month(nov, paid, emptyList(), emptyList(), payEstimate = 2_000_000)
-        assertEquals(2_000_000, m.payCounted)
-        assertEquals(2_000_000, m.income)
+        assertEquals(2_150_000, m.payCounted)
+        assertEquals(2_150_000, m.income)
+        assertEquals(2_150_000, m.received)
+        assertEquals(null, m.payExpected)
         assertEquals(2_150_000, m.payRecorded)
         assertTrue(m.payObserved)
-        assertEquals(2_000_000, MoneyCalculator.month(nov, emptyList(), emptyList(), emptyList(), 2_000_000).income)
+        // Before it came in, the estimate is 들어올 돈 (in the 남은 돈, not in 들어온 돈).
+        val before = MoneyCalculator.month(nov, emptyList(), emptyList(), emptyList(), 2_000_000)
+        assertEquals(2_000_000, before.income)
+        assertEquals(2_000_000L, before.payExpected)
+        assertEquals(0, before.received)
         // With no estimate (급여 계산을 안 쓰는 달) the salary written down is the pay.
         assertEquals(2_150_000, MoneyCalculator.month(nov, paid, emptyList(), emptyList()).income)
     }

@@ -43,7 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -161,7 +160,7 @@ fun PlazaFilterBar(
 fun TrialSheet(trial: Trial?, onClose: () -> Unit, onVote: (Boolean) -> Unit, proposal: Boolean = false, slip: com.bamnat.core.pay.PayslipCheck? = null) {
     val t = trial ?: return
     val what = if (proposal) "이 제안" else "이 규칙"
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (proposal) "이 제안으로 내 월급 계산" else "내 월급으로 시험", style = MaterialTheme.typography.titleLarge)
             Text("${t.month.monthValue}월 내 근무를 지금 내 설정과 ${what}으로 각각 계산했어요. 기본급과 사람마다 다른 수당 금액은 내 것 그대로예요. 계산은 휴대폰 안에서만 해요.",
@@ -241,7 +240,7 @@ private fun TotalBox(label: String, amount: Long, modifier: Modifier) {
 @Composable
 fun HistorySheet(state: HistoryState?, onClose: () -> Unit, onCompare: ((RuleVersion, RuleVersion) -> Unit)? = null) {
     val h = state ?: return
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("바뀐 기록", style = MaterialTheme.typography.titleLarge)
             Text("${h.title} · 채택된 버전은 지워지지 않고 여기에 남아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -301,7 +300,7 @@ private fun VersionRow(v: RuleVersion, onCompare: (() -> Unit)? = null) {
 fun ActivitySheet(holder: ActivityHolder) {
     val open by holder.open.collectAsStateWithLifecycle()
     val o = open ?: return
-    ModalBottomSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("내 활동", style = MaterialTheme.typography.titleLarge)

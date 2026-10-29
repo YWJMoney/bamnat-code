@@ -17,7 +17,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -71,7 +70,7 @@ fun ProOfferHost(c: AppContainer) {
     if (!open) return
     val feature by ProOffer.asking.collectAsStateWithLifecycle()
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
-    ModalBottomSheet(onDismissRequest = ProOffer::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = ProOffer::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         ProOfferContent(c, feature, gate, onPro = { ProOffer.close(); goPro() })
     }
 }

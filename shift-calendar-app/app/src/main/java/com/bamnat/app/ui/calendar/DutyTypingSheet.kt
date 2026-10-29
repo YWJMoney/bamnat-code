@@ -32,7 +32,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -100,7 +99,7 @@ fun DutyTypingSheet(
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         v != androidx.compose.material3.SheetValue.Hidden || guard.typed == 0 || false.also { guard.asking = true }
     })
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
         DutyTypingPanel(snap, month, onDismiss, onSave, rules, initial, doubtful, onRules, onDoubtLeft, weekStart,
             Modifier.navigationBarsPadding(), guard)
     }

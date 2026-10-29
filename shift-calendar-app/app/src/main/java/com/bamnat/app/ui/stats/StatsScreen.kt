@@ -56,7 +56,6 @@ import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.ui.money.wonBrief
-import com.bamnat.app.ui.pay.TakeHomeLine
 import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
@@ -307,8 +306,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 onClick = onOpenPay,
                 onFocus = if (payProfile != null) onOpenPayFocus else null,
             )
-            // [HRLY-04] 예상 실수령 next to the pay before tax.
-            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
+            // [HRLY-04] 예상 실수령 next to the pay before tax. [J133-01] 1.33 (보고서 A3): for every kind of pay, the same 세후
+            // 가계부 shows, or the tax way asked right here when it never was.
+            if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree) }
         }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
         WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree,
@@ -881,5 +881,27 @@ private fun StatsRangePicker(range: com.bamnat.core.hours.StatsRange.Range, onPi
     ) {
         androidx.compose.material3.DateRangePicker(state, title = { Text("볼 기간 고르기 (1년까지)", Modifier.padding(start = 24.dp, top = 16.dp)) },
             modifier = Modifier.heightIn(max = 520.dp))
+    }
+}
+
+/** [J133-01][J133-02] 세후 under the pay card: [com.bamnat.app.tax.TaxWay.net], or the three ways to pick when none is. */
+@Composable
+private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfile, gross: Long, month: YearMonth, nonTaxable: Long?) {
+    val learned by produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, gross, month, profile) {
+        value = runCatching { vm.takeHome(gross, month) }.getOrNull()
+    }
+    val net = com.bamnat.app.tax.TaxWay.net(profile, gross, month, nonTaxable, learned)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Column(Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp)) {
+        if (net != null) {
+            Text("세후 예상 ${com.bamnat.app.ui.Fmt.won(net)} · 떼는 돈 ${com.bamnat.app.ui.Fmt.won(gross - net)}",
+                style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        } else {
+            Text(com.bamnat.app.tax.TaxWay.UNKNOWN, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.bamnat.app.tax.TaxWayChips(null) { m ->
+                scope.launch { com.bamnat.app.tax.TaxWay.pick(context.appContainer, vm.calendarId, m) }
+            }
+        }
     }
 }

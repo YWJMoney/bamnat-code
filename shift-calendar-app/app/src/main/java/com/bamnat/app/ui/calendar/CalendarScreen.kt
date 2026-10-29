@@ -14,7 +14,6 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -1674,7 +1673,7 @@ private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content
     // [STAB-01] A message still showing here when the sheet closes is closed with it: otherwise it waits for
     // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
     DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
         // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
         Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
@@ -1921,7 +1920,7 @@ internal fun CalendarToolsSheet(
     others: List<com.bamnat.app.ui.components.OtherRow> = emptyList(),
     onAdd: (String, Boolean) -> Unit = { _, _ -> },
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             CalendarToolsGrid(tools, onPicked = onDismiss)
             // [FIT-02] What this kind of work does not use, put away and added back here.
