@@ -181,8 +181,9 @@ class AGScreenshotTest : ScreenshotBase() {
         assertTrue(appears("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)."))
         assertTrue(appears("불편한 점 알려 주기"))
         assertTrue(appears("개발자가 직접 읽고 답을 드리고"))
-        // The 더 보기 row says the rule as meant, not "다른 날 한 번 더 열면".
-        reveal("5명 더 채울 때마다 또 · 초대 코드 넣기")
+        // [J133-77] 1.33: while this card says 친구 초대, the 더 보기 row does not say it again.
+        reveal("더 보기", exact = true)
+        assertTrue(gone("초대 코드 넣기"))
         scrollDown(2000)
         reveal("함께 만들어요", exact = true)
         noCuts("settings_top")

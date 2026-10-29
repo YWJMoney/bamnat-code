@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.appContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -243,7 +244,9 @@ fun CalendarEditScreen(
                 OutlinedButton(onClick = onShare, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("이 달력 근무표 공유")
+                    // [J133-87] In the calendar's own words (이 달력 영업일 공유).
+                    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+                    Text("이 달력 " + com.bamnat.core.work.shareTitle(app.calendars.styleOf(vm.calendarId, app.settingsRepository.current.workStyle)))
                 }
                 // [UNDO-02] Starting this calendar over without removing it, with 7 days to take it back.
                 TextButton(onClick = { scope.launch { clearing = vm.records() } }, modifier = Modifier.fillMaxWidth()) {

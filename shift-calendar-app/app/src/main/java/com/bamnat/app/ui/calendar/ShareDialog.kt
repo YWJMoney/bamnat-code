@@ -239,7 +239,7 @@ fun ShareDialog(
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
             Text(
-                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}을 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
@@ -274,7 +274,9 @@ fun ShareDialog(
             Text("보여 줄 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    PartRow("근무", if (employee) "이름·색·시간, 늘 들어가요" else "근무를 적은 날만, 이름·색·시간", checked = true, enabled = false) {}
+                    // [J133-87] 1.33 빌드 6: a shop's first row is its 영업일, a field worker's its 일정 days, in their words.
+                    PartRow(if (employee) "근무" else if (field) "일한 날" else com.bamnat.core.work.scheduleWord(style),
+                        if (employee) "이름·색·시간, 늘 들어가요" else "적은 날만, 이름·색·시간", checked = true, enabled = false) {}
                     if (field) {
                         PartRow("일정", "날마다 일감 이름과 시간, ${ShareLinkPayload.JOBS_PER_DAY}개까지. 고객·장소·금액은 빼요", options.jobs) { options = options.copy(jobs = it) }
                     }

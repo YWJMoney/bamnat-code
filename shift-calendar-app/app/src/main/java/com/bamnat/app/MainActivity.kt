@@ -119,7 +119,8 @@ class MainActivity : ComponentActivity() {
                     info != null && info.firstInstallTime != info.lastUpdateTime
                 }
                 val consent by container.consentStore.seen.collectAsStateWithLifecycle()
-                if (!settings.textAsked && updated && consent != null && settings.workStyle != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                // [J133-87] A size already picked (settings, or the first screen of 1.32) is an answer too.
+                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.workStyle != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // [LOCK-01] Over the app, so the screen the user was on is still there after.

@@ -526,6 +526,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 container.importUndo.save()
                 container.backupManager.restore(json)
                 container.telemetry.event(DiagEvents.BACKUP_RESTORE)
+                // [J133-87] 1.33 빌드 6 (복원 뒤 완료 알림이 안 보여요): the restored settings (12시간 보기, 글자 크기) draw the app's root
+                // again, and a message shown at once went with the old one. Said once the new screen is up.
+                kotlinx.coroutines.delay(RESTORED_SAY_MS)
                 SettingsMessage("백업을 불러왔어요", undo = true)
             }.getOrElse { e -> SettingsMessage((e as? BackupException)?.message ?: "백업을 불러오지 못했어요. 지금 데이터는 그대로예요") }
         }
@@ -533,6 +536,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private companion object {
         const val MISSED_WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000L
+        const val RESTORED_SAY_MS = 700L
     }
 }
 

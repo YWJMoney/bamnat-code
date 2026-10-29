@@ -437,6 +437,8 @@ fun CompanyDetailScreen(
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
+                    // [J133-88] No pay way here yet: the public record of this very company, said as the record's.
+                    if (p.setups.none { it.hasPay }) PublicFirmCard(p.name, onlyExact = true)
                     // [PLAZA-09] 결정 D79: a member's room, only what the others changed, each value to take alone.
                     room?.takeIf { onPick == null }?.let { r ->
                         RoomSection(r, onTake = { card -> vm.take(card) { msg, ok -> if (ok) { error = null; notice = msg } else error = msg } })

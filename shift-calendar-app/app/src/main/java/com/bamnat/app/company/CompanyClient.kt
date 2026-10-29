@@ -437,6 +437,8 @@ interface CompanyApi {
     suspend fun search(query: String): List<CompanyHit>
     /** [SRCH-04] 1.29 AS: the companies most phones use, with their 대표 주기 line, for the phone to keep ([CompanySearch]). */
     suspend fun popular(): List<CompanyHit> = emptyList()
+    /** [J133-88] What the 국민연금 가입 사업장 record says of workplaces named like [query]; null when it cannot be read now. */
+    suspend fun publicFirms(query: String): com.bamnat.core.plaza.PublicFirms? = null
     suspend fun company(id: String): CompanyPage
 
     /**
@@ -570,6 +572,25 @@ class CompanyClient(
         if (CompanyText.norm(query).length < 2) return@readCall emptyList()
         val o = request("GET", "/api/companies?q=" + URLEncoder.encode(query.trim().take(40), "UTF-8"))
         o.optJSONArray("companies").objects().map(::companyHit)
+    }
+
+    /** [J133-88] null from a server before 1.33 (not_found) and when the record is not there now (unavailable). */
+    override suspend fun publicFirms(query: String): com.bamnat.core.plaza.PublicFirms? = readCall {
+        if (CompanyText.norm(query).length < 2) return@readCall null
+        val o = try {
+            request("GET", "/api/public/firms?q=" + URLEncoder.encode(query.trim().take(40), "UTF-8"))
+        } catch (e: CompanyException) {
+            if (e.code == "not_found" || e.code == "http_404") return@readCall null else throw e
+        }
+        if (o.optBoolean("unavailable")) return@readCall null
+        com.bamnat.core.plaza.PublicFirms(o.optString("asOf"), o.optString("source"), o.optJSONArray("firms").objects().map {
+            com.bamnat.core.plaza.PublicFirm(it.optString("name"), it.optString("region"), it.optString("industry"), it.optInt("members"), it.optLong("average"))
+        }, o.optInt("minMembers", 5), o.optJSONArray("rules").objects().map { r ->
+            com.bamnat.core.plaza.PublicRuleSet(r.optString("name"), r.optString("rule"), r.optString("effective"), r.optString("url"),
+                r.optInt("hours", 0).takeIf { it in 100..320 },
+                r.optJSONArray("lines").objects().map { l -> com.bamnat.core.plaza.PublicRuleLine(l.optString("item"), l.optString("calc"), l.optString("amount"), l.optString("note")) },
+                r.optJSONArray("takes")?.let { a -> (0 until a.length()).map(a::getString) }.orEmpty(), r.optString("setup"))
+        }, o.optString("rulesSource"))
     }
 
     /** [SRCH-04] 1.29 AS: the companies most phones use, with their 대표 주기; empty from a server before 1.29. */

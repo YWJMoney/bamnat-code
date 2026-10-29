@@ -307,6 +307,8 @@ fun PayFindFlow(
                     style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                 Text("근무주기처럼 직접 만들어 주세요. 몇 가지만 고르면 돼요. 다 만들면 같은 회사 분들도 쓰게 ‘$name’ 이름으로 광장에 나눌지 한 번 여쭤봐요(내 급여 금액·이름은 빼고).",
                     style = MaterialTheme.typography.bodyMedium)
+                // [J133-88] What the public record says of it, before the user makes it (5인 이상 decides the 가산).
+                PublicFirmCard(name, max = 2)
                 Button(onClick = { find.none(name); onByHand(name, row?.publicId) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text("직접 만들게요")
                 }
@@ -413,6 +415,8 @@ private fun NameStep(state: PayFindState, find: PayFind, byHandHere: Boolean, on
         val settled = server is PayServer.Found || server == PayServer.Off
         if (settled && rows.none { it.pay }) {
             Text("‘$q’ 급여 방식은 아직 없어요. 직접 만들면 같은 회사 분들의 첫 급여 방식이 돼요.", style = MaterialTheme.typography.bodyMedium)
+            // [J133-88] Not empty-handed: what the public record says of the name.
+            PublicFirmCard(q)
         }
         if (byHandHere) {
             OutlinedButton(onClick = { find.none(q); onByHand(q, null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

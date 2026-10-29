@@ -207,7 +207,8 @@ class AHScreenshotTest : ScreenshotBase() {
         assertTrue(appears("근무 시간이 달라요", exact = true))
         assertTrue(appears("급여 항목이 달라요", exact = true))
         tapText("근무 시간이 달라요", exact = true)
-        tapText("달라요 보내기", exact = true)
+        // b55400cb 1.33: 달라요 now offers to write the fix right after; this one sends the vote alone.
+        tapText("달라요만 보내기", exact = true)
         assertEquals(false to "time", l.votes.last())
     }
 

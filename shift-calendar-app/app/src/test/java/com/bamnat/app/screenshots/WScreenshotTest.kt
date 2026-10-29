@@ -56,7 +56,7 @@ class WScreenshotTest : ScreenshotBase() {
     private fun payWithRecords(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
         runBlocking {
             c.payStore.save(PayViewModel(c).sampleProfile().copy(period = com.bamnat.core.pay.PayPeriod(payDay = 10, payNextMonth = true),
-                taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4), keepUndo = false)
+                taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4, taxChosen = true), keepUndo = false)
             val tax = c.tax(PersonalCalendar.MAIN)
             val now = YearMonth.from(today)
             listOf(3 to (3_420_000L to 2_948_000L), 2 to (3_180_000L to 2_760_000L)).forEach { (i, gn) ->
@@ -113,7 +113,8 @@ class WScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.money.MoneyScreen(vm, wide = false, onOpenPay = {}, today = today) }
         settle()
         reveal("수입 내역", exact = true)
-        assertTrue(appears("관측", exact = false))
+        // 1.33 (0b54ca79): the pay that came is said against the estimate ("예상 … · N원 더/덜 들어왔어요"), no longer "관측".
+        assertTrue(appears("들어왔어요", exact = false) || appears(" · 같아요", exact = false))
     }
     @Test fun hugeTextCard() = shoot("855_w_tax_card_huge_text", SMALL_PHONE, fontScale = 2f) { payWithRecords()(); money()() }
     @Test fun darkSheet() = shoot("856_w_take_home_dark", FOLDED_NIGHT) { payWithRecords()(); money()(); tapText("기록·자세히") }

@@ -957,7 +957,8 @@ class BackupManager(
                         .let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
                     showDayCard = o.optBoolean("dayCard", o.optString("phoneDayView") == PhoneDayView.PREVIEW.name),
                     tapSelectFirst = o.optBoolean("tapFirst", false),
-                    textAsked = o.optBoolean("textAsked", s.textAsked),
+                    // [J133-87] 1.33 빌드 6: a backup from before the ask brought it back over a phone that already answered.
+                    textAsked = s.textAsked || o.optBoolean("textAsked", false),
                     compact = o.optBoolean("compact", s.compact),
                     textStep = o.optInt("textStep", s.textStep),
                     clock12 = o.optBoolean("clock12", s.clock12),

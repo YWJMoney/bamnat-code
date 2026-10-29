@@ -154,6 +154,15 @@ fun PayQuickSetup(
     val scope = rememberCoroutineScope()
     val container = LocalContext.current.appContainer
     val companyFinder = com.bamnat.app.ui.company.companyScope(container).find
+    // [J133-88] 1.33: a part-timer's workplace the 국민연금 record has with 5 or more members is 5인 이상 for sure; picked, and said why.
+    var fiveFrom by remember { mutableStateOf<com.bamnat.core.plaza.PublicFirm?>(null) }
+    LaunchedEffect(form?.wageType) {
+        if (form?.wageType != WageType.HOURLY || fiveOrMore != null) return@LaunchedEffect
+        val name = companyFinder.known().takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val firm = com.bamnat.core.plaza.PublicFirmWords.exact(com.bamnat.app.ui.company.publicFirmsFor(container, name), name)
+            ?.takeIf(com.bamnat.core.plaza.PublicFirmWords::fiveOrMore) ?: return@LaunchedEffect
+        if (fiveOrMore == null) { fiveOrMore = true; fiveFrom = firm }
+    }
 
     val since = if (initial != null) thisMonth.atDay(1) else thisMonth.minusMonths(12).atDay(1)
     fun draftOf(f: WorkForm?, a: Long?, h: HolidayWork?): PayProfile? {
@@ -267,7 +276,7 @@ fun PayQuickSetup(
                         profile = draft ?: initial, month = thisMonth,
                         // [J133-80] 빌드 5: the keypad covered 다음, so its first tap only closed the keypad. 완료 goes on.
                         onDone = { if ((amount ?: 0) > 0) next() })
-                    if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false) { fromSlip = null; fiveOrMore = it }
+                    if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false, fiveFrom) { fromSlip = null; fiveFrom = null; fiveOrMore = it }
                     SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
                 }
                 HOLIDAY -> {
@@ -337,12 +346,17 @@ fun PayQuickSetup(
 /** [J133-04] 같이 일하는 사람이 5명 이상인가요? Two chips, 아니요 unless the user knows. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun FiveOrMoreRow(yes: Boolean, onChange: (Boolean) -> Unit) {
+private fun FiveOrMoreRow(yes: Boolean, from: com.bamnat.core.plaza.PublicFirm? = null, onChange: (Boolean) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("같이 일하는 사람이 사장님 빼고 5명 이상인가요?", style = MaterialTheme.typography.titleSmall)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.bamnat.app.ui.components.FilterChip(selected = !yes, onClick = { onChange(false) }, label = { Text("아니요 (모르면 이것)") })
             com.bamnat.app.ui.components.FilterChip(selected = yes, onClick = { onChange(true) }, label = { Text("네, 5명 이상") })
+        }
+        // [J133-88] Picked from the public record: which one, so the user can tell it is their workplace.
+        from?.let { f ->
+            Text("국민연금 공개 자료에 ‘${f.name}’ 가입자가 ${"%,d".format(f.members)}명이라 5명 이상으로 골라 뒀어요. 다른 곳이면 바꿔 주세요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
         Text(if (yes) "야간(밤 10시~아침 6시)·연장·휴일에 일하면 시급의 1.5배로 계산해요."
             else "5명 미만 가게는 법으로 야간·연장·휴일 가산이 없어서 시급대로 계산해요. 주휴수당은 그대로 받아요.",

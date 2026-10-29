@@ -761,7 +761,9 @@ fun CalendarScreen(
         received.view(null)
         // [MCAL-03] An added calendar's notice opens that calendar's sheet.
         // [PROV-04] A notice about a second link names it too, and the sheet opens on it.
-        val key = NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN
+        val key = NoticeLinks.calendar.value
+            ?: (if (NoticeLinks.payload.value == NoticeLinks.ON_SCREEN) context.appContainer.calendars.active.value else null)
+            ?: com.bamnat.app.data.PersonalCalendar.MAIN
         vm.viewCalendar(com.bamnat.app.share.ShareLinkKey.calendar(key))
         shareSlot = com.bamnat.app.share.ShareLinkKey.slot(key)
         if (shareLinks) showShare = true

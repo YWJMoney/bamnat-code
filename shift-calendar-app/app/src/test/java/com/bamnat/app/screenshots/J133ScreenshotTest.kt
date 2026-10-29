@@ -49,4 +49,32 @@ class J133ScreenshotTest : ScreenshotBase() {
         tab(4, wide = false)
         tapText("도움말과 문의", exact = true)
     })
+
+    /** [J133-88][J133-89] Where no one has shared a pay way yet: the institution's own 보수규정 and its 국민연금 line, said as the record's. */
+    @Test fun foldedPublicRecord() = shoot("j133_07_folded_public_record", FOLDED) {
+        val c = companyOn()
+        runBlocking { c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile(), keepUndo = false) }
+        val setup = """{"app":"com.bamnat.app","format":"bamnat-company","v":4,"company":"서울교통공사(시험)","shiftTypes":[],""" +
+            """"pay":{"fiveOrMore":true,"monthlyHours":209,"holidayMode":"FULL","withAmounts":false,"items":[]}}"""
+        company.publicRecord = com.bamnat.core.plaza.PublicFirms("2026-09", "국민연금공단 국민연금 가입 사업장 내역",
+            listOf(com.bamnat.core.plaza.PublicFirm("서울교통공사(시험)", "서울 성동구", "도시철도 운송업", 16_000, 6_100_000)),
+            rules = listOf(com.bamnat.core.plaza.PublicRuleSet("서울교통공사(시험)", "보수규정", "2026-09-15", "https://www.cleaneye.go.kr/", 209,
+                listOf(
+                    com.bamnat.core.plaza.PublicRuleLine("통상임금 기준 시간", "시간급 = 기본급÷209", "", "제4조"),
+                    com.bamnat.core.plaza.PublicRuleLine("야간근무수당", "22:00~06:00 통상임금×0.5/209×시간", "", "별표2 3호"),
+                    com.bamnat.core.plaza.PublicRuleLine("교대근무수당", "업무보전수당: 근무형태별 기본급의 %", "4조2교대 비심야 6.75% / 심야 6.35%",
+                        "별표2 9호; 표 열 배치가 섞여 대상 설명은 원문 확인 권장, 표 판독 불확실"),
+                    com.bamnat.core.plaza.PublicRuleLine("승무수당", "열차승무수당 현업 3급 이하 승무직, 매월", "월 100,000원", "별표2 8호"),
+                ), listOf("승무수당"), setup)),
+            rulesSource = "공공기관 보수규정 (알리오 공공기관 내부규정·클린아이·국가법령정보센터)")
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                com.bamnat.app.ui.company.PublicFirmCard("서울교통공사(시험)")
+            }
+        }
+        org.junit.Assert.assertTrue(appears("공개 규정 · 서울교통공사(시험) 보수규정", exact = true))
+        org.junit.Assert.assertTrue(appears("원문 표를 다 읽지 못한 줄이에요", exact = false))
+        reveal("국민연금 가입 16,000명", exact = false)
+    }
 }

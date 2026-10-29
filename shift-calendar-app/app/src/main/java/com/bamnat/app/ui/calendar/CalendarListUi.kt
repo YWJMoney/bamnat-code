@@ -320,7 +320,12 @@ fun CalendarSwitcherSheet(
                         trailing = {
                             Row {
                                 IconButton(onClick = { onEdit(row.cal) }) { Icon(Icons.Outlined.Edit, "${row.cal.name} 고치기") }
-                                onShare?.let { share -> IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} 근무표 공유") } }
+                                // [J133-87] 1.33 빌드 6: read as '가게 근무표 공유'; each calendar's in its own words (가게 영업일 공유).
+                                onShare?.let { share ->
+                                    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+                                    val name = com.bamnat.core.work.shareTitle(app.calendars.styleOf(row.cal.id, app.settingsRepository.current.workStyle))
+                                    IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} $name") }
+                                }
                             }
                         },
                     )

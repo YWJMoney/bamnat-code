@@ -1436,7 +1436,7 @@ abstract class ScreenshotBase {
     // [PAYR-04][PAYR-05] 평일 근무 통계: 예상 실수령 from the 간이세액표, with 가족·자녀 under 4대보험.
     internal fun dayTakeHome(wide: Boolean = false): Screen.() -> Unit = {
         val c = app.container
-        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(taxFamily = 3, taxChildren = 1), keepUndo = false) }
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(taxFamily = 3, taxChildren = 1, taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4, taxChosen = true), keepUndo = false) }
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
         settle()
         tab(3, wide = wide)
@@ -1516,6 +1516,9 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
 internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override val enabled = true
     var file = "{}"
+    /** [J133-88][J133-89] What the public record says of a name (국민연금 사업장, 공공기관 보수규정); null: nothing. */
+    var publicRecord: com.bamnat.core.plaza.PublicFirms? = null
+    override suspend fun publicFirms(query: String): com.bamnat.core.plaza.PublicFirms? = publicRecord
     /** [COMM-14] Two reports for (주)예시정밀 생산팀 side by side, on the board and the company screen. */
     var twins = false
     /** [PLAZA-02][PLAZA-05] 묶음 X: the second 생산팀 판's own file (null: the same as [file]), history with each version's file. */

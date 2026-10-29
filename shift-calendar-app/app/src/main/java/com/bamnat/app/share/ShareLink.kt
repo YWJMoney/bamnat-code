@@ -109,9 +109,10 @@ enum class ShareAudience(val key: String) {
         return when (this) {
             COWORKER -> if (companyWork && setupOpen) "근무표와 회사 설정까지, 받은 동료는 기본급만 넣으면 돼요"
                 else if (companyWork) "근무표와 연장·휴무일 근무를 보여요. 회사 설정은 파일로 따로 보내요"
-                else if (employee) "근무표와 연장·휴무일 근무를 함께 보여요" else "${com.bamnat.core.work.scheduleWord(style)}을 함께 보며 맞춰요"
-            FAMILY -> "${days}만 보여요. 메모·${if (employee) "급여" else "금액"}는 안 가요"
-            FRIEND -> "${days}만 보여요. 친구도 바로 자기 ${if (employee) "근무" else "달력"}를 넣을 수 있어요"
+                else if (employee) "근무표와 연장·휴무일 근무를 함께 보여요" else com.bamnat.core.work.scheduleWord(style).let { "$it${com.bamnat.app.ui.Fmt.obj(it)} 함께 보며 맞춰요" }
+            // [J133-87] 1.33 빌드 6 ('금액는', '달력를'): the particle follows the word.
+            FAMILY -> (if (employee) "급여" else "금액").let { "${days}만 보여요. 메모·$it${com.bamnat.app.ui.Fmt.eun(it)} 안 가요" }
+            FRIEND -> (if (employee) "근무" else "달력").let { "${days}만 보여요. 친구도 바로 자기 $it${com.bamnat.app.ui.Fmt.obj(it)} 넣을 수 있어요" }
         }
     }
 

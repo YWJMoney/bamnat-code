@@ -916,4 +916,12 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     if (style == null) return this
     val first = HelpFaq.firstFor(style)
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
+        .map { if (style == com.bamnat.core.work.WorkStyle.HOURLY) it.copy(question = workplaceWords(it.question), answer = workplaceWords(it.answer)) else it }
 }
+
+/**
+ * [J133-87] 1.33 빌드 6 (알바 도움말에 '회사 계산 방법'·'회사 규칙'): 알바's pay tab is 근무지 규칙, so the answers say what the
+ * screen says. The plaza keeps its own name (회사 규칙 광장).
+ */
+internal fun workplaceWords(text: String): String =
+    text.replace("회사 계산 방법", "근무지 계산 방법").replace(Regex("회사 규칙(?! 광장)"), "근무지 규칙").replace("회사 방식", "근무지 방식")

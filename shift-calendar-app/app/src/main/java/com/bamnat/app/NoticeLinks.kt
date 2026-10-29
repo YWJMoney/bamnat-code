@@ -138,6 +138,9 @@ object NoticeLinks {
         _target.value = target
     }
 
+    /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
+    const val ON_SCREEN = "on_screen"
+
     fun consume(target: Target) {
         _target.compareAndSet(target, null)
     }

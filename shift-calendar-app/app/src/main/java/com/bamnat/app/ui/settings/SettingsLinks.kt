@@ -57,7 +57,8 @@ object SettingsLinks {
     fun go(go: SettingsGo) {
         when (go) {
             // The calendar opens these itself, on the user's own calendar.
-            SettingsGo.SHARE -> NoticeLinks.open(NoticeLinks.Target.SHARE)
+            // [J133-87] 1.33 빌드 6: from the 가게 calendar it opened 내 달력's sheet and left 내 달력 on screen; it is the calendar on screen's.
+            SettingsGo.SHARE -> NoticeLinks.open(NoticeLinks.Target.SHARE, payload = NoticeLinks.ON_SCREEN)
             SettingsGo.RECEIVE -> NoticeLinks.open(NoticeLinks.Target.RECEIVE)
             SettingsGo.SLEEP -> NoticeLinks.open(NoticeLinks.Target.SLEEP)
             SettingsGo.CALENDAR_IMPORT -> NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)

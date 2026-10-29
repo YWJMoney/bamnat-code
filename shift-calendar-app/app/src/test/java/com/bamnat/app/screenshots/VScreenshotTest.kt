@@ -215,7 +215,7 @@ class VScreenshotTest : ScreenshotBase() {
     })
 
     // ---- 377 [PAYX-48] 월급날 비교: '사용하러 가기' opens the card, and the amount is typed right there ----
-    private fun withPay() = runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+    private fun withPay() = runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules, taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4, taxChosen = true), keepUndo = false) }
     private fun Screen.openPayGap() {
         com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRegistry.get("pay.gap")!!)
         settle()
