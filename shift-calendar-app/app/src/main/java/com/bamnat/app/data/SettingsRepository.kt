@@ -160,6 +160,8 @@ data class AppSettings(
     val spendHeat: Boolean = false,
     /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
     val backupNudge: Boolean = true,
+    /** 1.32 [WTYP-12] 연속 근무 경고: a stretch of work (shifts and extras with under an hour between) longer than this; 0 is not checked. */
+    val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
     val payDepositNotice: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
@@ -331,6 +333,7 @@ class SettingsRepository(context: Context) {
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
             spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
             backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
+            stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
@@ -421,6 +424,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
             .putBoolean(K_SPEND_HEAT, s.spendHeat)
             .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
+            .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
@@ -461,6 +465,7 @@ class SettingsRepository(context: Context) {
         const val K_SPEND_IN_CELLS = "spend_in_cells"
         const val K_SPEND_HEAT = "spend_heat"
         const val K_BACKUP_NUDGE = "backup_nudge"
+        const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_CAL_ONLY = "calendar_only"
         const val K_STATS_PERIOD = "stats_pay_period"

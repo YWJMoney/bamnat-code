@@ -63,4 +63,20 @@ class WorkTypeAudit132Test {
         val proof = FieldDaysProof.doc("", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), days, LocalDate.of(2026, 10, 31)).text()
         assertTrue(proof.contains("판교") && proof.contains("3일"))
     }
+
+    /** 1.32 [WTYP-12] 당직(야간) 뒤 바로 이어진 장주간과 잔업은 한 번에 센 연속 근무예요. */
+    @Test fun aNightRunningIntoTheDayIsOneStretch() {
+        val pattern = WorkPattern.Weekly.fromSteps(LocalDate.of(2026, 10, 5), listOf(3L, 5L, null, null, null, null, null))
+        val extra = com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.OVERTIME_ID, LocalTime.of(19, 0), LocalTime.of(23, 0))
+        val entries = listOf(com.bamnat.core.model.DayEntry(LocalDate.of(2026, 10, 6), extras = listOf(extra)))
+        val resolver = ScheduleResolver(Fixtures.all, pattern, entries)
+        val s = com.bamnat.core.hours.Stretches.of(LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 6), resolver::resolve)
+        assertEquals(1, s.size)
+        // 10/5 22:00 → 10/6 23:00: 25시간.
+        assertEquals(25 * 60L, s[0].minutes)
+        assertEquals(1, com.bamnat.core.hours.Stretches.over(s, 24).size)
+        assertTrue(com.bamnat.core.hours.Stretches.over(s, 0).isEmpty() && com.bamnat.core.hours.Stretches.over(s, 28).isEmpty())
+        assertEquals("10/5 22:00부터 25시간 연속 · 24시간 넘음", com.bamnat.core.hours.Stretches.line(s[0], 24))
+        assertTrue(com.bamnat.core.hours.Stretches.Preset.RESIDENT.matches(80, 72, 24))
+    }
 }

@@ -309,9 +309,24 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }
         }
-        TextButton(onClick = {
-            vm.update { it.copy(weeklyLimitHours = AppSettings().weeklyLimitHours, averageLimitHours = AppSettings().averageLimitHours) }
-        }) { Text("기본값으로 (주 64시간 · 평균 52시간)") }
+        // 1.32 [WTYP-12] 연속 근무: 당직 뒤 바로 이어진 근무까지 한 번에 센 시간.
+        LimitRow(STRETCH_ROW, "근무와 추가 근무 사이가 1시간이 안 되면 이어서 세요. 0이면 보지 않아요", settings.stretchLimitHours, min = 0, max = 48) { h ->
+            vm.update { it.copy(stretchLimitHours = h) }
+        }
+        // 1.32 [WTYP-12] (조사 3장 의료) 미리 정한 값: 일반, 전공의.
+        Text("미리 정한 값", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.bamnat.core.hours.Stretches.Preset.entries.forEach { p ->
+                androidx.compose.material3.FilterChip(
+                    selected = p.matches(settings.weeklyLimitHours, settings.averageLimitHours, settings.stretchLimitHours),
+                    onClick = { vm.update { it.copy(weeklyLimitHours = p.weekly, averageLimitHours = p.average, stretchLimitHours = p.stretch) } },
+                    label = { Text(p.label) },
+                )
+            }
+        }
+        com.bamnat.core.hours.Stretches.Preset.entries.firstOrNull { it.matches(settings.weeklyLimitHours, settings.averageLimitHours, settings.stretchLimitHours) }?.let {
+            Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -996,6 +1011,8 @@ const val SETUP_AGAIN_ROW = "처음 설정 다시 받기"
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
+/** 1.32 [WTYP-12] */
+internal const val STRETCH_ROW = "연속 근무 경고"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"

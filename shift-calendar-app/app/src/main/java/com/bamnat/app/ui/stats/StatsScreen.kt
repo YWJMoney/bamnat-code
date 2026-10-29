@@ -444,6 +444,18 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
                     }
+                    // 1.32 [WTYP-12] 연속 근무 경고: stretches in these days past the limit set in 근무시간 경고.
+                    val long = remember(snap, summary, settings.stretchLimitHours) {
+                        summary.weeks.firstOrNull()?.let { first ->
+                            com.bamnat.core.hours.Stretches.over(com.bamnat.core.hours.Stretches.of(first.start, summary.weeks.last().end, snap.resolver::resolve), settings.stretchLimitHours)
+                        }.orEmpty()
+                    }
+                    if (long.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("연속 근무 ${settings.stretchLimitHours}시간 넘은 때 ${long.size}번", style = MaterialTheme.typography.titleSmall,
+                            color = LocalCalendarColors.current.warning)
+                        long.take(5).forEach { Text(com.bamnat.core.hours.Stretches.line(it, settings.stretchLimitHours), style = MaterialTheme.typography.bodySmall) }
+                    }
                     // [CAL-40] I 리뷰 I19: the coming week read from the roster, so 52시간 is seen before it is passed.
                     val next = remember(calc, today) { calc.glance(today.plusWeeks(1)) }
                     if (next.minutes > 0) {
