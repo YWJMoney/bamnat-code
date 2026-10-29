@@ -55,7 +55,7 @@ class SScreenshotTest : ScreenshotBase() {
 
     // ---- 357 [SETUP-15] ----
     @Test fun firstStyleFolded() = shoot("780_s_first_style", FOLDED, firstScreen {
-        assertTrue(shows("어떤 일을 하고 계신가요?"))
+        assertTrue(appears("어떤 일을 하고 계신가요?"))
         assertTrue("the setup's own question is not on screen", !shows("어떻게 일하세요?"))
     })
     @Test fun firstStyleSmallPhone() = shoot("781_s_first_style_small", SMALL_PHONE, firstScreen())
@@ -66,8 +66,8 @@ class SScreenshotTest : ScreenshotBase() {
 
     @Test fun dayWorkGetsDayNotices() = shoot("784_s_recommended_day", FOLDED, firstScreen {
         tapText("평일 근무", exact = true)
-        assertTrue(shows("평일 근무에 맞춰 골라 두었어요."))
-        assertFalse("no night notice to switch", shows(RecommendedFeature.COMMUTE.title, exact = true))
+        assertTrue(appears("평일 근무에 맞춰 골라 두었어요."))
+        assertTrue("no night notice to switch", gone(RecommendedFeature.COMMUTE.title, exact = true))
         reveal("꺼 두었어요")
     })
     @Test fun dayWorkThenTheSetupGoesOn() = shoot("785_s_day_then_setup", FOLDED, firstScreen {
@@ -75,7 +75,7 @@ class SScreenshotTest : ScreenshotBase() {
         tapText(LATER)
         // The work told once is not asked again: the setup starts on its next question.
         assertEquals(WorkStyle.DAY, c.setupDrafts.draft.value?.style)
-        assertFalse(shows("어떻게 일하세요?"))
+        assertTrue(gone("어떻게 일하세요?"))
         assertEquals(setOf(RecommendedFeature.BEDTIME, RecommendedFeature.TODAY_SHIFT), RecommendedSettings.on(c.settingsRepository.current))
     })
     @Test fun hourlyWorkGetsDayNotices() = shoot("786_s_recommended_hourly_dark", FOLDED_NIGHT, firstScreen {
@@ -86,8 +86,8 @@ class SScreenshotTest : ScreenshotBase() {
     })
     @Test fun fieldWorkGetsNoShiftNotices() = shoot("787_s_recommended_field", FOLDED, firstScreen {
         tapText("현장 · 프리랜서", exact = true)
-        assertTrue(shows("입금 약속일과 미수 알림", exact = false))
-        assertFalse("no shift notice to switch", shows(RecommendedFeature.BRIEFING.title, exact = true))
+        assertTrue(appears("입금 약속일과 미수 알림", exact = false))
+        assertTrue("no shift notice to switch", gone(RecommendedFeature.BRIEFING.title, exact = true))
     })
     @Test fun fieldWorkStartsAtOnce() = shoot("788_s_field_started", FOLDED, firstScreen {
         tapText("현장 · 프리랜서", exact = true)
@@ -117,7 +117,7 @@ class SScreenshotTest : ScreenshotBase() {
     @Test fun backFromRecommendedAsksAgain() = shoot("791_s_back_to_first_style", FOLDED, firstScreen {
         tapText("평일 근무", exact = true)
         back()
-        assertTrue(shows("어떤 일을 하고 계신가요?"))
+        assertTrue(appears("어떤 일을 하고 계신가요?"))
     })
 
     // ---- 358/359 [COMM-12][COMM-13][COMM-14] ----
@@ -143,7 +143,7 @@ class SScreenshotTest : ScreenshotBase() {
         val vm = CompanyBoardViewModel(companyOn())
         content { CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
         reveal("다른 점:")
-        assertTrue(shows("제보 1"))
+        assertTrue(appears("제보 1"))
     }
     @Test fun boardTwinsHugeText() = shoot("794_s_board_twins_huge_text", PHONE, fontScale = 2f) {
         company.twins = true
@@ -168,13 +168,13 @@ class SScreenshotTest : ScreenshotBase() {
         // [PAYF-03] 1.29: a setup with a pay way asks first whether the pay goes in too.
         if (shows("근무주기만 넣을게요", exact = true)) tapText("근무주기만 넣을게요", exact = true)
         reveal("1번째 줄: 오늘 주간")
-        assertFalse(shows("내 근무와 같은 줄을 먼저 골라 주세요"))
+        assertTrue(gone("내 근무와 같은 줄을 먼저 골라 주세요"))
     }
 
     // ---- 360 [INQ-06][INQ-07] ----
     @Test fun inquiryShareSwitch() {
         inquiriesOn()
-        shoot("797_s_inquiry_share_off", FOLDED) {
+        shoot("797_s_inquiry_share_on", FOLDED) {
             askFromScreen(InquiryStart(about = "달력", kind = InquiryKind.QUESTION))
             tapText("모두의 문의에 올리기", exact = true)
             reveal("모두의 문의에 올리기", exact = true)
@@ -184,7 +184,7 @@ class SScreenshotTest : ScreenshotBase() {
         inquiriesOn()
         shoot("798_s_help_home_ask_huge_text", PHONE, fontScale = 2f) {
             askFromScreen(InquiryStart(help = true))
-            assertTrue(shows("문의하기", exact = true))
+            assertTrue(appears("문의하기", exact = true))
         }
     }
     @Test fun inquiryShareSwitchLandscape() {

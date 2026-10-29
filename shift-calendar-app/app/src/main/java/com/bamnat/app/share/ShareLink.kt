@@ -52,6 +52,10 @@ data class ShareOptions(
     val pay: Boolean = false,
     /** [SHR-11] Booked jobs by title and time, for field and freelance work; never the client, place or price. */
     val jobs: Boolean = false,
+    /** [SHR-20] 1.33: who the link is for, as picked at the top of the sheet; null for a link made before 1.33. */
+    val audience: ShareAudience? = null,
+    /** [SHR-20] A coworker's link also carries the company setup (no amounts), from 처리방침 3.7's date. */
+    val setup: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */
     val shows: List<String>
@@ -64,9 +68,56 @@ data class ShareOptions(
         }
     val any: Boolean get() = shows.isNotEmpty()
 
+    /** [SHR-20] The company setup goes with this link: a coworker's, ticked. */
+    val sendsSetup: Boolean get() = setup && audience == ShareAudience.COWORKER
+
     companion object {
-        fun of(shows: Collection<String>) =
-            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows)
+        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false) =
+            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup)
+
+        /**
+         * [SHR-20] 1.33 (계획 690~694): what each way sends at first. 동료: the 연장·휴무일 근무 and the company setup, never
+         * memos or money; 가족·친구: the shifts and leave only (a freelancer's family also sees the 일정). Each can still be
+         * ticked by hand; 기본급·입사일·연차·알람·메모·금액 go nowhere unless ticked.
+         */
+        fun forAudience(a: ShareAudience, employee: Boolean, field: Boolean): ShareOptions = when (a) {
+            ShareAudience.COWORKER -> ShareOptions(extras = employee, jobs = field, audience = a, setup = employee)
+            ShareAudience.FAMILY -> ShareOptions(jobs = field, audience = a)
+            ShareAudience.FRIEND -> ShareOptions(audience = a)
+        }
+    }
+}
+
+/**
+ * [SHR-20] 1.33 (계획 690 "달력 '공유' 맨 위에 세 갈래"): who a link is for. The words follow the kind of work: 교대·일근 have a
+ * 회사, the rest 같이 일하는 사람 and 친구 ([J133-71]).
+ */
+enum class ShareAudience(val key: String) {
+    COWORKER("coworker"), FAMILY("family"), FRIEND("friend");
+
+    fun label(companyWork: Boolean): String = when (this) {
+        COWORKER -> if (companyWork) "같은 회사 동료" else "같이 일하는 사람"
+        FAMILY -> "가족·연인"
+        FRIEND -> if (companyWork) "다른 회사 친구" else "친구"
+    }
+
+    /** [setupOpen]: the company setup can go in the link now (정책 3.7 시행 뒤); before, the coworker is told the 근무표 only. */
+    fun hint(companyWork: Boolean, setupOpen: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): String {
+        // [J133-79] A shop's or a field worker's link in its own words (빌드 5: 가게 공유 시트가 '근무표·근무와 휴가').
+        val employee = style?.usesPayEngine != false
+        val days = com.bamnat.core.work.daysWord(style)
+        return when (this) {
+            COWORKER -> if (companyWork && setupOpen) "근무표와 회사 설정까지, 받은 동료는 기본급만 넣으면 돼요"
+                else if (companyWork) "근무표와 연장·휴무일 근무를 보여요. 회사 설정은 파일로 따로 보내요"
+                else if (employee) "근무표와 연장·휴무일 근무를 함께 보여요" else com.bamnat.core.work.scheduleWord(style).let { "$it${com.bamnat.app.ui.Fmt.obj(it)} 함께 보며 맞춰요" }
+            // [J133-87] 1.33 빌드 6 ('금액는', '달력를'): the particle follows the word.
+            FAMILY -> (if (employee) "급여" else "금액").let { "${days}만 보여요. 메모·$it${com.bamnat.app.ui.Fmt.eun(it)} 안 가요" }
+            FRIEND -> (if (employee) "근무" else "달력").let { "${days}만 보여요. 친구도 바로 자기 $it${com.bamnat.app.ui.Fmt.obj(it)} 넣을 수 있어요" }
+        }
+    }
+
+    companion object {
+        fun of(key: String?): ShareAudience? = entries.firstOrNull { it.key == key }
     }
 }
 
@@ -116,6 +167,8 @@ object ShareLinkPayload {
     }
 
     const val MEMO_CHARS = 80
+    /** [SHR-20] The share server's limit for a setup file. */
+    const val SETUP_CHARS = 24 * 1024
     /** Up to "0.75일 무급 휴가", as the server takes it. */
     const val LEAVE_CHARS = 12
 
@@ -172,6 +225,8 @@ object ShareLinkPayload {
         jobs: Map<LocalDate, List<SharedJob>> = emptyMap(),
         /** [FEAT-15] The calendar feed (…/s/<id>.ics) is on, with its times in this zone; null keeps it off. */
         feed: java.time.ZoneId? = null,
+        /** [SHR-20] The company setup file (no amounts) for a coworker's link; sent only with [ShareOptions.sendsSetup]. */
+        setup: String? = null,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -243,6 +298,9 @@ object ShareLinkPayload {
             put("types", types)
             put("days", days)
             if (options.any) put("shows", JSONArray(options.shows))
+            // [SHR-20] A server from before 1.33 ignores both and keeps the link as it was.
+            options.audience?.let { put("audience", it.key) }
+            if (options.sendsSetup && setup != null && setup.length <= SETUP_CHARS) put("setup", setup)
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->
@@ -402,9 +460,12 @@ class ShareLinkStore(
         set(value) { if (!retired) prefs.edit().apply { if (value == null) remove("noticed") else putString("noticed", value.toString()) }.apply() }
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
-    fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty())
+    fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty(),
+        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false))
 
-    fun saveOptions(o: ShareOptions) { if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).apply() }
+    fun saveOptions(o: ShareOptions) {
+        if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).putString("audience", o.audience?.key).putBoolean("setup", o.setup).apply()
+    }
 
     /**
      * [FEAT-15] Whether the link also serves a calendar feed (…/s/<id>.ics) to subscribe to; off until the

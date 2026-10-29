@@ -17,6 +17,10 @@ import androidx.compose.ui.unit.dp
  */
 enum class PayTab(val label: String) {
     RESULT("결과"), VALUES("내 급여 값"), RULES("회사 규칙"), TOOLS("도구"),
+    ;
+
+    /** [J133-71] 1.33: 알바's rules are 근무지 규칙, not 회사 규칙. */
+    fun labelFor(style: com.bamnat.core.work.WorkStyle?): String = if (this == RULES) "${style?.employer ?: "회사"} 규칙" else label
 }
 
 /**
@@ -45,7 +49,7 @@ enum class PayFocus(val key: String, val label: String, val tab: PayTab) {
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun PayTabRow(tab: PayTab, onTab: (PayTab) -> Unit) {
+internal fun PayTabRow(tab: PayTab, onTab: (PayTab) -> Unit, style: com.bamnat.core.work.WorkStyle? = null) {
     androidx.compose.foundation.layout.BoxWithConstraints {
         val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
         if (maxWidth / 4 < 64.dp * scale) {
@@ -54,7 +58,7 @@ internal fun PayTabRow(tab: PayTab, onTab: (PayTab) -> Unit) {
                 modifier = Modifier.padding(vertical = 4.dp),
             ) {
                 PayTab.entries.forEach { t ->
-                    com.bamnat.app.ui.components.FilterChip(selected = t == tab, onClick = { onTab(t) }, label = { Text(t.label) })
+                    com.bamnat.app.ui.components.FilterChip(selected = t == tab, onClick = { onTab(t) }, label = { Text(t.labelFor(style)) })
                 }
             }
         } else {
@@ -62,7 +66,7 @@ internal fun PayTabRow(tab: PayTab, onTab: (PayTab) -> Unit) {
                 PayTab.entries.forEach { t ->
                     // The content form of Tab grows with its text (the text form is a fixed 48dp and cuts a second line).
                     Tab(selected = t == tab, onClick = { onTab(t) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(t.label, textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall,
+                        Text(t.labelFor(style), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.padding(horizontal = 2.dp, vertical = 10.dp))
                     }
                 }

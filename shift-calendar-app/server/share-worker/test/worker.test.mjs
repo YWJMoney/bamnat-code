@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import worker, { validate, renderSchedule, renderIcs, flushStats, REPORT_REASONS } from "../src/index.js";
+import worker, { validate, renderSchedule, renderIcs, flushStats, REPORT_REASONS, LIMITS } from "../src/index.js";
 
 function memoryKv() {
   const map = new Map();
@@ -581,4 +581,31 @@ test("[SHR-14] 모임 코드: each adds only their own link, the group is ids on
   assert.equal((await call(env, "DELETE", `/api/groups/${code}/${a.id}`, undefined, { "x-delete-token": a.deleteToken })).status, 204);
   assert.equal((await call(env, "GET", `/api/groups/${code}`)).status, 404);
   assert.equal((await call(env, "GET", "/api/groups/ABCDE1")).status, 404);
+});
+
+test("[SHR-20] 1.33: a link says who it is for, and only a coworker's carries the company setup", async () => {
+  const setup = JSON.stringify({ format: "bamnat-company", company: "가나공업", types: [] });
+  assert.equal(validate({ ...sample, audience: "family" }).schedule.audience, "family");
+  assert.equal(validate({ ...sample, audience: "boss" }).error, "audience");
+  assert.equal(validate({ ...sample, audience: "family", setup }).error, "setup");
+  assert.equal(validate({ ...sample, setup }).error, "setup");
+  assert.equal(validate({ ...sample, audience: "coworker", setup: "{not json" }).error, "setup");
+  assert.equal(validate({ ...sample, audience: "coworker", setup: JSON.stringify({ format: "backup" }) }).error, "setup");
+  assert.equal(validate({ ...sample, audience: "coworker", setup: "x".repeat(LIMITS.setup + 1) }).error, "setup");
+  const ok = validate({ ...sample, audience: "coworker", setup });
+  assert.equal(ok.schedule.setup, setup);
+  // A link from before 1.33 has neither.
+  const old = validate(sample).schedule;
+  assert.equal(old.audience, undefined);
+  assert.equal(old.setup, undefined);
+  // The page says the app takes it, and never shows the file.
+  const html = renderSchedule(ok.schedule, new Date(Date.now() + 86400000).toISOString());
+  assert.match(html, /회사 근무 설정도 함께 보냈어요/);
+  assert.ok(!html.includes("가나공업"));
+  // The app gets it back with the schedule.
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, audience: "coworker", setup })).json();
+  const got = await (await call(env, "GET", `/api/share/${made.id}`)).json();
+  assert.equal(got.schedule.audience, "coworker");
+  assert.equal(got.schedule.setup, setup);
 });

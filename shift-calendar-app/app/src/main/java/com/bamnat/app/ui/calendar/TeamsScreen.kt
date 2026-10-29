@@ -58,7 +58,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -69,7 +68,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,6 +80,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -206,6 +206,8 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
             }
             return@Scaffold
         }
+        // [J133-46] Stepping past the month's last day turns the table's month with it.
+        LaunchedEffect(picked) { picked?.let { if (view == TeamsView.MONTH && YearMonth.from(it) != month) month = YearMonth.from(it) } }
         val saved = rosters[vm.calendarId]
         val roster = remember(saved, rotation) { rosterFor(saved, rotation) }
         val guessed = saved == null
@@ -215,27 +217,40 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
             if (wide) {
                 // Unfolded: today and the cover finder on the left, the table on the right.
                 Row(Modifier.fillMaxSize()) {
+                    // [J133-50] 1.33 (직접 써 보기, 폴드): a picked day's result on top of the left side, not under the cards.
                     Column(Modifier.weight(0.42f).fillMaxSize().verticalScroll(rememberScrollState())) {
-                        TodayTeams(roster, rotation, snap, today, guessed, onEdit = { editing = true })
-                        CoverHint(onPick = { picked = today.plusDays(1) })
                         picked?.let { day ->
-                            CoverPanel(day, roster, rotation, snap, restMinutes, vm::setRest, onClose = { picked = null })
+                            CoverPanel(day, roster, rotation, snap, restMinutes, vm::setRest, onClose = { picked = null },
+                                onStep = { step -> picked = day.plusDays(step.toLong()) })
                         }
+                        TodayTeams(roster, rotation, snap, today, guessed, onEdit = { editing = true })
+                        if (picked == null) CoverHint(onPick = { picked = today.plusDays(1) })
                     }
                     Column(Modifier.weight(0.58f).fillMaxSize()) {
                         TableArea(view, { view = it }, month, { month = it }, roster, rotation, snap, today, picked) { picked = if (picked == it) null else it }
                     }
                 }
             } else {
+                // [J133-46] 순번 726: a picked day opens a panel over the lower part only, not a sheet over the whole
+                // screen, so the table stays above it and the next day is one tap (or a swipe) away instead of 뒤로 first.
+                val panelMax = maxHeight * 0.5f
+                androidx.activity.compose.BackHandler(enabled = picked != null) { picked = null }
                 Column(Modifier.fillMaxSize()) {
-                    TodayTeams(roster, rotation, snap, today, guessed, onEdit = { editing = true })
+                    if (picked == null) TodayTeams(roster, rotation, snap, today, guessed, onEdit = { editing = true })
                     TableArea(view, { view = it }, month, { month = it }, roster, rotation, snap, today, picked,
                         modifier = Modifier.weight(1f)) { picked = if (picked == it) null else it }
-                }
-                picked?.let { day ->
-                    ModalBottomSheet(onDismissRequest = { picked = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-                        Column(Modifier.verticalScroll(rememberScrollState())) {
-                            CoverPanel(day, roster, rotation, snap, restMinutes, vm::setRest, onClose = { picked = null })
+                    picked?.let { day ->
+                        Surface(
+                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            shadowElevation = 6.dp,
+                            // [J133-58] 1.33 (중간 빌드 확인): a sideways swipe anywhere on the panel steps the day, not only on its title.
+                            modifier = Modifier.fillMaxWidth().heightIn(max = panelMax).daySwipe(day) { step -> picked = day.plusDays(step.toLong()) },
+                        ) {
+                            Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                                CoverPanel(day, roster, rotation, snap, restMinutes, vm::setRest, onClose = { picked = null },
+                                    onStep = { step -> picked = day.plusDays(step.toLong()) })
+                            }
                         }
                     }
                 }
@@ -278,7 +293,8 @@ fun TeamsPanel(calendarId: String, snap: ScheduleSnapshot, month: YearMonth, sel
         }
         picked?.let { day ->
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                CoverPanel(day, roster, rotation, snap, rests[calendarId] ?: CoverFinder.DEFAULT_REST_MINUTES, vm::setRest, onClose = { picked = null })
+                CoverPanel(day, roster, rotation, snap, rests[calendarId] ?: CoverFinder.DEFAULT_REST_MINUTES, vm::setRest, onClose = { picked = null },
+                    onStep = { step -> picked = day.plusDays(step.toLong()).also { d -> if (YearMonth.from(d) != shown) shown = YearMonth.from(d) } })
             }
         }
     }
@@ -290,11 +306,12 @@ private fun TodayTeams(roster: TeamRoster, rotation: WorkPattern.Rotation, snap:
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("오늘 ${Fmt.dayTitle(today)}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         val ordered = listOf(roster.mine) + roster.teams.filterNot { it.mine }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // [J133-50] Every team in sight: the cards share the width (1.32 scrolled sideways and cut the last team off).
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ordered.forEach { team ->
                 val type = roster.shiftOn(rotation, team, today)?.let { snap.typesById[it] }?.takeIf { !it.isOff }
                 val next = roster.shiftOn(rotation, team, today.plusDays(1))?.let { snap.typesById[it] }?.takeIf { !it.isOff }
-                TeamCard(team, type, next)
+                TeamCard(team, type, next, Modifier.weight(1f))
             }
         }
         if (guessed) {
@@ -310,29 +327,32 @@ private fun TodayTeams(roster: TeamRoster, rotation: WorkPattern.Rotation, snap:
 }
 
 @Composable
-private fun TeamCard(team: TeamRoster.Team, type: ShiftType?, next: ShiftType?) {
+private fun TeamCard(team: TeamRoster.Team, type: ShiftType?, next: ShiftType?, modifier: Modifier = Modifier) {
     val tint = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
     val desc = "${team.name}${if (team.mine) ", 내 조" else ""}, 오늘 ${type?.name ?: "쉬는 날"}, 내일 ${next?.name ?: "쉬는 날"}"
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (type == null) MaterialTheme.colorScheme.surfaceContainerLow else tint.copy(alpha = 0.14f),
-        modifier = Modifier
-            .widthIn(min = 92.dp)
+        modifier = modifier
             .then(if (team.mine) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
             .semantics(mergeDescendants = true) { contentDescription = desc },
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(horizontal = 6.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(team.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(team.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
                 if (team.mine) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     Text("내 조", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 1.dp))
                 }
             }
             ShiftBadge(type, text = if (type == null) "휴" else null, outlined = type == null, size = 36.dp)
-            Text(type?.let { t -> if (t.hasTimes) "${t.name} ${Fmt.timeRange(t.start!!, t.end!!)}" else t.name } ?: "쉬는 날",
-                style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            Text(type?.name ?: "쉬는 날", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            type?.takeIf { it.hasTimes }?.let { t ->
+                Text(Fmt.timeRange(t.start!!, t.end!!), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text("내일 ${next?.name ?: "휴"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -394,6 +414,17 @@ private fun TeamTable(
     val cal = LocalCalendarColors.current
     val list = rememberLazyListState()
     LaunchedEffect(days.firstOrNull(), scrollToToday) { if (scrollToToday) list.scrollToItem((today.dayOfMonth - 3).coerceAtLeast(0)) }
+    // [J133-46] A day stepped to from the panel stays in sight above it.
+    LaunchedEffect(picked) {
+        val i = picked?.let { days.indexOf(it) } ?: -1
+        if (i < 0) return@LaunchedEffect
+        // [J133-58] 1.33 (중간 빌드 확인): a row only partly above the panel counts as hidden too.
+        val info = list.layoutInfo
+        val row = info.visibleItemsInfo.firstOrNull { it.index == i }
+        if (row == null || row.offset < info.viewportStartOffset || row.offset + row.size > info.viewportEndOffset) {
+            list.animateScrollToItem((i - 2).coerceAtLeast(0))
+        }
+    }
     val mineTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
     BoxWithConstraints(modifier.fillMaxWidth()) {
         // Columns share the width when they fit, and scroll sideways only with many teams on a narrow screen.
@@ -469,7 +500,7 @@ private fun TeamTable(
 @Composable
 internal fun CoverPanel(
     day: LocalDate, roster: TeamRoster, rotation: WorkPattern.Rotation, snap: ScheduleSnapshot,
-    restMinutes: Int, onRest: (Int) -> Unit, onClose: () -> Unit,
+    restMinutes: Int, onRest: (Int) -> Unit, onClose: () -> Unit, onStep: ((Int) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val myDay = remember(snap, day) { snap.resolver.resolve(day) }
@@ -479,7 +510,13 @@ internal fun CoverPanel(
     val label = "${Fmt.monthDay(day)}(${Fmt.dayOfWeekShort(day.dayOfWeek)})"
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$label 대근 찾기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
+            // [J133-46] 전날·다음 날 without closing: the arrows, or a sideways swipe on the title.
+            if (onStep != null) IconButton(onClick = { onStep(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "전날") }
+            Text("$label 대근 찾기", style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f).semantics { heading() }.then(
+                    if (onStep == null) Modifier else Modifier.daySwipe(day, onStep),
+                ))
+            if (onStep != null) IconButton(onClick = { onStep(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 날") }
             TextButton(onClick = onClose) { Text("닫기") }
         }
         val mine = result.myShift
@@ -558,6 +595,14 @@ internal fun CoverPanel(
             }
         }
     }
+}
+
+/** [J133-46] A sideways swipe: left for the next day, right for the day before. */
+private fun Modifier.daySwipe(day: LocalDate, onStep: (Int) -> Unit): Modifier = pointerInput(day) {
+    var dx = 0f
+    detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = {
+        if (dx < -60f) onStep(1) else if (dx > 60f) onStep(-1)
+    }) { _, amount -> dx += amount }
 }
 
 @Composable
@@ -713,7 +758,7 @@ private fun TeamEditor(
             }
         },
         confirmButton = {
-            Button(enabled = roster.teams.all { it.name.isNotBlank() } && roster.teams.map { it.name }.toSet().size == roster.teams.size,
+            com.bamnat.app.ui.components.SaveButton(enabled = roster.teams.all { it.name.isNotBlank() } && roster.teams.map { it.name }.toSet().size == roster.teams.size,
                 onClick = { onSave(roster.anchored(size)) }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

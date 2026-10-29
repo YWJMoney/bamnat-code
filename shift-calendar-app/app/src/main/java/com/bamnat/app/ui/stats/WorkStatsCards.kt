@@ -70,19 +70,22 @@ fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.
     val yearEnd = if (year == today.year) today else LocalDate.of(year, 12, 31)
     val yearDays = remember(book, year, yearEnd) { FieldYear.workedDays(book.jobs, LocalDate.of(year, 1, 1), yearEnd) }
     // [GUIDE-05] 출역일 and the year's totals go off together, for this calendar.
-    FeatureCard("field.year", calendarId) { FieldYearCards(book, month, today, monthDays, yearDays) }
+    // [J133-77] 1.33 (유형별 점검: 사업자형 프리랜서에게 건설 일용직의 퇴직공제·실업급여): those lines only for work paid by 공수.
+    val dayLabor = remember(book, year) { book.jobs.any { it.date.year == year && it.units != null && !it.cancelled } }
+    FeatureCard("field.year", calendarId) { FieldYearCards(book, month, today, monthDays, yearDays, dayLabor) }
     // [LEDG-26] The year's 수입·경비·떼인 세금 for the 5월 신고, with where the numbers come from.
     FeatureCard("money.incomeTax", calendarId) { IncomeTaxCard(book, year) }
 }
 
 @Composable
-private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, monthDays: Int, yearDays: Int) {
+private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, monthDays: Int, yearDays: Int, dayLabor: Boolean = true) {
     val year = month.year
     SectionCard(title = "출역일") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${month.monthValue}월", "${monthDays}일", Modifier.weight(1f))
             StatTile("${year}년", "${yearDays}일", Modifier.weight(1f), caption = if (year == today.year) "오늘까지" else null)
         }
+        if (!dayLabor) return@SectionCard
         Text(
             "퇴직공제 대상일 ${yearDays}일 (참고용) · 건설근로자 퇴직공제는 공제 가입 현장에서 일한 날만큼 쌓이고, 252일이 넘으면 받을 수 있어요. 정확한 날 수는 건설근로자공제회에서 확인해요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

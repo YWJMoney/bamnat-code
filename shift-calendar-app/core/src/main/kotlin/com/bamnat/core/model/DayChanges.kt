@@ -18,7 +18,7 @@ object DayChanges {
         if (!b.isEmpty && after.isEmpty && !b.copy(extras = emptyList()).isEmpty) return "바꾼 내용 모두 지움"
         val parts = mutableListOf<String>()
         if (b.override != after.override) parts += when (val o = after.override) {
-            ShiftOverride.None -> "패턴대로 되돌림"
+            ShiftOverride.None -> "근무 주기대로 되돌림"
             ShiftOverride.Off -> "쉬는 날로"
             is ShiftOverride.Shift -> "근무 → ${typeName(o.shiftTypeId)}"
         }

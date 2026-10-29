@@ -63,7 +63,7 @@ class EasyAskTest {
         assertEquals("이", Needs.subject("PDF"))
     }
 
-    @Test fun `two a day, the same card all day`() {
+    @Test fun `one a day, the same card all day`() {
         val missing = Needs.of(emptyMap(), payFeatures)
         var state = AskState()
         val first = AskScheduler.pick(state, missing, AskPlace.Home, today)!!
@@ -74,15 +74,18 @@ class EasyAskTest {
         assertFalse(again.isNew)
         assertEquals(first.missing.key, again.missing.key)
         assertEquals(state, AskScheduler.shown(state, again, today))
-        // Answered: the next one may come today.
+        // [J133-51] Answered or put off: no second question the same day.
         state = AskScheduler.answered(state, first.missing.key)
         val rest = missing.filter { it.key != first.missing.key }
-        val second = AskScheduler.pick(state, rest, AskPlace.Home, today)!!
-        assertTrue(second.isNew)
-        state = AskScheduler.answered(AskScheduler.shown(state, second, today), second.missing.key)
-        assertNull(AskScheduler.pick(state, rest.filter { it.key != second.missing.key }, AskPlace.Home, today))
+        assertNull(AskScheduler.pick(state, rest, AskPlace.Home, today))
+        assertNull(AskScheduler.pick(AskScheduler.later(AskScheduler.shown(AskState(), first, today), first.missing.key, today), rest, AskPlace.Home, today))
         // Tomorrow it starts again.
-        assertNotNull(AskScheduler.pick(state, rest.filter { it.key != second.missing.key }, AskPlace.Home, today.plusDays(1)))
+        assertNotNull(AskScheduler.pick(state, rest, AskPlace.Home, today.plusDays(1)))
+        // [J133-51] The day a setup was made: no question, no tip.
+        val quiet = AskScheduler.rest(AskState(), today)
+        assertNull(AskScheduler.pick(quiet, missing, AskPlace.Home, today))
+        assertFalse(AskScheduler.tipAllowed(quiet, today))
+        assertNotNull(AskScheduler.pick(quiet, missing, AskPlace.Home, today.plusDays(1)))
     }
 
     @Test fun `later puts off a week, twice parks it`() {

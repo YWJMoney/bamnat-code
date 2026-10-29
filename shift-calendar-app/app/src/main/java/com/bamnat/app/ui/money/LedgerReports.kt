@@ -135,13 +135,20 @@ fun LedgerReportsPane(
 private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
     SectionCard(title = "${m.month.monthValue}월 한눈에") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("들어온 돈", Fmt.won(m.income), Modifier.weight(1f), caption = changeText(m.income, r.previousIncome, "많이", "적게")?.let { "지난달보다 $it" })
+            // [J133-62] 1.33 (중간 빌드 확인): the pay still to come is not money that came in; it is said under the tile.
+            StatTile("들어온 돈", Fmt.won(m.received), Modifier.weight(1f),
+                caption = m.payExpected?.let { "들어올 급여(예상) ${wonBrief(it)} 별도" }
+                    ?: changeText(m.income, r.previousIncome, "많이", "적게")?.let { "지난달보다 $it" })
             StatTile("나간 돈", Fmt.won(m.spent), Modifier.weight(1f), caption = changeText(m.spent, r.previousSpent)?.let { "지난달보다 $it" })
         }
         Spacer(Modifier.height(8.dp))
-        val saved = if (m.income > 0) (m.balance * 100 / m.income).toInt() else null
-        StatTile("남은 돈", Fmt.won(m.balance), Modifier.fillMaxWidth(), warning = m.balance < 0,
-            caption = saved?.let { if (it >= 0) "들어온 돈의 $it%를 남겼어요" else "들어온 돈보다 더 썼어요" })
+        // [J133-73] 중간 빌드 확인 ("들어온 돈 0원인데 '들어온 돈의 100%를 남겼어요'"): 남은 돈 is what came in less what went out,
+        // the same sum as the two tiles above; the pay still to come is said beside it, never counted as in.
+        val left = m.received - m.spent
+        val saved = if (m.received > 0) (left * 100 / m.received).toInt() else null
+        StatTile("남은 돈", Fmt.won(left), Modifier.fillMaxWidth(), warning = left < 0,
+            caption = m.payExpected?.let { "급여(예상 ${wonBrief(it)})가 들어오면 ${wonBrief(left + it)}" }
+                ?: saved?.let { if (it >= 0) "들어온 돈의 $it%를 남겼어요" else "들어온 돈보다 더 썼어요" })
         if (r.daysCounted > 0) {
             val perDay = r.spent / r.daysCounted
             Text("하루 평균 ${Fmt.won(perDay)} · 무지출 ${r.noSpendDays}일" + if (YearMonth.from(today) == m.month) " (오늘까지)" else "",
@@ -231,15 +238,17 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
 private fun InOutCard(m: MonthMoney, style: WorkStyle?) {
     if (m.income == 0L && m.spent == 0L) return
     val cal = LocalCalendarColors.current
-    val top = maxOf(m.income, m.spent).coerceAtLeast(1)
+    // [J133-73] 중간 빌드 확인 ("예상 급여를 받은 돈으로 세고, 세후 금액에 '세전'"): only money that came in; the pay still to come
+    // is a line of its own under the sum, in no tax words (the ledger's estimate is take-home when the pay setup says so).
+    val top = maxOf(m.received, m.spent).coerceAtLeast(1)
     val sources = buildList {
-        if (m.payCounted > 0) add((if (m.payRecorded > 0) "급여 (받은 금액)" else "급여 (세전 예상)") to m.payCounted)
+        if (m.payRecorded > 0) add("급여 (받은 금액)" to m.payRecorded)
         if (m.jobReceived > 0 || style?.usesJobs == true) add("일감 받은 돈" to m.jobReceived)
         if (m.salesNet != 0L || style?.usesSales == true) add("가게 순수익" to m.salesNet)
         if (m.otherIncome > 0) add("그 밖의 수입" to m.otherIncome)
     }
     SectionCard(title = "들어온 돈과 나간 돈", trailing = { ProPill() }) {
-        ShareRow("들어온 돈", m.income, m.income.toFloat() / top, cal.income)
+        ShareRow("들어온 돈", m.received, m.received.toFloat() / top, cal.income)
         sources.forEach { (label, v) ->
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 2.dp, bottom = 2.dp)) {
                 Text("· $label", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -251,10 +260,15 @@ private fun InOutCard(m: MonthMoney, style: WorkStyle?) {
             Text("일감 경비 ${Fmt.won(m.jobCosts)}이 나간 돈에 들어 있어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp))
         }
+        val left = m.received - m.spent
         Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
             Text("남은 돈", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text(Fmt.won(m.balance), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
-                color = if (m.balance < 0) cal.expense else cal.income)
+            Text(Fmt.won(left), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
+                color = if (left < 0) cal.expense else cal.income)
+        }
+        m.payExpected?.let { expected ->
+            Text("들어올 급여(예상) ${Fmt.won(expected)}는 아직 안 들어와서 위에 넣지 않았어요. 들어오면 남은 돈은 ${Fmt.won(left + expected)}이에요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

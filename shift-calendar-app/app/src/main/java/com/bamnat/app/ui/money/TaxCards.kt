@@ -75,6 +75,8 @@ internal fun TaxCard(
     business: BusinessTax.Year?,
     gate: Gate,
     onOpen: () -> Unit,
+    /** [J133-01] Picks the pay setup's tax way, when it was never asked. */
+    onTaxWay: (com.bamnat.core.pay.TaxMode) -> Unit = {},
 ) {
     SectionCard(
         title = "세금·실수령",
@@ -90,7 +92,7 @@ internal fun TaxCard(
         com.bamnat.app.ui.pro.ProLock(Feature.TAX_FORECAST, gate) {
             Column {
                 when (side) {
-                    TaxSide.PAY -> PayTaxLines(view)
+                    TaxSide.PAY -> PayTaxLines(view, onTaxWay)
                     TaxSide.BUSINESS -> BusinessTaxLines(business)
                 }
             }
@@ -99,8 +101,15 @@ internal fun TaxCard(
 }
 
 @Composable
-private fun PayTaxLines(view: TakeHomeView?) {
+private fun PayTaxLines(view: TakeHomeView?, onTaxWay: (com.bamnat.core.pay.TaxMode) -> Unit = {}) {
     val f = view?.forecast
+    if (view != null && view.taxUnknown) {
+        // [J133-01] The 세전 alone, and the way to pick, never the 세전 called 실수령.
+        view.gross?.let { TaxLine("${view.month.monthValue}월 세전 예상", Fmt.won(it)) }
+        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?")
+        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), onTaxWay)
+        return
+    }
     if (view == null || f == null) {
         Muted("급여 계산을 정하면 이달 세전과 세후(실수령)를 함께 보여 드려요. 지난 월급을 적으면 회사가 실제로 떼는 만큼 맞춰요.")
         return
@@ -121,7 +130,7 @@ private fun BusinessTaxLines(y: BusinessTax.Year?) {
         return
     }
     TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
-    TaxLine("  종합소득세 (${y.best.method.label})", Fmt.won(y.incomeTaxDue.coerceAtLeast(0)), muted = true)
+    TaxLine("  종합소득세 · ${y.best.method.label}", Fmt.won(y.incomeTaxDue.coerceAtLeast(0)), muted = true)
     TaxLine("  부가가치세", if (y.vatExempt) "면제" else Fmt.won(y.vat.coerceAtLeast(0)), muted = true)
     // F 1.32 [TAXP-07] 카드 매출 발행세액공제, already taken off the 부가세 above.
     if (y.cardCredit > 0) TaxLine("    카드 매출 발행세액공제 (1.3%)", "−" + Fmt.won(y.cardCredit), muted = true)

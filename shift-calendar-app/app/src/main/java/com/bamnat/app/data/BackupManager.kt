@@ -176,7 +176,8 @@ class BackupManager(
                     // [SHOP-01][SHOP-02][SHOP-03] Version 17.
                     .put("card", d.card).put("cash", d.cash).put("transfer", d.transfer).put("delivery", d.delivery)
                     .putOpt("counted", d.cashCounted).put("settled", d.cardSettled)
-                    .putOpt("cashReceipt", d.cashReceipt.takeIf { it > 0 })) // [TAXP-14] Version 22.
+                    .putOpt("cashReceipt", d.cashReceipt.takeIf { it > 0 }) // [TAXP-14] Version 22.
+                    .putOpt("costsProven", d.costsProven.takeIf { it > 0 })) // [J133-29] Version 23.
             }
         })
         // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
@@ -777,6 +778,7 @@ class BackupManager(
                 card = o.optLong("card"), cash = o.optLong("cash"), transfer = o.optLong("transfer"), delivery = o.optLong("delivery"),
                 cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
                 cashReceipt = o.optLong("cashReceipt").coerceAtLeast(0),
+                costsProven = o.optLong("costsProven").coerceAtLeast(0),
             )
         }
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
@@ -955,7 +957,8 @@ class BackupManager(
                         .let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
                     showDayCard = o.optBoolean("dayCard", o.optString("phoneDayView") == PhoneDayView.PREVIEW.name),
                     tapSelectFirst = o.optBoolean("tapFirst", false),
-                    textAsked = o.optBoolean("textAsked", s.textAsked),
+                    // [J133-87] 1.33 빌드 6: a backup from before the ask brought it back over a phone that already answered.
+                    textAsked = s.textAsked || o.optBoolean("textAsked", false),
                     compact = o.optBoolean("compact", s.compact),
                     textStep = o.optInt("textStep", s.textStep),
                     clock12 = o.optBoolean("clock12", s.clock12),
@@ -1115,6 +1118,12 @@ class BackupManager(
         /** 2: extra work as its own list [EXTRA-01]. 1.8 and earlier refuse it rather than drop it. */
         const val FORMAT_VERSION = 2
         const val MIME_TYPE = "application/json"
+        /**
+         * [J133-36] 순번 716 (1.32 실사용 테스트: 압축 파일인데 이름이 .json이라 다른 앱이 열려다 깨진 글자를 보였어요): a backup is
+         * saved as a `.bamnat` file of this type; files saved before (.json) open as before.
+         */
+        const val FILE_MIME = "application/octet-stream"
+        const val EXTENSION = "bamnat"
         const val SEALED_FORMAT = "bamnat-enc"
         /** [SLP-14] The longest way home a backup may set. */
         const val MAX_COMMUTE_MINUTES = 180

@@ -29,7 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -263,9 +262,12 @@ fun PublicApplySheet(
     val needsToday = !weekly && codes.isNotEmpty() && pick == null
     val ready = (codes.any { it in PublicCycle.WORK } || cycle.roster) && (!needsToday || today != null)
 
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        // [J133-61] 1.33 (중간 빌드 확인): the button stays at the bottom of the sheet; the order list scrolls above it, so '이 순서로
+        // 설정 이어가기' is never below the fold.
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(
-            Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(cycle.company, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
@@ -311,6 +313,8 @@ fun PublicApplySheet(
             Text(if (pick != null) "시간은 다음 화면에서 고칠 수 있어요. 급여 금액은 넣지도 가져오지도 않아요."
                 else "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요. 급여 금액은 넣지도 가져오지도 않아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!done) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             Button(
                 onClick = {
@@ -338,6 +342,7 @@ fun PublicApplySheet(
                 Text(if (codes.isEmpty() && !cycle.roster) "순서를 먼저 골라 주세요" else "오늘이 몇 번째 날인지 골라 주세요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
         }
     }
 }

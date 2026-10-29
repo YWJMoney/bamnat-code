@@ -40,7 +40,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
@@ -364,7 +363,7 @@ private fun stripText(card: TodayFlow.Card): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Unit, onHide: () -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             Text("오늘의 흐름은 이렇게 정해요", style = MaterialTheme.typography.titleLarge)
             Text("근무표와 실제로 울릴 알람으로 앞으로 24시간을 계산한 참고 정보예요. 진단이나 치료가 아니니 몸 상태와 회사 사정에 맞게 조절하세요.",

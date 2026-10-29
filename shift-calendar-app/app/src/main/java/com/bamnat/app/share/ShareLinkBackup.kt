@@ -25,7 +25,9 @@ class ShareLinkBackup(
             val s = store.link.value ?: continue
             put(JSONObject().put("key", key).put("id", s.id).put("url", s.url).put("token", s.deleteToken)
                 .put("expires", s.expiresAt.toString()).put("title", s.title).put("ttl", s.ttlDays).putOpt("from", s.from?.toString())
-                .put("auto", store.auto).put("feed", store.feed).put("shows", JSONArray(store.options().shows)))
+                .put("auto", store.auto).put("feed", store.feed).put("shows", JSONArray(store.options().shows))
+                // [SHR-20] 1.33: who the link is for and whether it carries the company setup.
+                .put("audience", store.options().audience?.key ?: JSONObject.NULL).put("setup", store.options().setup))
         }
     }
 
@@ -46,7 +48,8 @@ class ShareLinkBackup(
                 ?: slots.firstOrNull { it.link.value == null }
                 ?: continue
             place.restore(s, o.optBoolean("auto", true), o.optBoolean("feed"),
-                ShareOptions.of(o.optJSONArray("shows")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()))
+                ShareOptions.of(o.optJSONArray("shows")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(),
+                    ShareAudience.of(o.optString("audience").takeIf { it.isNotEmpty() && it != "null" }), o.optBoolean("setup", false)))
             taken++
         }
         return taken

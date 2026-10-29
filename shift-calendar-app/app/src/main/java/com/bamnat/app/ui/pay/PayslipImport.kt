@@ -259,7 +259,8 @@ fun PayslipFillDialog(
         }
     }
     PhotoResultScreen(
-        title = if (byHandRules) "회사 규칙 칸으로 적기" else title,
+        // [J133-77] 알바's rules are the 근무지's.
+        title = if (byHandRules) "${com.bamnat.app.ui.flags.rememberScreenStyle()?.employer ?: "회사"} 규칙 칸으로 적기" else title,
         photos = listOfNotNull(photo, scanSecond?.takeIf { it.text == second || second.contains(it.text) }?.image),
         read = r, unsure = unsure, same = same, fromPhoto = photo != null,
         onSame = { same = it },
@@ -366,16 +367,17 @@ internal fun RuleSentenceBox(
     val host = remember(shiftTypes) {
         RuleSheetHost(PhotoCellsLogic.blank, com.bamnat.app.data.ScheduleSnapshot(shiftTypes, emptyList(), emptyList()), month)
     }
+    val employer = com.bamnat.app.ui.flags.rememberScreenStyle()?.employer ?: "회사" // [J133-77]
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!read) {
             // In the long rules editor the builder opens on a tap, so the sections under it stay close.
             if (building || built.isNotEmpty()) com.bamnat.app.ui.components.RuleBuilder(built, { built = it })
-            else com.bamnat.app.ui.components.AddButton("회사 규칙 골라 담기", onClick = { building = true })
+            else com.bamnat.app.ui.components.AddButton("$employer 규칙 골라 담기", onClick = { building = true })
             TextButton(onClick = { words = !words }) { Text(if (words || text.isNotBlank()) "글로 적기 접기" else "글로 적거나 사진으로 읽기") }
             if (words || text.isNotBlank()) {
                 OutlinedTextField(
                     value = text, onValueChange = { text = it },
-                    label = { Text("회사 규칙을 적어 주세요") },
+                    label = { Text("$employer 규칙을 적어 주세요") },
                     placeholder = { Text("예)\n토요일 근무는 50% 더\n상여금 연 800% 짝수달") },
                     minLines = 3, modifier = Modifier.fillMaxWidth(),
                 )

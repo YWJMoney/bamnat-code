@@ -247,6 +247,15 @@ function adminApp(L, BUILD, M) {
     doing: "말씀해 주신 내용을 지금 만들고 있어요. 업데이트되면 다시 알려 드릴게요.",
   };
   const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기" };
+  // [J133-40] 순번 720: the kind as the sender picked it in the app (InquiryKind), said beside the admin's name for it.
+  const APP_KIND_NAMES = { question: "궁금해요", bug: "앱이 이상해요", idea: "건의·제안", company: "회사 방식 알려 주기", other: "그 밖의 이야기" };
+  // [J133-40] "접수됨으로", "답변 완료로": 로 after a vowel or ㄹ, 으로 after another final consonant; (으)로 for anything else.
+  const roSuffix = (w) => {
+    const c = String(w ?? "").trim().slice(-1).charCodeAt(0);
+    if (!(c >= 0xac00 && c <= 0xd7a3)) return "(으)로";
+    const j = (c - 0xac00) % 28;
+    return j === 0 || j === 8 ? "로" : "으로";
+  };
   const STATUS_NAMES = { open: "답 대기", answered: "답함", closed: "닫힘" };
   // [INQ-02] The stages the asker's app shows.
   const PROGRESS_NAMES = { received: "접수됨", checking: "확인 중", answered: "답변 완료", planned: "개발 목록에 올림", building: "개발 중", released: "반영됨" };
@@ -1309,7 +1318,7 @@ function adminApp(L, BUILD, M) {
       <section>
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
-          <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}로 보여요. ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
+          <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>

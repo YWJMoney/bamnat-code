@@ -16,9 +16,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Description
@@ -32,7 +36,6 @@ import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -140,6 +143,12 @@ fun ShareDialog(
         value = orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind, calendarId) }
     }
     val hasPay = money?.isNotEmpty() == true
+    // [SHR-20][J133-71] 1.33: the 동료 way's words and setup only for work with a company; the setup in the link from 3.7's date.
+    val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
+    val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
+    val setupFrom = remember {
+        container.remoteConfig.config.value.calendar.of("3.7")?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "처리방침 3.7 시행일"
+    }
 
     fun run(action: suspend () -> Unit) {
         busy = true; error = null
@@ -151,13 +160,17 @@ fun ShareDialog(
         options.copy(
             pay = options.pay && hasPay, jobs = options.jobs && field,
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
+            setup = options.setup && setupOpen && employee && companyWork,
         )
     }
-    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen(), calendarId, feed)
+    // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
+    // further ahead is on screen.
+    val linkMonth = YearMonth.from(Today.date()).let { now -> if (month.isAfter(now.plusMonths(1))) month else now }
+    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, linkMonth.atDay(1), title, ttlDays, chosen(), calendarId, feed)
     /** [SHR-12] Keeps what was sent, so the automatic update sends only what changes after it. */
     fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
         store.saveOptions(chosen()); saved = chosen()
-        store.save(made.copy(from = month), ShareLinkPayload.fingerprint(sent))
+        store.save(made.copy(from = linkMonth), ShareLinkPayload.fingerprint(sent))
         store.sendResult(Today.instant())
     }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
@@ -166,13 +179,16 @@ fun ShareDialog(
         value = orElse(false) { !ShareLinkPayload.hasContent(payload()) }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         // Scrolls so a folded cover screen with a large font still reaches the buttons.
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
+            // [J133-79] 빌드 5: with the keyboard up a drag typed letters into the name (글라이드), and the keyboard hid
+            // 링크 만들어 보내기. A drag now puts the keyboard away first, and the sheet keeps clear of it.
+            Modifier.nestedScroll(com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()).verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding().imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("근무표 공유", style = MaterialTheme.typography.titleLarge)
+            Text(com.bamnat.core.work.shareTitle(style), style = MaterialTheme.typography.titleLarge) // [J133-77]
             if (added && calendar != null) {
                 // [MCAL-03] Which calendar this link is for, and that the others keep their own.
                 Text("${calendar.name} 달력만 보내요. 다른 달력은 각자 링크를 따로 만들어요.",
@@ -188,9 +204,9 @@ fun ShareDialog(
             fun rosterPdf(year: Boolean) {
                 if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(); return }
                 val name = when {
-                    title.isNotBlank() -> "${title.trim()}의 근무표"
-                    added && calendar != null -> "${calendar.name} 근무표"
-                    else -> "근무표"
+                    title.isNotBlank() -> "${title.trim()}의 ${com.bamnat.core.work.scheduleWord(style)}"
+                    added && calendar != null -> "${calendar.name} ${com.bamnat.core.work.scheduleWord(style)}"
+                    else -> com.bamnat.core.work.scheduleWord(style)
                 }
                 scope.launch {
                     runCatching {
@@ -223,9 +239,12 @@ fun ShareDialog(
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
             Text(
-                "받는 사람은 ${month.monthValue}월부터 3개월 근무표를 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
+            Text("누구에게 보내요?", style = MaterialTheme.typography.titleSmall)
+            AudienceRows(options.audience, companyWork, setupOpen, style) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
             // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
@@ -243,13 +262,21 @@ fun ShareDialog(
                     Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else "",
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
-                Button(enabled = !busy, onClick = { send(context, made) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
+                Button(enabled = !busy, onClick = { send(context, made, style) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
+                // [SHR-20] Before 3.7, or when the box is off: the company setup as a file the sharer passes on, through no server.
+                if (options.audience == com.bamnat.app.share.ShareAudience.COWORKER && employee && companyWork && !(setupOpen && saved.setup)) {
+                    OutlinedButton(enabled = !busy, onClick = {
+                        scope.launch { sendSetupFile(context, container, calendarId) { error = it } }
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("회사 설정 파일도 보내기") }
+                }
             }
 
             Text("보여 줄 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    PartRow("근무", if (employee) "이름·색·시간, 늘 들어가요" else "근무를 적은 날만, 이름·색·시간", checked = true, enabled = false) {}
+                    // [J133-87] 1.33 빌드 6: a shop's first row is its 영업일, a field worker's its 일정 days, in their words.
+                    PartRow(if (employee) "근무" else if (field) "일한 날" else com.bamnat.core.work.scheduleWord(style),
+                        if (employee) "이름·색·시간, 늘 들어가요" else "적은 날만, 이름·색·시간", checked = true, enabled = false) {}
                     if (field) {
                         PartRow("일정", "날마다 일감 이름과 시간, ${ShareLinkPayload.JOBS_PER_DAY}개까지. 고객·장소·금액은 빼요", options.jobs) { options = options.copy(jobs = it) }
                     }
@@ -259,10 +286,20 @@ fun ShareDialog(
                     }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
                     PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { options = options.copy(pay = it) }
+                    // [SHR-20] 1.33 (계획 691·694): a coworker's link with the company setup, from 처리방침 3.7's date.
+                    if (options.audience == com.bamnat.app.share.ShareAudience.COWORKER && employee && companyWork) {
+                        PartRow("회사 설정",
+                            if (setupOpen) "근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름. 기본급·입사일·연차·금액은 빼요"
+                            else "${setupFrom}부터 링크에 함께 담겨요. 지금은 링크를 만든 뒤 ‘회사 설정 파일도 보내기’로 보내 주세요",
+                            options.setup && setupOpen, enabled = setupOpen) { options = options.copy(setup = it) }
+                    }
                 }
             }
+            val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
             OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
-                label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth())
+                label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide() }))
             // [SHR-12] With a link made, the period is what 기간 늘리기 adds from today.
             Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
@@ -301,7 +338,8 @@ fun ShareDialog(
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
                 // [FEAT-15] The feed also sends the phone's time zone name (처리방침 2.6, 1항).
-                "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("휴대폰 시간대 이름".takeIf { feed && feedOpen }))
+                "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("회사 설정(금액 없이)".takeIf { chosen().sendsSetup },
+                    "휴대폰 시간대 이름".takeIf { feed && feedOpen }))
                     .joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -323,7 +361,7 @@ fun ShareDialog(
                         val made = client.create(sent)
                         keep(made, sent)
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" } + if (slot > 1) ",slot$slot" else "")
-                        send(context, made)
+                        send(context, made, style)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
@@ -332,7 +370,7 @@ fun ShareDialog(
                 // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.
                 SentLine(store.sentAt, unsent, busy) { run { container.shareSync.resend(store.key) } }
                 if (chosen() != saved || title.trim() != current.title.trim()) {
-                    Text("고른 항목이나 이름이 바뀌었어요. ‘지금 근무표로 고치기’를 누르면 링크에 들어가요.",
+                    Text("고른 항목이나 이름이 바뀌었어요. ‘지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
                 // [SHR-12] Sent the way the automatic update sends it: the end date stays.
@@ -343,7 +381,7 @@ fun ShareDialog(
                             keep(client.update(current, sent), sent)
                         }
                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 근무표로 고치기")
+                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기")
                     }
                 }
                 OutlinedButton(enabled = !busy && !empty, onClick = {
@@ -358,9 +396,19 @@ fun ShareDialog(
                     else Text("오늘부터 ${ShareLinkPayload.ttlLabel(ttl)} 열어 두기")
                     if (extraLocked) { Spacer(Modifier.width(8.dp)); com.bamnat.app.ui.money.ProPill() }
                 }
-                TextButton(enabled = !busy, onClick = {
-                    run { client.delete(current); store.clear() }
-                }, modifier = Modifier.fillMaxWidth()) { Text(if (slot > 1) "이 링크 끊기" else "링크 끊기", color = MaterialTheme.colorScheme.error) }
+                // [J133-30] Cutting it takes the schedule away from everyone who has the link: asked once.
+                var cutting by remember { mutableStateOf(false) }
+                if (cutting) androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { cutting = false },
+                    title = { Text("링크를 끊을까요?") },
+                    text = { Text("받은 사람 앱과 브라우저에서도 이 ${com.bamnat.core.work.scheduleWord(style)}${if (style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST) "이" else "가"} 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },
+                    confirmButton = { TextButton(onClick = { cutting = false; run { client.delete(current); store.clear() } }) {
+                        Text("끊기", color = MaterialTheme.colorScheme.error) } },
+                    dismissButton = { TextButton(onClick = { cutting = false }) { Text("취소") } },
+                )
+                TextButton(enabled = !busy, onClick = { cutting = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (slot > 1) "이 링크 끊기" else "링크 끊기", color = MaterialTheme.colorScheme.error)
+                }
             }
             error?.let { why ->
                 Text(why, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -391,6 +439,37 @@ fun ShareDialog(
             }
         }
     }
+}
+
+/** [SHR-20] 1.33 (계획 690): 같은 회사 동료 / 가족·연인 / 다른 회사 친구, one line each with what it sends. */
+@Composable
+private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, setupOpen: Boolean,
+                         style: com.bamnat.core.work.WorkStyle?, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Column(Modifier.padding(vertical = 4.dp).selectableGroup()) {
+            com.bamnat.app.share.ShareAudience.entries.forEach { a ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .selectable(selected = a == picked, role = Role.RadioButton, onClick = { onPick(a) })
+                        .padding(start = 4.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.RadioButton(selected = a == picked, onClick = null, modifier = Modifier.padding(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(a.label(companyWork), style = MaterialTheme.typography.bodyLarge)
+                        Text(a.hint(companyWork, setupOpen, style), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [SHR-20] The company setup as a file (금액 없이) through the share sheet, the way 설정 › 급여 › 회사 설정 보내기 sends it. */
+private suspend fun sendSetupFile(context: Context, c: com.bamnat.app.AppContainer, calendar: String, onError: (String) -> Unit) {
+    val name = ShareContent.companyName(c, calendar)
+    val text = ShareContent.setupFile(c, calendar) ?: return onError("회사 설정 파일을 만들지 못했어요")
+    runCatching { com.bamnat.app.data.CompanyShare.send(context, name, text) }.onFailure { onError("회사 설정 파일을 만들지 못했어요") }
 }
 
 /** [SHR-13] 마지막으로 보낸 때, and 보내지 못한 변경 with a button that sends it now. */
@@ -562,8 +641,9 @@ private fun messageFor(e: Exception, options: ShareOptions): String = when (e.me
     else if (e is java.io.IOException) "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요." else "링크를 만들지 못했어요. 다시 해 주세요."
 }
 
-private fun send(context: Context, s: ShareLinkState) {
-    val text = (if (s.title.isNotBlank()) "${s.title}의 근무표" else "근무표") + "\n${s.url}"
+private fun send(context: Context, s: ShareLinkState, style: com.bamnat.core.work.WorkStyle? = null) {
+    val word = com.bamnat.core.work.scheduleWord(style)
+    val text = (if (s.title.isNotBlank()) "${s.title}의 $word" else word) + "\n${s.url}"
     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
-    context.startActivity(Intent.createChooser(send, "근무표 링크 보내기"))
+    context.startActivity(Intent.createChooser(send, "$word 링크 보내기"))
 }

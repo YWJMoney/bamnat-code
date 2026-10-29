@@ -35,7 +35,9 @@ class SettingsFilesBackup(
                 if (part.keys != null && k !in part.keys) continue
                 encode(v)?.let { o.put(k, it) }
             }
-            if (o.length() > 0) prefs.put(part.name, o)
+            // [J133B-05] 1.33 빌드 9 확인 ("복원했는데 회사 적용이 그대로예요"): an empty part is written too, so a restore knows the
+            // backup had none of it (no company applied) and takes away what came after, instead of keeping it.
+            prefs.put(part.name, o)
         }
         val marks = JSONObject()
         val added = calendarIds().filter { it != PersonalCalendar.MAIN && it != PersonalCalendar.EXAMPLE }
@@ -54,7 +56,7 @@ class SettingsFilesBackup(
                 val keys = PARTS.first { it.name == part.key }.keys
                 val values = JSONObject()
                 for ((k, v) in p.all) if (keys == null || k in keys) encode(v)?.let { values.put(k, it) }
-                if (values.length() > 0) o.put(part.key, values)
+                o.put(part.key, values)
             }
             if (o.length() > 0) companies.put(id, o)
         }
@@ -67,7 +69,10 @@ class SettingsFilesBackup(
         o.optJSONObject("prefs")?.let { prefs ->
             for (part in PARTS) {
                 val saved = prefs.optJSONObject(part.name) ?: continue
-                val edit = context.getSharedPreferences(part.name, Context.MODE_PRIVATE).edit()
+                val file = context.getSharedPreferences(part.name, Context.MODE_PRIVATE)
+                val edit = file.edit()
+                // [J133B-05] What the part had then, and nothing it did not: a key of the part written after the backup goes.
+                for (k in file.all.keys) if ((part.keys == null || k in part.keys) && !saved.has(k)) edit.remove(k)
                 for (k in saved.keys()) {
                     if (part.keys != null && k !in part.keys) continue
                     decode(edit, k, saved.optJSONObject(k) ?: continue)
@@ -84,7 +89,9 @@ class SettingsFilesBackup(
                 for (part in CALENDAR_PARTS) {
                     val saved = parts.optJSONObject(part.key) ?: continue
                     val keys = PARTS.first { it.name == part.key }.keys
-                    val edit = com.bamnat.app.company.CompanyScopeStorage.prefs(context, id, part.value).edit()
+                    val file = com.bamnat.app.company.CompanyScopeStorage.prefs(context, id, part.value)
+                    val edit = file.edit()
+                    for (k in file.all.keys) if ((keys == null || k in keys) && !saved.has(k)) edit.remove(k)
                     for (k in saved.keys()) {
                         if (keys != null && k !in keys) continue
                         decode(edit, k, saved.optJSONObject(k) ?: continue)
@@ -238,6 +245,9 @@ class SettingsFilesBackup(
             // 1.31 [STAT-08][GUIDE-20]: lookup times waiting to be sent, and whether the first week's 시작 단계 card was put away.
             "lookup_stats" to "조회에 걸린 시간 중 아직 보내지 않은 것(처리방침 3.5 시행 뒤, 동의한 경우), 이 휴대폰에서만",
             "start_steps" to "첫 주 ‘시작 3단계’ 카드를 그만 보기로 했는지, 이 휴대폰에서만",
+            "share_ask_gate" to "나누기 부탁을 거절한 뒤 다시 묻지 않는 날짜, 이 휴대폰에서만 (J133-17)",
+            "first_pay_asked" to "광장 판마다 '첫 급여 방식이 되어 주세요'를 이미 보여 준 기록, 이 휴대폰에서만 (J133-94)",
+            "inquiry_reply" to "문의 답을 바로 알린 개수, 같은 답을 두 번 알리지 않으려고 (J133-24)",
             // 1.32 [PROX-02]: when this phone was offered a free day on a money day (끄기는 기능 스위치로 백업).
             "pro_moments" to "급여일·신고 달의 하루 무료 권유를 이 휴대폰에서 본 날과 닫은 날",
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.

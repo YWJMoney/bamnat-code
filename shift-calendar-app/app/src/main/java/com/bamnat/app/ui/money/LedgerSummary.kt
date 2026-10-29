@@ -38,7 +38,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -107,12 +106,23 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("들어온 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FitText("+" + Fmt.won(m.income), MaterialTheme.typography.titleMedium, cal.income, fontWeight = FontWeight.Bold)
+                FitText("+" + Fmt.won(m.received), MaterialTheme.typography.titleMedium, cal.income, fontWeight = FontWeight.Bold)
+            }
+            // [J133-02] 1.33 (보고서 A10): the pay estimate is money still to come, not money that came in.
+            m.payExpected?.let { expected ->
+                Column(Modifier.weight(1f)) {
+                    Text("들어올 돈(예상)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FitText("+" + Fmt.won(expected), MaterialTheme.typography.titleMedium, cal.income.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+                }
             }
             Column(Modifier.weight(1f)) {
                 Text("나간 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FitText("-" + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
             }
+        }
+        if (m.payExpected != null) {
+            Text("남은 돈은 들어올 급여 예상까지 넣어 셈했어요. 월급이 들어오면 그 금액으로 바뀌어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
         // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
         if (m.jobOwed > 0) {
@@ -230,7 +240,7 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
         months.flatMap { it.expenseByCategory }.groupBy { it.category }.mapValues { (_, l) -> l.sumOf { it.amount } / counted }
     }
     val sum = categories.sumOf { values[it]?.toAmount() ?: 0 }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("예산 정하기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -270,7 +280,7 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
                 Spacer(Modifier.height(4.dp))
             }
             HorizontalDivider()
-            Button(
+            com.bamnat.app.ui.components.SaveButton(
                 onClick = { onSave((listOf(MoneyBudget.TOTAL) + categories + book.budgets.map { it.category }).distinct().associateWith { values[it]?.toAmount() ?: 0 }) },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
             ) { Text("저장") }
@@ -376,7 +386,7 @@ fun AccountEditor(
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
     val banks = book.activeAccounts.filter { it.keepsBalance && it.id != initial?.id }
     val card = kind == AccountType.CREDIT || kind == AccountType.CHECK
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle(if (initial == null) "결제수단 추가" else "결제수단 고치기", onDismiss) {
                 if (initial != null) IconButton(onClick = { onRemove(initial) }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
@@ -436,7 +446,7 @@ fun AccountEditor(
                 Spacer(Modifier.height(4.dp))
             }
             HorizontalDivider()
-            Button(
+            com.bamnat.app.ui.components.SaveButton(
                 enabled = name.isNotBlank(),
                 onClick = {
                     onSave((initial ?: MoneyAccount(name = name, type = kind)).copy(
@@ -489,7 +499,7 @@ fun CategoryEditor(
     }
     var renaming by remember { mutableStateOf<Int?>(null) }
     var adding by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("분류 편집", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

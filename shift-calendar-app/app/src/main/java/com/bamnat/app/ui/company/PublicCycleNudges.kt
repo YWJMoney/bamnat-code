@@ -56,8 +56,8 @@ fun PublicWayNotice(modifier: Modifier = Modifier, onPay: () -> Unit, onShare: (
             PublicStep.PAY -> PublicPayCard(cycle, u.codes, onPay = onPay, onLater = { store.updatePublicUse { it.copy(payClosed = true) } })
             PublicStep.SHARE -> PublicShareCard(
                 u, cycle, hasPay = profile != null, reward = rewardShort(cachedTerms()), onShare = onShare,
-                onLater = { store.updatePublicUse { it.later() } },
-                onNever = { store.updatePublicUse { it.copy(inviteNever = true) } },
+                onLater = { store.updatePublicUse { it.later() }; com.bamnat.app.company.ShareAskGate.declined(c.appContext) },
+                onNever = { store.updatePublicUse { it.copy(inviteNever = true) }; com.bamnat.app.company.ShareAskGate.declined(c.appContext) },
             )
             null -> Unit
         }
@@ -70,7 +70,7 @@ internal enum class PublicStep { PAY, SHARE }
 internal fun publicStep(c: AppContainer, u: PublicUse, hasPay: Boolean): PublicStep? = when {
     u.sentId != null -> null
     !hasPay && !u.payClosed -> PublicStep.PAY
-    c.companyApi.enabled && u.inviteDue() -> PublicStep.SHARE
+    c.companyApi.enabled && u.inviteDue() && com.bamnat.app.company.ShareAskGate.open(c.appContext) -> PublicStep.SHARE
     else -> null
 }
 

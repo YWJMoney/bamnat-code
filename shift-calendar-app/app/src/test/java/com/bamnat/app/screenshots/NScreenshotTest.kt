@@ -146,7 +146,7 @@ class NScreenshotTest : ScreenshotBase() {
         tapText("기능 켜고 끄기", exact = true)
         reveal("이걸 알려 주면 시작해요", exact = false)
     })
-    @Test fun settingsBoardUnfolded() = shoot("706_n_settings_board_unfolded", UNFOLDED, clean { tab(4, wide = true); reveal("밤낮이 한 일", exact = true) })
+    @Test fun settingsBoardUnfolded() = shoot("706_n_settings_board_unfolded", UNFOLDED, clean { tab(4, wide = true); reveal("밤낮이 한 일", exact = true, across = 0.2f) })
 
     // N-4: 도움말 answers and the update notice that tell of it.
     @Test fun helpProfile() {

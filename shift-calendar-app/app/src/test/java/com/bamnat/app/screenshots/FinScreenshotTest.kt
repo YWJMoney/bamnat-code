@@ -39,11 +39,11 @@ class FinScreenshotTest : ScreenshotBase() {
 
     @Test fun rulesHoursOneSet() = shoot("1470_fin_rules_hours_one_set", FOLDED, rulesHours {
         // The company's first, and not again as a plain 180시간 chip (1.30 had three sets of chips here).
-        assertTrue(shows("회사 규칙 180시간", exact = true))
-        assertFalse(shows("180시간", exact = true))
-        assertTrue(shows("226시간", exact = true))
+        assertTrue(appears("회사 규칙 180시간", exact = true))
+        assertTrue(gone("180시간", exact = true))
+        assertTrue(appears("226시간", exact = true))
         // The user's 209 against the company's 180: one tap sends it as an opinion.
-        assertTrue(shows("209시간으로 의견 보내기", exact = true))
+        assertTrue(appears("209시간으로 의견 보내기", exact = true))
     })
 
     @Test fun rulesHoursHugeText() = shoot("1471_fin_rules_hours_200", FOLDED, 2f, rulesHours())
@@ -62,8 +62,8 @@ class FinScreenshotTest : ScreenshotBase() {
     @Test fun usedWithPayGoesToThePay() {
         var opened = false
         shoot("1472_fin_used_with_pay", FOLDED, usedWithPay({ opened = true }) {
-            assertTrue(shows("급여 화면에서 기본급을 넣으면 들어가요", exact = false))
-            assertTrue(shows("‘$NAME’ 광장 보기", exact = true))
+            assertTrue(appears("급여 화면에서 기본급을 넣으면 들어가요", exact = false))
+            assertTrue(appears("‘$NAME’ 광장 보기", exact = true))
             tapText("급여 화면에서 기본급 넣기", exact = true)
             settle()
             assertTrue(opened)

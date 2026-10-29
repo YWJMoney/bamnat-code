@@ -93,6 +93,14 @@ class PayItemShareTest {
         assertEquals(180_000L, p.items.single().amount.on(month).value)
     }
 
+    /** [J133-81] A guessed amount left out of the total is out of the 통상시급 too; said, it is in both. */
+    @Test fun `an amount still 확인 필요 is not in the 통상임금`() {
+        val shift = PayItem("s", "교대수당", wage(150_000), Cadence.MONTHLY, ordinary = true)
+        val guessed = profile(shift).copy(estimatedFields = setOf(Unknowns.item("s")))
+        assertEquals(0L, PayCalculator.ordinaryWage(guessed, month).allowances)
+        assertEquals(150_000L, PayCalculator.ordinaryWage(profile(shift), month).allowances)
+    }
+
     @Test fun `a company amount or a percent is never asked as 금액 모름`() {
         val unknown = PayItem("u", "자격수당", ValueTimeline(), Cadence.MONTHLY)
         val p = profile(meals, risk, unknown)

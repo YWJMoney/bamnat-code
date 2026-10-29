@@ -62,6 +62,8 @@ object Notifications {
     const val PRO_ID = 7203
     const val BACKUP_ID = 7204
     const val PLAZA_ID = 7205
+    /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */
+    const val INQUIRY_ID = 7208
     /** [ALRM-01] 휴대폰 캘린더 permission taken back. */
     const val CALENDAR_PERMISSION_ID = 7206
     /** [ALRM-01] Why an alarm rang late or only as a plain notice. */

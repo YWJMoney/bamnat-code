@@ -106,6 +106,14 @@ class PayViewModel(
 
     init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
 
+    /** [J133-85][J133-94] The card to be the first pay way of the 광장 version in use, once for each version. */
+    private suspend fun offerFirstPay() {
+        val company = container.companyOf(calendarId)
+        val applied = company.store.applied.value ?: return
+        if (company.payWays.way.value != null || com.bamnat.app.ui.company.FirstPayAsked.was(container.appContext, applied)) return
+        if (container.companyApi.enabled) _firstPay.value = com.bamnat.app.ui.company.firstPayOf(container, applied)
+    }
+
     val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = payStore.closed
 
     /** Keeps this month's result as it is now, whatever changes later [PAYX-03]. */
@@ -141,14 +149,19 @@ class PayViewModel(
     fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [J133-51] No question cards or tips for the rest of the day the pay was set up.
+        container.asks.set(calendarId, com.bamnat.core.profile.AskScheduler.rest(container.asks.of(calendarId), com.bamnat.core.time.Today.date()))
         // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
         // [PAYS-15] Not when the screen asks itself right away (PlazaAskDialog after a payslip): one ask, not two.
         // [PLAZA-07] 결정 D79: a known company's pay way is shared by itself after the one-time yes, which this may ask.
         // [CALI-04] 1.30 BB: the calendar's own company (1.29: the main calendar's only).
         val company = container.companyOf(calendarId)
         val asked = company.autoShare.saved()
-        if (invite && !asked && company.store.applied.value == null) _shareMoment.value =
+        if (invite && !asked && company.store.applied.value == null && company.payWays.way.value == null &&
+            com.bamnat.app.company.ShareAskGate.open(container.appContext)) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
+        // [J133-85] The calendar uses a company's shifts from the 광장 and that version has no pay way: the first one, offered.
+        if (invite) offerFirstPay()
         // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
         val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
         read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
@@ -171,6 +184,18 @@ class PayViewModel(
     fun shareShown() {
         _shareMoment.value = null
     }
+
+    private val _firstPay = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.ui.company.FirstPay?>(null)
+    /** [J133-85] The pay was just set by hand on a 광장 version without a pay way: the card to be its first. */
+    val firstPay: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.ui.company.FirstPay?> = _firstPay
+
+    fun firstPayShown() {
+        _firstPay.value = null
+    }
+
+    // [J133-94] Also when the pay was there before the 광장 version went in: the card waits on the pay screen. After [_firstPay]:
+    // the launch runs at once on the main thread (빌드 8: an init above it met the flow not made yet and closed the app).
+    init { viewModelScope.launch { if (payStore.profile.value != null) offerFirstPay() } }
 
     /** [TAX-02] The calendar's pay records, so 세후 예상 under the total follows a newly read or typed month. */
     val payRecords = container.tax(calendarId).observations

@@ -487,7 +487,7 @@ class CompanyDetailViewModel(
 
     fun tryPay(setup: SharedSetup, month: YearMonth = Today.month()) {
         _trial.value = Trial(setup.id, month, loading = true)
-        viewModelScope.launch { _trial.value = payTrial(c, setup.text, setup.id, month, calendar) }
+        viewModelScope.launch { _trial.value = payTrial(c, setup.text, setup.id, month, calendar, setup.payHidden) }
     }
 
     fun closeTrial() {
@@ -552,14 +552,17 @@ data class TrialLine(val label: String, val now: Long, val then: Long)
 
 internal suspend fun payTrial(c: AppContainer, text: String, setup: String, month: YearMonth,
     /** [CALI-03] Whose pay and shifts it is tried on. */
-    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN): Trial {
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    /** [J133-82] The setup has a pay way this phone may not see yet (결정 D79), not none. */
+    payHidden: Boolean = false): Trial {
     val scope = c.companyOf(calendar)
     val mine = scope.pay.profile.value ?: return Trial(setup, month, note = "내 급여 설정이 없어 비교할 수 없어요. 급여 설정을 먼저 해 주세요")
     val trial = try {
         scope.share.trial(text)
     } catch (e: Exception) {
         null
-    } ?: return Trial(setup, month, note = "이 규칙에는 급여 계산 방식이 없어 근무표만 비교할 수 있어요")
+    } ?: return Trial(setup, month, note = if (payHidden) "이 회사의 급여 계산 방식은 ‘이 설정 쓰기’로 이 회사를 쓰면 보여요. 지금은 근무표만 비교해요"
+        else "이 규칙에는 급여 계산 방식이 없어 근무표만 비교할 수 있어요")
     val snapshot = scope.schedule.snapshot.first()
     val settings = c.settingsRepository.current
     val calc = com.bamnat.core.pay.PayCalculator()
@@ -597,6 +600,8 @@ class TalkHolder(
         val note: String? = null,
         /** [SPD-13] The talk on screen is the one kept on the phone, being read again (a thin line on top). */
         val refreshing: Boolean = false,
+        /** [J133-55] The kind of post the writing starts on: "proposal" after 달라요. */
+        val startKind: String? = null,
     ) {
         val room: Boolean get() = setup == com.bamnat.core.plaza.StylePlaza.ROOM
     }
@@ -618,12 +623,12 @@ class TalkHolder(
      * [SPD-13] 1.30 AP1: the talk kept on the phone ([com.bamnat.app.company.PageCache]; a room's also from its company's page)
      * shows at once, without a spinner, while it is read again.
      */
-    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null) {
+    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null) {
         val kept = c.companySearch.cache.talk(company, setup)?.value
         changed = false
         last = kept
         com.bamnat.app.company.NetTimings.cached(kept != null)
-        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null)
+        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind)
         reload()
     }
 
@@ -674,6 +679,8 @@ class TalkHolder(
         change: List<com.bamnat.app.company.ChangeLine> = emptyList(),
         withSetup: Boolean = false,
         setupText: String? = null,
+        /** [J133-83] The user's own proposal this one is sent in place of: taken down once this one is in. */
+        replacing: String? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
@@ -682,7 +689,7 @@ class TalkHolder(
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
         val talkKey = "${o.company}/${o.setup}"
         val now = com.bamnat.core.time.Today.instant()
-        if (!com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
+        if (replacing == null && !com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         // [SPD-16] 1.30 AP1: the post shows in the talk at once ("나 (보내는 중)") and the server's talk takes its place after.
         val pending = com.bamnat.app.company.TalkPost("local-${now.toEpochMilli()}", 0, null, false, text.trim(), now, mine = true, nick = SENDING,
             parent = parent, kind = kind, change = change)
@@ -699,6 +706,8 @@ class TalkHolder(
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
                 // [FIN130-06] A proposal is a version of the company's page: the page kept on the phone is read again next time.
                 if (kind == "proposal") c.companySearch.forgetPage(o.company)
+                // [J133-83] 고쳐 다시 올리기: the old one goes only after the new one is in, so a refused send loses nothing.
+                replacing?.let { old -> runCatching { c.companyApi.deletePost(c.companyStore.device, old) } }
                 sentHere = com.bamnat.core.plaza.RepeatGuard.record(sentHere, talkKey, text, now)
                 changed = true
                 null
@@ -1134,7 +1143,10 @@ class CompanyPayViewModel(
     /** The company's setup the pay is made from; [PLAZA-03] the user's own corrections replace it ([useEdited]). */
     var text: String? by androidx.compose.runtime.mutableStateOf(scope.store.pendingPay)
         private set
-    val company: String = scope.store.applied.value?.company.orEmpty()
+    // [695] A setup from a file or a coworker's link names its company in the file.
+    val company: String = scope.store.applied.value?.company
+        ?: text?.let { t -> runCatching { org.json.JSONObject(t).optString("company").trim() }.getOrNull() }.orEmpty()
+    internal val app: AppContainer get() = c
     /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
     private val applied: AppliedSetup? = scope.store.applied.value
     val canPropose: Boolean get() = applied != null
@@ -1220,6 +1232,9 @@ class CompanyReportViewModel(
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
 
+    /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
+    fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+
     sealed interface Sending {
         data object Idle : Sending
         data object Busy : Sending
@@ -1272,7 +1287,10 @@ class CompanyReportViewModel(
      * [SPAT-05] The public row this phone's cycle came from, while nothing went up from it: the form starts from its
      * company and goes as '공개 자료 확인·고침' with the order the user chose (or '처음 제공' for a company not in it).
      */
-    val publicUse: PublicUse? = scope.store.publicUse.value?.takeIf { it.sentId == null }
+    val publicUse: PublicUse? = scope.store.publicUse.value?.takeIf { u ->
+        // [J133-92] One kept from before another company's setup went in is not this form's (a phone from build 7 has one).
+        u.sentId == null && scope.store.applied.value.let { a -> a == null || CompanyText.norm(a.company) == CompanyText.norm(u.company) }
+    }
     /** Whether a pay setup is there to go with the cycle; without one only the cycle can go. */
     val hasPay: Boolean get() = scope.pay.profile.value != null
     private val _cycleOnly = MutableStateFlow(!hasPay)
@@ -1446,7 +1464,8 @@ class CompanyNudgeViewModel(
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
     private val store = scope.store
-    val enabled: Boolean = c.companyApi.enabled
+    // [J133-71] 1.33: a calendar of work with no company (알바·현장·가게·투자) is not asked to share or pick one.
+    val enabled: Boolean = c.companyFits(calendar)
     val applied: StateFlow<AppliedSetup?> = store.applied
     val draft: StateFlow<CompanyDraft?> = store.draft
     private val _terms = MutableStateFlow(c.termsNow())
@@ -1466,7 +1485,10 @@ class CompanyNudgeViewModel(
         store.sent) { d, hand, due, never, sent ->
         val draft = d ?: CompanyDraft("").takeIf { hand && sent.isEmpty() && store.applied.value == null }
         draft?.takeIf { enabled && com.bamnat.core.plaza.ShareAsk.due(never, due, Today.millis(), usesCompanySetup = false) }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    }.combine(com.bamnat.app.company.ShareAskGate.until(c.appContext)) { d, until -> d?.takeIf { Today.millis() >= (until ?: 0) } }
+        // [J133-54] A pay way just taken from the plaza (coworkers made it) is not the user's to share as the first 길잡이.
+        .combine(scope.payWays.way) { d, way -> d?.takeIf { it.fix || way == null || CompanyText.norm(way.company) != CompanyText.norm(it.company) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** [PLAZA-04] What would go, in the plaza's words and without amounts, so the user sees it before deciding. */
     private val _preview = MutableStateFlow<List<String>>(emptyList())
@@ -1529,6 +1551,7 @@ class CompanyNudgeViewModel(
     /** [PLAZA-04] "다음에" (14, 30, then 90 days) or, with [never], "그만 볼게요". */
     fun closeInvite(never: Boolean = false) {
         if (never) store.inviteNever() else store.inviteLater(Today.millis())
+        com.bamnat.app.company.ShareAskGate.declined(c.appContext)
         c.telemetry.event("company_invite_close", if (never) "never" else "later")
     }
 }

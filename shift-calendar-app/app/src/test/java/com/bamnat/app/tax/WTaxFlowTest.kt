@@ -99,14 +99,14 @@ class WTaxFlowTest {
         assertEquals(PayObservation.Source.DEPOSIT, obs.source)
         assertEquals(e.payMonth, obs.payMonth)
         assertEquals(came, obs.net)
-        // The money tab's month: the estimate counts, the deposit is an observation beside it.
+        // The money tab's month: [J133-02] 1.33 the deposit that came counts, the estimate is said beside it.
         val month = YearMonth.from(e.payDay!!)
         val estimate = 3_000_000L
         val m = money.book.first().month(month, estimate)
-        assertEquals(estimate, m.payCounted)
+        assertEquals(came, m.payCounted)
         assertTrue(m.payObserved)
         assertEquals(0L, m.otherIncome)
-        assertEquals(estimate, m.income)
+        assertEquals(came, m.income)
         // Said once in '밤낮이 한 일', with no amount.
         val end = System.currentTimeMillis() + 20_000
         while (c.journal.load().none { it.kind == JournalKind.PAY_OBSERVED }) {

@@ -25,6 +25,10 @@ object FlagCatalog {
     const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
     /** [STAT-08] 1.31 N4: how long lookups took (정해진 구간 값만), sent with 사용 통계 once 처리방침 3.5 names it. */
     const val STATS_LOOKUP = "stats.lookup"
+    /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
+    const val DIAG_OBSERVE = "diag.observe"
+    /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
+    const val SHARE_SETUP = "share.setup"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -180,6 +184,34 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.31.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.32.1 [STAB-10] (사용자 2026-10-29 "멈춘 상태를 어플이 인지해서 문의로 보고하면 해결할 수 있게"): the 멈춤 관찰 기록
+     * (화면 꺼짐·켜짐·잠금 풀림 시각, 앱 앞·뒤, 화면 크기, 메모리 수치, 화면 멈춤·안 그려짐) goes in an inquiry's 점검 기록 only
+     * from 처리방침 3.6's date, and only when the person ticks 점검 기록 and sends. The phone keeps it from 1.32.1 on.
+     */
+    val DIAG_OBSERVE_FLAG = Flag(
+        DIAG_OBSERVE, "문의에 멈춤 관찰 기록 붙이기",
+        what = "문의할 때 ‘점검 기록도 보내기’를 고르면, 앱이 멈추기 전 3일 동안의 화면 꺼짐·켜짐·잠금 풀림 시각, 앱이 앞·뒤로 간 때, 화면 크기, 앱이 쓴 메모리, 화면이 멈추거나 그려지지 않은 때도 함께 보내요. 적은 글·금액·메모는 들어가지 않아요.",
+        whyOff = "처리방침 3.6(1-3항)이 시행된 날부터 저절로 켜져요. 그 전에는 이 기록을 휴대폰 안(알람 › 알람 점검 › 앱 멈춤 관찰)에만 두고 문의에는 앱 멈춤 기록만 가요.",
+        basis = Basis(policy = "3.6 1-3항", decision = "D104", requirement = "STAB-10", note = "1.32.1 멈춤 관측"),
+        conditions = listOf(Condition.Date(policy = "3.6")),
+        default = false, risk = Risk.LEGAL, since = "1.32.1", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 1.33 [SHR-20] (계획 690~694, 사용자 2026-10-29 "보고서에 적힌 전체 진행"): the 같은 회사 동료 way of a 근무표 링크 puts the
+     * company setup in the link (근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름, 금액 없이) only from 처리방침 3.7's date; before
+     * it, the sheet sends the same setup as a file the sharer passes on themselves, which goes through no server.
+     */
+    val SHARE_SETUP_FLAG = Flag(
+        SHARE_SETUP, "동료 링크에 회사 설정 담기",
+        what = "근무표 링크를 ‘같은 회사 동료’에게 보낼 때 회사 설정(근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름)도 링크에 함께 담아요. 받은 동료는 앱에서 기본급만 넣으면 돼요. 기본급·입사일·연차·알람·메모·금액은 담지 않아요(회사 공통 정액만 1-2항처럼).",
+        whyOff = "처리방침 3.7(1항)이 시행된 날부터 저절로 켜져요. 그 전에는 링크에 담지 않고, 공유 창의 ‘회사 설정 파일도 보내기’로 파일을 직접 보내요(서버를 거치지 않음).",
+        basis = Basis(policy = "3.7 1항", decision = "D105", requirement = "SHR-20", note = "1.33 공유 세 갈래(계획 690~694)"),
+        conditions = listOf(Condition.Date(policy = "3.7")),
+        default = false, risk = Risk.LEGAL, since = "1.33.0", group = FlagGroup.LAW,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -191,7 +223,8 @@ object FlagCatalog {
         )
     }
 
-    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG) +
+    val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

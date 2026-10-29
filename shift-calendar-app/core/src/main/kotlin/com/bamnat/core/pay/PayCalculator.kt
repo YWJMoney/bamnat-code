@@ -61,6 +61,11 @@ data class MissingItem(
     val name: String,
     /** How many times it would have been paid this month; null for a monthly allowance. */
     val times: Int?,
+    /**
+     * [J133-33] 순번 713: what the guessed amount (a preset's or a payslip's guess, still 확인 필요) would add this month; 0 when
+     * there is no guess. It is not in the total: "넣으면 +○원".
+     */
+    val guess: Long = 0,
 )
 
 /** [PAYX-35] One week's 주휴 check: the hours that count, the 주휴 it earned, or why not. */
@@ -770,8 +775,9 @@ class PayCalculator(
                 if (times == 0) continue
                 val bonusBase = profile.bonusBase(item, month)
                 val once = item.bonusPayment(bonusBase, month)
-                if (once == 0L && unknownAmount(item)) {
-                    missing += MissingItem(item.id, item.name, times)
+                if (unknownAmount(item)) {
+                    // [J133-33] 순번 713: a guessed bonus is not counted until the user says it; the guess is said beside it.
+                    missing += MissingItem(item.id, item.name, times, guess = once * times)
                     continue
                 }
                 // [PAYX-10] Name the 명절 that falls this year so the moving month is explained.
@@ -795,12 +801,16 @@ class PayCalculator(
             }
             val amount = item.amount.on(month)
             val count = if (item.cadence == Cadence.MONTHLY) 1 else itemCounts[item.id] ?: 0
-            if (count > 0 && amount.value == 0L && unknownAmount(item)) {
-                missing += MissingItem(item.id, item.name, count.takeUnless { item.cadence == Cadence.MONTHLY })
-            }
-            if (count == 0 || amount.value == 0L) continue
             // [PAYX-24] A monthly allowance is cut like the 기본급 in a month joined or left part way.
             val cut = item.cadence == Cadence.MONTHLY && proration != null
+            if (count > 0 && unknownAmount(item)) {
+                // [J133-33] 순번 713 (1.32 실사용 테스트: "금액을 모르면 합계에 넣지 않아요"라면서 짐작 금액이 들어가 있었어요): an amount still
+                // 확인 필요 stays out of the total, its guess said as "넣으면 +○원".
+                val guess = if (amount.value == 0L) 0L else if (cut) prorated(amount.value) else amount.value * count
+                missing += MissingItem(item.id, item.name, count.takeUnless { item.cadence == Cadence.MONTHLY }, guess = guess)
+                continue
+            }
+            if (count == 0 || amount.value == 0L) continue
             val paid = if (cut) prorated(amount.value) else amount.value * count
             allowancePaid[item.id] = paid
             // [ITEM-01] A percent allowance says what it is a percent of; a company amount says so.
@@ -1306,10 +1316,13 @@ class PayCalculator(
             // [ITEM-01] A company amount or a percent allowance in 통상임금 counts at what it pays this month.
             val profile = ItemShares.resolve(given, month)
             val base = profile.base.on(month).value
-            val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() }
+            // [J133-81] 1.33 (광장 급여 써 보기: 합계에서 뺀 교대수당이 통상시급에는 들어가 12,679원): an amount still 확인 필요 is in no
+            // figure, the 통상시급 either, until the user says it.
+            fun known(item: PayItem) = Unknowns.item(item.id) !in profile.estimatedFields
+            val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() && known(it) }
                 .sumOf { it.amount.on(month).value }
             val bonuses = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
-            else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }.sumOf { it.bonusMonthlyShare(profile.bonusBase(it, month), month) }
+            else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS && known(it) }.sumOf { it.bonusMonthlyShare(profile.bonusBase(it, month), month) }
             return OrdinaryWage(base, allowances, bonuses)
         }
 

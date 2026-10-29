@@ -75,7 +75,8 @@ object ShiftEvents {
 
     /** G 1.32 [WTYP-05] 607 "다음 오프까지" under the countdown: today off, the next off day in [days], or none in the week. */
     fun nextOff(days: List<ResolvedDay>, today: java.time.LocalDate): String {
-        fun off(d: ResolvedDay) = d.shiftType == null || d.shiftType.isOff || (d.leave != null && d.scheduledMinutes == 0)
+        // [J133-32] 순번 712: a day off with a 대근 (or other extra work) on it is a working day, not the next 오프.
+        fun off(d: ResolvedDay) = (d.shiftType == null || d.shiftType.isOff || (d.leave != null && d.scheduledMinutes == 0)) && d.extras.isEmpty()
         days.firstOrNull { it.date == today }?.let { if (off(it)) return "오늘은 쉬는 날이에요" }
         val next = days.filter { it.date.isAfter(today) }.sortedBy { it.date }.firstOrNull(::off)
             ?: return "7일 안에 쉬는 날이 없어요"

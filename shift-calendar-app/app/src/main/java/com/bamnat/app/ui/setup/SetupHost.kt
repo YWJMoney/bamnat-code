@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -236,12 +237,15 @@ fun SetupHost(
             modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
             label = "setup-step",
         ) { step ->
+            // [J133-79] 빌드 5 (첫 설정 회사 이름 칸): a drag of the step puts the keyboard away, as on 회사 찾기.
+            val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Column(
                     Modifier
                         // [VIS-02] Unfolded, the questions stay a comfortable reading width.
                         .widthIn(max = 600.dp)
                         .fillMaxWidth()
+                        .nestedScroll(hideOnDrag)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 20.dp, vertical = 16.dp)
                         .semantics { paneTitle = step.title },

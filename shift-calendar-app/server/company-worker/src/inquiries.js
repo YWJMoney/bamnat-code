@@ -59,7 +59,7 @@ export const INQUIRY_TOPICS = [
   ["company", "회사 설정", /회사|부서|규칙|투표|토론|채택/g],
   ["backup", "백업·기기 이동", /백업|복원|새\s*(폰|휴대폰|기기)|기기\s*변경|옮기|가져오기|내보내기/g],
   ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료/g],
-  ["app", "앱 동작", /멈춰|멈춤|멈추|꺼져|꺼짐|튕|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
+  ["app", "앱 동작", /멈춰|멈춤|멈추|멈췄|꺼져|꺼짐|닫혀|닫힘|닫혔|튕|먹통|굳어|렉|응답\s*없|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
 ];
 export const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
 
@@ -78,6 +78,9 @@ export function triage(kind, text, info) {
   // What came with it says more than any word: 계산이 이상해요 sends the pay check, the alarm form its check.
   if (kind === "company" || info?.setup) topic = "company";
   else if (info?.pay) topic = "pay";
+  // 1.32.1 [STAB-14] (사용자 2026-10-29 "멈출 때마다 알람이라고 뜨는데 실제로는 다른 원인 같아"): a 점검 기록 that starts
+  // with 앱 멈춤 (the app puts it first for a stop's inquiry) is 앱 동작; any other 점검 기록 with no word is still 알람.
+  else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
   else if (best === 0 && info?.diag) topic = "alarm";
   const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };

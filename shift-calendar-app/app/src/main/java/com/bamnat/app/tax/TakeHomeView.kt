@@ -2,6 +2,7 @@ package com.bamnat.app.tax
 
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.taxKnown
 import com.bamnat.core.tax.PayObservation
 import com.bamnat.core.tax.TaxLearner
 import java.time.YearMonth
@@ -20,6 +21,8 @@ data class TakeHomeView(
     val fit: TaxLearner.Fit,
     val year: TaxLearner.YearSoFar,
     val records: List<PayObservation>,
+    /** [J133-01] The pay setup never picked a tax way and the records do not show one: no 세후, the way asked instead. */
+    val taxUnknown: Boolean = false,
 ) {
     val deposits: List<PayObservation> get() = records.filter { it.source == PayObservation.Source.DEPOSIT }
     val typed: List<PayObservation> get() = records.filter { it.source != PayObservation.Source.DEPOSIT }
@@ -31,8 +34,11 @@ data class TakeHomeView(
             val fit = TaxLearner.fit(records, table, gross)
             val g = gross(month)
             val last = TaxLearner.perMonth(records).firstOrNull { it.payMonth < month }
+            // [J133-01] Never the 세전 as 실수령: with no way picked (and none the records show), 세후 waits for the way.
+            val unknown = profile != null && !profile.taxKnown && fit.mode == com.bamnat.core.pay.TaxMode.NONE
             return TakeHomeView(
-                month = month, gross = g, forecast = g?.let { TaxLearner.forecast(month, it, fit, table) },
+                month = month, gross = g, forecast = g?.takeIf { !unknown }?.let { TaxLearner.forecast(month, it, fit, table) },
+                taxUnknown = unknown,
                 lastActual = last, fit = fit, year = TaxLearner.yearSoFar(month.year, fit, table),
                 records = records.sortedByDescending { it.payMonth },
             )

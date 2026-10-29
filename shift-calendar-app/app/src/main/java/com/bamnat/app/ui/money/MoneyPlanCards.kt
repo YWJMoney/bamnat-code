@@ -15,7 +15,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -572,7 +571,7 @@ fun FixedCostDialog(
     val accounts = ledger.activeAccounts
     val chosenCategory = category.takeIf { it in categories } ?: categories.first()
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (initial == null) "반복 추가" else "반복 고치기", style = MaterialTheme.typography.titleLarge,
@@ -655,7 +654,7 @@ fun FixedCostDialog(
             }
             HorizontalDivider()
             val ready = name.isNotBlank() && digits.toAmount() > 0
-            Button(
+            com.bamnat.app.ui.components.SaveButton(
                 enabled = ready,
                 onClick = {
                     onSave(FixedCost(

@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -161,7 +160,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     val types = remember(d.types) { d.types.associateBy { it.id } }
     SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
     val source = d.source
-    if (source != null || d.companyName.isNotBlank()) {
+    if ((source != null || d.companyName.isNotBlank()) && SetupStep.COMPANY in d.steps) {
         SummaryCard("회사", companyLine(d, source), onFix = { vm.fix(SetupStep.COMPANY) })
     }
     SummaryCard(
@@ -181,7 +180,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             onFix = { vm.fix(SetupStep.ORDER) },
         )
         d.style == WorkStyle.HOURLY && d.noFixedDays -> SummaryCard("요일", "그때그때 달라요. 일한 날 달력에 적어요", onFix = { vm.fix(SetupStep.ORDER) })
-        else -> SummaryCard("요일", weekLine(d), onFix = { vm.fix(SetupStep.ORDER) })
+        else -> SummaryCard("요일", weekLine(d) + if (d.holidaysOff) " · 공휴일 쉼" else " · 공휴일에도 일함", onFix = { vm.fix(SetupStep.ORDER) })
     }
     if (d.usesRotation) {
         val date = vm.questionDate(d)
@@ -222,7 +221,8 @@ private fun SummaryCard(title: String, text: String, onFix: () -> Unit, extra: (
 }
 
 private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList {
-    if (d.companyName.isNotBlank()) add(d.companyName.trim())
+    // [J133-26] Said once: the name is the company picked, so its line says it already.
+    if (d.companyName.isNotBlank() && (source == null || source.kind == SetupSource.Kind.TEMPLATE || source.name.trim() != d.companyName.trim())) add(d.companyName.trim())
     when (source?.kind) {
         SetupSource.Kind.TEMPLATE -> add("${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
         SetupSource.Kind.SERVER -> add("같은 회사 설정: ${source.name}${source.dept.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}")
@@ -275,7 +275,7 @@ fun SetupPaySheet(
     }
     if (way != null) {
         androidx.compose.runtime.LaunchedEffect(way) { company.pendingWays.offer(way) }
-        ModalBottomSheet(onDismissRequest = onLater, sheetState = state) {
+        com.bamnat.app.ui.components.AppSheet(onDismissRequest = onLater, sheetState = state) {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -293,7 +293,7 @@ fun SetupPaySheet(
         }
         return
     }
-    ModalBottomSheet(onDismissRequest = onLater, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onLater, sheetState = state) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -302,6 +302,8 @@ fun SetupPaySheet(
             Text("달력을 채웠어요. 예상 급여도 볼까요?", style = MaterialTheme.typography.headlineSmall)
             Text(
                 if (companyPay) "회사 급여 방식은 함께 받아 왔어요. 내 기본급이나 시급만 넣으면 이번 달 예상 급여를 보여 드려요."
+                // [J133-71] 1.33: 알바 looks for no company; the 시급 is all it takes.
+                else if (c.scopeOf(calendar).currentSettings().workStyle?.usesCompany == false) "시급만 넣으면 주휴수당까지 넣어 이번 달 예상 급여를 보여 드려요."
                 // [PAYF-05] 1.29 AP: the pay starts from the company (근무주기처럼): its way when coworkers made one, else made by hand.
                 else "먼저 우리 회사 급여 방식이 있는지 찾아봐요. 있으면 그대로 쓰고 기본급만 넣으면 돼요. 없으면 몇 가지만 골라 직접 만들어요.",
                 style = MaterialTheme.typography.bodyMedium,

@@ -69,6 +69,9 @@ class TodayWidget : GlanceAppWidget() {
 }
 
 class WeekWidget : GlanceAppWidget() {
+    // [J133-32] 순번 712: laid out for its real size, so the 4×1 it is put down at keeps its marks whole.
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent { GlanceTheme { WidgetFrame { WeekContent(data) } } }
@@ -371,9 +374,18 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
 @Composable
 private fun WeekContent(data: WidgetData) {
     // "이번 주" starts on the user's first day of the week, like the calendar.
-    val days = CalendarGrid.week(CalendarGrid.weekStartOf(data.today, data.weekStart))
+    val monday = CalendarGrid.weekStartOf(data.today, data.weekStart)
+    // [J133-32] 순번 712 (1.32 실사용 테스트: 기본 4×1에서 근무 칩이 아래로 반쯤 잘렸어요): one cell high, no title and the day on one
+    // line ("월 3"), so the mark fits.
+    // [J133-96] 1.33 빌드 7 확인 (Pixel 런처의 4×1은 약 105dp 높이라 제목·요일·날짜·칩이 다 들어가지 않아 칩 아래가 잘렸어요): under
+    // 140dp the day stays on one line under the title; under 90dp the title goes too.
+    // [J133B-04] 1.33 빌드 8 확인 ("4×2로 늘리면 아래 절반이 비어요"): from 200dp the next week fills the rest.
+    val height = LocalSize.current.height
+    val tiny = height < 90.dp
+    val short = height < 140.dp
+    val twoWeeks = height >= 200.dp
     Column(GlanceModifier.fillMaxSize()) {
-        Text(
+        if (!tiny) Text(
             when (data.focus) {
                 CalendarFocus.SHIFTS -> "이번 주 근무"
                 CalendarFocus.JOBS -> "이번 주 일감"
@@ -382,32 +394,54 @@ private fun WeekContent(data: WidgetData) {
             },
             style = small(GlanceTheme.colors.onSurfaceVariant),
         )
-        Spacer(GlanceModifier.height(6.dp))
-        Row(GlanceModifier.fillMaxWidth()) {
-            for (date in days) {
-                val day = data.day(date)
-                // [DAILY-06] Each day opens itself.
-                Column(GlanceModifier.defaultWeight().clickable(openDay(androidx.glance.LocalContext.current, date)), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (!tiny) Spacer(GlanceModifier.height(if (short) 4.dp else 6.dp))
+        WeekDays(data, CalendarGrid.week(monday), short, tiny)
+        if (twoWeeks) {
+            Spacer(GlanceModifier.height(8.dp))
+            Text("다음 주", style = small(GlanceTheme.colors.onSurfaceVariant))
+            Spacer(GlanceModifier.height(4.dp))
+            WeekDays(data, CalendarGrid.week(monday.plusWeeks(1)), short = false, tiny = false)
+        }
+    }
+}
+
+/** One week of [WeekContent]: each day's name, date and mark, a tap opening the day. */
+@Composable
+private fun WeekDays(data: WidgetData, days: List<java.time.LocalDate>, short: Boolean, tiny: Boolean) {
+    Row(GlanceModifier.fillMaxWidth()) {
+        for (date in days) {
+            val day = data.day(date)
+            // [DAILY-06] Each day opens itself.
+            Column(GlanceModifier.defaultWeight().clickable(openDay(androidx.glance.LocalContext.current, date)), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (short) {
                     Text(
-                        if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek),
+                        (if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek)) + " ${date.dayOfMonth}",
                         style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),
+                        maxLines = 1,
                     )
-                    Text(
-                        "${date.dayOfMonth}",
-                        style = TextStyle(
-                            // [CAL-11] A public holiday is red as on the calendar.
-                            color = if (KoreanHolidays.isHoliday(date) && date != data.today) WidgetRed else GlanceTheme.colors.onSurface,
-                            fontSize = 15.sp,
-                            fontWeight = if (date == data.today) FontWeight.Bold else FontWeight.Normal,
-                            textAlign = TextAlign.Center,
-                        ),
-                    )
-                    Spacer(GlanceModifier.height(4.dp))
-                    WeekMark(data, day, 26)
-                    // [DAILY-07] The day's alarm is off.
-                    if (day.alarmSkipped && (day.isWorkDay || day.coveredShift != null)) {
-                        Text("🔕", style = TextStyle(fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
-                    }
+                    Spacer(GlanceModifier.height(2.dp))
+                    WeekMark(data, day, if (tiny) 20 else 24)
+                    return@Column
+                }
+                Text(
+                    if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek),
+                    style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),
+                )
+                Text(
+                    "${date.dayOfMonth}",
+                    style = TextStyle(
+                        // [CAL-11] A public holiday is red as on the calendar.
+                        color = if (KoreanHolidays.isHoliday(date) && date != data.today) WidgetRed else GlanceTheme.colors.onSurface,
+                        fontSize = 15.sp,
+                        fontWeight = if (date == data.today) FontWeight.Bold else FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+                Spacer(GlanceModifier.height(4.dp))
+                WeekMark(data, day, 26)
+                // [DAILY-07] The day's alarm is off.
+                if (day.alarmSkipped && (day.isWorkDay || day.coveredShift != null)) {
+                    Text("🔕", style = TextStyle(fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
                 }
             }
         }

@@ -21,10 +21,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -86,6 +86,9 @@ internal suspend fun inlineSearch(c: AppContainer, q: String): List<CompanyHit>?
     null
 }
 
+/** [J133-47] Public rows shown after '더 보기'. */
+private const val PUBLIC_MORE = 12
+
 /** [SRCH-07] How long before [INLINE_WAIT_MS] [inlineSearch] gives what the phone knows instead of waiting on. */
 internal const val INLINE_KNOWN_EARLY_MS = 300L
 
@@ -114,9 +117,12 @@ fun CompanyInlineResults(
     val q = query.trim()
     val ready = CompanyText.norm(q).length >= 2
     // AS 1.29 [SRCH-12] The public rows from their index, off the frame's own work when the index is not made yet.
-    val publicRows by produceState(remember(q) { if (ready) PublicCycles.searchIfReady(q) else emptyList() }, q) {
-        if (ready && value.isEmpty()) value = withContext(Dispatchers.Default) { PublicCycles.search(q) }
+    // [J133-47] 1.33 (직접 써 보기): produceState keeps its value across keys, so 1.32 kept the first two letters' rows for good
+    // ('현ㄷ' while typing found 한화솔루션·LG화학 by sound, and '현대제철' then still showed them). Every name typed is looked up.
+    val publicRows by produceState(remember { if (ready) PublicCycles.searchIfReady(q) else emptyList() }, q) {
+        value = if (!ready) emptyList() else PublicCycles.searchIfReady(q).ifEmpty { withContext(Dispatchers.Default) { PublicCycles.search(q) } }
     }
+    var more by remember(q) { mutableStateOf(false) }
     val serverOn = onServer != null && c.companyApi.enabled
     // [SPD-12] 1.30 AP1: the whole list of companies read now if the start of the app did not yet (the first setup comes first).
     androidx.compose.runtime.LaunchedEffect(serverOn) { if (serverOn) c.warmCompanies() }
@@ -146,10 +152,12 @@ fun CompanyInlineResults(
                 modifier = Modifier.semantics { heading() })
         }
         hits.take(limit).forEach { hit -> InlineCompanyRow(hit) { onServer?.invoke(hit) } }
-        publicRows.take(limit).forEach { row -> InlinePublicRow(row) { open = row } }
-        if (publicRows.size > limit) {
-            Text("공개 자료 ${publicRows.size - limit}곳 더 있어요. 아래 ‘더 찾기’에서 볼 수 있어요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        publicRows.take(if (more) PUBLIC_MORE else limit).forEach { row -> InlinePublicRow(row) { open = row } }
+        // [J133-47] The rest one tap away, right here (1.32 pointed at a '더 찾기' the first setup did not have).
+        if (!more && publicRows.size > limit) {
+            TextButton(onClick = { more = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("공개 자료 ${(publicRows.size - limit).coerceAtMost(PUBLIC_MORE - limit)}곳 더 보기")
+            }
         }
         // [SPAT-07] Last, under every company found: the user's own company is not there.
         OutlinedButton(onClick = { providing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -164,7 +172,7 @@ fun CompanyInlineResults(
             pick = onPick?.let { p -> { codes: String -> open = null; p(row, codes) } }, calendar = calendar)
     }
     if (providing) {
-        ModalBottomSheet(onDismissRequest = { providing = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        com.bamnat.app.ui.components.AppSheet(onDismissRequest = { providing = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState())) {
                 FirstProviderCard(q, rewardShort(cachedTerms()), onStart = { form ->
                     providing = false

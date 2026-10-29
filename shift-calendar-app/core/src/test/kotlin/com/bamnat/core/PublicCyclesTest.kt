@@ -140,7 +140,7 @@ class PublicCyclesTest {
     @Test fun theNoteSaysWhatTheUserChecked() {
         val none = all.first { it.formKey == "4조2교대" && it.orderState == OrderState.NONE && it.asOf.isNotEmpty() }
         val n = PublicSetup.note(none, "DDOONNOO", picked = true)
-        assertTrue(n, n.startsWith("공개 자료 확인·고침 (${none.id}): 4조 2교대 · 순서 주주휴휴야야휴휴 (공개 순서 없음, 직접 골랐어요)"))
+        assertTrue(n, n.startsWith("공개 자료 확인·고침: 4조 2교대 · 순서 주주휴휴야야휴휴 (공개 순서 없음, 직접 골랐어요)"))
         val own = all.first { it.company == "GS EPS" }
         assertTrue(PublicSetup.note(own, "DNBO", true).contains("공개 자료와 달라서 고쳤어요"))
         assertTrue(PublicSetup.note(PublicCycles.provided("예시정밀", "4조2교대"), "DDOONNOO", true).startsWith("처음 제공: 4조 2교대 · 순서 주주휴휴야야휴휴"))

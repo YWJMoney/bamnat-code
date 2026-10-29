@@ -95,6 +95,16 @@ class WorkKitTest {
         assertEquals(LocalDate.of(2026, 10, 9), m.worst?.date)
     }
 
+    /** [J133-77] Closed days are counted up to today, not the days still to come; each kind shares in its own words. */
+    @Test
+    fun shopClosedDaysStopAtToday() {
+        val m = WorkStats.shop(oct, emptyList(), LocalDate.of(2026, 10, 10)) { it.dayOfWeek != DayOfWeek.SUNDAY }
+        assertEquals(1, m.closedDays) // Sunday 10/4 only; 10/11 and on are still to come
+        assertEquals(31, WorkStats.shop(oct, emptyList(), LocalDate.of(2026, 10, 31)) { false }.closedDays)
+        assertEquals("영업일 공유", com.bamnat.core.work.shareTitle(com.bamnat.core.work.WorkStyle.BUSINESS))
+        assertEquals("근무표 공유", com.bamnat.core.work.shareTitle(null))
+    }
+
     /** [TYPE-06] 주휴수당 needs 15 hours and no absence; its hours are a fifth of the week's, at most 8. */
     @Test
     fun hourlyWeeksAndHolidayPay() {

@@ -93,7 +93,7 @@ class ZScreenshotTest : ScreenshotBase() {
             tapText(page.title, exact = true)
             back()
             assertEquals("${page.title} → 뒤로", "설정", tabNow())
-            assertFalse("${page.title} → 뒤로: the list, not the page", shows("뒤로", exact = true))
+            assertTrue("${page.title} → 뒤로: the list, not the page", gone("뒤로", exact = true))
             assertFalse(scenario.finishing())
         }
     }
@@ -134,10 +134,10 @@ class ZScreenshotTest : ScreenshotBase() {
     @Test fun memoSearchClearsBeforeLeavingTheTab() = open(FOLDED) {
         tab(2, wide = false)
         typeInto("제목, 내용, #태그 검색", "회식")
-        assertTrue(shows("검색어 지우기", exact = true))
+        assertTrue(appears("검색어 지우기", exact = true))
         back()
         assertEquals("메모", tabNow())
-        assertFalse("back cleared the search", shows("검색어 지우기", exact = true))
+        assertTrue("back cleared the search", gone("검색어 지우기", exact = true))
         back()
         assertEquals("달력", tabNow())
     }
@@ -158,8 +158,8 @@ class ZScreenshotTest : ScreenshotBase() {
     /** [NAV-03] 922: the tools in fixed places, the ways out in a row of their own. */
     @Test fun toolSheetFolded() = shoot("922_z_tools_fixed", FOLDED) {
         tapText("도구")
-        assertTrue(shows("다른 화면으로", exact = true))
-        assertTrue(shows("달력 보기 설정", exact = true))
+        assertTrue(appears("다른 화면으로", exact = true))
+        assertTrue(appears("달력 보기 설정", exact = true))
     }
 
     /** [NAV-02] The 이번 달 전부 넣기 panel beside the month closes with back; the app stays. */
@@ -188,7 +188,7 @@ class ZScreenshotTest : ScreenshotBase() {
         longMemo()
         openLongMemo()
         scrollUp(300)
-        assertTrue("맨 밑으로 shows while a long memo is scrolled", shows("맨 밑으로", exact = true))
+        assertTrue("맨 밑으로 shows while a long memo is scrolled", appears("맨 밑으로", exact = true))
     }
 
     @Test fun memoJumpButtonGoesToTheEnd() = shoot("911_z_memo_jump_end", FOLDED) {
@@ -196,7 +196,7 @@ class ZScreenshotTest : ScreenshotBase() {
         openLongMemo()
         scrollUp(300)
         tapText("맨 밑으로", exact = true)
-        assertTrue("the memo's last line shows", shows("인수인계 줄 80"))
+        assertTrue("the memo's last line shows", appears("인수인계 줄 80"))
     }
 
     // ---- 399 [UX-13] 하루 창 ----
@@ -235,8 +235,8 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun alarmWheelsByClock() = shoot("914_z_alarm_clock", FOLDED) {
         dayShiftAlarm()
-        assertTrue(shows("울릴 시각", exact = true))
-        assertTrue(shows("에 울려요"))
+        assertTrue(appears("울릴 시각", exact = true))
+        assertTrue(appears("에 울려요"))
     }
 
     @Test fun alarmWheelsBeforeTheStart() = shoot("915_z_alarm_before", FOLDED) {
@@ -267,8 +267,8 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun deleteAsksWhereTheShiftIsUsed() = shoot("917_z_delete_ask", FOLDED) {
         deleteNight()
-        assertTrue(shows("‘야간’ 근무를 삭제할까요?"))
-        assertTrue(shows("근무 주기에 들어 있어요"))
+        assertTrue(appears("‘야간’ 근무를 삭제할까요?"))
+        assertTrue(appears("근무 주기에 들어 있어요"))
     }
 
     @Test fun deleteMovesToAnotherTypeAndUndoPutsItBack() = shoot("918_z_delete_undo", FOLDED) {
@@ -280,7 +280,7 @@ class ZScreenshotTest : ScreenshotBase() {
         val gone = runBlocking { c.scheduleRepository.snapshot.first() }
         assertTrue(gone.shiftTypes.none { it.id == night })
         assertTrue("the work order has 주간 where 야간 was", gone.resolver.resolve(today).shiftType != null)
-        assertTrue(shows("되돌리기", exact = true))
+        assertTrue(appears("되돌리기", exact = true))
         tapText("되돌리기", exact = true)
         val back = runBlocking { c.scheduleRepository.snapshot.first() }
         assertEquals(before.shiftTypes, back.shiftTypes)
@@ -293,8 +293,8 @@ class ZScreenshotTest : ScreenshotBase() {
     @Test fun moveToANewPhone() = shoot("920_z_move_phone", FOLDED) {
         settingsPage("데이터")
         tapText("새 휴대폰으로 옮기기", exact = true)
-        assertTrue(shows("옮겨지는 것", exact = true))
-        assertTrue(shows("이 휴대폰에만 남는 것", exact = true))
+        assertTrue(appears("옮겨지는 것", exact = true))
+        assertTrue(appears("이 휴대폰에만 남는 것", exact = true))
     }
 
     @Test fun moveToANewPhoneHugeText() = shoot("921_z_move_phone_huge_text", PHONE, fontScale = 2f) {
@@ -318,15 +318,15 @@ class ZScreenshotTest : ScreenshotBase() {
         tapText("주간 넣기", exact = true, scrolls = 0)
         tapText("야간 넣기", exact = true, scrolls = 0)
         backOnTop()
-        assertTrue("back asks first", shows("넣은 2일을 버릴까요?", exact = true))
+        assertTrue("back asks first", appears("넣은 2일을 버릴까요?", exact = true))
         assertEquals("nothing closed yet", 1, closed)
         tapText("취소", exact = true, scrolls = 0)
-        assertFalse("the ask is gone", shows("넣은 2일을 버릴까요?", exact = true))
+        assertTrue("the ask is gone", gone("넣은 2일을 버릴까요?", exact = true))
         // The days are still there: 저장 still counts them.
         reveal("2일 저장", exact = true)
         // 닫기 asks the same; 버리고 닫기 closes.
         tapText("닫기", exact = true)
-        assertTrue(shows("넣은 2일을 버릴까요?", exact = true))
+        assertTrue(appears("넣은 2일을 버릴까요?", exact = true))
         tapText("버리고 닫기", exact = true, scrolls = 0)
         assertEquals(2, closed)
         content { com.bamnat.app.ui.calendar.DutyTypingSheet(snap, java.time.YearMonth.of(2026, 11), onDismiss = { closed++ }, onSave = {}) }
@@ -342,9 +342,9 @@ class ZScreenshotTest : ScreenshotBase() {
         while (shownDialogs().isNotEmpty()) backOnTop()
         tapText("주간 넣기", exact = true)
         back()
-        assertTrue("back asks first", shows("넣은 1일을 버릴까요?", exact = true))
+        assertTrue("back asks first", appears("넣은 1일을 버릴까요?", exact = true))
         tapText("버리고 닫기", exact = true, scrolls = 0)
-        assertFalse("the panel closed", shows("주간 넣기", exact = true))
+        assertTrue("the panel closed", gone("주간 넣기", exact = true))
         assertEquals("달력", tabNow())
         assertFalse(scenario.finishing())
     }
@@ -353,17 +353,17 @@ class ZScreenshotTest : ScreenshotBase() {
     @Test fun rosterScreenAsksBeforeLeaving() = shoot("924_z_roster_leave_ask", FOLDED) {
         tapText("도구")
         tapText("이번 달 전부 넣기", exact = true)
-        assertTrue(shows("한 달 근무 넣기", exact = true))
+        assertTrue(appears("한 달 근무 넣기", exact = true))
         tapText("주간 넣기", exact = true)
         back()
-        assertTrue("back asks first", shows("넣지 않고 나갈까요?", exact = true))
+        assertTrue("back asks first", appears("넣지 않고 나갈까요?", exact = true))
         tapText("취소", exact = true, scrolls = 0)
-        assertTrue("still on the screen", shows("한 달 근무 넣기", exact = true))
+        assertTrue("still on the screen", appears("한 달 근무 넣기", exact = true))
         tapText("뒤로", exact = true, scrolls = 0)
-        assertTrue("the arrow asks too", shows("넣지 않고 나갈까요?", exact = true))
+        assertTrue("the arrow asks too", appears("넣지 않고 나갈까요?", exact = true))
         tapText("버리고 나가기", exact = true, scrolls = 0)
         assertEquals("달력", tabNow())
-        assertFalse("nothing typed: back leaves at once", shows("넣지 않고 나갈까요?", exact = true))
+        assertTrue("nothing typed: back leaves at once", gone("넣지 않고 나갈까요?", exact = true))
         tapText("도구")
         tapText("이번 달 전부 넣기", exact = true)
         tapText("주간 넣기", exact = true)
@@ -377,16 +377,16 @@ class ZScreenshotTest : ScreenshotBase() {
         runBlocking { c.scheduleRepository.clearPattern() }
         c.settingsRepository.update { it.copy(workStyle = null) }
         open(FOLDED) { scenario ->
-            assertTrue(shows("어떤 일을 하고 계신가요?"))
+            assertTrue(appears("어떤 일을 하고 계신가요?"))
             back()
             assertFalse("one back on the very first screen does not close the app", scenario.finishing())
-            assertTrue(shows("어떤 일을 하고 계신가요?"))
+            assertTrue(appears("어떤 일을 하고 계신가요?"))
             tapText("백업이나 회사 파일로 시작할게요", exact = true)
             tapText("허용은 나중에 할게요")
-            assertTrue(shows("어떻게 일하세요?"))
+            assertTrue(appears("어떻게 일하세요?"))
             back()
             assertFalse("one back on the first question does not close the app", scenario.finishing())
-            assertTrue(shows("어떻게 일하세요?"))
+            assertTrue(appears("어떻게 일하세요?"))
             back()
             assertTrue("a second back closes it", scenario.finishing())
         }
@@ -400,9 +400,9 @@ class ZScreenshotTest : ScreenshotBase() {
         settle()
         tapText("찾기", exact = true, scrolls = 0)
         typeInto("이름, 무슨 돈, 메모로 찾기", "민지")
-        assertTrue(shows("지우기", exact = true))
+        assertTrue(appears("지우기", exact = true))
         back()
-        assertFalse("back closed the search", shows("지우기", exact = true))
+        assertTrue("back closed the search", gone("지우기", exact = true))
         assertEquals("and did not leave", 0, left)
     }
 
@@ -415,10 +415,10 @@ class ZScreenshotTest : ScreenshotBase() {
         val file = runBlocking { c.backupManager.export() }
         view.edit().putBoolean("list", false).commit()
         open(FOLDED) {
-            assertTrue("the month as a grid", shows("목록으로 보기", exact = true))
+            assertTrue("the month as a grid", appears("목록으로 보기", exact = true))
             runBlocking { c.backupManager.restore(file) }
             settle()
-            assertTrue("the list, at once", shows("달력으로 보기", exact = true))
+            assertTrue("the list, at once", appears("달력으로 보기", exact = true))
         }
     }
 }

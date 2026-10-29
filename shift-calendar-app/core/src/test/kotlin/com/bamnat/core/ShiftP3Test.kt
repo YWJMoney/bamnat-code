@@ -156,6 +156,28 @@ class ShiftP3Test {
         assertEquals(y.months.maxBy { it.nights }.nights, y.busiestNightMonth!!.nights)
     }
 
+    /**
+     * [J133-42] 순번 722 (1.32 실사용 테스트: 4조 2교대에 '근무 사이 11시간 미만 51일'이 맞나요?): 12-hour shifts. 주주휴휴야야휴휴 rests
+     * 12 hours between shifts and 주야휴휴 24 hours (주간 one day, 야간 the next evening): neither has a short rest, and a quick
+     * return comes only from a shift moved by hand or extra work.
+     */
+    @Test
+    fun `twelve hour four team shifts have no quick returns of their own`() {
+        val d12 = com.bamnat.core.model.ShiftType(41, "주간", "주", 0xFF1E88E5, java.time.LocalTime.of(7, 0), java.time.LocalTime.of(19, 0), breakMinutes = 60)
+        val n12 = com.bamnat.core.model.ShiftType(42, "야간", "야", 0xFF5E35B1, java.time.LocalTime.of(19, 0), java.time.LocalTime.of(7, 0), breakMinutes = 60)
+        val types = Fixtures.all + d12 + n12
+        val start = LocalDate.of(2026, 1, 1)
+        val until = LocalDate.of(2026, 2, 28)
+        val apart = ScheduleResolver(types, WorkPattern.Rotation(start, listOf(d12.id, d12.id, null, null, n12.id, n12.id, null, null)), emptyList())
+        assertEquals(0, ShiftHealth.year(2026, apart::resolve, { null }, until = until).quickReturns)
+        val joined = ScheduleResolver(types, WorkPattern.Rotation(start, listOf(d12.id, n12.id, null, null)), emptyList())
+        assertEquals(0, ShiftHealth.year(2026, joined::resolve, { null }, until = until).quickReturns)
+        // A 야간 moved by hand to the 주간 after it (07:00 → 07:00 the same morning) is one.
+        val moved = ScheduleResolver(types, WorkPattern.Rotation(start, listOf(d12.id, n12.id, null, null)),
+            listOf(com.bamnat.core.model.DayEntry(start.plusDays(2), com.bamnat.core.model.ShiftOverride.Shift(d12.id))))
+        assertEquals(1, ShiftHealth.year(2026, moved::resolve, { null }, until = until).quickReturns)
+    }
+
     @Test
     fun `a day shift soon after a night is a quick return`() {
         // 야간 ends 07:00, 오후 starts 14:00 the same day: 7 hours.

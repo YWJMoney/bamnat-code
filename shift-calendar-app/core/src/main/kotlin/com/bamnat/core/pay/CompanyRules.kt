@@ -247,7 +247,7 @@ enum class HolidayWork(val label: String, val detail: String) {
     /** 근로기준법 제56조 제2항: 8시간까지 50%, 넘으면 100% on top. */
     PREMIUM("휴일 근무 가산", "법대로 8시간까지 50%, 넘으면 100% 더 받아요"),
     /** [PAYX-07][HOLI-03] Paid like a kind of extra work (특근·대근), by the kind of shift; its night premium stays. */
-    AS_EXTRA("특근·대근처럼", "빨간날 근무를 특근(대근)으로 셈해요. 모닝·이브닝·나이트마다 금액을 정하고 야간 수당은 그대로"),
+    AS_EXTRA("특근·대근처럼", "빨간날 근무를 특근(대근)으로 셈해요. 근무 종류마다(주간·야간 등) 금액을 정하고 야간 수당은 그대로"),
     /** 제55조 제2항 단서: swapped for another day by a written agreement, so a working day with no premium. */
     SUBSTITUTE("대체휴일", "가산 없이 평일처럼 받고, 다른 날 하루 쉬어요(근로자대표와 서면 합의)"),
     /** The rota already holds the 휴일: a 빨간날 is a usual day for shift work. */

@@ -294,6 +294,14 @@ class LedgerTest {
 
     // ---- [LEDG-10] Reports ----
 
+    /** [J133-79] Days before the first line written down are not 무지출: the book did not exist yet. */
+    @Test fun noSpendDaysStartAtTheFirstLine() {
+        val book = MoneyBook(entries = listOf(spend(20, 10_000, "식비")), accounts = accounts)
+        val r = Reports.month(book.month(nov), null, book, d(25))
+        assertEquals(5, r.noSpendDays)
+        assertEquals(0, Reports.month(MoneyBook().month(nov), null, MoneyBook(), d(25)).noSpendDays)
+    }
+
     @Test fun monthReportComparesWithTheMonthBefore() {
         val oct = YearMonth.of(2026, 10)
         val lines = listOf(

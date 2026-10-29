@@ -110,6 +110,9 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     return@Column
                 }
                 Text("거의 다 됐어요! 내 금액만 넣어요", style = MaterialTheme.typography.headlineSmall)
+                // [SHR-20][695] 1.33: a setup that came in a coworker's 근무표 링크 says so.
+                val from = remember { vm.app.pendingSetupFrom.also { vm.app.pendingSetupFrom = null } }
+                if (from != null) Note("동료가 보낸 설정 · $from 님 · ${vm.company.ifEmpty { "회사" }}")
                 if (vm.edited) Note("말씀하신 다른 점을 넣은 방식으로 계산해요. " + (sendNote ?: "같은 회사 분들께도 제안으로 올렸어요. 맞아요가 모이면 다음 버전이 돼요."))
                 Text(
                     "${vm.company.ifEmpty { "같은 회사" }} 분들이 맞춘 계산 방식이 들어 있어요. 사람마다 다른 금액만 넣으면 끝나요.",

@@ -69,7 +69,8 @@ internal object Estimates {
     }
 
     /** [PAYX-23] The note under the total when a break's start time was guessed; null when none was. */
-    fun breakNote(result: MonthPay): String? = result.breakGuessedDays.size.takeIf { it > 0 }?.let { n ->
+    // [J133-77] 1.33 (유형별 점검: 5명 미만 알바에게 '야간 시간을 비율로 나눴어요'): no night premium under 5, so nothing to make exact.
+    fun breakNote(result: MonthPay, fiveOrMore: Boolean = true): String? = result.breakGuessedDays.size.takeIf { it > 0 && fiveOrMore }?.let { n ->
         "휴게 시작 시각을 모르는 근무 ${n}일은 야간 시간을 비율로 나눴어요. 근무 유형에 휴게 시작 시각을 넣으면 정확해져요."
     }
 
@@ -82,7 +83,7 @@ internal object Estimates {
             return EstimateHint(HOLIDAY, checks = true)
         }
         if (result.minutes.any { it.estimated }) return EstimateHint(EXTRA_TIMES)
-        if (result.breakGuessedDays.isNotEmpty()) return EstimateHint(BREAK)
+        if (result.breakGuessedDays.isNotEmpty() && profile.fiveOrMoreEmployees) return EstimateHint(BREAK)
         return EstimateHint(GENERIC)
     }
 }

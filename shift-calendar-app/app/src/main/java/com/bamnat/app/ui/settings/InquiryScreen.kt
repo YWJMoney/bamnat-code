@@ -476,8 +476,9 @@ private fun InquiryForm(
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var openTip by rememberSaveable { mutableStateOf<String?>(null) }
-    // [INQ-06] 모두의 문의에 올리기: on as before, said and changed right above 보내기 (점검 보고서 중-13).
-    var share by rememberSaveable { mutableStateOf(true) }
+    // [INQ-06] 모두의 문의에 올리기, said and changed right above 보내기 (점검 보고서 중-13). [J133-35] 순번 715 (1.32 실사용 테스트):
+    // off unless the user turns it on; a question about one's own pay or phone is not for everyone by default.
+    var share by rememberSaveable { mutableStateOf(false) }
     // [SRV-06] Up to two photos, made small and stripped on the phone; the developer's switch can pause them.
     var photos by remember { mutableStateOf<List<ByteArray>>(emptyList()) }
     val photosOpen = !mail && !context.appContainer.flags.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
@@ -495,12 +496,14 @@ private fun InquiryForm(
     val problem = if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text)
     // The alarm check helps most when the app misbehaves, so it is offered ticked there.
     LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
-    LaunchedEffect(withCheck, showCheck) { if ((withCheck || showCheck) && check == null) check = vm.alarmCheck(context) }
+    // 1.32.1 [STAB-14] About the app stopping (from its notice or card, or the words say so): the record starts with 앱 멈춤.
+    val stop = com.bamnat.core.diag.StopTrail.aboutStop(start?.about, text)
+    LaunchedEffect(withCheck, showCheck, stop) { if (withCheck || showCheck) check = vm.alarmCheck(context, stop) }
     // [UX-05] Kept as it is written, so leaving to look something up loses nothing. Only on this phone.
     LaunchedEffect(kind, text) { vm.saveDraft(kind, if (bodyOf(text).isEmpty()) "" else text) }
     val sendByMail: () -> Unit = {
         scope.launch {
-            val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
+            val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
             mailQuestion(context, kind, text, diag, pay.takeIf { withPay })
             vm.clearDraft()
             onMailed()
@@ -552,7 +555,9 @@ private fun InquiryForm(
         )
         // [UX-05] An answer that fits what is being written, before it is sent.
         val body = bodyOf(text)
-        val topics = remember { HelpFaq.topics(vm.shareOn) }
+        val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
         val tips = remember(body, kind) {
             if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.forQuestion(body, topics, limit = 2)
         }
@@ -579,7 +584,9 @@ private fun InquiryForm(
                     if (showPay) Shown(pay)
                 }
                 Spacer(Modifier.height(4.dp))
-                CheckRow("알람 점검 기록도 보내기", "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람 기록이 들어 있어요",
+                // 1.32.1 [STAB-13] Named for what it holds: an app that stopped is not an alarm problem.
+                CheckRow("점검 기록도 보내기", if (stop) "앱이 멈춘 곳과 그때의 화면·메모리 상태, 권한 상태가 먼저 들어 있어요. 적은 글·금액은 없어요"
+                    else "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람·앱 멈춤 기록이 들어 있어요",
                     checked = withCheck, onChange = { withCheck = it })
                 TextButton(onClick = { showCheck = !showCheck }) {
                     Text(if (showCheck) "기록 접기" else "보낼 기록 보기")
@@ -635,7 +642,7 @@ private fun InquiryForm(
                 error = null
                 if (mail) sendByMail()
                 else scope.launch {
-                    val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
+                    val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
                     vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share) { sent, why ->
                         if (sent != null) {
                             com.bamnat.app.company.InquiryPhotos.skipped(sent.photosSkipped)?.let {
@@ -673,7 +680,7 @@ private fun InquiryForm(
 private fun mailQuestion(context: Context, kind: InquiryKind?, text: String, diag: String?, pay: String?) {
     val extra = buildString {
         if (pay != null) append("\n\n[급여 계산 내용]\n").append(pay)
-        if (diag != null) append("\n\n[알람 점검 기록]\n").append(diag)
+        if (diag != null) append("\n\n[점검 기록]\n").append(diag)
     }
     writeToUs(context, "[밤낮 문의] " + (kind?.label ?: "문의"), text.trim() + extra)
 }
@@ -1141,7 +1148,9 @@ private fun HelpHome(
     onOpenPublic: (PublicInquiry) -> Unit,
     onIdea: (String) -> Unit = {},
 ) {
-    val topics = remember { HelpFaq.topics(vm.shareOn) }
+    val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1194,9 +1203,9 @@ private fun HelpHome(
             val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
             // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
             val guideContainer = LocalContext.current.appContainer
-            val features = remember(query) {
+            val features = remember(query, hiddenKinds) {
                 val (_, style) = guideContainer.guideCalendar()
-                com.bamnat.app.ui.guide.FeatureSearch.search(query, style)
+                com.bamnat.app.ui.guide.FeatureSearch.search(query, style, hidden = hiddenKinds)
             }
             val total = found.size + settings.size + posts.size + features.size
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",

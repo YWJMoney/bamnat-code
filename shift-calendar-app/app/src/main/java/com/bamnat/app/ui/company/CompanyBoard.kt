@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.company
 
+import com.bamnat.app.appContainer
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -45,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
@@ -306,7 +307,11 @@ fun TrustLine(trust: Int, agree: Int, persons: Int, bad: Int, adopted: Boolean) 
 
 /** 맞았어요 · 달라요 on one setup, for anyone who knows the company; 달라요 asks what is off. */
 @Composable
-fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com.bamnat.app.company.Opinion? = null) {
+fun VoteButtons(
+    mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com.bamnat.app.company.Opinion? = null,
+    /** [J133-55] 달라요 straight on to what it should be: the proposal form, or the talk on 고치자는 제안. */
+    onPropose: (() -> Unit)? = null,
+) {
     var asking by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         val okText = if (mine == true) "맞았어요 ✓" else "맞았어요"
@@ -332,11 +337,17 @@ fun VoteButtons(mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com
                             Text(text, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    Text("무엇이 다른지 토론에 적어 주시면 같은 회사 분들께 큰 도움이 돼요.", style = MaterialTheme.typography.bodySmall,
+                    Text(if (onPropose != null) "‘보내고 고칠 점 적기’를 누르면 맞는 값을 바로 적을 수 있어요. 같은 회사 분들께 큰 도움이 돼요."
+                        else "무엇이 다른지 토론에 적어 주시면 같은 회사 분들께 큰 도움이 돼요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 }
             },
-            confirmButton = { TextButton(onClick = { asking = false; onVote(false, why) }) { Text("달라요 보내기") } },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (onPropose != null) TextButton(onClick = { asking = false; onVote(false, why); onPropose() }) { Text("보내고 고칠 점 적기") }
+                    TextButton(onClick = { asking = false; onVote(false, why) }) { Text(if (onPropose != null) "달라요만 보내기" else "달라요 보내기") }
+                }
+            },
             dismissButton = { TextButton(onClick = { asking = false }) { Text("취소") } },
         )
     }
@@ -356,13 +367,35 @@ fun TalkSheet(holder: TalkHolder) {
     var error by remember(o.setup) { mutableStateOf<String?>(null) }
     var flagging by remember { mutableStateOf<TalkPost?>(null) }
     var replyTo by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
-    var kind by rememberSaveable(o.setup) { mutableStateOf("talk") }
+    var kind by rememberSaveable(o.setup) { mutableStateOf(o.startKind ?: "talk") }
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
     var withSetup by rememberSaveable(o.setup) { mutableStateOf(false) }
     var hiding by remember { mutableStateOf<TalkPost?>(null) }
+    var redoing by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
+    redoing?.let { post -> ProposalRedoSheet(holder, o.company, o.setup, o.title, post) { redoing = null } }
     val rules = rememberPlazaRules()
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
-    ModalBottomSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // [J133-99] 1.33 빌드 8 확인 ("고치자는 제안에 글을 쓰고 뒤로 키 두 번이면 묻지 않고 사라져요"): words or a change not sent yet
+    // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).
+    // [J133-99] 빌드 9 확인 ("X·끌어내리기는 묻는데 뒤로 키는 묻지 않고 닫혀요"): read through one held value, so the sheet's state
+    // and its back are made once and see the words as they are now (a plain value made a new sheet state at every letter).
+    val typedNow = androidx.compose.runtime.rememberUpdatedState(text.isNotBlank() || (kind == "proposal" && change != listOf(blankChange())))
+    var leaving by remember { mutableStateOf(false) }
+    val talkScope = androidx.compose.runtime.rememberCoroutineScope()
+    val talkState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        v != androidx.compose.material3.SheetValue.Hidden || !typedNow.value || false.also { leaving = true }
+    })
+    if (leaving) com.bamnat.app.ui.components.ConfirmDialog(
+        title = "쓴 글을 버릴까요?",
+        message = "보내지 않고 닫으면 지금 쓴 글이 사라져요.",
+        confirmLabel = "버리고 닫기",
+        onDismiss = { leaving = false },
+        onConfirm = { leaving = false; text = ""; holder.close() },
+        destructive = true,
+    )
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
+        if (typedNow.value) { leaving = true; talkScope.launch { talkState.show() } } else holder.close()
+    }, sheetState = talkState, onClose = { if (typedNow.value) leaving = true else holder.close() }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
             // [PLAZA-32] 1.27 AI: a room's talk is free talk under its own name.
             Text(if (o.room) "자유 토의" else "토론", style = MaterialTheme.typography.titleLarge)
@@ -389,7 +422,8 @@ fun TalkSheet(holder: TalkHolder) {
                         tops.forEach { p ->
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
-                                company = o.company, setup = o.setup)
+                                company = o.company, setup = o.setup,
+                                onRedo = if (talk.past || o.room) null else ({ redoing = p }))
                             talk.posts.filter { it.parent == p.id }.forEach { r ->
                                 Row {
                                     Spacer(Modifier.width(20.dp))
@@ -509,13 +543,57 @@ fun TalkSheet(holder: TalkHolder) {
     }
 }
 
+/**
+ * [J133-83] 1.33 광장 급여 써 보기: the user's own proposal opened again in 다른 점 말하기, as it was sent (a member sees its
+ * setup; anyone else starts from the version and its reason), and sent in its place: the old one is taken down once the new one is in.
+ */
+@Composable
+private fun ProposalRedoSheet(holder: TalkHolder, company: String, setup: String, title: String, post: TalkPost, onDismiss: () -> Unit) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val base by androidx.compose.runtime.produceState<String?>(null, company, setup) { value = keptSetupText(c, company, setup) }
+    val hidden = remember(company, setup, base) { c.companySearch.page(company)?.setups?.firstOrNull { it.id == setup }?.payHidden == true }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val b = base ?: return
+    val draft = remember(b, post.id) {
+        val text = post.proposal?.text?.takeIf { com.bamnat.core.plaza.SetupEdit.of(it) != null } ?: b
+        com.bamnat.core.plaza.ProposalDraft(b, text, com.bamnat.core.plaza.SetupCompare.proposalLines(com.bamnat.core.plaza.SetupCompare.rows(b, text)), post.body)
+    }
+    DiffEditorSheet(
+        title = title, base = b, mine = null, busy = busy, error = error, draft = draft, payHidden = hidden,
+        onSend = { lines, text, why ->
+            busy = true
+            holder.send(proposalBody(com.bamnat.core.plaza.SetupCompare.rows(b, text), why), kind = "proposal", change = lines, setupText = text,
+                replacing = post.id) { e ->
+                busy = false
+                if (e == null) {
+                    c.telemetry.event("plaza_diff", "redo")
+                    onDismiss()
+                } else error = e
+            }
+        },
+        onDismiss = onDismiss,
+    )
+}
+
 @Composable
 private fun PostRow(
     p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null,
     /** [PROP-02] The talk's company and version, for 이 제안으로 내 월급 계산해 보기 on a proposal. */
     company: String = "", setup: String = "",
+    /** [J133-83] The user's own proposal, fixed and sent again in its place. */
+    onRedo: (() -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
+    // [J133-55] A post goes for good: asked once before it does.
+    var deleting by remember { mutableStateOf(false) }
+    if (deleting) AlertDialog(
+        onDismissRequest = { deleting = false },
+        title = { Text("이 글을 지울까요?") },
+        text = { Text(if (p.kind == "proposal") "고치자는 제안과 그동안 받은 맞아요도 함께 사라지고, 되돌릴 수 없어요." else "지운 글은 되돌릴 수 없어요.") },
+        confirmButton = { TextButton(onClick = { deleting = false; onDelete() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = { deleting = false }) { Text("취소") } },
+    )
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
             .padding(start = 0.dp),
@@ -525,7 +603,7 @@ private fun PostRow(
             Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
-                "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("제안", Tone.WAIT) }
+                "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("고치자는 제안", Tone.WAIT) }
             }
             Spacer(Modifier.width(6.dp))
             when (p.stance) {
@@ -540,12 +618,18 @@ private fun PostRow(
             Spacer(Modifier.weight(1f))
             Text(ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(18.dp)) }
+                // [J133-70] 1.33 (실사용 테스트: 손가락에 작은 단추, 메뉴를 그냥 닫는 줄이 없었어요): a finger-sized button and a 닫기 line.
+                IconButton(onClick = { menu = true }, modifier = Modifier.size(44.dp)) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(20.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; onDelete() })
+                    // [J133-83] 1.33 광장 급여 써 보기 ("올린 제안을 고칠 수가 없어요, 지우고 처음부터 다시"): fixed in the same form.
+                    if (p.mine && p.kind == "proposal" && p.proposal?.adopted != true && p.hidden == null && onRedo != null) {
+                        DropdownMenuItem(text = { Text("고쳐 다시 올리기") }, onClick = { menu = false; onRedo() })
+                    }
+                    if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; deleting = true })
                     else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; onFlag() })
                     // [COMM-09] Play's UGC rule: users can block one another.
                     if (!p.mine && p.author != null) DropdownMenuItem(text = { Text("이 사람 글 안 보기") }, onClick = { menu = false; onHide() })
+                    DropdownMenuItem(text = { Text("닫기", color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = { menu = false })
                 }
             }
         }

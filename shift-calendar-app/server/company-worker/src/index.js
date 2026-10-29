@@ -397,6 +397,8 @@ async function routeOnce(request, env, url, ctx) {
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
   // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
+  // [J133-88] 공개 자료 (국민연금 가입 사업장): what the public record says of a workplace, beside the 광장's own.
+  if (path === "/api/public/firms" && method === "GET") return edgeCached(request, ctx, FIRMS_EDGE_SECONDS, () => publicFirms(env, url));
   if (path === "/api/companies/top" && method === "GET") return edgeCached(request, ctx, TOP_EDGE_SECONDS, () => topCompanies(env, url));
   // AS 1.29 끝
   // SP1 1.30 시작 [SPD-06] Every company in one list with an ETag (304 when the app has it); [SPD-04] the same public answers
@@ -3427,6 +3429,16 @@ async function talkData(request, env, companyId, grp, known = null) {
   }
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
   if (member && !room) await withProposalTexts(all, env, c, posts); // BC 1.30 [PROP-01]
+  // [J133-91] 1.33 빌드 7 확인 ("고쳐 다시 올리기를 열면 전에 바꾼 값이 비어 있어요"): the writer's own proposals come with their
+  // setup to anyone, so it opens as it was sent; without the pay part when this version has a pay way they may not see (결정 D79).
+  else if (!room) {
+    const own = posts.filter((p) => p.mine && p.kind === "proposal");
+    if (own.length) {
+      const base = await one(env, `SELECT setup FROM rules WHERE company_id = ?1 AND grp = ?2
+        UNION ALL SELECT setup FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, grp);
+      await withProposalTexts(all, env, c, own, { withoutPay: !base || JSON.parse(base.setup).pay !== undefined });
+    }
+  }
   const past = !room && !(live.current || live.pending);
   const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
@@ -3475,15 +3487,20 @@ async function post(request, env) {
   let proposal = null;
   if (kind === "proposal" && given(body.proposal)) {
     const texts = [];
-    const setup = cleanSetup(body.proposal, texts);
+    const base = await one(env, `SELECT dept, dept_norm, setup FROM rules WHERE company_id = ?1 AND grp = ?2
+      UNION ALL SELECT dept, dept_norm, setup FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
+    // [J133-82] 1.33: someone who does not use this company sees its shifts only (결정 D79), so their proposal comes without the
+    // pay part; the pay they never saw stays as it is instead of going with the next version.
+    const was = base ? JSON.parse(base.setup).pay : undefined;
+    const raw = body.proposal && typeof body.proposal === "object" && !given(body.proposal.pay) && was !== undefined
+      ? { ...body.proposal, pay: was } : body.proposal;
+    const setup = cleanSetup(raw, texts);
     for (const [field, t] of texts) {
       const why = personal(t);
       if (why) refuse(why, field);
     }
     // [FIN130-15] As a report: no company amount before 처리방침 3.4 is in force.
     if (!(await fixedAmountsOpen(env, now))) withoutFixedAmounts(setup);
-    const base = await one(env, `SELECT dept, dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
-      UNION ALL SELECT dept, dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
     const grp = (await sha256(`${base.dept_norm}|${await fingerprint(setup)}`)).slice(0, 16);
     if (grp === body.setup) refuse("same", "proposal");
     const active = await activeRule(env, c.id, base.dept_norm);
@@ -5935,6 +5952,81 @@ export async function playVitals(env, now) {
   }
   vitalsKept.set(env.DB ?? env, { value, until: now + (value.error ? HOUR : VITALS.keepMs) });
   return value;
+}
+
+/**
+ * [J133-88] 1.33 (사용자 2026-10-29 15:48 "급여체계는 첫 제공자가 나올 때까지 존재하지 않고 ... 인터넷에서 최대한 폭 넓게"): the
+ * 국민연금공단 '가입 사업장 내역' (공공데이터포털, 이용허락범위 제한 없음), cut by tools/public_firms.py into one file per first letter
+ * on GitHub Pages and read here when a name is searched (the phone never asks GitHub itself). A workplace there with 5 members or
+ * more is 5인 이상; its members and the average monthly income it reports are said as the record's, never as anyone's post.
+ */
+export const FIRMS = { base: "https://ywjmoney.github.io/-/remote/firms/v1", max: 8, keepSeconds: 6 * 3600 };
+export const FIRMS_EDGE_SECONDS = 600;
+
+async function firmFile(env, path) {
+  const base = (typeof env.FIRMS_BASE_URL === "string" && /^https:\/\/[^\s]+$/.test(env.FIRMS_BASE_URL.trim())
+    ? env.FIRMS_BASE_URL.trim() : FIRMS.base).replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(SHARE_TIMEOUT_MS),
+      cf: { cacheTtl: FIRMS.keepSeconds, cacheEverything: true } });
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** [J133-88] Workplaces in the public record whose name holds [q]: the very name first, then those that start with it, larger first. */
+export async function publicFirms(env, url) {
+  const q = normName(String(url.searchParams.get("q") ?? "")).slice(0, 40);
+  if (q.length < 2) return json({ firms: [] }, 200, SEARCH_CACHE);
+  const shard = q.codePointAt(0).toString(16).padStart(4, "0");
+  const [text, metaText, kinds, rulesText] = await Promise.all([firmFile(env, `${shard}.tsv`), firmFile(env, "meta.json"),
+    firmFile(env, "industries.tsv"), firmFile(env, "rules.json")]);
+  let meta = null;
+  try {
+    meta = metaText === null ? null : JSON.parse(metaText);
+  } catch {
+    meta = null;
+  }
+  // No file for the letter is no workplace; the record not there at all is said, so the app does not claim there is none.
+  if (!meta) return json({ firms: [], unavailable: true }, 200, { "cache-control": "no-store" });
+  const industry = new Map((kinds ?? "").split("\n").map((l) => l.split("\t")).filter((p) => p.length === 2));
+  const hits = [];
+  for (const line of (text ?? "").split("\n")) {
+    const [name, region, code, members, average] = line.split("\t");
+    if (!name || average === undefined) continue;
+    const key = normName(name);
+    const rank = key === q ? 0 : key.startsWith(q) ? 1 : key.includes(q) ? 2 : -1;
+    if (rank < 0) continue;
+    hits.push({ rank, firm: { name, region, industry: industry.get(code) ?? "", members: Number(members), average: Number(average) * 10_000 } });
+  }
+  // The file is larger first already; the sort keeps that order within a rank.
+  hits.sort((a, b) => a.rank - b.rank);
+  return json({ asOf: String(meta.asOf ?? ""), source: String(meta.source ?? ""), url: String(meta.url ?? ""),
+    minMembers: Number(meta.minMembers ?? 5), firms: hits.slice(0, FIRMS.max).map((h) => h.firm), ...publicRules(rulesText, q) }, 200, SEARCH_CACHE);
+}
+
+/**
+ * [J133-89] Public institutions' own 보수규정 (알리오·클린아이·법령, tools/public_rules.py) whose name is [q] or holds it: each line in
+ * words with its source, and the file of what is one number for everyone (통상시급 기준 시간, a 매월 정액) for 이 값 쓰기.
+ * "충남대병원" finds 충남대학교병원.
+ */
+function publicRules(text, q) {
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    return {};
+  }
+  const short = (k) => k.replace(/대학교병원$/, "대병원").replace(/대학교/g, "대");
+  // What people call it (코레일, 한수원, SR), said exactly; the name itself also by a part of it. Exact ones first.
+  const called = (o) => Array.isArray(o.aliases) && o.aliases.includes(q);
+  const exact = (o) => o.key === q || short(o.key) === q || called(o);
+  const found = (data?.orgs ?? []).filter((o) => typeof o.key === "string" &&
+    (exact(o) || o.key.includes(q) || short(o.key).includes(q))).sort((a, b) => Number(exact(b)) - Number(exact(a)));
+  if (!found.length) return {};
+  return { rulesSource: String(data.source ?? ""), rules: found.slice(0, 3).map((o) => ({ name: o.name, rule: o.rule, effective: o.effective,
+    url: o.url, hours: o.hours ?? null, lines: (o.lines ?? []).slice(0, 60), takes: o.takes ?? [], setup: o.setup })) };
 }
 
 /**

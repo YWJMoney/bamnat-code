@@ -497,3 +497,21 @@ fun ConfirmDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
+
+/**
+ * [J133-75][J133-77] A drag of the list puts the keyboard away, so the results under it and the tabs at the bottom can be
+ * reached (중간 빌드 확인: 회사 찾기, 설정 찾기). Put it before the list's verticalScroll.
+ */
+@Composable
+fun rememberHideKeyboardOnDrag(): androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    return androidx.compose.runtime.remember(keyboard) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource):
+                androidx.compose.ui.geometry.Offset {
+                if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y != 0f) keyboard?.hide()
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+}

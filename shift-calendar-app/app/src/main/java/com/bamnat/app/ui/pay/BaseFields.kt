@@ -56,12 +56,14 @@ internal fun BaseFields(
     companyHours: Int? = null,
     companyName: String? = null,
     keepBase: Long? = null,
+    onDone: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MoneyField(
             when (wage) { WageType.MONTHLY -> "월 기본급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" },
             base, onChange = onBase,
             placeholder = when (wage) { WageType.MONTHLY -> "명세서 ‘기본급’ 줄의 금액"; WageType.HOURLY -> "계약서의 시급"; WageType.DAILY -> "하루 받는 금액" },
+            onDone = onDone,
         )
         // [PAYG-02] The base the setup has, one tap away and never put in by itself.
         if (keepBase != null && base != keepBase) {
@@ -69,8 +71,19 @@ internal fun BaseFields(
                 modifier = Modifier.heightIn(min = 48.dp))
         }
         if (base == null || base <= 0) {
-            Text("회사 방식은 기본급으로 계산해요. ${wage.baseName()}만 넣으면 이번 달 예상 급여가 바로 보여요.",
+            // [J133-05] 1.33: a part-timer is told 시급, never 기본급.
+            Text(if (wage == WageType.MONTHLY) "회사 방식은 기본급으로 계산해요. 기본급만 넣으면 이번 달 예상 급여가 바로 보여요."
+                else "${wage.baseName()}만 넣으면 이번 달 예상 급여가 바로 보여요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // [J133-28] 1.33 (실사용 테스트 "시급 화면에 최저시급 안내가 없어요"): this year's minimum, and a word when the 시급 is under it.
+        if (wage == WageType.HOURLY) {
+            val minimum = com.bamnat.core.pay.RateTable.on(com.bamnat.core.time.Today.date()).minimumHourlyWage
+            val under = base != null && base > 0 && base < minimum
+            Text(if (under) "${com.bamnat.core.time.Today.date().year}년 최저시급 ${won(minimum)}보다 적어요. 계약서를 한 번 더 봐 주세요."
+                else "${com.bamnat.core.time.Today.date().year}년 최저시급은 ${won(minimum)}이에요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (under) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (wage != WageType.MONTHLY) return@Column
         val company = companyHours?.takeIf { it in BaseAsk.HOURS_RANGE }

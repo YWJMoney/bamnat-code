@@ -12,7 +12,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -233,7 +232,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
 fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () -> Unit, onSave: (Long, Int?) -> Unit) {
     var base by rememberSaveable { mutableStateOf(BaseAsk.known(profile, month)) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("기본급을 확인해 주세요", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
@@ -268,7 +267,7 @@ private fun PendingWayAsk(vm: PayWayViewModel, profile: PayProfile?) {
     var again by remember { mutableStateOf<PendingWay?>(null) }
     val asking = pending?.takeIf { it.source != PendingWay.Source.FIND || it == again }
     if (asking != null && profile != null) {
-        ModalBottomSheet(onDismissRequest = { company.cancelPending(c, asking) },
+        com.bamnat.app.ui.components.AppSheet(onDismissRequest = { company.cancelPending(c, asking) },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -165,6 +165,8 @@ data class DailySales(
     val cardSettled: Boolean = false,
     /** 1.32 [TAXP-14] Of [cash], how much a 현금영수증 was issued for (현금영수증 발행 확인). */
     val cashReceipt: Long = 0,
+    /** 1.33 [J133-29] Of [costs], how much came with a proof that carries VAT (세금계산서·카드·현금영수증). */
+    val costsProven: Long = 0,
 ) {
     val net: Long get() = sales - costs
     /** [SHOP-01] Sales written by how they were paid. */
@@ -249,9 +251,9 @@ data class CategoryTotal(val category: String, val amount: Long, val count: Int)
 
 /**
  * One month of money for the money tab [WORK-04][LEDG-01]. Income adds up each source the user's
- * work produces. [TAX-01] (결정 W-D1, 사용자 U9-다): the month's pay counts once, as the engine's
- * estimate; the salary actually paid (분류 급여) is kept as an observation ([payRecorded]) that teaches
- * the 세후 예상, and counts only in a month with no estimate. A job counts only the deposit and
+ * work produces. [TAX-01] (결정 W-D1, 사용자 U9-다): the month's pay counts once. [J133-02] 1.33: the salary
+ * actually paid (분류 급여, [payRecorded]) when it came in, else the engine's estimate as 들어올 돈 ([payExpected]);
+ * the salary also teaches the 세후 예상. A job counts only the deposit and
  * balance ticked as paid ([RECV-04]): money still owed is 받을 돈, not 들어온 돈, and the job's
  * costs go out with the other spending so an unpaid job never shows as negative income.
  */
@@ -273,10 +275,17 @@ data class MonthMoney(
     val expenses: Long,
     val expenseByCategory: List<CategoryTotal>,
 ) {
-    /** [TAX-01] The estimate when there is one, else the salary written down; never both. */
-    val payCounted: Long get() = payEstimate ?: payRecorded
-    /** [TAX-01] The salary that came in sits beside the estimate as 관측, not inside 들어온 돈. */
+    /**
+     * [TAX-01] One of the two, never both. [J133-02] 1.33 (보고서 A10): the salary written down wins once it came in (it is
+     * the money in the account); before that the estimate stands in, as [payExpected] (들어올 돈).
+     */
+    val payCounted: Long get() = if (payRecorded > 0) payRecorded else payEstimate ?: 0
+    /** [TAX-01] Both an estimate and the salary that came in: the salary counts, the estimate is said beside it. */
     val payObserved: Boolean get() = payEstimate != null && payRecorded > 0
+    /** [J133-02] 들어올 돈(예상): the month's pay estimate while no salary came in yet; null once it did. */
+    val payExpected: Long? get() = payEstimate?.takeIf { payRecorded == 0L }
+    /** [J133-02] 들어온 돈 without the pay still to come. */
+    val received: Long get() = income - (payExpected ?: 0)
     val salesNet: Long get() = sales - salesCosts
     val jobProfit: Long get() = jobEarned - jobCosts
     /** [RECV-04] This month's jobs not yet paid; shown beside 들어온 돈, never inside it. */

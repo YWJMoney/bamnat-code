@@ -83,6 +83,7 @@ internal fun OrderStep(vm: SetupViewModel, d: SetupDraft) {
         else -> {
             StepHeader("어느 요일에 일하세요?", "쉬는 요일은 비워 두세요. 어떤 주만 다르면 달력에서 그날만 바꾸면 돼요.")
             WeekDays(d, onSet = vm::setWeekly)
+            HolidaysOffRow(d.holidaysOff, vm::setHolidaysOff)
         }
     }
 }
@@ -263,7 +264,8 @@ private fun WeekDays(d: SetupDraft, onSet: (Int, Long?) -> Unit) {
                         .clip(CircleShape)
                         .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
                         .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
-                        .semantics { contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${t.name}" },
+                        // [J133-39] 순번 719: an off day reads as 쉼, not as the shift it would be.
+                        .semantics { contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${if (on) t.name else "쉼"}" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -316,7 +318,27 @@ private fun HourlyDays(vm: SetupViewModel, d: SetupDraft) {
         selected = d.noFixedDays,
         onClick = { vm.setNoFixedDays(true) },
     )
-    if (!d.noFixedDays) WeekDays(d, onSet = vm::setWeekly)
+    if (!d.noFixedDays) {
+        WeekDays(d, onSet = vm::setWeekly)
+        HolidaysOffRow(d.holidaysOff, vm::setHolidaysOff)
+    }
+}
+
+/** [J133-03] 공휴일에 쉬나요? asked once with the days, on by default. */
+@Composable
+private fun HolidaysOffRow(on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
+            .toggleable(value = on, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("공휴일(빨간날)에는 쉬어요", style = MaterialTheme.typography.titleSmall)
+            Text(if (on) "한글날·성탄절 같은 날은 쉬는 날로 둬요. 출근하는 날만 달력에서 바꾸면 돼요."
+                else "공휴일에도 요일대로 일해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
+    }
 }
 
 // ---- a roster painted every month ----

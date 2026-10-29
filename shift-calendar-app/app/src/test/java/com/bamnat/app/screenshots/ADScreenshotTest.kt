@@ -110,19 +110,19 @@ class ADScreenshotTest : ScreenshotBase() {
     @Test fun longPressDragTapOutsideAndTheAppOpensOnMemos() {
         open(PHONE_393) { scenario ->
             assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "설정"), barOrder())
-            assertFalse(shows(TAB_EDIT_HINT_TOP))
+            assertTrue(gone(TAB_EDIT_HINT_TOP))
             // Held still on 메모, then dragged to the front in the same touch.
             dragTab(2, 0, wide = false, hold = 40)
-            assertTrue("the edit says what the first tab is", shows(TAB_EDIT_HINT_TOP))
+            assertTrue("the edit says what the first tab is", appears(TAB_EDIT_HINT_TOP))
             assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
             assertEquals("not saved while editing", "", saved())
             // A tab tapped while editing does not open.
             tab(4, wide = false)
             assertEquals("달력", tabNow())
-            assertTrue(shows(TAB_EDIT_HINT_TOP))
+            assertTrue(appears(TAB_EDIT_HINT_TOP))
             // Anywhere else saves and ends the edit, and does nothing else.
             tap(200f, 300f)
-            assertFalse(shows(TAB_EDIT_HINT_TOP))
+            assertTrue(gone(TAB_EDIT_HINT_TOP))
             assertEquals(MEMO_FIRST, saved())
             assertEquals("달력", tabNow())
             // Home moved in this run: back from the calendar goes to 메모, then two backs close the app there.
@@ -163,9 +163,9 @@ class ADScreenshotTest : ScreenshotBase() {
 
     @Test fun backWhileEditingSavesAndStaysInTheApp() = open(PHONE_393) { scenario ->
         dragTab(3, 0, wide = false, hold = 40)
-        assertTrue(shows(TAB_EDIT_HINT_TOP))
+        assertTrue(appears(TAB_EDIT_HINT_TOP))
         back()
-        assertFalse(shows(TAB_EDIT_HINT_TOP))
+        assertTrue(gone(TAB_EDIT_HINT_TOP))
         assertEquals("stats,calendar,money,memos,settings", saved())
         assertFalse(scenario.finishing())
     }
@@ -173,7 +173,7 @@ class ADScreenshotTest : ScreenshotBase() {
     @Test fun theRailMovesUpAndDownToo() {
         open(UNFOLDED) {
             dragTab(4, 0, wide = true, hold = 40)
-            assertTrue(shows(TAB_EDIT_HINT_TOP))
+            assertTrue(appears(TAB_EDIT_HINT_TOP))
             // The screen beside the rail saves.
             tap(400f, 300f)
             assertEquals("settings,calendar,money,memos,stats", saved())
@@ -185,13 +185,13 @@ class ADScreenshotTest : ScreenshotBase() {
         open(PHONE_393) {
             tabAction("메모", TAB_FORWARD_ACTION)
             tabAction("메모", TAB_FORWARD_ACTION)
-            assertTrue(shows(TAB_EDIT_HINT_TOP))
+            assertTrue(appears(TAB_EDIT_HINT_TOP))
             assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
             // What TalkBack reads out after the move, from the hint's live region.
             assertTrue(nodes().any { n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("메모, 1번째") } })
             tabAction("달력", TAB_BACKWARD_ACTION)
             tabAction("가계부", TAB_SAVE_ACTION)
-            assertFalse(shows(TAB_EDIT_HINT_TOP))
+            assertTrue(gone(TAB_EDIT_HINT_TOP))
             assertEquals("memos,money,calendar,stats,settings", saved())
             // Outside the edit a tab offers the long press by name.
             val tabNode = nodes().first { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
@@ -238,7 +238,7 @@ class ADScreenshotTest : ScreenshotBase() {
         val t = com.bamnat.app.ui.settings.HelpFaq.topics().first { it.id == "tabOrder" }
         t.action!!.second.run()
         settle()
-        assertTrue(shows(TAB_ORDER_ROW))
+        assertTrue(appears(TAB_ORDER_ROW))
     }
 
     // ---- 422: 사진 1020~1039 ----
@@ -248,7 +248,7 @@ class ADScreenshotTest : ScreenshotBase() {
         // A long press, again once if the first came before the bar was drawn (a busy machine), then the drag.
         dragTab(from, from, wide = wide, hold = 40)
         if (!shows(TAB_EDIT_HINT_TOP)) dragTab(from, from, wide = wide, hold = 40)
-        assertTrue(shows(TAB_EDIT_HINT_TOP))
+        assertTrue(appears(TAB_EDIT_HINT_TOP))
         if (to != from) dragTab(from, to, wide = wide)
         noCuts(name)
     }
@@ -293,13 +293,13 @@ class ADScreenshotTest : ScreenshotBase() {
         settle()
         typeInto("기능과 도움말 찾기", "첫 화면")
         tapText("달력 말고 다른 화면으로 시작하고 싶어요")
-        assertTrue(shows("첫 화면·메뉴 순서 열기"))
+        assertTrue(appears("첫 화면·메뉴 순서 열기"))
         noCuts("help_answer")
     }
     @Test fun settingsSearch() = shoot("1034_ad_settings_search", PHONE_393) {
         tab(4, wide = false)
         typeInto("설정 찾기", "첫 화면")
-        assertTrue(shows(TAB_ORDER_ROW))
+        assertTrue(appears(TAB_ORDER_ROW))
         noCuts("settings_search")
     }
 }

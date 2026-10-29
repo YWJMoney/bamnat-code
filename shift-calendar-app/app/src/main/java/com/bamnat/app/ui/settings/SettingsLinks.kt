@@ -25,6 +25,8 @@ enum class SettingsGo {
     RECOMMENDED,
     /** [EASY-08][OBS-02] 내 정보 and 밤낮이 한 일. */
     PROFILE, JOURNAL,
+    /** [J133-34] 순번 714: the pay screen opened at a value (기본급·시급, 수당, 월급날), as its 고치기 chips do. */
+    PAY_BASE, PAY_ITEMS, PAY_PERIOD,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */
@@ -55,7 +57,8 @@ object SettingsLinks {
     fun go(go: SettingsGo) {
         when (go) {
             // The calendar opens these itself, on the user's own calendar.
-            SettingsGo.SHARE -> NoticeLinks.open(NoticeLinks.Target.SHARE)
+            // [J133-87] 1.33 빌드 6: from the 가게 calendar it opened 내 달력's sheet and left 내 달력 on screen; it is the calendar on screen's.
+            SettingsGo.SHARE -> NoticeLinks.open(NoticeLinks.Target.SHARE, payload = NoticeLinks.ON_SCREEN)
             SettingsGo.RECEIVE -> NoticeLinks.open(NoticeLinks.Target.RECEIVE)
             SettingsGo.SLEEP -> NoticeLinks.open(NoticeLinks.Target.SLEEP)
             SettingsGo.CALENDAR_IMPORT -> NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)

@@ -34,6 +34,9 @@ import com.bamnat.core.work.words
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
@@ -120,7 +123,12 @@ private fun WorkPage(
         }
         HorizontalDivider()
         // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
-        NavRow(SETUP_AGAIN_ROW, "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요") {
+        // [J133-71] 1.33: 회사 찾기 is said only for work that has a company.
+        NavRow(SETUP_AGAIN_ROW, when {
+            work.workStyle?.usesCompany != false -> "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요"
+            work.workStyle?.usesPayEngine == true -> "근무 시간·요일·알람·급여까지 첫 설정 질문을 다시 받아요"
+            else -> "일하는 방식부터 첫 설정 질문을 다시 받아요"
+        }) {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)
         }
     }
@@ -206,6 +214,16 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             val times = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
                 .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }
             NavRow(t.name, "${Fmt.time(t.start)} 시작 · " + if (times.isEmpty()) "켜진 알람 없음" else "알람 $times", onOpenShiftTypes)
+            // [J133-21] 1.33 (실사용 테스트 "야간 알람 2시간 전이 세 단계 안쪽, 빠른 칩에 2시간이 없어요"): the first alarm right here.
+            val first = t.alarms.filter { it.enabled }.maxOfOrNull { it.offsetMinutes }
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("첫 알람", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for (m in listOf(30, 60, 90, 120)) {
+                    com.bamnat.app.ui.components.FilterChip(selected = first == m, onClick = { vm.setFirstAlarm(t.id, m) },
+                        label = { Text(if (m % 60 == 0) "${m / 60}시간 전" else if (m > 60) "${m / 60}시간 ${m % 60}분 전" else "${m}분 전") })
+                }
+            }
         }
         // [SET-05] Every shift's alarms earlier or later at once, instead of opening each shift (G.md P21).
         var moving by rememberSaveable { mutableStateOf(false) }
@@ -262,7 +280,8 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         }
     }
     SectionCard(title = null) {
-        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
+        // 1.32.1 [STAB-13] It also holds 앱 멈춤 and 앱 멈춤 관찰, so it says so.
+        NavRow("알람 점검", "알람이 안 울리거나 늦을 때, 앱이 멈췄을 때 원인을 찾아요") { onOpenDiagnostics(false) }
     }
 }
 
@@ -406,17 +425,19 @@ private fun NoticesPage(
             set(on) { it.copy(afterAlarmCard = on) }
         }
     }
-    SectionCard(title = "돈과 휴가") {
+    // [J133-77] 연차 for work with a company; 급여 입금 for work paid wages.
+    val leave = settings.workStyle?.usesCompany != false
+    SectionCard(title = if (leave) "돈과 휴가" else "돈") {
         SwitchRow("나갈 돈·받을 돈", "고정비는 3일 전과 당일에, 못 받은 돈은 다음 날과 7일 뒤에 알려 줘요. 같은 때 온 것은 하나로 묶어요",
             settings.moneyNotices, warning = warning(settings.moneyNotices, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(moneyNotices = on) }
         }
         // D 1.32 [PAYA-05]
-        SwitchRow("급여 입금 비교", "은행 알림으로 급여가 들어온 걸 읽으면 예상 급여와 바로 비교해 알려 줘요(결제 알림 읽기를 켠 경우)",
+        if (settings.workStyle?.usesPayEngine != false) SwitchRow("급여 입금 비교", "은행 알림으로 급여가 들어온 걸 읽으면 예상 급여와 바로 비교해 알려 줘요(결제 알림 읽기를 켠 경우)",
             settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(payDepositNotice = on) }
         }
-        SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
+        if (leave) SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
         }
@@ -424,8 +445,8 @@ private fun NoticesPage(
     }
     // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
     SectionCard(title = "소식") {
-        SwitchRow("밤낮 소식", "문의에 답이 오거나, 받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
-            "하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+        SwitchRow("밤낮 소식", "받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
+            "하루 한 번 묶어서 소리 없이 알려 줘요. 문의에 답이 오면 바로 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
@@ -441,17 +462,40 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
     // [CALS-02] Each calendar has its own pay setup.
     CalendarPick()
+    // [J133-71] 1.33: the pay page in the words of the calendar's kind of work; 회사 rows only where there is a company.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val style = vm.workSettings.collectAsStateWithLifecycle().value.workStyle
+    val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
+    val companyWork = c.companyFits(com.bamnat.app.ui.company.companyCalendarOf(c, null))
+    // [J133-77] 1.33 (유형별 점검: 가게 달력에서 '급여 계산 시작하기'가 나와요): a shop's, a freelancer's or an investor's money is
+    // on its own tab and its days are set up under 내 가게·내 일정; this page says where, in its words.
+    if (style != null && !style.usesPayEngine) {
+        val words = style.words()
+        SectionCard(title = null) {
+            NavRow(words.income, words.incomeHint + " · ${words.tab} 탭에서 적고 봐요") {
+                com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.STATS))
+            }
+            HorizontalDivider()
+            NavRow(words.pattern, words.patternHint) { SettingsLinks.go(SettingsGo.PATTERN) }
+        }
+        return
+    }
     SectionCard(title = null) {
-        NavRow("급여 계산", if (profile != null) "기본급·수당·회사 규칙·연차·급여일" else "기본급만 넣으면 이번 달 예상 급여가 보여요", onOpenPay)
+        NavRow("급여 계산", when {
+            profile != null && hourly -> "시급·수당·근무지 규칙·주휴수당·급여일"
+            profile != null -> "기본급·수당·회사 규칙·연차·급여일"
+            hourly -> "시급만 넣으면 이번 달 예상 급여가 보여요"
+            else -> "기본급만 넣으면 이번 달 예상 급여가 보여요"
+        }, onOpenPay)
         // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
         SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
             else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
         if (settings.rateHint) RateRegionRow()
     }
     // [COMM-01][COMM-02]
-    if (company != null) SectionCard(title = "같은 회사 사람들과", content = company)
+    if (company != null && companyWork) SectionCard(title = "같은 회사 사람들과", content = company)
     // [COMM-00] Coworkers share one setup instead of each typing it in.
-    SectionCard(title = "회사 설정 파일") {
+    if (companyWork) SectionCard(title = "회사 설정 파일") {
         Note("근무 종류·주기·급여 규칙을 파일로 동료에게 보내요. 기본급, 입사일, 연차, 달력에 적은 내용은 들어가지 않아요.")
         NavRow("회사 설정 보내기", "카카오톡·메일 등으로 파일을 보내요", files.shareCompany)
         HorizontalDivider()
@@ -785,7 +829,8 @@ private fun PrivacyPage(
         // the app works the same either way.
         UsageStatsRow(settings.shareUsageStats) { on -> context.appContainer.setUsageStats(on) }
         // [PLAZA-07] 결정 D79: the work order and pay way shared by themselves after the one-time yes; off stops it.
-        if (context.appContainer.companyApi.enabled) AutoShareRow()
+        // [J133-71] Only while a calendar's work has a company.
+        if (context.appContainer.companyScopes().any { context.appContainer.companyFits(it.calendarId) }) AutoShareRow()
         // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
         val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
         var adWords by remember { mutableStateOf(false) }
@@ -827,6 +872,17 @@ private fun PrivacyPage(
             PermissionRow(ok = false, title = "정확한 시간에 울리기", fixLabel = "허용") {
                 if (Build.VERSION.SDK_INT >= 31) SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
             }
+        }
+        // [J133-44] 순번 724 (1.32 실사용 테스트: 첫 설정에서 받은 캘린더 권한이 이 목록에 없었어요): a choice too, said with why it is
+        // asked; the phone's app settings take it back or give it.
+        HorizontalDivider()
+        val calendarOk = remember(refresh) {
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CALENDAR) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        NavRow("휴대폰 캘린더 읽기", if (calendarOk) "허용됨 · 삼성·Google 캘린더 일정을 근무와 메모로 옮길 때 써요"
+            else "허용 안 함 · 캘린더에서 가져오기나 휴대폰 캘린더에 쓰기를 켤 때만 필요해요") {
+            SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
         }
         // Reading sleep is a choice, not something missing: it says where it is turned on.
         HorizontalDivider()

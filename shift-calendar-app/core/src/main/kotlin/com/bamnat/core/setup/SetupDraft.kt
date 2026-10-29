@@ -61,6 +61,11 @@ data class SetupDraft(
     val weekly: List<Long?> = List(7) { null },
     /** [SETUP-02] Hourly work on days that change: no weekly pattern at all. */
     val noFixedDays: Boolean = false,
+    /**
+     * [J133-03] 1.33 (보고서 심각 3, B1·C2): weekday and part-time work is off on public holidays unless the user says
+     * otherwise, asked once on the days' page. 1.32 put them in as working days and asked again every month.
+     */
+    val holidaysOff: Boolean = true,
     /** [SETUP-02] Painted roster days: a type id, or null for a plain day off. */
     val painted: Map<LocalDate, Long?> = emptyMap(),
     /**
@@ -103,9 +108,12 @@ data class SetupDraft(
                 // A shared order is asked too, already chosen: a template's is only the usual one for that work.
                 SetupStep.ORDER, SetupStep.TODAY.takeIf { usesRotation }, SetupStep.ALARM, SetupStep.SUMMARY,
             )
-            // [COMM-05] Weekday and part-time work look for the company too, or start from a template.
-            WorkStyle.DAY, WorkStyle.HOURLY ->
+            // [COMM-05] Weekday work looks for the company too, or starts from a template.
+            WorkStyle.DAY ->
                 listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
+            // [J133-71] 1.33: a part-time job has no company setup to look for; the hours come first.
+            WorkStyle.HOURLY ->
+                listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
         }
 
     /** "근무 설정 3/6": [step]'s place among [steps], 1-based. */
@@ -147,7 +155,7 @@ data class SetupDraft(
     fun pattern(today: LocalDate): WorkPattern? = when {
         usesRotation -> rotation.takeIf { it.isNotEmpty() }?.let { WorkPattern.Rotation(today, it, anchorDate = anchor ?: today) }
         style == WorkStyle.DAY || style == WorkStyle.HOURLY && !noFixedDays ->
-            WorkPattern.Weekly.fromSteps(today, weekly).takeIf { w -> w.steps.any { !isOff(it) } }
+            WorkPattern.Weekly.fromSteps(today, weekly, holidaysOff = holidaysOff).takeIf { w -> w.steps.any { !isOff(it) } }
         else -> null
     }
 

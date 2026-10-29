@@ -38,7 +38,11 @@ data class Ask(val missing: Missing, val reward: String, val isNew: Boolean)
  * summary. A good moment ([Moment]) puts its fact first: after the first night shift the 야간수당 question.
  */
 object AskScheduler {
-    const val PER_DAY = 2
+    /**
+     * [J133-51] 1.33 (사용자 2026-10-29 "급여 설정 후 질문이 너무 많고"): one question a day. 1.32 asked two, and the second came
+     * the moment the first was put off (입사일 → 나중에 → 월급날 at once).
+     */
+    const val PER_DAY = 1
     const val SNOOZE_DAYS = 7L
     const val MAX_SNOOZES = 2
 
@@ -84,6 +88,12 @@ object AskScheduler {
         snoozedUntil = state.snoozedUntil + (key.id to today.plusDays(SNOOZE_DAYS)),
         snoozes = state.snoozes + (key.id to (state.snoozes[key.id] ?: 0) + 1),
     )
+
+    /**
+     * [J133-51] A day of no questions and no tips: the day a setup (첫 설정, 급여 설정, 회사 방식 받기) was just made, so what
+     * the user just did is not followed by more asks.
+     */
+    fun rest(state: AskState, today: LocalDate): AskState = state.copy(day = today, shownToday = PER_DAY, current = null)
 
     /** [GUIDE-03] The one-line tip waits on a day a question was shown: the question comes first. */
     fun tipAllowed(state: AskState, today: LocalDate): Boolean = state.countOn(today) == 0

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -154,14 +154,20 @@ fun CompanyFindScreen(
             )
         },
     ) { padding ->
+        // [J133-75] 중간 빌드 3 확인 ("자판이 결과를 가려 현대제철(3번째)이 안 보여요. 제목을 눌러도 자판이 안 내려가요"): a tap
+        // on the title, or a drag of the list, puts the keyboard away; once a name is typed the picture and the
+        // explanation give their room to the results.
+        val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
         Box(Modifier.fillMaxSize().padding(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                Modifier.widthIn(max = 640.dp).fillMaxWidth().nestedScroll(hideOnDrag).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                HeroIcon(Icons.Outlined.Apartment)
-                Text(if (setup) "다니는 회사를 찾아볼까요?" else "회사 이름으로 찾아요", style = MaterialTheme.typography.headlineSmall)
-                Text(
+                val typed = query.isNotBlank()
+                if (!typed) HeroIcon(Icons.Outlined.Apartment)
+                Text(if (setup) "다니는 회사를 찾아볼까요?" else "회사 이름으로 찾아요", style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.clickable(interactionSource = null, indication = null) { keyboard?.hide() })
+                if (!typed) Text(
                     if (vm.server) "같은 회사 분들이 맞춰 둔 근무표와 급여 계산 방식을 그대로 가져와요. 금액은 각자 넣어요."
                     // [SPAT-02] Without the company server: the public cycles only.
                     else "기사·채용 공고·노무 사이트에 나온 회사 근무주기를 찾아요. 고른 뒤 내 근무와 맞춰 봐요.",
@@ -388,7 +394,7 @@ fun CompanyDetailScreen(
     }
     askingPay?.let { s ->
         val p = page
-        if (p != null) WithPayDialog(p.name, s, onAnswer = { yes -> askingPay = null; withPay = yes; order(p, s) }, onDismiss = { askingPay = null })
+        if (p != null) WithPayDialog(p.name, s, calendar = vm.calendar, onAnswer = { yes -> askingPay = null; withPay = yes; order(p, s) }, onDismiss = { askingPay = null })
     }
     if (openPhasesFor != null && page != null) {
         LaunchedEffect(page) { page.setups.firstOrNull { it.id == openPhasesFor }?.let { start(page, it) } }
@@ -431,6 +437,8 @@ fun CompanyDetailScreen(
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
+                    // [J133-88] No pay way here yet: the public record of this very company, said as the record's.
+                    if (p.setups.none { it.hasPay }) PublicFirmCard(p.name, onlyExact = true)
                     // [PLAZA-09] 결정 D79: a member's room, only what the others changed, each value to take alone.
                     room?.takeIf { onPick == null }?.let { r ->
                         RoomSection(r, onTake = { card -> vm.take(card) { msg, ok -> if (ok) { error = null; notice = msg } else error = msg } })
@@ -481,6 +489,7 @@ fun CompanyDetailScreen(
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
                             onTalk = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}") },
+                            onPropose = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}", kind = "proposal") },
                             // [PLZ-10][PLZ-04] My own month with these rules, and how the rule got here.
                             onTry = if (su.hasPay) ({ vm.tryPay(su) }) else null,
                             onHistory = if (su.adopted && (su.version ?: 1) > 1) ({ vm.showHistory(p, su) }) else null,
@@ -559,6 +568,7 @@ fun CompanyDetailScreen(
             title = "${page?.name.orEmpty()} · ${su.dept.ifEmpty { "회사 전체" }}",
             base = su.text, mine = mine, busy = sending, error = sendError,
             alsoMine = payWay?.setup == su.id,
+            payHidden = su.payHidden,
             onSend = { lines, text, why ->
                 val p = page ?: return@DiffEditorSheet
                 sending = true
@@ -597,6 +607,8 @@ private fun SetupCard(
     vote: Boolean? = null,
     onVote: ((Boolean, String?) -> Unit)? = null,
     onTalk: (() -> Unit)? = null,
+    /** [J133-55] After 달라요 when there is no proposal form here: the talk, on 고치자는 제안. */
+    onPropose: (() -> Unit)? = null,
     onTry: (() -> Unit)? = null,
     onHistory: (() -> Unit)? = null,
     onDiff: (() -> Unit)? = null,
@@ -659,7 +671,7 @@ private fun SetupCard(
             if (onVote != null) {
                 Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion)
+                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion, onPropose = onDiff ?: onPropose)
             }
             if (onTry != null || onHistory != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -737,7 +749,7 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
 internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
     val today = remember { Today.date() }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("오늘은 어떤 근무예요?", style = MaterialTheme.typography.titleLarge)
@@ -822,7 +834,14 @@ private data class Compare(
  * a company setup with a pay way, before its order is picked: the pay way too, or the cycle alone. Yes leads to the 기본급 next.
  */
 @Composable
-internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit) {
+internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit,
+    calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
+    // [J133-54] 1.33 (실사용 테스트 "넣기 전에 내 월급이 어떻게 바뀌는지 안 보여요"): this month before and after, on my own pay.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val trial by androidx.compose.runtime.produceState<Trial?>(null, setup.id, calendar) {
+        value = if (c.companyOf(calendar).pay.profile.value == null) null
+            else runCatching { payTrial(c, setup.text, setup.id, Today.month(), calendar, setup.payHidden) }.getOrNull()
+    }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("급여 계산 방식도 같이 넣을까요?") },
@@ -832,11 +851,26 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
                     style = MaterialTheme.typography.bodyMedium)
                 Text("넣으면 수당과 계산 방식이 들어오고, 기본급만 내 것으로 넣으면 돼요. 금액은 가져오지 않아요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TrialBeforeAfter(trial)
             }
         },
         confirmButton = { Button(onClick = { onAnswer(true) }) { Text("네, 같이 넣을게요") } },
         dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("근무주기만 넣을게요") } },
     )
+}
+
+/** [J133-54] This month before and after on the user's own pay, with the three lines that move most; nothing until it is read. */
+@Composable
+internal fun TrialBeforeAfter(trial: Trial?) {
+    val t = trial?.takeIf { it.note == null && !it.loading && (it.now > 0 || it.then > 0) } ?: return
+    val d = t.diff
+    Text("이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
+        if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
+        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    t.lines.filter { it.now != it.then }.sortedByDescending { kotlin.math.abs(it.then - it.now) }.take(3).forEach { l ->
+        Text("· ${l.label} ${com.bamnat.app.ui.pay.won(l.now)} → ${com.bamnat.app.ui.pay.won(l.then)}",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 /**

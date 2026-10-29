@@ -77,6 +77,8 @@ object NoticeLinks {
         PAY,
         /** D 1.32 [PAYA-05] 근무·급여 at 월급날 비교, for the calendar in [calendar], from the pay deposit's notice. */
         PAY_GAP,
+        /** 1.32.1 [STAB-13] 문의하기 as 앱 멈춤 with the 점검 기록 ticked, from the notice after the app stopped. */
+        STOP_REPORT,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"
@@ -135,6 +137,9 @@ object NoticeLinks {
         _payload.value = payload
         _target.value = target
     }
+
+    /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
+    const val ON_SCREEN = "on_screen"
 
     fun consume(target: Target) {
         _target.compareAndSet(target, null)

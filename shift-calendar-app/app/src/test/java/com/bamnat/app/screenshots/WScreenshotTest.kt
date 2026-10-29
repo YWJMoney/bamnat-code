@@ -56,7 +56,7 @@ class WScreenshotTest : ScreenshotBase() {
     private fun payWithRecords(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
         runBlocking {
             c.payStore.save(PayViewModel(c).sampleProfile().copy(period = com.bamnat.core.pay.PayPeriod(payDay = 10, payNextMonth = true),
-                taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4), keepUndo = false)
+                taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4, taxChosen = true), keepUndo = false)
             val tax = c.tax(PersonalCalendar.MAIN)
             val now = YearMonth.from(today)
             listOf(3 to (3_420_000L to 2_948_000L), 2 to (3_180_000L to 2_760_000L)).forEach { (i, gn) ->
@@ -80,19 +80,19 @@ class WScreenshotTest : ScreenshotBase() {
     }
 
     // ---- 380·381: 세금·실수령 for pay ----
-    @Test fun payCard() = shoot("850_w_tax_card_pay", PHONE) { payWithRecords()(); money()(); assertTrue(shows("세후 예상 (실수령)")) }
+    @Test fun payCard() = shoot("850_w_tax_card_pay", PHONE) { payWithRecords()(); money()(); assertTrue(appears("세후 예상 (실수령)")) }
     @Test fun takeHomeSheet() = shoot("851_w_take_home_sheet", FOLDED) {
         payWithRecords()(); money()()
         tapText("기록·자세히")
-        assertTrue(shows("실수령 기록 3건"))
-        assertTrue(shows("월급 아니에요"))
+        assertTrue(appears("실수령 기록 3건"))
+        assertTrue(appears("월급 아니에요"))
     }
     @Test fun payRecordFromPayslip() = shoot("852_w_pay_record_dialog", PHONE) {
         payWithRecords()(); money()()
         tapText("기록·자세히"); tapText("지난 월급 적기")
         typeInto("세전 (지급 총액)", "3400000")
         typeInto("실수령 (통장에 들어온 돈)", "2931000")
-        assertTrue(shows("명세서 사진으로 채우기"))
+        assertTrue(appears("명세서 사진으로 채우기"))
     }
     @Test fun typedRecordIsSaved() = shoot("853_w_pay_record_saved", PHONE) {
         payWithRecords()(); money()()
@@ -113,7 +113,8 @@ class WScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.money.MoneyScreen(vm, wide = false, onOpenPay = {}, today = today) }
         settle()
         reveal("수입 내역", exact = true)
-        assertTrue(shows("관측", exact = false))
+        // 1.33 (0b54ca79): the pay that came is said against the estimate ("예상 … · N원 더/덜 들어왔어요"), no longer "관측".
+        assertTrue(appears("들어왔어요", exact = false) || appears(" · 같아요", exact = false))
     }
     @Test fun hugeTextCard() = shoot("855_w_tax_card_huge_text", SMALL_PHONE, fontScale = 2f) { payWithRecords()(); money()() }
     @Test fun darkSheet() = shoot("856_w_take_home_dark", FOLDED_NIGHT) { payWithRecords()(); money()(); tapText("기록·자세히") }
@@ -130,12 +131,12 @@ class WScreenshotTest : ScreenshotBase() {
         c.tax(PersonalCalendar.MAIN).saveSettings { it.copy(business = BusinessTax.Profile(vat = BusinessTax.VatType.SIMPLE, industry = BusinessTax.Industry.CONSTRUCTION,
             simpleRate = 86.6, standardRate = 18.6, lastYearTax = 420_000)) }
     })
-    @Test fun businessCard() = shoot("858_w_tax_card_business", PHONE) { business()(); money(WorkStyle.FIELD)(); assertTrue(shows("낼 세금 예상", exact = false)) }
+    @Test fun businessCard() = shoot("858_w_tax_card_business", PHONE) { business()(); money(WorkStyle.FIELD)(); assertTrue(appears("낼 세금 예상", exact = false)) }
     @Test fun businessSheet() = shoot("859_w_business_sheet", FOLDED) {
         business()(); money(WorkStyle.FIELD)()
         tapText("자세히·설정")
-        assertTrue(shows("내는 날"))
-        assertTrue(shows("단순경비율"))
+        assertTrue(appears("내는 날"))
+        assertTrue(appears("단순경비율"))
     }
 
     // ---- 379: 매도 단가 → 수수료·세금, 기본 수수료 ----
@@ -158,8 +159,8 @@ class WScreenshotTest : ScreenshotBase() {
     @Test fun sellPriceWorksOutCosts() = shoot("860_w_trade_sell_costs", FOLDED, tradeSheet {
         typeInto("단가", "72000")
         // 720,000 × 0.05% = 360 fee; 증권거래세 KOSPI 0.05% = 360 (research/1.25-W-조사.md 3장).
-        assertTrue(shows("360", exact = false))
-        assertTrue(shows("0.05%", exact = false))
+        assertTrue(appears("360", exact = false))
+        assertTrue(appears("0.05%", exact = false))
     })
     @Test fun feeRatesSaved() = shoot("861_w_fee_rates", PHONE, tradeSheet {
         tapText("기본 수수료")
@@ -195,13 +196,13 @@ class WScreenshotTest : ScreenshotBase() {
         then()
     }
     @Test fun foundTradesWithoutPrice() = shoot("862_w_found_without_price", PHONE, foundWithoutPrice {
-        assertTrue(shows("단가 없는 알림 2건"))
-        assertTrue(shows("체결 금액 ÷ 수량", exact = false))
+        assertTrue(appears("단가 없는 알림 2건"))
+        assertTrue(appears("체결 금액 ÷ 수량", exact = false))
     })
     @Test fun captureGuide() = shoot("863_w_capture_guide", PHONE, foundWithoutPrice {
         tapText("체결 내역 캡처로 채우기")
-        assertTrue(shows("체결 내역 캡처로 채우기", exact = true))
-        assertTrue(shows("이런 화면이면 돼요"))
+        assertTrue(appears("체결 내역 캡처로 채우기", exact = true))
+        assertTrue(appears("이런 화면이면 돼요"))
     })
     @Test fun captureGuideSmall() = shoot("864_w_capture_guide_small", SMALL_PHONE, foundWithoutPrice { tapText("체결 내역 캡처로 채우기") })
 
@@ -217,8 +218,8 @@ class WScreenshotTest : ScreenshotBase() {
         then(vm)
     }
     @Test fun captureAsksInYellow() = shoot("865_w_capture_review_ask", FOLDED, captureRead {
-        assertTrue(shows("수량 × 단가가 금액과 안 맞아요", exact = false))
-        assertTrue(shows("노란 칸은 확인해야 넣을 수 있어요"))
+        assertTrue(appears("수량 × 단가가 금액과 안 맞아요", exact = false))
+        assertTrue(appears("노란 칸은 확인해야 넣을 수 있어요"))
         // [INV-43] 1.27 AK: the sure row goes in as a trade; the yellow one waits, unfilled.
         tapText("넣기 1건", exact = true)
         val repo = InvestRepository.of(c.database)
@@ -249,7 +250,7 @@ class WScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.invest.InvestViewModel(c, PersonalCalendar.MAIN)
         content { com.bamnat.app.ui.invest.InvestScreen(vm, wide = false, snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }) }
         settle()
-        assertTrue(shows("체결 내역 캡처에서 읽었어요", exact = false))
+        assertTrue(appears("체결 내역 캡처에서 읽었어요", exact = false))
         tapText("적기", exact = true)
         assertEquals(1, runBlocking { repo.now().trades.count { it.side == Side.BUY && it.price == 71_500.0 || it.side == Side.SELL && it.price == 41_250.0 } })
     })

@@ -93,11 +93,11 @@ class UScreenshotTest : ScreenshotBase() {
     @Test fun noDays() = shoot("816_u_no_row_of_dates", PHONE_393, asked(days = false) { reveal("사진 위에서 누르기") })
     @Test fun tapDialog() = shoot("817_u_tap_on_photo", PHONE_393, asked(days = false) {
         tapText("사진 위에서 누르기")
-        assertTrue(shows("날짜 줄(1 2 3 …)을 눌러 주세요"))
+        assertTrue(appears("날짜 줄(1 2 3 …)을 눌러 주세요"))
     })
     @Test fun diagnosis() = shoot("818_u_what_was_read", PHONE_393, asked {
         tapText("무엇을 읽었는지 보기")
-        assertTrue(shows("근무 줄 4개"))
+        assertTrue(appears("근무 줄 4개"))
     })
 
     // ---- 371: the first setup's 듀티표가 있어요 ----
@@ -135,14 +135,14 @@ class UScreenshotTest : ScreenshotBase() {
                 rules = com.bamnat.app.ui.pay.RuleTarget(emptyList(), emptyList(), true) { _, _ -> }, onRead = {})
         }
         settle()
-        assertTrue(shows("2. 회사 계산 방법", exact = false))
+        assertTrue(appears("2. 회사 계산 방법", exact = false))
     }
 
     // ---- 372: taking a month back, and what saving overwrites ----
     @Test fun undoInTools() = shoot("822_u_undo_recent_fill", PHONE_393, style(WorkStyle.SHIFT) {
         RecentFill.record("11월에 30일을 넣었어요", c.calendars.active.value, c.appScope) {}
         tapText("도구")
-        assertTrue(shows("방금 넣은 것 되돌리기"))
+        assertTrue(appears("방금 넣은 것 되돌리기"))
     })
     @Test fun keypadOverwrite() = shoot("823_u_keypad_overwrite", FOLDED, style(WorkStyle.SHIFT) {
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }

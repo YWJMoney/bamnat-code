@@ -60,6 +60,35 @@ class ShareLinkTest {
     }
 
     /** [SHR-04] Days with no work at all say so, for the receiver's 같이 쉬는 날; the day off with a 대근 does not. */
+    /** [SHR-20] 1.33 (계획 690~694): who the link is for, and the company setup only on a coworker's with the box ticked. */
+    @Test fun audienceAndCoworkerSetup() {
+        val file = org.json.JSONObject().put("format", "bamnat-company").put("company", "가나공업").toString()
+        val family = ShareOptions.forAudience(ShareAudience.FAMILY, employee = true, field = false)
+        assertFalse(family.memos || family.pay || family.extras || family.leaveKinds || family.setup)
+        val p = ShareLinkPayload.build(snapshot, start, "", 30, family, setup = file)
+        assertEquals("family", p.getString("audience"))
+        assertFalse(p.has("setup"))
+        val coworker = ShareOptions.forAudience(ShareAudience.COWORKER, employee = true, field = false)
+        assertTrue(coworker.extras && coworker.setup && !coworker.memos && !coworker.pay)
+        val c = ShareLinkPayload.build(snapshot, start, "", 30, coworker, setup = file)
+        assertEquals("coworker", c.getString("audience"))
+        assertEquals(file, c.getString("setup"))
+        // Unticked, or a 친구: no setup.
+        assertFalse(ShareLinkPayload.build(snapshot, start, "", 30, coworker.copy(setup = false), setup = file).has("setup"))
+        assertFalse(ShareLinkPayload.build(snapshot, start, "", 30, ShareOptions.forAudience(ShareAudience.FRIEND, true, false), setup = file).has("setup"))
+        // A link from before 1.33 stays as it was.
+        assertFalse(ShareLinkPayload.build(snapshot, start, "", 30).has("audience"))
+        // The other way: the receiving app reads both, and only a company file as a setup.
+        val read = SharedSchedule.parse(org.json.JSONObject(c.toString()))
+        assertEquals(ShareAudience.COWORKER, read.audience)
+        assertEquals(file, read.setup)
+        val junk = SharedSchedule.parse(org.json.JSONObject(c.toString()).put("setup", "{}"))
+        assertEquals(null, junk.setup)
+        // Words follow the kind of work.
+        assertEquals("같은 회사 동료", ShareAudience.COWORKER.label(true))
+        assertEquals("같이 일하는 사람", ShareAudience.COWORKER.label(false))
+    }
+
     @Test fun restDaysAreMarked() {
         val days = ShareLinkPayload.build(snapshot, start, "", 30).getJSONArray("days")
         val rest = (0 until days.length()).map { days.getJSONObject(it) }.associate { it.getString("date") to it.optBoolean("rest") }

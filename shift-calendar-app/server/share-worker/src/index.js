@@ -49,6 +49,8 @@ export const LIMITS = {
   // [SHR-11] A freelancer's jobs on a day: title and time only.
   jobs: 4,
   jobName: 12,
+  // [SHR-20] A company setup file as the app writes it, without amounts.
+  setup: 24 * 1024,
   // [SRV-05] Reports: a few an hour from one caller, one per link and caller a day.
   reportsPerHour: 10,
   // A taken-down link answers "removed" this long, then is gone like any other.
@@ -76,6 +78,13 @@ export const REPORT_REASONS = {
 
 /** [SHR-01] The parts a sharer can tick on top of the shifts. */
 export const SHOWS = ["leaveKinds", "extras", "memos", "pay", "jobs"];
+
+/**
+ * [SHR-20] 1.33 (계획 690~694): who a link is for, as the sharer picked it. A coworker's link may carry the company's setup
+ * file (근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름; never 기본급, 입사일, 연차, 알람, 메모 or amounts but a 회사 공통
+ * 정액), for the receiving app to put in. 처리방침 3.7.
+ */
+export const AUDIENCES = ["coworker", "family", "friend"];
 
 /** [SHR-11] What the money in `pay` is: an employee's pay, a freelancer's job income, a shop's sales. */
 export const PAY_KINDS = { pay: "급여", jobs: "일감 수입", sales: "매출" };
@@ -631,6 +640,18 @@ export function validate(body) {
       schedule.payKind = payKind;
     }
   }
+  // [SHR-20] Who the link is for; a link with no audience is one made before 1.33.
+  if (body.audience != null) {
+    if (!AUDIENCES.includes(body.audience)) return { error: "audience" };
+    schedule.audience = body.audience;
+  }
+  if (body.setup != null) {
+    if (schedule.audience !== "coworker" || typeof body.setup !== "string" || body.setup.length > LIMITS.setup) return { error: "setup" };
+    let file;
+    try { file = JSON.parse(body.setup); } catch { return { error: "setup" }; }
+    if (!file || typeof file !== "object" || Array.isArray(file) || file.format !== "bamnat-company") return { error: "setup" };
+    schedule.setup = body.setup;
+  }
   return { schedule, ttlDays };
 }
 
@@ -788,6 +809,8 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const shows = Object.keys(SHOW_NAMES).filter((k) => (schedule.shows ?? []).includes(k))
     .map((k) => (k === "pay" ? PAY_KINDS[payKind] : SHOW_NAMES[k]));
   const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
+  // [SHR-20] The page never shows the setup itself: only that the app takes it.
+  const setupLine = schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "";
   const pay = schedule.pay?.length
     ? `<section class="pay"><h2>함께 보낸 ${PAY_KINDS[payKind]}</h2><ul>${schedule.pay.map((p) => {
         const [y, m] = p.month.split("-").map(Number);
@@ -797,7 +820,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
-  return page(title, `<h1>${esc(title)}</h1>${has}${app}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
+  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
     `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>` + (reportId ? reportForm(reportId) : ""));
 }
 

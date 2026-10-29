@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -123,7 +124,7 @@ fun CompareSheet(
     action: (@Composable () -> Unit)? = null,
 ) {
     val rows = remember(before, after) { SetupCompare.rows(before, after) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
@@ -154,6 +155,8 @@ fun DiffEditorSheet(
     onDismiss: () -> Unit,
     draft: com.bamnat.core.plaza.ProposalDraft? = null,
     alsoMine: Boolean = false,
+    /** [J133-82] The company has a pay way this phone may not see (결정 D79): the user is told so, and it stays as it is. */
+    payHidden: Boolean = false,
 ) {
     val start = remember(base) { SetupEdit.of(base) }
     var edit by remember(base, draft) { mutableStateOf(draft?.let { SetupEdit.of(it.text) } ?: start) }
@@ -167,15 +170,41 @@ fun DiffEditorSheet(
     val amounts = remember { runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }.getOrDefault(false) }
     // [FIN130-02] 내 급여도 이 값으로 goes onto the pay of the calendar on screen, never 내 달력's from another calendar's plaza.
     val mineScope = companyScope(c)
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // [J133-82] 1.33 광장 급여 써 보기 ("끌어내리니 바꾼 게 다 사라졌어요"): a swipe, the X, a tap outside or back ask first
+    // once something is changed, as the month's typing sheet does.
+    val mineEdit = remember(mine, payHidden) { mine?.let(SetupEdit::of)?.let { if (payHidden) it.withoutPay() else it } }
+    var touched by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        v != androidx.compose.material3.SheetValue.Hidden || (!busy && (!touched || false.also { asking = true }))
+    })
+    val close = { if (busy) Unit else if (touched) asking = true else onDismiss() }
+    if (asking) com.bamnat.app.ui.components.ConfirmDialog(
+        title = "바꾼 곳을 버릴까요?",
+        message = "보내지 않고 닫으면 지금 바꾼 값이 사라져요.",
+        confirmLabel = "버리고 닫기",
+        onDismiss = { asking = false },
+        onConfirm = { asking = false; touched = false; onDismiss() },
+        destructive = true,
+    )
+    // [J133-90] 빌드 7·8 확인 ("뒤로 키·뒤로 제스처는 묻지 않고 닫혀 값이 사라져요"): the sheet's own back (predictive back too) hides
+    // it and then asks to be dismissed without the swipe's check, so here the sheet comes back up and the question is asked.
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
+        when {
+            busy -> scope.launch { state.show() }
+            touched -> { asking = true; scope.launch { state.show() } }
+            else -> onDismiss()
+        }
+    }, sheetState = state, onClose = close) {
         val e = edit
         if (start == null || e == null) {
             Text("이 설정은 고칠 수 없어요. 토론에 글로 적어 주세요.", Modifier.padding(24.dp))
-            return@ModalBottomSheet
+            return@AppSheet
         }
         val rows = remember(e) { SetupCompare.rows(base, e.text) }
         val changed = rows.filter { !it.same }
         val changedGroups = changed.map { it.group }.toSet()
+        androidx.compose.runtime.SideEffect { touched = changed.isNotEmpty() }
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
             Text("다른 점 말하기", style = MaterialTheme.typography.titleLarge)
             Text("$title · 이 회사 값으로 채워 두었어요. 우리와 다른 곳만 바꿔 주세요.", style = MaterialTheme.typography.bodySmall,
@@ -185,11 +214,12 @@ fun DiffEditorSheet(
                 Text(if (changed.isEmpty()) "아직 바꾼 곳이 없어요" else "바꾼 곳 ${changed.size}가지",
                     style = MaterialTheme.typography.labelLarge, modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp),
                     color = if (changed.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
-                if (mine != null) TextButton(onClick = { SetupEdit.of(mine)?.let { m -> edit = m } }) { Text("내 설정으로 채우기") }
+                if (mineEdit != null) TextButton(onClick = { edit = mineEdit }) { Text("내 설정으로 채우기") }
                 if (changed.isNotEmpty()) TextButton(onClick = { edit = start }) { Text("처음대로") }
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SetupEditor(e, changedGroups, amounts = amounts, baseHours = start.monthlyHours) { edit = it }
+                SetupEditor(e, changedGroups, amounts = amounts, baseHours = start.monthlyHours, payHidden = payHidden,
+                    myPay = mineEdit?.takeIf { it.hasPay }) { edit = it }
                 if (changed.isNotEmpty()) {
                     TextButton(onClick = { comparing = !comparing }) { Text(if (comparing) "비교 접기" else "바꾼 곳 비교해 보기") }
                     if (comparing) changed.forEach { CompareLine(it, "지금", "바꿀 값") }
@@ -253,7 +283,17 @@ private val RATE_KEYS = listOf("ot" to "연장", "night" to "야간", "hw" to "�
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, amounts: Boolean = true, baseHours: Int? = null, onChange: (SetupEdit) -> Unit) {
+internal fun SetupEditor(
+    e: SetupEdit,
+    changed: Set<FactGroup>,
+    amounts: Boolean = true,
+    baseHours: Int? = null,
+    /** [J133-82] The company's pay way is there but not for this phone's eyes (결정 D79). */
+    payHidden: Boolean = false,
+    /** [J133-82] The user's own setup with its pay, to give a shifts-only setup its first pay way in one tap. */
+    myPay: SetupEdit? = null,
+    onChange: (SetupEdit) -> Unit,
+) {
     // The order's days cycle through every shift, 휴무 too, then 쉼.
     val names = e.shifts.map { it.name }
     Part(FactGroup.SHIFT, changed) {
@@ -301,9 +341,30 @@ internal fun SetupEditor(e: SetupEdit, changed: Set<FactGroup>, amounts: Boolean
             else -> Text("매달 근무표로 일해요. 순서는 없어요.", style = MaterialTheme.typography.bodyMedium)
         }
     }
+    if (payHidden && !e.hasPay) {
+        // [J133-82] 1.33 광장 급여 써 보기: it had said there was no pay way while the card said there was one.
+        SoftCard {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("급여 계산 방식은 이 회사를 쓰는 분께만 보여요", style = MaterialTheme.typography.titleSmall)
+                Text("근무 시각·순서를 고쳐 보내도 회사의 급여 방식은 그대로 남아요. 가산율·수당까지 고치려면 ‘이 설정 쓰기’로 이 회사를 쓰고 다시 열어 주세요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
     if (!e.hasPay) {
-        Text("급여 계산 방식이 없는 설정이에요. 근무 시각과 순서만 고칠 수 있어요.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [J133-82] 1.33 광장 급여 써 보기 ("급여 방식이 없는 회사에는 더할 길이 없어요"): the first pay way, from the user's own or the law.
+        SoftCard(highlighted = true) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("이 설정엔 아직 급여 계산 방식이 없어요", style = MaterialTheme.typography.titleSmall)
+                Text("처음 알려 주시면 같은 회사 분들이 월급을 바로 계산할 수 있어요. 금액은 담기지 않고, 가산율·수당 이름 같은 방식만 올라가요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (myPay != null) Button(onClick = { onChange(e.withPayOf(myPay)) }, modifier = Modifier.fillMaxWidth()) { Text("내 급여 설정으로 채우기") }
+                OutlinedButton(onClick = { onChange(e.withLawPay(myPay?.fiveOrMore ?: true)) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("법대로 시작해서 고치기")
+                }
+            }
+        }
         return
     }
     Part(FactGroup.PLACE, changed) {

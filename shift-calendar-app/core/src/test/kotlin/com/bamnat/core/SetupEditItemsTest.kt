@@ -111,4 +111,40 @@ class SetupEditItemsTest {
         // A file without pay has no hours to change.
         assertNull(ProposalDraft.hours("""{"app":"com.bamnat.app","format":"bamnat-company","v":2,"shiftTypes":[]}""", 180))
     }
+
+    private val shiftsOnly = """{"app":"com.bamnat.app","format":"bamnat-company","v":2,"company":"",
+        "shiftTypes":[{"name":"주간","label":"주","color":4281352429,"start":"07:00","end":"19:00","break":60,"off":false}],
+        "rotation":{"anchor":"2026-10-01","steps":["주간",null]}}"""
+
+    @Test fun `J133-82 a shifts-only setup takes the user's pay way, without shifts it does not have`() {
+        val mine = SetupEdit.of(company.replace(""""c2","name":"자격수당"""",
+            """"c3","name":"야간수당","amount":{"entries":[],"raise":null},"cadence":"PER_SHIFT_TYPE","types":["주간","야간"]},
+            {"id":"c2","name":"자격수당""""))!!
+        val e = SetupEdit.of(shiftsOnly)!!
+        assertFalse(e.hasPay)
+        val with = e.withPayOf(mine)
+        assertTrue(with.hasPay)
+        assertEquals(209, with.monthlyHours)
+        assertEquals(listOf("식대", "야간수당", "자격수당"), with.allowances.map { it.name })
+        // The shifts and their order stay this file's.
+        assertEquals(e.rotation, with.rotation)
+        assertFalse(with.text.contains("\"야간\""))
+        assertTrue(with.text.contains("\"withAmounts\":false"))
+        // Nothing to take from a file without pay.
+        assertSame(e, e.withPayOf(e))
+        // The compare shows the pay as what changed.
+        assertTrue(com.bamnat.core.plaza.SetupCompare.rows(shiftsOnly, with.text).any { !it.same })
+    }
+
+    @Test fun `J133-82 the law's pay way starts with nothing but the law`() {
+        val e = SetupEdit.of(shiftsOnly)!!.withLawPay(fiveOrMore = false)
+        assertTrue(e.hasPay)
+        assertFalse(e.fiveOrMore)
+        assertEquals(SetupEdit.LAW_HOURS, e.monthlyHours)
+        assertTrue(e.allowances.isEmpty())
+        assertNull(e.rate("ot"))
+        // It can be changed like any other pay way.
+        assertEquals(1.5, e.rate("night", 1.5).rate("night")!!, 1e-9)
+        assertEquals("식대", e.addItem("식대").allowances.single().name)
+    }
 }

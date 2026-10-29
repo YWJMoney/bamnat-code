@@ -41,7 +41,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Surface
@@ -137,7 +136,7 @@ internal fun MonthSummaryBar(
             else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null, short = "공휴일 ${overview.holidayWorkDays}일"),
         )
         CalendarFocus.JOBS -> listOf(
-            Figure("${month}월 일감", "${overview.jobs}건", "${overview.jobDays}일 일해요"),
+            Figure("${month}월 일감", "${overview.jobs}건", overview.jobDays.takeIf { it > 0 }?.let { "${it}일 일해요" }),
             Figure("번 돈", Fmt.wonShort(overview.jobEarned), overview.jobReceived.takeIf { it > 0 }?.let { "받음 ${Fmt.wonShort(it)}" }, cal.income),
             Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, if (overview.jobOwed > 0) cal.warning else null),
         )
@@ -293,7 +292,7 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -409,8 +408,10 @@ internal fun CalendarStartCard(start: CalendarStart, onAction: () -> Unit, modif
  * [CAL-07] Weekday work set by the week runs into public holidays: asked once a month whether those
  * days are off, with the dates named. Either answer can be taken back.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun HolidayWorkCard(month: YearMonth, dates: List<LocalDate>, onRest: () -> Unit, onKeep: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HolidayWorkCard(month: YearMonth, dates: List<LocalDate>, onRest: () -> Unit, onKeep: () -> Unit, modifier: Modifier = Modifier,
+                            onAlways: (() -> Unit)? = null) {
     val cal = LocalCalendarColors.current
     val names = dates.joinToString(", ") { d -> "${d.dayOfMonth}일 ${com.bamnat.core.holiday.KoreanHolidays.nameOf(d).orEmpty()}".trim() }
     Surface(
@@ -428,10 +429,11 @@ internal fun HolidayWorkCard(month: YearMonth, dates: List<LocalDate>, onRest: (
             }
             Text("$names · 쉬는 날이면 한 번에 바꿀 수 있어요.", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            // [J133-03] 1.33: a third answer, so the card is not asked again every month.
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
                 TextButton(onClick = onKeep) { Text("그대로 일해요") }
-                Spacer(Modifier.width(4.dp))
-                Button(onClick = onRest) { Text("쉬는 날로") }
+                if (onAlways != null) OutlinedButton(onClick = onAlways) { Text("앞으로도 늘 쉬어요") }
+                Button(onClick = onRest) { Text("이번 달만 쉬어요") }
             }
         }
     }

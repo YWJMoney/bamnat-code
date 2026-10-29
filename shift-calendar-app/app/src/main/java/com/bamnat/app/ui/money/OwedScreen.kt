@@ -72,7 +72,6 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -844,7 +843,7 @@ private fun ReceivableSheet(
     var confirmDelete by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val o = Owed.Written(r)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             SheetHeader(o, today, listOfNotNull(r.who.takeIf { it.isNotBlank() && it != r.name }, r.kind.label).joinToString(" · "))
@@ -938,7 +937,7 @@ private fun ReceivableSheet(
 private fun JobOwedSheet(job: Job, today: LocalDate, onDismiss: () -> Unit, onReceive: (Job) -> Unit, onRemind: () -> Unit, onEdit: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     val o = Owed.FromJob(job)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             val span = if (job.days > 1) "${Fmt.shortDate(job.date)}~${Fmt.shortDate(job.lastDate)} (${job.days}일)" else Fmt.dayTitle(job.date)

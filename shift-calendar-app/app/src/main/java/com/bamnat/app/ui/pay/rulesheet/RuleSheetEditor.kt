@@ -91,7 +91,8 @@ fun RuleSheetEditor(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Hint("명세서에 있는 수당·더 받는 근무·빠지는 돈을 칸으로 하나씩 더해요. 사진이 없어도 돼요.")
-                        if (showHourly) HourlyCard(shown.value?.profile ?: host.profile, host.month, state.sheet.common, state::terms, plaza = plaza)
+                        // [J133-77] 1.33 (유형별 점검: 알바 화면에 '통상시급'): 시급·일당 is its own hourly value; the card is for 월급.
+                        if (showHourly && host.profile.wageType == com.bamnat.core.pay.WageType.MONTHLY) HourlyCard(shown.value?.profile ?: host.profile, host.month, state.sheet.common, state::terms, plaza = plaza)
                         RuleSheetCells(state, host, empty = "아직 칸이 없어요. 아래 ‘칸 더하기’에서 자주 쓰는 수당을 고르면 금액만 넣으면 돼요.")
                         Spacer(Modifier.height(16.dp))
                     }

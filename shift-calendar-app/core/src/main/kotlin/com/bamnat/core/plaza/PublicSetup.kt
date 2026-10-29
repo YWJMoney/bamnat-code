@@ -50,7 +50,9 @@ object PublicSetup {
             if (codes.isNotEmpty()) append(" · 순서 ").append(CycleOrders.spoken(codes))
             return@buildString
         }
-        append("공개 자료 확인·고침 (").append(cycle.id).append("): ").append(cycle.formName)
+        // [J133-84] 1.33 광장 급여 써 보기: the row's own number (c143) meant nothing to the user reading the note; the
+        // company the report names finds the row.
+        append("공개 자료 확인·고침: ").append(cycle.formName)
         if (codes.isNotEmpty()) append(" · 순서 ").append(CycleOrders.spoken(codes))
         when {
             codes.isEmpty() -> Unit

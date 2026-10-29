@@ -85,12 +85,17 @@ const MAX_PROPOSALS = 50;
  * so 이 제안으로 내 월급 계산해 보기 works from the post itself, also when the company page lists no more than three versions.
  * One read for every proposal of the talk. [all] is index.js's query helper; [company] is { id, name }.
  */
-export async function withProposalTexts(all, env, company, posts) {
+export async function withProposalTexts(all, env, company, posts, { withoutPay = false } = {}) {
   const grps = [...new Set(posts.filter((p) => p.proposal?.setup).map((p) => p.proposal.setup))].slice(0, MAX_PROPOSALS);
   if (!grps.length) return posts;
   const rows = await all(env, `SELECT grp, setup FROM reports WHERE company_id = ? AND grp IN (${grps.map(() => "?").join(", ")})
     GROUP BY grp`, company.id, ...grps);
-  const texts = new Map(rows.map((r) => [r.grp, JSON.stringify({ ...JSON.parse(r.setup), company: company.name })]));
+  const texts = new Map(rows.map((r) => {
+    const setup = { ...JSON.parse(r.setup), company: company.name };
+    // [J133-91] A writer who is not a member gets their own proposal back without a pay way they were never shown.
+    if (withoutPay) delete setup.pay;
+    return [r.grp, JSON.stringify(setup)];
+  }));
   for (const p of posts) {
     const text = p.proposal?.setup ? texts.get(p.proposal.setup) : undefined;
     if (text) p.proposal.text = text;

@@ -110,10 +110,10 @@ class BAScreenshotTest : ScreenshotBase() {
         waitFor(400)
         tapText("(주)예시정밀", exact = true)
         tapText("이 급여 방식 쓰기", exact = true)
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         // Empty, and 이대로 계산 does nothing while it is.
         tapText("이대로 계산", exact = true)
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         assertNull(c.payWays.way.value)
         assertEquals(bare().rules, c.payStore.profile.value?.rules)
         assertNull(c.companyStore.draft.value)
@@ -124,10 +124,10 @@ class BAScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(bare(), keepUndo = false) }
         c.companyOf(PersonalCalendar.MAIN).pendingWays.offer(way(PendingWay.Source.APPLY))
         c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         tapText("급여 방식은 넣지 않을게요", exact = true)
-        assertTrue(shows("‘(주)예시정밀’ 급여 방식은 넣지 않았어요. 급여는 그대로예요.", exact = true))
-        assertTrue(shows("다시 넣기", exact = true))
+        assertTrue(appears("‘(주)예시정밀’ 급여 방식은 넣지 않았어요. 급여는 그대로예요.", exact = true))
+        assertTrue(appears("다시 넣기", exact = true))
         assertNull(c.payWays.way.value)
         assertEquals(bare().rules, c.payStore.profile.value?.rules)
     }
@@ -146,8 +146,8 @@ class BAScreenshotTest : ScreenshotBase() {
         assertTrue(done)
         assertNull("the pay waits for its 기본급", c.payWays.way.value)
         c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
-        assertTrue(shows("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         typeInto("월 기본급", "2600000")
         tapText("이대로 계산", exact = true)
         waitFor(200)
@@ -169,8 +169,8 @@ class BAScreenshotTest : ScreenshotBase() {
         var now = false
         content { SetupPaySheet(companyPay = true, onNow = { now = true }, onLater = {}) }
         settle()
-        assertTrue(shows("달력을 채웠어요. ‘(주)예시정밀 · 생산팀’ 급여 계산도 들어 있어요. 쓸까요?", exact = true))
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("달력을 채웠어요. ‘(주)예시정밀 · 생산팀’ 급여 계산도 들어 있어요. 쓸까요?", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         typeInto("월 기본급", "2700000")
         tapText("이대로 계산", exact = true)
         waitFor(200)
@@ -184,9 +184,9 @@ class BAScreenshotTest : ScreenshotBase() {
         setupWithPay()
         content { SetupPaySheet(companyPay = true, onNow = {}, onLater = {}) }
         settle()
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         reveal("나중에", exact = true)
-        assertTrue(shows("급여 방식은 넣지 않을게요", exact = true))
+        assertTrue(appears("급여 방식은 넣지 않을게요", exact = true))
     }
 
     @Test fun notThisCompanysPayLeavesNothingToAsk() = shoot("1305_ba_setup_pay_skip", PHONE_393) {
@@ -204,9 +204,9 @@ class BAScreenshotTest : ScreenshotBase() {
     // ---- [PAYG-04] 기본급 없는 급여 화면: 0원 대신 '기본급만 넣으면 끝나요' 카드 하나 ----
     @Test fun aPayWithNoBaseAsksItInsteadOfZero() = shoot("1306_ba_result_no_base", PHONE_393) {
         payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(base = ValueTimeline()) })()
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
-        assertFalse(shows("항목별 내역", exact = true))
-        assertFalse(shows("0원", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(gone("항목별 내역", exact = true))
+        assertTrue(gone("0원", exact = true))
     }
 
     @Test fun theBaseInShowsTheMonth() = shoot("1318_ba_result_base_in", PHONE_393) {
@@ -214,13 +214,13 @@ class BAScreenshotTest : ScreenshotBase() {
         typeInto("월 기본급", "2500000")
         tapText("예상 급여 보기", exact = true)
         waitFor(200)
-        assertFalse(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(gone("기본급만 넣으면 끝나요", exact = true))
         reveal("항목별 내역", exact = true)
     }
 
     @Test fun theBaseCardLargeText() = shoot("1307_ba_base_card_large", SMALL_PHONE, 2f) {
         box { BaseNeededCard(bare(), Today.month(), onSave = { _, _ -> }, companyHours = 180, companyName = "(주)예시정밀") }
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         reveal("회사 규칙 180시간", exact = true)
     }
 
@@ -236,24 +236,24 @@ class BAScreenshotTest : ScreenshotBase() {
         compose.onNodeWithText("회사 규칙 (가산율·수당 기준)").assertExists()
         compose.onNodeWithText("자세히 고치기 (하나씩 묻기)").performClick()
         settle()
-        assertTrue(shows("급여 계산 설정", exact = true))
-        assertTrue(shows("이전", exact = true) || shows("다음", exact = true) || shows("없으면 직접 만들어요", exact = true))
+        assertTrue(appears("급여 계산 설정", exact = true))
+        assertTrue(appears("이전", exact = true) || shows("다음", exact = true) || shows("없으면 직접 만들어요", exact = true))
     }
 
     @Test fun theDetailedEditOpens() = shoot("1309_ba_detailed_opens", PHONE_393) {
         leads()
         withPay()()
         tapText("자세히 고치기", scrolls = 40)
-        assertTrue(shows("이전", exact = true) || shows("다음", exact = true) || shows("없으면 직접 만들어요", exact = true))
+        assertTrue(appears("이전", exact = true) || shows("다음", exact = true) || shows("없으면 직접 만들어요", exact = true))
         // Opened on the questions, never jumping to a company's way.
-        assertFalse(shows("근무주기에 넣은 회사라 먼저 찾아 두었어요.", exact = true))
+        assertTrue(gone("근무주기에 넣은 회사라 먼저 찾아 두었어요.", exact = true))
     }
 
     @Test fun theEasySetupLinksTheDetailedOne() = shoot("1310_ba_quick_detailed_link", PHONE_393) {
         leads()
         withPay()()
         tapText("처음부터 설정", scrolls = 40)
-        assertTrue(shows("지금 설정을 하나씩 고치려면 자세히 고치기", exact = true))
+        assertTrue(appears("지금 설정을 하나씩 고치려면 자세히 고치기", exact = true))
     }
 
     @Test fun aPayUsingAWayOpensOnIt() = shoot("1311_ba_using_step", PHONE_393) {
@@ -261,9 +261,9 @@ class BAScreenshotTest : ScreenshotBase() {
         c.payWays.use(PayWay("c1", "(주)예시정밀", "생산팀", "s1", null, null))
         withPay()()
         tapText("처음부터 설정", scrolls = 40)
-        assertTrue(shows("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
-        assertTrue(shows("자세히 고치기", exact = true))
-        assertTrue(shows("다른 회사 급여 방식 찾기", exact = true))
+        assertTrue(appears("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
+        assertTrue(appears("자세히 고치기", exact = true))
+        assertTrue(appears("다른 회사 급여 방식 찾기", exact = true))
     }
 
     // ---- [PAYG-06] 근무주기에 넣은 회사면 바로, 광장에 없으면 직접 만들기 ----
@@ -274,8 +274,8 @@ class BAScreenshotTest : ScreenshotBase() {
         c.companyStore.setDraft(CompanyDraft("(주)예시정밀", ""))
         firstPay()()
         waitFor(400)
-        assertTrue(shows("근무주기에 넣은 회사라 먼저 찾아 두었어요.", exact = true))
-        assertTrue(shows("이 급여 방식 쓰기", exact = true))
+        assertTrue(appears("근무주기에 넣은 회사라 먼저 찾아 두었어요.", exact = true))
+        assertTrue(appears("이 급여 방식 쓰기", exact = true))
     }
 
     @Test fun aCompanyNotOnThePlazaIsMadeByHand() = shoot("1313_ba_start_by_hand", PHONE_393) {
@@ -283,7 +283,7 @@ class BAScreenshotTest : ScreenshotBase() {
         c.companyStore.setDraft(CompanyDraft("가나다라정밀", ""))
         firstPay()()
         waitFor(400)
-        assertTrue(shows("‘가나다라정밀’ 직접 만들기", exact = true))
+        assertTrue(appears("‘가나다라정밀’ 직접 만들기", exact = true))
     }
 
     // ---- [PAYG-08] 회사 통상시급 기준 시간이 먼저, 다르면 의견으로 ----
@@ -305,9 +305,9 @@ class BAScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(bare(), keepUndo = false) }
         c.companyOf(PersonalCalendar.MAIN).pendingWays.offer(way(PendingWay.Source.APPLY))
         c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
-        assertTrue(shows("통상시급 기준 시간: 회사 규칙 180시간", exact = true))
+        assertTrue(appears("통상시급 기준 시간: 회사 규칙 180시간", exact = true))
         tapText("209시간", exact = true)
-        assertTrue(shows("회사 규칙은 180시간이에요. 209시간으로 계산하고, 넣은 뒤 같은 회사 분들께 의견으로 보낼지 여쭤볼게요.", exact = true))
+        assertTrue(appears("회사 규칙은 180시간이에요. 209시간으로 계산하고, 넣은 뒤 같은 회사 분들께 의견으로 보낼지 여쭤볼게요.", exact = true))
     }
 
     // ---- [PAYG-11] 금액 화면: 회사 공통 항목, 사람마다 다른 수당만, 형태·시작 달은 접어서 ----
@@ -320,7 +320,7 @@ class BAScreenshotTest : ScreenshotBase() {
         content { CompanyPayScreen(vm, onBack = {}, onByHand = {}) }
         settle()
         tapText("네, 이 설정으로 할게요", exact = true)
-        assertFalse(shows("대략이에요", exact = true))
+        assertTrue(gone("대략이에요", exact = true))
         reveal("시급·일당이거나 받기 시작한 달이 다르면", exact = true)
         assertNull("in use only once saved", c.payWays.way.value)
     }

@@ -111,7 +111,11 @@ object Reports {
             byAccount = byAccount, byTag = byTag,
             biggest = spending.filter { it.amount > 0 }.sortedWith(compareByDescending<MoneyEntry> { it.amount }.thenBy { it.date }).take(5),
             byWeekday = weekday.toList(),
-            noSpendDays = (0 until days).count { day[it] <= 0 }, daysCounted = days,
+            // [J133-79] 빌드 5 ('무지출 30일'을 설치 전 날까지 셌어요): only from the first day anything was written down.
+            noSpendDays = run {
+                val first = (book.entries.map { it.date } + book.jobs.map { it.date }).minOrNull()
+                (0 until days).count { day[it] <= 0 && first != null && !month.atDay(it + 1).isBefore(first) }
+            }, daysCounted = days,
         )
     }
 

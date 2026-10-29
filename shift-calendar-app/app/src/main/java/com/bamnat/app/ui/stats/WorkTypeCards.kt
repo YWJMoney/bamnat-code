@@ -219,7 +219,10 @@ private fun DayFirstCard(
     val context = LocalContext.current
     val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
-    val mode = choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
+    // [J133-02] The same way 가계부 and the pay screen use (the pay setup's), not a second choice of this card's own.
+    val mode = com.bamnat.app.tax.TaxWay.of(profile, choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4)
+    val container = context.appContainer
+    val taxScope = rememberCoroutineScope()
     val today = remember { Today.date() }
     // [LEAVE-01] The 연차 원장 of this calendar.
     val ledger by remember(calendarId) { context.appContainer.calendars.leave(calendarId).summary }
@@ -228,7 +231,7 @@ private fun DayFirstCard(
         (1..month.lengthOfMonth()).mapNotNull { snapshot.resolver.resolve(month.atDay(it)).leave }.filter { it.kind.annual }.sumOf { it.days }
     }
     val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
-    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+    val takeHome = payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
         nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
@@ -243,7 +246,8 @@ private fun DayFirstCard(
             },
             { m ->
                 StatTile("예상 실수령", takeHome?.let { Fmt.won(it.net) } ?: "-", m,
-                    caption = takeHome?.let { "세전 ${Fmt.won(it.gross)} · 참고용" } ?: "급여 계산을 설정하면 보여요")
+                    caption = takeHome?.let { "세전 ${Fmt.won(it.gross)} · 참고용" }
+                        ?: if (payTotal != null && mode == null) "세금 방식을 고르면 보여요" else "급여 계산을 설정하면 보여요")
             },
         )
         tiles.chunked(columns.coerceAtMost(3)).forEach { row ->
@@ -262,7 +266,7 @@ private fun DayFirstCard(
             if (profile?.publicGrade != null) Text(DayWork.PUBLIC_RULE_NOTE, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         }
-        TaxModeChips(mode) { prefs.setTaxMode(calendarId, it) }
+        com.bamnat.app.tax.TaxWayChips(mode) { m -> taxScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, m) } }
         if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
             Text(
@@ -302,17 +306,6 @@ private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
     }
 }
 
-/** [DAYW-02] How tax comes off, for the take-home estimate. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TaxModeChips(mode: TaxMode, onChange: (TaxMode) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(TaxMode.INSURANCE_4 to "4대보험", TaxMode.WITHHOLDING_3_3 to "3.3%", TaxMode.NONE to "떼지 않음").forEach { (m, label) ->
-            FilterChip(selected = mode == m, onClick = { onChange(m) }, label = { Text(label) })
-        }
-    }
-}
-
 /**
  * [SHFT-04][PAYX-48] 월급날 비교: once the month's 급여 came in (a 급여 line in 돈, around the pay day when one is set), how far it
  * was from the estimate after tax. Always on screen (U9-나: '사용하러 가기' used to land on nothing when no 급여 line was there):
@@ -328,16 +321,16 @@ private fun PayGapCard(
     val context = LocalContext.current
     val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
-    // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
-    val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
+    // [J133-02] 1.33: one way for every 세후 (the pay setup's); a setup that never picked one shows no 세후 here either.
+    val mode = com.bamnat.app.tax.TaxWay.of(profile, choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4)
     // [TAX-02] 1.25 W·V: with 세금 예측 open, the 예상 is the same 세후 the pay screen shows, learned from the pay that came in.
     val learned by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, payTotal, month, book, profile) {
         value = payTotal?.let { runCatching { takeHome(it, month) }.getOrNull() }
     }
     val fromRecords = learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED
-    val expected = if (fromRecords) learned?.net else payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+    val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
         nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
-    val basisLabel = if (fromRecords) "내 월급 기록으로 맞춘 세후" else mode.gapLabel()
+    val basisLabel = if (fromRecords) "내 월급 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
     val payDate = profile?.period?.payDate(month)
     val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
     var adding by remember { mutableStateOf(false) }
@@ -351,6 +344,12 @@ private fun PayGapCard(
     val cal = LocalCalendarColors.current
     SectionCard(title = "${month.monthValue}월 월급날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
         when {
+            // [J133-01] Pay is set up but the tax way never asked: the way first, here, then the 예상.
+            profile != null && payTotal != null && mode == null && !fromRecords -> {
+                Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
+                val c = context.appContainer
+                com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp)) { m -> scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) } }
+            }
             profile == null || expected == null -> {
                 Text("급여 계산을 먼저 맞추면, 들어온 급여와 계산한 급여의 차이를 알려 드려요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -389,7 +388,7 @@ private fun PayGapCard(
                     TextButton(onClick = {
                         if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
                             val gross = payTotal ?: return@launch
-                            val ded = TakeHome.estimate(gross, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+                            val ded = TakeHome.estimate(gross, mode ?: TaxMode.NONE, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
                                 nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).deductions
                             com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
                                 "bamnat-덜받은돈-$month.pdf")

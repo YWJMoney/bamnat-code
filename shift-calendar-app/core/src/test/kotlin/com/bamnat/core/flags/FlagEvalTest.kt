@@ -231,7 +231,9 @@ class FlagEvalTest {
             assertTrue(f.key, f.name.isNotBlank() && f.what.isNotBlank() && f.whyOff.isNotBlank() && f.basis.words.isNotBlank())
             assertTrue(f.key, f.owner.isNotBlank() && f.since == (if (f.key == FlagCatalog.PLAZA_FIXED_AMOUNT) "1.30.0" /* BC 1.30 결정 D102 */
                 else if (f.group == FlagGroup.SERVER) "1.22.0" else if (f.key == FlagCatalog.PHOTO_WRONG) "1.29.0"
-                else if (f.key == FlagCatalog.STATS_LOOKUP) "1.31.0" /* 1.31 N4 */ else "1.28.0"))
+                else if (f.key == FlagCatalog.STATS_LOOKUP) "1.31.0" /* 1.31 N4 */
+                else if (f.key == FlagCatalog.DIAG_OBSERVE) "1.32.1" /* 1.32.1 STAB-10 */
+                else if (f.key == FlagCatalog.SHARE_SETUP) "1.33.0" /* 1.33 SHR-20 */ else "1.28.0"))
             if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any { it is Condition.Date && it.policy != null })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }

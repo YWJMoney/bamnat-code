@@ -123,9 +123,9 @@ class APScreenshotTest : ScreenshotBase() {
     @Test fun theSearchBoxAsTheFirstQuestionChecks() = shoot("1231_ap_pay_first_search_small", SMALL_PHONE, 2f) {
         leads()
         firstPay()()
-        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
-        assertTrue(shows("회사 이름", exact = true))
-        assertTrue(shows("직접 만들게요", exact = true))
+        assertTrue(appears("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(appears("회사 이름", exact = true))
+        assertTrue(appears("직접 만들게요", exact = true))
     }
 
     @Test fun typingListsThePayWays() = shoot("1232_ap_pay_find_results", PHONE_393) {
@@ -133,11 +133,11 @@ class APScreenshotTest : ScreenshotBase() {
         firstPay()()
         typeInto("회사 이름", "예시정밀")
         waitFor(400)
-        assertTrue(shows("(주)예시정밀", exact = true))
-        assertTrue(shows("급여 방식 있음 · 맞아요 4명", exact = true))
-        assertTrue(shows("급여 방식은 아직 없어요", exact = true))
+        assertTrue(appears("(주)예시정밀", exact = true))
+        assertTrue(appears("급여 방식 있음 · 맞아요 4명", exact = true))
+        assertTrue(appears("급여 방식은 아직 없어요", exact = true))
         // 결정 D79: no value of the pay before it is used.
-        assertFalse(shows("상여", exact = false))
+        assertTrue(gone("상여", exact = false))
     }
 
     // ---- [PAYF-02] 느린 서버: 휴대폰 목록은 바로, "없어요"는 서버가 답한 뒤에만 ----
@@ -150,9 +150,9 @@ class APScreenshotTest : ScreenshotBase() {
         typeInto("회사 이름", row.company)
         compose.mainClock.advanceTimeBy(3_000)
         waitFor(100)
-        assertTrue(shows(row.company, exact = false))
-        assertTrue(shows("서버가 조금 느려요. 찾는 대로 바로 보여 드릴게요", exact = true))
-        assertFalse(shows("급여 방식은 아직 없어요. 직접", exact = false))
+        assertTrue(appears(row.company, exact = false))
+        assertTrue(appears("서버가 조금 느려요. 찾는 대로 바로 보여 드릴게요", exact = true))
+        assertTrue(gone("급여 방식은 아직 없어요. 직접", exact = false))
     }
 
     // ---- [PAYF-01][PAYF-04] 이 급여 방식 쓰기: 다시 묻지 않고 금액만 ----
@@ -168,8 +168,8 @@ class APScreenshotTest : ScreenshotBase() {
         val vm = CompanyPayViewModel(c)
         content { CompanyPayScreen(vm, onBack = {}, onByHand = {}) }
         settle()
-        assertFalse(shows("이 회사 급여 설정을 쓸까요?", exact = true))
-        assertTrue(shows("거의 다 됐어요! 내 금액만 넣어요", exact = true))
+        assertTrue(gone("이 회사 급여 설정을 쓸까요?", exact = true))
+        assertTrue(appears("거의 다 됐어요! 내 금액만 넣어요", exact = true))
         // [PAYG-08] 1.30 BA: the company's 통상시급 hours shown first, open.
         reveal("회사 규칙 180시간", exact = true)
     }
@@ -184,7 +184,7 @@ class APScreenshotTest : ScreenshotBase() {
         tapText("(주)예시정밀", exact = true)
         tapText("이 급여 방식 쓰기", exact = true)
         // [PAYG-01] 1.30 BA: nothing in until 이대로 계산 with the 기본급.
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         assertNull(c.payWays.way.value)
         typeInto("월 기본급", "2500000")
         tapText("이대로 계산", exact = true)
@@ -198,18 +198,18 @@ class APScreenshotTest : ScreenshotBase() {
         val l = leads()
         c.payWays.use(PayWay("c1", "(주)예시정밀", "생산팀", "s1", null, null))
         box { PayWayCard(bare(), update = {}) }
-        assertTrue(shows("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
+        assertTrue(appears("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
         // [PAYG-04] 1.30 BA: the 기본급 is asked by the pay screen's one card, not by a line here.
-        assertFalse(shows("기본급을 넣어야 예상 급여가 맞아요", exact = true))
-        assertTrue(shows("맞았어요", exact = true))
-        assertTrue(shows("달라요", exact = true))
-        assertTrue(shows("고쳐서 제안하기", exact = true))
+        assertTrue(gone("기본급을 넣어야 예상 급여가 맞아요", exact = true))
+        assertTrue(appears("맞았어요", exact = true))
+        assertTrue(appears("달라요", exact = true))
+        assertTrue(appears("고쳐서 제안하기", exact = true))
         tapText("달라요", exact = true)
         tapText("달라요 보내기", exact = true)
         assertEquals(false to "order", l.votes.last())
         assertEquals(false, c.payWays.way.value?.vote)
         // 달라요 goes straight on to the company's values, to send what ours is.
-        assertTrue(shows("다른 점 말하기", exact = true))
+        assertTrue(appears("다른 점 말하기", exact = true))
     }
 
     @Test fun thePayWayCardAsItShows() = shoot("1241_ap_pay_way_card_only", SMALL_PHONE, 2f) {
@@ -225,9 +225,9 @@ class APScreenshotTest : ScreenshotBase() {
         val vm = CompanyDetailViewModel(c, "c1")
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, openPhasesFor = "s1") }
         settle()
-        assertTrue(shows("급여 계산 방식도 같이 넣을까요?", exact = true))
-        assertTrue(shows("네, 같이 넣을게요", exact = true))
-        assertTrue(shows("근무주기만 넣을게요", exact = true))
+        assertTrue(appears("급여 계산 방식도 같이 넣을까요?", exact = true))
+        assertTrue(appears("네, 같이 넣을게요", exact = true))
+        assertTrue(appears("근무주기만 넣을게요", exact = true))
     }
 
     @Test fun theCycleAloneLeavesThePay() = shoot("1238_ap_with_pay_answers", PHONE_393) {
@@ -253,8 +253,8 @@ class APScreenshotTest : ScreenshotBase() {
         assertTrue(c.payStore.profile.value?.rules == bare().rules)
         val profile = c.payStore.profile.value
         box { PayWayCard(profile, update = {}) }
-        assertTrue(shows("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
     }
 
     // ---- [PAYF-06] 기본급은 꼭, 통상시급 기준 시간은 선택 ----
@@ -262,11 +262,11 @@ class APScreenshotTest : ScreenshotBase() {
         var saved: Pair<Long, Int?>? = null
         content { BaseAskSheet(bare(), Today.month(), onDismiss = {}) { b, h -> saved = b to h } }
         settle()
-        assertTrue(shows("기본급을 확인해 주세요", exact = true))
+        assertTrue(appears("기본급을 확인해 주세요", exact = true))
         typeInto("월 기본급", "2090000")
         tapText("통상시급 기준 시간도 알아요 (선택)", exact = true)
         typeInto("통상시급을 알면 (선택)", "10000")
-        assertTrue(shows("월 209시간으로 계산해요", exact = true))
+        assertTrue(appears("월 209시간으로 계산해요", exact = true))
         tapText("이대로 계산", exact = true)
         assertEquals(2_090_000L to 209, saved)
     }
@@ -276,9 +276,9 @@ class APScreenshotTest : ScreenshotBase() {
         leads()
         runBlocking { c.payStore.save(bare(), keepUndo = false) }
         box { PayFindLine() }
-        assertTrue(shows("우리 회사 급여 방식이 있나요?", exact = true))
+        assertTrue(appears("우리 회사 급여 방식이 있나요?", exact = true))
         tapText("회사 이름으로 찾기", exact = true)
-        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(appears("우리 회사 급여 방식 찾기", exact = true))
         assertNotNull(c.payStore.profile.value)
     }
 
@@ -289,9 +289,9 @@ class APScreenshotTest : ScreenshotBase() {
         leads()
         withPay()()
         tapText("처음부터 설정", scrolls = 40)
-        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
-        assertTrue(shows("회사 이름", exact = true))
-        assertTrue(shows("직접 만들게요", exact = true))
+        assertTrue(appears("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(appears("회사 이름", exact = true))
+        assertTrue(appears("직접 만들게요", exact = true))
     }
 
     private fun Screen.wizard(onDone: (PayProfile) -> Unit = {}) {
@@ -304,11 +304,11 @@ class APScreenshotTest : ScreenshotBase() {
     @Test fun theQuestionSetupHasTheSameBox() = shoot("1243_ap_wizard_search", PHONE_393) {
         leads()
         wizard()
-        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
-        assertTrue(shows("없으면 직접 만들어요", exact = true))
+        assertTrue(appears("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(appears("없으면 직접 만들어요", exact = true))
         typeInto("회사 이름", "예시정밀")
         waitFor(400)
-        assertTrue(shows("급여 방식 있음 · 맞아요 4명", exact = true))
+        assertTrue(appears("급여 방식 있음 · 맞아요 4명", exact = true))
     }
 
     @Test fun theQuestionSetupUsesTheWayAndAsksTheBase() = shoot("1244_ap_wizard_use", PHONE_393_NIGHT) {
@@ -318,11 +318,11 @@ class APScreenshotTest : ScreenshotBase() {
         typeInto("회사 이름", "예시정밀")
         waitFor(400)
         tapText("(주)예시정밀", exact = true)
-        assertTrue(shows("‘(주)예시정밀’ 급여 방식을 쓸까요?", exact = true))
+        assertTrue(appears("‘(주)예시정밀’ 급여 방식을 쓸까요?", exact = true))
         // The wizard's own 다음 waits while the box's steps are on; 이전 goes back to the box.
-        assertFalse(shows("다음", exact = true))
+        assertTrue(gone("다음", exact = true))
         tapText("이 급여 방식 쓰기", exact = true)
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         typeInto("월 기본급", "2700000")
         tapText("이대로 계산", exact = true)
         assertEquals(2_700_000L, BaseAsk.known(done, Today.month()))
@@ -332,6 +332,6 @@ class APScreenshotTest : ScreenshotBase() {
     @Test fun theQuestionSetupBoxLarge() = shoot("1245_ap_wizard_search_large", SMALL_PHONE, 2f) {
         leads()
         wizard()
-        assertTrue(shows("우리 회사 급여 방식 찾기", exact = true))
+        assertTrue(appears("우리 회사 급여 방식 찾기", exact = true))
     }
 }

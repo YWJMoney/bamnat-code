@@ -78,10 +78,10 @@ class ASScreenshotTest : ScreenshotBase() {
         server().also { c.companySearch.slowAfterMs = 60_000 } // the asking step itself, before "조금 오래 걸려요"
         inline("예시")
         // On the first frame, before any answer: the most used companies read after the first month, 대표 주기 and all.
-        assertTrue(shows("(주)예시정밀", exact = true))
-        assertTrue(shows("대표 주기 주주휴휴야야휴휴", exact = false))
-        assertTrue(shows("20명 쓰고 있어요 · 맞아요 9명 · 급여 방식 있음 · 사업장 2곳", exact = true))
-        assertTrue(shows("같은 회사 분들 자료를 더 찾고 있어요", exact = true))
+        assertTrue(appears("(주)예시정밀", exact = true))
+        assertTrue(appears("대표 주기 주주휴휴야야휴휴", exact = false))
+        assertTrue(appears("20명 쓰고 있어요 · 맞아요 9명 · 급여 방식 있음 · 사업장 2곳", exact = true))
+        assertTrue(appears("같은 회사 분들 자료를 더 찾고 있어요", exact = true))
     }
 
     @Test fun aSlowAnswerIsWaitedForAndSaidSo() = shoot("1281_as_inline_slow", PHONE) {
@@ -89,8 +89,8 @@ class ASScreenshotTest : ScreenshotBase() {
         inline("예시정밀")
         compose.mainClock.advanceTimeBy(3_000)
         waitFor(100)
-        assertTrue(shows("연결이 느려 조금 오래 걸려요. 찾으면 바로 여기에 보여 드려요.", exact = true))
-        assertFalse(shows("못 불러왔어요", exact = false))
+        assertTrue(appears("연결이 느려 조금 오래 걸려요. 찾으면 바로 여기에 보여 드려요.", exact = true))
+        assertTrue(gone("못 불러왔어요", exact = false))
     }
 
     @Test fun theLateAnswerShowsWhenItComes() = shoot("1282_as_inline_late_answer", PHONE) {
@@ -101,8 +101,8 @@ class ASScreenshotTest : ScreenshotBase() {
         // 1.28 threw an answer away after 2.5 s: the 대표판 never showed. Now it shows when it comes.
         s.gate.complete(Unit)
         reveal("(주)예시정밀", exact = true)
-        assertTrue(shows("대표 주기 주주휴휴야야휴휴", exact = false))
-        assertFalse(shows("조금 오래 걸려요", exact = false))
+        assertTrue(appears("대표 주기 주주휴휴야야휴휴", exact = false))
+        assertTrue(gone("조금 오래 걸려요", exact = false))
     }
 
     @Test fun noConnectionSaysSoAndKeepsWhatThePhoneHas() = shoot("1283_as_inline_offline", PHONE) {
@@ -111,8 +111,8 @@ class ASScreenshotTest : ScreenshotBase() {
         s.gate.complete(Unit)
         inline("예시")
         waitFor(400)
-        assertTrue(shows("인터넷 연결을 확인해 주세요", exact = false))
-        assertTrue(shows("(주)예시정밀", exact = true))
+        assertTrue(appears("인터넷 연결을 확인해 주세요", exact = false))
+        assertTrue(appears("(주)예시정밀", exact = true))
     }
 
     @Test fun companyFindKeepsTheKnownCompaniesWhileAsking() = shoot("1284_as_find_known_first", PHONE) {
@@ -120,8 +120,8 @@ class ASScreenshotTest : ScreenshotBase() {
         val vm = CompanyFindViewModel(c).apply { query.value = "예시" }
         content { CompanyFindScreen(vm, setup = false, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
         settle()
-        assertTrue(shows("같은 회사 분들 자료를 더 찾고 있어요", exact = true))
-        assertTrue(shows("(주)예시정밀", exact = true))
+        assertTrue(appears("같은 회사 분들 자료를 더 찾고 있어요", exact = true))
+        assertTrue(appears("(주)예시정밀", exact = true))
     }
 
     @Test fun companyFindSaysWhereTheListWillBe() = shoot("1285_as_find_skeleton", PHONE) {
@@ -129,7 +129,7 @@ class ASScreenshotTest : ScreenshotBase() {
         val vm = CompanyFindViewModel(c).apply { query.value = "예시정밀" }
         content { CompanyFindScreen(vm, setup = false, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
         waitFor(400)
-        assertTrue(shows("찾고 있어요…", exact = true))
+        assertTrue(appears("찾고 있어요…", exact = true))
     }
 
     @Test fun companyFindShowsEveryCompanysLead() = shoot("1286_as_find_every_lead", PHONE) {
@@ -140,8 +140,8 @@ class ASScreenshotTest : ScreenshotBase() {
         waitFor(400)
         // [SRCH-01] 1.28's 회사 찾기 said only "쓰는 설정 1개"; the 대표 주기 was on the line under the name box alone (and the
         // server gave it to the first five only). The 7th company here has its 사업장's 대표 주기 too.
-        assertTrue(shows("(주)예시정밀", exact = true))
-        assertTrue(shows("20명 쓰고 있어요 · 맞아요 9명 · 급여 방식 있음 · 사업장 2곳", exact = true))
+        assertTrue(appears("(주)예시정밀", exact = true))
+        assertTrue(appears("20명 쓰고 있어요 · 맞아요 9명 · 급여 방식 있음 · 사업장 2곳", exact = true))
         reveal("대표 주기 주주휴휴야야휴휴 · 온산공장", exact = true)
     }
 }

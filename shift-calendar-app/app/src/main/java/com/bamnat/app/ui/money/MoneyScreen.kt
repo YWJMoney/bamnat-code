@@ -207,6 +207,11 @@ class MoneyViewModel(
         }
     }
 
+    /** [J133-01] The pay setup's tax way, picked on the 세금·실수령 card. */
+    fun pickTaxWay(mode: com.bamnat.core.pay.TaxMode) {
+        container.appScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, mode) }
+    }
+
     /** [TAX-02] The 세금·실수령 card's numbers, off the main thread. */
     suspend fun takeHome(profile: PayProfile?, snapshot: ScheduleSnapshot?, records: List<com.bamnat.core.tax.PayObservation>, month: YearMonth) =
         withContext(Dispatchers.Default) { com.bamnat.app.tax.TakeHomeView.of(profile, snapshot, records, month) }
@@ -252,10 +257,19 @@ class MoneyViewModel(
     suspend fun analysis(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?,
                          month: YearMonth, today: LocalDate): LedgerAnalysis = withContext(Dispatchers.Default) {
         val now = YearMonth.from(today)
+        // [J133-37] 순번 717 (중간 빌드 확인: 오늘 깐 앱인데 '올해 들어온 돈 4천만 원'): no estimate for months before the app was in
+        // use (installed, or the first line written, whichever is earlier: a backup brought over keeps its months).
+        val since = listOfNotNull(
+            container.installedAt?.atZone(Today.zone())?.let { YearMonth.from(it) },
+            book.entries.minOfOrNull { it.date }?.let { YearMonth.from(it) },
+        ).minOrNull()
         val pays = HashMap<YearMonth, Long?>()
-        val at = { m: YearMonth -> book.month(m, if (m.isAfter(now)) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) }) }
+        val at = { m: YearMonth ->
+            book.month(m, if (m.isAfter(now) || (since != null && m.isBefore(since))) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) })
+        }
         val current = at(month)
-        val year = (1..12).map { at(YearMonth.of(month.year, it)) }
+        // [J133-62] 올해 들어온 돈 is money that came in: this month's pay still to come stays out of it.
+        val year = (1..12).map { YearMonth.of(month.year, it) }.map { m -> if (m == now) book.month(m, null) else at(m) }
         LedgerAnalysis(current, Reports.month(current, at(month.minusMonths(1)), book, today), Reports.year(month.year, year))
     }
 
@@ -608,7 +622,8 @@ fun MoneyScreen(
             IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net, gate = gate)
         },
         // [TAX-02][TAX-05] 세전·세후 and this year's tax (프로).
-        MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true }) } },
+        MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true },
+            onTaxWay = vm::pickTaxWay) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
             OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
@@ -808,12 +823,11 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
     val net = profile?.ledgerTakeHome == true
     SectionCard(title = "수입 내역") {
         if (style?.usesPayEngine != false) {
+            // [J133-02] 1.33: the salary that came in counts; until then the estimate is 들어올 돈.
             val label = when {
-                m.payObserved && net -> "급여 (지급일 실수령 예상)"
-                m.payObserved -> "급여 (세전 예상)"
                 m.payRecorded > 0 -> "급여 (받은 금액)"
-                m.payEstimate != null && net -> "급여 (지급일 실수령 예상)"
-                m.payEstimate != null -> "급여 (세전 예상)"
+                m.payEstimate != null && net -> "들어올 돈 · 급여 (지급일 실수령 예상)"
+                m.payEstimate != null -> "들어올 돈 · 급여 (세전 예상)"
                 else -> "급여"
             }
             if (m.payRecorded > 0 || m.payEstimate != null) {
@@ -828,7 +842,14 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
                 }
             }
             // [TAX-01] 결정 W-D1: the pay that came is an observation beside the estimate, never added on top.
-            if (m.payObserved) Line("  실제 들어온 월급 ${Fmt.won(m.payRecorded)} · 관측 (세금 예측에 써요)", "", muted = true)
+            if (m.payObserved) m.payEstimate?.let { est ->
+                val d = m.payRecorded - est
+                Line("  ${if (net) "실수령" else "세전"} 예상 ${Fmt.won(est)}" + when {
+                    d == 0L -> " · 같아요"
+                    d > 0 -> " · ${Fmt.won(d)} 더 들어왔어요"
+                    else -> " · ${Fmt.won(-d)} 덜 들어왔어요"
+                }, "", muted = true)
+            }
             // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
             if (hasProfile && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })

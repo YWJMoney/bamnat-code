@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.appContainer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -183,7 +183,18 @@ fun CalendarIdentityBar(
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
     // Two faces beside 공유 on a cover screen or with large text, three where there is room.
-    val room = if (maxWidth < 392.dp || LocalDensity.current.fontScale > 1.3f) 2 else 3
+    // [J133-22] 1.33 (실사용 테스트 "작은 폰에서 지금 보는 달력 칩·공유가 0x0으로 사라짐"): a small phone keeps the name and 공유
+    // (as an icon) and leaves the other calendars to the list (+n).
+    val small = maxWidth < 340.dp
+    val room = when {
+        small -> 0
+        LocalDensity.current.fontScale > 1.3f -> 1
+        maxWidth < 392.dp -> 2
+        else -> 3
+    }
+    // [J133-77] 공유 said in the calendar's kind of work (근무표·일정·영업일).
+    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val shareName = com.bamnat.core.work.shareTitle(app.calendars.styleOf(home.id, app.settingsRepository.current.workStyle))
     Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         val currentName = (current as? CalendarRow.Got)?.cal?.fullName ?: current.title
         // [UX-03] The name takes all the room the faces and 공유 leave, not half of it.
@@ -208,18 +219,35 @@ fun CalendarIdentityBar(
             // Faces to switch with one tap, in the list's order.
             val faces = rows.filter { it.key != current.key }
             val shown = if (onShare != null) room else 3
-            faces.take(shown).forEach { row ->
+            // [J133-66] 1.33 (중간 빌드 확인: '회'·'알' 한 글자 동그라미가 무엇인지 몰랐어요): with one or two other calendars and
+            // room for them, each says its name beside its face.
+            // [J133-79] 빌드 5 (달력이 4개면 다시 한 글자 동그라미): two named faces at most, the rest behind +N.
+            val named = shown >= 2
+            val count = if (named) 2 else shown
+            faces.take(count).forEach { row ->
                 val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
-                Box(
+                if (named) Surface(
+                    onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "$name 보기" },
+                ) {
+                    Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        row.Avatar(size = 24.dp)
+                        Spacer(Modifier.width(4.dp))
+                        Text(row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    }
+                } else Box(
                     Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) }
                         .semantics { contentDescription = "$name 보기" },
                     contentAlignment = Alignment.Center,
                 ) { row.Avatar(size = 30.dp) }
             }
-            if (faces.size > shown) {
-                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - shown}") }
+            if (faces.size > count) {
+                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - count}", maxLines = 1, softWrap = false) }
             }
-            onShare?.let { ShareAction(it, Modifier.padding(start = 4.dp)) }
+            onShare?.let {
+                if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }
+                else ShareAction(it, Modifier.padding(start = 4.dp), shareName)
+            }
         } else {
             Surface(onClick = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) },
                 shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
@@ -238,11 +266,11 @@ fun CalendarIdentityBar(
 
 /** [UX-03] 공유 in words and an icon, so it reads as what it does on every screen; TalkBack hears what is shared. */
 @Composable
-internal fun ShareAction(onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ShareAction(onClick: () -> Unit, modifier: Modifier = Modifier, description: String = "근무표 공유") {
     FilledTonalButton(
         onClick = onClick,
         contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
-        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "근무표 공유" },
+        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = description },
     ) {
         Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
@@ -271,7 +299,7 @@ fun CalendarSwitcherSheet(
     onCombined: (() -> Unit)? = null,
 ) {
     var removing by remember { mutableStateOf<ReceivedCalendar?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("어느 달력을 볼까요?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -292,7 +320,12 @@ fun CalendarSwitcherSheet(
                         trailing = {
                             Row {
                                 IconButton(onClick = { onEdit(row.cal) }) { Icon(Icons.Outlined.Edit, "${row.cal.name} 고치기") }
-                                onShare?.let { share -> IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} 근무표 공유") } }
+                                // [J133-87] 1.33 빌드 6: read as '가게 근무표 공유'; each calendar's in its own words (가게 영업일 공유).
+                                onShare?.let { share ->
+                                    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+                                    val name = com.bamnat.core.work.shareTitle(app.calendars.styleOf(row.cal.id, app.settingsRepository.current.workStyle))
+                                    IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} $name") }
+                                }
                             }
                         },
                     )
@@ -383,7 +416,9 @@ fun NewCalendarDialog(
         onDismissRequest = onDismiss,
         title = { Text("새 달력 만들기") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // [J133-22] 1.33 (실사용 테스트 "작은 폰에서 자판이 '취소·다음'을 덮음"): the box scrolls and the keyboard's own
+            // 다음 key goes on, so the buttons under the keyboard are never needed.
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "근무 형태부터 처음 시작할 때처럼 하나씩 물어볼게요. 지금 달력은 그대로예요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -392,6 +427,8 @@ fun NewCalendarDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { if (it.length <= PersonalCalendar.MAX_NAME) name = it }, singleLine = true,
                     label = { Text("이름") }, placeholder = { Text(suggested) }, modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = { onCreate(name.trim().ifEmpty { suggested }, color) }),
                 )
                 ColorRow(color) { color = it }
             }
@@ -404,7 +441,7 @@ fun NewCalendarDialog(
 /** [MCAL-07] What a calendar past the free ones is, before and after the 정식 출시 switch. */
 internal fun proNote(live: Boolean): String =
     if (live) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
-    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요. 지금은 모든 기능이 무료예요."
+    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요."
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -786,9 +823,17 @@ fun CalendarScopeChips(
                     if (cal.id != active) c.telemetry.event("calendar_switch", if (cal.isMain) "main" else "added")
                     c.calendars.setActive(cal.id)
                 },
-                label = { Text(cal.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                // [J133-77] 1.33 (유형별 점검: 장부·매출 위 칩의 첫 달력이 '내 달력'으로만 보여 어떤 일인지 몰라요): its kind of work beside it.
+                label = { Text(chipName(cal, c.calendars.styleOf(cal.id, c.settingsRepository.current.workStyle)), maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 leadingIcon = { Box(Modifier.size(10.dp).clip(MineShape).background(cal.color.asColor())) },
             )
         }
     }
+}
+
+/** [J133-77] "내 달력 · 알바"; a name that already says the work ("알바", "가게 장부") stays as it is. */
+internal fun chipName(cal: PersonalCalendar, style: com.bamnat.core.work.WorkStyle?): String {
+    val word = style?.let { com.bamnat.core.work.shortLabel(it) } ?: return cal.name
+    return if (cal.name.contains(word)) cal.name else "${cal.name} · $word"
 }

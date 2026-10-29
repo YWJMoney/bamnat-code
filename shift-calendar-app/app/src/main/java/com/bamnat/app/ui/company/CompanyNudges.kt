@@ -33,7 +33,6 @@ import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
@@ -227,7 +226,7 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
 private fun RightSheet(a: AppliedSetup, proof: Boolean = true, onDismiss: () -> Unit, onVote: (Boolean, (String?) -> Unit) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf<String?>(null) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("좋아요! 무엇과 맞춰 보셨어요?", style = MaterialTheme.typography.titleLarge)
             Text("${a.company} 분들이 이 설정을 믿고 쓸 수 있게 점수로 쌓여요.", style = MaterialTheme.typography.bodyMedium,
@@ -260,7 +259,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf<String?>(null) }
     var asking by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         AnimatedContent(told, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "wrong-plea") { plea ->
             Column(
                 Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
@@ -352,13 +351,14 @@ fun InviteSheet(vm: CompanyNudgeViewModel, onShare: () -> Unit, onDismiss: () ->
     val draft by vm.invite.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
     val d = draft ?: return
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("🧭", style = MaterialTheme.typography.displaySmall, modifier = Modifier.align(Alignment.CenterHorizontally))
-            Text("설정 끝! ${d.company}의 첫 번째 길잡이가 되어 주실래요?", style = MaterialTheme.typography.titleLarge,
+            // [J133-17] A setup made without a company name (알바) has no "○○의" to say.
+            Text(if (d.company.isBlank()) "설정 끝! 같은 일 하는 분들의 첫 번째 길잡이가 되어 주실래요?" else "설정 끝! ${d.company}의 첫 번째 길잡이가 되어 주실래요?", style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Text("방금 맞춘 근무표와 계산 방식을 내 급여 금액 없이 나눠 주시면, 같은 회사 분들은 회사 이름만 찾으면 1분이면 끝나요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -479,6 +479,10 @@ fun ColumnScope.CompanySettingsRows(
     }
     CompanyNudgeCards(vm, onShare = onShare, onFix = onFix)
     com.bamnat.app.ui.settings.NavRow("회사 찾기", "같은 회사 분들이 맞춘 근무표와 계산 방식을 가져와요", onFind)
+    // [J133-86] 1.33 광장 급여 써 보기 ("급여 방식 찾기는 처음부터 설정 안에만 있어요"): the pay way alone, any time.
+    var findingPay by rememberSaveable { mutableStateOf(false) }
+    com.bamnat.app.ui.settings.NavRow("우리 회사 급여 방식 찾기", "근무표는 그대로 두고 급여 계산 방식만 가져와요. 넣기 전에 내 월급이 어떻게 바뀌는지 보여요") { findingPay = true }
+    if (findingPay) PayFindSheet(onDismiss = { findingPay = false })
     // [COMM-07]
     com.bamnat.app.ui.settings.NavRow("회사 규칙 광장", "여러 회사가 올린 근무표·급여 규칙을 보고, 맞는지 투표하고 토론해요", onBoard)
     com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "내 급여 금액 없이 보내요. 채택되면 보상을 드려요", onShare)

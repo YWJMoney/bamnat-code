@@ -203,6 +203,9 @@ internal val WIDGET_BUTTON_HEIGHT = 40.dp
  * where the phone allows widgets there.
  */
 class CountdownWidget : GlanceAppWidget() {
+    // [J133-32] 순번 712: at 2×1 the lines are one each, not cut in the middle.
+    override val sizeMode: androidx.glance.appwidget.SizeMode = androidx.glance.appwidget.SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent {
@@ -223,14 +226,16 @@ class CountdownWidgetReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 internal fun CountdownContent(data: WidgetData) {
+    // [J133-32] 순번 712 (1.32 실사용 테스트: 2×1에서 두 줄 다 말줄임이 됐어요): one cell high, no label and smaller lines.
+    val short = androidx.glance.LocalSize.current.height < 90.dp
     Column(GlanceModifier.fillMaxWidth()) {
-        Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
+        if (!short) Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
         Text(
-            data.countdown ?: "다음 7일 동안 잡힌 근무가 없어요",
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold),
-            maxLines = 2,
+            data.countdown ?: "7일 안에 근무가 없어요",
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (short) 14.sp else 16.sp, fontWeight = FontWeight.Bold),
+            maxLines = if (short) 1 else 2,
         )
         // G 1.32 [WTYP-05] 607 다음 오프까지, one line under.
-        data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = 12.sp), maxLines = 1) }
+        data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (short) 11.sp else 12.sp), maxLines = 1) }
     }
 }

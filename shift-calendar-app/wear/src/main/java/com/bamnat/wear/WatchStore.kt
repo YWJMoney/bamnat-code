@@ -74,8 +74,11 @@ object WatchStore {
             Intent(context, MidnightReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     }
 
-    /** Reads the Data Layer's copy (there even when the phone is away) and asks the phone for fresh days. */
-    suspend fun refresh(context: Context) {
+    /**
+     * Reads the Data Layer's copy (there even when the phone is away) and asks the phone for fresh days. [J133-38] 순번 718:
+     * false when no phone is connected, so the screen can say so instead of waiting.
+     */
+    suspend fun refresh(context: Context): Boolean {
         val client = Wearable.getDataClient(context)
         val items = await(client.getDataItems(Uri.Builder().scheme("wear").path(WatchDays.PATH).build()))
         if (items != null) {
@@ -87,6 +90,7 @@ object WatchStore {
         }
         val nodes = await(Wearable.getNodeClient(context).connectedNodes).orEmpty()
         nodes.forEach { node -> await(Wearable.getMessageClient(context).sendMessage(node.id, SYNC_PATH, ByteArray(0))) }
+        return nodes.isNotEmpty()
     }
 
     /** [WEAR-03] Tells the phone to do something (turn today's alarm off, write 출근·퇴근); it sends fresh days back. */

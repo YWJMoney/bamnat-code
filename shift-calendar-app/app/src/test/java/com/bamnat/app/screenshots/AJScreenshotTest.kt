@@ -102,7 +102,7 @@ class AJScreenshotTest : ScreenshotBase() {
         settle()
         tapText("5일 주간", scrolls = 4)
         settle()
-        assertTrue(shows("그대로 두기"))
+        assertTrue(appears("그대로 두기"))
     })
 
     // ---- 447 첫 설정 ----
@@ -149,7 +149,7 @@ class AJScreenshotTest : ScreenshotBase() {
         settle()
         tapText("야간근로수당", scrolls = 4)
         settle()
-        assertTrue(shows("이 줄 고치기"))
+        assertTrue(appears("이 줄 고치기"))
     })
 
     // ---- 448·449 급여 화면 ----
@@ -160,14 +160,14 @@ class AJScreenshotTest : ScreenshotBase() {
     @Test fun payNeeds() = shoot("1149_aj_pay_needs_card", PHONE_393, needsPay { reveal("만 넣으면 정확해져요") })
     @Test fun payMatchCard() = shoot("1150_aj_pay_match_card", PHONE_393, needsPay {
         reveal("명세서와 맞춰 보기")
-        assertTrue(shows("금액 비교하기"))
-        assertTrue(shows("계산 방식 찾기"))
+        assertTrue(appears("금액 비교하기"))
+        assertTrue(appears("계산 방식 찾기"))
     })
     @Test fun payHours() = shoot("1151_aj_pay_hours_dialog", PHONE_393, needsPay {
         reveal("월 소정근로시간(시수)")
         tapAction("월 소정근로시간(시수) 넣기")
         settle()
-        assertTrue(shows("통상시급 = 기본급"))
+        assertTrue(appears("통상시급 = 기본급"))
     })
     @Test fun rulesOnly() = shoot("1152_aj_rules_only", PHONE_393, {
         payScreen(Tier.PRO, withProfile = true) { vm -> PayScreen(vm, onBack = {}) }.invoke(this)
@@ -177,10 +177,10 @@ class AJScreenshotTest : ScreenshotBase() {
         typeInto("명세서 글", "야간근로는 통상시급의 60%를 가산하여 지급한다.")
         tapText("읽기", exact = true)
         settle()
-        assertTrue(shows("명세서 없이 회사 계산 방법만으로 계산해요"))
+        assertTrue(appears("명세서 없이 회사 계산 방법만으로 계산해요"))
         // [PHOTO-34] 1.30 AW: what the rules come to shows under them as they are, before anything is applied.
         waitFor(800)
-        assertTrue(shows("월 규칙으로 계산"))
+        assertTrue(appears("월 규칙으로 계산"))
         tapText("규칙으로 계산하기", exact = true)
         settle()
         waitFor(800)

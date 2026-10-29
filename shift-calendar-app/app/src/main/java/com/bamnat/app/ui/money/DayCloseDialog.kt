@@ -60,6 +60,8 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
     var counted by rememberSaveable { mutableStateOf(initial?.cashCounted?.toString().orEmpty()) }
     // 1.32 [TAXP-14] Of the cash sales, what a 현금영수증 was issued for.
     var receipt by rememberSaveable { mutableStateOf(amountDigits(initial?.cashReceipt ?: 0)) }
+    // [J133-29] Of the costs, what came with a VAT proof.
+    var proven by rememberSaveable { mutableStateOf(amountDigits(initial?.costsProven ?: 0)) }
     var credit by rememberSaveable { mutableStateOf("") }
     var creditWho by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
@@ -79,6 +81,7 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
         card = card.toAmount(), cash = cash.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount(),
         cashCounted = counted.toLongOrNull(), cardSettled = initial?.cardSettled == true && card.toAmount() == initial.card,
         cashReceipt = receipt.toAmount().coerceAtMost(cash.toAmount()),
+        costsProven = proven.toAmount().coerceAtMost(costs.toAmount()),
     )
 
     AlertDialog(
@@ -112,6 +115,16 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 AmountField("경비 (재료비·인건비 등)", costs, { costs = it })
+                // [J133-29] 1.33 (실사용 테스트 "경비 칸에서 증빙 여부를 고를 수 없어 부가세가 크게 나와요").
+                if (costs.toAmount() > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AmountField("그중 증빙 있음", proven, { proven = it }, Modifier.weight(1f), allowZero = true)
+                        com.bamnat.app.ui.components.FilterChip(selected = proven.toAmount() == costs.toAmount(), onClick = { proven = costs },
+                            label = { Text("전부 있음") })
+                    }
+                    Text("세금계산서·카드 영수증·현금영수증을 받은 경비는 부가세 예상에서 빠져요. 인건비는 보통 증빙이 아니에요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 CashCheck(initial?.copy(cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount())
                     ?: DailySales(date, sales, cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount()),

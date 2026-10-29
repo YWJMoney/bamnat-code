@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.setup
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,7 +39,10 @@ import java.time.LocalDate
 @Composable
 internal fun StepHeader(title: String, subtitle: String? = null) {
     Column(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+        // [J133-79] A tap on the question puts the keyboard away (빌드 5: 회사 이름을 치다가 결과를 보려면 뒤로 가기뿐이었어요).
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() }
+            .clickable(interactionSource = null, indication = null) { keyboard?.hide() })
         if (subtitle != null) {
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

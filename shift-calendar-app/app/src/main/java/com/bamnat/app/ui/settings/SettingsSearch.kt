@@ -135,8 +135,37 @@ internal object SettingsIndex {
     private val D = SettingsPage.DATA
     private val V = SettingsPage.PRIVACY
 
-    /** [board]: the build has 회사 규칙 광장; [share]: it can make and take links. */
-    fun entries(board: Boolean = true, share: Boolean = true): List<SettingEntry> = listOfNotNull(
+    /**
+     * [board]: the build has 회사 규칙 광장; [share]: it can make and take links. [company]: [J133-71] the calendar's work has a
+     * company (교대·일근, or one already joined), so 회사 찾기·회사 설정 파일 are found; 알바·현장·가게·투자 search without them.
+     */
+    fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): List<SettingEntry> =
+        all(board, share, company).filter { fits(it, style) }.map { inWords(it, style) }
+
+    /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
+    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry =
+        if (style != com.bamnat.core.work.WorkStyle.HOURLY || "회사 계산 방법" !in e.title) e
+        else e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
+
+    /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
+    private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,
+        SettingsGo.COMMUTE, SettingsGo.PAY, SettingsGo.PAY_BASE, SettingsGo.PAY_ITEMS, SettingsGo.PAY_PERIOD)
+    /** [J133-77] Rows about shifts, wages and 연차. */
+    private val WAGE_ROWS = setOf("휴식 점검", "근무표 점검 기준", "한 주 근무 경고", "최근 3개월 한 주 평균 경고", "퇴근 시각 알림", "연속 근무 경고",
+        "급여 입금 비교", "연차 사용 촉진 알림", "근무마다 다른 소리", "알람 뒤 오늘 카드")
+
+    /**
+     * [J133-77] 1.33 (유형별 점검: 알바가 '회사'를 찾으면 근태 엑셀이, 가게가 찾으면 연차·급여가 나와요): what the calendar's kind of
+     * work has. No kind chosen keeps everything.
+     */
+    internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): Boolean {
+        if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
+        val place = e.place
+        if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
+        return e.title !in WAGE_ROWS
+    }
+
+    private fun all(board: Boolean, share: Boolean, company: Boolean): List<SettingEntry> = listOfNotNull(
         screen(W.title, "일하는 방식", SettingsGo.WORK_STYLE, "근무 형태", "교대", "일근", "시급", "현장", "프리랜서", "자영업", "가게"),
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
             "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
@@ -147,7 +176,7 @@ internal object SettingsIndex {
             // [IMPORT-03]
             "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동"),
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
-        screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx"),
+        screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
         row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
@@ -163,6 +192,8 @@ internal object SettingsIndex {
         row(A, WATCH_ALARM_ROW, "워치", "워치 알람", "시계 진동", "Wear OS", "워치 진동"), // [WEAR-06] 1.31
         row(A, PHOTO_ROW, "증명 사진", "사진 미션", "사진 찍어 끄기", "욕실 거울", "기준 사진"), // [ALRM-04] O 1.23 (L)
         screen(A.title, "알람 점검", SettingsGo.DIAGNOSTICS, "알람이 안 울려요", "늦게 울려요", "원인", "진단", "점검"),
+        // 1.32.1 [STAB-13] 앱 멈춤 기록 and 멈춤 관찰 are found by what people say when the app froze.
+        screen(A.title, "앱 멈춤 기록", SettingsGo.DIAGNOSTICS, "멈춤", "멈췄어요", "화면 멈춤", "앱이 닫혀요", "튕겨요", "렉", "먹통", "잠금 풀면 멈춤"),
         row(N, "오늘의 흐름 보기", "잘 시간", "수면 제안", "카페인", "낮잠", "오늘 카드"),
         row(N, "목표 수면 시간", "잠", "수면 목표"),
         row(N, "퇴근 후 잠들기까지", "출퇴근", "씻는 시간", "퇴근"),
@@ -197,10 +228,12 @@ internal object SettingsIndex {
             "부양가족", "자녀 수", "간이세액", "공무원 봉급", "계급", "호봉", "호봉표", "탄력근무", "포괄임금", "연차 세는 기준", "회계연도"),
         row(P, "광장 시세와 내 단가 견주기", "시세", "일당", "시급 비교", "임금표"), // [DAILY-16]
         row(P, "견줄 내 지역", "시세 지역", "광장 시세", "내 지역"), // [DAILY-16]
-        row(P, "회사 설정 보내기", "동료", "회사 설정 파일", "같은 회사"),
-        row(P, "회사 설정 불러오기", "동료에게 받은 파일"),
-        screen("설정", "회사 규칙 광장", SettingsGo.BOARD, "회사 규칙", "투표", "토론").takeIf { board },
-        row(P, "회사 찾기", "회사 설정", "같은 회사", "회사 근무표", "회사 계산").takeIf { board },
+        row(P, "회사 설정 보내기", "동료", "회사 설정 파일", "같은 회사").takeIf { company },
+        row(P, "회사 설정 불러오기", "동료에게 받은 파일").takeIf { company },
+        screen("설정", "회사 규칙 광장", SettingsGo.BOARD, "회사 규칙", "투표", "토론").takeIf { board && company },
+        // [J133-71] Other kinds of work find their own 광장.
+        screen("설정", "광장", SettingsGo.BOARD, "알바 광장", "현장 광장", "가게 광장", "투자 이야기", "시세", "이야기").takeIf { board && !company },
+        row(P, "회사 찾기", "회사 설정", "같은 회사", "회사 근무표", "회사 계산").takeIf { board && company },
         // [SET-03] 1.22 묶음 B: someone hidden in the plaza comes back from 내 활동.
         screen("광장 › 내 활동", "가린 사람", SettingsGo.BOARD, "차단", "차단 해제", "안 보기", "가리기", "글 안 보기").takeIf { board },
         screen("달력 › 도구", "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
@@ -245,7 +278,7 @@ internal object SettingsIndex {
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
         row(V, "사용 통계 보내기", "통계", "사용 기록", "익명", "보낼 내용"), // [STAT-01]
-        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board }, // [PLAZA-07]
+        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board && company }, // [PLAZA-07]
         row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
@@ -278,7 +311,7 @@ internal object SettingsIndex {
         row(C, TAB_ORDER_ROW, "첫 화면", "메뉴 순서", "시작 화면", "탭", "탭 순서", "메인 화면", "처음 화면", "메뉴 바꾸기", "메모부터"),
         // ---- 1.26 묶음 AC [SPAT-02] ----
         screen("${W.title} › 근무 주기", "회사 이름으로 근무주기 찾기", SettingsGo.PATTERN, "회사 근무주기", "공개 자료", "근무주기 검색", "회사 검색",
-            "4조 2교대", "3조 2교대", "교대 주기", "처음 제공"),
+            "4조 2교대", "3조 2교대", "교대 주기", "처음 제공").takeIf { company },
         // ---- 1.26 묶음 AE [INVITE-02][INVITE-03] ----
         screen("설정 › 프로", "친구 초대", SettingsGo.PRO, "초대", "초대 링크", "추천", "친구", "프로 한 달", "공짜 프로", "초대한 친구"),
         screen("설정 › 프로", "초대 코드 넣기", SettingsGo.PRO, "초대 코드", "받은 코드", "친구 코드", "추천 코드", "코드 입력"),
@@ -287,13 +320,17 @@ internal object SettingsIndex {
         screen("설정 › 기능 켜고 끄기", "달력의 친구 초대 카드 끄기", SettingsGo.FEATURES, "초대 카드", "초대 알림", "초대 권유", "그만 보기"),
         // AG 1.27 끝
         // ---- 1.27 묶음 AH [PLAZA-14][PLAZA-16] ----
-        screen("${W.title} › 근무 주기", "회사 대표 주기", SettingsGo.PATTERN, "대표 주기", "사업장", "쓰고 있어요", "맞아요", "달라요", "회사 이름 자동 완성"),
-        screen("급여 › 급여 계산 설정", "우리 회사 급여 방식 찾기", SettingsGo.PAY, "급여 방식 찾기", "회사 급여", "계산 방식 가져오기", "수당 가져오기"),
+        screen("${W.title} › 근무 주기", "회사 대표 주기", SettingsGo.PATTERN, "대표 주기", "사업장", "쓰고 있어요", "맞아요", "달라요", "회사 이름 자동 완성").takeIf { company },
+        screen("급여 › 급여 계산 설정", "우리 회사 급여 방식 찾기", SettingsGo.PAY, "급여 방식 찾기", "회사 급여", "계산 방식 가져오기", "수당 가져오기").takeIf { company },
         // ---- 1.27 묶음 AJ [READ-15][READ-17][PAYS-17][PAYS-19] ----
         screen(W.title, "사진과 같은가요? · 다른 곳 고치기", SettingsGo.DUTY_ROSTER, "사진과 같은가요", "다른 곳이 있어요", "잘못 읽음", "칸 고치기",
             "스캐너", "문서 스캐너", "반듯하게", "그림자"),
         screen("급여", "명세서와 맞춰 보기", SettingsGo.PAY, "맞춰 보기", "맞춰보기", "금액 비교하기", "계산 방식 찾기", "명세서 비교", "실제 입금액",
             "사진으로 회사 방식 맞추기", "명세서로 맞춰 보기"),
+        // [J133-34] 순번 714 (1.32 실사용 테스트: 'ㄱㅂㄱ'·'기본급'으로 찾아도 기본급 칸으로 가는 결과가 없었어요): the values themselves.
+        screen("근무·급여 › 값", "기본급·시급 바꾸기", SettingsGo.PAY_BASE, "기본급", "시급", "일당", "월급 금액", "급여 금액", "임금"),
+        screen("근무·급여 › 값", "수당 넣기·고치기", SettingsGo.PAY_ITEMS, "수당", "야간수당", "교대수당", "식대", "상여", "보너스", "직책수당"),
+        screen("근무·급여 › 규칙", "월급날·정산 기간", SettingsGo.PAY_PERIOD, "월급날", "급여일", "지급일", "정산", "마감일", "월급 들어오는 날"),
         screen("급여", "이것만 넣으면 정확해져요", SettingsGo.PAY, "규칙만", "명세서 없이", "시수", "월 소정근로시간", "기본급 넣기", "필수 값", "0원"),
         // S 1.32 [SECX-04] 1.28's 진단 › 기능 상태 row is gone with the card (no developer words such as 다크머지 in search).
     )

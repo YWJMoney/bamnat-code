@@ -272,6 +272,19 @@ class AppContainer(context: Context) {
         return synchronized(addedCompanies) { addedCompanies.getOrPut(calendarId) { addedCompany(calendarId) } }
     }
 
+    /**
+     * [J133-71] 1.33 (사용자 2026-10-29 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아? … 유형에 맞게"): whether
+     * calendar [calendarId] is offered company things (회사 찾기·고르기, 같은 회사 설정, 광장에 올리기 권유): 교대·일근 always, any other
+     * kind only once that calendar already joined or took a company's setup, so nothing it has goes out of reach.
+     */
+    fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN, needsServer: Boolean = true): Boolean {
+        // [SHR-20] A company setup passed as a file or in a link needs no company server ([needsServer] false).
+        if (needsServer && !companyApi.enabled) return false
+        if (scopeOf(calendarId).currentSettings().workStyle?.usesCompany != false) return true
+        val store = companyOf(calendarId).store
+        return store.applied.value != null || store.member.value != null
+    }
+
     /** [CALI-01] The main calendar's and every added one's (not the example's), for what goes over all of them. */
     fun companyScopes(): List<com.bamnat.app.company.CompanyScope> =
         listOf(mainCompany) + calendars.calendars.value.filter { !it.isMain && !it.isExample }.map { companyOf(it.id) }.filter { !it.isMain }
@@ -338,6 +351,14 @@ class AppContainer(context: Context) {
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
     var pendingPayCheck: String? = null
+
+    /** [SHR-20][695] 1.33: who sent the company setup just put in from a 근무표 링크, said once on the pay screen that follows. */
+    /**
+     * [J133-77] 1.33 (유형별 점검: 가게는 영업일·카드 수수료를 처음에 묻지 않아요): a 자영업 calendar just set up, whose 영업일·정기휴무
+     * (카드 매출 입금 included) open as soon as the setup is gone.
+     */
+    val pendingShopDays = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    @Volatile var pendingSetupFrom: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [PHOTO-09] 1.29 AQ: '사진이 달라요' counts waiting to go (only once 처리방침 3.3 lets them). Made on first press. */
     val photoWrong by lazy { com.bamnat.app.diag.PhotoWrongStore(appContext) }

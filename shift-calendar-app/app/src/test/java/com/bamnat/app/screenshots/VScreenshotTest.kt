@@ -56,7 +56,7 @@ class VScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun holidayCardsFolded() = shoot("830_v_holiday_cards", FOLDED, holidayCards {
-        HolidayWork.entries.forEach { assertTrue("${it.label} card", shows(it.label, exact = true)) }
+        HolidayWork.entries.forEach { assertTrue("${it.label} card", appears(it.label, exact = true)) }
     })
     @Test fun holidayAsExtraSaves() = shoot("831_v_holiday_as_extra", FOLDED, holidayCards {
         tapText(HolidayWork.AS_EXTRA.label, exact = true)
@@ -83,10 +83,10 @@ class VScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun quickSetupFirstQuestion() = shoot("834_v_quick_form", FOLDED, quickSetup {
-        assertTrue(shows(FORM_TITLE))
+        assertTrue(appears(FORM_TITLE))
         // The calendar's 주간 08~20 and 야간 20~08 point to 2교대, offered first.
-        assertTrue(shows("2교대 · 달력을 보면 이것 같아요"))
-        assertFalse("the old setup's first question is behind 자세히 고치기", shows("월급·시급·일당 중에"))
+        assertTrue(appears("2교대 · 달력을 보면 이것 같아요"))
+        assertTrue("the old setup's first question is behind 자세히 고치기", gone("월급·시급·일당 중에"))
     })
 
     /** The whole easy setup by taps: 2교대, 기본급, 빨간날은 특근처럼, then 이대로 계산 saves it and the month is worked out. */
@@ -95,12 +95,12 @@ class VScreenshotTest : ScreenshotBase() {
         waitFor(400)
         typeInto("월 기본급", "2600000")
         tapText("다음", exact = true)
-        assertTrue(shows("빨간날(공휴일)에 일하면 어떻게 받나요?"))
+        assertTrue(appears("빨간날(공휴일)에 일하면 어떻게 받나요?"))
         tapText(HolidayWork.AS_EXTRA.label, exact = true)
         tapText("다음", exact = true)
-        assertTrue(shows("이렇게 계산해요", exact = true))
-        assertTrue(shows("월 기본급 2,600,000원"))
-        assertTrue(shows("빨간날 근무는 특근"))
+        assertTrue(appears("이렇게 계산해요", exact = true))
+        assertTrue(appears("월 기본급 2,600,000원"))
+        assertTrue(appears("빨간날 근무는 특근"))
         tapText("이대로 계산", exact = true)
         waitFor(400)
         assertNotNull(saved)
@@ -110,7 +110,7 @@ class VScreenshotTest : ScreenshotBase() {
         assertEquals(Occupation.MANUFACTURING, p.occupation)
         assertEquals(HolidayWork.AS_EXTRA, p.rules.holidayWork)
         // Back on the result: this month is worked out from the setup just made.
-        assertTrue(shows("급여 계산", exact = true))
+        assertTrue(appears("급여 계산", exact = true))
         assertTrue(c.payStore.profile.value != null)
     })
 
@@ -119,9 +119,9 @@ class VScreenshotTest : ScreenshotBase() {
         payScreen(Tier.PRO, withProfile = true).invoke(this)
         val before = saved!!
         tapText("처음부터 설정", scrolls = 40)
-        assertTrue(shows(FORM_TITLE))
+        assertTrue(appears(FORM_TITLE))
         // The sample is a nurse setup: its form is picked already.
-        assertTrue(shows("간호 듀티"))
+        assertTrue(appears("간호 듀티"))
         tapText("다음", exact = true)
         typeInto("월 기본급", "3100000")
         tapText("다음", exact = true)
@@ -142,10 +142,10 @@ class VScreenshotTest : ScreenshotBase() {
         tapText("다음", exact = true)
         tapText("자세히 고치기 (수당·계산 방식 하나씩)", exact = true)
         // The question-by-question setup, started from the form and amount picked.
-        assertTrue(shows("계산 시작") || shows("다음", exact = true))
-        assertFalse(shows("이렇게 계산해요", exact = true))
+        assertTrue(appears("계산 시작") || shows("다음", exact = true))
+        assertTrue(gone("이렇게 계산해요", exact = true))
         back()
-        assertTrue("back returns to the easy setup", shows(FORM_TITLE) || shows("이렇게 계산해요", exact = true))
+        assertTrue("back returns to the easy setup", appears(FORM_TITLE) || shows("이렇게 계산해요", exact = true))
     })
 
     // ---- 376 [PAYS-14][PAYS-15] 명세서 + 회사 계산 방법 → 회사 규칙, then 광장 ----
@@ -163,13 +163,13 @@ class VScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun slipRulesTwoPhotos() = shoot("838_v_slip_two_photos", FOLDED, slipRules {
-        assertTrue(shows("1. 명세서"))
-        assertTrue(shows("2. 회사 계산 방법"))
-        assertTrue(shows("사진과 금액은 어디에도 보내지 않아요"))
+        assertTrue(appears("1. 명세서"))
+        assertTrue(appears("2. 회사 계산 방법"))
+        assertTrue(appears("사진과 금액은 어디에도 보내지 않아요"))
     })
     @Test fun slipRulesRead() = shoot("839_v_slip_read", FOLDED, slipRules {
         typeSlip()
-        assertTrue(shows("2026년 9월 명세서"))
+        assertTrue(appears("2026년 9월 명세서"))
         reveal("이대로 채우", exact = false)
     })
 
@@ -179,7 +179,7 @@ class VScreenshotTest : ScreenshotBase() {
         typeSlip()
         // [PHOTO-34] 1.30 AW: what changes shows under the result as it is read; its one button applies (no second window).
         waitFor(800)
-        assertTrue(shows("9월 명세서 3,612,000원"))
+        assertTrue(appears("9월 명세서 3,612,000원"))
         tapText("이대로 채우", prefix = true)
         waitFor(400)
         val after = saved!!
@@ -187,14 +187,14 @@ class VScreenshotTest : ScreenshotBase() {
         assertEquals(2_850_000L, after.base.on(java.time.YearMonth.of(2026, 9)).value)
         assertTrue(before != after)
         // [PAYS-15] Then the 광장 ask, with how it is adopted and what it brings.
-        assertTrue(shows("같은 회사 사람들도 바로 쓰게 해 주실래요?"))
+        assertTrue(appears("같은 회사 사람들도 바로 쓰게 해 주실래요?"))
     })
     @Test fun slipRulesPlazaAsk() = shoot("841_v_plaza_ask", FOLDED_NIGHT, slipRules {
         typeSlip()
         waitFor(800)
         tapText("이대로 채우", prefix = true)
         waitFor(400)
-        assertTrue(shows("이렇게 채택돼요"))
+        assertTrue(appears("이렇게 채택돼요"))
         tapText("광장에 올리기", exact = true)
         assertTrue("광장 report opened", shared)
     })
@@ -206,7 +206,7 @@ class VScreenshotTest : ScreenshotBase() {
         waitFor(800)
         tapText("이대로 채우", prefix = true)
         waitFor(400)
-        assertTrue(shows("명세서에서 찾은 회사 방식을 넣었어요"))
+        assertTrue(appears("명세서에서 찾은 회사 방식을 넣었어요"))
         tapText("이대로 계산", exact = true)
         waitFor(400)
         val p = saved!!
@@ -215,7 +215,7 @@ class VScreenshotTest : ScreenshotBase() {
     })
 
     // ---- 377 [PAYX-48] 월급날 비교: '사용하러 가기' opens the card, and the amount is typed right there ----
-    private fun withPay() = runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+    private fun withPay() = runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules, taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4, taxChosen = true), keepUndo = false) }
     private fun Screen.openPayGap() {
         com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRegistry.get("pay.gap")!!)
         settle()
@@ -227,28 +227,28 @@ class VScreenshotTest : ScreenshotBase() {
         withPay()
         settle()
         openPayGap()
-        assertTrue("the amount is asked at once", shows("들어온 급여 적기", exact = true))
+        assertTrue("the amount is asked at once", appears("들어온 급여 적기", exact = true))
         typeInto("들어온 급여", "3200000")
         tapText("저장", exact = true)
         waitFor(400)
         val lines = runBlocking { c.moneyRepository.book.first().entries }
         assertTrue(lines.any { it.kind == MoneyKind.INCOME && it.amount == 3_200_000L && it.category == MoneyCategories.SALARY })
         reveal("10월 월급날 비교", exact = true)
-        assertTrue(shows("들어온 돈 3,200,000원"))
+        assertTrue(appears("들어온 돈 3,200,000원"))
     })
     @Test fun payGapBeforeTheMoney() = shoot("844_v_pay_gap_waiting", FOLDED_NIGHT, {
         withPay()
         settle()
         tab(3, wide = false)
         reveal("10월 월급날 비교", exact = true)
-        assertTrue(shows("들어온 급여 적기", exact = true))
+        assertTrue(appears("들어온 급여 적기", exact = true))
     })
     @Test fun payGapBeforeSetup() = shoot("845_v_pay_gap_no_setup", FOLDED, {
         runBlocking { c.payStore.save(null, keepUndo = false) }
         settle()
         openPayGap()
         reveal("10월 월급날 비교", exact = true)
-        assertTrue(shows("급여 계산 맞추기", exact = true))
+        assertTrue(appears("급여 계산 맞추기", exact = true))
     })
 
     // ---- 378 at other sizes: 큰 글씨, 어두운 화면, 작은 폰 ----
@@ -258,7 +258,7 @@ class VScreenshotTest : ScreenshotBase() {
         typeInto("월 기본급", "2600000")
         tapText("다음", exact = true)
         tapText("다음", exact = true)
-        assertTrue(shows("이렇게 계산해요", exact = true))
+        assertTrue(appears("이렇게 계산해요", exact = true))
     })
     @Test fun quickHolidayAmountsDark() = shoot("847_v_quick_holiday_dark", FOLDED_NIGHT, quickSetup {
         tapText("2교대 · 달력을 보면 이것 같아요", exact = true)
@@ -267,17 +267,17 @@ class VScreenshotTest : ScreenshotBase() {
         tapText("다음", exact = true)
         tapText(HolidayWork.AS_EXTRA.label, exact = true)
         reveal("빨간날 근무 1회 금액", exact = true)
-        assertTrue(shows("빨간날 주간"))
+        assertTrue(appears("빨간날 주간"))
     })
     @Test fun slipRulesSmallPhone() = shoot("848_v_slip_small", SMALL_PHONE, slipRules {
         typeSlip()
         waitFor(800)
-        assertTrue(shows("9월 명세서 3,612,000원"))
+        assertTrue(appears("9월 명세서 3,612,000원"))
     })
     @Test fun payGapDialogDark() = shoot("849_v_pay_gap_dialog_dark", FOLDED_NIGHT, {
         withPay()
         settle()
         openPayGap()
-        assertTrue(shows("통장에 실제로 들어온 금액이에요(세금·4대보험 뺀 금액)."))
+        assertTrue(appears("통장에 실제로 들어온 금액이에요(세금·4대보험 뺀 금액)."))
     })
 }

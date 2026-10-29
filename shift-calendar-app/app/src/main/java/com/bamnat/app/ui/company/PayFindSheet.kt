@@ -29,7 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -308,6 +307,8 @@ fun PayFindFlow(
                     style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                 Text("근무주기처럼 직접 만들어 주세요. 몇 가지만 고르면 돼요. 다 만들면 같은 회사 분들도 쓰게 ‘$name’ 이름으로 광장에 나눌지 한 번 여쭤봐요(내 급여 금액·이름은 빼고).",
                     style = MaterialTheme.typography.bodyMedium)
+                // [J133-88] What the public record says of it, before the user makes it (5인 이상 decides the 가산).
+                PublicFirmCard(name, max = 2)
                 Button(onClick = { find.none(name); onByHand(name, row?.publicId) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text("직접 만들게요")
                 }
@@ -414,6 +415,8 @@ private fun NameStep(state: PayFindState, find: PayFind, byHandHere: Boolean, on
         val settled = server is PayServer.Found || server == PayServer.Off
         if (settled && rows.none { it.pay }) {
             Text("‘$q’ 급여 방식은 아직 없어요. 직접 만들면 같은 회사 분들의 첫 급여 방식이 돼요.", style = MaterialTheme.typography.bodyMedium)
+            // [J133-88] Not empty-handed: what the public record says of the name.
+            PublicFirmCard(q)
         }
         if (byHandHere) {
             OutlinedButton(onClick = { find.none(q); onByHand(q, null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -464,6 +467,12 @@ internal fun PendingDone(
     Text("‘${way.title}’ 수당과 계산 방식이 준비됐어요. ‘이대로 계산’을 누르면 한 번에 들어가요. 그 전에 닫으면 급여는 그대로예요.",
         style = MaterialTheme.typography.bodyMedium)
     CommonItemLines(way.text)
+    // [J133-86] 1.33 광장 급여 써 보기: a pay already set up sees what this way does to this month before 이대로 계산.
+    val calendar = LocalCompanyCalendar.current
+    val trial by androidx.compose.runtime.produceState<Trial?>(null, way.text, had != null) {
+        value = if (had == null) null else runCatching { payTrial(c, way.text, way.setup, month, calendar) }.getOrNull()
+    }
+    TrialBeforeAfter(trial)
     val wage = had?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY
     BaseFields(wage, base, { base = it }, hours, { hours = it }, had, month,
         companyHours = way.hours, companyName = way.title, keepBase = BaseAsk.keepChip(had, month))
@@ -554,7 +563,7 @@ fun PayFindEntry(modifier: Modifier = Modifier, open: Boolean = false) {
 @Composable
 fun PayFindSheet(onDismiss: () -> Unit, onSaved: ((PayProfile) -> Unit)? = null) {
     val state = rememberPayFindState()
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState())) {
             PayFindFlow(state, onByHand = { _, _ -> onDismiss() }, onDone = onDismiss, onSaved = onSaved)
         }
@@ -606,3 +615,12 @@ fun PayFindLine(@Suppress("UNUSED_PARAMETER") onSaved: ((PayProfile) -> Unit)? =
 }
 
 private const val LINE_CLOSED = "pay_find_line"
+
+/**
+ * [J133-51] 1.33 (직접 써 보기): the pay was just set up from the easy setup, whose first question was this same search: the
+ * line is not offered again on top of the result.
+ */
+fun closePayFindLine(context: android.content.Context, calendar: String) {
+    val key = if (calendar == com.bamnat.app.data.PersonalCalendar.MAIN) LINE_CLOSED else "$LINE_CLOSED:$calendar"
+    com.bamnat.app.ui.calendar.HintStore(context).markDone(key)
+}

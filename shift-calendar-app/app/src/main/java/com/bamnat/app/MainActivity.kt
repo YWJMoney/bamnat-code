@@ -48,6 +48,10 @@ class MainActivity : ComponentActivity() {
         )
         enableEdgeToEdge()
         setContent { shown.value?.let { Content(it) } }
+        // 1.32.1 [STAB-10][STAB-11] 멈춤 관찰: the screen made again (a Fold, a theme) and every draw of the window.
+        com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,
+            "restore=${if (savedInstanceState != null) 1 else 0} ${com.bamnat.app.diag.Trail.size(resources.configuration)}")
+        window.decorView.viewTreeObserver.addOnDrawListener { com.bamnat.app.diag.MainStall.drew() }
         val app = application as BamnatApp
         val ready = app.readyContainer()
         if (ready != null) {
@@ -109,12 +113,14 @@ class MainActivity : ComponentActivity() {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.
+                // [J133-53] Not while the first setup (which offers the chip) is still open.
                 val updated = androidx.compose.runtime.remember {
                     val info = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
                     info != null && info.firstInstallTime != info.lastUpdateTime
                 }
                 val consent by container.consentStore.seen.collectAsStateWithLifecycle()
-                if (!settings.textAsked && updated && consent != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                // [J133-87] A size already picked (settings, or the first screen of 1.32) is an answer too.
+                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.workStyle != null) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // [LOCK-01] Over the app, so the screen the user was on is still there after.
@@ -164,6 +170,28 @@ class MainActivity : ComponentActivity() {
         com.bamnat.app.ui.components.AdMoment.opened(com.bamnat.core.time.Today.instant())
         // [PERF-09] Before the container is whole this part waits for it ([open] runs it).
         shown.value?.let(::started)
+        // 1.32.1 [STAB-10][STAB-11] Back on screen: a line of 멈춤 관찰, and the next draw is waited for.
+        com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.FRONT,
+            "${com.bamnat.app.diag.Trail.size(resources.configuration)} lock=${if (AppLock.locked.value) 1 else 0}")
+        com.bamnat.app.diag.MainStall.expectDraw()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        com.bamnat.app.diag.MainStall.focus(hasFocus)
+        com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.FOCUS, if (hasFocus) "1" else "0")
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // [STAB-10] A Fold opened or closed, the phone turned: the screen's new size.
+        com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.LAYOUT, com.bamnat.app.diag.Trail.size(newConfig))
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        // [STAB-11] Taps that change nothing on screen are counted (no place, only that a finger lifted).
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) com.bamnat.app.diag.MainStall.tapped()
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun started(c: AppContainer) {
@@ -191,6 +219,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         com.bamnat.app.diag.MainStall.stop()
+        com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.BACK, com.bamnat.app.diag.Trail.memoryNow())
         // [PERF-15] A screen gone before its month showed gives no startup sample.
         if (!isChangingConfigurations) StartupTrace.activityStopped()
         if (!startDone) return

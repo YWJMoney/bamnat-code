@@ -115,11 +115,26 @@ class ZFullBackupTest {
         c.settingsRepository.update { AppSettings() }
     }
 
+    /** [J133B-05] 1.33 빌드 9 확인: a company taken after the backup goes when the backup is put back; the phone's own keys stay. */
+    @Test fun aCompanyTakenAfterTheBackupGoesOnRestore() = runBlocking {
+        c.scheduleRepository.ensureDefaults()
+        prefs("company").edit().remove("applied").putString("device", "this-phone").commit()
+        val file = c.backupManager.export()
+        prefs("company").edit().putString("applied", "{\"id\":\"lg\"}").commit()
+        c.companyStore.reload()
+        c.backupManager.restore(file)
+        assertEquals(null, prefs("company").getString("applied", null))
+        assertEquals(null, c.companyStore.applied.value)
+        assertEquals("this-phone", prefs("company").getString("device", null))
+    }
+
     /**
      * [CALI-07] 1.30 BB: an added calendar's company connection (its own `company.json`·`pay_way.json`) travels with the
      * same keys as 내 달력's; what is this phone's own (참여, 저절로 나누기 기준) stays here.
      */
     @Test fun anAddedCalendarsCompanyTravelsWithTheSameKeys() = runBlocking {
+        // A backup needs the main calendar's shift types; run first in its JVM (CI's order), this test made none of its own.
+        c.scheduleRepository.ensureDefaults()
         val id = c.calendars.begin("둘째").also { c.calendars.finishSetup(it, WorkStyle.SHIFT) }
         try {
             val files = com.bamnat.app.company.CompanyScopeStorage

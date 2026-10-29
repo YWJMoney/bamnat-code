@@ -83,17 +83,19 @@ private fun WatchApp() {
     val context = LocalContext.current
     val payload by WatchStore.payload.collectAsState()
     var refreshing by remember { mutableStateOf(false) }
+    // [J133-38] 순번 718: no phone answered the last ask.
+    var noPhone by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     fun refresh() {
         refreshing = true
-        scope.launch { runCatching { WatchStore.refresh(context) }; refreshing = false }
+        scope.launch { noPhone = runCatching { !WatchStore.refresh(context) }.getOrDefault(false); refreshing = false }
     }
     LaunchedEffect(Unit) { refresh() }
     val pager = rememberPagerState(pageCount = { 3 })
     HorizontalPager(pager, Modifier.fillMaxSize().background(Color.Black)) { page ->
         val p = payload
         when {
-            p == null -> Empty(refreshing, ::refresh)
+            p == null -> Empty(refreshing, noPhone, ::refresh)
             page == 0 -> TodayPage(p, refreshing, ::refresh)
             page == 1 -> WeekPage(p)
             else -> MonthPage(p)
@@ -102,11 +104,13 @@ private fun WatchApp() {
 }
 
 @Composable
-private fun Empty(refreshing: Boolean, onRefresh: () -> Unit) {
+private fun Empty(refreshing: Boolean, noPhone: Boolean, onRefresh: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("밤낮", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
-        Text("휴대폰의 밤낮을 한 번 열면 근무가 여기로 와요.", textAlign = TextAlign.Center, fontSize = 13.sp, color = Color(0xFFD6DAE3))
+        // [J133-38] 순번 718 (1.32 실사용 테스트: 휴대폰이 없는데도 '휴대폰에서 다시 받기'만 있었어요).
+        Text(if (noPhone && !refreshing) "휴대폰과 연결되어 있지 않아요. 휴대폰의 Wear OS 앱에서 이 시계가 연결됐는지 확인해 주세요."
+            else "휴대폰의 밤낮을 한 번 열면 근무가 여기로 와요.", textAlign = TextAlign.Center, fontSize = 13.sp, color = Color(0xFFD6DAE3))
         Spacer(Modifier.height(8.dp))
         RefreshChip(refreshing, onRefresh)
     }

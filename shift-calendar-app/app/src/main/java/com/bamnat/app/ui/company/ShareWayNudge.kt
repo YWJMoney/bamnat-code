@@ -42,18 +42,23 @@ import com.bamnat.core.time.Today
  * [PAYS-09] Whether the invitation to share the company's way may show, on this phone only: [PLAZA-04] "다음에" puts it
  * off for 14 days, then 30, then 90 ([com.bamnat.core.plaza.ShareAsk]), and "그만 볼게요" for good, so it never nags.
  */
-internal class ShareWayMemory(context: Context) {
+internal class ShareWayMemory(private val context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("share_way", Context.MODE_PRIVATE)
 
     fun due(now: Long = Today.millis()): Boolean =
-        com.bamnat.core.plaza.ShareAsk.due(prefs.getBoolean("never", false), prefs.getLong("later", 0), now, usesCompanySetup = false)
+        com.bamnat.core.plaza.ShareAsk.due(prefs.getBoolean("never", false), prefs.getLong("later", 0), now, usesCompanySetup = false) &&
+            com.bamnat.app.company.ShareAskGate.open(context, now)
 
     fun later(now: Long = Today.millis()) {
         val laters = prefs.getInt("laters", 0) + 1
         prefs.edit().putInt("laters", laters).putLong("later", com.bamnat.core.plaza.ShareAsk.nextDue(laters, now)).apply()
+        com.bamnat.app.company.ShareAskGate.declined(context, now)
     }
 
-    fun never() = prefs.edit().putBoolean("never", true).apply()
+    fun never() {
+        prefs.edit().putBoolean("never", true).apply()
+        com.bamnat.app.company.ShareAskGate.declined(context)
+    }
 }
 
 /**
@@ -101,7 +106,8 @@ fun ShareWayCard(
     val memory = remember { ShareWayMemory(context) }
     var shown by rememberSaveable { mutableStateOf(memory.due()) }
     var asking by remember { mutableStateOf(false) }
-    val companyOn = container.companyApi.enabled
+    // [J133-71] 1.33: 같은 회사 동료 words only for a calendar whose work has a company.
+    val companyOn = container.companyFits(LocalCompanyCalendar.current)
     val askOn = container.inquiryApi.enabled
     if (!shown || !companyOn && !askOn) return
     val canShare = onShare != null && companyOn

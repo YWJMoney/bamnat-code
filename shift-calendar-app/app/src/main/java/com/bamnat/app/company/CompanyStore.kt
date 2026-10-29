@@ -221,6 +221,10 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
 
     fun setApplied(a: AppliedSetup?) {
         _applied.value = a
+        // [J133-92] 1.33 빌드 7 확인 (내 설정 나누기 맨 위 '공개 자료 확인·고침 · 현대제철', 회사 칸 'GS칼텍스'): another company's setup
+        // put in over a public cycle not yet sent ends that cycle's turn, so the two are never offered as one.
+        if (a != null) _publicUse.value?.takeIf { it.sentId == null && CompanyText.norm(it.company) != CompanyText.norm(a.company) }
+            ?.let { setPublicUse(null) }
         prefs.edit().putString("applied", a?.let {
             JSONObject().put("companyId", it.companyId).put("company", it.company).put("dept", it.dept).put("setup", it.setup)
                 .put("version", it.version ?: -1).put("adopted", it.adopted).put("at", it.at.toString())

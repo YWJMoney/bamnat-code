@@ -56,7 +56,6 @@ import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.ui.money.wonBrief
-import com.bamnat.app.ui.pay.TakeHomeLine
 import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
@@ -307,8 +306,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 onClick = onOpenPay,
                 onFocus = if (payProfile != null) onOpenPayFocus else null,
             )
-            // [HRLY-04] 예상 실수령 next to the pay before tax.
-            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
+            // [HRLY-04] 예상 실수령 next to the pay before tax. [J133-01] 1.33 (보고서 A3): for every kind of pay, the same 세후
+            // 가계부 shows, or the tax way asked right here when it never was.
+            if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree) }
         }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
         WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree,
@@ -665,7 +665,8 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).jobEarned } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
-        { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = "${days}일 일해요") },
+        // [J133-77] '0일 일해요' read oddly: the days only once there are some.
+        { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = if (days > 0) "${days}일 일해요" else "아직 없어요") },
         { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" }) },
         { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
@@ -711,7 +712,8 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
 @Composable
 private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen: (java.time.LocalDate) -> Boolean) {
     val m = remember(book, month) { book.month(month) }
-    val shop = remember(book, month, isOpen) { WorkStats.shop(month, book.sales, isOpen) }
+    val today = com.bamnat.core.time.Today.date()
+    val shop = remember(book, month, isOpen, today) { WorkStats.shop(month, book.sales, today, isOpen) }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).sales } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
@@ -719,7 +721,9 @@ private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen
         { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, warning = m.salesNet < 0) },
         { md -> StatTile("영업일 평균", Fmt.won(shop.perOpenDay), md,
             caption = shop.best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
-        { md -> StatTile("영업일", "${shop.openDays}일", md, caption = "휴무 ${shop.closedDays}일") },
+        // [J133-77] 휴무 up to today; a month with no 영업일 set and nothing sold yet says how to set them instead.
+        { md -> StatTile("영업일", "${shop.openDays}일", md,
+            caption = if (shop.openDays == 0 && m.salesDays == 0) "영업일을 정하면 세어요" else "휴무 ${shop.closedDays}일" + if (!month.isBefore(YearMonth.from(today))) " (오늘까지)" else "") },
         { md -> StatTile("가장 적은 날", shop.worst?.let { wonBrief(it.sales) } ?: "-", md,
             caption = shop.worst?.let { "${it.date.monthValue}/${it.date.dayOfMonth} ${WEEKDAY[it.date.dayOfWeek.ordinal]}" }) },
     )
@@ -881,5 +885,27 @@ private fun StatsRangePicker(range: com.bamnat.core.hours.StatsRange.Range, onPi
     ) {
         androidx.compose.material3.DateRangePicker(state, title = { Text("볼 기간 고르기 (1년까지)", Modifier.padding(start = 24.dp, top = 16.dp)) },
             modifier = Modifier.heightIn(max = 520.dp))
+    }
+}
+
+/** [J133-01][J133-02] 세후 under the pay card: [com.bamnat.app.tax.TaxWay.net], or the three ways to pick when none is. */
+@Composable
+private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfile, gross: Long, month: YearMonth, nonTaxable: Long?) {
+    val learned by produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, gross, month, profile) {
+        value = runCatching { vm.takeHome(gross, month) }.getOrNull()
+    }
+    val net = com.bamnat.app.tax.TaxWay.net(profile, gross, month, nonTaxable, learned)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Column(Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp)) {
+        if (net != null) {
+            Text("세후 예상 ${com.bamnat.app.ui.Fmt.won(net)} · 떼는 돈 ${com.bamnat.app.ui.Fmt.won(gross - net)}",
+                style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        } else {
+            Text(com.bamnat.app.tax.TaxWay.UNKNOWN, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.bamnat.app.tax.TaxWayChips(null) { m ->
+                scope.launch { com.bamnat.app.tax.TaxWay.pick(context.appContainer, vm.calendarId, m) }
+            }
+        }
     }
 }

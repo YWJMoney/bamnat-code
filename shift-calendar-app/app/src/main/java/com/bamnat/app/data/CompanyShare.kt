@@ -721,6 +721,26 @@ class CompanyShare(
         private const val MAX_NAME = 40
         const val MAX_TEAM = 12
 
+        /**
+         * [COMM-00] Writes a company file to the share cache and opens the share sheet. [SHR-20] 1.33: also the 근무표 공유's
+         * ‘회사 설정 파일도 보내기’, so both send the same file the same way.
+         */
+        suspend fun send(context: android.content.Context, company: String, text: String) {
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }
+                java.io.File(dir, "밤낮-회사설정-${company.trim().ifEmpty { "우리회사" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.json").apply { writeText(text) }
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.share", file)
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = MIME_TYPE
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_TEXT, "밤낮 앱 설정 > 데이터 > 파일 불러오기에서 이 파일을 열면 근무 주기와 급여 규칙이 들어가요.")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(android.content.Intent.createChooser(send, "회사 설정 보내기"))
+        }
+
         fun isCompanyFile(text: String): Boolean =
             runCatching { JSONObject(text).optString("format") == FORMAT }.getOrDefault(false)
     }

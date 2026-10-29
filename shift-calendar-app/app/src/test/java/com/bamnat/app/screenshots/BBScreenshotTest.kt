@@ -100,8 +100,8 @@ class BBScreenshotTest : ScreenshotBase() {
         val b = twoCompanies()
         c.companyOf(b).payWays.use(PayWay("c1", "(주)예시정밀", "생산팀", "s1"))
         on(b) { PayWayCard(bare(), update = {}) }
-        assertTrue(shows("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
-        assertFalse(shows("공장A", exact = false))
+        assertTrue(appears("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
+        assertTrue(gone("공장A", exact = false))
         assertNull("내 달력의 급여 방식은 그대로", c.payWays.way.value)
     }
 
@@ -127,15 +127,15 @@ class BBScreenshotTest : ScreenshotBase() {
         assertTrue(c.companyOf(b).payWays.askBase.value)
         assertFalse(c.payWays.askBase.value)
         c.calendars.pay(b).profile.value.let { p -> on(b) { PayWayCard(p, update = {}) } }
-        assertTrue(shows("기본급만 넣으면 끝나요", exact = true))
+        assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
     }
 
     // ---- [CALI-08] 광장 위 달력 칩: 달력마다 그 회사 ----
     @Test fun thePlazaSaysWhichCalendarsCompany() = shoot("1322_bb_plaza_calendar_chips", PHONE_393) {
         val b = twoCompanies()
         board(b)
-        assertTrue(shows("편의점 알바 · (주)예시정밀", exact = true))
-        assertTrue(shows("${PersonalCalendar.MAIN_NAME} · 공장A", exact = true))
+        assertTrue(appears("편의점 알바 · (주)예시정밀", exact = true))
+        assertTrue(appears("${PersonalCalendar.MAIN_NAME} · 공장A", exact = true))
     }
 
     // ---- [CALI-08] 내 활동: 이 달력에서 보낸 규칙만, 다른 달력의 것은 한 줄로 ----
@@ -145,9 +145,9 @@ class BBScreenshotTest : ScreenshotBase() {
         val vm = board(b)
         vm.activity.show()
         waitFor(200)
-        assertTrue(shows("‘편의점 알바’에서 보낸 규칙 1", exact = true))
-        assertTrue(shows("라마바전자", exact = false))
-        assertFalse(shows("(주)예시정밀 · 생산팀 —", exact = false))
+        assertTrue(appears("‘편의점 알바’에서 보낸 규칙 1", exact = true))
+        assertTrue(appears("라마바전자", exact = false))
+        assertTrue(gone("(주)예시정밀 · 생산팀 —", exact = false))
         reveal("‘${PersonalCalendar.MAIN_NAME}’에서 보낸 규칙 1개는 그 달력의 광장에서 보여요", exact = true)
     }
 
@@ -171,14 +171,14 @@ class BBScreenshotTest : ScreenshotBase() {
         assertTrue(c.companyOf(b).isMain)
         assertEquals("공장A", c.companyStore.applied.value?.company)
         board(PersonalCalendar.MAIN)
-        assertFalse(shows("편의점 알바", exact = false))
-        assertFalse(shows("(주)예시정밀 · ", exact = false))
+        assertTrue(gone("편의점 알바", exact = false))
+        assertTrue(gone("(주)예시정밀 · ", exact = false))
     }
 
     // ---- [CALI-08] 큰 글씨·작은 휴대폰에서도 칩은 옆으로 밀어 보기 ----
     @Test fun theChipsOnASmallPhone() = shoot("1326_bb_chips_small_big_text", SMALL_PHONE, 2f) {
         val b = twoCompanies()
         board(b)
-        assertTrue(shows("편의점 알바 · (주)예시정밀", exact = true))
+        assertTrue(appears("편의점 알바 · (주)예시정밀", exact = true))
     }
 }

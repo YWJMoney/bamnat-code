@@ -24,4 +24,17 @@ class StartStepsTest {
         assertEquals("시작 2단계 중 1개 했어요", StartSteps.title(rows))
         assertNull(StartSteps.rows(day0, day0, false, alarmsOn = true, hasShifts = true, companyLinked = false, companyApplies = false))
     }
+
+    /** [J133-71] 1.33: each kind of work's own words; 투자 has no start card. */
+    @Test fun stepsSpeakTheKindOfWork() {
+
+        val hourly = StartSteps.rows(day0, day0, false, alarmsOn = false, hasShifts = false, companyLinked = false, companyApplies = false, style = com.bamnat.core.work.WorkStyle.HOURLY)!!
+        assertEquals(listOf("근무 알람 켜기", "일하는 날 넣기"), hourly.map { it.label })
+        val field = StartSteps.rows(day0, day0, false, alarmsOn = false, hasShifts = true, companyLinked = false, companyApplies = false, style = com.bamnat.core.work.WorkStyle.FIELD)!!
+        assertEquals("일정 알람 켜기", field.first().label)
+        assertNull(StartSteps.rows(day0, day0, false, alarmsOn = false, hasShifts = true, companyLinked = false, companyApplies = false, style = com.bamnat.core.work.WorkStyle.INVEST))
+        assertEquals(false, com.bamnat.core.work.WorkStyle.HOURLY.usesCompany)
+        assertEquals(true, com.bamnat.core.work.WorkStyle.DAY.usesCompany)
+        assertEquals("근무지", com.bamnat.core.work.WorkStyle.HOURLY.employer)
+    }
 }

@@ -260,6 +260,12 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val date = memo.date
+                // [J133-20] 1.33 (실사용 테스트 "알람 맞추기 칩이 옆으로 밀려 안 보여요"): first in the row, in sight on a narrow phone.
+                ScheduleChip(
+                    reminder = memo.reminder,
+                    onOpen = { answering = null; scheduling = true },
+                    onClear = { vm.setReminder(null) },
+                )
                 AssistChip(
                     onClick = { showDatePicker = true },
                     label = { Text(if (date != null) Fmt.fullDate(date) else "날짜 붙이기") },
@@ -273,11 +279,6 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 if (date != null) ShiftLabel(day)
                 // [NOTE-05] A dated memo can come back every week, month or year.
                 if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
-                ScheduleChip(
-                    reminder = memo.reminder,
-                    onOpen = { answering = null; scheduling = true },
-                    onClear = { vm.setReminder(null) },
-                )
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }

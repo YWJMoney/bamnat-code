@@ -30,8 +30,28 @@ object ShareContent {
             val pay = if (options.pay) money(c, snapshot, from, kind, calendar) else emptyList()
             val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
             val zone = Today.zone().takeIf { feed && c.featureGate.allows(com.bamnat.app.tier.Feature.ICS_FEED) }
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone)
+            val setup = if (options.sendsSetup && setupInLink(c, calendar)) setupFile(c, calendar) else null
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup)
         }
+
+    /**
+     * [SHR-20] 1.33: a coworker's link carries the company setup only from 처리방침 3.7's date (`share.setup`, LEGAL), and only
+     * for work that has a company ([AppContainer.companyFits]).
+     */
+    fun setupInLink(c: AppContainer, calendar: String = PersonalCalendar.MAIN): Boolean =
+        c.companyFits(calendar, needsServer = false) && runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP) }.getOrDefault(false)
+
+    /** [SHR-20] The calendar's company setup as a coworker's file has it, without amounts (회사 공통 정액 as the 광장 has it). */
+    suspend fun setupFile(c: AppContainer, calendar: String = PersonalCalendar.MAIN): String? {
+        val scope = c.companyOf(calendar)
+        return runCatching { scope.share.export(companyName(c, calendar), withAmounts = false) }.getOrNull()
+    }
+
+    /** [SHR-20][695] The company the calendar is in, else the name typed in the first setup; "" when none. */
+    fun companyName(c: AppContainer, calendar: String = PersonalCalendar.MAIN): String {
+        val store = c.companyOf(calendar).store
+        return store.applied.value?.company ?: store.member.value?.second?.takeIf { it.isNotBlank() } ?: store.draft.value?.company?.trim().orEmpty()
+    }
 
     /** [SHR-11] The money a link of this user carries: pay for employees, job income for field work, sales for a shop. */
     fun kind(c: AppContainer, calendar: String = PersonalCalendar.MAIN): MoneyShare =

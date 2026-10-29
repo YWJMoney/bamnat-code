@@ -465,6 +465,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
             NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 1.32.1 [STAB-13] Not 알람 점검: a 앱 멈춤 문의 whose 점검 기록 starts with the stop.
+            NoticeLinks.Target.STOP_REPORT -> {
+                com.bamnat.app.ui.grow.GrowAsk.feedback(com.bamnat.app.ui.grow.STOP_ABOUT, kind = com.bamnat.app.company.InquiryKind.BUG, withCheck = true)
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.GROUP -> { nav.navigate(Routes.SHARE_GROUP) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PHONE_CALENDAR -> {
                 com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.PHONE_CALENDAR_ROW)
@@ -551,8 +556,23 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             is SettingsLink.Go -> {
                 SettingsLinks.consume(link)
-                link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
+                // [J133-77] 근무 주기 of the calendar on screen: a shop's is its 영업일·정기휴무.
+                if (link.go == SettingsGo.PATTERN) nav.openPattern(container, companyCalendarOf(container, null))
+                else link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
             }
+        }
+    }
+    // [J133-77] A 자영업 calendar just set up opens on its 영업일·정기휴무, once the setup screen is gone.
+    LaunchedEffect(Unit) {
+        container.pendingShopDays.collect { id ->
+            if (id == null) return@collect
+            // The kind of work is saved a moment after the setup closes: wait for it, a few seconds at most.
+            val saved = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+                while (container.calendars.styleOf(id, container.settingsRepository.current.workStyle) != WorkStyle.BUSINESS) kotlinx.coroutines.delay(100)
+                true
+            }
+            container.pendingShopDays.value = null
+            if (saved == true) { kotlinx.coroutines.delay(300); nav.openPattern(container, id) }
         }
     }
     // [GUIDE-01] The checklist, a tip, the help search or 기능 켜고 끄기 opens a feature where it lives,
@@ -575,14 +595,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val inquiryUnread by container.inquiryStore.unread.collectAsStateWithLifecycle()
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
-        runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess { container.inquiryStore.update(it) }
+        runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
+            container.inquiryStore.update(it)
+            // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
+            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext)
+        }
     }
 
     // [GUIDE-08] Once after an update: what it brought, each with a way to open it.
     val whatsNew = remember {
         val ctx = container.appContext
         val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
-        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+        // [J133-53] A phone with no setup yet (reinstalled, data cleared) has nothing new to compare against.
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || container.settingsRepository.current.workStyle == null
         mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
     }
     // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
@@ -1157,7 +1182,8 @@ private fun AppNavHost(
                     )
                 }) else null,
                 onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
-                onOpenBoard = if (nudges.enabled) ({ nav.navigate(Routes.companyBoard()) { launchSingleTop = true } }) else null,
+                // [J133-77] Every kind of work has its 광장 (알바 광장, 가게 광장 …), not only work with a company.
+                onOpenBoard = if (container.companyApi.enabled) ({ nav.navigate(Routes.companyBoard()) { launchSingleTop = true } }) else null,
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
@@ -1193,7 +1219,8 @@ private fun AppNavHost(
             val payEngine = remember(calendar) {
                 container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle)?.usesPayEngine != false
             }
-            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE
+            // [J133-71] 1.33: and only for work that has a company (교대·일근), or an 알바 calendar that already joined one.
+            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE && remember(calendar) { container.companyFits(calendar) }
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
@@ -1252,7 +1279,8 @@ private fun AppNavHost(
                 companyFind = companyPay)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                    onDismiss = { inviting = false })
+                    // [J133-17] 나중에 is a no for now: the card on the pay screen waits too, not asking again right after.
+                    onDismiss = { inviting = false; nudges.closeInvite() })
             }
             }
         }
@@ -1660,6 +1688,9 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.SHIFT_TYPES -> Routes.shiftTypes()
     SettingsGo.EXTRA_KINDS -> Routes.extraKinds()
     SettingsGo.PAY -> Routes.pay()
+    SettingsGo.PAY_BASE -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.BASE.key)
+    SettingsGo.PAY_ITEMS -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.ITEMS.key)
+    SettingsGo.PAY_PERIOD -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.PERIOD.key)
     SettingsGo.CALENDARS -> Routes.CALENDARS
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
     SettingsGo.INQUIRY -> Routes.INQUIRY

@@ -58,6 +58,7 @@ import com.bamnat.core.work.asksHolidaysOff
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -144,10 +145,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      */
     val snapshot: StateFlow<ScheduleSnapshot?> =
         kotlinx.coroutines.flow.combine(container.calendars.activeSnapshotAround { container.shownMonth.month.value },
-            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }, container.shownMonth.month) { s, p, m ->
+            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }, container.shownMonth.month,
+            container.settingsRepository.settings.map { it.workStyle }.distinctUntilChanged()) { s, p, m, _ ->
             if (!s.covers(m.minusMonths(1)) || !s.covers(m.plusMonths(1))) null
             // [HRLY-05] Hours on the calendar take the legal break off, as pay does.
-            else if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s
+            else (if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s).let { snap ->
+                // [J133B-01] An 알바 calendar's 대근 is its 대타, in the menu, the chip and the day's record.
+                val style = container.calendars.styleOf(container.calendars.active.value, container.settingsRepository.current.workStyle)
+                if (style == com.bamnat.core.work.WorkStyle.HOURLY) snap.kinds.forHourly().let { k -> if (k === snap.kinds) snap else snap.copy(kinds = k) } else snap
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     /**
      * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that
@@ -246,6 +252,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             _holidaysKept.value = _holidaysKept.value - key
             viewPrefs.edit().putStringSet(K_HOLIDAYS, _holidaysKept.value).apply()
         })
+    }
+
+    /**
+     * [J133-03] 1.33 앞으로도 늘 쉬어요: the weekly pattern itself keeps public holidays off, so the card is not asked again
+     * next month. Said back with undo.
+     */
+    fun restHolidaysAlways() {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule
+            val before = schedule.patterns.first()
+            if (before.none { it is com.bamnat.core.model.WorkPattern.Weekly && !it.holidaysOff }) return@launch
+            schedule.restorePatterns(before.map { if (it is com.bamnat.core.model.WorkPattern.Weekly) it.copy(holidaysOff = true) else it })
+            _messages.emit(UndoMessage("앞으로 공휴일은 늘 쉬는 날로 둘게요") { schedule.restorePatterns(before) })
+        }
     }
 
     /** [CAL-07] The holidays become days off in one write, said back with undo. */
@@ -740,7 +760,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val before = schedule.updateDays(dates.distinct()) { entry -> nextShift(entry, target) }
             val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "을" else "${before.size}일을"
             _lastPaint.value = PaintUndo(
-                if (name == null) "$what 패턴대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요",
+                if (name == null) "$what 근무 주기대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요",
                 // Only the shift goes back: a memo or alarm changed on those days since stays.
                 undo = {
                     schedule.updateDays(before.keys.toList()) { now ->
@@ -851,7 +871,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val beforePatterns = snap.patterns
             schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
             val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
-            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 패턴대로"
+            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 근무 주기대로"
             _messages.emit(
                 UndoMessage("${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요$cleared") {
                     schedule.restorePatterns(beforePatterns)
@@ -873,7 +893,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val name = (override as? ShiftOverride.Shift)?.let { snapshot.value?.typesById?.get(it.shiftTypeId)?.name }
                 ?: if (override == ShiftOverride.Off) "쉬는 날" else null
             _messages.emit(
-                UndoMessage(if (name == null) "${Fmt.monthDay(date)}을 패턴대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") {
+                UndoMessage(if (name == null) "${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") {
                     schedule.restoreDay(date, before)
                 },
             )
@@ -899,7 +919,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                         schedule.restoreDay(date, before)
                         schedule.addExtra(date, ExtraText.cover(cover, type))
                     }
-                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요", undo = restore)
+                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요", undo = restore)
                     else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요", undo = restore)
                 },
             )
@@ -1240,7 +1260,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.resetDay(date)
             if (before != null && !before.isEmpty) {
-                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요") {
+                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요") {
                     schedule.restoreDay(date, before)
                 })
             }

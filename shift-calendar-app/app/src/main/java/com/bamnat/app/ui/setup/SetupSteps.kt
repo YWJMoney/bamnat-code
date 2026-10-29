@@ -273,7 +273,8 @@ internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDis
     var openId by remember { mutableStateOf(initialOpen) }
     // [CALI-05] 1.30 BB: an added calendar's setup looks for that calendar's company (what it already has, its plaza).
     val calendar = vm.calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // [J133-75] The dialog takes the keyboard's insets itself, so the search's imePadding lifts the results above it.
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             val id = openId
@@ -361,7 +362,7 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
             else -> "근무 시간이 맞나요?"
         },
         when (d.style) {
-            WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필을 눌러 지우세요."
+            WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필(이름·색 고치기)을 누르고 맨 아래 ‘이 근무 종류 삭제’로 지워요."
             else -> "회사 근무표와 다르면 시각을 눌러 바로 고쳐요."
         },
     )

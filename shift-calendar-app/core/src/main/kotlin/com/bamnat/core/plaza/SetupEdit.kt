@@ -94,6 +94,42 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
     /** [ITEM-09] The 통상시급's hours a month (월 소정근로시간), as the file has them. */
     val monthlyHours: Int? get() = (pay()?.get("monthlyHours") as? Number)?.toInt()
 
+    /**
+     * [J133-82] 1.33 광장 급여 써 보기 ("근무표만 있는 설정에는 급여를 더할 길이 없어요"): [other]'s pay part in this file, so a
+     * shifts-only setup can get the user's own pay way in one tap. Shifts this file does not have are left out of it (allowances
+     * paid on them and the extra-work rules by shift), as the server would.
+     */
+    fun withPayOf(other: SetupEdit): SetupEdit {
+        val pay = other.pay() ?: return this
+        val names = shifts.map { it.name }.toSet()
+        return with { r ->
+            val p = copyMap(pay)
+            p["withAmounts"] = false
+            p["items"] = (p["items"] as? List<*>).orEmpty().map { i ->
+                val m = i as? Map<*, *> ?: return@map i
+                copyMap(m).also { c -> c["types"] = (m["types"] as? List<*>).orEmpty().filter { it in names } }
+            }
+            (p["rules"] as? Map<*, *>)?.let { rules ->
+                p["rules"] = copyMap(rules).also { c ->
+                    (rules["extraByShift"] as? Map<*, *>)?.let { by -> c["extraByShift"] = by.filterKeys { it in names }.let(::copyMap) }
+                }
+            }
+            r["pay"] = p
+        }
+    }
+
+    /** [J133-82] The file without its pay part: what someone who cannot see a company's pay (결정 D79) may send for it. */
+    fun withoutPay(): SetupEdit = if (!hasPay) this else with { it.remove("pay") }
+
+    /**
+     * [J133-82] A pay part that is the law and nothing else (가산율 법대로, 수당 없음, 209시간), to start from and change: the first
+     * person to tell a company's pay way needs no payslip at hand for what the law already says.
+     */
+    fun withLawPay(fiveOrMore: Boolean = true): SetupEdit = with { r ->
+        r["pay"] = linkedMapOf<String, Any?>("fiveOrMore" to fiveOrMore, "monthlyHours" to LAW_HOURS, "holidayMode" to "FULL",
+            "withAmounts" to false, "items" to ArrayList<Any?>())
+    }
+
     /** [ITEM-09] The hours a month, kept within what a workplace counts (100~320). */
     fun monthlyHours(hours: Int): SetupEdit = withPay { it["monthlyHours"] = hours.coerceIn(HOURS_MIN, HOURS_MAX) }
 
@@ -271,6 +307,8 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
         const val DEFAULT_PERCENT = 0.1
         const val HOURS_MIN = 100
         const val HOURS_MAX = 320
+        /** 주 40시간에 주휴 8시간: (40 + 8) × 365 ÷ 7 ÷ 12. */
+        const val LAW_HOURS = 209
         private val DEFAULT_RULE = mapOf("basis" to "LEGAL", "multiplier" to 1.5, "amount" to 0, "min" to 0, "night" to true,
             "percent" to 0.1, "cover" to -1, "premiums" to false, "bonus" to 0, "unit" to "ORDINARY", "unitMin" to 480, "adds" to emptyList<Any?>())
 

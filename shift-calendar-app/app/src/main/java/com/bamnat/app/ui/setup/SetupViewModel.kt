@@ -195,7 +195,11 @@ class SetupViewModel(
         val d = current
         when (style) {
             // Field and shop work are written day by day: nothing more to ask.
-            WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> save(SetupDraft(style = style))
+            WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> {
+                // [J133-77] A shop's days and card fees are its first question, asked on their own screen right after.
+                if (style == WorkStyle.BUSINESS) c.pendingShopDays.value = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
+                save(SetupDraft(style = style))
+            }
             else -> {
                 val same = d.style == style && d.rosterMonthly == (roster && style == WorkStyle.SHIFT)
                 val start = when {
@@ -348,10 +352,13 @@ class SetupViewModel(
         // [PLAZA-01] A company whose file says its roster comes every month is painted, not repeated.
         val monthly = roster ?: shared.roster.takeIf { it && current.style == WorkStyle.SHIFT }
         val base = monthly?.let { current.copy(rosterMonthly = it) } ?: current
-        val d = base.withShared(source.copy(team = null, anchor = null), shared.types, shared.order, shared.weekly)
+        val d = base.withShared(source.copy(team = null, anchor = null), shared.types, shared.order, shared.weekly).let { d ->
+            // [J133-26] 1.33 (실사용 테스트 "회사 이름이 고른 회사 대신 검색어('현대')로 저장돼요"): the company picked is its name.
+            if (source.kind != SetupSource.Kind.TEMPLATE && source.name.isNotBlank()) d.copy(companyName = source.name.take(40)) else d
+        }
         // New shifts are a new setup from here on, not a fix of one answer.
         _fixing.value = false
-        store.save(d.copy(step = d.steps.dropWhile { it != SetupStep.COMPANY }.getOrElse(1) { SetupStep.SUMMARY }))
+        store.save(d.copy(step = d.steps.firstOrNull { it != SetupStep.STYLE && it != SetupStep.COMPANY } ?: SetupStep.SUMMARY))
     }
 
     /**
@@ -371,7 +378,9 @@ class SetupViewModel(
         val d = current
         val style = d.style ?: return
         _fixing.value = false
-        store.save(fresh(style, d.rosterMonthly).copy(companyName = d.companyName, step = SetupStep.COMPANY))
+        val again = fresh(style, d.rosterMonthly).copy(companyName = d.companyName)
+        // [J133-71] 알바 has no company step: back to its first question.
+        store.save(again.copy(step = if (SetupStep.COMPANY in again.steps) SetupStep.COMPANY else again.steps.getOrElse(1) { SetupStep.STYLE }))
     }
 
     fun setCompanyName(name: String) = update { it.copy(companyName = name.take(40)) }
@@ -433,6 +442,7 @@ class SetupViewModel(
     fun setWeekly(day: Int, id: Long?) = update { d -> d.copy(weekly = d.weekly.mapIndexed { i, v -> if (i == day) id else v }) }
 
     fun setNoFixedDays(on: Boolean) = update { it.copy(noFixedDays = on) }
+    fun setHolidaysOff(on: Boolean) = update { it.copy(holidaysOff = on) }
 
     // [SETUP-02] Painting a monthly roster.
     private val _paintMonth = MutableStateFlow(YearMonth.from(now()))
@@ -659,6 +669,11 @@ class SetupViewModel(
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
                     if (again) { store.clear(); _done.value = true }
+                    // [J133-51] The day the calendar was set up: no question cards or tips on top of it.
+                    val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
+                    c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
+                    // [J133-52] The setup came from a company: the first week's card does not ask for one again.
+                    if (d.source?.name?.isNotBlank() == true) com.bamnat.app.ui.guide.StartStepsState.companyPicked(c)
                     // [PLAZA-14] 1.27 AH: a cycle from a company search is asked about once, for the calendar it went into.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
                         c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN))

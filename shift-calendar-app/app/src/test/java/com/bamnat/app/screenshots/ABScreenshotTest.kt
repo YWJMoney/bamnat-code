@@ -52,8 +52,8 @@ class ABScreenshotTest : ScreenshotBase() {
             )
         }
         settle()
-        assertTrue(shows("오늘 남은 알람 모두 끄기"))
-        assertTrue(shows("소리·전원 버튼을 눌러도 꺼져요"))
+        assertTrue(appears("오늘 남은 알람 모두 끄기"))
+        assertTrue(appears("소리·전원 버튼을 눌러도 꺼져요"))
         noCuts(name)
     }
 
@@ -69,8 +69,8 @@ class ABScreenshotTest : ScreenshotBase() {
                 note = com.bamnat.app.alarm.missionNote(AlarmButtons.Action.DISMISS, quiet = false, allOffWaits = true))
         }
         settle()
-        assertTrue(shows("소리·전원 버튼은 소리만 30초 줄여요"))
-        assertTrue(shows("미션을 마치면 오늘 남은 알람이 모두 꺼져요"))
+        assertTrue(appears("소리·전원 버튼은 소리만 30초 줄여요"))
+        assertTrue(appears("미션을 마치면 오늘 남은 알람이 모두 꺼져요"))
         noCuts("mission_note")
     }
 
@@ -78,8 +78,8 @@ class ABScreenshotTest : ScreenshotBase() {
         // The calendar follows it as it changes.
         AlarmsOff.turnOff(app, null)
         settle()
-        assertTrue(shows("오늘 알람 끔 · 밤 12시까지"))
-        assertTrue(shows("다시 켜기", exact = true))
+        assertTrue(appears("오늘 알람 끔 · 밤 12시까지"))
+        assertTrue(appears("다시 켜기", exact = true))
         noCuts(name)
     }
 
@@ -89,7 +89,7 @@ class ABScreenshotTest : ScreenshotBase() {
     @Test fun settingsRow() = shoot("967_ab_settings_buttons", PHONE_393) {
         settingsPage("알람")
         reveal("버튼으로 알람 끄기", exact = true)
-        assertTrue(shows("아무것도 안 함"))
+        assertTrue(appears("아무것도 안 함"))
     }
 
     @Test fun checkLines() = shoot("968_ab_alarm_check_lines", PHONE_393) {
@@ -99,6 +99,6 @@ class ABScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.diag.DiagnosticsScreen(vm, onBack = {}) }
         settle()
         reveal("잠금 화면에 알람 보이기", exact = true)
-        assertTrue(shows("조용히로 바뀌어 알람 화면이 안 떠요"))
+        assertTrue(appears("조용히로 바뀌어 알람 화면이 안 떠요"))
     }
 }

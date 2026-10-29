@@ -42,6 +42,15 @@ class SettingsSearchTest {
         assertEquals("오전/오후로 보기", first("12시간"))
     }
 
+    // [J133-34] 순번 714: the 새 기능 안내's own example lands on the 기본급, and the pay values are found by their names.
+    @Test fun payValuesAreFoundDirectly() {
+        assertEquals("기본급·시급 바꾸기", first("ㄱㅂㄱ"))
+        assertEquals("기본급·시급 바꾸기", first("기본급"))
+        assertEquals("기본급·시급 바꾸기", first("시급"))
+        assertEquals("수당 넣기·고치기", first("수당"))
+        assertEquals("월급날·정산 기간", first("월급날"))
+    }
+
     @Test fun theTitleItselfComesFirst() {
         assertEquals("진동", first("진동"))
         assertEquals("근무 주기", first("근무 주기"))
@@ -65,6 +74,52 @@ class SettingsSearchTest {
         assertFalse("회사 규칙 광장" in titles)
         assertFalse("동료 근무표 받기" in titles)
         assertTrue("근무표 공유" in titles)
+    }
+
+    /** [J133-71] 1.33 (사용자 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아?"): work with no company finds no 회사 things. */
+    /** [J133-77] A shop, a freelancer and an investor search without wages; an 알바 without 연차 촉진; help in each kind's order. */
+    @Test fun eachKindOfWorkFindsItsOwn() {
+        val shop = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.BUSINESS).map { it.title }
+        assertFalse("급여 계산" in shop)
+        assertFalse("연장 휴무일 근무 지정" in shop)
+        assertFalse("연차 사용 촉진 알림" in shop)
+        assertFalse("근태 엑셀 가져오기" in shop)
+        assertTrue("백업 저장" in shop)
+        val hourly = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.HOURLY).map { it.title }
+        assertTrue("급여 계산" in hourly)
+        assertFalse("연차 사용 촉진 알림" in hourly)
+        assertFalse("근태 엑셀 가져오기" in hourly)
+        assertTrue("근태 엑셀 가져오기" in SettingsIndex.entries(style = com.bamnat.core.work.WorkStyle.DAY).map { it.title })
+
+        val all = HelpFaq.topics()
+        val field = all.forStyle(com.bamnat.core.work.WorkStyle.FIELD).map { it.id }
+        assertEquals(listOf("jobOwed", "jobTax", "bizTax"), field.take(3))
+        assertFalse("pattern" in field)
+        assertFalse("plazaEntry" in field)
+        assertFalse("pay" in field)
+        val business = all.forStyle(com.bamnat.core.work.WorkStyle.BUSINESS).map { it.id }
+        assertEquals(listOf("shopCash", "shopVat", "bizTax"), business.take(3))
+        assertFalse("jobOwed" in business)
+        assertFalse("investFee" in business)
+        val hourlyHelp = all.forStyle(com.bamnat.core.work.WorkStyle.HOURLY).map { it.id }
+        assertEquals("hourlyCover", hourlyHelp.first())
+        assertFalse("plazaPayFind" in hourlyHelp)
+        assertFalse("shopCash" in hourlyHelp)
+        assertEquals(all.map { it.id }, all.forStyle(null).map { it.id })
+        assertTrue(all.forStyle(com.bamnat.core.work.WorkStyle.SHIFT).map { it.id }.containsAll(listOf("pattern", "plazaEntry", "pay")))
+    }
+
+    @Test fun workWithNoCompanyFindsNoCompanyRows() {
+        val entries = SettingsIndex.entries(company = false)
+        val titles = entries.map { it.title }
+        assertFalse("회사 찾기" in titles)
+        assertFalse("회사 설정 보내기" in titles)
+        assertFalse("우리 회사 급여 방식 찾기" in titles)
+        assertFalse("회사 규칙 광장" in titles)
+        assertTrue("광장" in titles)
+        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title.startsWith("회사") })
+        assertEquals("광장", SettingsIndex.search("알바 광장", entries).first().title)
+        assertTrue("회사 찾기" in SettingsIndex.entries().map { it.title })
     }
 
     @Test fun everyShortcutIsInTheIndex() {
