@@ -3,6 +3,7 @@ package com.bamnat.app.flags
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.diag.UsageStats
 import com.bamnat.app.tier.AdminState
@@ -53,6 +54,7 @@ class FlagsAppTest {
     private val now = Instant.parse("2026-11-12T03:00:00Z")
 
     @Before fun clean() {
+        context.appContainer // [QA-09] the start's own clean-up first (it forgets a usage book written before it)
         context.getSharedPreferences("launch_config", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("flag_preview", Context.MODE_PRIVATE).edit().clear().commit()
     }

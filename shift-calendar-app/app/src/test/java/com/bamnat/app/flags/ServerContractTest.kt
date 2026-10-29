@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.StartupTrace
+import com.bamnat.app.appContainer
 import com.bamnat.app.diag.StartupStats
 import com.bamnat.app.diag.UsageStats
 import com.bamnat.app.tier.Feature
@@ -53,6 +54,9 @@ class ServerContractTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
     @Before fun clean() {
+        // [QA-09] The start's own clean-up first: without a yes it forgets the waiting book (UsageStats.forgetUnless),
+        // and landing after the book below was written it left preview() empty (NPE, CI on 1.32).
+        context.appContainer
         context.getSharedPreferences("launch_config", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE).edit().clear().commit()
     }
