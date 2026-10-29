@@ -433,6 +433,7 @@ class SetupViewModel(
     fun setWeekly(day: Int, id: Long?) = update { d -> d.copy(weekly = d.weekly.mapIndexed { i, v -> if (i == day) id else v }) }
 
     fun setNoFixedDays(on: Boolean) = update { it.copy(noFixedDays = on) }
+    fun setHolidaysOff(on: Boolean) = update { it.copy(holidaysOff = on) }
 
     // [SETUP-02] Painting a monthly roster.
     private val _paintMonth = MutableStateFlow(YearMonth.from(now()))
@@ -659,6 +660,9 @@ class SetupViewModel(
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
                     if (again) { store.clear(); _done.value = true }
+                    // [J133-51] The day the calendar was set up: no question cards or tips on top of it.
+                    val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
+                    c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
                     // [PLAZA-14] 1.27 AH: a cycle from a company search is asked about once, for the calendar it went into.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
                         c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN))

@@ -141,6 +141,8 @@ class PayViewModel(
     fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [J133-51] No question cards or tips for the rest of the day the pay was set up.
+        container.asks.set(calendarId, com.bamnat.core.profile.AskScheduler.rest(container.asks.of(calendarId), com.bamnat.core.time.Today.date()))
         // [PLAZA-04] Pay made by hand (no coworkers' setup in use): the moment to offer it to the plaza.
         // [PAYS-15] Not when the screen asks itself right away (PlazaAskDialog after a payslip): one ask, not two.
         // [PLAZA-07] 결정 D79: a known company's pay way is shared by itself after the one-time yes, which this may ask.

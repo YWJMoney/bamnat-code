@@ -61,6 +61,11 @@ data class SetupDraft(
     val weekly: List<Long?> = List(7) { null },
     /** [SETUP-02] Hourly work on days that change: no weekly pattern at all. */
     val noFixedDays: Boolean = false,
+    /**
+     * [J133-03] 1.33 (보고서 심각 3, B1·C2): weekday and part-time work is off on public holidays unless the user says
+     * otherwise, asked once on the days' page. 1.32 put them in as working days and asked again every month.
+     */
+    val holidaysOff: Boolean = true,
     /** [SETUP-02] Painted roster days: a type id, or null for a plain day off. */
     val painted: Map<LocalDate, Long?> = emptyMap(),
     /**
@@ -147,7 +152,7 @@ data class SetupDraft(
     fun pattern(today: LocalDate): WorkPattern? = when {
         usesRotation -> rotation.takeIf { it.isNotEmpty() }?.let { WorkPattern.Rotation(today, it, anchorDate = anchor ?: today) }
         style == WorkStyle.DAY || style == WorkStyle.HOURLY && !noFixedDays ->
-            WorkPattern.Weekly.fromSteps(today, weekly).takeIf { w -> w.steps.any { !isOff(it) } }
+            WorkPattern.Weekly.fromSteps(today, weekly, holidaysOff = holidaysOff).takeIf { w -> w.steps.any { !isOff(it) } }
         else -> null
     }
 

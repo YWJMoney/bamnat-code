@@ -833,7 +833,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         }
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
-    val answers = remember(query, share) { HelpFaq.search(query, HelpFaq.topics(share), limit = 3) }
+    val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
+    val answers = remember(query, share, hiddenKinds) { HelpFaq.search(query, HelpFaq.topics(share).withoutKinds(hiddenKinds), limit = 3) }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
@@ -855,7 +856,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         }
     }
     // [GUIDE-07] Features too: where each is, what it does, whether it is off here.
-    val features = remember(query) { com.bamnat.app.ui.guide.FeatureSearch.search(query, limit = 3) }
+    val features = remember(query, hiddenKinds) { com.bamnat.app.ui.guide.FeatureSearch.search(query, limit = 3, hidden = hiddenKinds) }
     if (features.isNotEmpty()) {
         Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))

@@ -217,13 +217,14 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
             if (wide) {
                 // Unfolded: today and the cover finder on the left, the table on the right.
                 Row(Modifier.fillMaxSize()) {
+                    // [J133-50] 1.33 (직접 써 보기, 폴드): a picked day's result on top of the left side, not under the cards.
                     Column(Modifier.weight(0.42f).fillMaxSize().verticalScroll(rememberScrollState())) {
-                        TodayTeams(roster, rotation, snap, today, guessed, onEdit = { editing = true })
-                        CoverHint(onPick = { picked = today.plusDays(1) })
                         picked?.let { day ->
                             CoverPanel(day, roster, rotation, snap, restMinutes, vm::setRest, onClose = { picked = null },
                                 onStep = { step -> picked = day.plusDays(step.toLong()) })
                         }
+                        TodayTeams(roster, rotation, snap, today, guessed, onEdit = { editing = true })
+                        if (picked == null) CoverHint(onPick = { picked = today.plusDays(1) })
                     }
                     Column(Modifier.weight(0.58f).fillMaxSize()) {
                         TableArea(view, { view = it }, month, { month = it }, roster, rotation, snap, today, picked) { picked = if (picked == it) null else it }
@@ -304,11 +305,12 @@ private fun TodayTeams(roster: TeamRoster, rotation: WorkPattern.Rotation, snap:
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("오늘 ${Fmt.dayTitle(today)}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         val ordered = listOf(roster.mine) + roster.teams.filterNot { it.mine }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // [J133-50] Every team in sight: the cards share the width (1.32 scrolled sideways and cut the last team off).
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ordered.forEach { team ->
                 val type = roster.shiftOn(rotation, team, today)?.let { snap.typesById[it] }?.takeIf { !it.isOff }
                 val next = roster.shiftOn(rotation, team, today.plusDays(1))?.let { snap.typesById[it] }?.takeIf { !it.isOff }
-                TeamCard(team, type, next)
+                TeamCard(team, type, next, Modifier.weight(1f))
             }
         }
         if (guessed) {
@@ -324,29 +326,32 @@ private fun TodayTeams(roster: TeamRoster, rotation: WorkPattern.Rotation, snap:
 }
 
 @Composable
-private fun TeamCard(team: TeamRoster.Team, type: ShiftType?, next: ShiftType?) {
+private fun TeamCard(team: TeamRoster.Team, type: ShiftType?, next: ShiftType?, modifier: Modifier = Modifier) {
     val tint = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
     val desc = "${team.name}${if (team.mine) ", 내 조" else ""}, 오늘 ${type?.name ?: "쉬는 날"}, 내일 ${next?.name ?: "쉬는 날"}"
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (type == null) MaterialTheme.colorScheme.surfaceContainerLow else tint.copy(alpha = 0.14f),
-        modifier = Modifier
-            .widthIn(min = 92.dp)
+        modifier = modifier
             .then(if (team.mine) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
             .semantics(mergeDescendants = true) { contentDescription = desc },
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(horizontal = 6.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(team.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(team.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
                 if (team.mine) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     Text("내 조", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 1.dp))
                 }
             }
             ShiftBadge(type, text = if (type == null) "휴" else null, outlined = type == null, size = 36.dp)
-            Text(type?.let { t -> if (t.hasTimes) "${t.name} ${Fmt.timeRange(t.start!!, t.end!!)}" else t.name } ?: "쉬는 날",
-                style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            Text(type?.name ?: "쉬는 날", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            type?.takeIf { it.hasTimes }?.let { t ->
+                Text(Fmt.timeRange(t.start!!, t.end!!), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text("내일 ${next?.name ?: "휴"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

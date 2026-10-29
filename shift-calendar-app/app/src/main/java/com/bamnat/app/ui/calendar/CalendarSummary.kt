@@ -408,8 +408,10 @@ internal fun CalendarStartCard(start: CalendarStart, onAction: () -> Unit, modif
  * [CAL-07] Weekday work set by the week runs into public holidays: asked once a month whether those
  * days are off, with the dates named. Either answer can be taken back.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun HolidayWorkCard(month: YearMonth, dates: List<LocalDate>, onRest: () -> Unit, onKeep: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HolidayWorkCard(month: YearMonth, dates: List<LocalDate>, onRest: () -> Unit, onKeep: () -> Unit, modifier: Modifier = Modifier,
+                            onAlways: (() -> Unit)? = null) {
     val cal = LocalCalendarColors.current
     val names = dates.joinToString(", ") { d -> "${d.dayOfMonth}일 ${com.bamnat.core.holiday.KoreanHolidays.nameOf(d).orEmpty()}".trim() }
     Surface(
@@ -427,10 +429,11 @@ internal fun HolidayWorkCard(month: YearMonth, dates: List<LocalDate>, onRest: (
             }
             Text("$names · 쉬는 날이면 한 번에 바꿀 수 있어요.", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            // [J133-03] 1.33: a third answer, so the card is not asked again every month.
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
                 TextButton(onClick = onKeep) { Text("그대로 일해요") }
-                Spacer(Modifier.width(4.dp))
-                Button(onClick = onRest) { Text("쉬는 날로") }
+                if (onAlways != null) OutlinedButton(onClick = onAlways) { Text("앞으로도 늘 쉬어요") }
+                Button(onClick = onRest) { Text("이번 달만 쉬어요") }
             }
         }
     }

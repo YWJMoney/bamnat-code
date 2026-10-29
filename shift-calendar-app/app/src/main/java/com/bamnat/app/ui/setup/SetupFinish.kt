@@ -180,7 +180,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             onFix = { vm.fix(SetupStep.ORDER) },
         )
         d.style == WorkStyle.HOURLY && d.noFixedDays -> SummaryCard("요일", "그때그때 달라요. 일한 날 달력에 적어요", onFix = { vm.fix(SetupStep.ORDER) })
-        else -> SummaryCard("요일", weekLine(d), onFix = { vm.fix(SetupStep.ORDER) })
+        else -> SummaryCard("요일", weekLine(d) + if (d.holidaysOff) " · 공휴일 쉼" else " · 공휴일에도 일함", onFix = { vm.fix(SetupStep.ORDER) })
     }
     if (d.usesRotation) {
         val date = vm.questionDate(d)

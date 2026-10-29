@@ -38,3 +38,20 @@ class TypeShown(val choices: List<TypeExposure.Choice>) {
         val ALL = TypeShown(TypeExposure.ALL)
     }
 }
+
+/**
+ * [J133-06] 1.33 (보고서 심각 6, G0): the kinds of work hidden from new calendars (서버 설정, e.g. 투자 before it opens) that
+ * no calendar on this phone uses. 기능 찾기 and 도움말 leave their features out, so a new user is never pointed at what
+ * cannot be made yet.
+ */
+@Composable
+fun rememberHiddenKinds(): Set<WorkStyle> {
+    val c = LocalContext.current.appContainer
+    val shown = typeChoices()
+    val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    return remember(shown, calendars, settings.workStyle) {
+        val used = calendars.mapNotNull { c.calendars.styleOf(it.id, settings.workStyle) }.toSet() + listOfNotNull(settings.workStyle)
+        WorkStyle.entries.filter { !shown.shows(it) && it !in used }.toSet()
+    }
+}

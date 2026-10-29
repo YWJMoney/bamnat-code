@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.GuideStore
+import com.bamnat.app.appContainer
 
 /**
  * U 1.32 [UX132-07] (조사 4.6, NN/g "한 번에 하나, 알맞은 때"): a one-line tip where the thing is, shown until × once.
@@ -37,6 +38,13 @@ internal fun OnceTip(key: String, text: String, modifier: Modifier = Modifier) {
     if (!shown) return
     val tipsOff = remember { GuideStore.get(context).isOff("guide.tips", com.bamnat.app.data.PersonalCalendar.MAIN) }
     if (tipsOff) return
+    // [J133-51] 1.33 (사용자 "질문이 너무 많고"): one tip a run of the app, and none the day a setup was just made.
+    val allowed = remember(key) {
+        val c = context.appContainer
+        val quiet = !com.bamnat.core.profile.AskScheduler.tipAllowed(c.asks.of(com.bamnat.app.data.PersonalCalendar.MAIN), com.bamnat.core.time.Today.date())
+        !quiet && OnceTipSlot.claim(key)
+    }
+    if (!allowed) return
     val scheme = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = scheme.secondaryContainer, contentColor = scheme.onSecondaryContainer,
         modifier = modifier.fillMaxWidth()) {
@@ -46,5 +54,14 @@ internal fun OnceTip(key: String, text: String, modifier: Modifier = Modifier) {
             Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             IconButton(onClick = { hints.markDone(key); shown = false }) { Icon(Icons.Filled.Close, "안내 닫기") }
         }
+    }
+}
+
+/** [J133-51] The one tip this run of the app may show: the first to ask keeps it. */
+internal object OnceTipSlot {
+    @Volatile private var holder: String? = null
+    @Synchronized fun claim(key: String): Boolean {
+        if (holder == null) holder = key
+        return holder == key
     }
 }

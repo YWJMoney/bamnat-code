@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.appContainer
 import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,6 +60,13 @@ import kotlinx.coroutines.launch
  * gallery that came out slanted or small is offered once more through the scanner, which can open the gallery itself.
  * Taken out of PayslipImport.kt (1.30, so the result screen and these buttons are changed apart).
  */
+/** [J133-07] The cause in words, and its code with the exception's class in the event log (no message, nothing read). */
+private fun ocrFailed(context: android.content.Context, e: Throwable): String {
+    val why = com.bamnat.app.pay.OcrModel.why(e)
+    runCatching { context.appContainer.telemetry.event("ocr_fail", "${why.code} ${e.javaClass.simpleName}") }
+    return why.text
+}
+
 @Composable
 internal fun ScanButtons(
     onText: (String) -> Unit = {}, modifier: Modifier = Modifier,
@@ -103,8 +111,11 @@ internal fun ScanButtons(
                 throw e
             } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
                 error = e.message
+                context.appContainer.telemetry.event("ocr_fail", "not_ready")
             } catch (e: Exception) {
-                error = "사진을 읽지 못했어요. 다른 사진으로 해 보거나 글로 붙여 넣어 주세요."
+                ocrFailed(context, e).let { error = it }
+            } catch (e: OutOfMemoryError) {
+                ocrFailed(context, e).let { error = it }
             } finally {
                 if (taken && last?.first != uri) PayslipScanner.clear(context)
                 reading = false

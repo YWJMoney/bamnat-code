@@ -842,3 +842,7 @@ internal object HelpFaq {
         return topics.filter { t -> t.screens.any { s -> SearchText.norm(s).let { it.isNotEmpty() && it in a } } }
     }
 }
+
+/** [J133-06] The topics of kinds of work hidden here (tag 투자 while 투자 is hidden) left out. */
+fun List<HelpTopic>.withoutKinds(hidden: Set<com.bamnat.core.work.WorkStyle>): List<HelpTopic> =
+    if (hidden.isEmpty()) this else filter { t -> hidden.none { it.label == t.tag } }

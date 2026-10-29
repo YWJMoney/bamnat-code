@@ -249,14 +249,17 @@ fun PayScreen(
                     val month by vm.month.collectAsStateWithLifecycle()
                     val settings by vm.settings.collectAsStateWithLifecycle()
                     var fromSlip by remember { mutableStateOf(false) }
+                    val setupContext = LocalContext.current
                     // [PAYS-12] The easy setup first; the question-by-question one behind 자세히 고치기, from what it had.
                     val detailed = detailedFrom
                     if (detailed == null) PayQuickSetup(
                         initial = profile,
+                        style = settings.workStyle,
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
                         slipRules = { base, read, rules -> vm.slipRules(base, snap, read, rules) },
                         onDone = { p, slip ->
+                            if (companyFind) com.bamnat.app.ui.company.closePayFindLine(setupContext, vm.calendarId)
                             vm.saveSetup(p, slip, invite = !(slip && onShareWay != null))
                             editingSetup = false
                             if (slip && onShareWay != null) plazaAsk = true

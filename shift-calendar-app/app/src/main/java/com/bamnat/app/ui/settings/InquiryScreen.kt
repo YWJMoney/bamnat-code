@@ -554,7 +554,8 @@ private fun InquiryForm(
         )
         // [UX-05] An answer that fits what is being written, before it is sent.
         val body = bodyOf(text)
-        val topics = remember { HelpFaq.topics(vm.shareOn) }
+        val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
+    val topics = remember(hiddenKinds) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds) }
         val tips = remember(body, kind) {
             if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.forQuestion(body, topics, limit = 2)
         }
@@ -1145,7 +1146,8 @@ private fun HelpHome(
     onOpenPublic: (PublicInquiry) -> Unit,
     onIdea: (String) -> Unit = {},
 ) {
-    val topics = remember { HelpFaq.topics(vm.shareOn) }
+    val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
+    val topics = remember(hiddenKinds) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1198,9 +1200,9 @@ private fun HelpHome(
             val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
             // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
             val guideContainer = LocalContext.current.appContainer
-            val features = remember(query) {
+            val features = remember(query, hiddenKinds) {
                 val (_, style) = guideContainer.guideCalendar()
-                com.bamnat.app.ui.guide.FeatureSearch.search(query, style)
+                com.bamnat.app.ui.guide.FeatureSearch.search(query, style, hidden = hiddenKinds)
             }
             val total = found.size + settings.size + posts.size + features.size
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",

@@ -248,6 +248,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         })
     }
 
+    /**
+     * [J133-03] 1.33 앞으로도 늘 쉬어요: the weekly pattern itself keeps public holidays off, so the card is not asked again
+     * next month. Said back with undo.
+     */
+    fun restHolidaysAlways() {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule
+            val before = schedule.patterns.first()
+            if (before.none { it is com.bamnat.core.model.WorkPattern.Weekly && !it.holidaysOff }) return@launch
+            schedule.restorePatterns(before.map { if (it is com.bamnat.core.model.WorkPattern.Weekly) it.copy(holidaysOff = true) else it })
+            _messages.emit(UndoMessage("앞으로 공휴일은 늘 쉬는 날로 둘게요") { schedule.restorePatterns(before) })
+        }
+    }
+
     /** [CAL-07] The holidays become days off in one write, said back with undo. */
     fun restHolidays(dates: List<LocalDate>) {
         if (dates.isEmpty()) return

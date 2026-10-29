@@ -106,17 +106,31 @@ fun PayQuickSetup(
      * the base at once), the setup only closes.
      */
     onApplied: () -> Unit = {},
+    /** [J133-05] The calendar's kind of work: 알바 starts on 시급 파트타임, 직장인 on 주5일, whatever the shifts look like. */
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
     val pattern = remember(snapshot) { PatternTimeline.current(snapshot.patterns, today) }
-    val guessed = remember(snapshot, initial) { WorkForms.guess(snapshot.shiftTypes, pattern, initial) }
+    val guessed = remember(snapshot, initial, style) {
+        WorkForms.guess(snapshot.shiftTypes, pattern, initial).let { g ->
+            when {
+                initial != null -> g
+                style == com.bamnat.core.work.WorkStyle.HOURLY -> WorkForm.PART_TIME
+                style == com.bamnat.core.work.WorkStyle.DAY && g != WorkForm.ON_CALL -> WorkForm.OFFICE
+                else -> g
+            }
+        }
+    }
     // [PAYF-01] A public row picked in 급여 방식 찾기 with no pay way of its own starts the setup like a cycle put in from it.
     var foundCycle by remember { mutableStateOf<PublicCycle?>(null) }
     val cycleStart = fromCycle?.takeIf { initial == null } ?: foundCycle?.takeIf { initial == null }?.let { it to it.codes }
     // [PAYG-12] 1.30 BA: 설정 고치기 too takes the form of a public row picked (only the form; the values the setup has stay).
     val cycleForm = cycleStart ?: foundCycle?.let { it to it.codes }
-    var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: initial?.let { guessed }) }
+    // [J133-05] 1.33 (보고서 심각 4): the form the calendar points to is picked already, so '다음' is on from the start.
+    var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed) }
+    // [J133-04] 1.33 (보고서 C2): 5명 미만 회사 has no 연장·야간·휴일 가산 by law; asked of a part-timer, "모르면 아니요".
+    var fiveOrMore by remember { mutableStateOf(initial?.fiveOrMoreEmployees) }
     var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
     // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
     var hours by remember { mutableStateOf<Int?>(null) }
@@ -145,6 +159,7 @@ fun PayQuickSetup(
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
     val draft = draftOf(form, amount, holiday)?.copy(taxMode = tax, taxChosen = true)
+        ?.let { p -> if (form?.wageType == WageType.HOURLY) p.copy(fiveOrMoreEmployees = fiveOrMore ?: false) else p }
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
 
@@ -239,6 +254,7 @@ fun PayQuickSetup(
                     // [PAYF-06] The base, and folded under it the 통상시급's hours when the user knows them.
                     BaseFields(wage, amount, onBase = { fromSlip = null; amount = it }, hours = hours, onHours = { fromSlip = null; hours = it },
                         profile = draft ?: initial, month = thisMonth)
+                    if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false) { fromSlip = null; fiveOrMore = it }
                     SlipEntry(onByHand = { slipByHand = true; slipOpen = true }) { slipOpen = true }
                 }
                 HOLIDAY -> {
@@ -298,6 +314,22 @@ fun PayQuickSetup(
                 ) { Text(if (step == CONFIRM) "이대로 계산" else "다음") }
             }
         }
+    }
+}
+
+/** [J133-04] 같이 일하는 사람이 5명 이상인가요? Two chips, 아니요 unless the user knows. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun FiveOrMoreRow(yes: Boolean, onChange: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("같이 일하는 사람이 사장님 빼고 5명 이상인가요?", style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.bamnat.app.ui.components.FilterChip(selected = !yes, onClick = { onChange(false) }, label = { Text("아니요 (모르면 이것)") })
+            com.bamnat.app.ui.components.FilterChip(selected = yes, onClick = { onChange(true) }, label = { Text("네, 5명 이상") })
+        }
+        Text(if (yes) "야간(밤 10시~아침 6시)·연장·휴일에 일하면 시급의 1.5배로 계산해요."
+            else "5명 미만 가게는 법으로 야간·연장·휴일 가산이 없어서 시급대로 계산해요. 주휴수당은 그대로 받아요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

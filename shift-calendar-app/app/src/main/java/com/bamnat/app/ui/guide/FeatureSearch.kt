@@ -49,8 +49,10 @@ import com.bamnat.core.work.WorkStyle
  * work come first when they fit as well.
  */
 internal object FeatureSearch {
-    fun search(query: String, style: WorkStyle? = null, limit: Int = 4, features: List<AppFeature> = FeatureRegistry.all): List<AppFeature> =
-        SearchText.best(features, limit) { f ->
+    fun search(query: String, style: WorkStyle? = null, limit: Int = 4, features: List<AppFeature> = FeatureRegistry.all,
+               hidden: Set<WorkStyle> = emptySet()): List<AppFeature> =
+        // [J133-06] A feature only for kinds of work hidden here is not offered.
+        SearchText.best(features.filter { f -> f.styles.isEmpty() || !hidden.containsAll(f.styles) }, limit) { f ->
             val s = SearchText.score(query, f.name, f.keywords, f.what + " " + f.where)
             when {
                 s <= 0 || style == null -> s

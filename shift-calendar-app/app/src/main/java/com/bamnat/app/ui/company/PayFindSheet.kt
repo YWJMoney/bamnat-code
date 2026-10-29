@@ -605,3 +605,12 @@ fun PayFindLine(@Suppress("UNUSED_PARAMETER") onSaved: ((PayProfile) -> Unit)? =
 }
 
 private const val LINE_CLOSED = "pay_find_line"
+
+/**
+ * [J133-51] 1.33 (직접 써 보기): the pay was just set up from the easy setup, whose first question was this same search: the
+ * line is not offered again on top of the result.
+ */
+fun closePayFindLine(context: android.content.Context, calendar: String) {
+    val key = if (calendar == com.bamnat.app.data.PersonalCalendar.MAIN) LINE_CLOSED else "$LINE_CLOSED:$calendar"
+    com.bamnat.app.ui.calendar.HintStore(context).markDone(key)
+}

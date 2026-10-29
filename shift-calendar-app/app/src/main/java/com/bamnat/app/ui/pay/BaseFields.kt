@@ -69,7 +69,9 @@ internal fun BaseFields(
                 modifier = Modifier.heightIn(min = 48.dp))
         }
         if (base == null || base <= 0) {
-            Text("회사 방식은 기본급으로 계산해요. ${wage.baseName()}만 넣으면 이번 달 예상 급여가 바로 보여요.",
+            // [J133-05] 1.33: a part-timer is told 시급, never 기본급.
+            Text(if (wage == WageType.MONTHLY) "회사 방식은 기본급으로 계산해요. 기본급만 넣으면 이번 달 예상 급여가 바로 보여요."
+                else "${wage.baseName()}만 넣으면 이번 달 예상 급여가 바로 보여요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (wage != WageType.MONTHLY) return@Column

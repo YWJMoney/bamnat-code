@@ -69,7 +69,7 @@ object SetupDraftCodec {
         .put("types", JSONArray(d.types.map(::typeJson)))
         .put("roles", JSONObject().apply { d.roles.forEach { (id, r) -> put(id.toString(), r.name) } })
         .put("timesOk", d.timesConfirmed)
-        .put("rotation", ids(d.rotation)).put("weekly", ids(d.weekly)).put("noFixedDays", d.noFixedDays)
+        .put("rotation", ids(d.rotation)).put("weekly", ids(d.weekly)).put("noFixedDays", d.noFixedDays).put("holidaysOff", d.holidaysOff)
         .put("painted", JSONObject().apply { d.painted.forEach { (date, id) -> put(date.toString(), id ?: JSONObject.NULL) } })
         .put("leaves", JSONObject().apply { d.leaves.forEach { (date, l) -> put(date.toString(), "${l.kind.code}.${l.quarters}.${if (l.fromStart) 1 else 0}") } })
         .putOpt("anchor", d.anchor?.toString()).put("todayOk", d.todayConfirmed)
@@ -94,6 +94,7 @@ object SetupDraftCodec {
             rotation = ids(o.optJSONArray("rotation")),
             weekly = ids(o.optJSONArray("weekly")).takeIf { it.size == 7 } ?: d.weekly,
             noFixedDays = o.optBoolean("noFixedDays"),
+            holidaysOff = o.optBoolean("holidaysOff", true),
             painted = o.optJSONObject("painted")?.let { p ->
                 p.keys().asSequence().mapNotNull { k ->
                     runCatching { LocalDate.parse(k) }.getOrNull()?.let { date -> date to (if (p.isNull(k)) null else p.getLong(k)) }

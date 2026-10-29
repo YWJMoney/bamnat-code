@@ -1098,6 +1098,7 @@ fun CalendarScreen(
                     onRest = { vm.restHolidays(holidayDays) },
                     onKeep = { vm.keepHolidayWork(visibleMonth) },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    onAlways = vm::restHolidaysAlways,
                 )
             })
             // [SETUP-02] A roster that comes every month: this month's or next month's, until a day of it is painted.
