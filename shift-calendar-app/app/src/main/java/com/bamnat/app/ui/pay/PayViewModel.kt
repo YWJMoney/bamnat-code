@@ -97,6 +97,9 @@ class PayViewModel(
     val month: StateFlow<YearMonth> = _month.asStateFlow()
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }
 
+    /** 1.32 [WTYP-21] 연·월 바로 이동. */
+    fun showMonth(m: java.time.YearMonth) { _month.value = m }
+
     private val calculator = PayCalculator()
     val settings: StateFlow<com.bamnat.app.data.AppSettings> =
         scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())

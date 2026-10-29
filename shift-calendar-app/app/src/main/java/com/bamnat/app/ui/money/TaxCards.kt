@@ -254,7 +254,7 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
                 Muted(kind.hint)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { month = month.minusMonths(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-                    Text("${Fmt.month(month)}분", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    com.bamnat.app.ui.calendar.MonthJumpTitle(month, { month = it }, Modifier.weight(1f), suffix = "분") // 1.32 [WTYP-21]
                     IconButton(onClick = { month = month.plusMonths(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
                 }
                 // [D68] The photo is read on the phone (U의 ImagePrep를 지남); nothing is sent anywhere.

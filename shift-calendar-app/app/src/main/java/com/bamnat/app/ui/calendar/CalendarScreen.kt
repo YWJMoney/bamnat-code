@@ -2305,6 +2305,20 @@ private fun PaintBar(
     }
 }
 
+/**
+ * 1.32 [WTYP-21] (근무유형 조사 6장 자영업, 오늘얼마 리뷰 "작년 같은 달을 보려면 한 달씩 넘겨야") The month in a screen's title
+ * row: a tap opens 연·월 바로 이동, as the calendar's own title does.
+ */
+@Composable
+internal fun MonthJumpTitle(month: YearMonth, onPick: (YearMonth) -> Unit, modifier: Modifier = Modifier,
+                            style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium, suffix: String = "") {
+    var open by remember { mutableStateOf(false) }
+    Text(Fmt.month(month) + suffix, style = style, maxLines = 1, softWrap = false,
+        modifier = modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "연·월 고르기", role = Role.Button) { open = true }
+            .padding(horizontal = 4.dp, vertical = 6.dp))
+    if (open) MonthPickerDialog(month, onDismiss = { open = false }, onPick = { open = false; onPick(it) })
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MonthPickerDialog(

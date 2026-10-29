@@ -219,7 +219,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
             }
-            Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium)
+            com.bamnat.app.ui.calendar.MonthJumpTitle(month, { vm.showMonth(it) }) // 1.32 [WTYP-21]
             IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }

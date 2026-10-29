@@ -205,7 +205,7 @@ internal fun RecordsTab(state: InvestState, open: (InvestSheet) -> Unit) {
     val ym = YearMonth.parse(month)
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { month = ym.minusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-        Text(Fmt.month(ym), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        com.bamnat.app.ui.calendar.MonthJumpTitle(ym, { month = it.toString() }, Modifier.weight(1f)) // 1.32 [WTYP-21]
         IconButton(onClick = { month = ym.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
     }
     val days = (state.trades.keys + state.cash.keys).filter { YearMonth.from(it) == ym }.sortedDescending()

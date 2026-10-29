@@ -401,7 +401,7 @@ private fun PayResult(
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (stack) Spacer(Modifier.weight(1f)) else who(Modifier.weight(1f))
             IconButton(onClick = { vm.moveMonth(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-            Text(Fmt.month(month), style = MaterialTheme.typography.titleSmall)
+            com.bamnat.app.ui.calendar.MonthJumpTitle(month, { vm.showMonth(it) }, style = MaterialTheme.typography.titleSmall) // 1.32 [WTYP-21]
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             if (stack) Spacer(Modifier.weight(1f))
         }
