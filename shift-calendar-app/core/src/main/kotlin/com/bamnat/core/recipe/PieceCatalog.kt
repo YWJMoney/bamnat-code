@@ -141,7 +141,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
         ),
     ),
 
-    /** [RCP-13] 현장 단가표 틀: how a field calendar counts its work, the 일당 the receiver's. */
+    /** [RCP-13] 현장 단가표 틀: how a field calendar counts its work (FieldRules), the 일당 the receiver's; 작업·경비 이름 become 분류. */
     FIELD_SHEET(
         "field", "현장 단가표 틀", setOf(WorkStyle.FIELD),
         listOf(
@@ -154,13 +154,19 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
         ),
     ),
 
-    /** [RCP-14] 가게 영업 틀: open days, the closing checklist, card fees and cost categories. */
+    /** [RCP-14] 가게 영업 틀: open days and hours (ShopRules), card fee and settlement (ShopMoney), 마감 체크 and 경비 분류. */
     SHOP(
         "shop", "가게 영업 틀", setOf(WorkStyle.BUSINESS),
         listOf(
             Field.Days("open"),
+            Field.Clock("opens", optional = true),
+            Field.Clock("closes", optional = true),
+            Field.Flag("holidaysClosed"),
+            Field.Num("cardFee", 0.0, 5.0, decimals = 2, optional = true),
+            Field.Num("settleDays", 0.0, 10.0, optional = true),
+            Field.Flag("simpleTax"),
+            Field.Num("valueAdded", 5.0, 40.0, optional = true),
             Field.Texts("closing", 20, 60),
-            Field.Items("cardFees", 6, optional = true, fields = listOf(Field.Text("name", 20, min = 1), Field.Num("percent", 0.0, 10.0, decimals = 2))),
             Field.Texts("costs", 20, 20),
         ),
     ),

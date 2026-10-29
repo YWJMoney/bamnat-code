@@ -240,6 +240,9 @@ class AppContainer(context: Context) {
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
         proof = { slipProof() })
+    /** [RCP-10] 1.34 나눔 판: the recipe server (the same worker); screenshots and tests put a fake in its place. */
+    var recipeApi: com.bamnat.app.recipe.RecipeApi = com.bamnat.app.recipe.RecipeClient(
+        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [PLAZA-32] 1.27 AI: the one line the company's 정보 광장 shows first after 이 설정 쓰기 (in memory, once). */
     var pendingPlazaNote: String? = null
     /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */

@@ -1,0 +1,245 @@
+package com.bamnat.app.recipe
+
+import com.bamnat.app.BuildConfig
+import com.bamnat.app.company.CompanyException
+import com.bamnat.app.company.objects
+import com.bamnat.app.company.optStringOrNull
+import com.bamnat.app.company.readCall
+import com.bamnat.app.company.serverCall
+import com.bamnat.app.company.serverExchange
+import com.bamnat.core.recipe.Cover
+import com.bamnat.core.recipe.Recipe
+import com.bamnat.core.recipe.RecipeCodec
+import com.bamnat.core.work.WorkStyle
+import java.net.URLEncoder
+import java.time.Instant
+import org.json.JSONObject
+
+/** [RCP-21] A recipe as the plaza lists it. [kept] is the 7일 유지율 in percent, null under 20 applications. */
+data class RecipeItem(
+    val code: String,
+    val title: String,
+    val summary: String,
+    val styles: Set<WorkStyle>,
+    val cover: Cover,
+    val nick: String?,
+    val version: Int,
+    val likes: Int,
+    val dislikes: Int,
+    val users: Int,
+    val kept: Int?,
+    val official: Boolean,
+    val publicData: Boolean,
+    val parent: String?,
+    val at: Instant,
+    val fresh: Boolean = false,
+)
+
+/** [RCP-23] One recipe with its written form; [state], [note] and [reasons] only for its maker. */
+data class RecipeDoc(
+    val item: RecipeItem,
+    val hash: String,
+    val body: String,
+    val scope: String,
+    val mine: Boolean,
+    val myVote: Int? = null,
+    val state: String? = null,
+    val note: String? = null,
+    val reasons: Reasons? = null,
+) {
+    /** The recipe itself, checked again on this phone: the written form hashes to what the server named it (S10). */
+    fun recipe(): Recipe {
+        val r = RecipeCodec.read(body)
+        if (RecipeCodec.hash(r) != hash) throw com.bamnat.core.recipe.RecipeException("hash")
+        return r
+    }
+}
+
+/** [RCP-31] What 안좋아요 said, for the maker: how many of each reason, and the short opinions (never who). */
+data class Reasons(val tally: Map<String, Int>, val opinions: List<Pair<String, String>>)
+
+data class RecipePage(val items: List<RecipeItem>, val next: Int?)
+
+/** [RCP-29] What the server said of a recipe sent. */
+data class Sent(val code: String, val version: Int, val hash: String, val state: String, val scope: String)
+
+/** [RCP-35] A post in a recipe's talk. */
+data class RecipePost(
+    val id: String,
+    val who: Int,
+    val nick: String?,
+    val body: String,
+    val at: Instant,
+    val kind: String,
+    val parent: String?,
+    val mine: Boolean,
+    val maker: Boolean,
+    val usingDays: Int?,
+    val likes: Int,
+    val dislikes: Int,
+    val myVote: Int? = null,
+    val author: String? = null,
+    val hidden: Boolean = false,
+    val reasons: List<Pair<String, String>> = emptyList(),
+)
+
+data class RecipeTalk(val posts: List<RecipePost>, val left: Int?, val mutedUntil: Instant? = null)
+
+data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: Boolean = false)
+
+/** [RCP-29] The phone's own recipes in every state. */
+data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>)
+
+/** [RCP-21]..[RCP-35] What the app asks of the 나눔 판 server; screenshots and tests answer with a fake. */
+interface RecipeApi {
+    val enabled: Boolean
+    suspend fun list(style: WorkStyle?, sort: String, q: String = "", cursor: Int = 0): RecipePage
+    suspend fun show(code: String, device: String?, version: Int? = null): RecipeDoc
+    suspend fun publish(device: String, recipe: Recipe, scope: String): Sent
+    suspend fun newVersion(device: String, code: String, recipe: Recipe, scope: String?): Sent
+    suspend fun delete(device: String, code: String)
+    suspend fun vote(device: String, code: String, value: Int?, reason: String? = null, opinion: String? = null): Votes
+    suspend fun applied(code: String, kept: Boolean)
+    suspend fun flag(device: String, code: String, reason: String)
+    suspend fun mine(device: String): MyRecipes
+    suspend fun talk(device: String?, code: String): RecipeTalk
+    suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?): String
+    suspend fun talkVote(device: String, post: String, value: Int?, reason: String? = null, opinion: String? = null): Votes
+}
+
+class RecipeClient(
+    private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
+    /** [COMM-09] The X-Hide header: the writers this phone hides. */
+    private val hidden: () -> String? = { null },
+) : RecipeApi {
+    override val enabled: Boolean get() = baseUrl.isNotBlank()
+
+    private fun call(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
+        val headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()
+        return serverExchange(baseUrl, method, path, body, device, headers).json
+    }
+
+    override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int): RecipePage = readCall {
+        val query = buildList {
+            style?.let { add("style=${it.name}") }
+            add("sort=$sort")
+            if (q.isNotBlank()) add("q=" + URLEncoder.encode(q.trim().take(30), "UTF-8"))
+            if (cursor > 0) add("cursor=$cursor")
+        }.joinToString("&")
+        val o = call("GET", "/api/recipes?$query")
+        RecipePage(o.optJSONArray("items").objects().map(::item), if (o.isNull("next")) null else o.optInt("next"))
+    }
+
+    override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc = readCall {
+        val o = call("GET", "/api/recipes/$code" + (version?.let { "?v=$it" } ?: ""), device = device)
+        RecipeDoc(
+            item(o), o.getString("hash"), o.getString("body"), o.optString("scope", "public"), o.optBoolean("mine"),
+            o.optInt("myVote").takeIf { o.has("myVote") }, o.optStringOrNull("state"), o.optStringOrNull("note"),
+            o.optJSONObject("reasons")?.let { r ->
+                val t = r.optJSONObject("tally")
+                Reasons(t?.keys()?.asSequence()?.associateWith { t.optInt(it) }.orEmpty(),
+                    r.optJSONArray("opinions").objects().map { it.optString("reason") to it.optString("text") })
+            },
+        )
+    }
+
+    private fun sent(o: JSONObject) = Sent(o.getString("code"), o.optInt("version", 1), o.getString("hash"), o.getString("state"), o.optString("scope", "public"))
+
+    override suspend fun publish(device: String, recipe: Recipe, scope: String): Sent = serverCall {
+        sent(call("POST", "/api/recipes", JSONObject().put("device", device).put("scope", scope).put("recipe", JSONObject(RecipeCodec.write(recipe)))))
+    }
+
+    override suspend fun newVersion(device: String, code: String, recipe: Recipe, scope: String?): Sent = serverCall {
+        sent(call("POST", "/api/recipes/$code/versions", JSONObject().put("device", device).put("recipe", JSONObject(RecipeCodec.write(recipe)))
+            .apply { scope?.let { put("scope", it) } }))
+    }
+
+    override suspend fun delete(device: String, code: String) = serverCall {
+        call("DELETE", "/api/recipes/$code", device = device)
+        Unit
+    }
+
+    private fun votes(o: JSONObject) = Votes(o.optInt("likes"), o.optInt("dislikes"), o.optInt("myVote").takeIf { o.has("myVote") && !o.isNull("myVote") },
+        o.optBoolean("held"))
+
+    private fun voteBody(device: String, value: Int?, reason: String?, opinion: String?) = JSONObject().put("device", device)
+        .put("value", value ?: JSONObject.NULL).apply { reason?.let { put("reason", it) }; opinion?.let { put("opinion", it) } }
+
+    override suspend fun vote(device: String, code: String, value: Int?, reason: String?, opinion: String?): Votes = serverCall {
+        votes(call("POST", "/api/recipes/$code/vote", voteBody(device, value, reason, opinion)))
+    }
+
+    override suspend fun applied(code: String, kept: Boolean) = serverCall {
+        call("POST", "/api/recipes/$code/applied", JSONObject().put("kind", if (kept) "kept" else "applied"))
+        Unit
+    }
+
+    override suspend fun flag(device: String, code: String, reason: String) = serverCall {
+        call("POST", "/api/recipes/$code/flag", JSONObject().put("device", device).put("reason", reason))
+        Unit
+    }
+
+    override suspend fun mine(device: String): MyRecipes = readCall {
+        val o = call("GET", "/api/recipes/mine", device = device)
+        MyRecipes(o.optInt("trust"), o.optInt("reviewLeft"), o.optJSONArray("items").objects().map {
+            item(it) to Triple(it.optString("state"), it.optString("scope"), it.optStringOrNull("note"))
+        })
+    }
+
+    override suspend fun talk(device: String?, code: String): RecipeTalk = readCall {
+        val o = call("GET", "/api/recipes/$code/talk", device = device)
+        RecipeTalk(o.optJSONArray("posts").objects().map { p ->
+            RecipePost(
+                p.getString("id"), p.optInt("who"), p.optStringOrNull("nick"), p.optString("body"), Instant.parse(p.getString("at")),
+                p.optString("kind", "opinion"), p.optStringOrNull("parent"), p.optBoolean("mine"), p.optBoolean("maker"),
+                p.optInt("usingDays").takeIf { p.has("usingDays") && !p.isNull("usingDays") }, p.optInt("likes"), p.optInt("dislikes"),
+                p.optInt("myVote").takeIf { p.has("myVote") }, p.optStringOrNull("author"), p.optBoolean("hidden"),
+                p.optJSONArray("reasons").objects().map { it.optString("reason") to it.optString("text") },
+            )
+        }, o.optInt("left").takeIf { o.has("left") }, o.optStringOrNull("mutedUntil")?.let(Instant::parse))
+    }
+
+    override suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?): String = serverCall {
+        call("POST", "/api/recipes/$code/talk", JSONObject().put("device", device).put("body", body).put("kind", kind)
+            .apply { parent?.let { put("parent", it) }; usingDays?.let { put("usingDays", it) } }).getString("id")
+    }
+
+    override suspend fun talkVote(device: String, post: String, value: Int?, reason: String?, opinion: String?): Votes = serverCall {
+        votes(call("POST", "/api/recipes/talk/$post/vote", voteBody(device, value, reason, opinion)))
+    }
+
+    companion object {
+        fun item(o: JSONObject): RecipeItem {
+            val c = o.optJSONObject("cover")
+            return RecipeItem(
+                o.getString("code"), o.optString("title"), o.optString("summary"),
+                (0 until (o.optJSONArray("styles")?.length() ?: 0)).mapNotNull { i -> WorkStyle.entries.firstOrNull { it.name == o.getJSONArray("styles").optString(i) } }.toSet(),
+                if (c == null) Cover() else Cover(c.optLong("a", Cover().a), c.optLong("b", Cover().b), c.optInt("dir"), c.optString("emoji", Cover().emoji)),
+                o.optStringOrNull("nick"), o.optInt("version", 1), o.optInt("likes"), o.optInt("dislikes"), o.optInt("users"),
+                o.optInt("kept").takeIf { o.has("kept") && !o.isNull("kept") }, o.optBoolean("official"), o.optBoolean("publicData"),
+                o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"),
+            )
+        }
+
+        /** What to tell the user about a refusal from the 나눔 판. */
+        fun problem(e: Throwable): String {
+            val c = (e as? CompanyException)?.code ?: return "잠시 뒤 다시 해 주세요"
+            return when (c) {
+                "offline" -> "인터넷에 연결되지 않았어요"
+                "not_yet" -> "처리방침 3.8이 시행되는 11월 29일부터 쓸 수 있어요"
+                "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
+                "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
+                "rate_limited" -> "오늘은 더 올릴 수 없어요. 내일 다시 해 주세요"
+                "reason" -> "안좋아요 이유를 골라 주세요"
+                "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
+                "own" -> "내 레시피에는 누를 수 없어요"
+                "muted" -> "신고가 쌓여 30일 동안 쓸 수 없어요"
+                "not_found" -> "지워졌거나 가려진 레시피예요"
+                "same" -> "바뀐 것이 없어요"
+                "paused" -> "잠시 쉬고 있어요"
+                "too_big", "too_large" -> "레시피가 너무 커요. 조각을 줄여 주세요"
+                else -> com.bamnat.core.recipe.RecipeText.problemText(c)
+            }
+        }
+    }
+}

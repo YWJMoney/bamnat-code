@@ -62,8 +62,9 @@ object RecipeDescribe {
         ).joinToString(" · ")
         PieceKind.SHOP -> listOfNotNull(
             texts(p, "open").takeIf { it.isNotEmpty() }?.let { d -> "영업 " + d.joinToString("") { DAY_NAMES[it] ?: "" } },
+            listOfNotNull(p.values["opens"] as? String, p.values["closes"] as? String).takeIf { it.size == 2 }?.joinToString("~"),
+            (p.values["cardFee"] as? Number)?.let { "카드 수수료 ${it}%" },
             texts(p, "closing").takeIf { it.isNotEmpty() }?.let { "마감 체크 ${it.size}개" },
-            items(p, "cardFees").takeIf { it.isNotEmpty() }?.let { "카드 수수료 ${it.size}곳" },
             texts(p, "costs").takeIf { it.isNotEmpty() }?.let { "경비 분류 ${it.size}개" },
         ).joinToString(" · ")
         PieceKind.INVEST -> "원칙 ${items(p, "rules").size}개" + texts(p, "journal").takeIf { it.isNotEmpty() }?.let { " · 일지 칸 ${it.size}개" }.orEmpty()
