@@ -246,7 +246,7 @@ internal fun WishOffChips(date: LocalDate, calendarId: String) {
     val month = java.time.YearMonth.from(date)
     val picked = w.picked(month)
     androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        androidx.compose.material3.FilterChip(
+        com.bamnat.app.ui.components.FilterChip(
             selected = on,
             onClick = {
                 c.wishOff.toggle(calendarId, date)

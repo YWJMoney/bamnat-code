@@ -98,7 +98,7 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                 if (cash.toAmount() > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AmountField("그중 현금영수증 발행", receipt, { receipt = it }, Modifier.weight(1f), allowZero = true)
-                        androidx.compose.material3.FilterChip(selected = receipt.toAmount() == cash.toAmount(), onClick = { receipt = cash },
+                        com.bamnat.app.ui.components.FilterChip(selected = receipt.toAmount() == cash.toAmount(), onClick = { receipt = cash },
                             label = { Text("전부 발행") })
                     }
                     val missing = (cash.toAmount() - receipt.toAmount()).coerceAtLeast(0)

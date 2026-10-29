@@ -317,7 +317,7 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         Text("미리 정한 값", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.bamnat.core.hours.Stretches.Preset.entries.forEach { p ->
-                androidx.compose.material3.FilterChip(
+                com.bamnat.app.ui.components.FilterChip(
                     selected = p.matches(settings.weeklyLimitHours, settings.averageLimitHours, settings.stretchLimitHours),
                     onClick = { vm.update { it.copy(weeklyLimitHours = p.weekly, averageLimitHours = p.average, stretchLimitHours = p.stretch) } },
                     label = { Text(p.label) },
