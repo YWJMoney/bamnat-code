@@ -67,59 +67,79 @@ fun swatchOf(r: Recipe): ThemeSwatch? {
 }
 
 /**
- * [FREE-09][FREE-10] 1.35 테마 고르기: the theme worn now and its days, the eight 추천 테마 of this kind of work drawn as themselves, and
- * 입었던 테마. A tap opens [ThemeSheet] (입어 보기, 입기). 벗기 always comes back to the user's own look; no record changes either way.
+ * [FREE-09][FREE-10] 1.35 내 테마 (사용자 2026-10-30 21:37 "테마는 사용자 자신의 페이지 성격이 강하므로 … 지금 중복이 존재해"): the user's
+ * own wardrobe, not a second shop. The theme worn now, large, with its days and 벗기; 내 테마 (saved, 프로 more); 입었던 테마 to wear
+ * again. Finding new themes is 장터's ([onFind]); only a phone that has never worn one sees three to start with. A tap opens
+ * [ThemeSheet] (입어 보기, 입기). 벗기 always comes back to the user's own look; no record changes either way.
  */
 @Composable
-fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier) {
+fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() -> Unit)? = null, onFix: (() -> Unit)? = null) {
     val c = LocalContext.current.appContainer
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf<Pair<Recipe, String>?>(null) }
     var takingOff by remember { mutableStateOf(false) }
-    val themes = remember(style) { BuiltInThemes.of(style) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        lease.worn?.let { w ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val left = lease.daysLeft(Today.date().toEpochDay())
-                val runs = c.wardrobe.state() != ThemeLease.State.NONE
-                Text("지금 입은 테마: ${w.title}" + if (runs && left != null) " · ${left}일 남음" else "",
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { takingOff = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("벗기") }
-            }
-        }
-        Text("추천 테마 · " + (style?.let { com.bamnat.core.recipe.RecipeDescribe.short(it) } ?: "교대"), style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.semantics { heading() })
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            themes.forEach { r ->
-                Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { open = r to "builtin:${r.title}" },
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    swatchOf(r)?.let { ThemeThumb(it, width = 112.dp) }
-                    Text(r.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 지금 입은 테마: what the whole app wears now, drawn as itself.
+        androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val w = lease.worn
+                val look = remember(w?.body) { w?.let { runCatching { RecipeCodec.read(it.body) }.getOrNull()?.let(::swatchOf) } }
+                look?.let { ThemeThumb(it, width = 96.dp) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("지금 입은 테마", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(w?.title ?: "내 모양 (테마 없음)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                    if (w != null) {
+                        val left = lease.daysLeft(Today.date().toEpochDay())
+                        val runs = c.wardrobe.state() != ThemeLease.State.NONE
+                        Text(if (runs && left != null) "${left}일 남았어요. 끝나는 날 연장할지 물어요" else if (w.free) "장터에 올린 내 테마라 기간 없이 입어요" else "기간 없이 입어요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (w != null) TextButton(onClick = { takingOff = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("벗기") }
+                        // [THM-05] Within 7 days of a 새 판, the one before.
+                        val prev = remember(w?.ver) { c.wardrobe.previous() }
+                        if (w != null && prev != null) TextButton(onClick = { c.appScope.launch { c.wardrobe.backToPrevious() } }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("이전 판으로")
+                        }
+                        onFix?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 모양 고치기") } }
+                    }
                 }
             }
         }
-        val past = lease.history.filter { it.key != lease.worn?.key }
-        if (past.isNotEmpty()) {
-            Text("입었던 테마", style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
-            past.take(10).forEach { w ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "다시 보기") {
-                    runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code }
-                }, verticalAlignment = Alignment.CenterVertically) {
-                    Text((if (w.own) "🎨 " else "") + w.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Text(if (w.own) "내 테마" else "다시 입기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-        // [FREE-10] 내 테마로 저장: free one, 프로 ten (꾸미기 혜택).
-        var saveNote by remember { mutableStateOf<String?>(null) }
+        // 내 테마: saved looks, free one, 프로 ten (꾸미기 혜택). [THM-01] Mine in 장터 never runs out; mine kept to myself runs as others' do.
+        val mine = lease.history.filter { it.own && it.key != lease.worn?.key }
         val mineCount = lease.history.count { it.own }
         val limit = c.wardrobe.outfitLimit()
+        Text("내 테마 ($mineCount/$limit)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        if (mine.isNotEmpty()) Shelf(mine) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
+        var saveNote by remember { mutableStateOf<String?>(null) }
         OutlinedButton(onClick = {
             scope.launch { saveNote = if (kotlinx.coroutines.withContext(c.appScope.coroutineContext) { c.wardrobe.saveMine("내 테마 ${mineCount + 1}") }) "지금 모양을 ‘내 테마 ${mineCount + 1}’로 저장했어요" else "더 저장할 수 없어요" }
-        }, enabled = mineCount < limit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("지금 모양을 내 테마로 저장 ($mineCount/$limit)") }
+        }, enabled = mineCount < limit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("지금 모양을 내 테마로 저장") }
         Text(saveNote ?: if (limit <= com.bamnat.app.recipe.ThemeWardrobe.FREE_OUTFITS) "무료는 ${limit}벌까지예요. 프로는 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 바꿔 입어요"
-            else "내 테마는 기간 없이 언제든 다시 입어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else "장터에 올린 내 테마는 광고 없이 입어요. 혼자 쓰는 테마는 다른 테마처럼 처음 2번 무료, 그 뒤 광고 한 번에 30일이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 입었던 테마: others' themes worn before, to wear again.
+        val past = lease.history.filter { !it.own && it.key != lease.worn?.key }
+        if (past.isNotEmpty()) {
+            Text("입었던 테마", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+            Shelf(past.take(10)) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
+        }
+        // A phone that never wore a theme: three of its kind of work to start with, the rest in 장터.
+        if (lease.worn == null && lease.history.isEmpty()) {
+            val starters = remember(style) { BuiltInThemes.of(style).take(3) }
+            Text("처음이라면 이런 테마부터", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                starters.forEach { r ->
+                    Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { open = r to "builtin:${r.title}" },
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        swatchOf(r)?.let { ThemeThumb(it, width = 112.dp) }
+                        Text(r.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+        onFind?.let { Button(onClick = it, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("장터에서 새 테마 찾기") } }
         Text("테마는 색, 칸 모양, 배치처럼 보이는 방식만 바꿔요. 근무, 메모, 가계부, 급여 기록과 알람은 그대로예요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -133,6 +153,22 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier) {
     )
 }
 
+/** Worn or saved themes in a row, each drawn as itself; a tap opens it. */
+@Composable
+private fun Shelf(items: List<ThemeLease.Wear>, onOpen: (ThemeLease.Wear) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items.forEach { w ->
+            val look = remember(w.body) { runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let(::swatchOf) }
+            Column(Modifier.width(112.dp).clickable(onClickLabel = if (w.own) "내 테마 보기" else "다시 입기") { onOpen(w) },
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                look?.let { ThemeThumb(it, width = 112.dp) }
+                Text((if (w.own) "🎨 " else "") + w.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(if (w.free) "내 테마 · 장터에 있음" else if (w.own) "내 테마 · 나만" else "다시 입기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
 /**
  * [FREE-08][FREE-10] One theme: 입어 보기 on the example phone, every tab a tap away, then 입기. Someone else's theme past the free ones
  * asks for a rewarded ad watched to the end; mine, 프로 and the ads switch off never do.
@@ -141,40 +177,38 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier) {
 fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
-    var tab by remember { mutableStateOf(TabOrder.CALENDAR) }
     var note by remember { mutableStateOf<String?>(null) }
     val own = code.isEmpty()
-    val needsAd = remember { c.wardrobe.needsAd(own) }
+    // [THM-01] Mine kept to myself asks as others' do; mine in 장터 never.
+    val needsAd = remember { c.wardrobe.needsAdFor(code, r.title) }
+    val all = remember(r) { com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet() }
+    fun said(t: String) = Toast.makeText(context.applicationContext, t, Toast.LENGTH_SHORT).show()
     // [J135-15] Worn on the app's scope: the look changing redraws the screens under this sheet, and a coroutine of the sheet would be
-    // cancelled half way (the look on, 입는 중 never written).
-    fun wear(after: () -> Unit = {}) = c.appScope.launch {
-        if (c.wardrobe.wear(r, code, own)) {
+    // cancelled half way (the look on, 입는 중 never written). [TRY-01] Only the parts ticked; the rest stays the user's own.
+    fun wear(picked: Set<String>, after: () -> Unit = {}) = c.appScope.launch {
+        val whole = picked.containsAll(all)
+        val worn = if (whole) r else com.bamnat.core.recipe.LookParts.pick(r, picked).copy(title = "${r.title} 일부".take(30))
+        if (c.wardrobe.wear(worn, code, own)) {
             after()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                Toast.makeText(context.applicationContext, "‘${r.title}’을(를) 입었어요. 기록은 그대로예요", Toast.LENGTH_SHORT).show()
+                said(if (whole) "‘${r.title}’을(를) 입었어요. 기록은 그대로예요" else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요. 기록은 그대로예요")
                 onDismiss()
             }
         }
     }
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth().padding(12.dp), shape = MaterialTheme.shapes.extraLarge) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(r.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("입어 보기: 아래 탭을 눌러 화면마다 봐요", style = MaterialTheme.typography.labelMedium)
-                MockPhone(r, style, tab, onTab = { tab = it })
-                note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                if (needsAd) com.bamnat.app.ads.ThemeAdButton(
-                    "광고 보고 입기", "광고를 끝까지 보면 30일 동안 입어요. 프로는 광고 없이 입어요",
-                    onReward = { wear() },
-                    onQuit = { note = "광고를 끝까지 봐야 입을 수 있어요" },
-                    onOffline = { note = "인터넷에 연결되면 다시 해 주세요" },
-                    onNoAd = { reason -> wear { c.wardrobe.counted(reason) } },
-                ) else Button(onClick = { wear() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 테마 입기") }
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("닫기") }
-            }
-        }
+    TryOnScreen(r, style, onDismiss,
+        onKeep = { ids -> said(if (c.wardrobe.keep(r, code, ids.toList())) "보관함에 담았어요. 마을 › 테마와 스튜디오에서 꺼내 써요" else "보관함이 꽉 찼어요 (${c.wardrobe.partsLimit()}개)") },
+    ) { picked ->
+        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        val label = if (picked.containsAll(all)) "이 테마 입기" else "고른 ${picked.size}개 입히기"
+        if (picked.isEmpty()) Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("입힐 것을 골라 주세요") }
+        else if (needsAd) com.bamnat.app.ads.ThemeAdButton(
+            "광고 보고 $label", "광고를 끝까지 보면 30일 동안 입어요. 프로는 광고 없이 입어요",
+            onReward = { wear(picked) },
+            onQuit = { note = "광고를 끝까지 봐야 입을 수 있어요" },
+            onOffline = { note = "인터넷에 연결되면 다시 해 주세요" },
+            onNoAd = { reason -> wear(picked) { c.wardrobe.counted(reason) } },
+        ) else Button(onClick = { wear(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
     }
 }
 
@@ -227,5 +261,49 @@ fun ThemeExpiryAsk() {
         },
         confirmButton = {},
         dismissButton = { TextButton(onClick = { shown = false; c.appScope.launch { c.wardrobe.takeOff() } }) { Text("아니요, 내 모양으로") } },
+    )
+}
+
+/**
+ * [THM-05] 1.35 테마 새 판 (사용자 2026-10-30 21:53 "테마가 업데이트 됬어요 업데이트 하시겠어요? 알림을 뜨게해주고 업데이트 하기전에는
+ * 바뀌지 않게"): someone else's theme worn now has a newer 판 in 장터. Asked once per 판 when the app opens; the look stays as it is until
+ * 업데이트 is pressed. 바뀐 모습 보기 opens 입어 보기 on the new 판 (지금 ↔ 입으면); 지금 그대로 keeps this 판 and is not asked again for it.
+ * 7 days after 업데이트, 이전 판으로 is in 마을 › 테마.
+ */
+@Composable
+fun ThemeUpdateAsk() {
+    val c = LocalContext.current.appContainer
+    val context = LocalContext.current
+    val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
+    val worn = lease.worn ?: return
+    var newer by remember(worn.key, worn.ver) { mutableStateOf<Pair<Recipe, Int>?>(null) }
+    var trying by remember { mutableStateOf(false) }
+    LaunchedEffect(worn.key, worn.ver) {
+        c.wardrobe.syncShared()
+        val v = c.wardrobe.newerWorn() ?: return@LaunchedEffect
+        val doc = runCatching { c.recipeApi.show(worn.code, null, v) }.getOrNull() ?: return@LaunchedEffect
+        runCatching { RecipeCodec.read(doc.body) }.getOrNull()?.let { newer = it to v }
+    }
+    val (r, v) = newer ?: return
+    fun update() = c.appScope.launch {
+        val ok = c.wardrobe.updateWorn(r, v)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            Toast.makeText(context, if (ok) "‘${worn.title}’을(를) 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+    if (trying) TryOnScreen(r, c.settingsRepository.current.workStyle, onDismiss = { trying = false }, onKeep = null) { _ ->
+        Button(onClick = { trying = false; newer = null; update() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("새 판으로 바꾸기") }
+    } else AlertDialog(
+        onDismissRequest = { newer = null },
+        title = { Text("‘${worn.title}’ 테마가 업데이트됐어요. 바꿀까요?") },
+        text = { Text("만든 분이 ${v}판을 올렸어요. 누르기 전에는 지금 모양 그대로예요. 기간은 그대로이고 광고도 없어요. 기록도 그대로예요") },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { trying = true }) { Text("바뀐 모습 보기") }
+                TextButton(onClick = { newer = null; update() }) { Text("업데이트") }
+            }
+        },
+        dismissButton = { TextButton(onClick = { c.wardrobe.skip(worn.code, v); newer = null }) { Text("지금 그대로") } },
     )
 }

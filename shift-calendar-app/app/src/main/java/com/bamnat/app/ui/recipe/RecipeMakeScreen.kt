@@ -127,7 +127,12 @@ class RecipeMakeViewModel(
         val putMine: Long? = null,
         /** [LIN-01] The recipe this one is a 수정판 of, as its title (for the line that says so). */
         val parentTitle: String? = null,
+        /** [THM-03] 사진 빼고 올리기: the pictures stay on this phone only. */
+        val bare: Boolean = false,
     )
+
+    /** [THM-01] One of my themes (or a new one, [com.bamnat.app.recipe.RecipeLinks.NEW_OWN]) sent from 스튜디오: in 장터 once it is up. */
+    private val ownTheme: String? = com.bamnat.app.recipe.RecipeLinks.ownTheme.also { com.bamnat.app.recipe.RecipeLinks.ownTheme = null }
 
     private val _state = MutableStateFlow(State(recipe = blank(), draftId = draftId))
     val state: StateFlow<State> = _state.asStateFlow()
@@ -291,6 +296,7 @@ class RecipeMakeViewModel(
         }
     }
     fun scope(v: String) { _state.value = _state.value.copy(scope = v) }
+    fun bare(on: Boolean) { _state.value = _state.value.copy(bare = on) }
     fun agree(v: Boolean) { _state.value = _state.value.copy(agreed = v) }
 
     fun go(step: Int) {
@@ -318,10 +324,19 @@ class RecipeMakeViewModel(
         _state.value = s.copy(sending = true, error = null)
         viewModelScope.launch {
             try {
-                val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(s.recipe)))
+                val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
+                val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(shown)))
                 val sent = if (code != null) c.recipeApi.newVersion(c.companyStore.device, code, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
+                // [THM-01] My own theme in 장터 for everyone: worn without days or ads from now (a new one is kept in 내 테마 first).
+                if (ownTheme != null && sent.scope == "public" && com.bamnat.core.recipe.BuiltInThemes.isTheme(s.recipe)) {
+                    val key = if (ownTheme == com.bamnat.app.recipe.RecipeLinks.NEW_OWN) {
+                        val mine = s.recipe.copy(title = s.recipe.title.take(30))
+                        if (c.wardrobe.saveLook(mine)) "own:${mine.title}" else null
+                    } else ownTheme
+                    key?.let { c.wardrobe.markShared(it, sent.code, sent.version, s.bare) }
+                }
                 _state.value = _state.value.copy(sending = false, sent = sent)
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code))
@@ -335,35 +350,39 @@ class RecipeMakeViewModel(
      * [RCX-30] A 그림 꾸미기 piece names the phone's own pictures; each is sent (made small, no EXIF, already on the phone) and the
      * piece names the server's id instead. A picture already sent keeps its id.
      */
-    private suspend fun withServerPictures(r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
-        if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK }) return r
-        val sent = mutableMapOf<String, String>()
-        suspend fun server(id: Any?): Any? {
-            val local = id as? String ?: return id
-            if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return local
-            return sent.getOrPut(local) { com.bamnat.app.recipe.LookImages.upload(c, local) }
-        }
-        return r.copy(pieces = r.pieces.map { p ->
-            // [FREE-05] 화면 색·배경's pictures, each screen's in turn.
-            if (p.kind == PieceKind.SCREEN_LOOK) (p.values["screens"] as? String)?.let { line ->
-                val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
-                val sentLooks = com.bamnat.core.recipe.ScreenLooks(looks.looks.mapValues { (_, l) -> l.photo?.let { l.copy(photo = server(it) as? String) } ?: l })
-                p.copy(values = p.values + ("screens" to sentLooks.encode()))
-            } ?: p
-            else if (p.kind != PieceKind.PHOTO_LOOK) p else {
-                val v = p.values.toMutableMap()
-                for (k in listOf("bg", "head", "widget")) v[k]?.let { v[k] = server(it) }
-                (v["icons"] as? List<*>)?.let { l -> v["icons"] = l.map { i -> (i as? Map<*, *>)?.let { m -> m.mapKeys { it.key.toString() }.toMutableMap().also { it["image"] = server(it["image"]) } } ?: i } }
-                p.copy(values = v)
-            }
-        })
-    }
+    private suspend fun withServerPictures(r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe = serverPictures(c, r)
 
     companion object {
         const val MIN_WAGE = 10_320L
         /** [RCX-31] Says where the first 시급 comes from without an amount, which the recipe's amount check refuses. */
         const val WAGE_HINT = "처음 값은 올해 최저임금이에요. 내 시급으로 바꿔 넣어요"
     }
+}
+
+
+/** [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id. */
+internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
+    if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK }) return r
+    val sent = mutableMapOf<String, String>()
+    suspend fun server(id: Any?): Any? {
+        val local = id as? String ?: return id
+        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return local
+        return sent.getOrPut(local) { com.bamnat.app.recipe.LookImages.upload(c, local) }
+    }
+    return r.copy(pieces = r.pieces.map { p ->
+        // [FREE-05] 화면 색·배경's pictures, each screen's in turn.
+        if (p.kind == PieceKind.SCREEN_LOOK) (p.values["screens"] as? String)?.let { line ->
+            val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
+            val sentLooks = com.bamnat.core.recipe.ScreenLooks(looks.looks.mapValues { (_, l) -> l.photo?.let { l.copy(photo = server(it) as? String) } ?: l })
+            p.copy(values = p.values + ("screens" to sentLooks.encode()))
+        } ?: p
+        else if (p.kind != PieceKind.PHOTO_LOOK) p else {
+            val v = p.values.toMutableMap()
+            for (k in listOf("bg", "head", "widget")) v[k]?.let { v[k] = server(it) }
+            (v["icons"] as? List<*>)?.let { l -> v["icons"] = l.map { i -> (i as? Map<*, *>)?.let { m -> m.mapKeys { it.key.toString() }.toMutableMap().also { it["image"] = server(it["image"]) } } ?: i } }
+            p.copy(values = v)
+        }
+    })
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -634,6 +653,15 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         Row(Modifier.fillMaxWidth().selectable(s.scope == k, role = Role.RadioButton) { vm.scope(k) }, verticalAlignment = Alignment.CenterVertically) {
             RadioButton(s.scope == k, null); Text(label, style = MaterialTheme.typography.bodyMedium)
         }
+    }
+    // [THM-03] 사진 빼고 올리기: family photos stay on this phone; it still counts as shared (광고 없이).
+    if (s.scope != "private" && com.bamnat.core.recipe.LookParts.hasPhotos(s.recipe)) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("사진 빼고 올리기", style = MaterialTheme.typography.bodyMedium)
+            Text("배경 사진은 내 휴대폰에만 남고, 받는 분께는 색만 가요. 그래도 장터에 올린 테마로 쳐요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(s.bare, vm::bare)
     }
     var all by remember { mutableStateOf(false) }
     TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "올라갈 내용 전부 보기") }

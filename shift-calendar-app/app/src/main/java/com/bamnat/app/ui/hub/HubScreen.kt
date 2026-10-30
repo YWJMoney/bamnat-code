@@ -1,7 +1,10 @@
 package com.bamnat.app.ui.hub
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.ui.company.SoftCard
-import com.bamnat.app.ui.settings.FreeLookScreen
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.work.WorkStyle
 
@@ -48,9 +50,10 @@ import com.bamnat.core.work.WorkStyle
  */
 enum class HubSection(val label: String, val line: String) {
     TALK("광장", "같은 일을 하는 분들과 이야기하고, 회사 규칙과 시세를 나눠요"),
-    THEMES("테마", "잘 꾸민 테마를 미리 보고 입어요. 기록은 그대로예요"),
-    SHARE("장터", "알람·메모 틀·급여 규칙·화면 배치를 받아 쓰고 좋아요·댓글을 남겨요"),
-    MAKE("공방", "내 모양과 설정을 직접 만들고 올려요"),
+    // 1.35 (사용자 2026-10-30 21:37 "장터를 2번째로 옮기고 테마를 3번째로"): 고르고 받기는 장터, 입고 간직하기는 테마, 만들기는 공방.
+    SHARE("장터", "테마·알람·메모 틀·급여 규칙·화면 배치를 받아 쓰고 좋아요·댓글을 남겨요"),
+    THEMES("테마", "내가 입은 테마와 간직한 테마예요. 기록은 그대로예요"),
+    MAKE("공방", "내 테마와 설정을 레시피로 만들어 올려요"),
 }
 
 /** [HUB-01] The tab's name, kept in one place so the bottom bar, the guide and the search say the same. */
@@ -62,15 +65,17 @@ fun HubScreen(
     c: AppContainer,
     style: WorkStyle?,
     talk: @Composable () -> Unit,
-    share: @Composable () -> Unit,
-    onThemesAll: () -> Unit,
+    /** 장터, opened on one kind ("skin" from 테마's 장터에서 새 테마 찾기) or on all. */
+    share: @Composable (kind: String?) -> Unit,
     onMake: () -> Unit,
     onMine: () -> Unit,
     onRequests: () -> Unit,
     onCode: () -> Unit,
+    /** 스튜디오, started from "mine", "plain" or "theme:<key>" ([com.bamnat.app.ui.studio.StudioViewModel]). */
+    onStudio: (String) -> Unit,
 ) {
     var section by rememberSaveable { mutableStateOf(HubSection.TALK) }
-    var freeLook by rememberSaveable { mutableStateOf(false) }
+    var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
@@ -82,7 +87,7 @@ fun HubScreen(
                 }
                 PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = MaterialTheme.colorScheme.surface) {
                     HubSection.entries.forEach { s ->
-                        Tab(selected = section == s, onClick = { section = s }, text = { Text(s.label) })
+                        Tab(selected = section == s, onClick = { if (s == HubSection.SHARE && section != s) shareKind = null; section = s }, text = { Text(s.label) })
                     }
                 }
             }
@@ -90,18 +95,9 @@ fun HubScreen(
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
             when (section) {
                 HubSection.TALK -> talk()
-                HubSection.SHARE -> share()
-                HubSection.THEMES -> Themes(style, onLook = { freeLook = true }, onThemesAll = onThemesAll, onMake = { section = HubSection.MAKE })
-                HubSection.MAKE -> Make(onLook = { freeLook = true }, onMake, onMine, onRequests, onCode)
-            }
-        }
-    }
-    if (freeLook) {
-        val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-        androidx.compose.ui.window.Dialog(onDismissRequest = { freeLook = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-            Surface(Modifier.fillMaxSize()) {
-                FreeLookScreen(settings, { f -> c.settingsRepository.update(f) }, onBack = { freeLook = false })
+                HubSection.SHARE -> share(shareKind)
+                HubSection.THEMES -> Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE })
+                HubSection.MAKE -> Make(c, style, onStudio, onMake, onMine, onRequests, onCode)
             }
         }
     }
@@ -117,22 +113,56 @@ private fun Page(content: @Composable () -> Unit) {
     }
 }
 
-/** [HUB-02] 테마: the built-in themes of this kind of work, what is worn and was worn, then others' themes and 직접 꾸미기. */
+/** [HUB-02] 테마: the user's own page (지금 입은 테마, 내 테마, 입었던 테마); new themes are found in 장터, made in 공방. */
 @Composable
-private fun Themes(style: WorkStyle?, onLook: () -> Unit, onThemesAll: () -> Unit, onMake: () -> Unit) = Page {
+private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit) = Page {
     Text(HubSection.THEMES.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    com.bamnat.app.ui.recipe.ThemePicker(style)
-    Card("다른 분들이 만든 테마", "좋아요가 많은 테마부터 보여요. 미리 보고 입어 본 뒤 마음에 들면 넣어요", "모두 보기", onThemesAll)
-    Card("직접 꾸미기", "달력 칸 하나를 꾸며 모든 칸에 쓰고, 메모장·가계부·급여와 화면마다 색과 배경을 바꿔요", "화면 꾸미기 열기", onLook)
-    OutlinedButton(onClick = onMake, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 테마 만들어 올리기") }
+    com.bamnat.app.ui.recipe.ThemePicker(style, onFind = onFind, onFix = onLook)
 }
 
-/** [HUB-03] 만들기: the studio, my look, my recipes and what others wish for, in one place. */
+/** [HUB-03] 공방: the studio, my recipes and what others wish for, in one place. */
+/**
+ * [HUB-03] 공방 (사용자 2026-10-30 21:39 "마을 탭 자체를 아주 좋게"): the studio first, large, with my look as it is now; my themes to go on
+ * from in a row; then a recipe with 알람·메모 틀·규칙 too, my recipes, the wishes and a code.
+ */
 @Composable
-private fun Make(onLook: () -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit, onCode: () -> Unit) = Page {
+private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit,
+                 onCode: () -> Unit) = Page {
     Text(HubSection.MAKE.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Card("스튜디오에서 만들기", "예시 앱을 탭별로 보며 꾸미고, 알람·메모 틀·규칙도 골라 묶어요. 저장만, 내 앱에만, 올리기 중에서 골라요", "만들기 시작", onMake)
-    Card("화면 꾸미기", "내 앱의 모양을 바로 바꿔요. 다 꾸민 뒤 테마로 저장하거나 올릴 수 있어요", "화면 꾸미기 열기", onLook)
+    val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
+    val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
+    val mine by androidx.compose.runtime.produceState<com.bamnat.core.recipe.Recipe?>(null, lease) {
+        value = com.bamnat.core.recipe.Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
+    }
+    SoftCard {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            mine?.let { r ->
+                Box(Modifier.clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }) {
+                    com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("스튜디오", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                Text("달력 칸, 패턴, 색·배경, 카드 배치, 위젯까지 한곳에서 꾸며요. 입히기 전까지 내 앱은 그대로예요",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양에서 꾸미기") }
+                TextButton(onClick = { onStudio("plain") }) { Text("처음 모양에서 새로") }
+            }
+        }
+    }
+    val themes = lease.history.sortedByDescending { it.own }.take(10)
+    if (themes.isNotEmpty() || kept.isNotEmpty()) {
+        Text("이어서 꾸미기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            themes.forEach { w ->
+                androidx.compose.material3.AssistChip(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_THEME + w.key) },
+                    label = { Text((if (w.own) "🎨 " else "") + w.title, maxLines = 1) })
+            }
+        }
+        if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Card("레시피 만들기", "테마에 알람·메모 틀·급여 규칙까지 묶어 장터에 올려요", "레시피 만들기", onMake)
     Card("내 레시피·받은 레시피", "올린 것의 좋아요·댓글과 검토 상태를 보고, 받은 것은 7일 안에 되돌려요", "열기", onMine)
     Card("이런 거 있었으면", "필요한 레시피를 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
     OutlinedButton(onClick = onCode, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드·링크로 받기") }

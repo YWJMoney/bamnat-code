@@ -337,7 +337,13 @@ class AlarmService : Service() {
         runCatching {
             val nm = NotificationManagerCompat.from(this)
             nm.cancel(Notifications.ALARM_AGAIN_ID)
-            nm.notify(Notifications.ALARM_AGAIN_ID, buildNotification(ring))
+            // 1.35 [J135-23] (실사용 F-68 진단: the notice again came out with SILENT and folded with 7006 under the app's automatic group,
+            // so it never popped up) its own group, alerting as itself, says it is still ringing.
+            val again = NotificationCompat.Builder(this, buildNotification(ring))
+                .setGroup(AGAIN_GROUP).setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_ALL).setSortKey("0")
+                .setContentText("아직 울리고 있어요 · " + describe(ring))
+                .build()
+            nm.notify(Notifications.ALARM_AGAIN_ID, again)
         }
     }
 
@@ -549,6 +555,8 @@ class AlarmService : Service() {
     companion object {
         /** [J135-08] How long after the screen comes on the ringing notice is put up again. */
         private const val AGAIN_DELAY_MS = 1_200L
+        /** [J135-23] The notice again in a group of its own, never folded under another notice of the app. */
+        private const val AGAIN_GROUP = "bamnat_alarm_again"
         /**
          * The sounds to try, in order: the shift's or the app's own, then this phone's alarm sound and the system's.
          * 1.32 [WTYP-13] 조사 대조 W10: a sound file from the old phone that is not on this one gives way to these, never silence.

@@ -539,19 +539,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }
         // [SET-02] 근무표 공유 and 동료 근무표 받기 live in the calendar's 도구 only; settings search still finds them.
     }
-    // [FREE-03] 1.35 화면 꾸미기: every screen's colours, background, the calendar's cells and patterns, memo, money and pay looks in one
-    // place, with the example on top.
-    var freeLook by rememberSaveable { mutableStateOf<FreeTarget?>(null) }
+    // [FREE-03][STU-10] 1.35 화면 꾸미기 is the studio now: every screen's colours, background, the calendar's cells and patterns, memo,
+    // money and pay looks in one place, with the example on top and the phone unchanged until 입히기.
     SectionCard(title = "꾸미기") {
-        NavRow(FREE_LOOK_ROW, "달력 칸·패턴, 메모장, 가계부, 급여, 모든 화면의 색과 배경을 미리 보며 바꿔요") { freeLook = FreeTarget.CALENDAR }
-    }
-    freeLook?.let { start ->
-        androidx.compose.ui.window.Dialog(onDismissRequest = { freeLook = null },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-            androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
-                FreeLookScreen(settings, { f -> vm.update(f) }, onBack = { freeLook = null }, start = start)
-            }
-        }
+        NavRow(FREE_LOOK_ROW, "달력 칸·패턴, 메모장, 가계부, 급여, 모든 화면의 색과 배경을 스튜디오에서 미리 보며 바꿔요") { SettingsLinks.go(SettingsGo.STUDIO) }
     }
     // U 1.32 [UX132-05][UX132-06] G [WTYP-07]: 글자 크기, 촘촘하게, 오전/오후 — first, as most people come here for them.
     SectionCard(title = "글자와 배치") {

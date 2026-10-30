@@ -97,158 +97,6 @@ import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-/**
- * [FREE-03..07] 1.35 화면 꾸미기 (사용자 2026-10-30 "미리보기는 아주 보기 편하고 접고 펼치고를 하면서 꾸밀 수 있어야 해… 허락된 범위 내에서는
- * 온전한 자유"): every screen in one place. The example of the screen picked stays on top — 크게, 작게 or 접기 — and follows each change at
- * once; under it each thing to change is a fold that says its value when closed. Tapping the example opens the fold for what was
- * tapped. Changes are the user's at once; 들어오기 전으로 puts back the whole look as it was when the screen opened.
- */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-fun FreeLookScreen(settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onBack: () -> Unit, start: FreeTarget = FreeTarget.CALENDAR) {
-    // 1.35 [J135-17] Its own full-screen window: the clock and icons on top follow this page's ground (white on a light page was unreadable).
-    com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.surface.luminance() > 0.5f)
-    val before = remember { settings }
-    var target by rememberSaveable { mutableStateOf(start) }
-    var dock by rememberSaveable { mutableStateOf(Dock.BIG) }
-    var open by rememberSaveable { mutableStateOf<String?>(target.firstFold) }
-    var payStyle by rememberSaveable { mutableStateOf(settings.workStyle ?: WorkStyle.SHIFT) }
-    var lookIndex by rememberSaveable { mutableIntStateOf(0) }
-    var undoAsk by remember { mutableStateOf(false) }
-    val scroll = rememberScrollState()
-    val scope = rememberCoroutineScope()
-    val foldTops = remember { mutableMapOf<String, Int>() }
-    fun jump(fold: String) {
-        open = fold
-        scope.launch { foldTops[fold]?.let { scroll.animateScrollTo(it) } }
-    }
-
-    val looks = remember(settings.screenLooks) { ScreenLooks.decode(settings.screenLooks) }
-    val view = remember(settings.calView) { CalendarView.decode(settings.calView) }
-    val memoLook = remember(settings.memoLook) { MemoLook.decode(settings.memoLook) }
-    val moneyLook = remember(settings.moneyLook) { MoneyLook.decode(settings.moneyLook) }
-    val payLooks = remember(settings.payLooks) { PayLook.decodeAll(settings.payLooks) }
-    val key = target.keyFor(payStyle)
-
-    fun saveLook(l: ScreenLook) = update { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(key, l).encode()) }
-    fun saveView(v: CalendarView) = update { with(com.bamnat.app.ui.calendar.CalendarViewSettings) { it.withView(v) } }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("화면 꾸미기") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
-                actions = {
-                    val changed = listOf(before.screenLooks to settings.screenLooks, before.calView to settings.calView, before.memoLook to settings.memoLook,
-                        before.moneyLook to settings.moneyLook, before.payLooks to settings.payLooks, before.calTheme to settings.calTheme,
-                        before.photoLook to settings.photoLook).any { it.first != it.second }
-                    if (changed) TextButton(onClick = { undoAsk = true }) { Text("들어오기 전으로") }
-                },
-            )
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            // Which screen: each a chip, the restricted ones said as such.
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FreeTarget.entries.forEach { t ->
-                    FilterChip(selected = t == target, onClick = { target = t; open = t.firstFold; lookIndex = 0 }, label = { Text(t.label) })
-                }
-            }
-            // The example, always on top.
-            PreviewDock(dock, { dock = it }, target.restricted) {
-                CompositionLocalProvider(
-                    LocalScreenLooks provides looks,
-                    com.bamnat.app.ui.calendar.LocalCalendarView provides view,
-                    LocalMemoLook provides memoLook,
-                    LocalMoneyLook provides moneyLook,
-                    com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
-                ) {
-                    ScreenSkin(key, Modifier.fillMaxWidth()) {
-                        when (target) {
-                            FreeTarget.CALENDAR -> CellWeeks(view, rows = if (dock == Dock.BIG) 3 else 1) { i -> lookIndex = i; jump(FOLD_CELL) }
-                            FreeTarget.MEMO -> com.bamnat.app.ui.memo.MemoLookSample(memoLook) { jump(FOLD_MEMO) }
-                            FreeTarget.MONEY -> MoneySample(moneyLook) { jump(FOLD_MONEY) }
-                            FreeTarget.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { jump(FOLD_PAY) }
-                            FreeTarget.ALARM -> AlarmSample { jump(FOLD_COLORS) }
-                            else -> ScreenSample(target) { jump(FOLD_COLORS) }
-                        }
-                    }
-                }
-            }
-            HorizontalDivider()
-            Column(
-                Modifier.fillMaxWidth().weight(1f).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // [FREE-09][FREE-10] 테마 고르기 first: a whole look in one tap, then each part below to make it one's own.
-                val wornNow = androidx.compose.ui.platform.LocalContext.current.appContainer.wardrobe.lease.collectAsStateWithLifecycle().value.worn
-                Fold(FOLD_THEMES, "테마 고르기", wornNow?.let { "지금: ${it.title}" } ?: "추천 테마 8개, 입었던 테마", open, { open = it }, foldTops) {
-                    com.bamnat.app.ui.recipe.ThemePicker(settings.workStyle)
-                }
-                if (target.restricted) {
-                    Text(target.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (target == FreeTarget.PAY) {
-                    Text("근무 유형마다 따로 꾸며요", style = MaterialTheme.typography.labelLarge)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        WorkStyle.entries.forEach { st -> FilterChip(selected = st == payStyle, onClick = { payStyle = st }, label = { Text(st.label.substringBefore(' ')) }) }
-                    }
-                }
-                when (target) {
-                    FreeTarget.CALENDAR -> {
-                        Fold(FOLD_CELL, "칸 디자인", cellSummary(view), open, { open = it }, foldTops) {
-                            CellDesigner(view, lookIndex, { lookIndex = it }, ::saveView)
-                        }
-                        Fold(FOLD_PATTERN, "패턴", patternSummary(view), open, { open = it }, foldTops) {
-                            PatternEditor(view, ::saveView)
-                        }
-                        Fold(FOLD_VIEW, "칸 높이·줄·메모", "칸 높이와 날짜 밑 줄", open, { open = it }, foldTops) {
-                            com.bamnat.app.ui.calendar.CalendarViewEditor(view, ::saveView, sample = {})
-                        }
-                        Fold(FOLD_THEME, "오늘·주말 색", "오늘, 토·일·공휴일 글자색", open, { open = it }, foldTops) {
-                            CalendarThemeRows(settings.calTheme) { t -> update { it.copy(calTheme = t) } }
-                        }
-                        Fold(FOLD_PHOTO, "달력 그림", "배경·머리 그림·근무 그림", open, { open = it }, foldTops) {
-                            PhotoLookRows(settings.photoLook) { t -> update { it.copy(photoLook = t) } }
-                        }
-                    }
-                    FreeTarget.MEMO -> Fold(FOLD_MEMO, "메모장 모양", memoSummary(memoLook), open, { open = it }, foldTops) {
-                        MemoLookEditor(memoLook) { l -> update { it.copy(memoLook = l.encode()) } }
-                    }
-                    FreeTarget.MONEY -> Fold(FOLD_MONEY, "가계부 모양", moneySummary(moneyLook), open, { open = it }, foldTops) {
-                        MoneyLookEditor(moneyLook) { l -> update { it.copy(moneyLook = l.encode()) } }
-                    }
-                    FreeTarget.PAY -> Fold(FOLD_PAY, "급여 모양 · ${payStyle.label.substringBefore(' ')}", paySummary(payLooks[payStyle]), open, { open = it }, foldTops) {
-                        PayLookEditor(payLooks[payStyle] ?: PayLook()) { l ->
-                            update { s -> s.copy(payLooks = PayLook.encodeAll(PayLook.decodeAll(s.payLooks) + (payStyle to l))) }
-                        }
-                    }
-                    else -> {}
-                }
-                Fold(FOLD_COLORS, if (target == FreeTarget.PLAZA) "배경·이모티콘" else "색·배경", colorSummary(looks.looks[key]), open, { open = it }, foldTops) {
-                    ScreenLookEditor(target, looks.looks[key] ?: ScreenLook(), looks.of(key), ::saveLook)
-                }
-                // 나눔 판: this screen's look as a piece.
-                com.bamnat.app.ui.recipe.ShareThisSetting(target.piece)
-                Spacer(Modifier.height(48.dp))
-            }
-        }
-    }
-    if (undoAsk) AlertDialog(
-        onDismissRequest = { undoAsk = false },
-        text = { Text("이 화면에 들어오기 전의 모양으로 모두 돌릴까요?") },
-        confirmButton = {
-            TextButton(onClick = {
-                undoAsk = false
-                update { it.copy(screenLooks = before.screenLooks, calView = before.calView, memoLook = before.memoLook, moneyLook = before.moneyLook,
-                    payLooks = before.payLooks, calTheme = before.calTheme, photoLook = before.photoLook) }
-            }) { Text("돌리기") }
-        },
-        dismissButton = { TextButton(onClick = { undoAsk = false }) { Text("그대로 두기") } },
-    )
-}
-
 /** [FREE-03] The screens 화면 꾸미기 changes. The restricted ones keep their layout; only their colours and background change. */
 enum class FreeTarget(val label: String, val restricted: Boolean = false, val note: String = "") {
     CALENDAR("달력"), MEMO("메모장"), MONEY("가계부"), PAY("급여"), STATS("통계"),
@@ -264,75 +112,12 @@ enum class FreeTarget(val label: String, val restricted: Boolean = false, val no
         SETTINGS -> "settings"; ALARM -> ScreenLooks.ALARM; GUARDED -> ScreenLooks.GUARDED; ALL -> ScreenLooks.ALL
     }
 
-    val firstFold: String get() = when (this) { CALENDAR -> FOLD_CELL; MEMO -> FOLD_MEMO; MONEY -> FOLD_MONEY; PAY -> FOLD_PAY; else -> FOLD_COLORS }
 
     val piece: com.bamnat.core.recipe.PieceKind get() = when (this) {
         CALENDAR -> com.bamnat.core.recipe.PieceKind.CAL_VIEW
         MEMO -> com.bamnat.core.recipe.PieceKind.MEMO_LOOK
         MONEY -> com.bamnat.core.recipe.PieceKind.MONEY_LOOK
         else -> com.bamnat.core.recipe.PieceKind.SCREEN_LOOK
-    }
-}
-
-private const val FOLD_CELL = "cell"
-private const val FOLD_THEMES = "themes"
-private const val FOLD_PATTERN = "pattern"
-private const val FOLD_VIEW = "view"
-private const val FOLD_THEME = "theme"
-private const val FOLD_PHOTO = "photo"
-private const val FOLD_MEMO = "memo"
-private const val FOLD_MONEY = "money"
-private const val FOLD_PAY = "pay"
-private const val FOLD_COLORS = "colors"
-
-enum class Dock(val label: String) { BIG("크게"), SMALL("작게"), FOLDED("접기") }
-
-/** The example on top: its size picked by three chips; folded, only its line stays. */
-@Composable
-private fun PreviewDock(dock: Dock, onDock: (Dock) -> Unit, restricted: Boolean, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().animateContentSize().padding(horizontal = 12.dp, vertical = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (restricted) "미리보기 (색·배경만)" else "미리보기 · 누르면 그 자리를 고쳐요", style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.weight(1f).semantics { heading() })
-            Dock.entries.forEach { d ->
-                TextButton(onClick = { onDock(d) }, modifier = Modifier.semantics { selected = d == dock }) {
-                    Text(d.label, fontWeight = if (d == dock) FontWeight.Bold else FontWeight.Normal,
-                        color = if (d == dock) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        if (dock != Dock.FOLDED) {
-            Box(
-                Modifier.fillMaxWidth().heightIn(max = if (dock == Dock.BIG) 380.dp else 170.dp).clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-                    .verticalScroll(rememberScrollState()),
-            ) { content() }
-        }
-    }
-}
-
-/** One fold: closed, its name and value in a line; open, what changes it. Its place is kept so a tap on the example can scroll to it. */
-@Composable
-private fun Fold(id: String, title: String, summary: String, open: String?, onOpen: (String?) -> Unit, tops: MutableMap<String, Int>, content: @Composable () -> Unit) {
-    val isOpen = open == id
-    Surface(
-        shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth().onGloballyPositioned { tops[id] = it.positionInParent().y.toInt() },
-    ) {
-        Column(Modifier.animateContentSize()) {
-            Row(
-                Modifier.fillMaxWidth().clickable(onClickLabel = if (isOpen) "접기" else "펼치기") { onOpen(if (isOpen) null else id) }
-                    .padding(horizontal = 14.dp, vertical = 12.dp).semantics { heading() },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleSmall)
-                    if (!isOpen) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                }
-                Icon(if (isOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null)
-            }
-            if (isOpen) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
-        }
     }
 }
 
@@ -352,7 +137,7 @@ private val SAMPLE_CELLS = listOf(
  * the pattern; a tap on a cell opens its look ([onCell] gets the look's index).
  */
 @Composable
-private fun CellWeeks(view: CalendarView, rows: Int, onCell: (Int) -> Unit) {
+internal fun CellWeeks(view: CalendarView, rows: Int, onCell: (Int) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val first = LocalDate.of(2026, 11, 2)
@@ -422,7 +207,7 @@ private val CELL_PRESETS: List<Pair<String, CalendarView.() -> CalendarView>> = 
 /** The looks one by one: 모양 1, 2 … (at most six), each in folds of its own parts. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit, onChange: (CalendarView) -> Unit) {
+internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit, onChange: (CalendarView) -> Unit) {
     var removing by remember { mutableStateOf(false) }
     Text("칸 하나를 꾸미면 달력 전체에 들어가요. 모양을 여러 개 만들어 패턴으로 번갈아 쓸 수도 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -513,7 +298,7 @@ private fun PlaceGrid(value: String, onPick: (String) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PatternEditor(view: CalendarView, onChange: (CalendarView) -> Unit) {
+internal fun PatternEditor(view: CalendarView, onChange: (CalendarView) -> Unit) {
     val n = view.looks.size
     if (n < 2) {
         Text("모양이 두 개 이상이면 번갈아 쓸 수 있어요. ‘칸 디자인’에서 + 모양 더하기를 눌러요", style = MaterialTheme.typography.bodySmall,
@@ -555,9 +340,9 @@ private fun PatternEditor(view: CalendarView, onChange: (CalendarView) -> Unit) 
     Chips(listOf<Pair<Int?, String>>(null to "패턴대로") + (0 until n).map { it to "모양 ${it + 1}" }, view.todayLook) { k -> onChange(view.copy(todayLook = k)) }
 }
 
-private fun cellSummary(v: CalendarView): String = if (v.looks.isEmpty()) "칸 디자인 없음 (처음대로)" else "모양 ${v.looks.size}개"
+internal fun cellSummary(v: CalendarView): String = if (v.looks.isEmpty()) "칸 디자인 없음 (처음대로)" else "모양 ${v.looks.size}개"
 
-private fun patternSummary(v: CalendarView): String = when (v.pattern.mode) {
+internal fun patternSummary(v: CalendarView): String = when (v.pattern.mode) {
     CellPattern.CYCLE -> "${v.pattern.n}칸마다 반복"
     CellPattern.WEEK -> "요일별"
     CellPattern.SHIFT -> "근무별"
@@ -567,7 +352,7 @@ private fun patternSummary(v: CalendarView): String = when (v.pattern.mode) {
 // ---- 메모장·가계부·급여 ----
 
 @Composable
-private fun MemoLookEditor(l: MemoLook, onChange: (MemoLook) -> Unit) {
+internal fun MemoLookEditor(l: MemoLook, onChange: (MemoLook) -> Unit) {
     Text("바로 고르기", style = MaterialTheme.typography.labelLarge)
     Chips(MemoLook.PRESETS.map { it.second to it.first }, MemoLook.PRESETS.firstOrNull { it.second == l }?.second) { p -> onChange(p ?: MemoLook()) }
     Group("배치") {
@@ -592,12 +377,12 @@ private fun MemoLookEditor(l: MemoLook, onChange: (MemoLook) -> Unit) {
     }
 }
 
-private fun memoSummary(l: MemoLook): String = if (l.isDefault) "처음대로 (목록, 메모마다 색)" else
+internal fun memoSummary(l: MemoLook): String = if (l.isDefault) "처음대로 (목록, 메모마다 색)" else
     listOfNotNull(mapOf("list" to "목록", "grid2" to "2열", "grid3" to "3열", "sticky" to "포스트잇", "diary" to "다이어리", "compact" to "촘촘히")[l.layout],
         l.font?.let { mapOf("serif" to "명조", "mono" to "고정폭", "hand" to "손글씨")[it] }, l.lines?.let { "${it}줄" }).joinToString(" · ").ifEmpty { "바꿈" }
 
 @Composable
-private fun MoneyLookEditor(l: MoneyLook, onChange: (MoneyLook) -> Unit) {
+internal fun MoneyLookEditor(l: MoneyLook, onChange: (MoneyLook) -> Unit) {
     Group("줄") {
         Chips(listOf(null to "처음대로", "compact" to "촘촘히", "roomy" to "넉넉히"), l.rows?.takeIf { it != "normal" }) { onChange(l.copy(rows = it)) }
         Chips(listOf(null to "분류 그림", "dot" to "색 점", "none" to "표시 없음"), l.mark?.takeIf { it != "emoji" }) { onChange(l.copy(mark = it)) }
@@ -611,7 +396,7 @@ private fun MoneyLookEditor(l: MoneyLook, onChange: (MoneyLook) -> Unit) {
     }
 }
 
-private fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로" else listOfNotNull(
+internal fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로" else listOfNotNull(
     mapOf("compact" to "촘촘히", "roomy" to "넉넉히")[l.rows], mapOf("dot" to "색 점", "none" to "표시 없음")[l.mark],
     mapOf("s" to "금액 작게", "l" to "금액 크게")[l.amount], "수입·지출 색".takeIf { l.income != null || l.expense != null },
 ).joinToString(" · ").ifEmpty { "바꿈" }
@@ -651,7 +436,7 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
 }
 
 @Composable
-private fun PayLookEditor(l: PayLook, onChange: (PayLook) -> Unit) {
+internal fun PayLookEditor(l: PayLook, onChange: (PayLook) -> Unit) {
     Text("금액, ‘예상’·‘추정’ 표시와 법 안내는 모양과 상관없이 늘 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Group("합계") {
         Chips(listOf(null to "보통", "m" to "작게", "xl" to "아주 크게"), l.total?.takeIf { it != "l" }) { onChange(l.copy(total = it)) }
@@ -665,14 +450,14 @@ private fun PayLookEditor(l: PayLook, onChange: (PayLook) -> Unit) {
     }
 }
 
-private fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
+internal fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
     mapOf("m" to "합계 작게", "xl" to "합계 아주 크게")[l.total], "합계 카드 색".takeIf { l.plus != null },
     mapOf("compact" to "촘촘히", "roomy" to "넉넉히")[l.rows], "풀이 펼침".takeIf { l.open == true }, "날짜별 숨김".takeIf { l.days == false },
 ).joinToString(" · ").ifEmpty { "바꿈" }
 
 /** The pay screen's example: its total card and three lines, by the look of [style]. */
 @Composable
-private fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
+internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "급여 모양 고치기", onClick = onTap).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val fill = look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
         val on = if (look.plus != null) contentColorOn(fill) else MaterialTheme.colorScheme.onPrimaryContainer
@@ -695,7 +480,7 @@ private fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLook, onChange: (ScreenLook) -> Unit) {
+internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLook, onChange: (ScreenLook) -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     val pick = rememberPhotoPicker(LookImages.Slot.BG, onPicked = { id -> problem = null; onChange(l.copy(photo = id)) }, onProblem = { problem = it })
     val picture = rememberLookPicture(l.photo)
@@ -730,14 +515,14 @@ private fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLoo
     if (!l.isDefault) OutlinedButton(onClick = { onChange(ScreenLook()) }) { Text("이 화면 색·배경 처음대로") }
 }
 
-private fun colorSummary(l: ScreenLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
+internal fun colorSummary(l: ScreenLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
     "배경색".takeIf { l.bg != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
     "강조색".takeIf { l.accent != null }, l.emoji,
 ).joinToString(" · ")
 
 /** A screen's example for the screens without their own: a bar, a card with words, a switch and a button. */
 @Composable
-private fun ScreenSample(target: FreeTarget, onTap: () -> Unit) {
+internal fun ScreenSample(target: FreeTarget, onTap: () -> Unit) {
     val emoji = com.bamnat.app.ui.theme.LocalScreenLook.current.emoji
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "색·배경 고치기", onClick = onTap).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(listOfNotNull(emoji, target.label).joinToString(" "), style = MaterialTheme.typography.titleLarge)
@@ -757,7 +542,7 @@ private fun ScreenSample(target: FreeTarget, onTap: () -> Unit) {
 
 /** The alarm screen's example: its time and the two big buttons, with the dismiss button on its own plate. */
 @Composable
-private fun AlarmSample(onTap: () -> Unit) {
+internal fun AlarmSample(onTap: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "색·배경 고치기", onClick = onTap).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("06:30", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
@@ -802,34 +587,48 @@ private val SWATCHES: List<Long> = listOf(
     0xFF1B1B1B, 0xFF0F1220, 0xFF1E335C, 0xFF16443B, 0xFF4D2230,
 )
 
-/** A colour: the swatches, 직접 고르기 (빛깔·맑기·밝기), or 처음대로 ([allowNone]). */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * 1.35 [STU-12] Colours used lately in this 스튜디오 (사용자 실사용 "색 동그라미가 줄줄이"): offered first in every colour line, so a
+ * look stays in a few colours without hunting. The studio provides it; elsewhere nothing is kept.
+ */
+class ColorMemory(val recent: List<Long> = emptyList(), val used: (Long) -> Unit = {})
+val LocalColorMemory = androidx.compose.runtime.staticCompositionLocalOf { ColorMemory() }
+
+/**
+ * A colour in one line: what it is now, the colours used lately, then the swatches in a row that scrolls sideways, and 직접 고르기
+ * (빛깔·맑기·밝기, or a code). 처음대로 when [allowNone].
+ */
 @Composable
 fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (Long?) -> Unit) {
     var custom by remember { mutableStateOf(false) }
+    val memory = LocalColorMemory.current
+    fun pick(c: Long?) { c?.let(memory.used); onPick(c) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            if (value != null) Box(Modifier.size(20.dp).clip(CircleShape).background(Color(value.toInt())).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
+            Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (allowNone && value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SWATCHES.forEach { c ->
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                    .semantics { contentDescription = "$label 직접 고르기" },
+                contentAlignment = Alignment.Center,
+            ) { Text("+", style = MaterialTheme.typography.titleMedium) }
+            val recent = memory.recent.filter { it !in SWATCHES }.take(6)
+            (recent + SWATCHES).forEachIndexed { i, c ->
+                if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
                 val on = value == c
                 Box(
                     Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
                         .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .clickable { onPick(c) }.semantics { contentDescription = "$label ${colorName(c)}"; selected = on },
+                        .clickable { pick(c) }.semantics { contentDescription = "$label ${colorName(c)}" + if (i < recent.size) " (최근)" else ""; selected = on },
                 )
             }
-            Box(
-                Modifier.size(30.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
-                    .semantics { contentDescription = "$label 직접 고르기" },
-                contentAlignment = Alignment.Center,
-            ) { Text("+", style = MaterialTheme.typography.titleMedium) }
         }
     }
-    if (custom) CustomColorDialog(value ?: 0xFF2F5BEA, onDismiss = { custom = false }) { custom = false; onPick(it) }
+    if (custom) CustomColorDialog(value ?: 0xFF2F5BEA, onDismiss = { custom = false }) { custom = false; pick(it) }
 }
 
 /** 빛깔 (hue), 맑기 (saturation) and 밝기 (value), or the colour's code. */

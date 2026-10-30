@@ -25,8 +25,18 @@ data class ThemeLease(
      * One theme: its name, where it came from ([code] a 나눔 판 code, "builtin:<title>" or "" for one of mine), its written form so it
      * can be worn again, and the days it runs ([until] the first day it is over).
      */
-    data class Wear(val title: String, val code: String, val body: String, val from: Long, val until: Long, val own: Boolean = false) {
+    data class Wear(
+        val title: String, val code: String, val body: String, val from: Long, val until: Long, val own: Boolean = false,
+        /** [THM-01] 1.35 One of mine shown in 장터 under this code (사용자 2026-10-30 21:53 "장터에 올리면 광고 없이"); "" when kept to myself. */
+        val shared: String = "",
+        /** The 장터 판 of [code] (someone else's) or of [shared] (mine) that is worn or was sent last. */
+        val ver: Int = 0,
+        /** Mine sent without its pictures (사진 빼고 올리기): the next 판 goes without them too. */
+        val bare: Boolean = false,
+    ) {
         val key: String get() = code.ifEmpty { "own:$title" }
+        /** [THM-01] Mine and in 장터 now: no days, no ad. */
+        val free: Boolean get() = own && shared.isNotEmpty()
     }
 
     enum class State { NONE, OK, SOON, OVER }
@@ -48,8 +58,11 @@ data class ThemeLease(
 
     fun daysLeft(today: Long): Long? = worn?.let { (it.until - today).coerceAtLeast(0) }
 
-    /** Whether putting on [theme] now asks for an ad (not mine, not 프로, the switch on, the free ones used). */
-    fun needsAd(own: Boolean, adsOn: Boolean, pro: Boolean): Boolean = adsOn && !pro && !own && freeUsed >= FREE_FIRST
+    /**
+     * Whether putting on a theme now asks for an ad: the switch on, not 프로, the free ones used, and not [shared] mine. [THM-01] 1.35
+     * (사용자 2026-10-30 21:53): one of mine kept to myself asks as someone else's does; one of mine in 장터 never asks.
+     */
+    fun needsAd(shared: Boolean, adsOn: Boolean, pro: Boolean): Boolean = adsOn && !pro && !shared && freeUsed >= FREE_FIRST
 
     /** [w] is worn from [today] for [DAYS]; it goes first in the history. [free] counts one of the first free ones. */
     fun wear(w: Wear, today: Long, free: Boolean): ThemeLease {
@@ -88,10 +101,25 @@ data class ThemeLease(
 
     /** 프로 ended on [today]: the worn theme runs at least 30 more days from then. */
     fun proEnded(today: Long): ThemeLease = worn?.let { w ->
-        if (w.own || w.until >= today + DAYS) this else copy(worn = w.copy(until = today + DAYS))
+        if (w.free || w.until >= today + DAYS) this else copy(worn = w.copy(until = today + DAYS))
     } ?: this
 
-    private fun runs(w: Wear, adsOn: Boolean, pro: Boolean) = adsOn && !pro && !w.own
+    private fun runs(w: Wear, adsOn: Boolean, pro: Boolean) = adsOn && !pro && !w.free
+
+    /** [THM-01] Mine ([key]) is in 장터 as [code] at [ver] (sent without pictures when [bare]): no days or ad from now. */
+    fun shared(key: String, code: String, ver: Int, bare: Boolean): ThemeLease {
+        fun f(w: Wear) = if (w.key == key && w.own) w.copy(shared = code, ver = ver, bare = bare) else w
+        return copy(worn = worn?.let(::f), history = history.map(::f))
+    }
+
+    /**
+     * [THM-01] Mine left 장터 ([code] taken down by me or hidden after reports): kept to myself from now, with [DAYS] from [today]
+     * before its first ad, so nobody loses the look the same day.
+     */
+    fun unshared(code: String, today: Long): ThemeLease {
+        fun f(w: Wear) = if (w.own && w.shared == code) w.copy(shared = "", until = maxOf(w.until, today + DAYS)) else w
+        return copy(worn = worn?.let(::f), history = history.map(::f))
+    }
 
     companion object {
         const val DAYS = 30L
@@ -149,10 +177,11 @@ data class ThemeLease(
 
         private fun clean(t: String) = t.replace('\t', ' ').replace('\n', ' ')
         private fun wear(w: Wear) = listOf(clean(w.title), clean(w.code), escape(w.body),
-            w.from.toString(), w.until.toString(), if (w.own) "1" else "0").joinToString("\t")
+            w.from.toString(), w.until.toString(), if (w.own) "1" else "0", clean(w.shared), w.ver.toString(), if (w.bare) "1" else "0").joinToString("\t")
 
         private fun wearOf(p: List<String>): Wear? = runCatching {
-            Wear(p[0], p[1], unescape(p[2]), p[3].toLong(), p[4].toLong(), p.getOrNull(5) == "1")
+            Wear(p[0], p[1], unescape(p[2]), p[3].toLong(), p[4].toLong(), p.getOrNull(5) == "1", p.getOrNull(6).orEmpty(),
+                p.getOrNull(7)?.toIntOrNull() ?: 0, p.getOrNull(8) == "1")
         }.getOrNull()
     }
 }

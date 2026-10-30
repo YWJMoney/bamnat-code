@@ -253,6 +253,9 @@ private object Routes {
     fun recipeMake(calendar: String = PersonalCalendar.MAIN, draft: Long = 0, kind: String = "", code: String = "") =
         "recipe_make?calendar=$calendar&draft=$draft&kind=$kind&code=$code"
     const val RECIPE_MINE = "recipe_mine"
+    /** [STU-10] 1.35 스튜디오; [start] "mine", "plain" or "theme:<key>". */
+    const val STUDIO = "studio?start={start}"
+    fun studio(start: String = "mine") = "studio?start=${android.net.Uri.encode(start)}"
     /** [RCX-05] 1.35 a maker's page; [RCX-04] the 요청 판 of a calendar's kind of work. */
     const val RECIPE_MAKER = "recipe_maker/{id}"
     fun recipeMaker(id: String) = "recipe_maker/$id"
@@ -667,6 +670,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         com.bamnat.app.ui.pro.TrialConsentPrompt(container)
         // [FREE-10] 1.35 테마 기간: asked when the app opens (never over an alarm, which has its own activity).
         com.bamnat.app.ui.recipe.ThemeExpiryAsk()
+        com.bamnat.app.ui.recipe.ThemeUpdateAsk()
         com.bamnat.app.ui.pro.LaunchThanks(container)
     }
 
@@ -1428,20 +1432,30 @@ private fun AppNavHost(
             val recipeCal = PersonalCalendar.MAIN
             com.bamnat.app.ui.hub.HubScreen(container, style,
                 talk = { PlazaHost(nav, container, null, onBack = null, inHub = true) },
-                share = {
+                share = { kind ->
                     val vm = appViewModel(key = "recipes-$recipeCal") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, recipeCal) }
+                    // 테마's 장터에서 새 테마 찾기 opens 장터 on 테마·스킨; the 장터 tab itself opens as it was left.
+                    LaunchedEffect(kind) { if (kind != null && vm.state.value.kind != kind) vm.kind(kind) }
                     com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = null,
                         onOpen = { code -> nav.navigate(Routes.recipe(code, recipeCal)) },
                         onMake = { nav.navigate(Routes.recipeMake(recipeCal)) },
                         onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
                         title = com.bamnat.app.ui.hub.HubSection.SHARE.label)
                 },
-                onThemesAll = { nav.navigate(Routes.recipes(recipeCal, kind = "skin")) { launchSingleTop = true } },
                 onMake = { nav.navigate(Routes.recipeMake(recipeCal)) },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
                 onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
+                onStudio = { start -> nav.navigate(Routes.studio(start)) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
+            val start = entry.arguments?.getString("start") ?: "mine"
+            val vm = appViewModel(key = "studio-$start") { com.bamnat.app.ui.studio.StudioViewModel(it, start) }
+            com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onUpload = { (body, parent) ->
+                com.bamnat.app.recipe.RecipeLinks.remake = body to parent
+                nav.navigate(Routes.recipeMake(PersonalCalendar.MAIN))
+            })
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
@@ -1833,6 +1847,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
+    SettingsGo.STUDIO -> Routes.studio()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }

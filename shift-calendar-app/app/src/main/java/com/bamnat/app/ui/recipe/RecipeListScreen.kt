@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -258,19 +259,18 @@ fun RecipeListScreen(
                     OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // [HUB-04] 1.35 (사용자 21:39 "밀도있게"): what kind, how sorted and whose in one line instead of three.
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
-                    }
-                    // [FREE-08] 종류로 보기: 테마·스킨, 배치, 메모장, 가계부, 알람·규칙.
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
                         FilterChip(selected = state.kind == null, onClick = { vm.kind(null) }, label = { Text("모든 종류") })
                         com.bamnat.app.recipe.RecipeClient.KINDS.forEach { k ->
                             FilterChip(selected = state.kind == k, onClick = { vm.kind(k) }, label = { Text(KIND_NAMES[k] ?: k) })
                         }
-                    }
-                    if (vm.style != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("다른 유형 레시피도 보기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Switch(state.allStyles, vm::allStyles)
+                        if (vm.style != null) {
+                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
+                            FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
+                        }
                     }
                     if (state.tab == RecipeListViewModel.Tab.GOOD) Text("좋아요가 5개 넘은 레시피만 여기 나와요. 표가 적으면 ‘새로’에서 볼 수 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -285,7 +285,13 @@ fun RecipeListScreen(
                 Text("아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
             }
-            items(state.items, key = { it.code }) { item -> RecipeRow(item, Modifier.widthIn(max = 640.dp)) { onOpen(item.code) } }
+            // [HUB-04] Themes are picked by eye: two big pictures a row; the rest as rows.
+            if (state.kind == "skin") items(state.items.chunked(2), key = { row -> row.first().code }) { row ->
+                Row(Modifier.widthIn(max = 640.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { item -> ThemeTile(item, Modifier.weight(1f)) { onOpen(item.code) } }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+            } else items(state.items, key = { it.code }) { item -> RecipeRow(item, Modifier.widthIn(max = 640.dp)) { onOpen(item.code) } }
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
             else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
         }
@@ -315,6 +321,20 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Un
             }
             // [FREE-08] The theme itself, to pick by eye.
             item.look?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
+        }
+    }
+}
+
+/** [HUB-04] One theme in 장터's grid: the theme drawn large, its name and how many like and wear it. */
+@Composable
+private fun ThemeTile(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Card(modifier.clickable(onClickLabel = "테마 보기", onClick = onClick)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                item.look?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
+            }
+            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("♥ ${item.likes} · 입은 분 ${item.users}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

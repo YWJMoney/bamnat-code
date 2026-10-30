@@ -51,18 +51,18 @@ class RecipePieces(private val c: AppContainer) {
     // ---- export (만들기 1단계: 지금 내 설정에서 가져오기) ----
 
     /** What [kind] holds now on calendar [cal], in the piece's own fields; null when there is nothing to share. */
-    suspend fun export(kind: PieceKind, cal: String): Map<String, Any?>? = when (kind) {
+    suspend fun export(kind: PieceKind, cal: String, from: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, Any?>? = when (kind) {
         PieceKind.SHIFT_LOOK -> types(cal).takeIf { it.isNotEmpty() }?.take(12)?.let { list ->
             mapOf("items" to list.map { t ->
                 mapOf("name" to t.name.take(20), "role" to role(t).key, "label" to t.label.ifEmpty { t.name.take(1) },
                     "color" to (t.colorArgb or 0xFF000000L), "emoji" to ShiftIcon.emoji(t.icon))
             })
         }
-        PieceKind.CAL_THEME -> CalendarTheme.decode(c.settingsRepository.current.calTheme).let { t ->
+        PieceKind.CAL_THEME -> CalendarTheme.decode(from.calTheme).let { t ->
             mapOf("today" to t.today, "sat" to t.sat, "sun" to t.sun, "holiday" to t.holiday, "cell" to (t.cell ?: "tint"))
         }
         PieceKind.ALARMS -> {
-            val s = c.settingsRepository.current
+            val s = from
             val byRole = types(cal).filter { !it.isOff && it.alarmEnabled }.groupBy { role(it) }.map { (r, list) ->
                 mapOf("role" to r.key, "before" to list.flatMap { t -> t.alarms.filter { it.enabled }.map { it.offsetMinutes.toLong() } }
                     .distinct().sortedDescending().take(4))
@@ -114,19 +114,19 @@ class RecipePieces(private val c: AppContainer) {
             runCatching { mapOf("setup" to c.companyShare.export("", withAmounts = false)) }.getOrNull()
         // [RCX-11] A bundle is made of codes on 만들기, not taken from the phone.
         PieceKind.BUNDLE -> null
-        PieceKind.LAYOUT -> c.settingsRepository.current.let { s ->
+        PieceKind.LAYOUT -> from.let { s ->
             mapOf("tabs" to com.bamnat.core.layout.TabOrder.of(s.tabOrder), "calendar" to s.calendarLayout.ifEmpty { null })
         }
-        PieceKind.CARDS -> c.settingsRepository.current.let { s ->
+        PieceKind.CARDS -> from.let { s ->
             mapOf("stats" to s.statsLayout.ifEmpty { null }, "money" to s.moneyLayout.ifEmpty { null }, "memo" to s.memoLayout.ifEmpty { null })
                 .takeIf { m -> m.values.any { it != null } }
         }
-        PieceKind.WIDGET -> c.settingsRepository.current.let { s ->
+        PieceKind.WIDGET -> from.let { s ->
             val w = com.bamnat.core.recipe.WidgetLook.decode(s.widgetLook)
             mapOf("alpha" to w.alpha.toLong(), "theme" to w.theme, "memo" to s.widgetMemo)
         }
         // [CVW-01] 1.35 달력 모양 with the cells' own switches.
-        PieceKind.CAL_VIEW -> c.settingsRepository.current.let { s ->
+        PieceKind.CAL_VIEW -> from.let { s ->
             val v = com.bamnat.core.recipe.CalendarView.decode(s.calView)
             mapOf("size" to v.size, "badge" to v.badge, "date" to v.date, "text" to v.text, "grid" to v.grid,
                 "memo" to (v.memo ?: if (s.memoInCells) null else 0)?.toLong(), "hours" to s.showHoursInCells, "lunar" to s.showLunar, "spend" to s.spendInCells,
@@ -135,16 +135,16 @@ class RecipePieces(private val c: AppContainer) {
                 "pattern" to v.pattern.takeIf { !it.isDefault }?.encode(), "today" to v.todayLook?.toLong())
         }
         // [FREE-04] 1.35 메모장 모양.
-        PieceKind.MEMO_LOOK -> com.bamnat.core.recipe.MemoLook.decode(c.settingsRepository.current.memoLook).takeIf { !it.isDefault }?.let { l ->
+        PieceKind.MEMO_LOOK -> com.bamnat.core.recipe.MemoLook.decode(from.memoLook).takeIf { !it.isDefault }?.let { l ->
             mapOf("layout" to l.layout, "card" to l.card, "cardColor" to l.cardColor, "border" to l.border, "corner" to l.corner?.toLong(),
                 "lines" to l.lines?.toLong(), "title" to l.title, "bold" to l.bold, "font" to l.font, "date" to l.date, "bg" to l.bg)
         }
         // [FREE-06] 1.35 가계부 모양.
-        PieceKind.MONEY_LOOK -> com.bamnat.core.recipe.MoneyLook.decode(c.settingsRepository.current.moneyLook).takeIf { !it.isDefault }?.let { l ->
+        PieceKind.MONEY_LOOK -> com.bamnat.core.recipe.MoneyLook.decode(from.moneyLook).takeIf { !it.isDefault }?.let { l ->
             mapOf("rows" to l.rows, "amount" to l.amount, "mark" to l.mark, "income" to l.income, "expense" to l.expense, "dayHead" to l.dayHead)
         }
         // [FREE-05][FREE-07] 1.35 화면 색·배경 and 급여 모양; a picture the phone does not have is left out.
-        PieceKind.SCREEN_LOOK -> c.settingsRepository.current.let { s ->
+        PieceKind.SCREEN_LOOK -> from.let { s ->
             val ctx = c.appContext
             val looks = com.bamnat.core.recipe.ScreenLooks.decode(s.screenLooks).let { all ->
                 com.bamnat.core.recipe.ScreenLooks(all.looks.mapValues { (_, l) -> if (l.photo != null && !LookImages.has(ctx, l.photo)) l.copy(photo = null) else l })
@@ -152,14 +152,14 @@ class RecipePieces(private val c: AppContainer) {
             mapOf("screens" to looks.encode().ifEmpty { null }, "pay" to s.payLooks.ifEmpty { null }).takeIf { m -> m.values.any { it != null } }
         }
         // [CVW-07] 1.35 앱 동작.
-        PieceKind.APP_FEEL -> c.settingsRepository.current.let { s ->
+        PieceKind.APP_FEEL -> from.let { s ->
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
                 "accent" to s.accentColor.takeIf { it != 0L }, "textStep" to s.textStep.toLong(), "compact" to s.compact, "clock12" to s.clock12,
                 "tap" to s.phoneDayView.name.lowercase(), "hold" to s.longPress, "dayOrder" to s.dayGroupOrder.joinToString(",").ifEmpty { null },
                 "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod)
         }
         // [RCX-30] The phone's own picture ids; they become the server's when the recipe is sent ([LookImages.upload]).
-        PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(c.settingsRepository.current.photoLook).takeIf { !it.isDefault }?.let { l ->
+        PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(from.photoLook).takeIf { !it.isDefault }?.let { l ->
             val ctx = c.appContext
             val mine = types(cal).associateBy { it.id }
             val icons = l.icons.mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
@@ -652,8 +652,8 @@ class RecipePieces(private val c: AppContainer) {
     // ---- 1.35 settings pieces (화면 배치·카드·위젯 모양), each setting kept as a line of text ----
 
     /** The settings [kind] would leave, by key, as text. */
-    private suspend fun settingsAfter(kind: PieceKind, values: Map<String, Any?>, cal: String): Map<String, String> {
-        val cur = c.settingsRepository.current
+    private suspend fun settingsAfter(kind: PieceKind, values: Map<String, Any?>, cal: String,
+                                      cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
                 texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
@@ -834,6 +834,41 @@ class RecipePieces(private val c: AppContainer) {
         "calTheme" -> s.copy(calTheme = v)
         else -> s
     }
+
+    // ---- 1.35 [STU-10] 스튜디오 초안: a look kept in memory as settings, never the phone's until 입히기 ----
+
+    /** The look pieces of [draft] (as [export] reads the phone's), for the example phone and for 입히기·저장·올리기. */
+    suspend fun lookPieces(draft: com.bamnat.app.data.AppSettings, cal: String = PersonalCalendar.MAIN): List<com.bamnat.core.recipe.Piece> =
+        com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS.mapNotNull { k ->
+            runCatching { export(k, cal, draft) }.getOrNull()?.filterValues { it != null }?.takeIf { it.isNotEmpty() }?.let { com.bamnat.core.recipe.Piece(k, it) }
+        }
+
+    /** [draft] with one look piece's [values] on it, the way [apply] would put them on the phone; any other kind leaves it as it is. */
+    suspend fun onDraft(draft: com.bamnat.app.data.AppSettings, kind: PieceKind, values: Map<String, Any?>, cal: String = PersonalCalendar.MAIN): com.bamnat.app.data.AppSettings =
+        when (kind) {
+            PieceKind.CAL_THEME -> {
+                val t = CalendarTheme.decode(draft.calTheme)
+                draft.copy(calTheme = t.copy(today = values["today"] as? Long ?: t.today, sat = values["sat"] as? Long ?: t.sat,
+                    sun = values["sun"] as? Long ?: t.sun, holiday = values["holiday"] as? Long ?: t.holiday,
+                    cell = (values["cell"] as? String)?.takeIf { it != "tint" } ?: if (values["cell"] == "tint") null else t.cell).encode())
+            }
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK ->
+                settingsAfter(kind, values, cal, draft).entries.fold(draft) { acc, (k, v) -> withSetting(acc, k, v) }
+            else -> draft
+        }
+
+    /** [draft] with the look of the phone's [LOOK_SETTINGS] put back to the app's own (처음 모양). */
+    fun plainLook(draft: com.bamnat.app.data.AppSettings): com.bamnat.app.data.AppSettings {
+        val plain = com.bamnat.app.data.AppSettings()
+        return LOOK_SETTINGS.fold(draft) { acc, k -> withSetting(acc, k, settingOf(plain, k)) }
+    }
+
+    /** [draft]'s look as the settings [restoreLook] puts on the phone (스튜디오의 입히기). */
+    fun lookOf(draft: com.bamnat.app.data.AppSettings): Map<String, String> = LOOK_SETTINGS.associateWith { settingOf(draft, it) }
+
+    /** Whether two drafts look the same, and how many look settings differ. */
+    fun lookDiff(a: com.bamnat.app.data.AppSettings, b: com.bamnat.app.data.AppSettings): Int = LOOK_SETTINGS.count { settingOf(a, it) != settingOf(b, it) }
 
     /** [FREE-10] The settings a theme can change ([com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS]); never a record, an alarm or a rule. */
     fun lookSnapshot(): Map<String, String> = LOOK_SETTINGS.associateWith { settingOf(c.settingsRepository.current, it) }

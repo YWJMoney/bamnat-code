@@ -481,7 +481,7 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
 
 /** A page's parts in order: up and down for the movable ones, shown or hidden for each, and 처음대로. */
 @Composable
-private fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, onChange: (String?) -> Unit) {
+internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, onChange: (String?) -> Unit) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }
     StudioCard(title, if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
         onReset = line?.let { { onChange(null) } }) {
@@ -506,7 +506,7 @@ private fun PartsEditor(title: String, parts: List<Triple<String, String, Boolea
 }
 
 @Composable
-private fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<String>?) -> Unit) {
+internal fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<String>?) -> Unit) {
     val order = TabOrder.of(saved)
     StudioCard("아래 탭 순서", "맨 앞 탭이 앱을 열면 처음 보이는 화면이에요", onReset = saved.takeIf { it.isNotEmpty() }?.let { { onChange(null) } }) {
         order.forEachIndexed { i, key ->
@@ -524,7 +524,7 @@ private fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<S
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CornersEditor(corners: String?, onChange: (String?) -> Unit) {
+internal fun CornersEditor(corners: String?, onChange: (String?) -> Unit) {
     StudioCard("모서리", "카드와 버튼의 둥근 정도예요", onReset = corners?.let { { onChange(null) } }) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("round" to "둥글게", "soft" to "보통", "square" to "각지게").forEach { (k, label) ->
@@ -718,5 +718,5 @@ internal object StudioStarters {
 }
 
 /** Whether a card belongs on this kind of work's screen, as on the phone ([com.bamnat.core.guide.FitTable]). */
-private fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, style: WorkStyle?): Boolean =
+internal fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, style: WorkStyle?): Boolean =
     style == null || com.bamnat.core.guide.FitTable.visible(surface, id, style, emptySet())

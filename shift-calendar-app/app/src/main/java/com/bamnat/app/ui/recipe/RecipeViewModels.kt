@@ -96,6 +96,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val diff: List<com.bamnat.core.recipe.RecipeDiff.Piece> = emptyList(),
         /** [RCX-24] When this recipe went on this phone, while it can still be taken back (넣은 지 7일 안). */
         val appliedAt: Long? = null,
+        /** [TRY-01] The look parts ticked in 입어 보기; null: the look pieces whole, as switched on. */
+        val lookParts: Set<String>? = null,
     )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -185,9 +187,31 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         }
     }
 
+    /**
+     * [TRY-01] 입어 보기 ticked these look parts: the look pieces they come from are switched on (the others off), and only those
+     * parts go in with [apply].
+     */
+    fun lookParts(ids: Set<String>) {
+        val r = _state.value.recipe ?: return
+        val kinds = com.bamnat.core.recipe.LookParts.pick(r, ids).pieces.map { it.kind }.toSet()
+        _state.value = _state.value.copy(lookParts = ids, pieces = _state.value.pieces.map { p ->
+            if (p.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) p.copy(on = p.fits && p.kind in kinds) else p
+        })
+    }
+
+    /** [TRY-03] 담아 두기: the parts ticked kept in 보관함. */
+    fun keep(ids: Set<String>): Boolean = _state.value.recipe?.let { c.wardrobe.keep(it, code, ids.toList()) } ?: false
+    fun partsLimit(): Int = c.wardrobe.partsLimit()
+
     fun apply(onDone: (Long?) -> Unit) {
-        val s = _state.value
-        val r = s.recipe ?: return
+        val s0 = _state.value
+        val full = s0.recipe ?: return
+        // [TRY-01] Only the look parts ticked; 알람·규칙·메모 틀 as switched on.
+        val r = s0.lookParts?.let { ids ->
+            val picked = com.bamnat.core.recipe.LookParts.pick(full, ids).pieces
+            full.copy(pieces = full.pieces.filter { it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS } + picked)
+        } ?: full
+        val s = s0
         val doc = s.doc ?: return
         _state.value = s.copy(applying = true)
         viewModelScope.launch {
@@ -200,7 +224,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     s.pieces.filter { it.on && it.fits }.map { RecipeRepository.Pick(it.kind, it.mode) }, s.answers)
             }.getOrNull()
             if (id != null && looks.isNotEmpty()) runCatching {
-                c.wardrobe.afterWear(r.copy(pieces = r.pieces.filter { it.kind in looks }), code, own = doc.mine)
+                c.wardrobe.afterWear(r.copy(pieces = r.pieces.filter { it.kind in looks }), code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 message = if (id == null) "바뀐 것이 없어요" else "적용했어요. 7일 안에 되돌릴 수 있어요")
@@ -212,7 +236,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun looksNeedAd(): Boolean {
         val s = _state.value
         val looks = s.pieces.any { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
-        return looks && c.wardrobe.needsAd(s.doc?.mine == true)
+        return looks && c.wardrobe.needsAd(shared = s.doc?.mine == true)
     }
 
     /** [FREE-10] A theme put on with no ad able to come: counted. */
@@ -360,7 +384,10 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
 
     fun delete(code: String) {
         viewModelScope.launch {
-            _message.value = runCatching { c.recipeApi.delete(c.companyStore.device, code) }.fold({ loadMine(); "지웠어요" }, { RecipeClient.problem(it) })
+            _message.value = runCatching { c.recipeApi.delete(c.companyStore.device, code) }.fold({
+                // [THM-01] Mine taken out of 장터: 30 days, then it runs as one kept to myself.
+                c.wardrobe.unshared(code); loadMine(); "지웠어요"
+            }, { RecipeClient.problem(it) })
         }
     }
 

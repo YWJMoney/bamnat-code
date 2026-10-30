@@ -42,6 +42,10 @@ object RecipeLinks {
     /** 고쳐 만들기: the written recipe and its code, handed to 만들기 once (in memory). */
     var remake: Pair<String, String>? = null
 
+    /** [THM-01] The key of one of my themes being sent from 스튜디오: once it is up, it is marked as in 장터 (no days, no ad). */
+    var ownTheme: String? = null
+    const val NEW_OWN = "new"
+
     val DISLIKE_REASONS = linkedMapOf(
         "thin" to "설명이 부족해요", "odd" to "내 달력에서 이상해요", "same" to "비슷한 게 이미 있어요", "hard" to "쓰기 어려워요", "other" to "그 밖의 것",
     )

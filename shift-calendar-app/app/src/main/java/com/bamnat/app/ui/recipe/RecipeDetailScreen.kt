@@ -193,11 +193,41 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // 1.35 실사용 점검: the field already says the range in red; here only why the button waits, not a second red line.
                 else if (outside.isNotEmpty()) Text("위 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
-                // [FREE-08] 앱 전체 입어 보기: every tab in the recipe's looks before anything is put in (free, nothing changes).
-                OutlinedButton(onClick = { tryOn = true }, enabled = chosen > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("앱 전체 입어 보기") }
-                if (tryOn) TryOnDialog(r.copy(pieces = r.pieces.filter { p -> s.pieces.any { it.kind == p.kind && it.on && it.fits } }), vm.style) { tryOn = false }
-                Button(onClick = { confirming = true }, enabled = chosen > 0 && missing.isEmpty() && outside.isEmpty() && !s.applying,
+                // [TRY-01] 1.35 (사용자 2026-10-30 21:45 "입어보기랑 넣기가 버튼 두개가 있을 필요가 없고"): a recipe with looks has one way in,
+                // 입어 보기 — 지금 ↔ 입으면 and the parts to tick — whose button puts in what was ticked. One without looks is put in at once.
+                val hasLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).isNotEmpty() }
+                val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
+                if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
+                } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
+                if (tryOn) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
+                    TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
+                        onKeep = { ids -> android.widget.Toast.makeText(context, if (vm.keep(ids)) "보관함에 담았어요. 마을 › 테마와 스튜디오에서 꺼내 써요"
+                            else "보관함이 꽉 찼어요 (${vm.partsLimit()}개)", android.widget.Toast.LENGTH_SHORT).show() },
+                        extra = if (others.isEmpty()) null else { {
+                            Text("기능 · 모양과 함께 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+                            others.forEach { p ->
+                                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    androidx.compose.material3.Checkbox(p.on, { vm.toggle(p.kind, it) })
+                                    Column(Modifier.weight(1f)) {
+                                        Text(p.kind.label, style = MaterialTheme.typography.bodyMedium)
+                                        Text(RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false), style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                    }
+                                }
+                            }
+                        } },
+                    ) { picked ->
+                        val n = picked.size + others.count { it.on }
+                        if (!ready && missing.isNotEmpty()) Text("‘${missing.first().label}’을(를) 위에서 채우면 넣을 수 있어요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                        Button(onClick = { vm.lookParts(picked); tryOn = false; confirming = true }, enabled = n > 0 && ready,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (n == 0) "넣을 것을 골라 주세요" else "고른 ${n}개 넣기") }
+                    }
+                }
 
                 // [RCX-11] 묶음: each recipe in it opens on its own, to be chosen piece by piece.
                 r.pieces.firstOrNull { it.kind == PieceKind.BUNDLE }?.let { b ->
@@ -606,23 +636,3 @@ private fun DiffRow(label: String, change: String?, pickable: Boolean, on: Boole
 }
 
 
-/**
- * [FREE-08] 1.35 입어 보기 (사용자 2026-10-30 "미리보기를 보여주고 적용해보기"): the example phone in the recipe's looks, every tab a tap away,
- * before anything is put in. Nothing on the phone changes; 닫기 leaves it as it was.
- */
-@Composable
-private fun TryOnDialog(r: com.bamnat.core.recipe.Recipe, style: com.bamnat.core.work.WorkStyle?, onDismiss: () -> Unit) {
-    var tab by remember { mutableStateOf(com.bamnat.core.layout.TabOrder.CALENDAR) }
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        androidx.compose.material3.Surface(Modifier.fillMaxWidth().padding(12.dp), shape = MaterialTheme.shapes.extraLarge) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("입어 보기 · ${r.title}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                Text("아래 탭을 눌러 화면마다 봐요. 내 기록과 설정은 바뀌지 않아요", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                MockPhone(r, style, tab, onTab = { tab = it })
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("닫기") }
-            }
-        }
-    }
-}

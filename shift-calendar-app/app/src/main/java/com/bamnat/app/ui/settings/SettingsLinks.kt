@@ -29,6 +29,8 @@ enum class SettingsGo {
     PAY_BASE, PAY_ITEMS, PAY_PERIOD,
     /** [RCP-38] 1.34 설정 › 나눔 판. */
     RECIPES,
+    /** [STU-10] 1.35 스튜디오 (화면 꾸미기와 합침). */
+    STUDIO,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */
