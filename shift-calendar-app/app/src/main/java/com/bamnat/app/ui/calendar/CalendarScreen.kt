@@ -2600,7 +2600,7 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
 }
 
 /**
- * [ALRM-20] A day just made a day off or leave had alarms: 끌까요? [F-70] The shift's own alarms stopped with it and alarms
+ * [ALRM-20] A day just made a day off or leave had alarms: 끌까요? [J135-10] The shift's own alarms stopped with it and alarms
  * set by hand still ring; 끄기 leaves none, 그대로 울리기 keeps every one, closing changes nothing more.
  */
 @Composable

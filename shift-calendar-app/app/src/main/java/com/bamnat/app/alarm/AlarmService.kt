@@ -179,7 +179,7 @@ class AlarmService : Service() {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == Intent.ACTION_SCREEN_OFF && AlarmButtons.screenOffIsPress(screenShownAt, screenHiddenAt, Today.millis())) pressed()
-                // 1.35 [F-68] With 전체 화면 알림 off the ringing notice drops into the shade when the screen goes off: back on
+                // 1.35 [J135-08] With 전체 화면 알림 off the ringing notice drops into the shade when the screen goes off: back on
                 // (or unlocked) with no ringing screen, the notice is put up again so 끄기 is in sight while it still rings.
                 if ((intent.action == Intent.ACTION_SCREEN_ON || intent.action == Intent.ACTION_USER_PRESENT) && screenShownAt == 0L) showAgain()
             }
@@ -321,7 +321,7 @@ class AlarmService : Service() {
         return com.bamnat.core.alarm.AlarmSuggest.offDetail(ring.shiftTypeId, due, ring.offsetMinutes)
     }
 
-    /** [F-68] The ringing notice again (it pops up once more), while ringing out of a call. */
+    /** [J135-08] The ringing notice again (it pops up once more), while ringing out of a call. */
     private fun showAgain() {
         val ring = _ringing.value ?: return
         if (inCallNow) return

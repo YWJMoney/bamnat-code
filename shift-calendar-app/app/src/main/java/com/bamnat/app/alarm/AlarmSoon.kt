@@ -62,7 +62,7 @@ object AlarmSoon {
 
     /**
      * Registers the look ahead for the alarm at [triggerAt] ([text] says which), [minutes] before it; null or 0 takes it
-     * away. 1.35 [F-69]: exact when the phone lets the app (an alarm app may), since an inexact one came 3 minutes late
+     * away. 1.35 [J135-09]: exact when the phone lets the app (an alarm app may), since an inexact one came 3 minutes late
      * on the emulator and said "5분 전" 2 minutes before; inexact only when exact alarms were taken away.
      */
     fun schedule(context: Context, triggerAt: Long?, text: String?, minutes: Int) {

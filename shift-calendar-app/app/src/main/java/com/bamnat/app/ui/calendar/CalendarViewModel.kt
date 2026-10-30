@@ -714,7 +714,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             container.calendars.activeSnapshot.first { s -> dates.any { s.resolver.entryOn(it) != was[it] } }
         } ?: return ""
         val days = dates.mapNotNull { com.bamnat.core.alarm.AlarmPlanner.restDay(before.resolver, after.resolver, it) }
-        // 1.35 [F-70] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
+        // 1.35 [J135-10] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
         // nobody misses a wake-up they still wanted. Closing the ask changes nothing more.
         if (days.isNotEmpty()) _restAlarms.value = RestAlarmAsk(days, schedule)
         val gone = days.filter { it.left.isEmpty() }
@@ -725,11 +725,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    /** [F-70] The ask closed without an answer: nothing more changes (the shift's own alarms stay off, alarms set by hand on). */
+    /** [J135-10] The ask closed without an answer: nothing more changes (the shift's own alarms stay off, alarms set by hand on). */
     fun closeRestAlarms() { _restAlarms.value = null }
 
     /**
-     * [ALRM-20] 끄기: those days' alarms off, said back with undo. 그대로 울리기 [F-70]: alarms set by hand stay, and a day
+     * [ALRM-20] 끄기: those days' alarms off, said back with undo. 그대로 울리기 [J135-10]: alarms set by hand stay, and a day
      * whose shift alarms stopped with the shift gets them back as its own alarms, said back with undo.
      */
     fun answerRestAlarms(ask: RestAlarmAsk, turnOff: Boolean) {
