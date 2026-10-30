@@ -123,6 +123,15 @@ class RecipePieces(private val c: AppContainer) {
             val w = com.bamnat.core.recipe.WidgetLook.decode(s.widgetLook)
             mapOf("alpha" to w.alpha.toLong(), "theme" to w.theme, "memo" to s.widgetMemo)
         }
+        // [RCX-30] The phone's own picture ids; they become the server's when the recipe is sent ([LookImages.upload]).
+        PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(c.settingsRepository.current.photoLook).takeIf { !it.isDefault }?.let { l ->
+            val ctx = c.appContext
+            val mine = types(cal).associateBy { it.id }
+            val icons = l.icons.mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
+                .distinctBy { it.first }.take(6).map { (r, id) -> mapOf("role" to r, "image" to id) }
+            mapOf("bg" to l.bg?.takeIf { LookImages.has(ctx, it) }, "dim" to l.dim.toLong(), "head" to l.head?.takeIf { LookImages.has(ctx, it) },
+                "widget" to l.widget?.takeIf { LookImages.has(ctx, it) }, "corners" to l.corners, "icons" to icons.ifEmpty { null })
+        }
     }
 
     // ---- preview ----
@@ -199,8 +208,22 @@ class RecipePieces(private val c: AppContainer) {
             else listOf(Change(runCatching { c.companyShare.summarize(values["setup"] as String).let { s -> "근무 ${s.shiftTypes.size}가지와 순서, 급여 규칙" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
         PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
+        // [RCX-30] Said from the recipe itself: its pictures come down only when it is put in.
+        PieceKind.PHOTO_LOOK -> {
+            val mine = types(cal)
+            listOfNotNull(
+                values["bg"]?.let { Change("달력 배경 그림" + ((values["dim"] as? Number)?.let { d -> " (흐리게 ${d}%)" } ?: "")) },
+                values["head"]?.let { Change("달력 위 머리 그림") },
+                items(values, "icons").takeIf { it.isNotEmpty() }?.let { l ->
+                    val n = mine.count { t -> l.any { (it["role"] as? String) == role(t).key } }
+                    if (n == 0) Change("근무 그림: 맞는 근무가 없어 건너뛰어요", skipped = true) else Change("근무 그림 ${n}개 (같은 종류의 내 근무에)")
+                },
+                values["widget"]?.let { Change("위젯 배경 그림") },
+                (values["corners"] as? String)?.let { Change(com.bamnat.core.recipe.RecipeDescribe.CORNER_NAMES[it] ?: "모서리") },
+            ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
+        }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET ->
-            settingsAfter(kind, values).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
+            settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
                 .ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
     }
 
@@ -365,9 +388,11 @@ class RecipePieces(private val c: AppContainer) {
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
             PieceKind.BUNDLE -> null
-            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET -> {
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK -> {
+                // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
+                if (kind == PieceKind.PHOTO_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
-                val changes = settingsAfter(kind, values).filter { (k, v) -> settingOf(now, k) != v }
+                val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {
                     val out = JSONObject()
                     changes.forEach { (k, v) -> out.put(k, JSONArray().put(settingOf(now, k)).put(v)) }
@@ -572,7 +597,7 @@ class RecipePieces(private val c: AppContainer) {
                 before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
             }
             PieceKind.BUNDLE -> {}
-            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET -> {
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK -> {
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -587,7 +612,7 @@ class RecipePieces(private val c: AppContainer) {
     // ---- 1.35 settings pieces (화면 배치·카드·위젯 모양), each setting kept as a line of text ----
 
     /** The settings [kind] would leave, by key, as text. */
-    private fun settingsAfter(kind: PieceKind, values: Map<String, Any?>): Map<String, String> {
+    private suspend fun settingsAfter(kind: PieceKind, values: Map<String, Any?>, cal: String): Map<String, String> {
         val cur = c.settingsRepository.current
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
@@ -605,6 +630,19 @@ class RecipePieces(private val c: AppContainer) {
                     theme = (values["theme"] as? String)?.takeIf { it in com.bamnat.core.recipe.WidgetLook.THEMES } ?: w.theme)
                 listOfNotNull("widgetLook" to after.encode(), (values["memo"] as? Boolean)?.let { "widgetMemo" to it.toString() }).toMap()
             }
+            // [RCX-30] Each picture the phone has (or got) takes its place; a kind of day's picture goes to the user's kinds of day
+            // of the same role. What the recipe leaves out stays as it is.
+            PieceKind.PHOTO_LOOK -> {
+                val ctx = c.appContext
+                val l = com.bamnat.core.recipe.PhotoLook.decode(cur.photoLook)
+                fun pic(k: String) = (values[k] as? String)?.takeIf { LookImages.has(ctx, it) }
+                val byRole = items(values, "icons").mapNotNull { i -> (i["image"] as? String)?.takeIf { LookImages.has(ctx, it) }?.let { (i["role"] as? String) to it } }.toMap()
+                val icons = if (byRole.isEmpty()) l.icons else l.icons + types(cal).mapNotNull { t -> byRole[role(t).key]?.let { t.id to it } }
+                val after = l.copy(bg = pic("bg") ?: l.bg, head = pic("head") ?: l.head, widget = pic("widget") ?: l.widget,
+                    dim = (values["dim"] as? Number)?.toInt()?.coerceIn(0, 80) ?: l.dim,
+                    corners = (values["corners"] as? String)?.takeIf { it in com.bamnat.core.recipe.PhotoLook.CORNERS } ?: l.corners, icons = icons)
+                mapOf("photoLook" to after.encode())
+            }
             else -> emptyMap()
         }
     }
@@ -617,6 +655,7 @@ class RecipePieces(private val c: AppContainer) {
         "memoLayout" -> s.memoLayout
         "widgetLook" -> s.widgetLook
         "widgetMemo" -> s.widgetMemo.toString()
+        "photoLook" -> s.photoLook
         else -> ""
     }
 
@@ -627,6 +666,7 @@ class RecipePieces(private val c: AppContainer) {
         "moneyLayout" -> s.copy(moneyLayout = v)
         "memoLayout" -> s.copy(memoLayout = v)
         "widgetLook" -> s.copy(widgetLook = v)
+        "photoLook" -> s.copy(photoLook = v)
         "widgetMemo" -> s.copy(widgetMemo = v == "true")
         else -> s
     }
@@ -642,6 +682,11 @@ class RecipePieces(private val c: AppContainer) {
         val name = (item["name"] as? String)?.trim()
         return mine.firstOrNull { it.name.trim() == name } ?: mine.firstOrNull { role(it) == ShiftRole.of(item["role"] as? String) }
     }
+
+    /** [RCX-30] Every picture id a 그림 꾸미기 piece names. */
+    fun photoIds(values: Map<String, Any?>): List<String> =
+        (listOf(values["bg"], values["head"], values["widget"]) + items(values, "icons").map { it["image"] }).filterIsInstance<String>()
+            .filter { com.bamnat.core.recipe.PhotoLook.isId(it) }.distinct()
 
     @Suppress("UNCHECKED_CAST")
     private fun items(values: Map<String, Any?>, key: String): List<Map<String, Any?>> = (values[key] as? List<*>)?.filterIsInstance<Map<String, Any?>>().orEmpty()
@@ -720,7 +765,8 @@ class RecipePieces(private val c: AppContainer) {
 
     companion object {
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
-            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄")
+            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄",
+            "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)")
         const val CLOSING_TITLE = "마감 체크"
         const val JOURNAL_TITLE = "투자일지"
         const val PRINCIPLES_MAX = 20

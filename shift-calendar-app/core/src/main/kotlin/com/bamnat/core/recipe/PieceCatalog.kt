@@ -207,7 +207,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     LAYOUT(
         "layout", "화면 배치", WorkStyle.entries.toSet(),
         listOf(
-            Field.Texts("tabs", 5, 10),
+            // 1.35 [RCX-29] six tabs since 광장 got one.
+            Field.Texts("tabs", 6, 10),
             Field.Text("calendar", 400, optional = true, guard = false, check = ::layoutLine),
         ),
     ),
@@ -229,6 +230,26 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Num("alpha", 30.0, 100.0, optional = true),
             Field.Pick("theme", listOf("system", "light", "dark"), optional = true),
             Field.Flag("memo"),
+        ),
+    ),
+
+    /**
+     * [RCX-30] 1.35 그림 꾸미기 (사용자 2026-10-30 "사진을 사용해서 버튼 모양이나 등등의 것들의 모습을 바꿀수 있게"): pictures for the
+     * calendar's background and its top, each kind of day's mark and the widgets' background, by the ids of pictures the server
+     * keeps (each looked at before anyone else sees it), how dim the background is drawn and how round the app's corners are.
+     */
+    PHOTO_LOOK(
+        "photoLook", "그림 꾸미기", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Text("bg", 16, optional = true, guard = false, check = PhotoLook::idProblem),
+            Field.Num("dim", 0.0, 80.0, optional = true),
+            Field.Text("head", 16, optional = true, guard = false, check = PhotoLook::idProblem),
+            Field.Text("widget", 16, optional = true, guard = false, check = PhotoLook::idProblem),
+            Field.Pick("corners", PhotoLook.CORNERS, optional = true),
+            Field.Items(
+                "icons", 6, optional = true,
+                fields = listOf(Field.Pick("role", ShiftRole.KEYS), Field.Text("image", 16, min = 16, guard = false, check = PhotoLook::idProblem)),
+            ),
         ),
     );
 
@@ -341,6 +362,52 @@ data class WidgetLook(val alpha: Int = 100, val theme: String = "system") {
             if (s.isBlank()) return WidgetLook()
             val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
             return WidgetLook(m["alpha"]?.toIntOrNull()?.coerceIn(30, 100) ?: 100, m["theme"]?.takeIf { it in THEMES } ?: "system")
+        }
+    }
+}
+
+/**
+ * [RCX-30] 1.35 그림 꾸미기, as the settings keep it ("bg=…;dim=30;head=…;widget=…;corners=soft;icon.12=…"): pictures by id
+ * (16 hex: a file the phone keeps under looks/, the server's id when it came in a recipe), the background's dimming (0..80 %)
+ * and the corners. [icons] is by the kind of day's id on this phone. Empty is the app's own look.
+ */
+data class PhotoLook(
+    val bg: String? = null,
+    val dim: Int = DIM,
+    val head: String? = null,
+    val widget: String? = null,
+    val corners: String? = null,
+    val icons: Map<Long, String> = emptyMap(),
+) {
+    val isDefault: Boolean get() = this == PhotoLook()
+
+    /** Every picture it uses, so the ones nothing uses can be let go. */
+    val images: Set<String> get() = setOfNotNull(bg, head, widget) + icons.values
+
+    fun encode(): String = if (isDefault) "" else listOfNotNull(
+        bg?.let { "bg=$it" }, "dim=$dim".takeIf { dim != DIM }, head?.let { "head=$it" }, widget?.let { "widget=$it" },
+        corners?.let { "corners=$it" },
+    ).plus(icons.entries.sortedBy { it.key }.map { (t, id) -> "icon.$t=$id" }).joinToString(";")
+
+    companion object {
+        const val DIM = 30
+        /** round: very round; soft: a little (the app's own, between); square: almost none. */
+        val CORNERS = listOf("round", "soft", "square")
+        private val ID = Regex("^[0-9a-f]{16}$")
+
+        fun isId(s: String?): Boolean = s != null && ID.matches(s)
+        fun idProblem(s: String): String? = if (s.isEmpty() || ID.matches(s)) null else "image"
+
+        fun decode(s: String): PhotoLook {
+            if (s.isBlank()) return PhotoLook()
+            val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }
+            val one = m.toMap()
+            return PhotoLook(
+                bg = one["bg"]?.takeIf(::isId), dim = one["dim"]?.toIntOrNull()?.coerceIn(0, 80) ?: DIM,
+                head = one["head"]?.takeIf(::isId), widget = one["widget"]?.takeIf(::isId),
+                corners = one["corners"]?.takeIf { it in CORNERS },
+                icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") }?.toLongOrNull()?.takeIf { isId(v) }?.let { it to v } }.toMap(),
+            )
         }
     }
 }

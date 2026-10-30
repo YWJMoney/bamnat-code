@@ -70,10 +70,7 @@ class TeamsWidgetReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 private fun WidgetBox(content: @Composable () -> Unit) {
-    Box(
-        GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(20.dp).padding(12.dp)
-            .clickable(actionStartActivity(NoticeLinks.intent(androidx.glance.LocalContext.current, NoticeLinks.Target.TEAMS))),
-    ) { content() }
+    WidgetSurface(GlanceModifier.clickable(actionStartActivity(NoticeLinks.intent(androidx.glance.LocalContext.current, NoticeLinks.Target.TEAMS)))) { content() }
 }
 
 /** [DAILY-03] Each team's shift today, mine marked, with tomorrow's beside it. */

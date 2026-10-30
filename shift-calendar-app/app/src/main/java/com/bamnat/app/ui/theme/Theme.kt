@@ -207,6 +207,9 @@ data class CalendarLook(
 
 val LocalCalendarLook = staticCompositionLocalOf { CalendarLook() }
 
+/** [RCX-30] 1.35 그림 꾸미기, as the settings keep it (pictures by id, drawn from files/looks/). */
+val LocalPhotoLook = staticCompositionLocalOf { com.bamnat.core.recipe.PhotoLook() }
+
 /**
  * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
  * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions
@@ -244,6 +247,19 @@ private val AppShapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
 )
 
+/** [RCX-30] 1.35 그림 꾸미기의 모서리: round (더 둥글게), square (거의 각지게); null and "soft" are the app's own. */
+fun shapesFor(corners: String?): Shapes = when (corners) {
+    "round" -> Shapes(
+        extraSmall = RoundedCornerShape(10.dp), small = RoundedCornerShape(16.dp), medium = RoundedCornerShape(24.dp),
+        large = RoundedCornerShape(32.dp), extraLarge = RoundedCornerShape(40.dp),
+    )
+    "square" -> Shapes(
+        extraSmall = RoundedCornerShape(2.dp), small = RoundedCornerShape(4.dp), medium = RoundedCornerShape(6.dp),
+        large = RoundedCornerShape(8.dp), extraLarge = RoundedCornerShape(12.dp),
+    )
+    else -> AppShapes
+}
+
 /** Tabular figures keep hour totals from jumping around as they change. */
 val NumberStyle = TextStyle(fontFeatureSettings = "tnum")
 
@@ -255,6 +271,8 @@ fun BamnatTheme(
     textStep: Int = TextSize.DEFAULT,
     /** U 1.32 [UX132-06] 촘촘하게. */
     compact: Boolean = true,
+    /** [RCX-30] 그림 꾸미기의 모서리 ([shapesFor]). */
+    corners: String? = null,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -280,7 +298,7 @@ fun BamnatTheme(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
-            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = AppShapes, content = content)
+            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = shapesFor(corners), content = content)
         }
     }
 }

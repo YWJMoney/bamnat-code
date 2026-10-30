@@ -56,6 +56,8 @@ const NS = (key, max, lo, hi, o = {}) => ({ t: "nums", key, max, lo, hi, decimal
 const D = (key, o = {}) => ({ t: "days", key, optional: true, ...o });
 const I = (key, max, fields, o = {}) => ({ t: "items", key, max, fields, min: 0, optional: false, ...o });
 
+const imageId = (s) => (s === "" || /^[0-9a-f]{16}$/.test(s) ? null : "image");
+
 const LAYOUT_LINE = /^-?[A-Za-z][A-Za-z0-9]{0,23}(,-?[A-Za-z][A-Za-z0-9]{0,23}){0,39}$/;
 const layoutLine = (s) => (s === "" || LAYOUT_LINE.test(s) ? null : "layout");
 
@@ -95,10 +97,15 @@ export const RECIPE_PIECES = {
   // 1.35 [RCX-11]..[RCX-14]
   bundle: { styles: STYLES, fields: [I("items", 8, [T("code", 8, { min: 8, guard: false, check: (s) => (CODE.test(s) ? null : "code") }),
     T("note", 40, { optional: true })], { min: 2 })] },
-  layout: { styles: STYLES, fields: [TS("tabs", 5, 10), T("calendar", 400, { optional: true, guard: false, check: layoutLine })] },
+  layout: { styles: STYLES, fields: [TS("tabs", 6, 10), T("calendar", 400, { optional: true, guard: false, check: layoutLine })] },
   cards: { styles: STYLES, fields: [T("stats", 400, { optional: true, guard: false, check: layoutLine }),
     T("money", 400, { optional: true, guard: false, check: layoutLine }), T("memo", 400, { optional: true, guard: false, check: layoutLine })] },
   widget: { styles: STYLES, fields: [N("alpha", 30, 100, { optional: true }), P("theme", ["system", "light", "dark"], { optional: true }), F("memo")] },
+  // 1.35 [RCX-30] 그림 꾸미기: pictures by their recipe_images id (each looked at before others see it).
+  photoLook: { styles: STYLES, fields: [T("bg", 16, { optional: true, guard: false, check: imageId }), N("dim", 0, 80, { optional: true }),
+    T("head", 16, { optional: true, guard: false, check: imageId }), T("widget", 16, { optional: true, guard: false, check: imageId }),
+    P("corners", ["round", "soft", "square"], { optional: true }),
+    I("icons", 6, [P("role", ROLES), T("image", 16, { min: 16, guard: false, check: imageId })], { optional: true })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 

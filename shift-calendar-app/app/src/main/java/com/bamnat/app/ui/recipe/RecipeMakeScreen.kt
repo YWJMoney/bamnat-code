@@ -230,7 +230,7 @@ class RecipeMakeViewModel(
         _state.value = s.copy(sending = true, error = null)
         viewModelScope.launch {
             try {
-                val r = RecipeCodec.read(RecipeCodec.write(s.recipe))
+                val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(s.recipe)))
                 val sent = if (code != null) c.recipeApi.newVersion(c.companyStore.device, code, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
@@ -241,6 +241,28 @@ class RecipeMakeViewModel(
                 _state.value = _state.value.copy(sending = false, error = RecipeClient.problem(e))
             }
         }
+    }
+
+    /**
+     * [RCX-30] A 그림 꾸미기 piece names the phone's own pictures; each is sent (made small, no EXIF, already on the phone) and the
+     * piece names the server's id instead. A picture already sent keeps its id.
+     */
+    private suspend fun withServerPictures(r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
+        if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK }) return r
+        val sent = mutableMapOf<String, String>()
+        suspend fun server(id: Any?): Any? {
+            val local = id as? String ?: return id
+            if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return local
+            return sent.getOrPut(local) { com.bamnat.app.recipe.LookImages.upload(c, local) }
+        }
+        return r.copy(pieces = r.pieces.map { p ->
+            if (p.kind != PieceKind.PHOTO_LOOK) p else {
+                val v = p.values.toMutableMap()
+                for (k in listOf("bg", "head", "widget")) v[k]?.let { v[k] = server(it) }
+                (v["icons"] as? List<*>)?.let { l -> v["icons"] = l.map { i -> (i as? Map<*, *>)?.let { m -> m.mapKeys { it.key.toString() }.toMutableMap().also { it["image"] = server(it["image"]) } } ?: i } }
+                p.copy(values = v)
+            }
+        })
     }
 
     companion object { const val MIN_WAGE = 10_320L }

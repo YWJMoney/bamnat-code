@@ -8,7 +8,8 @@ import { CODE, cleanText, graphemes, listItem, makerId, oneEmoji, sha256hex, tex
 import { DAY, HOUR } from "./units.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
-export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerDay: 3, imageBytes: 64 * 1024, imagesPerDay: 5, picks: 3, versionsAsk: 50 };
+// 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
+export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerDay: 3, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50 };
 export const RECIPE_BADGES = {
   first: "첫 레시피",
   users100: "쓰는 분 100명",

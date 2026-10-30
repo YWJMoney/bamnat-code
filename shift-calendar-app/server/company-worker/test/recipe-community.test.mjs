@@ -121,7 +121,7 @@ test("[RCX-15] 그림 표지: WebP only, small, shown to others once the operato
   const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([20, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(16)]).toString("base64");
   const png = Buffer.from("\x89PNG\r\n\x1a\n0000000000000000").toString("base64");
   assert.equal((await call("POST", "/api/recipes/images", { device: device(1), webp: png }, from(1))).data.error, "image");
-  const big = Buffer.concat([Buffer.from("RIFF0000WEBP"), Buffer.alloc(70_000)]).toString("base64");
+  const big = Buffer.concat([Buffer.from("RIFF0000WEBP"), Buffer.alloc(170_000)]).toString("base64");
   assert.equal((await call("POST", "/api/recipes/images", { device: device(1), webp: big }, from(1))).status, 413);
   const id = (await call("POST", "/api/recipes/images", { device: device(1), webp }, from(1))).data.id;
   assert.match(id, /^[0-9a-f]{16}$/);

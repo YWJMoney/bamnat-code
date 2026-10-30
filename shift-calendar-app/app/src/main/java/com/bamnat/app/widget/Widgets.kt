@@ -132,14 +132,7 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 private fun WidgetFrame(content: @Composable () -> Unit) {
-    Box(
-        GlanceModifier
-            .fillMaxSize()
-            .background(widgetBg())
-            .cornerRadius(20.dp)
-            .padding(12.dp)
-            .clickable(actionStartActivity<MainActivity>()),
-    ) { content() }
+    WidgetSurface(GlanceModifier.clickable(actionStartActivity<MainActivity>())) { content() }
 }
 
 /** [CAL-11] What an empty widget asks for, in the words of the user's kind of work. */

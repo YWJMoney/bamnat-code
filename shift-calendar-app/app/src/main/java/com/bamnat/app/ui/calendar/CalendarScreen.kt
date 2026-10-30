@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -1474,6 +1475,8 @@ fun CalendarScreen(
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
+        // [RCX-30] 1.35 그림 꾸미기: the background picture under the page.
+        PhotoBackdrop()
         if (tabletop != null) {
             // [DAILY-09] The month above the hinge, the day panel below it; nothing sits on the fold itself.
             var areaTop by remember { mutableIntStateOf(0) }
@@ -1554,6 +1557,7 @@ fun CalendarScreen(
                     .verticalScroll(pageScroll)
                     .padding(bottom = bottomSpace),
             ) {
+                com.bamnat.app.ui.theme.PhotoHead()
                 calendarPart()
             }
         }

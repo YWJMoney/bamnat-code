@@ -84,9 +84,16 @@ object RecipeDescribe {
             (p.values["theme"] as? String)?.let { mapOf("system" to "휴대폰 화면 따라", "light" to "밝게", "dark" to "어둡게")[it] },
             (p.values["memo"] as? Boolean)?.let { if (it) "메모 한 줄 보임" else "메모 숨김" },
         ).joinToString(" · ").ifEmpty { "위젯 모양" }
+        PieceKind.PHOTO_LOOK -> listOfNotNull(
+            "달력 배경".takeIf { p.values["bg"] != null }, "머리 그림".takeIf { p.values["head"] != null },
+            items(p, "icons").size.takeIf { it > 0 }?.let { "근무 그림 ${it}개" }, "위젯 배경".takeIf { p.values["widget"] != null },
+            (p.values["corners"] as? String)?.let { CORNER_NAMES[it] },
+        ).joinToString(" · ").ifEmpty { "그림 꾸미기" }
     }
 
-    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "settings" to "설정")
+    val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
+
+    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "plaza" to "광장", "settings" to "설정")
 
     /** "보이는 카드 n개, 숨긴 카드 m개" of a layout line. */
     private fun parts(line: String): String {
