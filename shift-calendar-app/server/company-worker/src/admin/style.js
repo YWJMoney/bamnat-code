@@ -721,4 +721,16 @@ details.card.events>summary h2{display:inline;font-size:1.06rem}
 .sort-field textarea{min-height:4.5rem}
 ul.mini{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem;font-size:.86rem}
 ul.mini small{color:var(--muted);margin-left:.3rem}
+/* 1.35 [ADMHE-01] A phone: the list starts higher. 정렬·고르기·CSV fold behind one button; the waiting line that only
+   repeats this tab's own number and the keyboard hint are left out. */
+.tools-toggle{display:none}
+.tool-more{display:contents}
+@media (max-width:599.98px){.toolbar.fold{flex-wrap:nowrap}.toolbar.fold.open{flex-wrap:wrap}.tools-toggle{display:inline-flex}
+.toolbar.fold .tool-more{display:none}.toolbar.fold.open .tool-more{display:flex;flex-wrap:wrap;gap:.5rem;flex-basis:100%}
+.toolbar.fold.open .tool-more select{flex:1 1 10rem}
+.toolbar.fold input[type=search]{flex:1 1 0}
+.waiting.only-here{display:none}.fresh{padding:.45rem .7rem;font-size:.85rem;flex-wrap:nowrap}.fresh span{flex:1 1 auto}.fresh [data-act=fresh-bugs]{display:none}}
+@media (pointer:coarse){.kbd-hint{display:none}}
+.sort-nudge{display:flex;align-items:center;gap:.6rem;margin:0 0 .9rem;padding:.7rem .9rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);text-decoration:none;font-size:.88rem}
+.sort-nudge svg{flex:none;width:1.25rem;height:1.25rem}.sort-nudge span{flex:1;min-width:0}.sort-nudge b{color:var(--info);margin-right:.35rem}
 `;

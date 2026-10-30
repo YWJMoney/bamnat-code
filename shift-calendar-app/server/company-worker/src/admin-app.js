@@ -958,7 +958,9 @@ function adminApp(L, BUILD, M) {
   function waitingStrip() {
     const hub = hubNow();
     if (!hub || hub.key === "today" || S.route.id || hub.tabs[0] !== S.route.name || !hub.tabs.some((t) => L.TABS[t].badge)) return "";
-    return `<p class="waiting" id="waiting" data-hub="${hub.key}">${waitingItems(hub.key)}</p>`;
+    // 1.35 [ADMHE-01] On a phone the line is left out when all it says is this tab's own number (the tab already shows it).
+    const only = L.waiting(hub.key, S.overview ?? {}, S.me).every((x) => x.tab === S.route.name);
+    return `<p class="waiting${only ? " only-here" : ""}" id="waiting" data-hub="${hub.key}">${waitingItems(hub.key)}</p>`;
   }
 
   function heading(bottom) {
@@ -1219,11 +1221,12 @@ function adminApp(L, BUILD, M) {
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
       ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>
-      <div class="toolbar"><input id="search" type="search" placeholder="문의와 답에서 찾기" value="${esc(S.inquiryQuery)}" autocomplete="off" enterkeyhint="search" aria-label="문의 찾기">
-        <label class="sr" for="inq-sort">정렬</label><select id="inq-sort" data-change="inquiry-sort">${SORTS.map(([k, label]) => `<option value="${k}"${S.inquirySort === k ? " selected" : ""}>${label}</option>`).join("")}</select>
+      <div class="toolbar fold${S.toolsOpen || picking ? " open" : ""}"><input id="search" type="search" placeholder="문의와 답에서 찾기" value="${esc(S.inquiryQuery)}" autocomplete="off" enterkeyhint="search" aria-label="문의 찾기">
+        ${edit && S.inquiryStatus === "open" ? '<button class="btn primary" data-act="queue-start">큐 모드</button>' : ""}
+        <button class="btn tools-toggle" data-act="tools-toggle" aria-expanded="${Boolean(S.toolsOpen || picking)}">${S.toolsOpen || picking ? "접기" : "정렬·더"}</button>
+        <span class="tool-more"><label class="sr" for="inq-sort">정렬</label><select id="inq-sort" data-change="inquiry-sort">${SORTS.map(([k, label]) => `<option value="${k}"${S.inquirySort === k ? " selected" : ""}>${label}</option>`).join("")}</select>
         <button class="btn" data-act="inquiry-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>
-        ${picking ? "" : csvButton("inquiries", S.data.inquiries?.inquiries)}
-        ${edit && S.inquiryStatus === "open" ? '<button class="btn primary" data-act="queue-start">큐 모드</button>' : ""}</div>
+        ${picking ? "" : csvButton("inquiries", S.data.inquiries?.inquiries)}</span></div>
       <div class="filterbar"><div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}</div>`;
     if (!d) return head + skeleton();
@@ -1245,7 +1248,7 @@ function adminApp(L, BUILD, M) {
         <span class="more-acts">${[["assign", "내가 맡기"], ["unassign", "맡기 취소"], ["reply", "같은 답 보내기"], ["close", "닫기"], ["open", "다시 열기"]].map(([k, label]) =>
           `<button class="btn small" data-act="inquiry-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}
         ${can("dev", "edit") ? `<button class="btn small" data-act="inquiry-bulk" data-key="link"${n ? "" : " disabled"}>개발사항에 연결</button>` : ""}</span>` : ""}</div>` : "";
-    return head + freshStrip(d) + `<p class="meta">${found}건${d.sla ? ` · 답 목표: 문제 ${d.sla.slaBug}시간, 질문 ${d.sla.slaQuestion}시간, 제안 ${d.sla.slaIdea}시간` : ""}${picking ? "" : " · 길게 누르거나 Space로 고르고, Shift로 이어서 골라요"}</p>
+    return head + freshStrip(d) + `<p class="meta">${found}건${d.sla ? ` · 답 목표: 문제 ${d.sla.slaBug}시간, 질문 ${d.sla.slaQuestion}시간, 제안 ${d.sla.slaIdea}시간` : ""}${picking ? "" : '<span class="kbd-hint"> · 길게 누르거나 Space로 고르고, Shift로 이어서 골라요</span>'}</p>
       <ul class="rows">${d.inquiries.map((q) => inquiryRow(q, { picking })).join("")}</ul>
       ${moreButton(d.next, "inquiries-more", d.total, d.inquiries.length)}${bar}`;
   }
@@ -3643,6 +3646,8 @@ function adminApp(L, BUILD, M) {
       sortApply([{ do: "reply", id, text }], "답했어요");
     },
     // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
+    // 1.35 [ADMHE-01] A phone's list toolbar: search and 큐 모드 in one line, the rest behind 정렬·더.
+    "tools-toggle": () => { S.toolsOpen = !S.toolsOpen; render({ keepScroll: true }); },
     "sort-jump": ({ key }) => document.getElementById(key === "tools" ? "sort-tools" : `pile-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
     "sort-skip": ({ id }) => sortApply([{ do: "skip", id }], "정리함에서 뺐어요"),
     "sort-pile": ({ key }) => {

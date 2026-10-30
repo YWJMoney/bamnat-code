@@ -77,6 +77,7 @@ export function todayViews(A) {
     return `${top}<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
         <p>${o.doneToday ? `오늘 ${o.doneToday}건 처리했어요. ` : ""}${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p></div>
       ${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
+      ${can("inquiries") && o.inquiries > 1 ? `<a class="sort-nudge" href="${href("sort")}">${icon(P.inquiries)}<span><b>정리함</b> 답 대기 ${o.inquiries}건을 이미 고침·개발 목록·새 문제로 나눠 두었어요. 한 번에 처리해요</span>${icon(P.chevron)}</a>` : ""}
       ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
       <div class="home-grid"><div class="home-main">${alertsCard(t.alerts)}${todoCard(t.todo)}</div>
         <div class="home-side">${more}${people}

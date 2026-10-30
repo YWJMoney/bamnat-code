@@ -1487,3 +1487,4 @@ INBOX-05,"1.35 Claude에게 넘기기: 아직 넘기지 않은 개발사항을 �
 INBOX-06,"1.35 개발 결과 붙여 넣기: Claude가 준 ‘d… 완료 1.36.0 / 개발중 / 반려 이유’ 줄을 읽어 무엇이 바뀌는지 먼저 보여 주고, 반영하면 개발사항 상태와 묶인 문의 답을 한 번에",2 (1.35.0),완료,,inbox.js readResult applyResult
 INBOX-07,"1.35 넘김·결과 규칙: 개발 회차는 정리함 넘김 글로 시작하고 끝에 결과 줄을 적어 돌려줌(관리자 앱과 상호작용하는 자가발전 규칙)",2 (1.35.0),완료,,inbox.js handoff 결과 적는 법
 INBOX-08,"1.35 정리함 저장: inquiries.sorted_at, dev_items.handed_at 열 추가(멱등 ALTER), 설정 inbox_auto",2 (1.35.0),완료,,src/index.js COLUMNS
+ADMHE-01,"1.35 관리자 앱 하이엔드 다듬기(사용자 2026-10-30 ‘직접 사용하면서 성능·편의성·디자인’): 휴대폰 문의 목록이 화면 아래로 밀리던 것 → 찾기·큐 모드 한 줄, 정렬·고르기·CSV는 ‘정렬·더’ 뒤로, 이 탭 숫자만 되풀이하는 ‘지금 기다리는 것’ 줄과 키보드 안내 숨김, 복사 전 문제 신고 띠 한 줄. 첫 문의가 660px→400px. 오늘 화면에 정리함 바로 가기",2 (1.35.0),완료,,src/admin-app.js inquiriesView src/admin/views/today.js src/admin/style.js
