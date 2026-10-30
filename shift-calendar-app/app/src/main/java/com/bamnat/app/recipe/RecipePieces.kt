@@ -670,7 +670,7 @@ class RecipePieces(private val c: AppContainer) {
                     size = pick("size", com.bamnat.core.recipe.CalendarView.SIZES) ?: v.size, badge = pick("badge", com.bamnat.core.recipe.CalendarView.BADGES) ?: v.badge,
                     date = pick("date", com.bamnat.core.recipe.CalendarView.DATES) ?: v.date, text = pick("text", com.bamnat.core.recipe.CalendarView.TEXTS) ?: v.text,
                     grid = pick("grid", com.bamnat.core.recipe.CalendarView.GRIDS) ?: v.grid, memo = memo ?: v.memo,
-                    order = (values["order"] as? String)?.takeIf { com.bamnat.core.recipe.CalendarView.orderProblem(it) == null && it.isNotEmpty() }?.split(',') ?: v.order,
+                    order = (values["order"].let { o -> (o as? List<*>)?.joinToString(",") ?: o as? String })?.takeIf { com.bamnat.core.recipe.CalendarView.orderProblem(it) == null && it.isNotEmpty() }?.split(',') ?: v.order,
                 )
                 listOfNotNull(
                     "calView" to after.encode(),

@@ -1037,7 +1037,7 @@ export function adminLib() {
 
   /** A question's title: the first line the asker wrote, 60 letters at most. */
   function copyTitle(q) {
-    // [F-39] Without the '[설정 > …]' tag the app puts before a question asked from a screen.
+    // [J135-04] Without the '[설정 > …]' tag the app puts before a question asked from a screen.
     return oneLine(askText(q).replace(/^\s*\[[^\]\n]{1,40}\]\s*/, "").split("\n").find((l) => l.trim()) ?? "", 60) || "(내용 없음)";
   }
 

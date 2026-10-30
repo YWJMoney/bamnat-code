@@ -103,7 +103,7 @@ export function replyFor(pile, match) {
 
 /** A 개발사항 title from the words of a question: its first sentence, at most 60 letters. */
 export function titleFrom(text) {
-  // [F-39] 1.35: without the '[설정 > 함께 만들어요]' the app puts before a question asked from a screen.
+  // [J135-04] 1.35: without the '[설정 > 함께 만들어요]' the app puts before a question asked from a screen.
   const first = String(text ?? "").replace(/^\s*\[[^\]\n]{1,40}\]\s*/, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?。])\s|\n/)[0] ?? "";
   const c = [...first];
   return c.length > 60 ? `${c.slice(0, 59).join("")}…` : first || "새 문의";

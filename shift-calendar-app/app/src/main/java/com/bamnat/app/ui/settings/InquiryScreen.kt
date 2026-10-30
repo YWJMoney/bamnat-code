@@ -203,7 +203,7 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     var lastHome by rememberSaveable { mutableStateOf(if (first == NEW) HELP else first) }
     LaunchedEffect(view) { if (home) lastHome = view }
     LaunchedEffect(open?.id, open?.answers) { open?.let(vm::opened) }
-    // [F-38] 1.35: going back to 내 문의 or opening one reads it again, and while either stays on screen it is read every
+    // [J135-03] 1.35: going back to 내 문의 or opening one reads it again, and while either stays on screen it is read every
     // 30 seconds, so an answer shows without leaving help or restarting the app (컴퓨터 점검 F-38).
     val screenLife = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val mineShown = view == LIST || (!home && view != NEW && publicId == null)

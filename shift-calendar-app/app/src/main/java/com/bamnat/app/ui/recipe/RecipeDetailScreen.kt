@@ -154,6 +154,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
                 s.appliedAt?.let { at -> AppliedCard(at) { undoing = true } }
                 if (r.desc.isNotEmpty()) Text(r.desc, style = MaterialTheme.typography.bodyMedium)
+                // [LIN-02][LIN-03] 1.35 a 수정판 of my recipe: what it changed, and 내 판에 가져오기.
+                s.parentDoc?.takeIf { it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
 
                 Text("내 달력에 넣을 것 고르기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", style = MaterialTheme.typography.bodySmall,
@@ -205,7 +207,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [RCX-01] 계보: what it was made from, and what others made from it.
                 s.lineage?.let { l -> LineageSection(l, onOpen) }
                 // [LIN-02][LIN-03] 1.35 달라진 점, and for the maker of the recipe it came from, 내 판에 가져오기.
-                s.parentDoc?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
+                // For anyone else it sits with the 계보; the maker of the original sees it first, above 넣기 (1.35 자유도 점검).
+                s.parentDoc?.takeIf { !it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { } }
                 HorizontalDivider()
                 if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일(11월 10일 예정)부터 열려요", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(32.dp))
@@ -539,7 +542,7 @@ private fun AppliedCard(at: Long, onUndo: () -> Unit) {
 private fun DiffSection(parent: com.bamnat.app.recipe.RecipeDoc, diff: List<com.bamnat.core.recipe.RecipeDiff.Piece>, onOpen: (String) -> Unit,
                         onTake: (Set<Pair<PieceKind, String>>) -> Unit) {
     val mine = parent.mine
-    var picked by remember(diff) { mutableStateOf(diff.flatMap { d -> if (d.lines.isEmpty()) listOf(d.kind to "*") else d.lines.map { d.kind to it.path } }.toSet()) }
+    var picked by remember(diff) { mutableStateOf(diff.flatMap { d -> if (d.change != com.bamnat.core.recipe.RecipeDiff.Kind.CHANGED || d.lines.isEmpty()) listOf(d.kind to "*") else d.lines.map { d.kind to it.path } }.toSet()) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(if (mine) "내 판과 달라진 점" else "원래 판과 달라진 점", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })

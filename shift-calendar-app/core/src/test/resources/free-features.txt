@@ -239,3 +239,6 @@ calendar.theme
 shift.emoji
 memo.template
 plaza.shiftRoom
+calendar.view
+app.feel
+recipe.studio

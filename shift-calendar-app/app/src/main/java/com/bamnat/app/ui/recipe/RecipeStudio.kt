@@ -109,7 +109,13 @@ private fun StudioStart(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
                 Text("어디서 시작할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
                 TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "다시 고르기") }
             }
-            if (!open) return@Column
+            if (!open) {
+                // Where it started, so the 수정판 line is not a surprise at 마치기.
+                Text(s.parentTitle?.let { "‘$it’에서 시작했어요. 올리면 그 판의 수정판으로 붙어요" }
+                    ?: if (s.recipe.pieces.isEmpty()) "빈 판이에요. 아래 조각을 켜서 꾸며요" else "새 판이에요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                return@Column
+            }
             Text("어느 쪽에서 시작해도 내 앱은 그대로예요. 다 만든 뒤 내 앱에 넣을지는 따로 골라요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (s.showcases.isNotEmpty()) {

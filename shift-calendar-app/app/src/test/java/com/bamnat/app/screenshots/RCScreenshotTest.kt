@@ -143,7 +143,7 @@ class RCScreenshotTest : ScreenshotBase() {
         style(WorkStyle.SHIFT)
         content { RecipeMakeScreen(RecipeMakeViewModel(c), onBack = {}, onOpen = {}) }
         settle()
-        assertTrue(appears("레시피 만들기 1/5 · 고르기", exact = true))
+        assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
     }
 
     @Test fun settingsOfTheBoard() = shoot("1345_rcp_mine", PHONE) {
@@ -229,5 +229,99 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("간호사 3교대 근무별 알람 세트", exact = false))
         assertTrue(appears("완성된 레시피 보기", exact = true))
+    }
+    // ---- 1.35 꾸미기 자유도 [CVW-01]..[CVW-10] [STU-01]..[STU-06] [LIN-01]..[LIN-05] ----
+
+    private fun memosThisMonth() = runBlocking {
+        listOf(0L to "치과 3시", 0L to "보험증 챙기기", 1L to "인수인계 정리", 3L to "엄마 생신 저녁", 5L to "헬스 PT 7시").forEachIndexed { n, (d, t) ->
+            c.memoRepository.save(com.bamnat.core.memo.Memo(date = today.plusDays(d), title = t, createdAtMillis = n + 1L))
+        }
+    }
+
+    private fun preset(name: String) = com.bamnat.core.recipe.CalendarView.PRESETS.first { it.first == name }.second
+
+    /** [CVW-01][CVW-02][CVW-03] 메모 중심: tall cells, a colour bar for the shift, the date at the top left and 3 memo lines. */
+    @Test fun aMemoFirstCalendar() = shoot("1350_cvw_memo_calendar", PHONE) {
+        memosThisMonth()
+        c.settingsRepository.update { with(com.bamnat.app.ui.calendar.CalendarViewSettings) { it.withView(preset("메모 중심")) } }
+        settle()
+        assertTrue(c.settingsRepository.current.memoInCells)
+        assertTrue(appears("보험증", exact = false))
+    }
+
+    /** [CVW-01][CVW-04] 다이어리: the tallest cells with lines, like a paper diary, on a Fold. */
+    @Test fun aDiaryCalendar() = shoot("1351_cvw_diary_calendar", FOLDED) {
+        memosThisMonth()
+        c.settingsRepository.update { with(com.bamnat.app.ui.calendar.CalendarViewSettings) { it.withView(preset("다이어리")) } }
+        settle()
+        assertTrue(appears("인수인계", exact = false))
+    }
+
+    /** [STU-01][STU-02][STU-05][LIN-01] The studio starts from a 보여주기 판 as its 수정판, and 내 앱에만 넣기 puts it on without sending. */
+    @Test fun theStudioStartsFromAShowcaseAndPutsItOnMine() = shoot("1352_stu_studio_start", PHONE) {
+        val api = object : Starters() {
+            var sent = 0
+            override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int) =
+                if (sort == "showcase") RecipePage(listOf(item(0).copy(showcase = true)), null) else super.list(style, sort, q, cursor)
+            override suspend fun publish(device: String, recipe: Recipe, scope: String): Sent { sent++; return super.publish(device, recipe, scope) }
+        }
+        c.recipeApi = api
+        style(WorkStyle.SHIFT)
+        val vm = RecipeMakeViewModel(c)
+        content { RecipeMakeScreen(vm, onBack = {}, onOpen = {}) }
+        settle()
+        assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
+        assertTrue(appears("어디서 시작할까요?", exact = true))
+        tapText(api.item(0).title, exact = true)
+        settle()
+        assertEquals("보여주기 판의 수정판", api.code(0), vm.state.value.recipe.parent)
+        assertEquals(api.item(0).title, vm.state.value.parentTitle)
+        assertTrue(appears("’에서 시작했어요. 올리면 그 판의 수정판으로 붙어요", exact = false))
+        vm.setValue(PieceKind.CAL_VIEW, "size", "tall")
+        vm.putOnMine()
+        settle()
+        val put = vm.state.value.putMine
+        assertTrue("내 앱에 들어갔어요", put != null && put > 0)
+        assertEquals("올리지 않아요", 0, api.sent)
+        assertEquals("tall", com.bamnat.core.recipe.CalendarView.decode(c.settingsRepository.current.calView).size)
+        assertTrue(runBlocking { c.recipes.undo(put!!) })
+        assertEquals("되돌리면 처음대로", "", c.settingsRepository.current.calView)
+    }
+
+    /** [LIN-02][LIN-03] The maker opens a 수정판 of their recipe: what changed, field by field, and 내 판에 가져오기 takes the picked ones. */
+    @Test fun theMakerSeesWhatARemixChangedAndTakesIt() = shoot("1353_lin_diff", PHONE) {
+        val base = Starters()
+        val i = base.recipes.indexOfFirst { (r, data) -> !data && WorkStyle.SHIFT in r.styles && r.pieces.any { it.kind == PieceKind.SHIFT_LOOK } }
+        val mine = base.recipes[i].first
+        val look = mine.pieces.first { it.kind == PieceKind.SHIFT_LOOK }
+        @Suppress("UNCHECKED_CAST") val items = look.values["items"] as List<Map<String, Any?>>
+        val remix = mine.copy(title = "야간 더 진하게", parent = base.code(i), pieces = (mine.pieces.map { p ->
+            if (p.kind != PieceKind.SHIFT_LOOK) p else p.copy(values = p.values + ("items" to items.mapIndexed { n, m -> if (n == 0) m + ("color" to 0xFF0D1B4CL) else m }))
+        } + com.bamnat.core.recipe.Piece(PieceKind.CAL_VIEW, mapOf("size" to "tall", "memo" to 3L))).sortedBy { it.kind.ordinal })
+        val api = object : Starters() {
+            override suspend fun show(code: String, device: String?, version: Int?) = when (code) {
+                "RMIX2345" -> RecipeDoc(item(i).copy(code = code, title = remix.title, parent = code(i)), RecipeCodec.hash(remix), RecipeCodec.write(remix), "public", mine = false)
+                code(i) -> super.show(code, device, version).copy(mine = true)
+                else -> super.show(code, device, version)
+            }
+        }
+        c.recipeApi = api
+        style(WorkStyle.SHIFT)
+        val vm = RecipeDetailViewModel(c, "RMIX2345", PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        assertTrue(appears("내 판과 달라진 점", exact = true))
+        val diff = vm.state.value.diff
+        assertEquals(setOf(PieceKind.SHIFT_LOOK, PieceKind.CAL_VIEW), diff.map { it.kind }.toSet())
+        // Only the colour is taken; the 달력 모양 the 수정판 added is left out.
+        val colour = diff.first { it.kind == PieceKind.SHIFT_LOOK }.lines.single()
+        val taken = RecipeCodec.read(vm.takeInto(setOf(PieceKind.SHIFT_LOOK to colour.path))!!)
+        @Suppress("UNCHECKED_CAST") val first = (taken.pieces.first { it.kind == PieceKind.SHIFT_LOOK }.values["items"] as List<Map<String, Any?>>)[0]
+        assertEquals(0xFF0D1B4CL, first["color"])
+        assertTrue(taken.pieces.none { it.kind == PieceKind.CAL_VIEW })
+        assertTrue(taken.desc.contains("도움 준 수정판: ‘야간 더 진하게’"))
+        // Every row starts ticked: a piece added whole counts once.
+        assertTrue(appears("고른 2개 내 판에 가져오기", exact = true))
+        assertEquals("내 판 그대로의 이름", mine.title, taken.title)
     }
 }
