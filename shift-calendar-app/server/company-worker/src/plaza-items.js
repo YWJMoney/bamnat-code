@@ -42,8 +42,11 @@ export function readItemShare(i, out, bad) {
   return out;
 }
 
-/** [FIN130-15] The privacy policy version that lets a company's one amount (FIXED fixedAmount) come to the 광장 (core FlagCatalog plaza.fixed_amount). */
-export const ITEM_FIXED_POLICY = "3.4";
+/**
+ * [FIN130-15] The privacy policy version that lets a company's one amount (FIXED fixedAmount) come to the 광장 (core FlagCatalog
+ * plaza.fixed_amount). 3.4 named it; [PRIV-05] 결정 D111 brings it forward to 3.9's date (정식 출시일).
+ */
+export const ITEM_FIXED_POLICY = "3.9";
 
 /**
  * [FIN130-15] Before [ITEM_FIXED_POLICY] is in force the server takes no amount at all: a checked setup's company amounts are

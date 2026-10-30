@@ -437,12 +437,16 @@ class AppContainer(context: Context) {
     val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
     /**
-     * [PRIV-03] 결정 D84: this phone was installed before 처리방침 3.1 was posted and has not said yes yet. [FLAG-03] The
-     * dates come from the policy calendar (the server may move them).
+     * [PRIV-03] 결정 D84·D111: this phone was installed before 처리방침 3.1 or 3.9 was posted and has not said yes yet (one
+     * card; a yes to 3.9 counts for 3.1 too). [FLAG-03] The dates come from the policy calendar (the server may move them).
      */
-    fun policyAsks(): Boolean = remoteConfig.current.calendar.holds(com.bamnat.core.ops.PolicyConsent.VERSION,
-        installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate(), remoteConfig.agreed.value,
-        com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)) == true
+    fun policyAsks(): Boolean {
+        val calendar = remoteConfig.current.calendar
+        val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
+        val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
+        return listOf(com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
+            .any { calendar.holds(it, installed, remoteConfig.agreed.value, today) == true }
+    }
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
      * built-in data as the app starts.

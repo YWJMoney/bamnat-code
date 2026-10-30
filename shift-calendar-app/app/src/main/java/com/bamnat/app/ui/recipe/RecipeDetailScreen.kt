@@ -196,7 +196,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [RCX-01] 계보: what it was made from, and what others made from it.
                 s.lineage?.let { l -> LineageSection(l, onOpen) }
                 HorizontalDivider()
-                if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 처리방침 3.8이 시행되는 11월 29일부터 열려요", style = MaterialTheme.typography.bodySmall)
+                if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일(11월 10일 예정)부터 열려요", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -244,7 +244,7 @@ private fun VoteRow(s: RecipeDetailViewModel.State, vm: RecipeDetailViewModel, o
             Icon(if (v.myVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown, null); Spacer(Modifier.width(6.dp)); Text("안좋아요 ${v.dislikes}")
         }
     }
-    if (!vm.canVote) Text("좋아요·안좋아요는 11월 29일부터 누를 수 있어요", style = MaterialTheme.typography.bodySmall,
+    if (!vm.canVote) Text("좋아요·안좋아요는 정식 출시일(11월 10일 예정)부터 누를 수 있어요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

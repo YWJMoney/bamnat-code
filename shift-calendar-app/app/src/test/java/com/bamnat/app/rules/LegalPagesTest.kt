@@ -4,6 +4,7 @@ import com.bamnat.app.ui.pro.PRIVACY_URL
 import com.bamnat.app.ui.pro.TERMS_URL
 import com.bamnat.core.tier.AdRules
 import com.bamnat.core.tier.TrialConsent
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -296,7 +297,7 @@ class LegalPagesTest {
         assertTrue(text.contains("사람마다 다른 수당의 금액"))
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT)!!
         assertTrue(flag.basis.policy.orEmpty().startsWith("3.4 1-2항"))
-        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.4" })
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.9" })
     }
 
     /**
@@ -320,7 +321,7 @@ class LegalPagesTest {
         assertTrue(text.contains("‘${com.bamnat.app.ui.flags.STATS_MORE_ROW}’"))
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP)!!
         assertTrue(flag.basis.policy.orEmpty().startsWith("3.5 1-9항"))
-        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.5" })
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.9" })
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Consent && it.key == "usage.stats.lookup" })
     }
     /**
@@ -341,7 +342,7 @@ class LegalPagesTest {
         assertTrue(text.contains("${com.bamnat.core.diag.StopTrail.KEEP_DAYS}일, 최대 ${com.bamnat.core.diag.StopTrail.KEEP_LINES}줄"))
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.DIAG_OBSERVE)!!
         assertTrue(flag.basis.policy.orEmpty().startsWith("3.6 1-3항"))
-        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.6" })
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.9" })
         assertFalse(flag.default)
     }
 
@@ -362,7 +363,7 @@ class LegalPagesTest {
         assertTrue(text.contains("기본급, 입사일, 연차, 알람, 메모, 사람마다 다른 수당 금액은 넣지 않음"))
         val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP)!!
         assertTrue(flag.basis.policy.orEmpty().startsWith("3.7 1항"))
-        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.7" })
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.9" })
         assertFalse(flag.default)
         // The sheet's words match the page's.
         assertTrue(text.contains(com.bamnat.app.share.ShareAudience.COWORKER.label(true)))
@@ -379,16 +380,42 @@ class LegalPagesTest {
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.8")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29))
         assertTrue(text.contains("처리방침 3.8 · 앱 버전 1.34.0 기준 · 게시일 2026년 10월 30일 · 시행일 2026년 11월 29일"))
-        assertTrue("3.8 is the newest version line", text.indexOf("처리방침 3.8 ·") < text.indexOf("처리방침 3.7 ·"))
+        assertTrue("3.8 comes before 3.7", text.indexOf("처리방침 3.8 ·") < text.indexOf("처리방침 3.7 ·"))
         assertTrue(text.contains("레시피 나눔 판"))
         assertTrue(text.contains("받는 사람이 채우는 칸"))
         for (key in listOf(com.bamnat.core.flags.FlagCatalog.RECIPE_PUBLISH, com.bamnat.core.flags.FlagCatalog.RECIPE_VOTE,
             com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
             val flag = com.bamnat.core.flags.FlagCatalog.of(key)!!
             assertTrue(key, flag.basis.policy.orEmpty().startsWith("3.8"))
-            assertTrue(key, flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.8" })
+            assertTrue(key, flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.9" })
             assertFalse(key, flag.default)
         }
         assertTrue(com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)!!.default)
+    }
+
+    /**
+     * [PRIV-05] 결정 D111 3.9: 3.2~3.8 start on 정식 출시일. Every LEGAL row they named waits for 3.9's date and, on a phone
+     * installed before 3.9 was posted, its yes or the latest promised day; the card asks for 3.9, which also counts for 3.1.
+     */
+    @Test fun policy39BringsThePreLaunchItemsToLaunchDay() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
+        assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
+        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue("3.9 is the newest version line", text.indexOf("처리방침 3.9 ·") < text.indexOf("처리방침 3.8 ·"))
+        assertTrue(text.contains("정식 출시 뒤의 개정은 위 기간을 그대로 지킵니다"))
+        assertTrue(text.contains("꾸미기 그림"))
+        assertFalse(text.contains("작은 JPEG(긴 변 512px"))
+        val c = com.bamnat.core.flags.FlagCatalog
+        for (key in listOf(c.STATS_MORE, c.PHOTO_WRONG, c.PLAZA_FIXED_AMOUNT, c.STATS_LOOKUP, c.DIAG_OBSERVE, c.SHARE_SETUP,
+            c.RECIPE_PUBLISH, c.RECIPE_VOTE, c.RECIPE_TALK)) {
+            val flag = c.of(key)!!
+            assertTrue(key, flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.9" })
+            assertTrue(key, flag.conditions.any { it is com.bamnat.core.flags.Condition.Policy && it.version == "3.9" })
+        }
+        assertEquals("3.9", com.bamnat.core.ops.PolicyConsent.VERSION)
+        assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.9"), "3.1"))
     }
 }

@@ -122,15 +122,15 @@ test("[STAT-08] lookup rows take only bucket edges of known kinds and steps", as
   assert.deepEqual(lookupRows([1]), []);
 });
 
-test("[STAT-08] lookup times are left out before 3.5 is in force and counted per bucket after, read back in 지표", async (t) => {
+test("[STAT-08] lookup times are left out before 3.9 (3.5 brought to 정식 출시일) is in force and counted per bucket after, read back in 지표", async (t) => {
   const { signIn } = await import("./helpers.mjs");
-  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-27T03:00:00Z") });
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-09T03:00:00Z") });
   const { call, DB } = server({ plaza: true });
   const parts = { wait: { find: 700, company: 1500 }, call: { search: 300, company: 500 } };
-  assert.equal((await call("POST", "/api/events", lookBundle(parts, "2026-11-26"), from(1))).status, 204);
-  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM usage_startup WHERE kind IN ('wait', 'call')").get().n, 0, "before 3.5");
-  t.mock.timers.setTime(Date.parse("2026-11-28T03:00:00Z"));
-  for (let i = 0; i < 3; i++) assert.equal((await call("POST", "/api/events", lookBundle(parts, "2026-11-27", 1 + i), from(10 + i))).status, 204);
+  assert.equal((await call("POST", "/api/events", lookBundle(parts, "2026-11-08"), from(1))).status, 204);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM usage_startup WHERE kind IN ('wait', 'call')").get().n, 0, "before 3.9");
+  t.mock.timers.setTime(Date.parse("2026-11-10T03:00:00Z"));
+  for (let i = 0; i < 3; i++) assert.equal((await call("POST", "/api/events", lookBundle(parts, "2026-11-09", 1 + i), from(10 + i))).status, 204);
   const rows = DB.db.prepare("SELECT kind, step, bucket, phones FROM usage_startup WHERE kind IN ('wait', 'call') ORDER BY kind, step").all().map((r) => ({ ...r }));
   assert.deepEqual(rows, [
     { kind: "call", step: "company", bucket: 500, phones: 3 },
