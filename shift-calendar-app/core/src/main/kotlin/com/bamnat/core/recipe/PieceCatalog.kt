@@ -324,3 +324,23 @@ object CompanyPiece {
         return if (parsed["format"] == "bamnat-company") null else "setup"
     }
 }
+
+/**
+ * [RCX-14] 1.35 위젯 모양, as the settings keep it ("alpha=80;theme=dark"): how opaque the widgets' background is (30..100 %) and
+ * whether it follows the phone's light or dark screen. Empty is the app's own (100 %, following the phone).
+ */
+data class WidgetLook(val alpha: Int = 100, val theme: String = "system") {
+    val isDefault: Boolean get() = this == WidgetLook()
+
+    fun encode(): String = if (isDefault) "" else "alpha=$alpha;theme=$theme"
+
+    companion object {
+        val THEMES = listOf("system", "light", "dark")
+
+        fun decode(s: String): WidgetLook {
+            if (s.isBlank()) return WidgetLook()
+            val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+            return WidgetLook(m["alpha"]?.toIntOrNull()?.coerceIn(30, 100) ?: 100, m["theme"]?.takeIf { it in THEMES } ?: "system")
+        }
+    }
+}

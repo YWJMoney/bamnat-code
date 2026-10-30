@@ -20,6 +20,9 @@ import com.bamnat.core.recipe.CalendarTheme
 /** The 설정 row title, also in [SettingsSearch]. */
 const val CAL_THEME_ROW = "달력 색"
 
+/** [RCX-14] 1.35 설정 › 달력 화면의 위젯 모양 줄 (검색이 가리키는 이름). */
+const val WIDGET_LOOK_ROW = "위젯 모양"
+
 /**
  * [RCP-09] 1.34 달력 테마: today's circle and the 토·일·공휴일 colours, and how a working day's cell is coloured. A 나눔 판 recipe
  * sets the same; '처음 색으로' brings the app's own back.

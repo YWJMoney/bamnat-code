@@ -110,6 +110,19 @@ class RecipePieces(private val c: AppContainer) {
         }
         PieceKind.COMPANY -> if (cal != PersonalCalendar.MAIN) null else
             runCatching { mapOf("setup" to c.companyShare.export("", withAmounts = false)) }.getOrNull()
+        // [RCX-11] A bundle is made of codes on 만들기, not taken from the phone.
+        PieceKind.BUNDLE -> null
+        PieceKind.LAYOUT -> c.settingsRepository.current.let { s ->
+            mapOf("tabs" to com.bamnat.core.layout.TabOrder.of(s.tabOrder), "calendar" to s.calendarLayout.ifEmpty { null })
+        }
+        PieceKind.CARDS -> c.settingsRepository.current.let { s ->
+            mapOf("stats" to s.statsLayout.ifEmpty { null }, "money" to s.moneyLayout.ifEmpty { null }, "memo" to s.memoLayout.ifEmpty { null })
+                .takeIf { m -> m.values.any { it != null } }
+        }
+        PieceKind.WIDGET -> c.settingsRepository.current.let { s ->
+            val w = com.bamnat.core.recipe.WidgetLook.decode(s.widgetLook)
+            mapOf("alpha" to w.alpha.toLong(), "theme" to w.theme, "memo" to s.widgetMemo)
+        }
     }
 
     // ---- preview ----
@@ -185,6 +198,10 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.COMPANY -> if (cal != PersonalCalendar.MAIN) listOf(Change("회사 설정은 ‘내 달력’에만 넣을 수 있어요", skipped = true))
             else listOf(Change(runCatching { c.companyShare.summarize(values["setup"] as String).let { s -> "근무 ${s.shiftTypes.size}가지와 순서, 급여 규칙" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
+        PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
+        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET ->
+            settingsAfter(kind, values).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
+                .ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
     }
 
     // ---- apply ----
@@ -342,6 +359,17 @@ class RecipePieces(private val c: AppContainer) {
                     .put("added", JSONArray(now.filter { n -> types.none { it.id == n.id } }.map { it.id }))
                     .put("patterns", JSONArray(patterns.map { p -> patternJson(p) }))
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
+            }
+            PieceKind.BUNDLE -> null
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET -> {
+                val now = c.settingsRepository.current
+                val changes = settingsAfter(kind, values).filter { (k, v) -> settingOf(now, k) != v }
+                if (changes.isEmpty()) null else {
+                    val out = JSONObject()
+                    changes.forEach { (k, v) -> out.put(k, JSONArray().put(settingOf(now, k)).put(v)) }
+                    c.settingsRepository.update { cur -> changes.entries.fold(cur) { acc, (k, v) -> withSetting(acc, k, v) } }
+                    JSONObject().put("settings", out)
+                }
             }
         }
     }
@@ -507,7 +535,64 @@ class RecipePieces(private val c: AppContainer) {
                 before.optJSONArray("added")?.let { a -> (0 until a.length()).forEach { runCatching { schedule.deleteShiftTypeUndoable(a.getLong(it)) } } }
                 before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
             }
+            PieceKind.BUNDLE -> {}
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET -> {
+                val sets = before.optJSONObject("settings") ?: return
+                c.settingsRepository.update { cur ->
+                    sets.keys().asSequence().fold(cur) { acc, k ->
+                        val pair = sets.getJSONArray(k)
+                        if (settingOf(acc, k) == pair.getString(1)) withSetting(acc, k, pair.getString(0)) else acc
+                    }
+                }
+            }
         }
+    }
+
+    // ---- 1.35 settings pieces (화면 배치·카드·위젯 모양), each setting kept as a line of text ----
+
+    /** The settings [kind] would leave, by key, as text. */
+    private fun settingsAfter(kind: PieceKind, values: Map<String, Any?>): Map<String, String> {
+        val cur = c.settingsRepository.current
+        return when (kind) {
+            PieceKind.LAYOUT -> listOfNotNull(
+                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
+                (values["calendar"] as? String)?.let { "calendarLayout" to it },
+            ).toMap()
+            PieceKind.CARDS -> listOfNotNull(
+                (values["stats"] as? String)?.let { "statsLayout" to it },
+                (values["money"] as? String)?.let { "moneyLayout" to it },
+                (values["memo"] as? String)?.let { "memoLayout" to it },
+            ).toMap()
+            PieceKind.WIDGET -> {
+                val w = com.bamnat.core.recipe.WidgetLook.decode(cur.widgetLook)
+                val after = w.copy(alpha = (values["alpha"] as? Number)?.toInt()?.coerceIn(30, 100) ?: w.alpha,
+                    theme = (values["theme"] as? String)?.takeIf { it in com.bamnat.core.recipe.WidgetLook.THEMES } ?: w.theme)
+                listOfNotNull("widgetLook" to after.encode(), (values["memo"] as? Boolean)?.let { "widgetMemo" to it.toString() }).toMap()
+            }
+            else -> emptyMap()
+        }
+    }
+
+    private fun settingOf(s: com.bamnat.app.data.AppSettings, key: String): String = when (key) {
+        "tabOrder" -> s.tabOrder.joinToString(",")
+        "calendarLayout" -> s.calendarLayout
+        "statsLayout" -> s.statsLayout
+        "moneyLayout" -> s.moneyLayout
+        "memoLayout" -> s.memoLayout
+        "widgetLook" -> s.widgetLook
+        "widgetMemo" -> s.widgetMemo.toString()
+        else -> ""
+    }
+
+    private fun withSetting(s: com.bamnat.app.data.AppSettings, key: String, v: String): com.bamnat.app.data.AppSettings = when (key) {
+        "tabOrder" -> s.copy(tabOrder = v.split(',').filter { it.isNotEmpty() })
+        "calendarLayout" -> s.copy(calendarLayout = v)
+        "statsLayout" -> s.copy(statsLayout = v)
+        "moneyLayout" -> s.copy(moneyLayout = v)
+        "memoLayout" -> s.copy(memoLayout = v)
+        "widgetLook" -> s.copy(widgetLook = v)
+        "widgetMemo" -> s.copy(widgetMemo = v == "true")
+        else -> s
     }
 
     // ---- helpers ----
@@ -598,6 +683,8 @@ class RecipePieces(private val c: AppContainer) {
     private fun dayShort(d: String) = "월화수목금토일"[DayOfWeek.valueOf(d).value - 1].toString()
 
     companion object {
+        private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
+            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄")
         const val CLOSING_TITLE = "마감 체크"
         const val JOURNAL_TITLE = "투자일지"
         const val PRINCIPLES_MAX = 20

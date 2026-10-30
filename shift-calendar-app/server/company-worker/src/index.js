@@ -80,6 +80,7 @@ import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { RECIPE_COLUMNS, RECIPE_SCHEMA, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity } from "./recipe-community.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -474,6 +475,9 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/invites" || path.startsWith("/api/invites/")) return invites(request, env, path, url);
   // 1.34 [RCP-29] 나눔 판.
   if (path === "/api/recipes" || path.startsWith("/api/recipes/")) {
+    // 1.35 [RCX-01..15] 계보·새 판·요청 판·제작자·고른 것·소식·그림 first: their paths are not a recipe's code.
+    const more = await communityRoute(recipeDeps, request, env, path, url);
+    if (more) return more;
     const res = await recipeRoute(recipeDeps, request, env, path, url, ctx);
     if (res) return res;
   }
@@ -671,6 +675,7 @@ const SCHEMA = [
     created_at INTEGER NOT NULL)`,
   // 1.34 [RCP-28] 나눔 판 (recipes.js).
   ...RECIPE_SCHEMA,
+  ...COMMUNITY_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -740,6 +745,7 @@ const COLUMNS = [
   "ALTER TABLE admin_devices ADD COLUMN previews TEXT",
   // 1.34 [RCP-35] 나눔 판의 이야기.
   ...RECIPE_COLUMNS,
+  ...COMMUNITY_COLUMNS,
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -3156,6 +3162,8 @@ async function forgetMine(request, env) {
   ]);
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);
+  // 1.35 its requests, likes, follows, maker page and pictures.
+  await batch(env, forgetCommunity(recipeDeps, env, dev));
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes, ...(recipes ? { recipes } : {}) });
 }
 
@@ -4248,6 +4256,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
   if (path === "/recipes" || path.startsWith("/recipes/")) {
+    const more = await communityAdmin(recipeDeps, request, env, path, url, now);
+    if (more) return more;
     const res = await recipeAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (res) return res;
   }

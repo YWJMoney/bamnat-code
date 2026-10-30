@@ -549,7 +549,13 @@ export function recipeCanonical(v) {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${recipeCanonical(v[k])}`).join(",")}}`;
 }
 
-async function sha256hex(text) {
+/** [RCX-05] 1.35 The public id of a maker: one way from the install hash, 12 letters. 'operator' stays 'operator' (밤낮 운영). */
+export async function makerId(owner) {
+  if (owner === "operator") return "operator";
+  return (await sha256hex(`maker|${owner}`)).slice(0, 12);
+}
+
+export async function sha256hex(text) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -647,7 +653,7 @@ export const RECIPE_COLUMNS = [
   "ALTER TABLE post_votes ADD COLUMN note TEXT",
 ];
 
-function newCode() {
+export function newCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   let s = "";
   for (const b of bytes) s += CODE_CHARS[b % 32];
@@ -657,7 +663,7 @@ function newCode() {
 const kstDayOf = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
 
 /** A list row as the app reads it (no owner, no hash of the owner). */
-function listItem(r, now) {
+export function listItem(r, now) {
   return {
     code: r.code, title: r.title, summary: r.summary, styles: r.styles.split(","), cover: JSON.parse(r.cover), nick: r.nick ?? null,
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
@@ -787,9 +793,10 @@ async function publish(d, env, request) {
   let code = newCode();
   while (await d.one(env, "SELECT 1 AS x FROM recipes WHERE code = ?", code)) code = newCode();
   await d.batch(env, [
-    d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
-    state, r.parent ?? null, clean.hash, clean.text, now, now),
+    d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at, maker)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
+    state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev)),
+    d.stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", dev, await makerId(dev), now),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
   ]);
   return d.json({ code, version: 1, hash: clean.hash, state, scope, trust: trust.level }, 201);

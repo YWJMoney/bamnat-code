@@ -600,6 +600,19 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             vm.update { it.copy(widgetMemo = on) }
             widgetContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(widgetContext) }
         }
+        // [RCX-14] 1.35 위젯 모양: light or dark, and how see-through.
+        val wl = com.bamnat.core.recipe.WidgetLook.decode(settings.widgetLook)
+        fun saveLook(n: com.bamnat.core.recipe.WidgetLook) {
+            vm.update { it.copy(widgetLook = n.encode()) }
+            widgetContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(widgetContext) }
+        }
+        ChoiceRow(WIDGET_LOOK_ROW, "홈 화면 위젯의 바탕을 휴대폰 화면에 맞추거나 늘 밝게·어둡게 해요",
+            listOf("system" to "휴대폰 따라", "light" to "밝게", "dark" to "어둡게"), wl.theme) { t -> saveLook(wl.copy(theme = t)) }
+        ChoiceRow("위젯 바탕 투명도", "배경 사진이 비쳐 보이게 할 수 있어요. 글자는 그대로 진해요",
+            listOf(100 to "불투명", 85 to "조금 비침", 65 to "반쯤 비침", 40 to "많이 비침"), listOf(100, 85, 65, 40).minBy { kotlin.math.abs(it - wl.alpha) }) { a ->
+            saveLook(wl.copy(alpha = a))
+        }
+        com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.WIDGET)
         // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
         ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
             PhoneDayView.WEEK -> "그 주(월~일)만 남고, 아래에 하루 화면이 펼쳐져요"

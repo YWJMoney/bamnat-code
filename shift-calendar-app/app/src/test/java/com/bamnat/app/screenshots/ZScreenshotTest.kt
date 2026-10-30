@@ -339,7 +339,8 @@ class ZScreenshotTest : ScreenshotBase() {
     @Test fun widePanelAsksBeforeTypedDaysGo() = open(UNFOLDED) { scenario ->
         tapText("도구")
         tapText("이번 달 전부 넣기", exact = true)
-        while (shownDialogs().isNotEmpty()) backOnTop()
+        repeat(5) { if (shownDialogs().isNotEmpty()) backOnTop() }
+        assertTrue("every dialog closes on back: ${shownDialogs().map { it.javaClass.simpleName }}", shownDialogs().isEmpty())
         tapText("주간 넣기", exact = true)
         back()
         assertTrue("back asks first", appears("넣은 1일을 버릴까요?", exact = true))

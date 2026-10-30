@@ -64,7 +64,7 @@ class TodayWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
-        provideContent { GlanceTheme { WidgetFrame { TodayContent(data) } } }
+        provideContent { WidgetLookTheme { WidgetFrame { TodayContent(data) } } }
     }
 }
 
@@ -74,7 +74,7 @@ class WeekWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
-        provideContent { GlanceTheme { WidgetFrame { WeekContent(data) } } }
+        provideContent { WidgetLookTheme { WidgetFrame { WeekContent(data) } } }
     }
 }
 
@@ -90,7 +90,7 @@ class MonthWidget : GlanceAppWidget() {
             val base = androidx.glance.currentState(MonthPageAction.BASE)
             val offset = if (base != null && base != MonthPageAction.monthKey(data.today)) 0
                 else androidx.glance.currentState(MonthPageAction.OFFSET) ?: 0
-            GlanceTheme { WidgetFrame { MonthContent(data, offset) } }
+            WidgetLookTheme { WidgetFrame { MonthContent(data, offset) } }
         }
     }
 }
@@ -135,7 +135,7 @@ private fun WidgetFrame(content: @Composable () -> Unit) {
     Box(
         GlanceModifier
             .fillMaxSize()
-            .background(GlanceTheme.colors.widgetBackground)
+            .background(widgetBg())
             .cornerRadius(20.dp)
             .padding(12.dp)
             .clickable(actionStartActivity<MainActivity>()),
