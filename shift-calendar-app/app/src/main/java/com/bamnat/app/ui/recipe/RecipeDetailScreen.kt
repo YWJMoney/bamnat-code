@@ -268,7 +268,7 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc) {
 }
 
 fun stateLabel(state: String?, scope: String): String = when (state) {
-    "review" -> "검토 중이에요. 처음 3개는 운영자가 보고 광장에 올려요"
+    "review" -> "운영자가 살펴보고 있어요. 곧 광장에 다시 보여요"
     "returned" -> "돌려받았어요. 메모를 보고 고쳐서 다시 올려 주세요"
     "hidden" -> "가려졌어요"
     else -> when (scope) { "link" -> "링크로만 열려요"; "private" -> "나만 봐요"; else -> "광장에 올라가 있어요" }

@@ -50,32 +50,26 @@ test("[RCP-37] before 처리방침 3.8 is in force nothing is kept: no recipe, v
   assert.equal((await call("GET", "/api/recipes?style=SHIFT")).status, 200);
 });
 
-test("[RCP-29][RCP-30] a new phone's first public recipes wait for the operator; link-only ones go up at once (D108)", async (t) => {
+test("[RCP-29][RCP-30][RCX-28] a public recipe is on the plaza at once (no 승인 since 1.35); link-only ones are not listed", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });
   const a = await up(call, 1);
   assert.equal(a.status, 201);
-  assert.equal(a.data.state, "pending");
+  assert.equal(a.data.state, "visible");
   assert.match(a.data.code, /^[2-9A-HJ-NP-Z]{8}$/);
   assert.equal(a.data.hash.length, 64);
-  // Not on the plaza and not readable by others while it waits; its maker sees it.
-  assert.equal((await call("GET", "/api/recipes?style=SHIFT&sort=new")).data.items.length, 0);
-  assert.equal((await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(2) })).status, 404);
-  const own = await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(1) });
-  assert.equal(own.data.state, "pending");
-  // Level 0: one a day.
-  assert.equal((await up(call, 1, { title: "두 번째" }, "link")).status, 429);
+  assert.equal((await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(2) })).status, 200);
+  // Level 0: two a day.
+  assert.equal((await up(call, 1, { title: "두 번째 세트" }, "link")).status, 201);
+  assert.equal((await up(call, 1, { title: "세 번째 세트" }, "link")).status, 429);
   const b = await up(call, 3, { title: "링크로만 세트" }, "link");
   assert.equal(b.data.state, "visible");
   assert.equal((await call("GET", `/api/recipes/${b.data.code}`, undefined, { "x-device": device(4) })).status, 200);
-  assert.equal((await call("GET", "/api/recipes?style=SHIFT&sort=new")).data.items.length, 0, "link-only is not listed");
-  // The operator approves; it is listed, and the written form hashes to what the phone was told.
-  const admin = await signIn(call);
-  const q = await call("GET", "/api/admin/recipes?tab=queue", undefined, admin);
-  assert.equal(q.data.items.length, 1);
-  assert.equal((await call("POST", `/api/admin/recipes/${a.data.code}/approve`, {}, admin)).status, 200);
   const listed = await call("GET", "/api/recipes?style=SHIFT&sort=new");
-  assert.equal(listed.data.items[0].code, a.data.code);
+  assert.deepEqual(listed.data.items.map((i) => i.code), [a.data.code], "link-only is not listed");
+  // Nothing waits for the operator.
+  const admin = await signIn(call);
+  assert.equal((await call("GET", "/api/admin/recipes?tab=queue", undefined, admin)).data.items.length, 0);
   const got = await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(9) });
   assert.equal(got.data.hash, a.data.hash);
   assert.equal((await cleanRecipe(got.data.body)).hash, got.data.hash);

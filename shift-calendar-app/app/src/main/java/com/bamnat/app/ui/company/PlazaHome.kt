@@ -197,7 +197,7 @@ class PlazaHomeViewModel(
 @Composable
 fun PlazaHomeScreen(
     vm: PlazaHomeViewModel,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     /** The rule plaza of every company (규칙 광장). */
     onAll: () -> Unit,
     onCompany: (String) -> Unit,
@@ -220,7 +220,7 @@ fun PlazaHomeScreen(
         topBar = {
             TopAppBar(
                 title = { Text(plan.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
     ) { padding ->

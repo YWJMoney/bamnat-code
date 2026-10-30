@@ -223,7 +223,7 @@ class RecipeMakeViewModel(
 
     fun fix(line: RecipeLint.Line) { line.fix?.let { f -> edit(f) } }
 
-    /** Step 5: 광장 (첫 3개는 검토 뒤), 링크로만, 나만 (만든 사람만 열어요). */
+    /** Step 5: 광장 (1.35 [RCX-28] 바로 올라가요), 링크로만, 나만 (만든 사람만 열어요). */
     fun publish() {
         val s = _state.value
         if (!RecipeLint.ready(lint)) return
@@ -447,7 +447,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }
     ExampleCalendars(s.recipe)
     Text("어디에 둘까요?", style = MaterialTheme.typography.titleSmall)
-    listOf("public" to "광장에 올리기 (처음 3개는 운영자가 보고 올려요)", "link" to "링크로만 (링크를 받은 분만 열어요)", "private" to "나만 (내 휴대폰들에서만 열어요)").forEach { (k, label) ->
+    listOf("public" to "광장에 올리기 (바로 모두에게 보여요)", "link" to "링크로만 (링크를 받은 분만 열어요)", "private" to "나만 (내 휴대폰들에서만 열어요)").forEach { (k, label) ->
         Row(Modifier.fillMaxWidth().selectable(s.scope == k, role = Role.RadioButton) { vm.scope(k) }, verticalAlignment = Alignment.CenterVertically) {
             RadioButton(s.scope == k, null); Text(label, style = MaterialTheme.typography.bodyMedium)
         }

@@ -10,17 +10,27 @@ object TabOrder {
     const val MONEY = "money"
     const val MEMOS = "memos"
     const val STATS = "stats"
+    /** 1.35 [RCX-29] 광장 and its 나눔 판 (사용자 2026-10-30 "너무 숨어있어"). */
+    const val PLAZA = "plaza"
     const val SETTINGS = "settings"
 
-    /** The order before 1.26, and after '처음 순서로'. */
-    val DEFAULT: List<String> = listOf(CALENDAR, MONEY, MEMOS, STATS, SETTINGS)
+    /** The usual order ('처음 순서로'); 1.35 put 광장 before 설정. */
+    val DEFAULT: List<String> = listOf(CALENDAR, MONEY, MEMOS, STATS, PLAZA, SETTINGS)
+
+    /** A tab added in a later version and the tab it goes in front of in an order saved before it came. */
+    private val ADDED_BEFORE = mapOf(PLAZA to SETTINGS)
 
     /**
      * The order to show for [saved]: keys the app does not know (or knows twice) are dropped and the tabs left out
      * go at the end in their usual order, so a backup from another version never loses a tab.
      */
     fun of(saved: List<String>, all: List<String> = DEFAULT): List<String> {
-        val kept = saved.filter { it in all }.distinct()
+        val kept = saved.filter { it in all }.distinct().toMutableList()
+        if (kept.isEmpty()) return all
+        // A tab newer than the saved order goes where it would have been (광장 in front of 설정), the rest at the end.
+        for ((tab, before) in ADDED_BEFORE) {
+            if (tab in all && tab !in kept && before in kept) kept.add(kept.indexOf(before), tab)
+        }
         return kept + all.filter { it !in kept }
     }
 

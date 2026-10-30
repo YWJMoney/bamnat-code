@@ -37,9 +37,11 @@ import androidx.compose.material.icons.automirrored.filled.StickyNote2
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -156,6 +158,8 @@ internal enum class TopLevel(val route: String, val label: String, val icon: Ima
     MEMOS("memos", "메모", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
     /** [NAV-01] Hours and pay of the month together; field and shop work, paid in 돈, keep 통계. */
     STATS("stats", "근무·급여", Icons.Outlined.Insights, Icons.Filled.Insights),
+    /** 1.35 [RCX-29] 광장 and its 나눔 판, a tab of their own (they were behind 설정 and the pay screen). */
+    PLAZA("plaza", "광장", Icons.Outlined.Forum, Icons.Filled.Forum),
     SETTINGS("settings", "설정", Icons.Outlined.Settings, Icons.Filled.Settings),
     ;
 
@@ -181,7 +185,7 @@ private fun TopLevel?.adPlace(): com.bamnat.core.tier.AdRules.Place = when (this
     TopLevel.CALENDAR -> com.bamnat.core.tier.AdRules.Place.CALENDAR
     TopLevel.MEMOS -> com.bamnat.core.tier.AdRules.Place.MEMOS
     TopLevel.SETTINGS -> com.bamnat.core.tier.AdRules.Place.SETTINGS
-    null -> com.bamnat.core.tier.AdRules.Place.OTHER
+    TopLevel.PLAZA, null -> com.bamnat.core.tier.AdRules.Place.OTHER
 }
 
 private object Routes {
@@ -469,7 +473,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.companyBoard()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PLAZA -> { nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
@@ -1215,7 +1219,7 @@ private fun AppNavHost(
                 }) else null,
                 onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
                 // [J133-77] Every kind of work has its 광장 (알바 광장, 가게 광장 …), not only work with a company.
-                onOpenBoard = if (container.companyApi.enabled) ({ nav.navigate(Routes.companyBoard()) { launchSingleTop = true } }) else null,
+                onOpenBoard = if (container.companyApi.enabled) ({ nav.navigateTopLevel(TopLevel.PLAZA.route) }) else null,
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
@@ -1406,57 +1410,12 @@ private fun AppNavHost(
             }
         }
         composable(Routes.COMPANY_BOARD, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
-            // [CALI-08] 1.30 BB: the 광장 of one calendar's company; with two calendars or more, chips above choose which.
-            var calendar by rememberSaveable { mutableStateOf(companyCalendarOf(container, entry.arguments?.getString("calendar"))) }
-            val company = remember(calendar) { container.companyOf(calendar) }
-            val recipesOn by container.recipes.on.collectAsStateWithLifecycle()
-            val chips: @Composable () -> Unit = {
-                com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
-                    Modifier.padding(horizontal = 16.dp))
-                // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
-                if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
-                    onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
-                    onMake = { nav.navigate(Routes.recipeMake(calendar)) },
-                    onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
-                    onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
-                )
-            }
-            // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
-            val member by company.store.member.collectAsStateWithLifecycle()
-            val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
-            val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
-            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
-            if (container.companyApi.enabled && plan.room != null) {
-                val home = appViewModel(key = "plaza-home-$calendar-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar) }
-                com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
-                    onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
-                    onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
-                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
-                    onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                    header = chips)
-            } else {
-                val vm = appViewModel(key = "company-board-$calendar") { CompanyBoardViewModel(it, calendar) }
-                CompanyBoardScreen(
-                    vm = vm,
-                    onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
-                    onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
-                    onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
-                    onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
-                    header = {
-                        Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
-                            chips()
-                            // [RCP-34] 1.34: 교대·일근 have a plaza of their own, one tap from the rule plaza.
-                            if (container.companyApi.enabled) plan.alsoRoom?.let { room ->
-                                com.bamnat.app.ui.company.StylePlazaLink(room) {
-                                    nav.navigate(Routes.stylePlaza(calendar)) { launchSingleTop = true }
-                                }
-                            }
-                        }
-                    },
-                )
-            }
-            }
+            PlazaHost(nav, container, entry.arguments?.getString("calendar"), onBack = { nav.popFrom(Routes.COMPANY_BOARD) })
+        }
+        // 1.35 [RCX-29] (사용자 2026-10-30 "광장이나 나눔판이 사람들에게 노출이 잘되게 위치를 바꿔줘 지금 너무 숨어있어"): 광장 is a tab
+        // of its own, with the 나눔 판 at its top; no back arrow, it is a place of the app like 달력.
+        composable(TopLevel.PLAZA.route) {
+            PlazaHost(nav, container, null, onBack = null)
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
@@ -1879,6 +1838,65 @@ private fun NavHostController.fixCompanySetup(place: FixPlace, calendar: String 
         FixPlace.SHIFT_TYPES -> navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true }
         FixPlace.PATTERN -> navigate(Routes.pattern(calendar = calendar)) { launchSingleTop = true }
         FixPlace.NONE -> navigate(Routes.companyReport(calendar)) { launchSingleTop = true }
+    }
+}
+
+/**
+ * [PLAZA-32][RCP-19] 광장: the joined company's 정보 광장 or the plaza of the calendar's kind of work, the 나눔 판 above it.
+ * [onBack] null when it is the 광장 tab (1.35 [RCX-29]).
+ */
+@Composable
+private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarArg: String?, onBack: (() -> Unit)?) {
+    // [CALI-08] 1.30 BB: the 광장 of one calendar's company; with two calendars or more, chips above choose which.
+    var calendar by rememberSaveable { mutableStateOf(companyCalendarOf(container, calendarArg)) }
+    val company = remember(calendar) { container.companyOf(calendar) }
+    val recipesOn by container.recipes.on.collectAsStateWithLifecycle()
+    val chips: @Composable () -> Unit = {
+        com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
+            Modifier.padding(horizontal = 16.dp))
+        // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
+        if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
+            onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
+            onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+            onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
+            onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
+        )
+    }
+    // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
+    val member by company.store.member.collectAsStateWithLifecycle()
+    val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+    val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
+    CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
+    if (container.companyApi.enabled && plan.room != null) {
+        val home = appViewModel(key = "plaza-home-$calendar-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar) }
+        com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = onBack,
+            onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
+            onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
+            onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+            onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+            header = chips)
+    } else {
+        val vm = appViewModel(key = "company-board-$calendar") { CompanyBoardViewModel(it, calendar) }
+        CompanyBoardScreen(
+            vm = vm,
+            onBack = onBack,
+            onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
+            onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+            onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+            onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
+            header = {
+                Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+                    chips()
+                    // [RCP-34] 1.34: 교대·일근 have a plaza of their own, one tap from the rule plaza.
+                    if (container.companyApi.enabled) plan.alsoRoom?.let { room ->
+                        com.bamnat.app.ui.company.StylePlazaLink(room) {
+                            nav.navigate(Routes.stylePlaza(calendar)) { launchSingleTop = true }
+                        }
+                    }
+                }
+            },
+        )
+    }
     }
 }
 

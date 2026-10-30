@@ -119,7 +119,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 val m = mine
                 if (m == null) Muted("불러오는 중이거나 인터넷이 없어요")
                 else {
-                    Muted("신뢰 단계 ${m.trust}" + if (m.reviewLeft > 0) " · 앞으로 ${m.reviewLeft}개는 운영자가 보고 올려요" else "")
+                    Muted("하루에 ${if (m.trust >= 1) 4 else 2}개까지 올릴 수 있어요" + if (m.reviewLeft > 0) " · 앞으로 ${m.reviewLeft}개는 운영자가 보고 올려요" else "")
                     if (m.items.isEmpty()) Muted("아직 올린 레시피가 없어요")
                     m.items.forEach { (item, st) ->
                         Card(Modifier.fillMaxWidth().clickable { onOpen(item.code) }) {

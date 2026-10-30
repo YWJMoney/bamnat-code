@@ -656,7 +656,7 @@ function adminApp(L, BUILD, M) {
       // [RCP-39] 1.34 나눔 판: the list of one tab and the month's numbers.
       if (name === "recipes") {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
-        const t = S.recipeTab ?? "queue";
+        const t = S.recipeTab ?? "flagged";
         const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
@@ -2202,7 +2202,8 @@ function adminApp(L, BUILD, M) {
   const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
 
   // [RCP-39] 1.34 나눔 판.
-  const RECIPE_TABS = [["queue", "검토 대기"], ["flagged", "신고됨"], ["hidden", "가린 것"], ["visible", "보이는 것"], ["official", "공식·공개 자료"],
+  // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["picks", "이번 주 고른 것"], ["images", "그림 표지 검토"], ["requests", "요청 판"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -2222,7 +2223,7 @@ function adminApp(L, BUILD, M) {
     const d = S.data.recipes;
     const m = S.data.recipeMonth;
     const edit = can("community", "edit");
-    const tab = S.recipeTab ?? "queue";
+    const tab = S.recipeTab ?? "flagged";
     const chips = `<div class="chips" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`;
     const month = m ? `<p class="hint">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
@@ -2231,10 +2232,10 @@ function adminApp(L, BUILD, M) {
     if (tab === "images") return chips + recipeImagesView(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
     const help = {
-      queue: "새 휴대폰의 첫 3개 레시피예요. 내용을 보고 올리거나, 고칠 점을 적어 돌려줘요. 하루 안에 봐 주세요.",
+      queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
-      visible: "광장에 보이는 레시피예요.",
+      visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
     }[tab];
     const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">

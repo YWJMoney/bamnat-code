@@ -597,11 +597,14 @@ export const keptPercent = (applied, kept7) => (applied < 20 ? null : Math.min(1
 // ---- the server's part ----
 
 export const RECIPE_LIMITS = {
-  /** 신뢰 0단계 하루 1개, 1단계부터 3개 (S9). */
-  perDay: [1, 3, 3],
+  /** 신뢰 0단계 하루 2개, 1단계부터 4개 (S9; 1.35 [RCX-28] 승인 없이 올라가니 조금 넉넉히). */
+  perDay: [2, 4, 4],
   perNetworkDay: 60,
-  /** D108: a phone's first public recipes wait for the operator. */
-  reviewFirst: 3,
+  /**
+   * D108 (1.34) had a phone's first 3 public recipes wait for the operator. 1.35 [RCX-28] (사용자 2026-10-30 "3개는 관리자 승인을
+   * 본다한 부분은 폐지해줘 자율성이 떨어져"): 0, a recipe is up at once; 신고 3번이면 먼저 가려지고(flagsToHide) 운영자가 봄.
+   */
+  reviewFirst: 0,
   votesPerHour: 60,
   /** S8: more votes than this from one network in an hour wait (held) and count nowhere until the operator lets them. */
   networkVotesHour: 30,
@@ -682,7 +685,8 @@ export async function recipeTrust(d, env, dev, now) {
   await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
   const t = await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev);
   const days = (now - t.first_at) / DAY;
-  const level = t.approved >= 3 && t.hidden === 0 ? 2 : t.approved >= 1 || days >= 7 ? 1 : 0;
+  // [RCX-28] With no 승인 any more, time on the 나눔 판 without anything hidden is what earns it.
+  const level = (t.approved >= 3 || days >= 14) && t.hidden === 0 ? 2 : t.approved >= 1 || days >= 3 ? 1 : 0;
   return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
 }
 
@@ -833,8 +837,8 @@ async function newVersion(d, env, request, code) {
   if (hit) return hit;
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
   const trust = await recipeTrust(d, env, dev, now);
-  // A returned or waiting recipe is looked at again; an approved one stays up (the maker is trusted with it).
-  const state = r.state === "hidden" ? "hidden" : scope === "public" && (r.state !== "visible" || trust.approved < 1) ? "pending" : "visible";
+  // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
+  const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
   const v = r.version + 1;
   const rec = clean.recipe;
   await d.batch(env, [

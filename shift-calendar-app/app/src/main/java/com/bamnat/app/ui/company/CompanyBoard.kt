@@ -94,7 +94,7 @@ import com.bamnat.core.time.Today
 @Composable
 fun CompanyBoardScreen(
     vm: CompanyBoardViewModel,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onOpen: (String) -> Unit,
     onShare: () -> Unit,
     /** [PLZ-14] 임금표. */
@@ -125,7 +125,7 @@ fun CompanyBoardScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (filter.job.isEmpty()) "규칙 광장" else "${com.bamnat.app.company.Plaza.job(filter.job)} 광장") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     // [PLZ-14][PLZ-08] Plain buttons, not a menu to find first.
                     if (onRates != null) TextButton(onClick = onRates) { Text("임금표") }
