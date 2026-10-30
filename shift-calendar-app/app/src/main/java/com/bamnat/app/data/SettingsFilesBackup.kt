@@ -168,6 +168,9 @@ class SettingsFilesBackup(
             Part("pay_way"),
             // 1.32 [WTYP-11] 희망 오프: 고른 날과 신청 마감일.
             Part("wish_off"),
+            // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
+            // the 프로 mark are this phone's.
+            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look")),
         )
 
         /**

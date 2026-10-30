@@ -36,7 +36,7 @@ export const CORE_FLAGS = [
 export const CORE_FREE = {"pattern":"^free\\.([A-Z][A-Z0-9_]{1,40})$","slot":"{feature}","name":"무료로 연 프로 기능: {feature}","what":"프로 기능 ‘{feature}’을 모두에게 무료로 열어요. 강제로 켜면 열리고, 풀면 다시 프로 기능이 돼요.","whyOff":"프로 기능이라 정식 출시 뒤에는 구독한 휴대폰만 쓰는 게 기본이에요.","group":"free","basis":{"req":"MON-02"},"risk":"NORMAL","default":false,"conditions":[],"sunset":null,"owner":"dd","since":"1.19.0","minApp":null,"maxApp":null};
 
 /** 프로 features a free.<FEATURE> row can open, code → 한국어 이름 (core ProFeatures). */
-export const CORE_FEATURES = {"NO_ADS":"광고 없음","PAYSLIP_MATCH":"명세서 대조","PAY_RULE_IMPORT":"임금 규칙 자동 인식","PAY_BULK_EDIT":"값 일괄 적용","MONEY_STATS":"가계부 통계","MORE_CALENDARS":"달력 여러 개","PAY_REPORT":"급여 리포트 PDF·CSV","WORK_COMPARE":"근무·급여 비교","DEVICE_CALENDAR":"휴대폰 캘린더에 근무 쓰기","ICS_FEED":"캘린더 구독 주소","AUTO_BACKUP":"매일 자동 백업","MORE_LINKS":"공유 링크 여러 개, 1년까지","ROSTER_PDF":"근무표 PDF","SURE_ALARM":"끄기 미션·일어났는지 확인","LEAVE_PAYOUT":"미사용 연차수당 계산","TAX_FORECAST":"세금 예측·실수령"};
+export const CORE_FEATURES = {"NO_ADS":"광고 없음","PAYSLIP_MATCH":"명세서 대조","PAY_RULE_IMPORT":"임금 규칙 자동 인식","PAY_BULK_EDIT":"값 일괄 적용","MONEY_STATS":"가계부 통계","MORE_CALENDARS":"달력 여러 개","PAY_REPORT":"급여 리포트 PDF·CSV","WORK_COMPARE":"근무·급여 비교","DEVICE_CALENDAR":"휴대폰 캘린더에 근무 쓰기","ICS_FEED":"캘린더 구독 주소","AUTO_BACKUP":"매일 자동 백업","MORE_LINKS":"공유 링크 여러 개, 1년까지","ROSTER_PDF":"근무표 PDF","SURE_ALARM":"끄기 미션·일어났는지 확인","LEAVE_PAYOUT":"미사용 연차수당 계산","TAX_FORECAST":"세금 예측·실수령","THEME_WARDROBE":"테마 옷장(여러 벌, 광고·기간 없이)"};
 
 /** 처리방침 dates the app ships with (PolicyCalendar.SEED); the server's calendar must agree on these versions. */
 export const CORE_POLICY = [

@@ -67,13 +67,17 @@ data class ThemeLease(
 
     /** No ad could come for [reason] on [day] ("yyyy-MM-dd"): [NO_AD_DAYS] more, and the reason counted. */
     fun noAd(today: Long, day: String, reason: String): ThemeLease {
-        val r = reason.takeIf { it in REASONS } ?: "other"
-        val k = "$day|$r"
-        val logged = copy(freeLog = (freeLog + (k to (freeLog[k] ?: 0) + 1)).entries.sortedByDescending { it.key }.take(LOG_KEEP).associate { it.toPair() })
+        val logged = counted(day, reason)
         return logged.worn?.let { w ->
             val next = w.copy(until = maxOf(today, w.until) + NO_AD_DAYS)
             logged.copy(worn = next, history = logged.history.map { if (it.key == next.key) next else it }, askedDay = null)
         } ?: logged
+    }
+
+    /** A theme put on with no ad able to come for [reason] on [day]: counted only (the days are the wear's own). */
+    fun counted(day: String, reason: String): ThemeLease {
+        val k = "$day|" + (reason.takeIf { it in REASONS } ?: "other")
+        return copy(freeLog = (freeLog + (k to (freeLog[k] ?: 0) + 1)).entries.sortedByDescending { it.key }.take(LOG_KEEP).associate { it.toPair() })
     }
 
     /** 아니요: back to the user's own look; the theme stays in the history to wear again. */
@@ -129,12 +133,26 @@ data class ThemeLease(
             return ThemeLease(worn, history.take(HISTORY), free, log, asked)
         }
 
+        /** The written theme on one line: backslash, tab and line breaks as \\, \t and \n. */
+        private fun escape(t: String) = t.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
+
+        private fun unescape(t: String): String = buildString {
+            var i = 0
+            while (i < t.length) {
+                val ch = t[i]
+                if (ch == '\\' && i + 1 < t.length) {
+                    append(when (t[i + 1]) { 't' -> '\t'; 'n' -> '\n'; 'r' -> '\r'; else -> t[i + 1] })
+                    i += 2
+                } else { append(ch); i++ }
+            }
+        }
+
         private fun clean(t: String) = t.replace('\t', ' ').replace('\n', ' ')
-        private fun wear(w: Wear) = listOf(clean(w.title), clean(w.code), java.util.Base64.getEncoder().encodeToString(w.body.toByteArray()),
+        private fun wear(w: Wear) = listOf(clean(w.title), clean(w.code), escape(w.body),
             w.from.toString(), w.until.toString(), if (w.own) "1" else "0").joinToString("\t")
 
         private fun wearOf(p: List<String>): Wear? = runCatching {
-            Wear(p[0], p[1], String(java.util.Base64.getDecoder().decode(p[2])), p[3].toLong(), p[4].toLong(), p.getOrNull(5) == "1")
+            Wear(p[0], p[1], unescape(p[2]), p[3].toLong(), p[4].toLong(), p.getOrNull(5) == "1")
         }.getOrNull()
     }
 }

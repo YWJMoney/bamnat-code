@@ -663,6 +663,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     } else {
         // [MON-06][MON-10] One at a time, after what the update brought.
         com.bamnat.app.ui.pro.TrialConsentPrompt(container)
+        // [FREE-10] 1.35 테마 기간: asked when the app opens (never over an alarm, which has its own activity).
+        com.bamnat.app.ui.recipe.ThemeExpiryAsk()
         com.bamnat.app.ui.pro.LaunchThanks(container)
     }
 

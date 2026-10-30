@@ -69,6 +69,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bamnat.app.appContainer
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.calendar.cellEdge
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.recipe.LookImages
@@ -176,6 +178,11 @@ fun FreeLookScreen(settings: AppSettings, update: ((AppSettings) -> AppSettings)
                 Modifier.fillMaxWidth().weight(1f).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // [FREE-09][FREE-10] 테마 고르기 first: a whole look in one tap, then each part below to make it one's own.
+                val wornNow = androidx.compose.ui.platform.LocalContext.current.appContainer.wardrobe.lease.collectAsStateWithLifecycle().value.worn
+                Fold(FOLD_THEMES, "테마 고르기", wornNow?.let { "지금: ${it.title}" } ?: "추천 테마 8개, 입었던 테마", open, { open = it }, foldTops) {
+                    com.bamnat.app.ui.recipe.ThemePicker(settings.workStyle)
+                }
                 if (target.restricted) {
                     Text(target.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -265,6 +272,7 @@ enum class FreeTarget(val label: String, val restricted: Boolean = false, val no
 }
 
 private const val FOLD_CELL = "cell"
+private const val FOLD_THEMES = "themes"
 private const val FOLD_PATTERN = "pattern"
 private const val FOLD_VIEW = "view"
 private const val FOLD_THEME = "theme"

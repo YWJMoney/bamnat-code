@@ -72,6 +72,8 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     LEAVE_PAYOUT(Tier.PRO),
     /** [TAX-02][TAX-05] 1.25 W: 세전·세후 learned from real pay, and a 사업자's year of tax (결정 W-D4). */
     TAX_FORECAST(Tier.PRO),
+    /** [FREE-10] 1.35 꾸미기 혜택: themes saved as many outfits and worn with no ad and no 30 days. */
+    THEME_WARDROBE(Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
     TEAM_ROSTER(Tier.LEADER, "팀 근무표 만들기"),
     ;

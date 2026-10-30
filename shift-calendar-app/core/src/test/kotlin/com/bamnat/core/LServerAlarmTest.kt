@@ -139,7 +139,8 @@ class LServerAlarmTest {
     }
 
     @Test fun noticeOpenIsTheEighteenthUsageEvent() {
-        assertEquals(18, UsageEvent.entries.size)
-        assertTrue(UsageEvent.entries.any { it.key == "notice_open" })
+        // 1.35 added five theme_free_* after it ([FREE-10]); 23 in all, as policy 3.9 lists.
+        assertEquals(23, UsageEvent.entries.size)
+        assertEquals(17, UsageEvent.entries.indexOfFirst { it.key == "notice_open" })
     }
 }

@@ -98,3 +98,73 @@ fun DayPassButton(gate: Gate, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * [FREE-10] 1.35 테마 연장·입기 광고 (사용자 2026-10-30 16:00 "보상은 광고를 온전히 다 볼 때만"): what it gives is said on the button
+ * before it plays. Only the SDK's reward callback calls [onReward]; closed before the end, the app left or the ad not finished calls
+ * [onQuit] and gives nothing. No internet calls [onOffline] (the ask waits, no days given). No ad after one more try, too slow, or
+ * failing to show calls [onNoAd] with the reason ([com.bamnat.core.recipe.ThemeLease.REASONS]), which the wardrobe counts.
+ * Shown only under AdRules.rewardedOffer's switch and never for 프로 (the wardrobe asks nothing of them).
+ */
+@Composable
+fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () -> Unit, onOffline: () -> Unit, onNoAd: (String) -> Unit,
+    modifier: Modifier = Modifier) {
+    val c = LocalContext.current.appContainer
+    val rows by c.flags.byKey.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var loading by remember { mutableStateOf(false) }
+    // The `ads` row (FlagCatalog.ADS) under the same rule as the day pass; the wardrobe never asks for an ad when it is off.
+    val adsRow = rows[com.bamnat.core.flags.FlagCatalog.ADS]?.on == true
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+    val allowed = AdRules.rewardedOffer(adsRow, gate.tier >= Tier.PRO, AdIds.rewarded.isNotBlank(), null, Today.date())
+    Column(modifier) {
+        OutlinedButton(
+            onClick = {
+                val activity = context.findActivity()
+                if (!adsRow) { onNoAd("flag_off"); return@OutlinedButton }
+                if (!allowed || activity == null || !c.ads.ready.value) { onNoAd("not_ready"); return@OutlinedButton }
+                loading = true
+                var tries = 0
+                var done = false
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                val slow = Runnable { if (!done) { done = true; loading = false; onNoAd("timeout") } }
+                handler.postDelayed(slow, AD_WAIT_MS)
+                fun load() {
+                    tries++
+                    RewardedAd.load(activity, AdIds.rewarded, AdRequest.Builder().build(), object : RewardedAdLoadCallback() {
+                        override fun onAdLoaded(ad: RewardedAd) {
+                            if (done) return
+                            done = true
+                            handler.removeCallbacks(slow)
+                            loading = false
+                            var earned = false
+                            ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                                override fun onAdDismissedFullScreenContent() { if (earned) onReward() else onQuit() }
+                                override fun onAdFailedToShowFullScreenContent(e: com.google.android.gms.ads.AdError) { onNoAd("show_failed") }
+                            }
+                            ad.show(activity) { earned = true }
+                        }
+
+                        override fun onAdFailedToLoad(error: LoadAdError) {
+                            if (done) return
+                            when (error.code) {
+                                AdRequest.ERROR_CODE_NETWORK_ERROR -> { done = true; handler.removeCallbacks(slow); loading = false; onOffline() }
+                                AdRequest.ERROR_CODE_NO_FILL, AdRequest.ERROR_CODE_MEDIATION_NO_FILL ->
+                                    if (tries < 2) load() else { done = true; handler.removeCallbacks(slow); loading = false; onNoAd("no_fill") }
+                                else -> { done = true; handler.removeCallbacks(slow); loading = false; onNoAd("other") }
+                            }
+                        }
+                    })
+                }
+                load()
+            },
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(if (loading) "광고를 불러오는 중…" else label) }
+        Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/** [FREE-10] How long an ad may take to come before it counts as 시간 초과. */
+private const val AD_WAIT_MS = 15_000L

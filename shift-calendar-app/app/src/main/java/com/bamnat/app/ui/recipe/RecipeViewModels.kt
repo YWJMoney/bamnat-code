@@ -191,20 +191,38 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val doc = s.doc ?: return
         _state.value = s.copy(applying = true)
         viewModelScope.launch {
+            // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
+            // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
+            val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
+            if (looks.isNotEmpty()) c.wardrobe.beforeWear()
             val id = runCatching {
                 c.recipes.apply(r, code, doc.item.version, calendar,
                     s.pieces.filter { it.on && it.fits }.map { RecipeRepository.Pick(it.kind, it.mode) }, s.answers)
             }.getOrNull()
+            if (id != null && looks.isNotEmpty()) runCatching {
+                c.wardrobe.afterWear(r.copy(pieces = r.pieces.filter { it.kind in looks }), code, own = doc.mine)
+            }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 message = if (id == null) "바뀐 것이 없어요" else "적용했어요. 7일 안에 되돌릴 수 있어요")
             onDone(id)
         }
     }
 
+    /** [FREE-10] Whether putting the chosen looks on asks for a rewarded ad (someone else's, past the free ones, ads on, not 프로). */
+    fun looksNeedAd(): Boolean {
+        val s = _state.value
+        val looks = s.pieces.any { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
+        return looks && c.wardrobe.needsAd(s.doc?.mine == true)
+    }
+
+    /** [FREE-10] A theme put on with no ad able to come: counted. */
+    fun noAdCounted(reason: String) = c.wardrobe.counted(reason)
+
     fun undo() {
         val id = _state.value.appliedId ?: return
         viewModelScope.launch {
             val ok = c.recipes.undo(id)
+            if (ok) c.wardrobe.forget(code)
             _state.value = _state.value.copy(appliedId = null, appliedAt = null, message = if (ok) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요")
         }
     }

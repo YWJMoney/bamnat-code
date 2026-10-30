@@ -797,6 +797,7 @@ class RecipePieces(private val c: AppContainer) {
         "moneyLook" -> s.moneyLook
         "screenLooks" -> s.screenLooks
         "payLooks" -> s.payLooks
+        "calTheme" -> s.calTheme
         else -> ""
     }
 
@@ -830,7 +831,16 @@ class RecipePieces(private val c: AppContainer) {
         "moneyLook" -> s.copy(moneyLook = v)
         "screenLooks" -> s.copy(screenLooks = v)
         "payLooks" -> s.copy(payLooks = v)
+        "calTheme" -> s.copy(calTheme = v)
         else -> s
+    }
+
+    /** [FREE-10] The settings a theme can change ([com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS]); never a record, an alarm or a rule. */
+    fun lookSnapshot(): Map<String, String> = LOOK_SETTINGS.associateWith { settingOf(c.settingsRepository.current, it) }
+
+    /** [FREE-10] Puts back a look written by [lookSnapshot]. */
+    fun restoreLook(m: Map<String, String>) {
+        c.settingsRepository.update { s -> m.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) } }
     }
 
     // ---- helpers ----
@@ -927,6 +937,10 @@ class RecipePieces(private val c: AppContainer) {
     private fun dayShort(d: String) = "월화수목금토일"[DayOfWeek.valueOf(d).value - 1].toString()
 
     companion object {
+        /** [FREE-10] What a theme may change, as settings. */
+        val LOOK_SETTINGS = listOf("calView", "calTheme", "screenLooks", "memoLook", "moneyLook", "payLooks", "widgetLook", "photoLook",
+            "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder")
+
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄",
             "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",

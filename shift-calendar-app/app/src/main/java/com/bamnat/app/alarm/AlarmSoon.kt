@@ -62,7 +62,8 @@ object AlarmSoon {
 
     /**
      * Registers the look ahead for the alarm at [triggerAt] ([text] says which), [minutes] before it; null or 0 takes it
-     * away. Not exact: a minute late changes nothing, and the phone is awake when it matters.
+     * away. 1.35 [F-69]: exact when the phone lets the app (an alarm app may), since an inexact one came 3 minutes late
+     * on the emulator and said "5분 전" 2 minutes before; inexact only when exact alarms were taken away.
      */
     fun schedule(context: Context, triggerAt: Long?, text: String?, minutes: Int) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
@@ -71,7 +72,11 @@ object AlarmSoon {
             am.cancel(fireIntent(context, 0L, null))
             return
         }
-        runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, fireIntent(context, triggerAt, text)) }
+        val op = fireIntent(context, triggerAt, text)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+        }
     }
 
     /** The phone is on and unlocked: someone is using it. */

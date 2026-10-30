@@ -270,7 +270,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val api = object : Starters() {
             var sent = 0
             override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
-                if (sort == "showcase") RecipePage(listOf(item(0).copy(showcase = true)), null) else super.list(style, sort, q, cursor)
+                if (sort == "showcase") RecipePage(listOf(item(0).copy(showcase = true)), null) else super.list(style, sort, q, cursor, kind)
             override suspend fun publish(device: String, recipe: Recipe, scope: String): Sent { sent++; return super.publish(device, recipe, scope) }
         }
         c.recipeApi = api

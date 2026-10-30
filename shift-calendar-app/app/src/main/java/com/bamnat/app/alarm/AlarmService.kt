@@ -179,10 +179,17 @@ class AlarmService : Service() {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == Intent.ACTION_SCREEN_OFF && AlarmButtons.screenOffIsPress(screenShownAt, screenHiddenAt, Today.millis())) pressed()
+                // 1.35 [F-68] With 전체 화면 알림 off the ringing notice drops into the shade when the screen goes off: back on
+                // (or unlocked) with no ringing screen, the notice is put up again so 끄기 is in sight while it still rings.
+                if ((intent.action == Intent.ACTION_SCREEN_ON || intent.action == Intent.ACTION_USER_PRESENT) && screenShownAt == 0L) showAgain()
             }
         }
+        val filter = android.content.IntentFilter(Intent.ACTION_SCREEN_OFF).apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
         // A system broadcast: not exported to other apps either way.
-        runCatching { ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED) }
+        runCatching { ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED) }
             .onSuccess { screenOff = receiver }
     }
 
@@ -312,6 +319,15 @@ class AlarmService : Service() {
         val due = ring.shiftDate.atTime(ring.shiftStart).minusMinutes(ring.offsetMinutes.toLong())
             .atZone(Today.zone()).toInstant().toEpochMilli()
         return com.bamnat.core.alarm.AlarmSuggest.offDetail(ring.shiftTypeId, due, ring.offsetMinutes)
+    }
+
+    /** [F-68] The ringing notice again (it pops up once more), while ringing out of a call. */
+    private fun showAgain() {
+        val ring = _ringing.value ?: return
+        if (inCallNow) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        runCatching { NotificationManagerCompat.from(this).notify(Notifications.ALARM_NOTIFICATION_ID, buildNotification(ring)) }
     }
 
     private fun startInForeground(ring: RingRequest?) {

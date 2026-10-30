@@ -1,5 +1,7 @@
 package com.bamnat.core.recipe
 
+import kotlin.math.pow
+
 /**
  * [FREE-01] 1.35 완전 자유 꾸미기 (사용자 2026-10-30 15:27 "한 칸을 가지고 꾸며서 전체 적용… 몇 개를 패턴으로 하는지도 자유롭게"): one day
  * cell's own design. Every part null is the app's own, so an empty look is the cell as 달력 모양 draws it. Written as "bg:FF112233|ba:40|
@@ -115,7 +117,7 @@ data class CellPattern(val mode: String = ONE, val n: Int = 2, val week: List<In
     fun indexFor(epochDay: Long, dayOfWeek: Int, role: String?, count: Int): Int {
         if (count <= 1) return 0
         val i = when (mode) {
-            CYCLE -> Math.floorMod(epochDay, n.toLong()).toInt()
+            CYCLE -> epochDay.mod(n.toLong()).toInt()
             WEEK -> week.getOrElse(dayOfWeek - 1) { 0 }
             SHIFT -> role?.let { shift[it] } ?: 0
             else -> 0
@@ -233,7 +235,7 @@ data class Palette(val bg: Long? = null, val card: Long? = null, val ink: Long? 
 
         /** WCAG relative luminance of an ARGB colour. */
         fun luminance(c: Long): Double {
-            fun ch(v: Long): Double { val s = v / 255.0; return if (s <= 0.03928) s / 12.92 else Math.pow((s + 0.055) / 1.055, 2.4) }
+            fun ch(v: Long): Double { val s = v / 255.0; return if (s <= 0.03928) s / 12.92 else ((s + 0.055) / 1.055).pow(2.4) }
             return 0.2126 * ch((c shr 16) and 0xFF) + 0.7152 * ch((c shr 8) and 0xFF) + 0.0722 * ch(c and 0xFF)
         }
 

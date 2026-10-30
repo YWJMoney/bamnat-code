@@ -27,6 +27,7 @@ object ProFeatures {
         "SURE_ALARM" to "끄기 미션·일어났는지 확인",
         "LEAVE_PAYOUT" to "미사용 연차수당 계산",
         "TAX_FORECAST" to "세금 예측·실수령",
+        "THEME_WARDROBE" to "테마 옷장(여러 벌, 광고·기간 없이)",
     )
 
     /** The feature's 한국어 이름, or [code] itself for a code this table does not know. */

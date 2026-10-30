@@ -28,6 +28,8 @@ export function trendQueries(may, start) {
   }
   if (may.community) q.tr_flags = byDay("post_flags", "at");
   if (may.metrics) q.tr_errors = ["SELECT key, count FROM counters WHERE key BETWEEN ? AND ?", `errors|${axKst(from)}`, `errors|${axKst(start)}`];
+  // 1.35 [FREE-10] Themes opened with no ad because none could come, all reasons, per day the phones counted them.
+  if (may.metrics) q.tr_themeFree = ["SELECT day, SUM(total) AS n FROM usage_events WHERE event LIKE 'theme_free_%' AND day BETWEEN ? AND ? GROUP BY day", axKst(from), axKst(start)];
   return q;
 }
 
@@ -40,6 +42,7 @@ export function trendFrom(got, start) {
     return list;
   };
   for (const k of ["inquiries", "bugs", "reports", "doubts", "flags"]) if (got[`tr_${k}`]) out[k] = seven(got[`tr_${k}`]);
+  if (got.tr_themeFree) out.themeFree = Array.from({ length: 7 }, (_, i) => got.tr_themeFree.find((r) => r.day === axKst(start - (6 - i) * AX_DAY))?.n ?? 0);
   if (got.tr_errors) {
     const days = Array.from({ length: 7 }, (_, i) => `errors|${axKst(start - (6 - i) * AX_DAY)}`);
     out.errors = days.map((key) => got.tr_errors.find((r) => r.key === key)?.count ?? 0);
@@ -58,7 +61,7 @@ const axSpiked = (list, min, times) => Boolean(list) && list[6] >= min && list[6
  * [ADMX-01][ADMX-07] What needs a look now, the worst first: each { key, kind, tone, title, meta, to, n }. [kind] is the
  * push kind it goes out as (ADMX-10). Rules: 기한 넘긴 일; 정할 판; 모양이 다른 판; 달라요 많은 규칙 (3 or more);
  * 문제 신고 twice yesterday's (3 or more); 서버 오류 three times yesterday's (5 or more); 달라요 twice the week's daily
- * mean (3 or more).
+ * mean (3 or more); 광고 없이 연 테마 yesterday twice the five days before (10 or more).
  */
 export function alertsFrom({ trend = {}, todo = [], now = Date.now(), versions = 0, shape = 0 }) {
   const out = [];
@@ -74,6 +77,15 @@ export function alertsFrom({ trend = {}, todo = [], now = Date.now(), versions =
   if (axSpiked(trend.errors, 5, 3)) {
     out.push({ key: "errors", kind: "spike", tone: "bad", n: trend.errors[6], title: `서버 오류가 늘었어요 · 오늘 ${trend.errors[6]}번`,
       meta: `어제 ${trend.errors[5]}번`, to: "#/metrics?days=7" });
+  }
+  // 1.35 [FREE-10] Phones send the days before today, so yesterday (index 5) is the last whole day: 10 or more free
+  // theme days and twice the mean of the five days before means the ads are not coming for many (사용자 2026-10-30 16:00).
+  if (trend.themeFree) {
+    const before = trend.themeFree.slice(0, 5).reduce((n, v) => n + v, 0) / 5;
+    if (trend.themeFree[5] >= 10 && trend.themeFree[5] >= 2 * Math.max(1, before)) {
+      out.push({ key: "themeFree", kind: "spike", tone: "warn", n: trend.themeFree[5], title: `광고 없이 열어 준 테마가 늘었어요 · 어제 ${trend.themeFree[5]}번`,
+        meta: `그 전 5일 하루 평균 ${Math.round(before * 10) / 10}번 · 이유는 지표에서`, to: "#/metrics?days=7" });
+    }
   }
   if (trend.doubts) {
     const week = trend.doubts.slice(0, 6).reduce((n, v) => n + v, 0) / 6;

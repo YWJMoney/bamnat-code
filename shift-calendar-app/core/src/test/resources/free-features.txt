@@ -242,3 +242,5 @@ plaza.shiftRoom
 calendar.view
 app.feel
 recipe.studio
+look.free
+look.themes

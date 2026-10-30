@@ -46,6 +46,8 @@ class ZFullBackupTest {
         backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
+        // 1.35 [FREE-03..08] 꾸미기.
+        memoLook = "layout=grid", moneyLook = "income=FF2F5BEA", screenLooks = "all:bg=FF102030", payLooks = "SHIFT:accent=FF00857A",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].

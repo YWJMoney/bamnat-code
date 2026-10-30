@@ -26,6 +26,12 @@ enum class UsageEvent(val key: String) {
     ALARM_RANG("alarm_rang"),
     ICS_EXPORT("ics_export"),
     NOTICE_OPEN("notice_open"),
+    // [FREE-10] 1.35 테마 기간: a theme opened or extended with no ad because none could come, by why (처리방침 3.9 1-9항, never who).
+    THEME_FREE_NO_FILL("theme_free_no_fill"),
+    THEME_FREE_TIMEOUT("theme_free_timeout"),
+    THEME_FREE_SHOW_FAILED("theme_free_show_failed"),
+    THEME_FREE_NOT_READY("theme_free_not_ready"),
+    THEME_FREE_OTHER("theme_free_other"),
     ;
 
     companion object {

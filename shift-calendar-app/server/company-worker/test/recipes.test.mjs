@@ -293,3 +293,12 @@ test("[FREE-09] every 추천 테마 core wrote reads the same on the server, eig
   }
   for (const style of ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"]) assert.equal(themes.filter((s) => s.recipe.styles[0] === style).length, 8, style);
 });
+
+test("[FREE-10] 오늘 says when themes opened with no ad jump (yesterday twice the five days before, 10 or more)", async () => {
+  const { alertsFrom } = await import("../src/admin-insight.js");
+  const at = (list) => alertsFrom({ trend: { themeFree: list } }).find((a) => a.key === "themeFree");
+  assert.ok(at([3, 4, 2, 3, 3, 12, 0]), "12 against ~3 a day");
+  assert.equal(at([3, 4, 2, 3, 3, 9, 0]), undefined, "under 10 is quiet");
+  assert.equal(at([10, 12, 11, 9, 10, 15, 0]), undefined, "steady is quiet");
+  assert.match(at([0, 0, 0, 0, 0, 10, 40]).title, /어제 10번/);
+});

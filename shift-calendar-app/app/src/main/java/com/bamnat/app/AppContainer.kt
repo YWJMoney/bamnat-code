@@ -245,6 +245,9 @@ class AppContainer(context: Context) {
         proof = { slipProof() })
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
+
+    /** [FREE-10] 1.35 테마 옷장: the theme worn, 입었던 테마 and its days. */
+    val wardrobe by lazy { com.bamnat.app.recipe.ThemeWardrobe(this, appContext) }
     /** [RCP-11] 1.34 메모 틀. */
     val memoTemplates by lazy { com.bamnat.app.data.MemoTemplateStore(appContext) }
     /** [RCP-10] 1.34 나눔 판: the recipe server (the same worker); screenshots and tests put a fake in its place. */

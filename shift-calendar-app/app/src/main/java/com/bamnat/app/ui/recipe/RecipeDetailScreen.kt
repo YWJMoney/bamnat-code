@@ -92,6 +92,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var disliking by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf(false) }
     var tryOn by remember { mutableStateOf(false) }
+    var adNote by remember { mutableStateOf<String?>(null) }
+    val adGate = confirming && vm.looksNeedAd()
     var folded by remember { mutableStateOf(true) }
     var undoing by remember { mutableStateOf(false) }
     LaunchedEffect(s.message) {
@@ -232,9 +234,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     }
                 }
                 Text("7일 안에는 설정 › 나눔 판에서 되돌릴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = { confirming = false; vm.apply { } }) { Text("넣기") } },
+        confirmButton = {
+            // [FREE-10] 적용할 때만 광고 (사용자 2026-10-30 15:53): the looks of someone else's theme, past the first free ones.
+            if (adGate) com.bamnat.app.ads.ThemeAdButton(
+                "광고 보고 넣기", "모양(테마)은 광고를 끝까지 보면 30일 동안 써요. 알람·규칙 같은 기능은 기간 없이 계속 써요",
+                onReward = { confirming = false; vm.apply { } },
+                onQuit = { adNote = "광고를 끝까지 봐야 넣을 수 있어요" },
+                onOffline = { adNote = "인터넷에 연결되면 다시 해 주세요" },
+                onNoAd = { reason -> confirming = false; vm.noAdCounted(reason); vm.apply { } },
+            ) else TextButton(onClick = { confirming = false; vm.apply { } }) { Text("넣기") }
+        },
         dismissButton = { TextButton(onClick = { confirming = false }) { Text("닫기") } },
     )
     if (undoing) AlertDialog(
