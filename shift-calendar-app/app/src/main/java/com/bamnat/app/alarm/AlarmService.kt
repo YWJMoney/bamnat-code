@@ -57,6 +57,8 @@ class AlarmService : Service() {
     private var watchRung = false
     /** [WEAR-06] 워치 먼저: the phone's own sound and vibration, held back while the watch rings. */
     private var phoneLater: Runnable? = null
+    /** [ALRM-22] A call was ringing or going on when last looked. */
+    private var inCallNow = false
 
     private val alarmAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ALARM)
@@ -69,7 +71,7 @@ class AlarmService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val ring = RingRequest.fromIntent(intent)
-                if (ring != null && _ringing.value == null && AlarmsOff.silences(this, ring)) {
+                if (ring != null && _ringing.value == null && (AlarmsOff.silences(this, ring) || AlarmSoon.silences(this, ring))) {
                     // [ALRM-09] 오늘 남은 알람 모두 끄기: anything that still comes today stays silent.
                     if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_silenced", if (ring.recheck) "recheck" else if (ring.isSnooze) "snooze" else "alarm")
                     startInForeground(null)
@@ -166,7 +168,7 @@ class AlarmService : Service() {
     private val endQuiet = Runnable {
         quietUntil = 0L
         _quiet.value = false
-        if (_ringing.value == null) return@Runnable
+        if (_ringing.value == null || inCallNow) return@Runnable
         runCatching { player?.setVolume(volume, volume) }
         val settings = BootAlarms.ringSettings(this)
         if (settings.vibrate || player == null) startVibration()
@@ -192,6 +194,9 @@ class AlarmService : Service() {
         if (_ringing.value == null) _since.value = Today.millis()
         _ringing.value = ring
         if (!ring.recheck && !BootAlarms.isLocked(this)) WakeCheck.cancel(this)
+        // [ALRM-22] A call already on: nothing sounds or opens over it; the ring starts when the call ends.
+        inCallNow = callActive()
+        _inCall.value = inCallNow
         startInForeground(ring)
 
         val settings = BootAlarms.ringSettings(this)
@@ -213,15 +218,82 @@ class AlarmService : Service() {
         }
         if (!watchFirst) phoneOutputs(ring)
         listenForPowerButton()
+        if (!inCallNow) handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+        handler.postDelayed(callWatch, CALL_CHECK_MILLIS)
+    }
 
-        handler.postDelayed({
-            if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull("auto_stop", offDetail(ring)).joinToString(" "))
-            finish()
-        }, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+    /** Stops a ring nobody answered after 자동으로 끄기. */
+    private val autoStop = Runnable {
+        val ring = _ringing.value ?: return@Runnable
+        if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull("auto_stop", offDetail(ring)).joinToString(" "))
+        finish()
+    }
+
+    /**
+     * [ALRM-22] 1.35: a phone call and an alarm at once. Ringing over a call left the user unable to reach the alarm (the
+     * call's screen on top) and hearing it through the call. While a call rings or goes on, the alarm holds its sound and
+     * vibration and its clock (자동으로 끄기 waits), and the notice says so with its buttons still working; when the call
+     * ends it rings again and comes back to the front.
+     */
+    private val callWatch = object : Runnable {
+        override fun run() {
+            val ring = _ringing.value ?: return
+            val now = callActive()
+            if (now != inCallNow) {
+                inCallNow = now
+                _inCall.value = now
+                if (now) holdForCall(ring) else resumeAfterCall(ring)
+            }
+            handler.postDelayed(this, CALL_CHECK_MILLIS)
+        }
+    }
+
+    private fun callActive(): Boolean {
+        val mode = runCatching { getSystemService(AudioManager::class.java)?.mode }.getOrNull() ?: return false
+        return mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION ||
+            (Build.VERSION.SDK_INT >= 30 && mode == AudioManager.MODE_CALL_SCREENING)
+    }
+
+    private fun holdForCall(ring: RingRequest) {
+        if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_call_hold")
+        handler.removeCallbacks(autoStop)
+        handler.removeCallbacks(volumeRamp)
+        runCatching { player?.takeIf { it.isPlaying }?.pause() }
+        vibrator?.cancel()
+        vibrator = null
+        startInForeground(ring)
+    }
+
+    private fun resumeAfterCall(ring: RingRequest) {
+        val settings = BootAlarms.ringSettings(this)
+        val mp = player
+        if (mp == null && preparing == null) {
+            if (phoneLater == null) phoneOutputs(ring)
+        } else if (mp != null) {
+            runCatching { mp.setVolume(if (quietUntil > Today.millis()) QUIET_VOLUME else volume, if (quietUntil > Today.millis()) QUIET_VOLUME else volume); mp.start() }
+            if (volume < 1f) handler.postDelayed(volumeRamp, RAMP_STEP_MILLIS)
+            if (settings.vibrate) startVibration()
+        }
+        handler.removeCallbacks(autoStop)
+        handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+        // Back in front: the notice again with its full-screen screen, and the screen itself where Android lets it open.
+        startInForeground(ring)
+        bringScreen()
+    }
+
+    /**
+     * [ALRM-22] The ringing screen to the front: allowed while the app is in front (and after a call, where Android
+     * lets it); elsewhere the notice at the top carries every button.
+     */
+    private fun bringScreen() {
+        runCatching {
+            startActivity(Intent(this, AlarmActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
     }
 
     /** The phone's own sound and vibration for [ring]. */
     private fun phoneOutputs(ring: RingRequest) {
+        if (inCallNow) return // [ALRM-22] the call's end starts them
         val settings = BootAlarms.ringSettings(this)
         val sound = ring.soundUri ?: settings.defaultSound
         if (sound != AppSettings.SILENT_SOUND) {
@@ -275,11 +347,16 @@ class AlarmService : Service() {
             return builder.setContentTitle(getString(R.string.app_name)).build()
         }
         val mission = BootAlarms.ringSettings(this).missionFor(ring) != AlarmMission.NONE
+        // [ALRM-22] In a call: quiet, no screen over the call, and a line saying it rings again after.
+        if (inCallNow) builder.setOnlyAlertOnce(true).setSilent(true)
+        else builder.setFullScreenIntent(fullScreen, true)
         return builder
             .setContentTitle(ring.title)
-            .setContentText(describe(ring))
+            .setContentText(if (inCallNow) "통화 중이라 잠시 멈췄어요 · 통화가 끝나면 다시 울려요" else describe(ring))
             .setContentIntent(fullScreen)
-            .setFullScreenIntent(fullScreen, true)
+            // [ALRM-22] A ringing alarm stands out at the top of whatever is on screen.
+            .setColorized(true)
+            .setColor(0xFFFF6B5E.toInt())
             // [REL-12] Both buttons work from the lock screen without unlocking the phone.
             .addAction(lockScreenAction("${snoozeMinutes}분 뒤 다시 울림", ACTION_SNOOZE, REQ_SNOOZE))
             // [PROV-06] With a mission, 끄기 opens it over the lock screen instead of turning the alarm off.
@@ -334,13 +411,14 @@ class AlarmService : Service() {
                 val started = runCatching {
                     volume = if (gradual) GRADUAL_START else 1f
                     ready.setVolume(volume, volume)
-                    ready.start()
+                    // [ALRM-22] Ready during a call: it waits, and the call's end starts it.
+                    if (!inCallNow) ready.start()
                 }.isSuccess
                 if (started) {
                     done = true
                     preparing = null
                     player = ready
-                    if (gradual) handler.postDelayed(volumeRamp, RAMP_STEP_MILLIS)
+                    if (gradual && !inCallNow) handler.postDelayed(volumeRamp, RAMP_STEP_MILLIS)
                 } else {
                     next()
                 }
@@ -368,7 +446,7 @@ class AlarmService : Service() {
     }
 
     private fun startVibration() {
-        if (vibrator != null || quietUntil > Today.millis()) return
+        if (vibrator != null || quietUntil > Today.millis() || inCallNow) return
         val v = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
@@ -425,6 +503,8 @@ class AlarmService : Service() {
         _allOffAfterMission.value = false
         _ringing.value = null
         _since.value = null
+        inCallNow = false
+        _inCall.value = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)
         stopSelf()
@@ -488,6 +568,13 @@ class AlarmService : Service() {
         private val _since = MutableStateFlow<Long?>(null)
         /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
         val ringingSince: StateFlow<Long?> = _since.asStateFlow()
+
+        private val _inCall = MutableStateFlow(false)
+        /** [ALRM-22] The ring waits for a call to end. */
+        val inCall: StateFlow<Boolean> = _inCall.asStateFlow()
+
+        /** [ALRM-22] How often a ringing alarm looks for a call. */
+        private const val CALL_CHECK_MILLIS = 1_500L
 
         private val _quiet = MutableStateFlow(false)
         /** [ALRM-08] A button quieted a mission alarm for a while. */

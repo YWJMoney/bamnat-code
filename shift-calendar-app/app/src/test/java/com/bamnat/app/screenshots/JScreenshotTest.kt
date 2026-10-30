@@ -80,23 +80,23 @@ class JScreenshotTest : ScreenshotBase() {
     @Test fun setupTimesDark() = shoot("581_j_setup_times_dark", FOLDED_NIGHT, fresh(null) { toTimes() })
     @Test fun setupTimeWindowDark() = shoot("582_j_setup_time_window_dark", FOLDED_NIGHT, fresh(null) { toTimes(); tapText("시작", exact = true) })
     @Test fun setupTodayDark() = shoot("583_j_setup_today_dark", FOLDED_NIGHT, fresh(null) { setupToToday() })
-    @Test fun settingsHubDark() = shoot("584_j_settings_hub_dark", FOLDED_NIGHT) { tab(4, wide = false) }
+    @Test fun settingsHubDark() = shoot("584_j_settings_hub_dark", FOLDED_NIGHT) { tab(SETTINGS_TAB, wide = false) }
     @Test fun settingsAlarmDark() = shoot("585_j_settings_alarm_dark", FOLDED_NIGHT) { settingsPage("알람"); reveal(MOVE_ALL_ALARMS_ROW, exact = true) }
     @Test fun moveAllAlarmsDark() = shoot("586_j_move_all_alarms_dark", FOLDED_NIGHT) { settingsPage("알람"); tapText(MOVE_ALL_ALARMS_ROW, exact = true) }
-    @Test fun featureSwitchesDark() = shoot("587_j_feature_switches_dark", FOLDED_NIGHT) { tab(4, wide = false); tapText("기능 켜고 끄기", exact = true) }
+    @Test fun featureSwitchesDark() = shoot("587_j_feature_switches_dark", FOLDED_NIGHT) { tab(SETTINGS_TAB, wide = false); tapText("기능 켜고 끄기", exact = true) }
     @Test fun recommendedDark() = shoot("588_j_recommended_dark", FOLDED_NIGHT, recommended())
-    @Test fun settingsSearchDark() = shoot("589_j_settings_search_dark", FOLDED_NIGHT) { tab(4, wide = false); typeInto("설정 찾기", "알람") }
+    @Test fun settingsSearchDark() = shoot("589_j_settings_search_dark", FOLDED_NIGHT) { tab(SETTINGS_TAB, wide = false); typeInto("설정 찾기", "알람") }
 
     @Test fun setupStyleBig() = shoot("590_j_setup_style_200", FOLDED, 2f, fresh(null))
     @Test fun setupTimesBig() = shoot("591_j_setup_times_200", FOLDED, 2f, fresh(null) { toTimes() })
     @Test fun setupTimeWindowBig() = shoot("592_j_setup_time_window_200", FOLDED, 2f, fresh(null) { toTimes(); tapText("시작", exact = true) })
     @Test fun setupTodayBig() = shoot("593_j_setup_today_200", FOLDED, 2f, fresh(null) { toTodayBig() })
-    @Test fun settingsHubBig() = shoot("594_j_settings_hub_200", PHONE, 2f) { tab(4, wide = false) }
+    @Test fun settingsHubBig() = shoot("594_j_settings_hub_200", PHONE, 2f) { tab(SETTINGS_TAB, wide = false) }
     @Test fun settingsAlarmBig() = shoot("595_j_settings_alarm_200", PHONE, 2f) { settingsPage("알람"); reveal(MOVE_ALL_ALARMS_ROW, exact = true) }
     @Test fun moveAllAlarmsBig() = shoot("596_j_move_all_alarms_200", PHONE, 2f) { settingsPage("알람"); tapText(MOVE_ALL_ALARMS_ROW, exact = true) }
-    @Test fun featureSwitchesBig() = shoot("597_j_feature_switches_200", PHONE, 2f) { tab(4, wide = false); tapText("기능 켜고 끄기", exact = true) }
+    @Test fun featureSwitchesBig() = shoot("597_j_feature_switches_200", PHONE, 2f) { tab(SETTINGS_TAB, wide = false); tapText("기능 켜고 끄기", exact = true) }
     @Test fun setupEscapeBig() = shoot("598_j_setup_escape_200", FOLDED, 2f, fresh(null) { toTodayBig(answer = false); reveal("잘 모르겠어요 · 달력에 직접 칠할게요", exact = true) })
-    @Test fun settingsSearchBig() = shoot("599_j_settings_search_200", PHONE, 2f) { tab(4, wide = false); typeInto("설정 찾기", "알람") }
+    @Test fun settingsSearchBig() = shoot("599_j_settings_search_200", PHONE, 2f) { tab(SETTINGS_TAB, wide = false); typeInto("설정 찾기", "알람") }
 
     /**
      * [setupToToday] at 200% on the folded screen (the setup is what a new user sees first, on the cover

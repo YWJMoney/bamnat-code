@@ -30,6 +30,8 @@ data class UpcomingAlarm(val plan: PlannedAlarm, val triggerAtMillis: Long, val 
 class AlarmScheduler(
     private val context: Context,
     private val telemetry: Telemetry,
+    /** [ALRM-21] Minutes before an alarm for 곧 알람이 울려요; 0 off. */
+    private val soonMinutes: () -> Int = { 0 },
     /** The ringing settings, copied with the alarms for a locked boot [REL-10]. */
     private val ringSettings: () -> BootAlarms.RingSettings = { BootAlarms.RingSettings() },
 ) {
@@ -62,11 +64,13 @@ class AlarmScheduler(
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
         // [ALRM-09] 오늘 남은 알람 모두 끄기: the next alarm is the first one after it.
-        val from = AlarmsOff.planFrom(context, planFrom(after))
+        // [ALRM-21] An alarm turned off ahead with 이번 알람 끄기: the one after it.
+        val from = AlarmSoon.planFrom(context, AlarmsOff.planFrom(context, planFrom(after)))
         val plan = if (enabled) nextOf(calendars, from) else null
         val operation = shiftAlarmIntent(plan)
         saveBootCopy(if (enabled) planAhead(calendars, from) else emptyList())
         if (plan == null) {
+            AlarmSoon.schedule(context, null, null, 0)
             prefs.edit().remove(K_PENDING).apply()
             alarmManager.cancel(operation)
             if (_upcoming.value != null) telemetry.event(DiagEvents.ALARM_CLEARED, if (enabled) "none_ahead" else "switched_off")
@@ -76,6 +80,7 @@ class AlarmScheduler(
         val triggerAt = plan.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()
         val exact = setAlarm(triggerAt, operation)
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
+        AlarmSoon.schedule(context, triggerAt, soonText(plan), soonMinutes())
         val previous = _upcoming.value
         // The schedule is re-planned on every edit; only a different alarm is worth a log line.
         if (previous == null || previous.triggerAtMillis != triggerAt || previous.exact != exact) {
@@ -100,7 +105,7 @@ class AlarmScheduler(
     fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = Today.dateTime()): Boolean {
         // An alarm that just rang is being planned past; until that is done nothing is missing.
         if (Today.millis() - firedAtMillis < SETTLE_MILLIS) return false
-        val expected = if (enabled) nextOf(calendars, AlarmsOff.planFrom(context, planFrom(now))) else null
+        val expected = if (enabled) nextOf(calendars, AlarmSoon.planFrom(context, AlarmsOff.planFrom(context, planFrom(now)))) else null
         val held = systemHolds()
         val pending = prefs.getLong(K_PENDING, 0L)
         val problem = when {
@@ -112,6 +117,12 @@ class AlarmScheduler(
         telemetry.event(DiagEvents.ALARM_REPAIRED, problem)
         reschedule(calendars, enabled, now)
         return true
+    }
+
+    /** [ALRM-21] What 곧 알람이 울려요 says the alarm is for. */
+    private fun soonText(plan: PlannedAlarm): String = when {
+        plan.shiftName.isNotBlank() -> "${plan.shiftName} 근무 알람이에요. 이번 알람을 끌까요?"
+        else -> "이 날 알람이에요. 이번 알람을 끌까요?"
     }
 
     private val _testAt = MutableStateFlow(prefs.getLong(K_TEST_AT, 0L).takeIf { it > Today.millis() })

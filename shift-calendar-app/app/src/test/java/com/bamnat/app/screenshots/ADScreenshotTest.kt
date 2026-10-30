@@ -117,7 +117,7 @@ class ADScreenshotTest : ScreenshotBase() {
             assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
             assertEquals("not saved while editing", "", saved())
             // A tab tapped while editing does not open.
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             assertEquals("달력", tabNow())
             assertTrue(appears(TAB_EDIT_HINT_TOP))
             // Anywhere else saves and ends the edit, and does nothing else.
@@ -147,7 +147,7 @@ class ADScreenshotTest : ScreenshotBase() {
             assertEquals("메모", tabNow())
             // Bar places now: 메모 달력 돈 근무·급여 설정.
             tab(2, wide = false)
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             assertEquals("설정", tabNow())
             back()
             assertEquals("the tab before", "가계부", tabNow())
@@ -297,7 +297,7 @@ class ADScreenshotTest : ScreenshotBase() {
         noCuts("help_answer")
     }
     @Test fun settingsSearch() = shoot("1034_ad_settings_search", PHONE_393) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "첫 화면")
         assertTrue(appears(TAB_ORDER_ROW))
         noCuts("settings_search")

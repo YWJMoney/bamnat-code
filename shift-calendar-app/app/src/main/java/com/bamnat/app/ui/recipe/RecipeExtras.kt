@@ -117,9 +117,12 @@ private fun ExampleWeek(r: Recipe, style: WorkStyle) {
  */
 @Composable
 internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.model.ShiftType, com.bamnat.core.model.ShiftType>>,
-    theme: Map<String, Any?>?) {
-    if (looks.isEmpty() && theme == null) return
+    theme: Map<String, Any?>?,
+    /** [RCX-31] 1.35: the 근무 주기·급여 방식 piece's setup when it is on: 넣은 뒤 shows its days from today, as putting it in does. */
+    company: String? = null) {
+    if (looks.isEmpty() && theme == null && company == null) return
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val shared = remember(company) { company?.let { runCatching { c.companyShare.read(it) }.getOrNull() } }
     val today = com.bamnat.app.ui.calendar.rememberToday()
     val month = java.time.YearMonth.from(today)
     val snap by remember(calendar) { c.scopeOf(calendar).schedule.snapshot }.collectAsStateWithLifecycle(null)
@@ -145,7 +148,21 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
     val weekStart = c.settingsRepository.current.weekStart
     val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
     val weeks = ((java.time.temporal.ChronoUnit.DAYS.between(first, month.atEndOfMonth()) / 7) + 1).toInt()
-    val changed = days.values.count { d -> d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true }
+    // [RCX-31] The company's days from today: its rotation from its own start day (or today), or its days of the week.
+    fun theirs(date: java.time.LocalDate): com.bamnat.core.model.ShiftType? {
+        val s = shared ?: return null
+        val name = when {
+            s.order.isNotEmpty() -> s.order[Math.floorMod(java.time.temporal.ChronoUnit.DAYS.between(s.anchor ?: today, date), s.order.size.toLong()).toInt()]
+            s.weekly.size == 7 -> s.weekly[date.dayOfWeek.value - 1]
+            else -> return null
+        } ?: return null
+        return snap?.shiftTypes?.firstOrNull { it.name == name } ?: s.types.firstOrNull { it.name == name }
+    }
+    val moves = shared != null && (shared.order.isNotEmpty() || shared.weekly.size == 7)
+    val changed = days.values.count { d ->
+        if (moves && !d.date.isBefore(today)) theirs(d.date)?.name != d.shiftType?.takeIf { d.isWorkDay }?.name
+        else d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true
+    }
     Column(Modifier.fillMaxWidth().clearAndSetSemantics {
         contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", 모양이 바뀌는 날 ${changed}일"
     }) {
@@ -155,11 +172,13 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                     val date = first.plusDays((w * 7 + d).toLong())
                     val inMonth = java.time.YearMonth.from(date) == month
                     val day = days[date].takeIf { inMonth }
-                    val type = day?.shiftType?.let { t -> if (after) swap[t.id] ?: t else t }
-                    val fill = if (type != null && day.isWorkDay) type.colorArgb.asColor() else androidx.compose.ui.graphics.Color.Transparent
+                    val company = after && moves && inMonth && !date.isBefore(today)
+                    val type = if (company) theirs(date)?.let { t -> swap[t.id] ?: t } else day?.shiftType?.let { t -> if (after) swap[t.id] ?: t else t }
+                    val works = if (company) type != null && !type.isOff else day?.isWorkDay == true
+                    val fill = if (type != null && works) type.colorArgb.asColor() else androidx.compose.ui.graphics.Color.Transparent
                     val holiday = com.bamnat.core.holiday.KoreanHolidays.isHoliday(date)
                     val digit = when {
-                        type != null && day.isWorkDay -> contentColorOn(fill)
+                        type != null && works -> contentColorOn(fill)
                         holiday -> look.holiday(cal)
                         date.dayOfWeek == java.time.DayOfWeek.SUNDAY -> look.sunday(cal)
                         date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> look.saturday(cal)
@@ -168,13 +187,19 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                     Box(Modifier.weight(1f).aspectRatio(1f).padding(1.dp).background(fill, RoundedCornerShape(4.dp))
                         .then(if (date == today && inMonth) Modifier.border(2.dp, look.today ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier),
                         contentAlignment = Alignment.Center) {
-                        if (inMonth) Text(type?.label?.takeIf { it.isNotEmpty() && day.isWorkDay } ?: date.dayOfMonth.toString(),
+                        if (inMonth) Text(type?.label?.takeIf { it.isNotEmpty() && works } ?: date.dayOfMonth.toString(),
                             style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
                     }
                 }
             }
         }
     }
-    Text(if (looks.isEmpty()) "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요" else "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요",
+    Text(when {
+        // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
+        moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
+        company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
+        looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
+        else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
+    },
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

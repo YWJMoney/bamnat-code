@@ -176,7 +176,7 @@ class AGScreenshotTest : ScreenshotBase() {
     })
 
     @Test fun settingsStartsWithGrowingTogether() = shoot("1085_ag_settings_top", FOLDED, style(WorkStyle.SHIFT) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)
         assertTrue(appears("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)."))
         assertTrue(appears("불편한 점 알려 주기"))
@@ -190,7 +190,7 @@ class AGScreenshotTest : ScreenshotBase() {
     })
 
     @Test fun feedbackOpensTheInquiryForm() = shoot("1093_ag_feedback_form", FOLDED, style(WorkStyle.SHIFT) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)
         tapText("알려 주기", exact = true)
         // The 문의 opens on its form, from here.
@@ -199,7 +199,7 @@ class AGScreenshotTest : ScreenshotBase() {
     })
 
     @Test fun closingTheSettingsCardWaitsAMonth() = shoot("1092_ag_settings_closed", FOLDED, style(WorkStyle.SHIFT) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)
         tapText("닫기", exact = true)
         assertTrue(gone("함께 만들어요", exact = true))
@@ -283,7 +283,7 @@ class AGScreenshotTest : ScreenshotBase() {
     @Test fun theProScreenSaysWhatIsLeft() = shoot("1090_ag_pro_next", PHONE_393, style(WorkStyle.SHIFT) {
         api.viewAnswer = view(progress = 3, waiting = 2, friends = 8, given = 1)
         runBlocking { c.invites.makeLink() }
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         tapText("프로", exact = true)
         tapText("친구 초대", exact = true, scrolls = 30)
         reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)

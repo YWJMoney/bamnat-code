@@ -89,6 +89,8 @@ class RecipeMakeViewModel(
 ) : ViewModel() {
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     val canPublish: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_PUBLISH)
+    /** [RCX-31] Making the next 판 of this code of mine; null for a new recipe. */
+    val ownCode: String? get() = code
 
     data class State(
         val step: Int = 1,
@@ -120,7 +122,8 @@ class RecipeMakeViewModel(
                 }
                 else -> null
             }
-            val r = start ?: blank()
+            // [RCX-31] A draft from before kept 최저임금 with its amount in the hint, which the amount check then refused.
+            val r = (start ?: blank()).let { d -> d.copy(inputs = d.inputs.map { i -> if (i.hint.contains("최저임금") && i.hint.any(Char::isDigit)) i.copy(hint = WAGE_HINT) else i }) }
             val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(kind)
             _state.value = _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine)
             val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
@@ -156,7 +159,7 @@ class RecipeMakeViewModel(
         val added = chosen.filter { k -> kept.none { it.kind == k } }.mapNotNull { k -> mine[k]?.let { Piece(k, it.filterValues { v -> v != null }) } }
         // Every amount becomes 받는 사람이 정할 칸 first (S7); the maker can keep one on purpose in step 2.
         return InputExtract.extract(r.copy(pieces = (kept + added).sortedBy { it.kind.ordinal }), _state.value.kept) { _, f -> if (f == "wage") MIN_WAGE else null }
-            .let { it.copy(inputs = it.inputs.map { i -> if (i.label == "시급" && i.default == MIN_WAGE) i.copy(hint = "처음 값은 2026 최저임금 ${MIN_WAGE}원이에요") else i }) }
+            .let { it.copy(inputs = it.inputs.map { i -> if (i.label == "시급" && i.default == MIN_WAGE) i.copy(hint = WAGE_HINT) else i }) }
     }
 
     fun toggle(kind: PieceKind) {
@@ -265,7 +268,11 @@ class RecipeMakeViewModel(
         })
     }
 
-    companion object { const val MIN_WAGE = 10_320L }
+    companion object {
+        const val MIN_WAGE = 10_320L
+        /** [RCX-31] Says where the first 시급 comes from without an amount, which the recipe's amount check refuses. */
+        const val WAGE_HINT = "처음 값은 올해 최저임금이에요. 내 시급으로 바꿔 넣어요"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -274,7 +281,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     val s by vm.state.collectAsStateWithLifecycle()
     val titles = listOf("고르기", "받는 사람이 정할 칸", "꾸미기", "설명", "검사하고 올리기")
     Scaffold(topBar = {
-        TopAppBar(title = { Text("레시피 만들기 ${s.step}/5 · ${titles[s.step - 1]}") },
+        TopAppBar(title = { Text((if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") + " ${s.step}/5 · ${titles[s.step - 1]}") },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -329,24 +336,34 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         @Suppress("UNCHECKED_CAST") (p.values["items"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { it["code"] as? String }
     }.orEmpty()
     var codes by remember { mutableStateOf(bundled.joinToString(" ")) }
+    // 1.35 실사용 점검 F-36: what is picked is what the field holds, so one chip stays picked until a second makes the piece.
+    val picked = remember(codes) { bundleCodes(codes) }
     Text("레시피 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
     // [RCX-11] Tap the ones I have rather than typing codes.
     if (s.bundleChoices.isNotEmpty()) {
         Text("넣어 둔 레시피와 내가 올린 레시피에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             s.bundleChoices.forEach { (k, title) ->
-                FilterChip(k in bundled, {
-                    val next = if (k in bundled) bundled - k else bundled + k
+                FilterChip(k in picked, {
+                    val next = if (k in picked) picked - k else picked + k
                     codes = next.joinToString(" "); vm.bundle(next)
                 }, label = { Text(title, maxLines = 1) })
             }
         }
     }
-    OutlinedTextField(codes, { t -> codes = t; vm.bundle(Regex("[2-9A-HJ-NP-Za-hj-np-z]{8}|https?://\\S+").findAll(t).mapNotNull { m -> com.bamnat.app.recipe.RecipeLinks.find(m.value) }.toList()) },
+    OutlinedTextField(codes, { t -> codes = t; vm.bundle(bundleCodes(t)) },
         label = { Text("다른 레시피 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-    Text(if (bundled.size >= 2) "묶음 ${bundled.size}개: 받는 분이 하나씩 열어 골라 넣어요" else "예: 근무 색 레시피와 알람 레시피를 한 번에 나누기",
+    Text(when {
+        bundled.size >= 2 -> "묶음 ${bundled.size}개: 받는 분이 하나씩 열어 골라 넣어요"
+        picked.size == 1 -> "하나 더 고르면 묶음이 돼요 (2~8개)"
+        else -> "예: 근무 색 레시피와 알람 레시피를 한 번에 나누기"
+    },
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
+
+/** The recipe codes in [t], typed or as links, each once. */
+private fun bundleCodes(t: String): List<String> =
+    Regex("[2-9A-HJ-NP-Za-hj-np-z]{8}|https?://\\S+").findAll(t).mapNotNull { m -> com.bamnat.app.recipe.RecipeLinks.find(m.value) }.distinct().toList()
 
 @Composable
 private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {

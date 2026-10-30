@@ -119,6 +119,8 @@ internal const val WATCH_ALARM_ROW = "워치에서도 울리기"
 internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 /** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
+/** [ALRM-21] 1.35: the row in 설정 › 알람 › 울리는 방식. */
+internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -304,6 +306,7 @@ internal object SettingsIndex {
         screen(W.title, "근무표 사진이 안 읽힐 때", SettingsGo.DUTY_ROSTER, "사진 인식", "인식 안 돼", "어느 줄", "내 조", "사진 위에서 누르기", "무엇을 읽었는지", "기울어진 사진"),
         screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
         // 1.25 묶음 AB
+        row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
         screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),

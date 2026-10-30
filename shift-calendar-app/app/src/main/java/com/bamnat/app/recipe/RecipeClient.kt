@@ -35,6 +35,8 @@ data class RecipeItem(
     val fresh: Boolean = false,
     /** [RCX-05] 1.35 The maker's page id (never the install); null from a server before 1.35. */
     val maker: String? = null,
+    /** [RCX-32] 1.35 운영자가 고른 보여주기 판: what 나눔 판 can do, shown first on every 광장. */
+    val showcase: Boolean = false,
 )
 
 /** [RCP-23] One recipe with its written form; [state], [note] and [reasons] only for its maker. */
@@ -323,6 +325,7 @@ class RecipeClient(
                 o.optStringOrNull("nick"), o.optInt("version", 1), o.optInt("likes"), o.optInt("dislikes"), o.optInt("users"),
                 o.optInt("kept").takeIf { o.has("kept") && !o.isNull("kept") }, o.optBoolean("official"), o.optBoolean("publicData"),
                 o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"), o.optStringOrNull("maker"),
+                o.optBoolean("showcase"),
             )
         }
 

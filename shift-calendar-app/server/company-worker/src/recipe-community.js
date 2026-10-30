@@ -35,7 +35,9 @@ export const COMMUNITY_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS recipe_images_state ON recipe_images (state, at)",
 ];
 /** [RCX-05] Each recipe knows its maker's public id, so a list row links the maker's page without the install hash. */
-export const COMMUNITY_COLUMNS = ["ALTER TABLE recipes ADD COLUMN maker TEXT"];
+export const COMMUNITY_COLUMNS = ["ALTER TABLE recipes ADD COLUMN maker TEXT",
+  // [RCX-32] 1.35 보여주기: the operator's showcases of what 나눔 판 can do, at the top of each kind of work's 나눔 판.
+  "ALTER TABLE recipes ADD COLUMN showcase INTEGER NOT NULL DEFAULT 0"];
 
 /** The maker row of an install, made the first time it is needed. */
 async function rcMakerOf(d, env, dev, now) {

@@ -299,7 +299,7 @@ class ACScreenshotTest : ScreenshotBase() {
     // ---- 418 [SPAT-06] 도움말 finds the answer and opens 근무 주기 ----
     @Test fun helpAnswersAndOpensThePattern() = shoot("1019_ac_help_answer", PHONE_393) {
         inquiriesOn()
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         tapText("도움말과 문의", exact = true)
         typeInto("기능과 도움말 찾기", "회사 근무주기")
         tapText("우리 회사 근무주기를 이름으로 찾을 수 있나요?", exact = true)

@@ -169,4 +169,21 @@ class AlarmPlannerTest {
         assertEquals(LocalTime.of(21, 0), twelve.end)
         assertEquals(12 * 60, twelve.durationMinutes)
     }
+
+    /** [ALRM-20] 연차 or 휴무 on a working day: the shift's alarms go by themselves, ones set by hand stay to be asked about. */
+    @Test
+    fun restDayTellsWhatStillRings() {
+        val date = start // 주간
+        val before = resolver()
+        val leave = AlarmPlanner.restDay(before, resolver(listOf(DayEntry(date, leave = com.bamnat.core.model.Leave()))), date)!!
+        assertTrue(leave.was.isNotEmpty())
+        assertTrue(leave.left.isEmpty())
+        val handSet = listOf(DayAlarm(LocalTime.of(6, 30)))
+        val withHand = resolver(listOf(DayEntry(date, customAlarms = handSet)))
+        val off = AlarmPlanner.restDay(withHand, resolver(listOf(DayEntry(date, override = ShiftOverride.Off, customAlarms = handSet))), date)!!
+        assertEquals(listOf(LocalTime.of(6, 30)), off.left.map { it.triggerAt.toLocalTime() })
+        // 반차 keeps a working day; a day already off asks nothing.
+        assertNull(AlarmPlanner.restDay(before, resolver(listOf(DayEntry(date, leave = com.bamnat.core.model.Leave(quarters = 2)))), date))
+        assertNull(AlarmPlanner.restDay(before, before, start.plusDays(4)))
+    }
 }

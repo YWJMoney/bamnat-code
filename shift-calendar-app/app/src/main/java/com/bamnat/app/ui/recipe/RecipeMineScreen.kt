@@ -50,7 +50,9 @@ import com.bamnat.core.recipe.PieceKind
 @Composable
 fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, onDraft: (Long) -> Unit, onList: () -> Unit,
     /** [RCX-05] 1.35 내 만든 분 페이지. */
-    onMaker: (String) -> Unit = {}) {
+    onMaker: (String) -> Unit = {},
+    /** [RCX-31] 1.35 새 판 만들기: the code and the recipe as it is. */
+    onNewVersion: (String, String) -> Unit = { _, _ -> }) {
     val on by vm.on.collectAsStateWithLifecycle()
     val applied by vm.applied.collectAsStateWithLifecycle()
     val drafts by vm.drafts.collectAsStateWithLifecycle()
@@ -129,8 +131,11 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
                                 Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users} · 코드 ${item.code}",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton(onClick = { asking = "‘${item.title}’을(를) 광장에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
-                                    Text("지우기", color = MaterialTheme.colorScheme.error)
+                                Row {
+                                    TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
+                                    TextButton(onClick = { asking = "‘${item.title}’을(를) 광장에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
+                                        Text("지우기", color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }

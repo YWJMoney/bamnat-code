@@ -292,6 +292,7 @@ fun CalendarScreen(
     var rulesOpen by rememberSaveable { mutableStateOf(false) }
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
     val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
+    val restAlarms by vm.restAlarms.collectAsStateWithLifecycle()
     // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
     var editingLayout by rememberSaveable { mutableStateOf(false) }
     // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
@@ -1605,6 +1606,7 @@ fun CalendarScreen(
         CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false }, calendar = activeCalendar.id)
     }
     coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
+    restAlarms?.let { ask -> RestAlarmDialog(ask, onAnswer = { off -> vm.answerRestAlarms(ask, off) }) }
 
     if (sheetOpen && !wide) {
         DaySheet(snackbar = sheetSnackbar, onDismiss = { sheetOpen = false }) { detailPart(Modifier.fillMaxWidth(), 24.dp) }
@@ -2579,6 +2581,33 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
     com.bamnat.core.work.CalendarFocus.JOBS -> "일감을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.SALES -> "매출을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.INVEST -> "매매를 바로 적을 수 있어요"
+}
+
+/**
+ * [ALRM-20] A day just made a day off or leave still has alarms set by hand: 끌까요? Closing it keeps them, as 그대로 does.
+ */
+@Composable
+private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turnOff: Boolean) -> Unit) {
+    val one = ask.days.singleOrNull()
+    val times = ask.days.flatMap { d -> d.left.map { Fmt.time(it.triggerAt.toLocalTime()) } }.distinct().take(3).joinToString(", ")
+    AlertDialog(
+        onDismissRequest = { onAnswer(false) },
+        icon = { Icon(Icons.Filled.AlarmOff, null) },
+        title = { Text("알람을 끌까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (one != null) "${Fmt.monthDay(one.date)}은 쉬는 날이 됐는데 직접 정한 $times 알람이 그대로 울려요."
+                    else "쉬는 날이 된 ${ask.days.size}일에 직접 정한 알람($times)이 그대로 울려요.",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text("끄면 그 날 알람이 모두 울리지 않아요. 날짜를 눌러 알람에서 다시 켤 수 있어요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { Button(onClick = { onAnswer(true) }) { Text("알람 끄기") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("그대로 두기") } },
+    )
 }
 
 /**

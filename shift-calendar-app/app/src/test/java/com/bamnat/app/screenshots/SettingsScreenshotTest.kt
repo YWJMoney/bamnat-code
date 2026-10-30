@@ -25,8 +25,8 @@ import com.bamnat.core.time.Today
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class SettingsScreenshotTest : ScreenshotBase() {
-    @Test fun foldedSettings() = shoot("4_folded_settings", FOLDED) { tab(4, wide = false) }
-    @Test fun unfoldedSettings() = shoot("8_unfolded_settings", UNFOLDED) { tab(4, wide = true) }
+    @Test fun foldedSettings() = shoot("4_folded_settings", FOLDED) { tab(SETTINGS_TAB, wide = false) }
+    @Test fun unfoldedSettings() = shoot("8_unfolded_settings", UNFOLDED) { tab(SETTINGS_TAB, wide = true) }
 
     @Test fun foldedDiagnostics() = shoot("22_folded_diagnostics", FOLDED) {
         val c = app.container
@@ -96,7 +96,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
     // ---- M10 [SET-01][SLP-15] Settings in groups ----
     @Test fun foldedSettingsAlarm() = shoot("140_folded_settings_alarm", FOLDED) { settingsPage("알람") }
     @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("알림과 잠"); reveal("오늘의 흐름 보기", exact = true) }
-    @Test fun phoneSettingsHugeText() = shoot("166_phone_settings_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
+    @Test fun phoneSettingsHugeText() = shoot("166_phone_settings_huge_text", PHONE, fontScale = 2f) { tab(SETTINGS_TAB, wide = false) }
     @Test fun foldedSettingsDataUndo() = shoot("144_folded_settings_data_undo", FOLDED) {
         runBlocking { app.container.importUndo.save() }
         settingsPage("데이터")
@@ -110,7 +110,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
         tab(3, wide = false)
         tapText("화면 꾸미기", exact = true, scrolls = 0)
     }
-    @Test fun smallPhoneSettings() = shoot("365_small_phone_settings", SMALL_PHONE) { tab(4, wide = false) }
+    @Test fun smallPhoneSettings() = shoot("365_small_phone_settings", SMALL_PHONE) { tab(SETTINGS_TAB, wide = false) }
     @Test fun phoneLockCover() = shoot("373_phone_lock_cover", PHONE) { content { com.bamnat.app.ui.LockCover {} } }
     @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보·앱 정보") }
 
@@ -128,7 +128,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
         launchedAt = Today.instant().minus(java.time.Duration.ofDays(1)), thanksMonths = 3)))
     @Test fun phoneAdPrivacy() = shoot("382_phone_ad_privacy", PHONE) { settingsPage("개인정보·앱 정보"); tapText("광고 개인정보 선택", exact = true) }
     @Test fun phoneProLargeText() = shoot("384_phone_pro_large_text", PHONE, fontScale = 1.5f, launched(then = pro()))
-    @Test fun phoneSettingsProRow() = shoot("383_phone_settings_pro_row", PHONE, launched { tab(4, wide = false); reveal("기능 켜고 끄기", exact = true) })
+    @Test fun phoneSettingsProRow() = shoot("383_phone_settings_pro_row", PHONE, launched { tab(SETTINGS_TAB, wide = false); reveal("기능 켜고 끄기", exact = true) })
     @Test fun phoneDataAutoBackup() = shoot("392_phone_data_auto_backup", PHONE) {
         val c = app.container
         c.keyBox = com.bamnat.app.backup.AutoBackupTest.FakeKeyBox()
@@ -154,42 +154,42 @@ class SettingsScreenshotTest : ScreenshotBase() {
 
     @Test fun foldedSettingsHubHelp() {
         inquiriesOn(asked = true)
-        shoot("327_folded_settings_hub", FOLDED) { tab(4, wide = false) }
+        shoot("327_folded_settings_hub", FOLDED) { tab(SETTINGS_TAB, wide = false) }
     }
     @Test fun foldedSettingsSearch() = shoot("328_folded_settings_search", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "알람 소리")
     }
     @Test fun foldedSettingsSearchFound() = shoot("329_folded_settings_search_found", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "알람 소리")
         tapText("알람음", exact = true)
     }
     @Test fun unfoldedSettingsSearchFound() = shoot("330_unfolded_settings_search_found", UNFOLDED) {
-        tab(4, wide = true)
+        tab(SETTINGS_TAB, wide = true)
         typeInto("설정 찾기", "다크 모드")
         tapText("테마", exact = true)
     }
     @Test fun phoneSettingsSearchHugeText() = shoot("331_phone_settings_search_huge_text", PHONE, fontScale = 2f) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "백업")
     }
     @Test fun foldedSettingsSearchNothing() = shoot("333_folded_settings_search_nothing", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "화면이 자꾸 꺼져요")
     }
 
     @Test fun foldedHelpHome() {
         inquiriesOn()
         shoot("334_folded_help_home", FOLDED) {
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             tapText("도움말과 문의", exact = true)
         }
     }
     @Test fun foldedHelpSearch() {
         inquiriesOn()
         shoot("335_folded_help_search", FOLDED) {
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             tapText("도움말과 문의", exact = true)
             typeInto("기능과 도움말 찾기", "알람이 안 울려요")
             tapText("알람이 안 울리거나 늦게 울려요", exact = true)
@@ -204,7 +204,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
     @Test fun unfoldedHelpHome() {
         inquiriesOn()
         shoot("339_unfolded_help_home", UNFOLDED) {
-            tab(4, wide = true)
+            tab(SETTINGS_TAB, wide = true)
             askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
         }
     }
@@ -224,18 +224,18 @@ class SettingsScreenshotTest : ScreenshotBase() {
     @Test fun foldedHelpByMail() {
         inquiriesOn(enabled = false)
         shoot("342_folded_help_mail", FOLDED) {
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             tapText("도움말과 문의", exact = true)
             reveal("메일로 문의하기")
         }
     }
     @Test fun foldedSettingsSearchWithHelp() = shoot("346_folded_settings_search_help", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "알람이 안 울려요")
     }
     @Test fun phoneSettingsHubNewAnswerHugeText() {
         inquiriesOn(asked = true)
-        shoot("347_phone_settings_new_answer_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
+        shoot("347_phone_settings_new_answer_huge_text", PHONE, fontScale = 2f) { tab(SETTINGS_TAB, wide = false) }
     }
     @Test fun foldedSetupStepsLeft() = shoot("279_folded_setup_steps_left", FOLDED, fresh(null) { tapText("순서가 돌아가요") })
     @Test fun unfoldedSetupStepsLeft() = shoot("280_unfolded_setup_steps_left", UNFOLDED, fresh(null) {
@@ -301,7 +301,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
 
     // [SET-02] The settings list in seven groups, and the two that took in another.
     @Test fun phoneSettingsSevenGroups() = shoot("528_phone_settings_seven_groups", PHONE) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("도움말과 문의", exact = true)
     }
     @Test fun foldedSettingsPrivacyAbout() = shoot("530_folded_settings_privacy_about", FOLDED) {

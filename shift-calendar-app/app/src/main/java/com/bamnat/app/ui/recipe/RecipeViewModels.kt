@@ -34,7 +34,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     val enabled: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_BROWSE)
 
-    enum class Tab(val key: String, val label: String) { HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
+    enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
         val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false)
@@ -311,4 +311,13 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
 
     fun deleteDraft(id: Long) { viewModelScope.launch { c.recipes.deleteDraft(id) } }
     fun shown() { _message.value = null }
+
+    /** [RCX-31] 새 판 만들기 from 내가 올린 레시피: the recipe as it is now, handed to [then] to change and send again. */
+    fun newVersion(code: String, then: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { c.recipeApi.show(code, c.companyStore.device) }
+                .onSuccess { then(it.body) }
+                .onFailure { _message.value = RecipeClient.problem(it) }
+        }
+    }
 }

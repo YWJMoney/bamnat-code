@@ -69,7 +69,7 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun backGoesToTheTabBeforeAndTwiceClosesFromTheCalendar() = open(FOLDED) { scenario ->
         tab(1, wide = false)
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         assertEquals("설정", tabNow())
         back()
         assertEquals("the tab before, not the calendar", "가계부", tabNow())
@@ -88,7 +88,7 @@ class ZScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun everySettingsPageBacksToTheSettingsList() = open(FOLDED) { scenario ->
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         for (page in SettingsPage.entries) {
             tapText(page.title, exact = true)
             back()

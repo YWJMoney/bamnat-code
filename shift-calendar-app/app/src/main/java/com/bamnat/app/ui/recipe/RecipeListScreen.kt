@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -103,13 +104,16 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
     hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}, style: WorkStyle? = null,
     picks: List<RecipeItem> = emptyList(), onRequests: (() -> Unit)? = null,
     /** [RCX-04] 1.35 네 번째 덩어리: the most wished-for requests not yet done. */
-    wishes: List<com.bamnat.app.recipe.RecipeRequest> = emptyList()) {
+    wishes: List<com.bamnat.app.recipe.RecipeRequest> = emptyList(),
+    /** [RCX-32] 1.35 운영자가 꾸민 보여주기 판: what can be made, first and big (사용자 2026-10-30 "이것도 할수 있네?"). */
+    showcase: List<RecipeItem> = emptyList()) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("나눔 판 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text(entryLine(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val shown = HashSet<String>()
+            if (showcase.isNotEmpty()) ShowcaseStrip(showcase, onItem)
+            val shown = showcase.mapTo(HashSet()) { it.code }
             for ((label, list) in listOf("이번 주 고른 것" to picks, "요즘 뜨는" to hot, "새로 올라온" to fresh)) {
                 val rest = list.filter { it.code !in shown }.take(3)
                 if (rest.isEmpty()) continue
@@ -153,6 +157,31 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
     }
 }
 
+/**
+ * [RCX-32] 이런 것도 만들 수 있어요: the showcases side by side, each a big cover with its name and what it does,
+ * so the 광장 shows at a glance how far a 판 can go. A tap opens it like any recipe (미리 보기, 고른 것만 넣기).
+ */
+@Composable
+internal fun ShowcaseStrip(items: List<RecipeItem>, onItem: (String) -> Unit) {
+    Text("이런 것도 만들 수 있어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items.take(SHOWCASE_SHOWN).forEach { item ->
+            OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) }) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    RecipeCover(item.cover, size = 56.dp)
+                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.heightIn(min = 40.dp))
+                    Text(item.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
+        }
+    }
+}
+
+/** The showcases on a 광장: five per kind of work are made, so all of them fit. */
+private const val SHOWCASE_SHOWN = 8
+
 /** [RCP-34] The 나눔 판 block of a 광장, with its 고른 것·요즘 뜨는·새로 read once for the calendar's kind of work (quietly empty offline). */
 @Composable
 fun PlazaRecipeBlock(c: com.bamnat.app.AppContainer, calendar: String, onOpen: () -> Unit, onMake: () -> Unit, onItem: (String) -> Unit,
@@ -164,12 +193,17 @@ fun PlazaRecipeBlock(c: com.bamnat.app.AppContainer, calendar: String, onOpen: (
             Triple(runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList()), c.recipeApi.list(style, "hot").items, c.recipeApi.list(style, "new").items)
         }.getOrDefault(value)
     }
+    // [RCX-32] Read on its own: a server before 1.35 answers 보여주기 with the usual list, which is not shown then.
+    val showcase by androidx.compose.runtime.produceState(emptyList<RecipeItem>(), calendar) {
+        if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)) return@produceState
+        value = runCatching { c.recipeApi.list(style, "showcase").items.filter { it.showcase } }.getOrDefault(emptyList())
+    }
     val wishes by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.RecipeRequest>(), calendar) {
         if (onRequests == null || !c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)) return@produceState
         value = runCatching { c.recipeApi.requests(null, style) }.getOrDefault(emptyList())
             .filter { it.state != "done" }.sortedByDescending { it.likes }.take(3)
     }
-    RecipeEntryCard(onOpen, onMake, modifier, lists.second, lists.third, onItem, style, lists.first, onRequests, wishes)
+    RecipeEntryCard(onOpen, onMake, modifier, lists.second, lists.third, onItem, style, lists.first, onRequests, wishes, showcase)
 }
 
 /** [RCP-38] The first line of 나눔 판 in the words of each kind of work: what is worth taking there. */
@@ -229,6 +263,8 @@ fun RecipeListScreen(
                     }
                     if (state.tab == RecipeListViewModel.Tab.GOOD) Text("좋아요가 5개 넘은 레시피만 여기 나와요. 표가 적으면 ‘새로’에서 볼 수 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.tab == RecipeListViewModel.Tab.SHOWCASE) Text("나눔 판으로 이만큼 꾸밀 수 있다는 걸 보여 주려고 운영자가 만든 판이에요. 미리 보고 마음에 드는 것만 넣어요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.tab == RecipeListViewModel.Tab.DATA) Text("공공 자료를 바탕으로 운영자가 만든 레시피예요. 출처가 함께 적혀 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -255,7 +291,8 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Un
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (item.official) Badge(if (item.publicData) "공개 자료" else "시작")
+                    if (item.showcase) Badge("보여주기")
+                    else if (item.official) Badge(if (item.publicData) "공개 자료" else "시작")
                 }
                 if (item.summary.isNotEmpty()) Text(item.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -41,6 +41,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -540,7 +541,7 @@ abstract class ScreenshotBase {
         }
 
         /**
-         * Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = settings).
+         * Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = 광장, 5 = settings).
          *
          * [QA-05] On a busy CI runner a tap can land while the bar is still being put together after the first frame
          * (1.28 [PERF-09] moved work there) and is lost: shots-b on c78434b stayed on the calendar three times. So the
@@ -549,12 +550,23 @@ abstract class ScreenshotBase {
         fun tab(index: Int, wide: Boolean) {
             var at = 0f to 0f
             repeat(TAB_TRIES) {
+                // 1.35 [RCX-29]: the bar's own tabs where they are drawn (six since 광장), the old guess only without a bar.
+                val found = barTabs(wide).getOrNull(index)?.boundsInWindow?.center
                 gesture { w, h, d ->
-                    at = if (wide) 40 * d to (45 + index * 62) * d else w * (index + 0.5f) / 5 to h - 40 * d
+                    at = found?.let { it.x to it.y } ?: if (wide) 40 * d to (45 + index * 62) * d else w * (index + 0.5f) / TABS to h - 40 * d
                     listOf(at, at)
                 }
                 if (tabChosenAt(at.first, at.second) != false) return
             }
+        }
+
+        /** The top-level tabs in their order: the lowest row of tabs on a phone, the leftmost column on a wide screen. */
+        private fun barTabs(wide: Boolean): List<SemanticsNode> {
+            val tabs = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab && it.config.getOrNull(SemanticsProperties.Selected) != null }
+            if (tabs.isEmpty()) return tabs
+            val bar = if (wide) tabs.minOf { it.boundsInWindow.left }.let { left -> tabs.filter { it.boundsInWindow.left <= left + 1f }.sortedBy { it.boundsInWindow.top } }
+                else tabs.maxOf { it.boundsInWindow.bottom }.let { low -> tabs.filter { it.boundsInWindow.bottom >= low - 1f }.sortedBy { it.boundsInWindow.left } }
+            return bar.takeIf { it.size == TABS }.orEmpty()
         }
 
         /** Whether the tab at ([x], [y]) is the chosen one; null when no tab is there (a screen without the bar). */
@@ -569,7 +581,7 @@ abstract class ScreenshotBase {
 
         /** [SET-01] Opens a group from the settings list. */
         fun settingsPage(title: String, wide: Boolean = false) {
-            tab(4, wide)
+            tab(SETTINGS_TAB, wide)
             // Wide, the list is the left part of the screen: it scrolls there.
             tapText(title, exact = true, across = if (wide) 0.2f else 0.5f)
         }
@@ -947,6 +959,9 @@ abstract class ScreenshotBase {
         const val REACH_WAIT_NANOS = 5_000_000_000L
         /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
         const val TAB_TRIES = 3
+        /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5). */
+        const val TABS = 6
+        const val SETTINGS_TAB = 5
         /** [QA-08] Once more, for a screen that has drawn nothing at all yet. */
         const val EMPTY_WAIT_NANOS = 15_000_000_000L
 

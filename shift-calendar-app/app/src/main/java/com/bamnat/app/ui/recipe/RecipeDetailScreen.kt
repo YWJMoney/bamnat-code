@@ -79,7 +79,9 @@ import com.bamnat.core.recipe.RecipeText
 @Composable
 fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: (String) -> Unit,
     /** [RCX-01][RCX-05][RCX-11] 1.35: another recipe (계보, 묶음) and a maker's page. */
-    onOpen: (String) -> Unit = {}, onMaker: (String) -> Unit = {}) {
+    onOpen: (String) -> Unit = {}, onMaker: (String) -> Unit = {},
+    /** [RCX-31] 1.35: my own recipe, made again as its next 판 (받은 분들께 새 판으로 알려져요). */
+    onNewVersion: (String) -> Unit = {}) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
@@ -110,6 +112,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     }) { Icon(Icons.Filled.Share, "링크 보내기") }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
                     DropdownMenu(menu, { menu = false }) {
+                        if (s.doc?.mine == true) DropdownMenuItem(text = { Text("새 판 만들기") }, onClick = { menu = false; vm.body()?.let(onNewVersion) }, enabled = s.recipe != null)
                         DropdownMenuItem(text = { Text("고쳐 만들기") }, onClick = { menu = false; vm.body()?.let(onRemake) }, enabled = s.recipe != null)
                         if (s.doc?.mine != true) DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
                     }
@@ -146,7 +149,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 Text("쓰는 분 ${doc.item.users}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
-                if (doc.mine) MakerCard(doc)
+                if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
                 s.appliedAt?.let { at -> AppliedCard(at) { undoing = true } }
                 if (r.desc.isNotEmpty()) Text(r.desc, style = MaterialTheme.typography.bodyMedium)
 
@@ -169,15 +172,18 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [RCX-27] 내 달력에서 미리 보기: this month, 지금 ↔ 넣은 뒤, with only the pieces switched on.
                 val lookOn = s.pieces.any { it.kind == PieceKind.SHIFT_LOOK && it.on && it.fits }
                 val themeOn = s.pieces.firstOrNull { it.kind == PieceKind.CAL_THEME && it.on && it.fits }
+                val companyOn = s.pieces.any { it.kind == PieceKind.COMPANY && it.on && it.fits }
                 MyMonthPreview(vm.calendar, if (lookOn) s.looks else emptyList(),
-                    themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) })
+                    themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) },
+                    company = r.pieces.firstOrNull { it.kind == PieceKind.COMPANY }?.takeIf { companyOn }?.values?.get("setup") as? String)
                 val chosen = s.pieces.count { it.on && it.fits }
                 val used = s.pieces.filter { it.on && it.fits }.flatMap { p -> RecipeResolve.inputsOf(r, r.pieces.first { it.kind == p.kind }) }.map { it.id }.toSet()
                 val missing = r.inputs.filter { it.id in used && it.required && s.answers[it.id] == null && it.default == null }
                 val outside = r.inputs.filter { it.id in used && RecipeResolve.rangeProblem(it, if (s.answers.containsKey(it.id)) s.answers[it.id] else it.default) != null }
                 if (missing.isNotEmpty()) Text("‘${missing.first().label}’을(를) 채워 주세요", color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
-                else if (outside.isNotEmpty()) Text("‘${outside.first().label}’ 값을 범위 안으로 고쳐 주세요", color = MaterialTheme.colorScheme.error,
+                // 1.35 실사용 점검: the field already says the range in red; here only why the button waits, not a second red line.
+                else if (outside.isNotEmpty()) Text("위 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { confirming = true }, enabled = chosen > 0 && missing.isEmpty() && outside.isEmpty() && !s.applying,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
@@ -250,7 +256,7 @@ private fun VoteRow(s: RecipeDetailViewModel.State, vm: RecipeDetailViewModel, o
 
 /** [RCP-31] What the maker alone sees: the state of the recipe, the reviewer's note, and why people did not like it (never who). */
 @Composable
-private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc) {
+private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() -> Unit)? = null) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("내 레시피", style = MaterialTheme.typography.titleSmall)
@@ -263,12 +269,18 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc) {
                 if (rs.opinions.isNotEmpty()) Text("의견을 보고 고친 새 판을 올리면 받는 분들께 알려져요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary)
             }
+            // [RCX-31] The way to the next 판: what this phone has now, or the recipe as it is, changed and sent again.
+            if (onNewVersion != null) androidx.compose.material3.Button(onClick = onNewVersion, modifier = Modifier.padding(top = 6.dp)) {
+                Text("새 판 만들기 (v${doc.item.version + 1})")
+            }
         }
     }
 }
 
 fun stateLabel(state: String?, scope: String): String = when (state) {
     "review" -> "운영자가 살펴보고 있어요. 곧 광장에 다시 보여요"
+    // [RCX-31] Waiting from before 1.35 dropped the first look: the operator lets it show soon.
+    "pending" -> "운영자 확인을 기다려요. 확인되면 광장과 코드로 열려요"
     "returned" -> "돌려받았어요. 메모를 보고 고쳐서 다시 올려 주세요"
     "hidden" -> "가려졌어요"
     else -> when (scope) { "link" -> "링크로만 열려요"; "private" -> "나만 봐요"; else -> "광장에 올라가 있어요" }

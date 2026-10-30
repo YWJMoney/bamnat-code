@@ -273,7 +273,8 @@ function text(v, max, path, min = 0, lines = false, guard = true) {
   const n = graphemes(t);
   if (n < min || n > max) fail("text", path);
   if (guard) {
-    const why = textProblem(t);
+    // [RCX-31] 1.35: 리딩방·종목 추천 is refused in every text of a recipe (제목, 설명, 칸 이름), not only in 투자 원칙.
+    const why = textProblem(t) ?? (investAdvice(t) ? "invest_advice" : null);
     if (why) fail(why, path);
   }
   return t;
@@ -678,6 +679,7 @@ export function listItem(r, now) {
     code: r.code, title: r.title, summary: r.summary, styles: r.styles.split(","), cover: JSON.parse(r.cover), nick: r.nick ?? null,
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
     official: r.official === 1, publicData: r.public_data === 1, parent: r.parent ?? null, at: new Date(r.updated_at).toISOString(),
+    ...(r.showcase === 1 ? { showcase: true } : {}),
     // [RCX-05] Who made it, as the public maker id only (never the install).
     ...(r.maker ? { maker: r.maker } : {}),
     ...(r.created_at > now - 7 * DAY ? { fresh: true } : {}),
@@ -702,7 +704,7 @@ async function readDevice(d, request, body) {
   return id ? d.deviceHash(id) : null;
 }
 
-const SORTS = ["good", "hot", "new", "official", "data"];
+const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
 
 /** GET /api/recipes: one kind of work's plaza, a page at a time, the same for every phone (edge-cached). */
 async function recipeList(d, env, url) {
@@ -719,6 +721,8 @@ async function recipeList(d, env, url) {
   }
   if (sort === "official") where.push("r.official = 1");
   if (sort === "data") where.push("r.public_data = 1");
+  // [RCX-32] 보여주기: the operator's showcases, newest first.
+  if (sort === "showcase") where.push("r.showcase = 1");
   if (q) {
     where.push("(r.title LIKE ? OR r.summary LIKE ? OR r.cover LIKE ? OR r.title_skel LIKE ?)");
     const like = `%${q.replace(/[%_]/g, "")}%`;
@@ -1142,7 +1146,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     code, action, String(reason).slice(0, 200), actorName, now);
   if (path === "/recipes" && method === "GET") {
     const tab = url.searchParams.get("tab") ?? "queue";
-    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1" }[tab]
+    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
       ?? "state = 'pending'";
     const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
     const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${rows.map(() => "?").join(",")})
@@ -1178,15 +1182,15 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     let code = newCode();
     while (await d.one(env, "SELECT 1 AS x FROM recipes WHERE code = ?", code)) code = newCode();
     await d.batch(env, [
-      d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, official, public_data, version, hash, body, created_at, updated_at, decided_at)
-        VALUES (?, 'operator', ?, ?, ?, ?, ?, 'public', 'visible', 1, ?, 1, ?, ?, ?, ?, ?)`, code, r.title, nameSkeleton(r.title), r.summary ?? "",
-      r.styles.join(","), JSON.stringify(r.cover), body.publicData === true ? 1 : 0, clean.hash, clean.text, now, now, now),
+      d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, official, public_data, showcase, version, hash, body, created_at, updated_at, decided_at)
+        VALUES (?, 'operator', ?, ?, ?, ?, ?, 'public', 'visible', 1, ?, ?, 1, ?, ?, ?, ?, ?)`, code, r.title, nameSkeleton(r.title), r.summary ?? "",
+      r.styles.join(","), JSON.stringify(r.cover), body.publicData === true ? 1 : 0, body.showcase === true ? 1 : 0, clean.hash, clean.text, now, now, now),
       d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
-      act(code, "official", body.publicData === true ? "공개 자료" : "시작 레시피"),
+      act(code, "official", body.publicData === true ? "공개 자료" : body.showcase === true ? "보여주기" : "시작 레시피"),
     ]);
     return d.json({ code, hash: clean.hash }, 201);
   }
-  const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official)$/);
+  const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {
     const [, code, what] = m;
     const body = await d.readJson(request, 2048);
@@ -1209,6 +1213,9 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE code = ?", code));
     } else if (what === "official") {
       stmts.push(d.stmt(env, "UPDATE recipes SET official = ? WHERE code = ?", body.on === false ? 0 : 1, code));
+    } else if (what === "showcase") {
+      // [RCX-32] Any visible public recipe can be shown as what 나눔 판 can do; off takes it back out.
+      stmts.push(d.stmt(env, "UPDATE recipes SET showcase = ? WHERE code = ?", body.on === false ? 0 : 1, code));
     } else {
       stmts.push(...dropRecipe(d, env, code));
     }

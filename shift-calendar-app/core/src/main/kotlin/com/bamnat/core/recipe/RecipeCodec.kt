@@ -126,7 +126,8 @@ object RecipeCodec {
         val t = if (guard) RecipeText.clean(s, lines) else s.trim()
         val n = RecipeText.graphemes(t)
         if (n < min || n > max) throw RecipeException("text", path)
-        if (guard) RecipeText.problem(t)?.let { throw RecipeException(it, path) }
+        // [RCX-31] 1.35: 리딩방·종목 추천 is refused in every text of a recipe, not only in 투자 원칙 (the server does the same).
+        if (guard) (RecipeText.problem(t) ?: "invest_advice".takeIf { RecipeText.investAdvice(t) })?.let { throw RecipeException(it, path) }
         return t
     }
 

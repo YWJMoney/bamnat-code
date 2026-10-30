@@ -124,6 +124,18 @@ object AlarmPlanner {
     /** The first alarm of the shift on [date], or null. */
     fun alarmOn(resolver: ScheduleResolver, date: LocalDate): PlannedAlarm? = alarmsOn(resolver, date).firstOrNull()
 
+    /**
+     * [ALRM-20] A working day that became a day off, 연차 or 결근: the alarms it had ([was]) and those still set to ring
+     * ([left]: ones set by hand for the date, or a 대근's). Null when the day did not stop being a working day or had no alarm.
+     */
+    data class RestDay(val date: LocalDate, val was: List<PlannedAlarm>, val left: List<PlannedAlarm>)
+
+    fun restDay(before: ScheduleResolver, after: ScheduleResolver, date: LocalDate): RestDay? {
+        if (!before.resolve(date).isWorkDay || after.resolve(date).isWorkDay) return null
+        val was = alarmsOn(before, date).takeIf { it.isNotEmpty() } ?: return null
+        return RestDay(date, was, alarmsOn(after, date))
+    }
+
     /** Offsets are limited to 24h so the two-day search window above is always enough. */
     const val MAX_OFFSET_MINUTES = 24 * 60
 }

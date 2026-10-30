@@ -47,6 +47,8 @@ data class AppSettings(
     val snoozeMinutes: Int = 5,
     /** The alarm stops by itself after this many minutes. */
     val ringMinutes: Int = 10,
+    /** [ALRM-21] 1.35: minutes before an alarm that 곧 알람이 울려요 shows while the phone is in use; 0 off. */
+    val alarmSoonMinutes: Int = 5,
     /** Master switch: off silences every alarm without losing any alarm settings. */
     val alarmsEnabled: Boolean = true,
     /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
@@ -300,6 +302,7 @@ class SettingsRepository(context: Context) {
             gradualVolume = prefs.getBoolean(K_GRADUAL, d.gradualVolume),
             snoozeMinutes = prefs.getInt(K_SNOOZE, d.snoozeMinutes),
             ringMinutes = prefs.getInt(K_RING, d.ringMinutes),
+            alarmSoonMinutes = prefs.getInt(K_ALARM_SOON, d.alarmSoonMinutes),
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
@@ -397,6 +400,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_GRADUAL, s.gradualVolume)
             .putInt(K_SNOOZE, s.snoozeMinutes)
             .putInt(K_RING, s.ringMinutes)
+            .putInt(K_ALARM_SOON, s.alarmSoonMinutes)
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
@@ -529,6 +533,7 @@ class SettingsRepository(context: Context) {
         const val K_GRADUAL = "gradual"
         const val K_SNOOZE = "snooze"
         const val K_RING = "ring_minutes"
+        const val K_ALARM_SOON = "alarm_soon_minutes"
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"

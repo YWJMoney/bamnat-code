@@ -138,7 +138,14 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         }
         if (merged.isEmpty()) return null
         val r = newer.copy(inputs = emptyList(), tokens = emptyList(), pieces = merged)
-        return apply(r, e.code, version, e.calendarId, merged.map { Pick(it.kind, if (it.kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE) }, emptyMap())
+        val id = apply(r, e.code, version, e.calendarId, merged.map { Pick(it.kind, if (it.kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE) }, emptyMap())
+            ?: return null
+        // [RCX-31] What the next 새 판 is compared with is this version as its maker made it, with the same answers: kept as the
+        // merge, a field I had changed and kept would look like the recipe's own and be offered (and ticked) for the taking.
+        dao.applied().firstOrNull { it.id == id }?.let { row ->
+            dao.upsertApplied(row.copy(body = RecipeCodec.write(newer), hash = RecipeCodec.hash(newer), inputs = JSONObject(a1.mapValues { (_, v) -> v }).toString()))
+        }
+        return id
     }
 
     /**

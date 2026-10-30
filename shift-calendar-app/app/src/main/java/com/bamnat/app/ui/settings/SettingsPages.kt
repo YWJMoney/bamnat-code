@@ -255,6 +255,9 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             listOf(3, 5, 10, 15, 20).map { it to "${it}분" }, settings.snoozeMinutes) { m -> vm.update { it.copy(snoozeMinutes = m) } }
         ChoiceRow("자동으로 끄기", "끄지 않으면 이만큼 울리고 멈춰요",
             listOf(1, 3, 5, 10, 20, 30).map { it to "${it}분 뒤" }, settings.ringMinutes) { m -> vm.update { it.copy(ringMinutes = m) } }
+        // [ALRM-21] 1.35: the phone in hand just before an alarm: a small notice at the top to turn that one off.
+        ChoiceRow(ALARM_SOON_ROW, "휴대폰을 쓰고 있을 때 알람이 곧 울리면 화면 위에 작게 알려요. 거기서 이번 알람만 끌 수 있어요",
+            listOf(0 to "알리지 않기", 3 to "3분 전", 5 to "5분 전", 10 to "10분 전"), settings.alarmSoonMinutes) { m -> vm.update { it.copy(alarmSoonMinutes = m) } }
         // [ALRM-08] 결정 D78: 끄기 at first; with a mission the buttons only quiet the sound for a while.
         ChoiceRow(BUTTON_ACTION_ROW, "울릴 때 소리 줄이기·키우기·전원 버튼을 누르면. 끄기 미션이 있으면 소리만 30초 줄어요",
             com.bamnat.app.alarm.AlarmButtons.Action.entries.map { it.key to it.label }, settings.alarmButtonAction) { k -> vm.update { it.copy(alarmButtonAction = k) } }

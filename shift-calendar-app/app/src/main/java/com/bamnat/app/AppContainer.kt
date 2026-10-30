@@ -191,7 +191,8 @@ class AppContainer(context: Context) {
         .also { com.bamnat.app.company.NetTimings.sink = it::record }
     val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
-    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) { ringSettings() }
+    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
+        soonMinutes = { settingsRepository.current.alarmSoonMinutes })
     /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
     fun ringSettings(): com.bamnat.app.alarm.BootAlarms.RingSettings =
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current, sureAlarm())
@@ -731,8 +732,9 @@ class AppContainer(context: Context) {
             runCatching { example.sweep() }
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
             // [MCAL-01] So does one in an added calendar whose alarms ring.
-            val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()
-            combine(calendars.ringing, enabled) { ringing, on -> ringing to on }
+            // [ALRM-21] And a change to 곧 울릴 알람 미리 알리기, which looks ahead from the same alarm.
+            val enabled = settingsRepository.settings.map { it.alarmsEnabled to it.alarmSoonMinutes }.distinctUntilChanged()
+            combine(calendars.ringing, enabled) { ringing, on -> ringing to on.first }
                 .debounce(300)
                 .collect { (ringing, on) ->
                     alarmScheduler.reschedule(ringing, on)

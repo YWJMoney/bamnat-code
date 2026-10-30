@@ -215,3 +215,33 @@ test("[RCP-40] every 시작 레시피 and 공개 자료 레시피 core wrote rea
     assert.equal(r.text, recipeCanonical(s.recipe), s.recipe.title);
   }
 });
+
+test("[RCX-32] 보여주기: the operator's showcase is listed on its own sort with its mark, and a row can be put in or taken out", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const made = await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "3교대 간호 풀세트" }), showcase: true }, admin);
+  assert.equal(made.status, 201);
+  const shown = await call("GET", "/api/recipes?style=SHIFT&sort=showcase");
+  assert.deepEqual(shown.data.items.map((i) => [i.title, i.showcase, i.official]), [["3교대 간호 풀세트", true, true]]);
+  // A user's recipe is not a showcase until the operator puts it in, and is out again when taken back.
+  const a = await up(call, 1, { title: "내 야간 판" });
+  assert.equal((await call("GET", "/api/recipes?style=SHIFT&sort=showcase")).data.items.length, 1);
+  assert.equal((await call("POST", `/api/admin/recipes/${a.data.code}/showcase`, { on: true }, admin)).status, 200);
+  assert.equal((await call("GET", "/api/recipes?style=SHIFT&sort=showcase")).data.items.length, 2);
+  const tab = await call("GET", "/api/admin/recipes?tab=showcase", undefined, admin);
+  assert.equal(tab.data.items.length, 2);
+  await call("POST", `/api/admin/recipes/${a.data.code}/showcase`, { on: false }, admin);
+  assert.deepEqual((await call("GET", "/api/recipes?style=SHIFT&sort=showcase")).data.items.map((i) => i.title), ["3교대 간호 풀세트"]);
+});
+
+test("[RCX-32] every 보여주기 판 core wrote reads the same on the server, five for each kind of work", async () => {
+  const shows = JSON.parse(readFileSync(new URL("../../../docs/recipes/showcase-recipes.json", import.meta.url), "utf8"));
+  assert.equal(shows.length, 30);
+  for (const s of shows) {
+    assert.equal(s.showcase, true);
+    const r = await cleanRecipe(recipeCanonical(s.recipe));
+    assert.equal(r.text, recipeCanonical(s.recipe), s.recipe.title);
+  }
+  for (const style of ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"]) assert.equal(shows.filter((s) => s.recipe.styles[0] === style).length, 5, style);
+});

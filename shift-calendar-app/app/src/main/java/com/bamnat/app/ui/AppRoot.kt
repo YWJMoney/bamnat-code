@@ -1464,7 +1464,12 @@ private fun AppNavHost(
             com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = { nav.popFrom(Routes.RECIPE) }, onRemake = { body ->
                 com.bamnat.app.recipe.RecipeLinks.remake = body to code
                 nav.navigate(Routes.recipeMake(calendar))
-            }, onOpen = { other -> nav.navigate(Routes.recipe(other, calendar)) }, onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) })
+            }, onOpen = { other -> nav.navigate(Routes.recipe(other, calendar)) }, onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) },
+                onNewVersion = { body ->
+                    // [RCX-31] The same code, its next 판.
+                    com.bamnat.app.recipe.RecipeLinks.remake = body to code
+                    nav.navigate(Routes.recipeMake(calendar, code = code))
+                })
         }
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -1501,7 +1506,11 @@ private fun AppNavHost(
                 onOpen = { code -> nav.navigate(Routes.recipe(code)) },
                 onDraft = { id -> nav.navigate(Routes.recipeMake(draft = id)) },
                 onList = { nav.navigate(Routes.recipes()) { launchSingleTop = true } },
-                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) })
+                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) },
+                onNewVersion = { code, body ->
+                    com.bamnat.app.recipe.RecipeLinks.remake = body to code
+                    nav.navigate(Routes.recipeMake(code = code))
+                })
         }
         composable(Routes.PLAZA_RATES) {
             val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
@@ -1800,6 +1809,14 @@ private fun RingingBanner() {
     val ring by AlarmService.ringing.collectAsStateWithLifecycle()
     val current = ring ?: return
     val context = LocalContext.current
+    // [ALRM-22] 1.35: an alarm that starts while the app is in use opens its ringing screen over it (Android shows only a
+    // notice then); the banner stays for when the screen was left.
+    androidx.compose.runtime.LaunchedEffect(current.triggerAtMillis, current.isSnooze) {
+        runCatching {
+            context.startActivity(android.content.Intent(context, com.bamnat.app.alarm.AlarmActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
+    }
     Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
