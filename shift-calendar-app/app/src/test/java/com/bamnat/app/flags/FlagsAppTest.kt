@@ -64,7 +64,7 @@ class FlagsAppTest {
         context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
-    private fun phone(agreed: Set<String> = setOf("3.1"), server: Instant? = now, admin: Boolean = false, owner: Boolean = false,
+    private fun phone(agreed: Set<String> = setOf("3.9"), server: Instant? = now, admin: Boolean = false, owner: Boolean = false,
                       previews: Set<String> = emptySet(), consents: Map<String, Boolean> = emptyMap()) =
         PhoneFacts(now = now, serverNow = server, versionCode = 39, installed = LocalDate.of(2026, 10, 1), agreed = agreed,
             admin = admin, owner = owner, previews = previews, consents = consents)
@@ -243,7 +243,7 @@ class FlagsAppTest {
         assertEquals(keys.sorted(), keys)
         assertTrue(FlagCatalog.STATS_MORE in keys && "type.shift" in keys)
         assertFalse("a preview tells an admin phone apart: left out", FlagCatalog.LEAVE_HOURLY in keys)
-        assertNull("before 3.2", flags(c) { phone(server = Instant.parse("2026-11-26T00:00:00Z"), consents = yes) }.statsOn())
+        assertNull("before 정식 출시일 (3.9)", flags(c) { phone(server = Instant.parse("2026-11-09T00:00:00Z"), consents = yes) }.statsOn())
         assertNull("without the extra yes", flags(c) { phone(server = Instant.parse("2026-11-27T00:00:00Z"), consents = mapOf("usage" to true)) }.statsOn())
 
         // What 사용 통계 sends: flagsOn beside the counts only when given.
