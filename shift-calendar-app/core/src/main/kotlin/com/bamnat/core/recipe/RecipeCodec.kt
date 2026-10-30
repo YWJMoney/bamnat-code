@@ -2,8 +2,9 @@ package com.bamnat.core.recipe
 
 import com.bamnat.core.remote.Json
 import com.bamnat.core.work.WorkStyle
-import java.math.BigDecimal
-import java.security.MessageDigest
+import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.roundToLong
 
 /**
  * [RCP-01][RCP-27] Reads, checks and writes a recipe (설계서 4-7 S1·S2·S10):
@@ -30,7 +31,7 @@ object RecipeCodec {
 
     /** [text] as a clean recipe, or [RecipeException] with why. */
     fun read(text: String): Recipe {
-        if (text.toByteArray(Charsets.UTF_8).size > MAX_BYTES) throw RecipeException("too_big")
+        if (RecipePlatform.utf8(text).size > MAX_BYTES) throw RecipeException("too_big")
         if (depth(text) > MAX_DEPTH) throw RecipeException("too_deep")
         val raw = try { Json.parse(text) } catch (e: Exception) { throw RecipeException("json") }
         return clean(raw)
@@ -139,12 +140,12 @@ object RecipeCodec {
         val d = when (v) { is Long -> v.toDouble(); is Double -> v; else -> throw RecipeException("number", path) }
         if (!d.isFinite()) throw RecipeException("number", path)
         if (decimals == 0) {
-            if (d != Math.rint(d)) throw RecipeException("number", path)
+            if (d != kotlin.math.round(d)) throw RecipeException("number", path)
             return d.toLong()
         }
-        val scale = Math.pow(10.0, decimals.toDouble())
-        val r = Math.round(d * scale) / scale
-        return if (r == Math.rint(r) && Math.abs(r) < 1e15) r.toLong() else r
+        val scale = 10.0.pow(decimals)
+        val r = (d * scale).roundToLong() / scale
+        return if (r == kotlin.math.round(r) && abs(r) < 1e15) r.toLong() else r
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -289,7 +290,7 @@ object RecipeCodec {
     fun hash(r: Recipe): String = sha256(write(r))
 
     fun sha256(text: String): String =
-        MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        RecipeNumbers.hex(RecipePlatform.sha256(RecipePlatform.utf8(text)))
 
     /** JSON with keys in order and nothing between tokens, as the server's `canonical()` writes it (JSON.stringify's escapes). */
     fun canonical(v: Any?): String = StringBuilder().also { put(it, v) }.toString()
@@ -325,8 +326,8 @@ object RecipeCodec {
 
     /** A number as JavaScript writes it, for the values a recipe holds (at most two decimals, no exponent). */
     private fun num(d: Double): String =
-        if (d == Math.rint(d) && Math.abs(d) < 1e15) d.toLong().toString()
-        else BigDecimal.valueOf(Math.round(d * 100), 2).stripTrailingZeros().toPlainString()
+        if (d == kotlin.math.round(d) && abs(d) < 1e15) d.toLong().toString()
+        else RecipeNumbers.cents((d * 100).roundToLong())
 
     private fun str(b: StringBuilder, s: String) {
         b.append('"')
@@ -338,7 +339,7 @@ object RecipeCodec {
             c == '\t' -> b.append("\\t")
             c == '\b' -> b.append("\\b")
             c == '\u000C' -> b.append("\\f")
-            c < ' ' -> b.append("\\u%04x".format(c.code))
+            c < ' ' -> b.append("\\u").append(c.code.toString(16).padStart(4, '0'))
             else -> b.append(c)
         }
         b.append('"')

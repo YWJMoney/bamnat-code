@@ -108,7 +108,8 @@ object FeatureSwitches {
         "money.cardBill", "money.shiftSpend", "money.subscriptions", "money.cardThreshold", "money.inCells", "pay.depositCompare",
         // 1.32 조사 대조 [LEDX-16][LEDX-17][LEDX-23]
         "money.asks", "money.installPlan", "money.heat", "backup.nudge", "day.leaveTime",
-        "recipe.browse") // [RCP-38] 1.34 설정 › 나눔 판의 스위치
+        "recipe.browse", // [RCP-38] 1.34 설정 › 나눔 판의 스위치
+        "recipe.update", "recipe.maker", "recipe.request") // [RCX-20] 1.35 새 판 알림·팔로우·답 알림·요청 판 보이기
 
     /** 1.32 [WTYP-08] The 가계부 card each of these features is ([com.bamnat.app.ui.money.MoneyPart]). */
     private val MONEY_CARDS = mapOf("money.cardBill" to "cardbill", "money.shiftSpend" to "shiftspend",
@@ -143,6 +144,9 @@ object FeatureSwitches {
             "backup.nudge" -> c.settingsRepository.current.backupNudge
             "day.leaveTime" -> c.settingsRepository.current.leaveTimeNotice
             "recipe.browse" -> c.recipes.on.value
+            "recipe.update" -> c.recipes.newVersionNews()
+            "recipe.maker" -> c.recipes.followNews()
+            "recipe.request" -> c.recipes.requestsOn.value
             in MONEY_CARDS -> moneyCardShown(c, MONEY_CARDS.getValue(feature.id))
             else -> true
         }
@@ -181,6 +185,9 @@ object FeatureSwitches {
                 "backup.nudge" -> c.settingsRepository.update { it.copy(backupNudge = on) }
                 "day.leaveTime" -> c.settingsRepository.update { it.copy(leaveTimeNotice = on) }
                 "recipe.browse" -> c.recipes.setOn(on)
+                "recipe.update" -> c.recipes.setNewVersionNews(on)
+                "recipe.maker" -> c.recipes.setFollowNews(on)
+                "recipe.request" -> c.recipes.setRequestsOn(on)
                 in MONEY_CARDS -> showMoneyCard(c, MONEY_CARDS.getValue(feature.id), on)
                 else -> { FeatureLinks.open(feature); return false }
             }

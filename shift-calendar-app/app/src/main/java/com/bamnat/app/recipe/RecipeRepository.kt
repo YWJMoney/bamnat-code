@@ -36,7 +36,21 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     fun agreed(): Int = prefs.getInt(K_AGREED, 0)
     fun agree(version: Int) = prefs.edit().putInt(K_AGREED, version).apply()
 
-    fun reload() { _on.value = prefs.getBoolean(K_ON, true) }
+    fun reload() { _on.value = prefs.getBoolean(K_ON, true); _requestsOn.value = prefs.getBoolean(K_REQUESTS, true) }
+
+    // [RCX-20] 1.35 끄기: each new way the 나눔 판 speaks up can be turned off on its own (설정 › 나눔 판).
+    /** 새 판 알림: the daily notice that a recipe in use has a new version. */
+    fun newVersionNews(): Boolean = prefs.getBoolean(K_NEWS_NEW, true)
+    fun setNewVersionNews(v: Boolean) = prefs.edit().putBoolean(K_NEWS_NEW, v).apply()
+
+    /** 팔로우·답 알림: followed makers' new recipes and makers' answers to my questions. */
+    fun followNews(): Boolean = prefs.getBoolean(K_NEWS_FOLLOW, true)
+    fun setFollowNews(v: Boolean) = prefs.edit().putBoolean(K_NEWS_FOLLOW, v).apply()
+
+    /** 요청 판 보이기: the 요청 판 way in on the 나눔 판 card. */
+    private val _requestsOn = MutableStateFlow(prefs.getBoolean(K_REQUESTS, true))
+    val requestsOn: StateFlow<Boolean> = _requestsOn.asStateFlow()
+    fun setRequestsOn(v: Boolean) { prefs.edit().putBoolean(K_REQUESTS, v).apply(); _requestsOn.value = v }
 
     /** One piece chosen for applying: how it meets mine, and its values with the inputs filled in. */
     data class Pick(val kind: PieceKind, val mode: RecipePieces.Mode)
@@ -134,12 +148,12 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     suspend fun newsLines(): List<String> {
         if (!on.value || !c.recipeApi.enabled) return emptyList()
         val lines = ArrayList<String>()
-        val newer = newer()
+        val newer = if (newVersionNews()) newer() else emptyMap()
         if (newer.isNotEmpty()) {
             val titles = inUse().filter { it.code in newer }.map { it.title }
             lines += "‘${titles.first()}’" + (if (titles.size > 1) " 외 ${titles.size - 1}개" else "") + "에 새 판이 나왔어요"
         }
-        if (c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
+        if (followNews() && c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
             val since = prefs.getString(K_NEWS_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
             runCatching { c.recipeApi.news(c.companyStore.device, since) }.onSuccess { n ->
                 prefs.edit().putString(K_NEWS_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
@@ -193,6 +207,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_ON = "on"
         private const val K_AGREED = "agreed"
         private const val K_UNSUB = "unsub_"
+        private const val K_NEWS_NEW = "news_new"
+        private const val K_NEWS_FOLLOW = "news_follow"
+        private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L

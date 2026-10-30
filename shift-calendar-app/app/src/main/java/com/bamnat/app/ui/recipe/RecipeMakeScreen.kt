@@ -364,6 +364,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         else "사진 표지는 처리방침 3.8이 시행되는 11월 29일부터 돼요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (pick) EmojiPickerDialog(onPick = { e -> vm.edit { it.copy(cover = it.cover.copy(emoji = e)) }; pick = false }, onDismiss = { pick = false })
+    ThemeTokens(r) { f -> vm.edit(f) }
     Text("맞는 일 유형", style = MaterialTheme.typography.labelLarge)
     val fits = r.pieces.flatMap { it.kind.styles }.toSet()
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -397,6 +398,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
             else if (l.level != RecipeLint.Level.OK) TextButton(onClick = { vm.go(l.step) }) { Text("가기") }
         }
     }
+    ExampleCalendars(s.recipe)
     Text("어디에 둘까요?", style = MaterialTheme.typography.titleSmall)
     listOf("public" to "광장에 올리기 (처음 3개는 운영자가 보고 올려요)", "link" to "링크로만 (링크를 받은 분만 열어요)", "private" to "나만 (내 휴대폰들에서만 열어요)").forEach { (k, label) ->
         Row(Modifier.fillMaxWidth().selectable(s.scope == k, role = Role.RadioButton) { vm.scope(k) }, verticalAlignment = Alignment.CenterVertically) {

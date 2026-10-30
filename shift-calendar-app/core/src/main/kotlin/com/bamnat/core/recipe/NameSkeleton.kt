@@ -1,6 +1,5 @@
 package com.bamnat.core.recipe
 
-import java.text.Normalizer
 
 /**
  * [RCP-04] 이름 사칭 막기 (설계서 3-1 6번, 4-7 S4·S5; Unicode UTS #39 Security Mechanisms 4 Confusable Detection):
@@ -32,7 +31,7 @@ object NameSkeleton {
 
     /** The skeleton of [name]: what two names that look alike have in common. */
     fun of(name: String): String {
-        val n = Normalizer.normalize(RecipeText.clean(name), Normalizer.Form.NFKC).lowercase()
+        val n = RecipePlatform.nfkc(RecipeText.clean(name)).lowercase()
         val b = StringBuilder()
         for (c in n) {
             if (c.isWhitespace()) continue

@@ -305,7 +305,7 @@ data class CalendarTheme(
         /** tint: a light wash with the shift's badge (the app's own); fill: a stronger wash; dot: no wash, the badge only. */
         val CELLS = listOf("fill", "tint", "dot")
 
-        private fun hex(c: Long) = "%08X".format(c and 0xFFFFFFFFL)
+        private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0')
 
         fun decode(s: String): CalendarTheme {
             if (s.isBlank()) return CalendarTheme()

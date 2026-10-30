@@ -2,7 +2,9 @@ package com.bamnat.app.screenshots
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
+import com.bamnat.app.recipe.MakerPage
 import com.bamnat.app.recipe.MyRecipes
+import com.bamnat.app.recipe.RecipeRequest
 import com.bamnat.app.recipe.RecipeApi
 import com.bamnat.app.recipe.RecipeDoc
 import com.bamnat.app.recipe.RecipeItem
@@ -12,7 +14,11 @@ import com.bamnat.app.recipe.Sent
 import com.bamnat.app.recipe.Votes
 import com.bamnat.app.ui.company.PlazaHomeScreen
 import com.bamnat.app.ui.company.PlazaHomeViewModel
+import com.bamnat.app.ui.recipe.MakerScreen
+import com.bamnat.app.ui.recipe.MakerViewModel
 import com.bamnat.app.ui.recipe.RecipeDetailScreen
+import com.bamnat.app.ui.recipe.RequestsScreen
+import com.bamnat.app.ui.recipe.RequestsViewModel
 import com.bamnat.app.ui.recipe.RecipeDetailViewModel
 import com.bamnat.app.ui.recipe.RecipeListScreen
 import com.bamnat.app.ui.recipe.RecipeListViewModel
@@ -20,7 +26,9 @@ import com.bamnat.app.ui.recipe.RecipeMakeScreen
 import com.bamnat.app.ui.recipe.RecipeMakeViewModel
 import com.bamnat.app.ui.recipe.RecipeMineScreen
 import com.bamnat.app.ui.recipe.RecipeMineViewModel
+import com.bamnat.core.recipe.PieceKind
 import com.bamnat.core.recipe.Recipe
+import com.bamnat.app.recipe.RecipeRepository
 import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
@@ -46,7 +54,7 @@ import java.time.Instant
 class RCScreenshotTest : ScreenshotBase() {
     private val c get() = app.container
 
-    private class Starters : RecipeApi {
+    private open class Starters : RecipeApi {
         val recipes: List<Pair<Recipe, Boolean>> = JSONArray(File("../docs/recipes/starter-recipes.json").readText()).let { a ->
             (0 until a.length()).map { i -> a.getJSONObject(i).let { RecipeCodec.read(it.getJSONObject("recipe").toString()) to it.getBoolean("publicData") } }
         }
@@ -156,5 +164,70 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(appears("교대 광장", exact = true))
         assertTrue(appears("교대 이야기", exact = true))
         assertTrue("회사 이야기는 회사 광장에", gone("근무·급여 정보", exact = true))
+    }
+
+    // ---- 1.35 [RCX-21] ----
+
+    /** [RCX-02][RCX-03] A recipe put on, a new version with 야간's colour changed: offered, picked, put in. */
+    @Test fun aNewVersionIsOfferedAndPutIn() = shoot("1347_rcx_update", PHONE) {
+        val base = Starters()
+        val i = base.recipes.indexOfFirst { (r, data) -> !data && r.pieces.any { it.kind == PieceKind.SHIFT_LOOK } }
+        val old = base.recipes[i].first
+        val look = old.pieces.first { it.kind == PieceKind.SHIFT_LOOK }
+        @Suppress("UNCHECKED_CAST") val items = look.values["items"] as List<Map<String, Any?>>
+        val newer = old.copy(pieces = old.pieces.map { p ->
+            if (p.kind != PieceKind.SHIFT_LOOK) p else p.copy(values = p.values + ("items" to items.mapIndexed { n, m -> if (n == 0) m + ("color" to 0xFF123456L) else m }))
+        })
+        val api = object : Starters() {
+            override suspend fun versions(codes: List<String>) = codes.associateWith { 2 }
+            override suspend fun show(code: String, device: String?, version: Int?) =
+                if (version == 2) super.show(code, device, null).copy(body = RecipeCodec.write(newer), hash = RecipeCodec.hash(newer)) else super.show(code, device, version)
+        }
+        c.recipeApi = api
+        style(WorkStyle.SHIFT)
+        runBlocking { c.recipes.apply(old, api.code(i), 1, PersonalCalendar.MAIN, listOf(RecipeRepository.Pick(PieceKind.SHIFT_LOOK, com.bamnat.app.recipe.RecipePieces.Mode.REPLACE)), emptyMap()) }
+        content { RecipeMineScreen(RecipeMineViewModel(c), onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
+        settle()
+        assertTrue(appears("새 판 v2 있어요", exact = false))
+        tapText("새 판 v2 있어요", exact = false)
+        settle()
+        assertTrue(appears("v2에서 바뀐 점", exact = false))
+        tapText("고른 것 반영", exact = true)
+        settle()
+        val now = runBlocking { c.recipes.applied.first() }
+        assertEquals("새 판이 한 번 더 들어가요", 2, now.size)
+    }
+
+    /** [RCX-05][RCX-06] 만든 분 페이지: face, numbers, badges, recipes; following waits for 3.8. */
+    @Test fun aMakersPage() = shoot("1348_rcx_maker", PHONE) {
+        val api = object : Starters() {
+            override suspend fun maker(device: String?, id: String) = MakerPage(id, "밤샘간호사", "🦉", 0xFF3949ABL, mine = false,
+                recipes = (0 until 3).map(::item), likes = 112, users = 340, followers = 18, following = false,
+                badges = listOf("first" to "첫 레시피", "users100" to "쓰는 분 100명"))
+        }
+        c.recipeApi = api
+        style(WorkStyle.SHIFT)
+        content { MakerScreen(MakerViewModel(c, "a1b2c3d4e5f6"), onBack = {}, onOpen = {}) }
+        settle()
+        assertTrue(appears("밤샘간호사", exact = false))
+        assertTrue(appears("🏅 쓰는 분 100명", exact = true))
+        assertTrue(appears("만든 레시피", exact = true))
+    }
+
+    /** [RCX-04] 요청 판: wishes with their likes and where they stand. */
+    @Test fun theRequestBoard() = shoot("1349_rcx_requests", PHONE) {
+        val at = Instant.parse("2026-10-29T00:00:00Z")
+        val api = object : Starters() {
+            override suspend fun requests(device: String?, style: WorkStyle?) = listOf(
+                RecipeRequest("q000000000001", WorkStyle.SHIFT, "간호사 3교대 근무별 알람 세트 있었으면 좋겠어요", 12, "making", null, at, mine = false, taking = false, liked = true),
+                RecipeRequest("q000000000002", WorkStyle.SHIFT, "4조 2교대 야간 많은 달 색 구분", 5, "done", code(0), at, mine = false, taking = false, liked = false),
+            )
+        }
+        c.recipeApi = api
+        style(WorkStyle.SHIFT)
+        content { RequestsScreen(RequestsViewModel(c), onBack = {}, onOpen = {}, onMake = {}) }
+        settle()
+        assertTrue(appears("간호사 3교대 근무별 알람 세트", exact = false))
+        assertTrue(appears("완성된 레시피 보기", exact = true))
     }
 }

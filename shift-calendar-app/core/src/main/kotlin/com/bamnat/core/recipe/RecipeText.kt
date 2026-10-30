@@ -1,6 +1,5 @@
 package com.bamnat.core.recipe
 
-import java.text.Normalizer
 
 /**
  * [RCP-01][RCP-40] The words of a recipe and of everything said about one, cleaned and checked the same way on the phone and on
@@ -15,7 +14,7 @@ object RecipeText {
 
     /** [s] cleaned (S5); [lines] keeps line breaks (at most [maxLines]), else they become spaces. */
     fun clean(s: String, lines: Boolean = false, maxLines: Int = 20): String {
-        val nfc = Normalizer.normalize(s, Normalizer.Form.NFC)
+        val nfc = RecipePlatform.nfc(s)
         val cps = nfc.codePoints().toArray()
         val out = StringBuilder()
         for ((i, cp) in cps.withIndex()) {
@@ -93,7 +92,7 @@ object RecipeText {
     /** Why [text] cannot be shared (email, phone, amount, link, chat), or null. The server's `personal()` plus links and chats. */
     fun problem(text: String): String? {
         // [RCP-40] Read as it looks: full-width letters and dots (ｂｉｔ．ｌｙ) and 。 are the plain ones.
-        val t = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC).replace('。', '.')
+        val t = RecipePlatform.nfkc(text).replace('。', '.')
         return PERSONAL.firstOrNull { (_, re) -> re.containsMatchIn(t) }?.first
     }
 
@@ -124,8 +123,8 @@ object RecipeText {
 
     /** Every emoji the app offers, base forms in Unicode's order (tools/emoji_list.py, Emoji 15.0까지). */
     val emoji: List<EmojiEntry> by lazy {
-        val stream = RecipeText::class.java.getResourceAsStream("/com/bamnat/core/recipe/emoji.tsv") ?: return@lazy emptyList()
-        stream.bufferedReader(Charsets.UTF_8).useLines { seq ->
+        val text = RecipePlatform.resource("/com/bamnat/core/recipe/emoji.tsv") ?: return@lazy emptyList()
+        text.lineSequence().let { seq ->
             seq.filter { it.isNotBlank() && !it.startsWith("#") }.map { line ->
                 val f = line.split('\t')
                 EmojiEntry(f[0], f.getOrElse(1) { "" }, f.getOrElse(2) { "" }, f.getOrElse(3) { "" }.split(' ').filter { it.isNotEmpty() })
@@ -140,7 +139,7 @@ object RecipeText {
      * grapheme and nothing else (설계서 4-6 이모지).
      */
     fun oneEmoji(s: String): String? {
-        val t = Normalizer.normalize(s.trim(), Normalizer.Form.NFC)
+        val t = RecipePlatform.nfc(s.trim())
         if (t.isEmpty()) return null
         if (t in allowed) return t
         val withVs = t.replace("️", "").let { bare ->

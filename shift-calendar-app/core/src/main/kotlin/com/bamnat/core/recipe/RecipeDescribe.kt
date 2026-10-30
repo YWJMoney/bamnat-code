@@ -23,7 +23,7 @@ object RecipeDescribe {
     private fun texts(p: Piece, key: String): List<String> = p.values[key] as? List<String> ?: emptyList()
 
     private fun won(v: Any?, amounts: Boolean): String = when (v) {
-        is Long -> if (amounts) "%,d원".format(v) else "정해 둔 금액"
+        is Long -> if (amounts) RecipeNumbers.grouped(v) + "원" else "정해 둔 금액"
         is Ref.Input -> YOURS
         else -> "그대로"
     }

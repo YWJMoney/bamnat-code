@@ -48,6 +48,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.bamnat.app.appContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -128,7 +130,9 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
                 FilledTonalButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text("레시피 보기") }
                 OutlinedButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 설정 나누기") }
             }
-            onRequests?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("요청 판: 이런 레시피 있었으면") } }
+            // [RCX-20] 요청 판 보이기 off (설정 › 나눔 판) hides the way in.
+            val requestsOn by LocalContext.current.appContainer.recipes.requestsOn.collectAsStateWithLifecycle()
+            onRequests?.takeIf { requestsOn }?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("요청 판: 이런 레시피 있었으면") } }
         }
     }
 }

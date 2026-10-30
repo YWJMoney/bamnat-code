@@ -31,6 +31,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.heightIn
+import com.bamnat.app.appContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
@@ -74,6 +77,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     }
                     Switch(on, vm::setOn)
                 }
+                if (on) NewsSwitches()
                 if (on) Row {
                     TextButton(onClick = onList) { Text("레시피 보러 가기") }
                     me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 만든 분 페이지") } }
@@ -205,3 +209,25 @@ private fun Header(t: String) = Text(t, style = MaterialTheme.typography.titleMe
 
 @Composable
 private fun Muted(t: String) = Text(t, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+/** [RCX-20] 1.35 끄기: 새 판 알림, 팔로우·답 알림, 요청 판, each on its own; this is where they come back on. */
+@Composable
+private fun NewsSwitches() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    var newer by remember { mutableStateOf(c.recipes.newVersionNews()) }
+    var follow by remember { mutableStateOf(c.recipes.followNews()) }
+    val requests by c.recipes.requestsOn.collectAsStateWithLifecycle()
+    @Composable fun line(title: String, what: String, value: Boolean, set: (Boolean) -> Unit) =
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium)
+                Text(what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(value, set)
+        }
+    line("새 판 알림", "넣은 레시피에 새 판이 나오면 밤낮 소식으로 알려요. 레시피마다 끄려면 아래 받은 레시피에서", newer) {
+        c.recipes.setNewVersionNews(it); newer = it
+    }
+    line("팔로우·답 알림", "팔로우한 분의 새 레시피와, 내 질문에 만든 분이 단 답을 알려요", follow) { c.recipes.setFollowNews(it); follow = it }
+    line("요청 판 보이기", "광장의 나눔 판 칸에 ‘이런 레시피 있었으면’이 보여요", requests, c.recipes::setRequestsOn)
+}
