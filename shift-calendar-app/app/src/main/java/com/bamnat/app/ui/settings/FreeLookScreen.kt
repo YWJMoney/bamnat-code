@@ -137,7 +137,7 @@ private val SAMPLE_CELLS = listOf(
  * the pattern; a tap on a cell opens its look ([onCell] gets the look's index).
  */
 @Composable
-internal fun CellWeeks(view: CalendarView, rows: Int, onCell: (Int) -> Unit) {
+internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val first = LocalDate.of(2026, 11, 2)
@@ -168,7 +168,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: (Int) -> Unit) {
                     Modifier.weight(1f).fillMaxSize()
                         .cellEdge(shown, look, shape, scheme.outlineVariant)
                         .clip(shape).background(tint ?: Color.Transparent)
-                        .clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) },
+                        .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(
                         view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null }, date = date, isToday = isToday,
@@ -187,7 +187,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: (Int) -> Unit) {
                 }
             }
         }
-        if (shown.looks.size > 1) Text("칸을 누르면 그 칸의 모양을 고쳐요", fontSize = 11.sp, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        if (onCell != null && shown.looks.size > 1) Text("칸을 누르면 그 칸의 모양을 고쳐요", fontSize = 11.sp, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }
 

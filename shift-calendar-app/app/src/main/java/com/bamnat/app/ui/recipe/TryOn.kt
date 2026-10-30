@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +49,9 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -99,7 +102,7 @@ fun TryOnScreen(
     r: Recipe,
     style: WorkStyle?,
     onDismiss: () -> Unit,
-    onKeep: ((Set<String>) -> Unit)?,
+    onKeep: ((Set<String>) -> Boolean)?,
     extra: (@Composable ColumnScope.() -> Unit)? = null,
     actions: @Composable ColumnScope.(Set<String>) -> Unit,
 ) {
@@ -109,6 +112,13 @@ fun TryOnScreen(
     var tab by remember { mutableStateOf(parts.firstOrNull()?.tab?.takeIf { it != LookParts.WIDGET } ?: TabOrder.CALENDAR) }
     var split by remember { mutableFloatStateOf(1f) }
     var tapped by remember { mutableStateOf(false) }
+    // F-96: what 담기 did stays on the screen (a toast is gone before it is read, and hides under the sheet).
+    var keptLine by remember(r) { mutableStateOf<String?>(null) }
+    val boxSize = c.wardrobe.kept.collectAsStateWithLifecycle().value.size
+    fun keep(ids: Set<String>) {
+        keptLine = if (onKeep?.invoke(ids) == true) "✓ 보관함에 담았어요 (${boxSize + 1}개). 마을 › 테마와 스튜디오의 보관함에서 꺼내 써요"
+            else "보관함이 꽉 찼거나 담을 부분이 없어요 (${c.wardrobe.partsLimit()}개까지)"
+    }
     val mine by produceState(Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = emptyList()), c) {
         value = Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
     }
@@ -116,6 +126,8 @@ fun TryOnScreen(
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize()) {
+            // F-95: this window's own bar icons follow its ground (they stayed white on a light sheet).
+            com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.surface.luminance() > 0.5f)
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -173,9 +185,11 @@ fun TryOnScreen(
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         actions(picked)
-                        if (onKeep != null && picked.isNotEmpty()) TextButton(onClick = { onKeep(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                        if (onKeep != null && picked.isNotEmpty()) TextButton(onClick = { keep(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
                             Text("고른 ${picked.size}개 보관함에 담아 두기 (무료)")
                         }
+                        keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
                     }
                 }
             }
@@ -193,7 +207,7 @@ fun TryOnScreen(
                     here.forEach { p ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(p.label, Modifier.weight(1f))
-                            if (onKeep != null) TextButton(onClick = { onKeep(setOf(p.id)) }) { Text("담기") }
+                            if (onKeep != null) TextButton(onClick = { keep(setOf(p.id)); tapped = false }) { Text("담기") }
                             TextButton(onClick = { picked = picked + p.id; tapped = false }) { Text("고르기") }
                         }
                     }

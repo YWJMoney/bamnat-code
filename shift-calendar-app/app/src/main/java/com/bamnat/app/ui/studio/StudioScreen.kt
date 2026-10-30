@@ -135,6 +135,13 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
 
+    /** F-97: the area chips say what the bottom tabs say for this kind of work (근무·급여, 장부 …), not a name of their own. */
+    fun labelFor(style: WorkStyle?): String = when (this) {
+        STATS -> com.bamnat.app.ui.TopLevel.STATS.labelFor(style)
+        MONEY -> com.bamnat.app.ui.TopLevel.MONEY.labelFor(style)
+        else -> label
+    }
+
     val tools: List<Tool> get() = when (this) {
         CALENDAR -> listOf(Tool.CELL, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS, Tool.BOX)
         MEMO -> listOf(Tool.MEMO_LOOK, Tool.COLORS, Tool.CARDS, Tool.BOX)
@@ -265,6 +272,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                     Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(when {
+                            s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
                             diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
                             else -> "바꾼 곳 ${diff}개 · 입히기 전까지 내 앱은 그대로예요"
                         } + (s.sources.values.firstOrNull()?.let { " · ‘$it’ 조각 사용" } ?: ""),
@@ -335,7 +343,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Area.entries.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.label) }) }
+                    Area.entries.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -391,13 +399,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
         onDismissRequest = { leaving = false },
         title = { Text("바꾼 것을 어떻게 할까요?") },
         text = { Text("입히기를 누르기 전이라 내 앱은 아직 그대로예요") },
+        // F-91: the choices one under another at full width, so no two labels share a line (큰 글자에서 겹치던 것).
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = { leaving = false; saving = true }) { Text("내 테마로 저장하고 나가기") }
-                TextButton(onClick = { leaving = false; onBack() }) { Text("버리고 나가기") }
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+                if (!vm.needsAd()) TextButton(onClick = { leaving = false; vm.wear().invokeOnCompletion { onBack() } }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("내 앱에 입히고 나가기")
+                }
+                TextButton(onClick = { leaving = false; saving = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 테마로 저장하고 나가기") }
+                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("버리고 나가기") }
+                TextButton(onClick = { leaving = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("계속 꾸미기") }
             }
         },
-        dismissButton = { TextButton(onClick = { leaving = false }) { Text("계속 꾸미기") } },
     )
     startAsk?.let { go ->
         AlertDialog(

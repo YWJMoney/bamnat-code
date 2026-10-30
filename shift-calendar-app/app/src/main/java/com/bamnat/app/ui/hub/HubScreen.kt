@@ -96,7 +96,8 @@ fun HubScreen(
             when (section) {
                 HubSection.TALK -> talk()
                 HubSection.SHARE -> share(shareKind)
-                HubSection.THEMES -> Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE })
+                HubSection.THEMES -> Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
+                    onKept = { id -> onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + id) })
                 HubSection.MAKE -> Make(c, style, onStudio, onMake, onMine, onRequests, onCode)
             }
         }
@@ -115,9 +116,9 @@ private fun Page(content: @Composable () -> Unit) {
 
 /** [HUB-02] 테마: the user's own page (지금 입은 테마, 내 테마, 입었던 테마); new themes are found in 장터, made in 공방. */
 @Composable
-private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit) = Page {
+private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onKept: (Long) -> Unit) = Page {
     Text(HubSection.THEMES.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    com.bamnat.app.ui.recipe.ThemePicker(style, onFind = onFind, onFix = onLook)
+    com.bamnat.app.ui.recipe.ThemePicker(style, onFind = onFind, onFix = onLook, onUseKept = onKept)
 }
 
 /** [HUB-03] 공방: the studio, my recipes and what others wish for, in one place. */
@@ -159,7 +160,7 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
                     label = { Text((if (w.own) "🎨 " else "") + w.title, maxLines = 1) })
             }
         }
-        if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
+        if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 마을 › 테마나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Card("레시피 만들기", "테마에 알람·메모 틀·급여 규칙까지 묶어 장터에 올려요", "레시피 만들기", onMake)

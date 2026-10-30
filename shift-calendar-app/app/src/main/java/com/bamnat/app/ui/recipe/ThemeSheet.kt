@@ -73,7 +73,8 @@ fun swatchOf(r: Recipe): ThemeSwatch? {
  * [ThemeSheet] (입어 보기, 입기). 벗기 always comes back to the user's own look; no record changes either way.
  */
 @Composable
-fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() -> Unit)? = null, onFix: (() -> Unit)? = null) {
+fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() -> Unit)? = null, onFix: (() -> Unit)? = null,
+                onUseKept: ((Long) -> Unit)? = null) {
     val c = LocalContext.current.appContainer
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -124,6 +125,36 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
         if (past.isNotEmpty()) {
             Text("입었던 테마", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
             Shelf(past.take(10)) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
+        }
+        // F-93 [TRY-02] 담아 둔 조각: the box shows here too, each with where it came from, to put on a draft in the studio or let go.
+        val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
+        if (kept.isNotEmpty()) {
+            Text("담아 둔 조각 (${kept.size}/${c.wardrobe.partsLimit()})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+            var letGo by remember { mutableStateOf<com.bamnat.app.recipe.ThemeWardrobe.Kept?>(null) }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                kept.forEach { k ->
+                    val look = remember(k.body) { runCatching { RecipeCodec.read(k.body) }.getOrNull()?.let(::swatchOf) }
+                    Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        look?.let { ThemeThumb(it, width = 112.dp) }
+                        Text(k.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(if (k.own) "내 조각" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row {
+                            onUseKept?.let { use -> TextButton(onClick = { use(k.id) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("꾸미기") } }
+                            TextButton(onClick = { letGo = k }, modifier = Modifier.heightIn(min = 48.dp)) { Text("빼기") }
+                        }
+                    }
+                }
+            }
+            letGo?.let { k ->
+                AlertDialog(
+                    onDismissRequest = { letGo = null },
+                    title = { Text("보관함에서 뺄까요?") },
+                    text = { Text("‘${k.title}’을(를) 보관함에서 빼요. 지금 입은 모양은 그대로예요") },
+                    confirmButton = { TextButton(onClick = { c.wardrobe.forgetKept(k.id); letGo = null }) { Text("빼기") } },
+                    dismissButton = { TextButton(onClick = { letGo = null }) { Text("닫기") } },
+                )
+            }
         }
         // A phone that never wore a theme: three of its kind of work to start with, the rest in 장터.
         if (lease.worn == null && lease.history.isEmpty()) {
@@ -197,7 +228,7 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
         }
     }
     TryOnScreen(r, style, onDismiss,
-        onKeep = { ids -> said(if (c.wardrobe.keep(r, code, ids.toList())) "보관함에 담았어요. 마을 › 테마와 스튜디오에서 꺼내 써요" else "보관함이 꽉 찼어요 (${c.wardrobe.partsLimit()}개)") },
+        onKeep = { ids -> c.wardrobe.keep(r, code, ids.toList()) },
     ) { picked ->
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         val label = if (picked.containsAll(all)) "이 테마 입기" else "고른 ${picked.size}개 입히기"

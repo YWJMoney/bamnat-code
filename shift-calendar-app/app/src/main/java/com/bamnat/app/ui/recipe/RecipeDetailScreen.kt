@@ -202,11 +202,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
                 if (tryOn) {
-                    val context = androidx.compose.ui.platform.LocalContext.current
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
-                        onKeep = { ids -> android.widget.Toast.makeText(context, if (vm.keep(ids)) "보관함에 담았어요. 마을 › 테마와 스튜디오에서 꺼내 써요"
-                            else "보관함이 꽉 찼어요 (${vm.partsLimit()}개)", android.widget.Toast.LENGTH_SHORT).show() },
+                        onKeep = { ids -> vm.keep(ids) },
                         extra = if (others.isEmpty()) null else { {
                             Text("기능 · 모양과 함께 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
                             others.forEach { p ->

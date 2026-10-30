@@ -61,6 +61,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** One line said after 입히기 or 저장, with 되돌리기 for 입히기. */
         val said: String? = null,
         val canUndoWear: Boolean = false,
+        /** F-94: the draft is what the phone wears now (just put on, nothing changed since). */
+        val wornNow: Boolean = false,
     ) {
         val changed: Boolean get() = past.isNotEmpty() && draft != base
     }
@@ -75,6 +77,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             start == START_PLAIN -> startPlain()
             start.startsWith(START_THEME) -> c.wardrobe.lease.value.history.firstOrNull { it.key == start.removePrefix(START_THEME) }
                 ?.let { startFrom(it) } ?: refresh(both = true)
+            // F-93: 마을 › 테마의 담아 둔 조각 › 꾸미기 opens the studio on my look with that part laid on.
+            start.startsWith(START_KEPT) -> {
+                refresh(both = true)
+                c.wardrobe.kept.value.firstOrNull { it.id.toString() == start.removePrefix(START_KEPT) }?.let { layer(it) }
+            }
             else -> refresh(both = true)
         }
     }
@@ -94,7 +101,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val s = _state.value
         val next = f(s.draft)
         if (next == s.draft) return
-        _state.value = s.copy(draft = next, past = (s.past + s.draft).takeLast(HISTORY), future = emptyList(), said = null)
+        _state.value = s.copy(draft = next, past = (s.past + s.draft).takeLast(HISTORY), future = emptyList(), said = null, wornNow = false)
         refresh()
     }
 
@@ -235,10 +242,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 }
             }
         }.getOrDefault(false)
-        val now = c.settingsRepository.current
+        // F-94: once on, the draft is the phone's look: 바꾼 곳 counts from here (the settings may still be being written, so the draft
+        // itself is the new start, not a read of them).
         _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" else "입히지 못했어요. 다시 해 주세요",
-            canUndoWear = done && beforeWear != null, base = if (done) now else _state.value.base, past = if (done) emptyList() else _state.value.past,
-            future = emptyList())
+            canUndoWear = done && beforeWear != null, base = if (done) s.draft else _state.value.base, past = if (done) emptyList() else _state.value.past,
+            future = emptyList(), wornNow = done)
         if (done) refresh(both = true)
     }
 
@@ -248,7 +256,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         c.recipes.pieces.restoreLook(before)
         beforeWear = null
         val now = c.settingsRepository.current
-        _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false)
+        _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false, wornNow = false)
         refresh(both = true)
     }
 
@@ -317,6 +325,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val START_PLAIN = "plain"
         /** "theme:<key>": a theme kept in 테마 ([ThemeLease.Wear.key]). */
         const val START_THEME = "theme:"
+        const val START_KEPT = "kept:"
         const val HISTORY = 50
     }
 }

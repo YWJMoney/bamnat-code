@@ -318,7 +318,9 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("11월", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2, start = 9)
+        // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
+        if (view.looks.isNotEmpty()) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null)
+        else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2, start = 9)
     }
 }
 
