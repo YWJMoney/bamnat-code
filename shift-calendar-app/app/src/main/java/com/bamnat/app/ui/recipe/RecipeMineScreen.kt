@@ -60,6 +60,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
     val snack = remember { SnackbarHostState() }
+    // [RCX-26] Every 지우기 here asks first (한 번 지운 것은 돌아오지 않아요).
+    var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     LaunchedEffect(message) { message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
@@ -127,7 +129,9 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
                                 Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users} · 코드 ${item.code}",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton(onClick = { vm.delete(item.code) }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
+                                TextButton(onClick = { asking = "‘${item.title}’을(를) 광장에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
+                                    Text("지우기", color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -142,7 +146,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 style = MaterialTheme.typography.bodyLarge)
                             Muted("${d.step}/5단계에서 멈춤")
                         }
-                        TextButton(onClick = { vm.deleteDraft(d.id) }) { Text("지우기") }
+                        TextButton(onClick = { asking = "만들던 레시피를 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -150,6 +154,11 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
         }
     }
     update?.let { UpdateDialog(it, vm) }
+    asking?.let { (q, go) ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { asking = null }, title = { Text("지울까요?") }, text = { Text(q) },
+            confirmButton = { TextButton(onClick = { asking = null; go() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { asking = null }) { Text("닫기") } })
+    }
 }
 
 /** [RCX-03] 새 판 반영: each piece's changed fields; 부딪힘 (I changed it too) is off unless chosen. */

@@ -272,13 +272,17 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.MEMO_TEMPLATES -> {
                 val ids = JSONArray()
+                // [RCX-23] 바꾸기: a template of mine with the same title goes (kept in the snapshot for 되돌리기); 둘 다 두기 keeps both.
+                val titles = items(values, "items").map { (it["title"] as? String).orEmpty() }.toSet()
+                val replaced = if (mode == Mode.REPLACE) c.memoTemplates.items.value.filter { it.title in titles && it.from != code } else emptyList()
+                if (replaced.isNotEmpty()) c.memoTemplates.save(c.memoTemplates.items.value - replaced.toSet())
                 items(values, "items").forEachIndexed { i, t ->
                     val id = "r$code$i"
                     c.memoTemplates.add(MemoTemplate(id, (t["title"] as? String).orEmpty(), t["emoji"] as? String,
                         (t["check"] as? List<*>)?.map { it.toString() }.orEmpty(), (t["body"] as? String).orEmpty(), (t["repeat"] as? String).orEmpty(), code))
                     ids.put(id)
                 }
-                JSONObject().put("templates", ids)
+                JSONObject().put("templates", ids).put("replaced", com.bamnat.app.data.MemoTemplateStore.encode(replaced))
             }
             PieceKind.HOURLY_RULES -> {
                 val store = c.scopeOf(cal).pay
@@ -438,6 +442,12 @@ class RecipePieces(private val c: AppContainer) {
         return (total(p) ?: return null) to (total(hourlyAfter(p, values)) ?: return null)
     }
 
+    /** [RCX-23] 부딪힘: the titles of [values]' memo templates I already have one of (asked 바꾸기 / 둘 다 두기 / 건너뛰기). */
+    fun memoClashes(values: Map<String, Any?>): List<String> {
+        val mine = c.memoTemplates.items.value.map { it.title }.toSet()
+        return items(values, "items").mapNotNull { (it["title"] as? String)?.takeIf { t -> t in mine } }.distinct()
+    }
+
     // ---- restore (7일 되돌리기) ----
 
     /** Puts back what [apply] replaced; a value the user changed since is left as they made it. */
@@ -478,7 +488,13 @@ class RecipePieces(private val c: AppContainer) {
                     n
                 }
             }
-            PieceKind.MEMO_TEMPLATES -> removeTemplates(before)
+            PieceKind.MEMO_TEMPLATES -> {
+                removeTemplates(before)
+                // [RCX-23] What 바꾸기 took away comes back (unless one with its id is there again).
+                val back = before.optJSONArray("replaced")?.let { com.bamnat.app.data.MemoTemplateStore.decode(it) }.orEmpty()
+                val have = c.memoTemplates.items.value.map { it.id }.toSet()
+                back.filter { it.id !in have }.takeIf { it.isNotEmpty() }?.let { c.memoTemplates.save(c.memoTemplates.items.value + it) }
+            }
             PieceKind.HOURLY_RULES -> {
                 val store = c.scopeOf(cal).pay
                 val now = store.profile.value ?: return

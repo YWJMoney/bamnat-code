@@ -16,6 +16,7 @@ import com.bamnat.app.recipe.RecipeTalk
 import com.bamnat.app.recipe.Votes
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.recipe.PieceKind
+import com.bamnat.core.time.Today
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.recipe.RecipeResolve
@@ -72,8 +73,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     val canVote: Boolean get() = c.flags.on(FlagCatalog.RECIPE_VOTE)
     val canTalk: Boolean get() = c.flags.on(FlagCatalog.RECIPE_TALK)
 
-    data class Piece(val kind: PieceKind, val on: Boolean, val fits: Boolean, val mode: RecipePieces.Mode = RecipePieces.Mode.REPLACE,
-        val lines: List<RecipePieces.Change> = emptyList())
+    data class Piece(val kind: PieceKind, val on: Boolean, val fits: Boolean,
+        val mode: RecipePieces.Mode = if (kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE,
+        val lines: List<RecipePieces.Change> = emptyList(),
+        /** [RCX-23] Titles of mine the piece runs into (메모 틀), asked 바꾸기 / 둘 다 두기. */
+        val clashes: List<String> = emptyList())
 
     data class State(
         val doc: RecipeDoc? = null, val recipe: Recipe? = null, val error: String? = null,
@@ -84,6 +88,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val looks: List<Pair<com.bamnat.core.model.ShiftType, com.bamnat.core.model.ShiftType>> = emptyList(),
         /** [RCX-01] 1.35 계보. */
         val lineage: com.bamnat.app.recipe.Lineage? = null,
+        /** [RCX-24] When this recipe went on this phone, while it can still be taken back (넣은 지 7일 안). */
+        val appliedAt: Long? = null,
     )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -99,6 +105,10 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,
                     votes = Votes(doc.item.likes, doc.item.dislikes, doc.myVote))
                 preview()
+                // [RCX-24] Already on this phone: 되돌리기 stays here for 7 days, not only in the moment's snackbar.
+                c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }?.let { e ->
+                    _state.value = _state.value.copy(appliedId = e.id, appliedAt = e.appliedAt)
+                }
                 if (canTalk) loadTalk()
                 if (doc.scope != "private") runCatching { c.recipeApi.lineage(code) }.onSuccess { _state.value = _state.value.copy(lineage = it) }
             } catch (e: com.bamnat.core.recipe.RecipeException) {
@@ -128,7 +138,12 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val look = r.pieces.firstOrNull { it.kind == PieceKind.SHIFT_LOOK }?.let { p ->
                 runCatching { c.recipes.pieces.lookPairs(RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
             }.orEmpty()
-            _state.value = _state.value.copy(pieces = _state.value.pieces.map { it.copy(lines = lines[it.kind].orEmpty()) }, looks = look)
+            val clashes = r.pieces.firstOrNull { it.kind == PieceKind.MEMO_TEMPLATES }?.let { p ->
+                runCatching { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
+            }.orEmpty()
+            _state.value = _state.value.copy(pieces = _state.value.pieces.map {
+                it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList())
+            }, looks = look)
         }
     }
 
@@ -142,7 +157,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 c.recipes.apply(r, code, doc.item.version, calendar,
                     s.pieces.filter { it.on && it.fits }.map { RecipeRepository.Pick(it.kind, it.mode) }, s.answers)
             }.getOrNull()
-            _state.value = _state.value.copy(applying = false, appliedId = id,
+            _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 message = if (id == null) "바뀐 것이 없어요" else "적용했어요. 7일 안에 되돌릴 수 있어요")
             onDone(id)
         }
@@ -152,7 +167,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val id = _state.value.appliedId ?: return
         viewModelScope.launch {
             val ok = c.recipes.undo(id)
-            _state.value = _state.value.copy(appliedId = null, message = if (ok) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요")
+            _state.value = _state.value.copy(appliedId = null, appliedAt = null, message = if (ok) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요")
         }
     }
 

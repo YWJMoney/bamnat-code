@@ -101,7 +101,9 @@ fun RecipeCover(cover: Cover, size: Dp = 56.dp, modifier: Modifier = Modifier) {
 @Composable
 fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier = Modifier,
     hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}, style: WorkStyle? = null,
-    picks: List<RecipeItem> = emptyList(), onRequests: (() -> Unit)? = null) {
+    picks: List<RecipeItem> = emptyList(), onRequests: (() -> Unit)? = null,
+    /** [RCX-04] 1.35 네 번째 덩어리: the most wished-for requests not yet done. */
+    wishes: List<com.bamnat.app.recipe.RecipeRequest> = emptyList()) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("나눔 판 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -132,7 +134,21 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
             }
             // [RCX-20] 요청 판 보이기 off (설정 › 나눔 판) hides the way in.
             val requestsOn by LocalContext.current.appContainer.recipes.requestsOn.collectAsStateWithLifecycle()
-            onRequests?.takeIf { requestsOn }?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("요청 판: 이런 레시피 있었으면") } }
+            onRequests?.takeIf { requestsOn }?.let { open ->
+                if (wishes.isNotEmpty()) {
+                    Text("요청 판 · 많이 바라는 것", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                    wishes.forEach { q ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(onClickLabel = "요청 판 열기", onClick = open),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("🙏", modifier = Modifier.width(32.dp))
+                            Text(q.body, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text((if (q.state == "making") "만드는 중 · " else "") + "👍 ${q.likes}", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                TextButton(onClick = open, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (wishes.isEmpty()) "요청 판: 이런 레시피 있었으면" else "요청 판 전체 보기") }
+            }
         }
     }
 }
@@ -148,7 +164,12 @@ fun PlazaRecipeBlock(c: com.bamnat.app.AppContainer, calendar: String, onOpen: (
             Triple(runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList()), c.recipeApi.list(style, "hot").items, c.recipeApi.list(style, "new").items)
         }.getOrDefault(value)
     }
-    RecipeEntryCard(onOpen, onMake, modifier, lists.second, lists.third, onItem, style, lists.first, onRequests)
+    val wishes by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.RecipeRequest>(), calendar) {
+        if (onRequests == null || !c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)) return@produceState
+        value = runCatching { c.recipeApi.requests(null, style) }.getOrDefault(emptyList())
+            .filter { it.state != "done" }.sortedByDescending { it.likes }.take(3)
+    }
+    RecipeEntryCard(onOpen, onMake, modifier, lists.second, lists.third, onItem, style, lists.first, onRequests, wishes)
 }
 
 /** [RCP-38] The first line of 나눔 판 in the words of each kind of work: what is worth taking there. */

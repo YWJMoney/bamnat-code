@@ -103,6 +103,8 @@ class RecipeMakeViewModel(
         val sent: Sent? = null,
         val error: String? = null,
         val draftId: Long = 0,
+        /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
+        val bundleChoices: List<Pair<String, String>> = emptyList(),
     )
 
     private val _state = MutableStateFlow(State(recipe = blank(), draftId = draftId))
@@ -121,6 +123,9 @@ class RecipeMakeViewModel(
             val r = start ?: blank()
             val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(kind)
             _state.value = _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine)
+            val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
+            val mineUp = runCatching { c.recipeApi.mine(c.companyStore.device).items.map { it.first.code to it.first.title } }.getOrDefault(emptyList())
+            _state.value = _state.value.copy(bundleChoices = (mineUp + put).filter { it.first != code }.distinctBy { it.first }.take(20))
         }
     }
 
@@ -175,7 +180,10 @@ class RecipeMakeViewModel(
         val list = codes.distinct().take(8)
         edit { r ->
             val rest = r.pieces.filter { it.kind != PieceKind.BUNDLE }
-            r.copy(pieces = if (list.size < 2) rest else rest + Piece(PieceKind.BUNDLE, mapOf("items" to list.map { mapOf("code" to it) })))
+            val titles = _state.value.bundleChoices.toMap()
+            r.copy(pieces = if (list.size < 2) rest else rest + Piece(PieceKind.BUNDLE, mapOf("items" to list.map { k ->
+                listOfNotNull("code" to k, titles[k]?.takeIf { RecipeText.graphemes(it) <= 40 }?.let { "note" to it }).toMap()
+            })))
         }
         _state.value = _state.value.copy(chosen = if (list.size < 2) _state.value.chosen - PieceKind.BUNDLE else _state.value.chosen + PieceKind.BUNDLE)
     }
@@ -263,7 +271,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이전") }
                     Spacer(Modifier.weight(1f))
-                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()),
+                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()) &&
+                        (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
                 }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 설정 › 나눔 판에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
@@ -274,6 +283,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     Text("내 설정에서 나눌 것을 골라요. 근무 기록·가계부·메모 글은 들어가지 않아요", style = MaterialTheme.typography.bodyMedium)
@@ -298,6 +308,18 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }.orEmpty()
     var codes by remember { mutableStateOf(bundled.joinToString(" ")) }
     Text("레시피 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
+    // [RCX-11] Tap the ones I have rather than typing codes.
+    if (s.bundleChoices.isNotEmpty()) {
+        Text("넣어 둔 레시피와 내가 올린 레시피에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            s.bundleChoices.forEach { (k, title) ->
+                FilterChip(k in bundled, {
+                    val next = if (k in bundled) bundled - k else bundled + k
+                    codes = next.joinToString(" "); vm.bundle(next)
+                }, label = { Text(title, maxLines = 1) })
+            }
+        }
+    }
     OutlinedTextField(codes, { t -> codes = t; vm.bundle(Regex("[2-9A-HJ-NP-Za-hj-np-z]{8}|https?://\\S+").findAll(t).mapNotNull { m -> com.bamnat.app.recipe.RecipeLinks.find(m.value) }.toList()) },
         label = { Text("다른 레시피 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
     Text(if (bundled.size >= 2) "묶음 ${bundled.size}개: 받는 분이 하나씩 열어 골라 넣어요" else "예: 근무 색 레시피와 알람 레시피를 한 번에 나누기",
@@ -313,7 +335,32 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(i.label, { t -> vm.edit { r -> r.copy(inputs = r.inputs.map { if (it.id == i.id) it.copy(label = t.take(20)) else it }) } },
                     label = { Text("칸 이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                InputField(i, null, { v -> vm.edit { r -> r.copy(inputs = r.inputs.map { if (it.id == i.id) it.copy(default = v, required = v == null && it.required) else it }) } })
+                InputField(i, null, { v -> vm.edit { r -> r.copy(inputs = r.inputs.map { if (it.id == i.id) it.copy(default = v) else it }) } })
+                // [RCX-25] 꼭 채우기 and, for a number, the range the receiver must stay in (설계서 4-2 2단계).
+                fun change(f: (com.bamnat.core.recipe.Input) -> com.bamnat.core.recipe.Input) = vm.edit { r -> r.copy(inputs = r.inputs.map { if (it.id == i.id) f(it) else it }) }
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("꼭 채우기", style = MaterialTheme.typography.bodyMedium)
+                        Text(if (i.required) "받는 분이 채워야 넣을 수 있어요" else "비워 두면 받는 분의 지금 값 그대로예요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.Switch(i.required, { on -> change { it.copy(required = on) } })
+                }
+                if (i.kind == com.bamnat.core.recipe.InputKind.MONEY || i.kind == com.bamnat.core.recipe.InputKind.NUMBER) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for ((label, get) in listOf<Pair<String, (com.bamnat.core.recipe.Input) -> Double?>>("가장 작게" to { it.min }, "가장 크게" to { it.max })) {
+                            var text by remember(i.id, label) { mutableStateOf(get(i)?.let { d -> if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString() }.orEmpty()) }
+                            OutlinedTextField(text, { t ->
+                                text = t.filter { it.isDigit() || it == '.' }.take(10)
+                                val d = text.toDoubleOrNull()
+                                change { if (label == "가장 작게") it.copy(min = d) else it.copy(max = d) }
+                            }, label = { Text("$label (선택)") }, singleLine = true, modifier = Modifier.weight(1f),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                        }
+                    }
+                    if (i.min != null && i.max != null && i.min!! > i.max!!) Text("가장 작게가 가장 크게보다 커요", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
                 if (i.kind == com.bamnat.core.recipe.InputKind.MONEY) {
                     var asking by remember { mutableStateOf(false) }
                     TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요 (회사 공통 정액)") }

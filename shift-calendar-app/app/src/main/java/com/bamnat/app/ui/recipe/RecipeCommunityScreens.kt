@@ -236,6 +236,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     val snack = remember { SnackbarHostState() }
     var writing by remember { mutableStateOf(false) }
     var finishing by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
@@ -272,7 +273,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                         }
                                         q.state == "waiting" && !q.mine && vm.canWrite -> TextButton(onClick = { vm.act(q.id, "take") }) { Text("만들게요") }
                                     }
-                                    if (q.mine) TextButton(onClick = { vm.act(q.id, "delete") }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
+                                    if (q.mine) TextButton(onClick = { deleting = q.id }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
                                 }
                             }
                         }
@@ -281,6 +282,13 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+    // [RCX-26] 요청 지우기 asks first.
+    deleting?.let { id ->
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("요청을 지울까요?") },
+            text = { Text("모인 좋아요도 함께 사라지고 되돌릴 수 없어요") },
+            confirmButton = { TextButton(onClick = { deleting = null; vm.act(id, "delete") }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("닫기") } })
     }
     if (writing) {
         var text by remember { mutableStateOf("") }

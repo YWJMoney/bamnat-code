@@ -88,6 +88,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var disliking by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf(false) }
     var folded by remember { mutableStateOf(true) }
+    var undoing by remember { mutableStateOf(false) }
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
         vm.shown()
@@ -146,6 +147,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
                 if (doc.mine) MakerCard(doc)
+                s.appliedAt?.let { at -> AppliedCard(at) { undoing = true } }
                 if (r.desc.isNotEmpty()) Text(r.desc, style = MaterialTheme.typography.bodyMedium)
 
                 Text("내 달력에 넣을 것 고르기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -164,11 +166,20 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         }
                     }
                 }
+                // [RCX-27] 내 달력에서 미리 보기: this month, 지금 ↔ 넣은 뒤, with only the pieces switched on.
+                val lookOn = s.pieces.any { it.kind == PieceKind.SHIFT_LOOK && it.on && it.fits }
+                val themeOn = s.pieces.firstOrNull { it.kind == PieceKind.CAL_THEME && it.on && it.fits }
+                MyMonthPreview(vm.calendar, if (lookOn) s.looks else emptyList(),
+                    themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) })
                 val chosen = s.pieces.count { it.on && it.fits }
-                val missing = r.inputs.filter { it.required && s.answers[it.id] == null && it.default == null }
+                val used = s.pieces.filter { it.on && it.fits }.flatMap { p -> RecipeResolve.inputsOf(r, r.pieces.first { it.kind == p.kind }) }.map { it.id }.toSet()
+                val missing = r.inputs.filter { it.id in used && it.required && s.answers[it.id] == null && it.default == null }
+                val outside = r.inputs.filter { it.id in used && RecipeResolve.rangeProblem(it, if (s.answers.containsKey(it.id)) s.answers[it.id] else it.default) != null }
                 if (missing.isNotEmpty()) Text("‘${missing.first().label}’을(를) 채워 주세요", color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { confirming = true }, enabled = chosen > 0 && missing.isEmpty() && !s.applying,
+                else if (outside.isNotEmpty()) Text("‘${outside.first().label}’ 값을 범위 안으로 고쳐 주세요", color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { confirming = true }, enabled = chosen > 0 && missing.isEmpty() && outside.isEmpty() && !s.applying,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
 
                 // [RCX-11] 묶음: each recipe in it opens on its own, to be chosen piece by piece.
@@ -178,7 +189,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     (b.values["items"] as? List<Map<String, Any?>>).orEmpty().forEach { i ->
                         val c = i["code"] as? String ?: return@forEach
                         OutlinedButton(onClick = { onOpen(c) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text(listOfNotNull(c, i["note"] as? String).joinToString(" · ") + " 열기")
+                            Text(((i["note"] as? String)?.let { "$it ($c)" } ?: c) + " 열기")
                         }
                     }
                 }
@@ -207,6 +218,13 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         },
         confirmButton = { TextButton(onClick = { confirming = false; vm.apply { } }) { Text("넣기") } },
         dismissButton = { TextButton(onClick = { confirming = false }) { Text("닫기") } },
+    )
+    if (undoing) AlertDialog(
+        onDismissRequest = { undoing = false },
+        title = { Text("넣기 전으로 되돌릴까요?") },
+        text = { Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요") },
+        confirmButton = { TextButton(onClick = { undoing = false; vm.undo() }) { Text("되돌리기") } },
+        dismissButton = { TextButton(onClick = { undoing = false }) { Text("닫기") } },
     )
     if (flagging) ChoiceDialog("신고하기", RecipeLinks.FLAG_REASONS, onPick = { vm.flag(it); flagging = false }, onDismiss = { flagging = false })
     if (disliking) DislikeDialog(onSend = { reason, opinion -> vm.vote(-1, reason, opinion); disliking = false }, onDismiss = { disliking = false })
@@ -281,6 +299,16 @@ private fun PieceCard(r: com.bamnat.core.recipe.Recipe, p: RecipeDetailViewModel
                     }
                 }
                 if (p.kind == PieceKind.CAL_THEME) ThemeSample(r, piece)
+                // [RCX-23] 부딪힘: a memo template of the same name is already mine.
+                if (p.clashes.isNotEmpty()) {
+                    Text("같은 이름 메모 틀이 이미 있어요: " + p.clashes.joinToString(", ") { "‘$it’" }, style = MaterialTheme.typography.bodySmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(p.mode == RecipePieces.Mode.BOTH, { vm.mode(p.kind, RecipePieces.Mode.BOTH) }, label = { Text("둘 다 두기") })
+                        FilterChip(p.mode == RecipePieces.Mode.REPLACE, { vm.mode(p.kind, RecipePieces.Mode.REPLACE) }, label = { Text("내 것을 이걸로 바꾸기") })
+                    }
+                    Text("넣지 않으려면 위 스위치를 끄면 돼요. 바꿔도 7일 안에 되돌리면 내 것이 돌아와요", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (p.kind == PieceKind.SHIFT_LOOK || p.kind == PieceKind.ALARMS) {
                     Text("내 근무와 이름이 같거나, 주간·야간처럼 역할이 같은 근무에 넣어요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -331,6 +359,8 @@ fun InputField(i: Input, value: Any?, onChange: (Any?) -> Unit) {
             }
         }
         if (i.hint.isNotEmpty()) Text(i.hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [RCX-25] The maker's 범위, checked on this phone.
+        RecipeResolve.rangeProblem(i, shown)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -465,5 +495,21 @@ private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) ->
     if (l.children.isNotEmpty()) {
         Text("이 레시피를 고쳐 만든 것 ${l.children.size}개", style = MaterialTheme.typography.labelLarge)
         l.children.take(5).forEach { k -> RecipeRow(k, Modifier) { onOpen(k.code) } }
+    }
+}
+
+/** [RCX-24] This recipe is on this phone: when, how long 되돌리기 lasts, and the button (설계서 4-3 5: 소식과 레시피 화면에). */
+@Composable
+private fun AppliedCard(at: Long, onUndo: () -> Unit) {
+    val left = (com.bamnat.app.recipe.RecipeRepository.UNDO_DAYS - (com.bamnat.core.time.Today.millis() - at) / 86_400_000L).coerceAtLeast(1)
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("내 달력에 넣어 둔 레시피예요", style = MaterialTheme.typography.titleSmall)
+                Text(java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(at)) + " 넣음 · ${left}일 안에 되돌릴 수 있어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            OutlinedButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+        }
     }
 }

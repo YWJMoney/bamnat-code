@@ -138,7 +138,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         }
         if (merged.isEmpty()) return null
         val r = newer.copy(inputs = emptyList(), tokens = emptyList(), pieces = merged)
-        return apply(r, e.code, version, e.calendarId, merged.map { Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap())
+        return apply(r, e.code, version, e.calendarId, merged.map { Pick(it.kind, if (it.kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE) }, emptyMap())
     }
 
     /**
@@ -153,6 +153,13 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             val titles = inUse().filter { it.code in newer }.map { it.title }
             lines += "‘${titles.first()}’" + (if (titles.size > 1) " 외 ${titles.size - 1}개" else "") + "에 새 판이 나왔어요"
         }
+        // [RCX-24] 되돌리기 in 소식 too: once, on the last day it can still be taken back.
+        val now = Today.millis()
+        inUse().filter { canUndo(it, now) && now - it.appliedAt >= (UNDO_DAYS - 1) * DAY_MILLIS && !prefs.getBoolean("$K_UNDO_SAID${it.id}", false) }
+            .forEach { e ->
+                lines += "‘${e.title}’은(는) 내일까지 되돌릴 수 있어요 (설정 › 나눔 판)"
+                prefs.edit().putBoolean("$K_UNDO_SAID${e.id}", true).apply()
+            }
         if (followNews() && c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
             val since = prefs.getString(K_NEWS_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
             runCatching { c.recipeApi.news(c.companyStore.device, since) }.onSuccess { n ->
@@ -209,6 +216,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_UNSUB = "unsub_"
         private const val K_NEWS_NEW = "news_new"
         private const val K_NEWS_FOLLOW = "news_follow"
+        private const val K_UNDO_SAID = "undo_said_"
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
         const val UNDO_DAYS = 7L

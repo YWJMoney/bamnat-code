@@ -162,7 +162,27 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
     val w = way ?: return
     if (profile == null) return
     TalkSheet(vm.talk)
-    SoftCard(modifier, highlighted = true) {
+    // [J135-01] (사용자 2026-10-30 "이미 의견을 보냈는데 사라지지 않고 계속 떠있어서 화면을 차지"): once 맞았어요·달라요 is sent, the
+    // card folds to one line a moment after the thanks; '펼치기' brings the buttons back (바꾸기·고쳐서 제안하기·토론).
+    val voted = w.vote ?: opinion?.mine?.let { it == "ok" }
+    var unfolded by rememberSaveable(w.company, w.dept) { mutableStateOf(false) }
+    LaunchedEffect(said) { if (said != null) { kotlinx.coroutines.delay(4_000); if (!proposing) { said = null; unfolded = false } } }
+    if (voted != null && !unfolded && said == null && !proposing) {
+        SoftCard(modifier) {
+            Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("‘${w.company}’ 급여 방식", style = MaterialTheme.typography.bodyMedium, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(if (voted) "‘맞았어요’라고 알려 주셨어요" else "‘달라요’라고 알려 주셨어요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val known = BaseAsk.known(profile, month)
+                    if (known != null && BaseAsk.needed(profile, month)) Text("기본급 ${won(known)}은 대략이에요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
+                TextButton(onClick = { unfolded = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("펼치기") }
+            }
+        }
+    } else SoftCard(modifier, highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("‘${w.company}${w.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}’ 급여 방식을 쓰고 있어요",
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -179,6 +199,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                 }
             }
             if (!vm.server) return@Column
+            if (voted != null && unfolded) TextButton(onClick = { unfolded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
             VoteButtons(w.vote ?: opinion?.mine?.let { it == "ok" }, onVote = { ok, why ->
                 said = null
                 vm.vote(ok, why) { e ->

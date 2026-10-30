@@ -14,6 +14,22 @@ object RecipeResolve {
         }
     }
 
+    /**
+     * [RCX-25] A number the receiver put outside the maker's 범위 (min~max), as the words to show under the field; null when it fits
+     * or the field has no range. The phone checks it again here: the server's copy of the range is not trusted.
+     */
+    fun rangeProblem(i: Input, v: Any?): String? {
+        if (i.kind != InputKind.MONEY && i.kind != InputKind.NUMBER) return null
+        val n = (v as? Number)?.toDouble() ?: return null
+        if ((i.min == null || n >= i.min) && (i.max == null || n <= i.max)) return null
+        fun w(d: Double) = if (d == d.toLong().toDouble()) RecipeNumbers.grouped(d.toLong()) else d.toString()
+        return when {
+            i.min != null && i.max != null -> "${w(i.min)}~${w(i.max)} 사이로 넣어 주세요"
+            i.min != null -> "${w(i.min)} 이상으로 넣어 주세요"
+            else -> "${w(i.max!!)} 이하로 넣어 주세요"
+        }
+    }
+
     fun piece(r: Recipe, p: Piece, answers: Map<String, Any>): Map<String, Any?> = resolve(r, p.values, answers) as Map<String, Any?>
 
     private fun resolve(r: Recipe, v: Any?, answers: Map<String, Any>): Any? = when (v) {
