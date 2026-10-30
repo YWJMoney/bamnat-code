@@ -141,7 +141,7 @@ class RecipeMakeViewModel(
         viewModelScope.launch {
             val mine = PieceKind.entries.associateWith { k -> runCatching { c.recipes.pieces.export(k, calendar) }.getOrNull() }
             val start = when {
-                from != null -> lenient(from)?.copy(parent = parent)
+                from != null -> lenient(from)?.copy(parent = parent?.takeIf { it.isNotBlank() }) // F-99: my own look has no parent ("" is no code)
                 draftId != 0L -> c.database.recipeDao().drafts().firstOrNull { it.id == draftId }?.let { d ->
                     _state.value = _state.value.copy(step = d.step, scope = d.scope); lenient(d.body)
                 }
@@ -241,7 +241,7 @@ class RecipeMakeViewModel(
         Recipe(title = (m["title"] as? String).orEmpty(), summary = (m["summary"] as? String).orEmpty(), desc = (m["desc"] as? String).orEmpty(),
             styles = (m["styles"] as? List<Any?>).orEmpty().mapNotNull { s -> WorkStyle.entries.firstOrNull { it.name == s } }.toSet().ifEmpty { blank().styles },
             cover = cover, inputs = pieces.flatMap { it.second }.distinctBy { it.id }, pieces = pieces.map { it.first },
-            parent = m["parent"] as? String)
+            parent = (m["parent"] as? String)?.takeIf { it.isNotBlank() })
     }.getOrNull()
 
     private fun withPieces(r: Recipe, chosen: Set<PieceKind>, mine: Map<PieceKind, Map<String, Any?>?>): Recipe {

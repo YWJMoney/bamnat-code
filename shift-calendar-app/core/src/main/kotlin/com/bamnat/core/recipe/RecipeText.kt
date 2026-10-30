@@ -113,6 +113,9 @@ object RecipeText {
         "chat" -> "채팅방·메신저로 부르는 글은 넣을 수 없어요"
         "invest_advice" -> "종목 추천·수익 보장·리딩방 글은 넣을 수 없어요"
         "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
+        // F-99: say which part, so the ✕ can be fixed (a bare "넣을 수 없는 내용" left no way out).
+        "parent" -> "원래 판 표시가 맞지 않아요. 스튜디오에서 올리기를 다시 눌러 주세요"
+        "cover" -> "표지를 다시 골라 주세요"
         else -> "넣을 수 없는 내용이 있어요"
     }
 
