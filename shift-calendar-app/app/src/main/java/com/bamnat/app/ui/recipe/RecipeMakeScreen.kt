@@ -138,7 +138,8 @@ class RecipeMakeViewModel(
             }.getOrNull()
         }
         val cover = (m["cover"] as? Map<String, Any?>)?.let { Cover((it["a"] as? Long) ?: Cover().a, (it["b"] as? Long) ?: Cover().b,
-            ((it["dir"] as? Long) ?: 0L).toInt(), (it["emoji"] as? String) ?: Cover().emoji) } ?: Cover()
+            ((it["dir"] as? Long) ?: 0L).toInt(), (it["emoji"] as? String) ?: Cover().emoji,
+            (it["image"] as? String)?.takeIf { id -> Cover.IMAGE.matches(id) }) } ?: Cover()
         Recipe(title = (m["title"] as? String).orEmpty(), summary = (m["summary"] as? String).orEmpty(), desc = (m["desc"] as? String).orEmpty(),
             styles = (m["styles"] as? List<Any?>).orEmpty().mapNotNull { s -> WorkStyle.entries.firstOrNull { it.name == s } }.toSet().ifEmpty { blank().styles },
             cover = cover, inputs = pieces.flatMap { it.second }.distinctBy { it.id }, pieces = pieces.map { it.first },
@@ -168,6 +169,31 @@ class RecipeMakeViewModel(
     }
 
     fun edit(f: (Recipe) -> Recipe) { _state.value = _state.value.copy(recipe = f(_state.value.recipe)) }
+
+    /** [RCX-11] 묶음: the codes of other recipes (2~8) as one piece; fewer than two takes the piece away. */
+    fun bundle(codes: List<String>) {
+        val list = codes.distinct().take(8)
+        edit { r ->
+            val rest = r.pieces.filter { it.kind != PieceKind.BUNDLE }
+            r.copy(pieces = if (list.size < 2) rest else rest + Piece(PieceKind.BUNDLE, mapOf("items" to list.map { mapOf("code" to it) })))
+        }
+        _state.value = _state.value.copy(chosen = if (list.size < 2) _state.value.chosen - PieceKind.BUNDLE else _state.value.chosen + PieceKind.BUNDLE)
+    }
+
+    /** [RCX-15] 그림 표지: the picked photo made small and re-encoded on the phone (no EXIF), sent, and its id on the cover. */
+    fun coverPhoto(bitmap: android.graphics.Bitmap?) {
+        if (bitmap == null) { edit { it.copy(cover = it.cover.copy(image = null)) }; return }
+        viewModelScope.launch {
+            val webp = com.bamnat.app.recipe.CoverImages.encode(bitmap)
+            if (webp == null) { _state.value = _state.value.copy(error = "사진이 너무 작거나 읽을 수 없어요"); return@launch }
+            try {
+                val id = c.recipeApi.image(c.companyStore.device, webp)
+                android.graphics.BitmapFactory.decodeByteArray(webp, 0, webp.size)?.let { com.bamnat.app.recipe.CoverImages.put(id, it) }
+                edit { it.copy(cover = it.cover.copy(image = id)) }
+                _state.value = _state.value.copy(error = null)
+            } catch (e: Exception) { _state.value = _state.value.copy(error = RecipeClient.problem(e)) }
+        }
+    }
     fun scope(v: String) { _state.value = _state.value.copy(scope = v) }
     fun agree(v: Boolean) { _state.value = _state.value.copy(agreed = v) }
 
@@ -251,9 +277,9 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
 @Composable
 private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     Text("내 설정에서 나눌 것을 골라요. 근무 기록·가계부·메모 글은 들어가지 않아요", style = MaterialTheme.typography.bodyMedium)
-    val fits = PieceKind.entries.filter { vm.style == null || vm.style in it.styles }
+    val fits = PieceKind.entries.filter { it != PieceKind.BUNDLE && (vm.style == null || vm.style in it.styles) }
     var more by remember { mutableStateOf(false) }
-    (if (more) PieceKind.entries else fits).forEach { k ->
+    (if (more) PieceKind.entries.filter { it != PieceKind.BUNDLE } else fits).forEach { k ->
         val mine = s.mine[k]
         Row(Modifier.fillMaxWidth().selectable(selected = k in s.chosen, enabled = mine != null, role = Role.Checkbox) { vm.toggle(k) }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -266,6 +292,16 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         }
     }
     if (fits.size < PieceKind.entries.size) TextButton(onClick = { more = !more }) { Text(if (more) "내 유형 조각만 보기" else "다른 유형 조각도 보기") }
+    // [RCX-11] 묶음: other recipes by their codes or links, put in one after another by whoever takes this one.
+    val bundled = s.recipe.pieces.firstOrNull { it.kind == PieceKind.BUNDLE }?.let { p ->
+        @Suppress("UNCHECKED_CAST") (p.values["items"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { it["code"] as? String }
+    }.orEmpty()
+    var codes by remember { mutableStateOf(bundled.joinToString(" ")) }
+    Text("레시피 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
+    OutlinedTextField(codes, { t -> codes = t; vm.bundle(Regex("[2-9A-HJ-NP-Za-hj-np-z]{8}|https?://\\S+").findAll(t).mapNotNull { m -> com.bamnat.app.recipe.RecipeLinks.find(m.value) }.toList()) },
+        label = { Text("다른 레시피 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+    Text(if (bundled.size >= 2) "묶음 ${bundled.size}개: 받는 분이 하나씩 열어 골라 넣어요" else "예: 근무 색 레시피와 알람 레시피를 한 번에 나누기",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -311,6 +347,22 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }
     var pick by remember { mutableStateOf(false) }
     OutlinedButton(onClick = { pick = true }) { Text("표지 이모지: ${r.cover.emoji}") }
+    // [RCX-15] 사진 표지: made small and written again on this phone (위치·기기 정보 없이), shown once the operator looked.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val photo = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.coverPhoto(runCatching {
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+        }.getOrNull())
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = {
+            photo.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }, enabled = vm.canPublish) { Text(if (r.cover.image == null) "사진으로 표지" else "사진 바꾸기") }
+        if (r.cover.image != null) TextButton(onClick = { vm.coverPhoto(null) }) { Text("사진 빼기") }
+    }
+    Text(if (vm.canPublish) "사진은 작게 줄이고 위치·기기 정보를 지운 뒤 보내요. 운영자가 본 뒤 다른 분께 보여요"
+        else "사진 표지는 처리방침 3.8이 시행되는 11월 29일부터 돼요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (pick) EmojiPickerDialog(onPick = { e -> vm.edit { it.copy(cover = it.cover.copy(emoji = e)) }; pick = false }, onDismiss = { pick = false })
     Text("맞는 일 유형", style = MaterialTheme.typography.labelLarge)
     val fits = r.pieces.flatMap { it.kind.styles }.toSet()

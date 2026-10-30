@@ -70,6 +70,86 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         return id
     }
 
+    // ---- [RCX-02][RCX-03] 1.35 구독과 새 판 ----
+
+    /** [RCX-02] 구독 (on this phone only): whether a recipe put on is followed for new versions; on unless turned off. */
+    fun subscribed(code: String): Boolean = !prefs.getBoolean("$K_UNSUB$code", false)
+    fun subscribe(code: String, on: Boolean) = prefs.edit().putBoolean("$K_UNSUB$code", !on).apply()
+
+    /** The recipes on this phone still in use, newest per code, that a new version could be for. */
+    suspend fun inUse(): List<AppliedRecipeEntity> = dao.applied().filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
+        .groupBy { it.code }.map { (_, list) -> list.maxBy { it.appliedAt } }
+
+    /** [RCX-02] Codes with a newer version than the one put on, asked with the codes only (no device). */
+    suspend fun newer(): Map<String, Int> {
+        val mine = inUse().filter { subscribed(it.code) }
+        if (mine.isEmpty() || !c.recipeApi.enabled) return emptyMap()
+        val v = runCatching { c.recipeApi.versions(mine.map { it.code }) }.getOrDefault(emptyMap())
+        return mine.mapNotNull { e -> v[e.code]?.takeIf { it > e.version }?.let { e.code to it } }.toMap()
+    }
+
+    private fun answersOf(e: AppliedRecipeEntity): Map<String, Any?> = runCatching {
+        val o = JSONObject(e.inputs)
+        o.keys().asSequence().associateWith { k -> o.get(k).takeIf { it != JSONObject.NULL } }
+    }.getOrDefault(emptyMap())
+
+    /** [RCX-03] For each piece put on from [e], what [newer] changes: the fields to offer and those that meet a change of mine. */
+    suspend fun changes(e: AppliedRecipeEntity, newer: Recipe): List<com.bamnat.core.recipe.Merge3.Result> {
+        val old = runCatching { RecipeCodec.read(e.body) }.getOrNull() ?: return emptyList()
+        val given = answersOf(e)
+        val a0 = RecipeResolve.answers(old, given)
+        val a1 = RecipeResolve.answers(newer, given)
+        return e.pieces.split(',').mapNotNull(PieceKind::of).mapNotNull { kind ->
+            val theirs = newer.pieces.firstOrNull { it.kind == kind }?.let { RecipeResolve.piece(newer, it, a1) } ?: return@mapNotNull null
+            val base = old.pieces.firstOrNull { it.kind == kind }?.let { RecipeResolve.piece(old, it, a0) }.orEmpty()
+            val mine = runCatching { pieces.current(kind, base, e.calendarId) }.getOrDefault(base)
+            com.bamnat.core.recipe.Merge3.of(kind, base, mine, theirs).takeIf { it.fields.isNotEmpty() }
+        }
+    }
+
+    /**
+     * [RCX-03] 새 판 반영: the [picked] fields of each piece from [newer], the rest as this phone has them, put on as one more
+     * application (so it too can be taken back for 7 days).
+     */
+    suspend fun update(e: AppliedRecipeEntity, newer: Recipe, version: Int, picked: Map<PieceKind, Set<String>>): Long? {
+        val old = runCatching { RecipeCodec.read(e.body) }.getOrNull() ?: return null
+        val given = answersOf(e)
+        val a0 = RecipeResolve.answers(old, given)
+        val a1 = RecipeResolve.answers(newer, given)
+        val merged = picked.filterValues { it.isNotEmpty() }.mapNotNull { (kind, paths) ->
+            val theirs = newer.pieces.firstOrNull { it.kind == kind }?.let { RecipeResolve.piece(newer, it, a1) } ?: return@mapNotNull null
+            val base = old.pieces.firstOrNull { it.kind == kind }?.let { RecipeResolve.piece(old, it, a0) }.orEmpty()
+            val mine = runCatching { pieces.current(kind, base, e.calendarId) }.getOrDefault(base)
+            com.bamnat.core.recipe.Piece(kind, com.bamnat.core.recipe.Merge3.apply(mine, theirs, paths))
+        }
+        if (merged.isEmpty()) return null
+        val r = newer.copy(inputs = emptyList(), tokens = emptyList(), pieces = merged)
+        return apply(r, e.code, version, e.calendarId, merged.map { Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap())
+    }
+
+    /**
+     * [RCX-02][RCX-07][RCX-10] 1.35 The 나눔 판 lines of the daily 밤낮 소식: new versions of recipes in use (asked with codes only),
+     * new recipes of followed makers and makers' answers to my questions. Empty when 나눔 판 is off.
+     */
+    suspend fun newsLines(): List<String> {
+        if (!on.value || !c.recipeApi.enabled) return emptyList()
+        val lines = ArrayList<String>()
+        val newer = newer()
+        if (newer.isNotEmpty()) {
+            val titles = inUse().filter { it.code in newer }.map { it.title }
+            lines += "‘${titles.first()}’" + (if (titles.size > 1) " 외 ${titles.size - 1}개" else "") + "에 새 판이 나왔어요"
+        }
+        if (c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
+            val since = prefs.getString(K_NEWS_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+            runCatching { c.recipeApi.news(c.companyStore.device, since) }.onSuccess { n ->
+                prefs.edit().putString(K_NEWS_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
+                n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
+                n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
+            }
+        }
+        return lines
+    }
+
     /** Whether [e] can still be taken back: on, and within [UNDO_DAYS] days. */
     fun canUndo(e: AppliedRecipeEntity, now: Long = Today.millis()): Boolean =
         e.undoneAt == null && e.replacedAt == null && now - e.appliedAt < UNDO_DAYS * DAY_MILLIS
@@ -112,6 +192,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         const val PREFS = "recipe"
         private const val K_ON = "on"
         private const val K_AGREED = "agreed"
+        private const val K_UNSUB = "unsub_"
+        private const val K_NEWS_SINCE = "news_since"
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000

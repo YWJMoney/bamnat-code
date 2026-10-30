@@ -85,6 +85,8 @@ fun PageEditSheet(
     /** [FIT-01][FIT-02] Parts hidden because they do not suit this calendar, and adding one back. */
     others: List<OtherRow> = emptyList(),
     onAdd: (id: String, added: Boolean) -> Unit = { _, _ -> },
+    /** [RCX-12] 1.35: which recipe piece this arrangement is, for "이 설정 나누기". */
+    share: com.bamnat.core.recipe.PieceKind = com.bamnat.core.recipe.PieceKind.CARDS,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
@@ -108,6 +110,7 @@ fun PageEditSheet(
             FitMore(others, onAdd)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             options()
+            com.bamnat.app.ui.recipe.ShareThisSetting(share, Modifier.heightIn(min = 48.dp))
             TextButton(onClick = onAsk, modifier = Modifier.heightIn(min = 48.dp)) { Text("원하는 배치나 기능이 없나요? 바로 말해 주세요") }
             Spacer(Modifier.height(16.dp))
         }

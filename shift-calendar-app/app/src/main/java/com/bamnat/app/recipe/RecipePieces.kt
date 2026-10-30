@@ -407,6 +407,26 @@ class RecipePieces(private val c: AppContainer) {
         }
     }
 
+    /**
+     * [RCX-03] 1.35 What this phone has now for a piece put on from a recipe, in the shape of the recipe's [base] values, so a new
+     * version can be weighed against it field by field: 근무 꾸미기 reads each item's kind of day as it matched; alarms, 메모 틀,
+     * 원칙 and a company file are things a recipe adds, so they count as untouched; the rest are read whole.
+     */
+    suspend fun current(kind: PieceKind, base: Map<String, Any?>, cal: String): Map<String, Any?> = when (kind) {
+        PieceKind.SHIFT_LOOK -> {
+            val mine = types(cal)
+            val used = HashSet<Long>()
+            base + ("items" to items(base, "items").map { i ->
+                val t = match(mine.filter { it.id !in used }, i) ?: return@map i
+                used += t.id
+                i + mapOf("label" to t.label, "color" to (t.colorArgb or 0xFF000000L)) +
+                    (ShiftIcon.emoji(t.icon)?.let { mapOf("emoji" to it) } ?: emptyMap())
+            })
+        }
+        PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST, PieceKind.COMPANY, PieceKind.BUNDLE -> base
+        else -> export(kind, cal)?.filterValues { it != null } ?: base
+    }
+
     /** [RCP-24] This month's pay before and after an 알바 근무지 규칙 piece (세전, the app's own engine); null without a pay setup. */
     suspend fun payPair(values: Map<String, Any?>, cal: String): Pair<Long, Long>? {
         val scope = c.scopeOf(cal)

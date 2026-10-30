@@ -77,7 +77,9 @@ import com.bamnat.core.recipe.RecipeText
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: (String) -> Unit) {
+fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: (String) -> Unit,
+    /** [RCX-01][RCX-05][RCX-11] 1.35: another recipe (계보, 묶음) and a maker's page. */
+    onOpen: (String) -> Unit = {}, onMaker: (String) -> Unit = {}) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
@@ -134,8 +136,10 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         Text(r.title, style = MaterialTheme.typography.titleLarge)
                         if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium)
                         Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: "만든 분 이름 없음", "v${doc.item.version}",
-                            RecipeDescribe.styles(r), doc.item.parent?.let { "‘$it’에서 고쳐 만듦" }).joinToString(" · "),
+                            RecipeDescribe.styles(r)).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // [RCX-05] The maker's page: their recipes, badges and 팔로우.
+                        doc.item.maker?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("만든 분 페이지") } }
                     }
                 }
                 Text("쓰는 분 ${doc.item.users}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
@@ -167,6 +171,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 Button(onClick = { confirming = true }, enabled = chosen > 0 && missing.isEmpty() && !s.applying,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
 
+                // [RCX-11] 묶음: each recipe in it opens on its own, to be chosen piece by piece.
+                r.pieces.firstOrNull { it.kind == PieceKind.BUNDLE }?.let { b ->
+                    Text("묶음 안 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                    @Suppress("UNCHECKED_CAST")
+                    (b.values["items"] as? List<Map<String, Any?>>).orEmpty().forEach { i ->
+                        val c = i["code"] as? String ?: return@forEach
+                        OutlinedButton(onClick = { onOpen(c) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(listOfNotNull(c, i["note"] as? String).joinToString(" · ") + " 열기")
+                        }
+                    }
+                }
+                // [RCX-01] 계보: what it was made from, and what others made from it.
+                s.lineage?.let { l -> LineageSection(l, onOpen) }
                 HorizontalDivider()
                 if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 처리방침 3.8이 시행되는 11월 29일부터 열려요", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(32.dp))
@@ -431,3 +448,22 @@ private fun ThemeSample(r: com.bamnat.core.recipe.Recipe, piece: com.bamnat.core
 
 private fun Modifier.androidx_clip(c: androidx.compose.ui.graphics.Color): Modifier =
     this.then(Modifier.background(c, androidx.compose.foundation.shape.CircleShape))
+
+
+/** [RCX-01] 1.35 계보: the recipes it was made from (원작자 표시는 지울 수 없음) and those made from it. */
+@Composable
+private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) -> Unit) {
+    if (l.parents.isEmpty() && l.children.isEmpty()) return
+    Text("계보", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+    l.parents.forEachIndexed { i, p ->
+        if (p == null) Text("${"↑".repeat(i + 1)} 지워진 레시피에서 고쳐 만들었어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else RecipeRow(p, Modifier) { onOpen(p.code) }
+    }
+    if (l.parents.isNotEmpty()) Text("위 레시피에서 고쳐 만들었어요. 원래 만든 분 표시는 늘 남아요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (l.children.isNotEmpty()) {
+        Text("이 레시피를 고쳐 만든 것 ${l.children.size}개", style = MaterialTheme.typography.labelLarge)
+        l.children.take(5).forEach { k -> RecipeRow(k, Modifier) { onOpen(k.code) } }
+    }
+}

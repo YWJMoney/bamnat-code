@@ -82,6 +82,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val applying: Boolean = false, val appliedId: Long? = null,
         /** [RCP-24] My kinds of day as they are and as the 근무 꾸미기 piece would make them. */
         val looks: List<Pair<com.bamnat.core.model.ShiftType, com.bamnat.core.model.ShiftType>> = emptyList(),
+        /** [RCX-01] 1.35 계보. */
+        val lineage: com.bamnat.app.recipe.Lineage? = null,
     )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -98,6 +100,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     votes = Votes(doc.item.likes, doc.item.dislikes, doc.myVote))
                 preview()
                 if (canTalk) loadTalk()
+                if (doc.scope != "private") runCatching { c.recipeApi.lineage(code) }.onSuccess { _state.value = _state.value.copy(lineage = it) }
             } catch (e: com.bamnat.core.recipe.RecipeException) {
                 _state.value = _state.value.copy(error = "레시피가 오는 길에 바뀌었어요. 받지 않았어요")
             } catch (e: Exception) {
@@ -214,7 +217,64 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    init { loadMine() }
+    /** [RCX-02] Codes put on whose maker made a newer version: code → its version. */
+    private val _newer = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val newer: StateFlow<Map<String, Int>> = _newer.asStateFlow()
+
+    /** [RCX-03] The 새 판 반영 sheet: which application, the new version and what it changes, with the fields chosen. */
+    data class Update(val entry: AppliedRecipeEntity, val recipe: com.bamnat.core.recipe.Recipe, val version: Int,
+        val results: List<com.bamnat.core.recipe.Merge3.Result>, val picked: Map<PieceKind, Set<String>>)
+    private val _update = MutableStateFlow<Update?>(null)
+    val update: StateFlow<Update?> = _update.asStateFlow()
+
+    /** The phone's own maker page id, for 내 페이지. */
+    private val _me = MutableStateFlow<String?>(null)
+    val me: StateFlow<String?> = _me.asStateFlow()
+
+    init {
+        loadMine()
+        viewModelScope.launch { _newer.value = c.recipes.newer() }
+        if (c.recipeApi.enabled) viewModelScope.launch { _me.value = runCatching { c.recipeApi.makerMe(c.companyStore.device) }.getOrNull() }
+    }
+
+    fun subscribed(code: String) = c.recipes.subscribed(code)
+    fun subscribe(code: String, on: Boolean) {
+        c.recipes.subscribe(code, on)
+        _message.value = if (on) "새 판이 나오면 알려 드려요" else "새 판 알림을 껐어요"
+        viewModelScope.launch { _newer.value = c.recipes.newer() }
+    }
+
+    fun openUpdate(e: AppliedRecipeEntity) {
+        val v = _newer.value[e.code] ?: return
+        viewModelScope.launch {
+            try {
+                val r = c.recipeApi.show(e.code, c.companyStore.device, v).recipe()
+                val results = c.recipes.changes(e, r)
+                if (results.isEmpty()) { _message.value = "새 판에서 이 휴대폰에 넣을 바뀐 점이 없어요"; return@launch }
+                // What only the new version changed is chosen; where I changed it too, mine stays unless picked.
+                val picked = results.associate { res -> res.kind to res.fields.filter { it.kind == com.bamnat.core.recipe.Merge3.Kind.THEIRS }.map { it.path }.toSet() }
+                _update.value = Update(e, r, v, results, picked)
+            } catch (x: Exception) { _message.value = RecipeClient.problem(x) }
+        }
+    }
+
+    fun pick(kind: PieceKind, path: String, on: Boolean) {
+        val u = _update.value ?: return
+        val now = u.picked[kind].orEmpty()
+        _update.value = u.copy(picked = u.picked + (kind to if (on) now + path else now - path))
+    }
+
+    fun closeUpdate() { _update.value = null }
+
+    fun applyUpdate() {
+        val u = _update.value ?: return
+        viewModelScope.launch {
+            val id = runCatching { c.recipes.update(u.entry, u.recipe, u.version, u.picked) }.getOrNull()
+            _update.value = null
+            _message.value = if (id == null) "바뀐 것이 없어요" else "새 판을 반영했어요. 7일 안에 되돌릴 수 있어요"
+            _newer.value = c.recipes.newer()
+        }
+    }
 
     fun setOn(v: Boolean) = c.recipes.setOn(v)
     fun canUndo(e: AppliedRecipeEntity) = c.recipes.canUndo(e)

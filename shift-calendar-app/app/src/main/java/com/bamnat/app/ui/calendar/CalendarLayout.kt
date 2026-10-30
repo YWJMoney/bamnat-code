@@ -101,6 +101,7 @@ internal fun CalendarEditSheet(
     val context = androidx.compose.ui.platform.LocalContext.current
     val added = com.bamnat.app.ui.guide.rememberFitAdded(calendar)
     com.bamnat.app.ui.components.PageEditSheet(
+        share = com.bamnat.core.recipe.PieceKind.LAYOUT,
         title = "달력 화면 꾸미기",
         groups = calendarEditGroups(placed) { settings.partFits(it, added) },
         others = com.bamnat.app.ui.guide.fitOthers(FitSurface.CALENDAR_PARTS, settings.workStyle, added) { id ->

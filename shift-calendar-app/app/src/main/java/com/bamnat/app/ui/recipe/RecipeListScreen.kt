@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Dp
 import com.bamnat.core.work.WorkStyle
 import androidx.compose.ui.unit.dp
@@ -77,27 +78,40 @@ fun RecipeCover(cover: Cover, size: Dp = 56.dp, modifier: Modifier = Modifier) {
         3 -> Brush.linearGradient(colors, start = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, 0f), end = androidx.compose.ui.geometry.Offset(0f, Float.POSITIVE_INFINITY))
         else -> Brush.verticalGradient(colors)
     }
+    // [RCX-15] A picture the operator let show goes over the gradient; until it comes (or offline) the emoji stays.
+    val c = androidx.compose.ui.platform.LocalContext.current.applicationContext.let { (it as? com.bamnat.app.BamnatApp)?.container }
+    val picture by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, cover.image) {
+        value = cover.image?.let { id -> c?.let { com.bamnat.app.recipe.CoverImages.load(it, id) } }
+    }
     Box(modifier.size(size).clip(RoundedCornerShape(size / 4)).background(brush), contentAlignment = Alignment.Center) {
-        Text(cover.emoji, fontSize = (size.value * 0.5f).sp)
+        val p = picture
+        if (p != null) androidx.compose.foundation.Image(p.asImageBitmap(), contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.matchParentSize())
+        else Text(cover.emoji, fontSize = (size.value * 0.5f).sp)
     }
 }
 
 /**
  * [RCP-19] The way into 나눔 판 on every kind of work's 광장: what it is, in one line, and the button.
  * [RCP-34] 1.34: with the plaza's front blocks under it, 요즘 뜨는 and 새로 (three each) of this kind of work.
+ * [RCX-08][RCX-04] 1.35: 이번 주 고른 것 first, and the 요청 판 last (설계서 4-5: 네 덩어리).
  */
 @Composable
 fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier = Modifier,
-    hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}, style: WorkStyle? = null) {
+    hot: List<RecipeItem> = emptyList(), fresh: List<RecipeItem> = emptyList(), onItem: (String) -> Unit = {}, style: WorkStyle? = null,
+    picks: List<RecipeItem> = emptyList(), onRequests: (() -> Unit)? = null) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("나눔 판 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text(entryLine(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            for ((label, list) in listOf("요즘 뜨는" to hot, "새로 올라온" to fresh.filter { f -> hot.none { it.code == f.code } })) {
-                if (list.isEmpty()) continue
+            val shown = HashSet<String>()
+            for ((label, list) in listOf("이번 주 고른 것" to picks, "요즘 뜨는" to hot, "새로 올라온" to fresh)) {
+                val rest = list.filter { it.code !in shown }.take(3)
+                if (rest.isEmpty()) continue
+                shown += rest.map { it.code }
                 Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
-                list.take(3).forEach { item ->
+                rest.forEach { item ->
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) },
                         verticalAlignment = Alignment.CenterVertically) {
                         RecipeCover(item.cover, size = 32.dp)
@@ -114,21 +128,23 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
                 FilledTonalButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text("레시피 보기") }
                 OutlinedButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 설정 나누기") }
             }
+            onRequests?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("요청 판: 이런 레시피 있었으면") } }
         }
     }
 }
 
-/** [RCP-34] The 나눔 판 block of a 광장, with its 요즘 뜨는·새로 read once for the calendar's kind of work (quietly empty offline). */
+/** [RCP-34] The 나눔 판 block of a 광장, with its 고른 것·요즘 뜨는·새로 read once for the calendar's kind of work (quietly empty offline). */
 @Composable
 fun PlazaRecipeBlock(c: com.bamnat.app.AppContainer, calendar: String, onOpen: () -> Unit, onMake: () -> Unit, onItem: (String) -> Unit,
-    modifier: Modifier = Modifier) {
-    val lists by androidx.compose.runtime.produceState(emptyList<RecipeItem>() to emptyList<RecipeItem>(), calendar) {
-        if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)) return@produceState
-        val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
-        value = runCatching { c.recipeApi.list(style, "hot").items to c.recipeApi.list(style, "new").items }.getOrDefault(value)
-    }
+    modifier: Modifier = Modifier, onRequests: (() -> Unit)? = null) {
     val style = remember(calendar) { c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle) }
-    RecipeEntryCard(onOpen, onMake, modifier, lists.first, lists.second, onItem, style)
+    val lists by androidx.compose.runtime.produceState(Triple(emptyList<RecipeItem>(), emptyList<RecipeItem>(), emptyList<RecipeItem>()), calendar) {
+        if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_BROWSE)) return@produceState
+        value = runCatching {
+            Triple(runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList()), c.recipeApi.list(style, "hot").items, c.recipeApi.list(style, "new").items)
+        }.getOrDefault(value)
+    }
+    RecipeEntryCard(onOpen, onMake, modifier, lists.second, lists.third, onItem, style, lists.first, onRequests)
 }
 
 /** [RCP-38] The first line of 나눔 판 in the words of each kind of work: what is worth taking there. */

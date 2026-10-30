@@ -88,7 +88,11 @@ internal fun TabOrderDialog(settings: AppSettings, onChange: (List<String>) -> U
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("완료") } },
         dismissButton = {
-            TextButton(onClick = { onChange(emptyList()) }, enabled = settings.tabOrder.isNotEmpty()) { Text("처음 순서로") }
+            androidx.compose.foundation.layout.Row {
+                // [RCX-12] 1.35 화면 배치 piece: this order (and the calendar's cards) as a recipe.
+                com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.LAYOUT)
+                TextButton(onClick = { onChange(emptyList()) }, enabled = settings.tabOrder.isNotEmpty()) { Text("처음 순서로") }
+            }
         },
     )
 }

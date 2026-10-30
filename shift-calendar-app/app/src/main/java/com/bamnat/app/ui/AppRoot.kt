@@ -247,6 +247,11 @@ private object Routes {
     fun recipeMake(calendar: String = PersonalCalendar.MAIN, draft: Long = 0, kind: String = "", code: String = "") =
         "recipe_make?calendar=$calendar&draft=$draft&kind=$kind&code=$code"
     const val RECIPE_MINE = "recipe_mine"
+    /** [RCX-05] 1.35 a maker's page; [RCX-04] the 요청 판 of a calendar's kind of work. */
+    const val RECIPE_MAKER = "recipe_maker/{id}"
+    fun recipeMaker(id: String) = "recipe_maker/$id"
+    const val RECIPE_REQUESTS = "recipe_requests?calendar={calendar}"
+    fun recipeRequests(calendar: String = PersonalCalendar.MAIN) = "recipe_requests?calendar=$calendar"
     /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
     const val COMPANY_BOARD_ALL = "company_board_all"
     /** [RCP-34] 1.34: 교대 광장·일근 광장, the plaza of the calendar's kind of work itself. */
@@ -1413,6 +1418,7 @@ private fun AppNavHost(
                     onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
                     onMake = { nav.navigate(Routes.recipeMake(calendar)) },
                     onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
+                    onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
                 )
             }
             // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
@@ -1467,6 +1473,7 @@ private fun AppNavHost(
                             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
                             onMake = { nav.navigate(Routes.recipeMake(calendar)) },
                             onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
+                            onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
                         )
                     })
             }
@@ -1498,7 +1505,18 @@ private fun AppNavHost(
             com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = { nav.popFrom(Routes.RECIPE) }, onRemake = { body ->
                 com.bamnat.app.recipe.RecipeLinks.remake = body to code
                 nav.navigate(Routes.recipeMake(calendar))
-            })
+            }, onOpen = { other -> nav.navigate(Routes.recipe(other, calendar)) }, onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) })
+        }
+        composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            val vm = appViewModel(key = "recipe-maker-$id") { com.bamnat.app.ui.recipe.MakerViewModel(it, id) }
+            com.bamnat.app.ui.recipe.MakerScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKER) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) })
+        }
+        composable(Routes.RECIPE_REQUESTS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "recipe-requests-$calendar") { com.bamnat.app.ui.recipe.RequestsViewModel(it, calendar) }
+            com.bamnat.app.ui.recipe.RequestsScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_REQUESTS) },
+                onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) }, onMake = { nav.navigate(Routes.recipeMake(calendar)) })
         }
         composable(Routes.RECIPE_MAKE, arguments = listOf(
             navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
@@ -1523,7 +1541,8 @@ private fun AppNavHost(
             com.bamnat.app.ui.recipe.RecipeMineScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MINE) },
                 onOpen = { code -> nav.navigate(Routes.recipe(code)) },
                 onDraft = { id -> nav.navigate(Routes.recipeMake(draft = id)) },
-                onList = { nav.navigate(Routes.recipes()) { launchSingleTop = true } })
+                onList = { nav.navigate(Routes.recipes()) { launchSingleTop = true } },
+                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) })
         }
         composable(Routes.PLAZA_RATES) {
             val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }

@@ -33,6 +33,8 @@ data class RecipeItem(
     val parent: String?,
     val at: Instant,
     val fresh: Boolean = false,
+    /** [RCX-05] 1.35 The maker's page id (never the install); null from a server before 1.35. */
+    val maker: String? = null,
 )
 
 /** [RCP-23] One recipe with its written form; [state], [note] and [reasons] only for its maker. */
@@ -90,6 +92,24 @@ data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: 
 /** [RCP-29] The phone's own recipes in every state. */
 data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>)
 
+/** [RCX-01] 계보: the recipes it was made from (nearest first; null where one is gone) and those made from it. */
+data class Lineage(val parents: List<RecipeItem?>, val children: List<RecipeItem>)
+
+/** [RCX-04] 요청 판: a wish, its likes and where it stands (waiting → making → done with a recipe's [code]). */
+data class RecipeRequest(
+    val id: String, val style: WorkStyle?, val body: String, val likes: Int, val state: String, val code: String?, val at: Instant,
+    val mine: Boolean, val taking: Boolean, val liked: Boolean,
+)
+
+/** [RCX-05][RCX-06] A maker's page. */
+data class MakerPage(
+    val maker: String, val nick: String?, val face: String?, val color: Long?, val mine: Boolean, val recipes: List<RecipeItem>,
+    val likes: Int, val users: Int, val followers: Int, val following: Boolean, val badges: List<Pair<String, String>>,
+)
+
+/** [RCX-07][RCX-10] For 소식: new recipes of followed makers, and makers' answers to my questions (code, title, the answer). */
+data class RecipeNews(val recipes: List<RecipeItem>, val replies: List<Triple<String, String, String>>)
+
 /** [RCP-21]..[RCP-35] What the app asks of the 나눔 판 server; screenshots and tests answer with a fake. */
 interface RecipeApi {
     val enabled: Boolean
@@ -105,6 +125,25 @@ interface RecipeApi {
     suspend fun talk(device: String?, code: String): RecipeTalk
     suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?): String
     suspend fun talkVote(device: String, post: String, value: Int?, reason: String? = null, opinion: String? = null): Votes
+
+    // ---- 1.35 (fakes answer empty unless they say otherwise) ----
+    suspend fun lineage(code: String): Lineage = Lineage(emptyList(), emptyList())
+    /** [RCX-02] The newest version of each code (no device sent). */
+    suspend fun versions(codes: List<String>): Map<String, Int> = emptyMap()
+    suspend fun requests(device: String?, style: WorkStyle?): List<RecipeRequest> = emptyList()
+    suspend fun request(device: String, style: WorkStyle, body: String): String = throw CompanyException("offline")
+    /** [what] like · take · done · delete; [on] false takes a like or a 만들게요 back; [code] for done. */
+    suspend fun requestAct(device: String, id: String, what: String, on: Boolean = true, code: String? = null) {}
+    suspend fun maker(device: String?, id: String): MakerPage = throw CompanyException("not_found")
+    /** The phone's own maker id, and its face when [face]/[color] are given. */
+    suspend fun makerMe(device: String, face: String? = null, color: Long? = null, set: Boolean = false): String = throw CompanyException("offline")
+    suspend fun follow(device: String, id: String, on: Boolean) {}
+    suspend fun picks(style: WorkStyle?): List<RecipeItem> = emptyList()
+    suspend fun news(device: String, since: Instant?): RecipeNews = RecipeNews(emptyList(), emptyList())
+    /** [RCX-15] A cover picture already shrunk to WebP; its id back (it shows once the operator looked). */
+    suspend fun image(device: String, webp: ByteArray): String = throw CompanyException("offline")
+    /** The address of a cover picture, for the image loader (the maker sees a waiting one with its device header). */
+    fun imageUrl(id: String): String? = null
 }
 
 class RecipeClient(
@@ -208,16 +247,82 @@ class RecipeClient(
         votes(call("POST", "/api/recipes/talk/$post/vote", voteBody(device, value, reason, opinion)))
     }
 
+    // ---- 1.35 ----
+
+    override suspend fun lineage(code: String): Lineage = readCall {
+        val o = call("GET", "/api/recipes/$code/lineage")
+        Lineage(o.optJSONArray("parents").objects().map { if (it.optBoolean("gone")) null else item(it) }, o.optJSONArray("children").objects().map(::item))
+    }
+
+    override suspend fun versions(codes: List<String>): Map<String, Int> = readCall {
+        if (codes.isEmpty()) return@readCall emptyMap()
+        val v = call("GET", "/api/recipes/versions?codes=" + codes.distinct().take(50).joinToString(",")).optJSONObject("versions") ?: JSONObject()
+        v.keys().asSequence().associateWith { v.getJSONObject(it).optInt("version", 1) }
+    }
+
+    override suspend fun requests(device: String?, style: WorkStyle?): List<RecipeRequest> = readCall {
+        call("GET", "/api/recipes/requests" + (style?.let { "?style=${it.name}" } ?: ""), device = device).optJSONArray("items").objects().map { q ->
+            RecipeRequest(q.getString("id"), WorkStyle.entries.firstOrNull { it.name == q.optString("style") }, q.optString("body"), q.optInt("likes"),
+                q.optString("state", "waiting"), q.optStringOrNull("code"), Instant.parse(q.getString("at")), q.optBoolean("mine"), q.optBoolean("taking"),
+                q.optBoolean("liked"))
+        }
+    }
+
+    override suspend fun request(device: String, style: WorkStyle, body: String): String = serverCall {
+        call("POST", "/api/recipes/requests", JSONObject().put("device", device).put("style", style.name).put("body", body)).getString("id")
+    }
+
+    override suspend fun requestAct(device: String, id: String, what: String, on: Boolean, code: String?) = serverCall {
+        call("POST", "/api/recipes/requests/$id/$what", JSONObject().put("device", device).put("on", on).apply { code?.let { put("code", it) } })
+        Unit
+    }
+
+    override suspend fun maker(device: String?, id: String): MakerPage = readCall {
+        val o = call("GET", "/api/recipes/makers/$id", device = device)
+        MakerPage(o.getString("maker"), o.optStringOrNull("nick"), o.optStringOrNull("face"), if (o.isNull("color") || !o.has("color")) null else o.optLong("color"),
+            o.optBoolean("mine"), o.optJSONArray("recipes").objects().map(::item), o.optInt("likes"), o.optInt("users"), o.optInt("followers"),
+            o.optBoolean("following"), o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") })
+    }
+
+    override suspend fun makerMe(device: String, face: String?, color: Long?, set: Boolean): String = serverCall {
+        val body = JSONObject().put("device", device)
+        if (set) body.put("face", face ?: JSONObject.NULL).put("color", color ?: JSONObject.NULL)
+        call("POST", "/api/recipes/makers/me", body).getString("maker")
+    }
+
+    override suspend fun follow(device: String, id: String, on: Boolean) = serverCall {
+        call("POST", "/api/recipes/makers/$id/follow", JSONObject().put("device", device).put("on", on))
+        Unit
+    }
+
+    override suspend fun picks(style: WorkStyle?): List<RecipeItem> = readCall {
+        call("GET", "/api/recipes/picks" + (style?.let { "?style=${it.name}" } ?: "")).optJSONArray("items").objects().map(::item)
+    }
+
+    override suspend fun news(device: String, since: Instant?): RecipeNews = readCall {
+        val o = call("GET", "/api/recipes/news" + (since?.let { "?since=" + URLEncoder.encode(it.toString(), "UTF-8") } ?: ""), device = device)
+        RecipeNews(o.optJSONArray("recipes").objects().map(::item),
+            o.optJSONArray("replies").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) })
+    }
+
+    override suspend fun image(device: String, webp: ByteArray): String = serverCall {
+        call("POST", "/api/recipes/images", JSONObject().put("device", device)
+            .put("webp", android.util.Base64.encodeToString(webp, android.util.Base64.NO_WRAP))).getString("id")
+    }
+
+    override fun imageUrl(id: String): String? = if (enabled && com.bamnat.core.recipe.Cover.IMAGE.matches(id)) "$baseUrl/api/recipes/images/$id" else null
+
     companion object {
         fun item(o: JSONObject): RecipeItem {
             val c = o.optJSONObject("cover")
             return RecipeItem(
                 o.getString("code"), o.optString("title"), o.optString("summary"),
                 (0 until (o.optJSONArray("styles")?.length() ?: 0)).mapNotNull { i -> WorkStyle.entries.firstOrNull { it.name == o.getJSONArray("styles").optString(i) } }.toSet(),
-                if (c == null) Cover() else Cover(c.optLong("a", Cover().a), c.optLong("b", Cover().b), c.optInt("dir"), c.optString("emoji", Cover().emoji)),
+                if (c == null) Cover() else Cover(c.optLong("a", Cover().a), c.optLong("b", Cover().b), c.optInt("dir"), c.optString("emoji", Cover().emoji),
+                    c.optStringOrNull("image")?.takeIf { Cover.IMAGE.matches(it) }),
                 o.optStringOrNull("nick"), o.optInt("version", 1), o.optInt("likes"), o.optInt("dislikes"), o.optInt("users"),
                 o.optInt("kept").takeIf { o.has("kept") && !o.isNull("kept") }, o.optBoolean("official"), o.optBoolean("publicData"),
-                o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"),
+                o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"), o.optStringOrNull("maker"),
             )
         }
 
