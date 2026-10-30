@@ -37,7 +37,39 @@ data class RecipeItem(
     val maker: String? = null,
     /** [RCX-32] 1.35 운영자가 고른 보여주기 판: what 나눔 판 can do, shown first on every 광장. */
     val showcase: Boolean = false,
+    /** [FREE-08] 1.35 What the card's small calendar is drawn from; null when the recipe carries no look. */
+    val look: ThemeSwatch? = null,
 )
+
+/**
+ * [FREE-08] A recipe's look as the list sends it (server lookOf): page, card, ink and accent colours, today·토·일, the kinds of day,
+ * the cell looks and their pattern, the memo layout and whether it has a picture.
+ */
+data class ThemeSwatch(
+    val bg: Long? = null, val card: Long? = null, val ink: Long? = null, val accent: Long? = null,
+    val today: Long? = null, val sat: Long? = null, val sun: Long? = null,
+    val days: List<Day> = emptyList(), val cells: String? = null, val pattern: String? = null, val badge: String? = null,
+    val memo: String? = null, val photo: Boolean = false,
+) {
+    data class Day(val color: Long?, val label: String, val emoji: String?, val role: String?)
+
+    companion object {
+        private fun hex(s: String?): Long? = s?.takeIf { Regex("^[0-9A-F]{8}$").matches(it) }?.toLong(16)
+
+        fun of(o: JSONObject?): ThemeSwatch? = o?.let {
+            ThemeSwatch(
+                hex(it.optStringOrNull("bg")), hex(it.optStringOrNull("card")), hex(it.optStringOrNull("ink")), hex(it.optStringOrNull("accent")),
+                it.optLong("today").takeIf { _ -> it.has("today") }, it.optLong("sat").takeIf { _ -> it.has("sat") }, it.optLong("sun").takeIf { _ -> it.has("sun") },
+                it.optJSONArray("days").objects().take(4).map { d ->
+                    Day(d.optLong("c").takeIf { d.has("c") && !d.isNull("c") }, d.optString("l").take(2), d.optStringOrNull("e"), d.optStringOrNull("r"))
+                },
+                it.optStringOrNull("cells")?.takeIf { c -> com.bamnat.core.recipe.CellLook.looksProblem(c) == null },
+                it.optStringOrNull("pattern")?.takeIf { c -> com.bamnat.core.recipe.CellPattern.problem(c) == null },
+                it.optStringOrNull("badge"), it.optStringOrNull("memo"), it.optBoolean("photo"),
+            )
+        }
+    }
+}
 
 /** [RCP-23] One recipe with its written form; [state], [note] and [reasons] only for its maker. */
 data class RecipeDoc(
@@ -117,7 +149,8 @@ data class RecipeNews(val recipes: List<RecipeItem>, val replies: List<Triple<St
 /** [RCP-21]..[RCP-35] What the app asks of the 나눔 판 server; screenshots and tests answer with a fake. */
 interface RecipeApi {
     val enabled: Boolean
-    suspend fun list(style: WorkStyle?, sort: String, q: String = "", cursor: Int = 0): RecipePage
+    /** [kind] 1.35 종류로 보기: skin, layout, memo, money or rules (server RECIPE_KINDS); null for all. */
+    suspend fun list(style: WorkStyle?, sort: String, q: String = "", cursor: Int = 0, kind: String? = null): RecipePage
     suspend fun show(code: String, device: String?, version: Int? = null): RecipeDoc
     suspend fun publish(device: String, recipe: Recipe, scope: String): Sent
     suspend fun newVersion(device: String, code: String, recipe: Recipe, scope: String?): Sent
@@ -162,12 +195,13 @@ class RecipeClient(
         return serverExchange(baseUrl, method, path, body, device, headers).json
     }
 
-    override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int): RecipePage = readCall {
+    override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?): RecipePage = readCall {
         val query = buildList {
             style?.let { add("style=${it.name}") }
             add("sort=$sort")
             if (q.isNotBlank()) add("q=" + URLEncoder.encode(q.trim().take(30), "UTF-8"))
             if (cursor > 0) add("cursor=$cursor")
+            kind?.takeIf { it in KINDS }?.let { add("kind=$it") }
         }.joinToString("&")
         val o = call("GET", "/api/recipes?$query")
         RecipePage(o.optJSONArray("items").objects().map(::item), if (o.isNull("next")) null else o.optInt("next"))
@@ -328,9 +362,12 @@ class RecipeClient(
                 o.optStringOrNull("nick"), o.optInt("version", 1), o.optInt("likes"), o.optInt("dislikes"), o.optInt("users"),
                 o.optInt("kept").takeIf { o.has("kept") && !o.isNull("kept") }, o.optBoolean("official"), o.optBoolean("publicData"),
                 o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"), o.optStringOrNull("maker"),
-                o.optBoolean("showcase"),
+                o.optBoolean("showcase"), ThemeSwatch.of(o.optJSONObject("look")),
             )
         }
+
+        /** [FREE-08] 종류로 보기 (server RECIPE_KINDS), in the order the chips show them. */
+        val KINDS = listOf("skin", "layout", "memo", "money", "rules")
 
         /** What to tell the user about a refusal from the 나눔 판. */
         fun problem(e: Throwable): String {

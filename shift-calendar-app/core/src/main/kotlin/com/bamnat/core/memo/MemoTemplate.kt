@@ -22,11 +22,9 @@ data class MemoTemplate(
     /** A new memo from this template on [date] (or none): a repeat moves the date to its next day from [date] or [today]. */
     fun start(date: LocalDate?, today: LocalDate, base: Memo = Memo(), answers: Map<String, String> = emptyMap()): Memo {
         val said = TemplateAsk.lines(asks, answers)
-        // [CVW-10] A list keeps only its own items (자유도 점검 F-56: answers ticked in 완료 read as done tasks); its answers go after the
-        // title, cut at [TITLE_ANSWERS] letters so a long answer does not push the title off the card ([J135-06] F-63).
-        val after = said.lines().joinToString(" · ").let { if (it.length > TITLE_ANSWERS) it.take(TITLE_ANSWERS - 1) + "…" else it }
-        val title = listOfNotNull(emoji, title).joinToString(" ") +
-            if (check.isNotEmpty() && said.isNotEmpty()) " ($after)" else ""
+        // [CVW-10] A list keeps only its own items (자유도 점검 F-56: answers ticked in 완료 read as done tasks). Its answers are kept
+        // whole as a note above the list, not in the title, which a long answer cut and then lost ([J135-07] F-63·F-65).
+        val title = listOfNotNull(emoji, title).joinToString(" ")
         val day = when {
             repeat.startsWith("W") -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
             repeat.startsWith("M") -> nextDayOfMonth(date ?: today, repeat.drop(1).toInt())
@@ -35,7 +33,7 @@ data class MemoTemplate(
         return base.copy(
             title = title,
             // [CVW-10] The answers as "칸: 값" lines before the template's own text; a list keeps them at its top, ticked.
-            body = if (check.isEmpty()) listOfNotNull(said.ifEmpty { null }, body.ifEmpty { null }).joinToString("\n") else "",
+            body = if (check.isEmpty()) listOfNotNull(said.ifEmpty { null }, body.ifEmpty { null }).joinToString("\n") else said,
             isChecklist = check.isNotEmpty(),
             checklist = check.map { ChecklistItem(it) },
             date = day,
@@ -45,7 +43,6 @@ data class MemoTemplate(
 
     companion object {
         const val MAX = 40
-        const val TITLE_ANSWERS = 30
 
         /** The next day [d] of a month on or after [from]; a short month uses its last day. */
         fun nextDayOfMonth(from: LocalDate, d: Int): LocalDate {

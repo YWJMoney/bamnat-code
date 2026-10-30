@@ -36,7 +36,9 @@ object RecipeLint {
             else Line("desc", Level.OK, "설명이 있어요", 4)
         // Contrast (S3): the theme's day colours drawn as text on the light and the dark calendar.
         // On the dark calendar the app lifts a colour itself (Contrast.onBlack); on the light one it is drawn as chosen.
-        val weak = themeColors(r).filter { (_, c) -> Contrast.ratio(c, LIGHT_BG) < MIN_RATIO }
+        // [FREE-08] A recipe that colours the calendar's page is read on that page; its screens' own text on their own ground.
+        val ground = calendarGround(r)
+        val weak = themeColors(r).filter { (_, c) -> Contrast.ratio(c, ground) < MIN_RATIO } + screensWeak(r)
         out += if (weak.isEmpty()) Line("contrast", Level.OK, "글자색이 잘 보여요 (4.5:1 이상)", 3)
             else Line("contrast", Level.WARN, "${weak.joinToString("·") { it.first }} 글자가 흐려요", 3, fix = ::fixContrast)
         // Personal values (S7): an amount kept as is, a name-like word in a memo template or the description.
@@ -98,12 +100,62 @@ object RecipeLint {
         else -> null
     }
 
-    /** The theme's day colours darkened, a step at a time, until they read at 4.5:1 on the light calendar. */
-    fun fixContrast(r: Recipe): Recipe = r.copy(pieces = r.pieces.map { p ->
-        if (p.kind != PieceKind.CAL_THEME) p else Piece(p.kind, p.values.mapValues { (k, v) ->
-            if (k in setOf("sat", "sun", "holiday") && v is Long) readableOnLight(v) else v
-        })
-    }, tokens = r.tokens.map { it.copy(light = readableOnLight(it.light), dark = Contrast.onBlack(it.dark)) })
+    /** [FREE-08] Where the calendar's text stands: the recipe's calendar card or page colour, else the light calendar. */
+    private fun calendarGround(r: Recipe): Long {
+        val screens = r.pieces.firstOrNull { it.kind == PieceKind.SCREEN_LOOK }?.values?.get("screens") as? String ?: return LIGHT_BG
+        val look = ScreenLooks.decode(screens).of("calendar")
+        return (look.card ?: look.bg)?.let { it or 0xFF000000L } ?: LIGHT_BG
+    }
+
+    /** [FREE-08] Screens whose own text colour does not stand 4.5:1 on their page and cards (the app would swap it; the maker is told). */
+    private fun screensWeak(r: Recipe): List<Pair<String, Long>> {
+        val screens = r.pieces.firstOrNull { it.kind == PieceKind.SCREEN_LOOK }?.values?.get("screens") as? String ?: return emptyList()
+        val all = ScreenLooks.decode(screens)
+        return all.looks.keys.mapNotNull { key ->
+            val l = all.of(key)
+            val ink = l.ink ?: return@mapNotNull null
+            val grounds = listOfNotNull(l.bg, l.card).map { it or 0xFF000000L }
+            if (grounds.isEmpty() || Palette.inkOn(ink, *grounds.toLongArray()) == ink) null
+            else (RecipeDescribe.SCREEN_NAMES[key.substringBefore('.')] ?: key) + " 화면" to ink
+        }
+    }
+
+    /**
+     * The theme's day colours darkened, a step at a time, until they read at 4.5:1 on the light calendar (on a recipe's own calendar
+     * page, the colour readable there); a screen's text colour that does not read becomes black or white ([Palette.inkOn]).
+     */
+    fun fixContrast(r: Recipe): Recipe {
+        val ground = calendarGround(r)
+        return r.copy(pieces = r.pieces.map { p ->
+            when (p.kind) {
+                PieceKind.CAL_THEME -> Piece(p.kind, p.values.mapValues { (k, v) ->
+                    if (k in setOf("sat", "sun", "holiday") && v is Long) (if (ground == LIGHT_BG) readableOnLight(v) else readableOn(v, ground)) else v
+                })
+                PieceKind.SCREEN_LOOK -> (p.values["screens"] as? String)?.let { line ->
+                    val all = ScreenLooks.decode(line)
+                    val fixed = all.looks.mapValues { (_, l) ->
+                        val grounds = listOfNotNull(l.bg, l.card).map { it or 0xFF000000L }
+                        if (l.ink == null || grounds.isEmpty()) l else l.copy(ink = Palette.inkOn(l.ink, *grounds.toLongArray()))
+                    }
+                    Piece(p.kind, p.values + ("screens" to ScreenLooks(fixed).encode()))
+                } ?: p
+                else -> p
+            }
+        }, tokens = r.tokens.map { it.copy(light = readableOnLight(it.light), dark = Contrast.onBlack(it.dark)) })
+    }
+
+    /** [c] darkened or lightened a step at a time until it reads at 4.5:1 on [ground]. */
+    fun readableOn(c: Long, ground: Long): Long {
+        val dark = Palette.luminance(ground) < 0.4
+        var x = c or 0xFF000000L
+        var n = 0
+        while (Contrast.ratio(x, ground) < MIN_RATIO && n < 24) {
+            fun ch(s: Int): Long { val v = (x shr s) and 0xFF; return if (dark) v + (255 - v) / 6 else (v * 9) / 10 }
+            x = 0xFF000000L or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+            n++
+        }
+        return x
+    }
 
     fun readableOnLight(c: Long): Long {
         var x = c or 0xFF000000L

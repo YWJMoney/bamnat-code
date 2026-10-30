@@ -42,13 +42,14 @@ class FreedomPiecesTest {
         // Nothing answered: the template's own text, as before.
         assertEquals("오늘 한 줄:", t.start(null, LocalDate.of(2026, 10, 30)).body)
         val list = t.copy(check = listOf("물 마시기")).start(null, LocalDate.of(2026, 10, 30), answers = mapOf("기분" to "2"))
-        // A list keeps its own items; the answers go after the title (F-56).
+        // A list keeps its own items (F-56); the answers stay whole as a note above it, the title as it is (F-63, F-65).
         assertEquals(listOf("물 마시기"), list.checklist.map { it.text })
-        assertEquals("🌤️ 컨디션 일지 (기분: ★★☆☆☆)", list.title)
-        // A long answer is cut in the title (F-63), and a 숫자 칸 keeps only a number (F-62).
-        val cut = t.copy(check = listOf("물"), asks = listOf(TemplateAsk("한 줄", "text"))).start(null, LocalDate.of(2026, 10, 30), answers = mapOf("한 줄" to "가".repeat(60)))
-        assertTrue(cut.title.endsWith("…)"))
-        assertEquals("🌤️ 컨디션 일지 (".length + MemoTemplate.TITLE_ANSWERS + 1, cut.title.length)
+        assertEquals("🌤️ 컨디션 일지", list.title)
+        assertEquals("기분: ★★☆☆☆", list.body)
+        val long = t.copy(check = listOf("물"), asks = listOf(TemplateAsk("한 줄", "text"))).start(null, LocalDate.of(2026, 10, 30), answers = mapOf("한 줄" to "가".repeat(60)))
+        assertEquals("한 줄: " + "가".repeat(60), long.body)
+        assertEquals("🌤️ 컨디션 일지", long.title)
+        // A 숫자 칸 keeps only a number (F-62).
         assertEquals("기분: ★★★★★\n날씨: 비\n오늘 한 줄:", t.start(null, LocalDate.of(2026, 10, 30), answers = mapOf("기분" to "5", "잠" to "여섯", "날씨" to "비")).body)
         // Two 칸 with one name keep their own answers, found by place (F-55).
         val twin = MemoTemplate("t2", "둘", asks = listOf(TemplateAsk("새", "pick", listOf("좋음", "나쁨")), TemplateAsk("새", "num")))

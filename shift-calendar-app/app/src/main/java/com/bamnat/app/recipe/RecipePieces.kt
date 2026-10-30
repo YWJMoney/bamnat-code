@@ -130,7 +130,26 @@ class RecipePieces(private val c: AppContainer) {
             val v = com.bamnat.core.recipe.CalendarView.decode(s.calView)
             mapOf("size" to v.size, "badge" to v.badge, "date" to v.date, "text" to v.text, "grid" to v.grid,
                 "memo" to (v.memo ?: if (s.memoInCells) null else 0)?.toLong(), "hours" to s.showHoursInCells, "lunar" to s.showLunar, "spend" to s.spendInCells,
-                "order" to v.order?.joinToString(","))
+                "order" to v.order?.joinToString(","),
+                "looks" to v.looks.takeIf { it.isNotEmpty() }?.let { com.bamnat.core.recipe.CellLook.encodeAll(it) },
+                "pattern" to v.pattern.takeIf { !it.isDefault }?.encode(), "today" to v.todayLook?.toLong())
+        }
+        // [FREE-04] 1.35 메모장 모양.
+        PieceKind.MEMO_LOOK -> com.bamnat.core.recipe.MemoLook.decode(c.settingsRepository.current.memoLook).takeIf { !it.isDefault }?.let { l ->
+            mapOf("layout" to l.layout, "card" to l.card, "cardColor" to l.cardColor, "border" to l.border, "corner" to l.corner?.toLong(),
+                "lines" to l.lines?.toLong(), "title" to l.title, "bold" to l.bold, "font" to l.font, "date" to l.date, "bg" to l.bg)
+        }
+        // [FREE-06] 1.35 가계부 모양.
+        PieceKind.MONEY_LOOK -> com.bamnat.core.recipe.MoneyLook.decode(c.settingsRepository.current.moneyLook).takeIf { !it.isDefault }?.let { l ->
+            mapOf("rows" to l.rows, "amount" to l.amount, "mark" to l.mark, "income" to l.income, "expense" to l.expense, "dayHead" to l.dayHead)
+        }
+        // [FREE-05][FREE-07] 1.35 화면 색·배경 and 급여 모양; a picture the phone does not have is left out.
+        PieceKind.SCREEN_LOOK -> c.settingsRepository.current.let { s ->
+            val ctx = c.appContext
+            val looks = com.bamnat.core.recipe.ScreenLooks.decode(s.screenLooks).let { all ->
+                com.bamnat.core.recipe.ScreenLooks(all.looks.mapValues { (_, l) -> if (l.photo != null && !LookImages.has(ctx, l.photo)) l.copy(photo = null) else l })
+            }
+            mapOf("screens" to looks.encode().ifEmpty { null }, "pay" to s.payLooks.ifEmpty { null }).takeIf { m -> m.values.any { it != null } }
         }
         // [CVW-07] 1.35 앱 동작.
         PieceKind.APP_FEEL -> c.settingsRepository.current.let { s ->
@@ -238,7 +257,8 @@ class RecipePieces(private val c: AppContainer) {
                 (values["corners"] as? String)?.let { Change(com.bamnat.core.recipe.RecipeDescribe.CORNER_NAMES[it] ?: "모서리") },
             ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
-        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL ->
+        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
+        PieceKind.SCREEN_LOOK ->
             settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
                 .ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
     }
@@ -406,9 +426,10 @@ class RecipePieces(private val c: AppContainer) {
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
             PieceKind.BUNDLE -> null
-            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL -> {
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
-                if (kind == PieceKind.PHOTO_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
+                if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
                 val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {
@@ -615,7 +636,8 @@ class RecipePieces(private val c: AppContainer) {
                 before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
             }
             PieceKind.BUNDLE -> {}
-            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL -> {
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK -> {
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -671,6 +693,11 @@ class RecipePieces(private val c: AppContainer) {
                     date = pick("date", com.bamnat.core.recipe.CalendarView.DATES) ?: v.date, text = pick("text", com.bamnat.core.recipe.CalendarView.TEXTS) ?: v.text,
                     grid = pick("grid", com.bamnat.core.recipe.CalendarView.GRIDS) ?: v.grid, memo = memo ?: v.memo,
                     order = (values["order"].let { o -> (o as? List<*>)?.joinToString(",") ?: o as? String })?.takeIf { com.bamnat.core.recipe.CalendarView.orderProblem(it) == null && it.isNotEmpty() }?.split(',') ?: v.order,
+                    looks = (values["looks"] as? String)?.takeIf { com.bamnat.core.recipe.CellLook.looksProblem(it) == null }
+                        ?.let { com.bamnat.core.recipe.CellLook.decodeAll(it) } ?: v.looks,
+                    pattern = (values["pattern"] as? String)?.takeIf { com.bamnat.core.recipe.CellPattern.problem(it) == null }
+                        ?.let { com.bamnat.core.recipe.CellPattern.decode(it) } ?: v.pattern,
+                    todayLook = (values["today"] as? Number)?.toInt()?.coerceIn(0, com.bamnat.core.recipe.CellLook.MAX - 1) ?: v.todayLook,
                 )
                 listOfNotNull(
                     "calView" to after.encode(),
@@ -695,6 +722,47 @@ class RecipePieces(private val c: AppContainer) {
                 (values["rest"] as? Boolean)?.let { "restCheck" to it.toString() },
                 (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to it.toString() },
             ).toMap()
+            // [FREE-04] What the piece names over the user's own.
+            PieceKind.MEMO_LOOK -> {
+                val l = com.bamnat.core.recipe.MemoLook.decode(cur.memoLook)
+                fun pick(k: String, from: List<String>) = (values[k] as? String)?.takeIf { it in from }
+                val after = l.copy(
+                    layout = pick("layout", com.bamnat.core.recipe.MemoLook.LAYOUTS) ?: l.layout, card = pick("card", com.bamnat.core.recipe.MemoLook.CARDS) ?: l.card,
+                    cardColor = (values["cardColor"] as? Long) ?: l.cardColor, border = pick("border", com.bamnat.core.recipe.MemoLook.BORDERS) ?: l.border,
+                    corner = (values["corner"] as? Number)?.toInt()?.coerceIn(0, 24) ?: l.corner,
+                    lines = (values["lines"] as? Number)?.toInt()?.coerceIn(1, com.bamnat.core.recipe.MemoLook.MAX_LINES) ?: l.lines,
+                    title = pick("title", com.bamnat.core.recipe.MemoLook.TITLES) ?: l.title, bold = (values["bold"] as? Boolean) ?: l.bold,
+                    font = pick("font", com.bamnat.core.recipe.MemoLook.FONTS) ?: l.font, date = (values["date"] as? Boolean) ?: l.date,
+                    bg = (values["bg"] as? Long) ?: l.bg,
+                )
+                mapOf("memoLook" to after.encode())
+            }
+            // [FREE-06]
+            PieceKind.MONEY_LOOK -> {
+                val l = com.bamnat.core.recipe.MoneyLook.decode(cur.moneyLook)
+                fun pick(k: String, from: List<String>) = (values[k] as? String)?.takeIf { it in from }
+                val after = l.copy(
+                    rows = pick("rows", com.bamnat.core.recipe.MoneyLook.ROWS) ?: l.rows, amount = pick("amount", com.bamnat.core.recipe.MoneyLook.AMOUNTS) ?: l.amount,
+                    mark = pick("mark", com.bamnat.core.recipe.MoneyLook.MARKS) ?: l.mark, income = (values["income"] as? Long) ?: l.income,
+                    expense = (values["expense"] as? Long) ?: l.expense, dayHead = pick("dayHead", com.bamnat.core.recipe.MoneyLook.DAY_HEADS) ?: l.dayHead,
+                )
+                mapOf("moneyLook" to after.encode())
+            }
+            // [FREE-05][FREE-07] Each screen the piece names takes the piece's look (a picture the phone could not get is left out);
+            // the others stay the user's own.
+            PieceKind.SCREEN_LOOK -> {
+                val ctx = c.appContext
+                val mine = com.bamnat.core.recipe.ScreenLooks.decode(cur.screenLooks)
+                val theirs = (values["screens"] as? String)?.takeIf { com.bamnat.core.recipe.ScreenLooks.problem(it) == null }
+                    ?.let { com.bamnat.core.recipe.ScreenLooks.decode(it) }
+                val screens = theirs?.looks?.entries?.fold(mine) { acc, (k, l) ->
+                    acc.with(k, if (l.photo != null && !LookImages.has(ctx, l.photo)) l.copy(photo = null) else l)
+                }
+                val pay = (values["pay"] as? String)?.takeIf { com.bamnat.core.recipe.PayLook.problem(it) == null }?.let { p ->
+                    com.bamnat.core.recipe.PayLook.encodeAll(com.bamnat.core.recipe.PayLook.decodeAll(cur.payLooks) + com.bamnat.core.recipe.PayLook.decodeAll(p))
+                }
+                listOfNotNull(screens?.let { "screenLooks" to it.encode() }, pay?.let { "payLooks" to it }).toMap()
+            }
             else -> emptyMap()
         }
     }
@@ -725,6 +793,10 @@ class RecipePieces(private val c: AppContainer) {
         "sleepTips" -> s.sleepTips.toString()
         "restCheck" -> s.restCheck.toString()
         "statsByPayPeriod" -> s.statsByPayPeriod.toString()
+        "memoLook" -> s.memoLook
+        "moneyLook" -> s.moneyLook
+        "screenLooks" -> s.screenLooks
+        "payLooks" -> s.payLooks
         else -> ""
     }
 
@@ -754,6 +826,10 @@ class RecipePieces(private val c: AppContainer) {
         "sleepTips" -> s.copy(sleepTips = v == "true")
         "restCheck" -> s.copy(restCheck = v == "true")
         "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
+        "memoLook" -> s.copy(memoLook = v)
+        "moneyLook" -> s.copy(moneyLook = v)
+        "screenLooks" -> s.copy(screenLooks = v)
+        "payLooks" -> s.copy(payLooks = v)
         else -> s
     }
 
@@ -771,8 +847,9 @@ class RecipePieces(private val c: AppContainer) {
 
     /** [RCX-30] Every picture id a 그림 꾸미기 piece names. */
     fun photoIds(values: Map<String, Any?>): List<String> =
-        (listOf(values["bg"], values["head"], values["widget"]) + items(values, "icons").map { it["image"] }).filterIsInstance<String>()
-            .filter { com.bamnat.core.recipe.PhotoLook.isId(it) }.distinct()
+        (listOf(values["bg"], values["head"], values["widget"], values["memoBg"]) + items(values, "icons").map { it["image"] } +
+            ((values["screens"] as? String)?.let { com.bamnat.core.recipe.ScreenLooks.decode(it).images }.orEmpty()))
+            .filterIsInstance<String>().filter { com.bamnat.core.recipe.PhotoLook.isId(it) }.distinct()
 
     @Suppress("UNCHECKED_CAST")
     private fun items(values: Map<String, Any?>, key: String): List<Map<String, Any?>> = (values[key] as? List<*>)?.filterIsInstance<Map<String, Any?>>().orEmpty()
@@ -853,10 +930,12 @@ class RecipePieces(private val c: AppContainer) {
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄",
             "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",
-            "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
+            "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서·칸 디자인·패턴)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
             "showLunar" to "음력 날짜", "spendInCells" to "날짜 밑 쓴 돈", "themeMode" to "밝기", "dynamicColor" to "휴대폰 배경색에 맞추기", "accentColor" to "앱 강조색",
             "textStep" to "글자 크기", "compact" to "촘촘하게", "clock12" to "오전/오후로 보기", "phoneDayView" to "날짜를 누르면", "longPress" to "날짜를 길게 누르면",
-            "dayGroupOrder" to "하루 화면 순서", "sleepTips" to "오늘의 흐름", "restCheck" to "휴식 점검", "statsByPayPeriod" to "통계를 급여 기간으로")
+            "dayGroupOrder" to "하루 화면 순서", "sleepTips" to "오늘의 흐름", "restCheck" to "휴식 점검", "statsByPayPeriod" to "통계를 급여 기간으로",
+            "memoLook" to "메모장 모양 (배치·카드·글꼴·배경)", "moneyLook" to "가계부 모양 (줄 간격·금액 크기·표시·색)",
+            "screenLooks" to "화면 색·배경", "payLooks" to "급여 화면 모양 (근무 유형별)")
         /** [CVW-07] 앱 동작's 밝기 and the settings' own. */
         private val THEMES = mapOf("system" to com.bamnat.app.data.ThemeMode.SYSTEM, "light" to com.bamnat.app.data.ThemeMode.LIGHT,
             "dark" to com.bamnat.app.data.ThemeMode.DARK, "night" to com.bamnat.app.data.ThemeMode.NIGHT_SHIFT)

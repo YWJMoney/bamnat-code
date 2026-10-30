@@ -280,6 +280,10 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Flag("lunar"),
             Field.Flag("spend"),
             Field.Text("order", 80, optional = true, guard = false, check = CalendarView::orderProblem),
+            // [FREE-01][FREE-02] 1.35 칸 디자이너: the cells' own looks, how they take turns, today's own.
+            Field.Text("looks", 760, optional = true, guard = false, check = CellLook::looksProblem),
+            Field.Text("pattern", 80, optional = true, guard = false, check = CellPattern::problem),
+            Field.Num("today", 0.0, 5.0, optional = true),
         ),
     ),
 
@@ -303,6 +307,49 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Flag("flow"),
             Field.Flag("rest"),
             Field.Flag("payPeriod"),
+        ),
+    ),
+
+    /** [FREE-04] 1.35 메모장 모양: the memo screen's layout, cards, font and background. */
+    MEMO_LOOK(
+        "memoLook", "메모장 모양", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Pick("layout", MemoLook.LAYOUTS, optional = true),
+            Field.Pick("card", MemoLook.CARDS, optional = true),
+            Field.Color("cardColor", optional = true),
+            Field.Pick("border", MemoLook.BORDERS, optional = true),
+            Field.Num("corner", 0.0, 24.0, optional = true),
+            Field.Num("lines", 1.0, MemoLook.MAX_LINES.toDouble(), optional = true),
+            Field.Pick("title", MemoLook.TITLES, optional = true),
+            Field.Flag("bold"),
+            Field.Pick("font", MemoLook.FONTS, optional = true),
+            Field.Flag("date"),
+            Field.Color("bg", optional = true),
+        ),
+    ),
+
+    /** [FREE-06] 1.35 가계부 모양: how the money list reads. */
+    MONEY_LOOK(
+        "moneyLook", "가계부 모양", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Pick("rows", MoneyLook.ROWS, optional = true),
+            Field.Pick("amount", MoneyLook.AMOUNTS, optional = true),
+            Field.Pick("mark", MoneyLook.MARKS, optional = true),
+            Field.Color("income", optional = true),
+            Field.Color("expense", optional = true),
+            Field.Pick("dayHead", MoneyLook.DAY_HEADS, optional = true),
+        ),
+    ),
+
+    /**
+     * [FREE-05][FREE-07] 1.35 화면 색·배경 and 급여 모양: every screen's colours and background (pictures by the server's id, looked at
+     * before others see them), and 급여's look by kind of work.
+     */
+    SCREEN_LOOK(
+        "screenLook", "화면 색·배경", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Text("screens", 1600, optional = true, guard = false, check = ScreenLooks::problem),
+            Field.Text("pay", 400, optional = true, guard = false, check = PayLook::problem),
         ),
     );
 
@@ -403,8 +450,21 @@ data class CalendarView(
     val grid: String? = null,
     val memo: Int? = null,
     val order: List<String>? = null,
+    /** [FREE-01] The cells' own designs, at most [CellLook.MAX]; empty draws every cell by the choices above. */
+    val looks: List<CellLook> = emptyList(),
+    /** [FREE-02] How [looks] take turns. */
+    val pattern: CellPattern = CellPattern(),
+    /** [FREE-02] Today's own look among [looks], or null for the pattern's. */
+    val todayLook: Int? = null,
 ) {
     val isDefault: Boolean get() = this == CalendarView()
+
+    /** [FREE-02] The look of a day, or null when there are none (or it is the app's own). */
+    fun lookFor(epochDay: Long, dayOfWeek: Int, role: String?, today: Boolean): CellLook? {
+        if (looks.isEmpty()) return null
+        val i = todayLook?.takeIf { today && it in looks.indices } ?: pattern.indexFor(epochDay, dayOfWeek, role, looks.size)
+        return looks[i].takeIf { !it.isDefault }
+    }
 
     /** The lines under the mark in this view's order: the ones it names first, then the rest in the app's own order. */
     val lines: List<String> get() = (order.orEmpty().filter { it in LINES } + LINES).distinct()
@@ -412,6 +472,8 @@ data class CalendarView(
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         size?.let { "size=$it" }, badge?.let { "badge=$it" }, date?.let { "date=$it" }, text?.let { "text=$it" }, grid?.let { "grid=$it" },
         memo?.let { "memo=$it" }, order?.takeIf { it.isNotEmpty() }?.let { "order=" + it.joinToString(",") },
+        looks.takeIf { it.isNotEmpty() }?.let { "looks=" + CellLook.encodeAll(it) }, pattern.takeIf { !it.isDefault }?.let { "pattern=" + it.encode() },
+        todayLook?.let { "today=$it" },
     ).joinToString(";")
 
     companion object {
@@ -438,6 +500,9 @@ data class CalendarView(
                 text = m["text"]?.takeIf { it in TEXTS }, grid = m["grid"]?.takeIf { it in GRIDS },
                 memo = m["memo"]?.toIntOrNull()?.coerceIn(0, MAX_MEMO),
                 order = m["order"]?.split(',')?.filter { it in LINES }?.distinct()?.takeIf { it.isNotEmpty() },
+                looks = m["looks"]?.takeIf { CellLook.looksProblem(it) == null }?.let(CellLook::decodeAll).orEmpty(),
+                pattern = CellPattern.decode(m["pattern"]),
+                todayLook = m["today"]?.toIntOrNull()?.takeIf { it in 0 until CellLook.MAX },
             )
         }
 

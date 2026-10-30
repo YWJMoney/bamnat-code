@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -183,7 +184,7 @@ internal fun Recipe.piece(kind: PieceKind) = pieces.firstOrNull { it.kind == kin
 
 /** The example app: the chosen tab's screen and the bottom tabs in the recipe's order, with its corners. */
 @Composable
-private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, onPick: () -> Unit = {}) {
+internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, onPick: () -> Unit = {}) {
     val resolved = remember(r) { r.pieces.associate { p -> p.kind to runCatching { RecipeResolve.piece(r, p, RecipeResolve.answers(r, emptyMap())) }.getOrDefault(p.values) } }
     val corners = resolved[PieceKind.PHOTO_LOOK]?.get("corners") as? String
     @Suppress("UNCHECKED_CAST")
@@ -197,18 +198,33 @@ private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String)
                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(26.dp))
                     .semantics { contentDescription = "예시 앱 화면" },
             ) {
-                Column(Modifier.weight(1f).fillMaxWidth().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(rememberScrollState()).padding(10.dp),
+                // [FREE-05] The recipe's 화면 색·배경 and 메모장·가계부 모양 on the example, as the phone would draw them.
+                val skin = remember(resolved) { com.bamnat.core.recipe.ScreenLooks.decode(resolved[PieceKind.SCREEN_LOOK]?.get("screens") as? String) }
+                CompositionLocalProvider(
+                    com.bamnat.app.ui.theme.LocalScreenLooks provides skin,
+                    com.bamnat.app.ui.theme.LocalMemoLook provides (resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook()),
+                    com.bamnat.app.ui.theme.LocalMoneyLook provides (resolved[PieceKind.MONEY_LOOK]?.let(::moneyLookOf) ?: com.bamnat.core.recipe.MoneyLook()),
+                ) {
+                com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.weight(1f).fillMaxWidth()) {
+                Column(Modifier.fillMaxSize().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(rememberScrollState()).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (tab) {
                         TabOrder.CALENDAR -> MockCalendar(resolved, style)
-                        TabOrder.MONEY -> MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label, it.what) },
-                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) })
+                        TabOrder.MONEY -> {
+                            MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label, it.what) },
+                                fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) })
+                            // [FREE-06]
+                            resolved[PieceKind.MONEY_LOOK]?.let { com.bamnat.app.ui.settings.MoneySample(moneyLookOf(it)) {} }
+                        }
                         TabOrder.MEMOS -> MockMemos(resolved)
                         TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true,
                             fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) })
-                        TabOrder.PLAZA -> MockNote("광장", "광장은 모두 같은 모양이에요. 여기서 꾸밀 것은 없어요")
+                        TabOrder.PLAZA -> MockNote(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji.orEmpty() + "광장",
+                            "광장은 글과 단추 자리가 모두 같아요. 배경과 이모티콘만 내 화면에서 바뀌어요")
                         else -> MockSettings(resolved)
                     }
+                }
+                }
                 }
                 Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp)).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -278,13 +294,18 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
 /** [CVW-01] 달력 모양's values as the calendar reads them. */
 internal fun viewOf(v: Map<String, Any?>?): com.bamnat.core.recipe.CalendarView = if (v == null) com.bamnat.core.recipe.CalendarView() else
     com.bamnat.core.recipe.CalendarView(size = v["size"] as? String, badge = v["badge"] as? String, date = v["date"] as? String, text = v["text"] as? String,
-        grid = v["grid"] as? String, memo = (v["memo"] as? Number)?.toInt(), order = (v["order"] as? String)?.split(',')?.filter { it.isNotEmpty() }?.ifEmpty { null })
+        grid = v["grid"] as? String, memo = (v["memo"] as? Number)?.toInt(), order = (v["order"] as? String)?.split(',')?.filter { it.isNotEmpty() }?.ifEmpty { null },
+        // [FREE-01][FREE-02]
+        looks = com.bamnat.core.recipe.CellLook.decodeAll(v["looks"] as? String), pattern = com.bamnat.core.recipe.CellPattern.decode(v["pattern"] as? String),
+        todayLook = (v["today"] as? Number)?.toInt())
 
 /** [CVW-01] [CalendarView] back as a piece's values (what is the app's own is left out). */
 internal fun valuesOf(v: com.bamnat.core.recipe.CalendarView, keep: Map<String, Any?>): Map<String, Any?> =
     keep.filterKeys { it in setOf("hours", "lunar", "spend") } + listOfNotNull(v.size?.let { "size" to it }, v.badge?.let { "badge" to it },
         v.date?.let { "date" to it }, v.text?.let { "text" to it }, v.grid?.let { "grid" to it }, v.memo?.let { "memo" to it.toLong() },
-        v.order?.let { "order" to it.joinToString(",") }).toMap()
+        v.order?.let { "order" to it.joinToString(",") },
+        v.looks.takeIf { it.isNotEmpty() }?.let { l -> "looks" to l.joinToString("/") { it.encode() } },
+        v.pattern.takeIf { !it.isDefault }?.let { "pattern" to it.encode() }, v.todayLook?.let { "today" to it.toLong() }).toMap()
 
 /** An example month in the recipe's 달력 모양 and theme: the kinds of day in turn (2 days each), example memos, today ringed. */
 @Composable
@@ -364,7 +385,24 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
             (t["check"] as? List<String>)?.joinToString(" · ") { "☐ $it" }?.ifEmpty { null } ?: (t["body"] as? String).orEmpty())
     }
     if (journal.isNotEmpty()) MockCard("📒 투자일지", journal.joinToString(" · "))
+    // [FREE-04] The memos in the recipe's 메모장 모양.
+    resolved[PieceKind.MEMO_LOOK]?.let { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it)) {} }
 }
+
+/** [FREE-04][FREE-06] A piece's values as the look they write (the same k=v line the settings keep). */
+internal fun memoLookOf(v: Map<String, Any?>): com.bamnat.core.recipe.MemoLook = com.bamnat.core.recipe.MemoLook.decode(lookLine(v))
+
+internal fun moneyLookOf(v: Map<String, Any?>): com.bamnat.core.recipe.MoneyLook = com.bamnat.core.recipe.MoneyLook.decode(lookLine(v))
+
+private fun lookLine(v: Map<String, Any?>): String = v.entries.mapNotNull { (k, x) ->
+    when (x) {
+        is Boolean -> "$k=" + if (x) 1 else 0
+        is Long -> if (k in setOf("cardColor", "bg", "income", "expense")) "$k=" + (x and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0') else "$k=$x"
+        is Number -> "$k=${x.toLong()}"
+        is String -> "$k=$x"
+        else -> null
+    }
+}.joinToString(";")
 
 @Composable
 private fun MockSettings(resolved: Map<PieceKind, Map<String, Any?>>) {
@@ -401,10 +439,11 @@ private fun repeatLabel(r: String) = when {
 /** The pieces a tab's screen shows, in the order they are edited there. */
 private fun piecesOn(tab: String): List<PieceKind> = when (tab) {
     TabOrder.CALENDAR -> listOf(PieceKind.SHIFT_LOOK, PieceKind.CAL_THEME, PieceKind.ALARMS)
-    TabOrder.MONEY -> listOf(PieceKind.SHOP, PieceKind.FIELD_SHEET)
-    TabOrder.MEMOS -> listOf(PieceKind.MEMO_TEMPLATES, PieceKind.INVEST)
+    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.SHOP, PieceKind.FIELD_SHEET)
+    TabOrder.MEMOS -> listOf(PieceKind.MEMO_LOOK, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST)
     TabOrder.STATS -> listOf(PieceKind.HOURLY_RULES)
-    TabOrder.SETTINGS -> listOf(PieceKind.APP_FEEL, PieceKind.WIDGET)
+    // [FREE-05] 화면 색·배경 comes from 설정 › 화면 꾸미기 (the colours and pictures are made there, with the example on top).
+    TabOrder.SETTINGS -> listOf(PieceKind.APP_FEEL, PieceKind.WIDGET, PieceKind.SCREEN_LOOK)
     else -> emptyList()
 }
 
@@ -539,7 +578,7 @@ private val PICK_LABELS = com.bamnat.core.recipe.RecipeWords.PICKS
 @Composable
 private fun FieldsForm(fields: List<Field>, values: Map<String, Any?>, kind: PieceKind, onChange: (String, Any?) -> Unit) {
     fields.forEach { f ->
-        val label = KEY_LABELS[f.key] ?: f.key
+        val label = com.bamnat.core.recipe.RecipeWords.KIND_KEYS["${kind.key}.${f.key}"] ?: KEY_LABELS[f.key] ?: f.key
         val v = values[f.key]
         when (f) {
             is Field.Text -> OutlinedTextField((v as? String).orEmpty(), { t -> onChange(f.key, t.take(f.max).ifEmpty { if (f.optional) null else t }) },
@@ -668,6 +707,12 @@ internal object StudioStarters {
         PieceKind.PHOTO_LOOK -> mapOf("corners" to "round")
         PieceKind.CAL_VIEW -> valuesOf(com.bamnat.core.recipe.CalendarView.PRESETS.first { it.first == "메모 중심" }.second, emptyMap())
         PieceKind.APP_FEEL -> mapOf("theme" to "system", "hold" to "menu")
+        // [FREE-04][FREE-05][FREE-06]
+        PieceKind.MEMO_LOOK -> mapOf("layout" to "sticky", "card" to "own", "corner" to 12L, "lines" to 4L)
+        PieceKind.MONEY_LOOK -> mapOf("rows" to "roomy", "amount" to "l", "dayHead" to "band")
+        PieceKind.SCREEN_LOOK -> mapOf("screens" to com.bamnat.core.recipe.ScreenLooks().with(
+            com.bamnat.core.recipe.ScreenLooks.ALL, com.bamnat.core.recipe.ScreenLook(bg = 0xFFFFF8EEL, card = 0xFFFFFFFFL, accent = 0xFFE07A5FL),
+        ).encode())
         PieceKind.COMPANY, PieceKind.BUNDLE -> emptyMap()
     }
 }

@@ -122,8 +122,18 @@ class AlarmActivity : ComponentActivity() {
         // [ALRM-04] 증명 사진's fingerprints; none before the first unlock after a restart, and then it is sums.
         val photos = runCatching { PhotoReferences(this).all.value }.getOrDefault(emptyList())
 
+        // [FREE-05] 1.35 화면 색·배경's 알람 화면: colours and a background only; read where the phone is unlocked, else the app's own.
+        val skins = runCatching {
+            val um = getSystemService(android.os.UserManager::class.java)
+            if (um?.isUserUnlocked != false) com.bamnat.core.recipe.ScreenLooks.decode(
+                getSharedPreferences("settings", MODE_PRIVATE).getString("screen_looks", null),
+            ) else null
+        }.getOrNull() ?: com.bamnat.core.recipe.ScreenLooks()
+
         setContent {
             BamnatTheme(themeMode = ThemeMode.DARK) {
+              androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skins) {
+              com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.SCREEN_ALARM, androidx.compose.ui.Modifier.fillMaxSize()) {
                 val ring by AlarmService.ringing.collectAsStateWithLifecycle()
                 // Leave as soon as the alarm stops, whether from here, the notification or the timeout.
                 LaunchedEffect(ring) {
@@ -170,6 +180,8 @@ class AlarmActivity : ComponentActivity() {
                         inCall = inCall,
                     )
                 }
+              }
+              }
             }
         }
     }

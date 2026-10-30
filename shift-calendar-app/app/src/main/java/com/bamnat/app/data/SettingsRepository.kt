@@ -218,6 +218,14 @@ data class AppSettings(
     val accentColor: Long = 0L,
     /** [CVW-09] 1.35 날짜를 길게 누르면: menu (빠른 메뉴, the app's own), memo (바로 메모) or open (하루 열기). In the backup. */
     val longPress: String = "menu",
+    /** [FREE-04] 1.35 메모장 모양 ([com.bamnat.core.recipe.MemoLook.encode]); empty is the app's own list. In the backup. */
+    val memoLook: String = "",
+    /** [FREE-06] 1.35 가계부 모양 ([com.bamnat.core.recipe.MoneyLook.encode]). In the backup. */
+    val moneyLook: String = "",
+    /** [FREE-05] 1.35 화면 색·배경 by screen ([com.bamnat.core.recipe.ScreenLooks.encode]). In the backup (the pictures are not). */
+    val screenLooks: String = "",
+    /** [FREE-07] 1.35 급여 모양 by kind of work ([com.bamnat.core.recipe.PayLook.encodeAll]). In the backup. */
+    val payLooks: String = "",
     /** [DAILY-16] The 지역 시세 line on the pay screen, worked out on the phone only; off from that line. */
     val rateHint: Boolean = true,
     /** [DAILY-17] The second 리뷰 moment (first 급여 리포트) came, and when any review was last asked (epoch day, 0 for never). */
@@ -382,6 +390,10 @@ class SettingsRepository(context: Context) {
             calView = prefs.getString(K_CAL_VIEW, null) ?: d.calView,
             accentColor = prefs.getLong(K_ACCENT, d.accentColor),
             longPress = prefs.getString(K_LONG_PRESS, null) ?: d.longPress,
+            memoLook = prefs.getString(K_MEMO_LOOK, null) ?: d.memoLook,
+            moneyLook = prefs.getString(K_MONEY_LOOK, null) ?: d.moneyLook,
+            screenLooks = prefs.getString(K_SCREEN_LOOKS, null) ?: d.screenLooks,
+            payLooks = prefs.getString(K_PAY_LOOKS, null) ?: d.payLooks,
             memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
             rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
             payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
@@ -479,6 +491,10 @@ class SettingsRepository(context: Context) {
             .putString(K_CAL_VIEW, s.calView)
             .putLong(K_ACCENT, s.accentColor)
             .putString(K_LONG_PRESS, s.longPress)
+            .putString(K_MEMO_LOOK, s.memoLook)
+            .putString(K_MONEY_LOOK, s.moneyLook)
+            .putString(K_SCREEN_LOOKS, s.screenLooks)
+            .putString(K_PAY_LOOKS, s.payLooks)
             .putString(K_MEMO_LAYOUT, s.memoLayout)
             .putBoolean(K_RATE_HINT, s.rateHint)
             .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
@@ -525,6 +541,10 @@ class SettingsRepository(context: Context) {
         const val K_CAL_VIEW = "cal_view"
         const val K_ACCENT = "accent_color"
         const val K_LONG_PRESS = "long_press"
+        const val K_MEMO_LOOK = "memo_look"
+        const val K_MONEY_LOOK = "money_look"
+        const val K_SCREEN_LOOKS = "screen_looks"
+        const val K_PAY_LOOKS = "pay_looks"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MEMO_LAYOUT = "memo_layout"

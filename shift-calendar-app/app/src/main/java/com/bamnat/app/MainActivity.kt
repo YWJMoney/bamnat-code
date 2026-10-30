@@ -121,7 +121,12 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook,
                 // [CVW-01][CVW-09] 1.35 달력 모양 and 날짜를 길게 누르면.
                 com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
-                com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress) {
+                com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress,
+                // [FREE-04][FREE-05][FREE-06][FREE-07] 1.35 완전 자유 꾸미기.
+                com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(settings.screenLooks) { com.bamnat.core.recipe.ScreenLooks.decode(settings.screenLooks) },
+                com.bamnat.app.ui.theme.LocalMemoLook provides androidx.compose.runtime.remember(settings.memoLook) { com.bamnat.core.recipe.MemoLook.decode(settings.memoLook) },
+                com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
+                com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) }) {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.

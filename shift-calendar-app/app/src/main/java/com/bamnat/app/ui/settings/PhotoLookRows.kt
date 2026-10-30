@@ -62,6 +62,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.theme.rememberLookPicture
 import com.bamnat.core.recipe.PhotoLook
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** The 설정 row title, also in [SettingsSearch]. */
@@ -84,14 +85,19 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
     var target by remember { mutableStateOf<Pair<Slot, Long?>?>(null) }
     var framing by remember { mutableStateOf<Uri?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // [J135-07] F-67: 없애기·처음으로 ask first (a framed photo cannot be got back without framing it again).
+    var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> framing = uri; problem = null }
     fun choose(slot: Slot, type: Long? = null) {
         target = slot to type
         runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
     }
     fun save(n: PhotoLook) {
-        onChange(n.encode())
+        val line = n.encode()
+        onChange(line)
         c.appScope.launch {
+            // [J135-07] F-66: the widget is drawn again once the look is saved, not before (it read the old photo for minutes).
+            kotlinx.coroutines.withTimeoutOrNull(3_000) { c.settingsRepository.settings.first { it.photoLook == line } }
             com.bamnat.app.widget.WidgetRefresher.refresh(context)
             LookImages.tidy(context, n.images)
         }
@@ -101,16 +107,16 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
         Text("내 사진으로 달력 배경, 달력 위 그림, 근무 표시, 위젯 바탕을 꾸며요. 사진은 휴대폰 안에서 작게 줄여 위치·기기 정보 없이 저장해요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        PlaceRow(Slot.BG, look.bg, "글자가 잘 보이게 사진 위를 흐리게 덮어요", onPick = { choose(Slot.BG) }, onClear = { save(look.copy(bg = null)) })
+        PlaceRow(Slot.BG, look.bg, "글자가 잘 보이게 사진 위를 흐리게 덮어요", onPick = { choose(Slot.BG) }, onClear = { asking = "달력 배경 사진을 없앨까요?" to { save(look.copy(bg = null)) } })
         if (look.bg != null) {
             var dim by remember(look.dim) { mutableFloatStateOf(look.dim.toFloat()) }
             Text("배경 흐리게 ${dim.toInt()}%", style = MaterialTheme.typography.bodySmall)
             Slider(dim, { dim = it }, valueRange = 0f..80f, steps = 7, onValueChangeFinished = { save(look.copy(dim = dim.toInt())) },
                 modifier = Modifier.semantics { contentDescription = "배경 흐리게" })
         }
-        PlaceRow(Slot.HEAD, look.head, "달력 맨 위에 가로로 길게 보여요", onPick = { choose(Slot.HEAD) }, onClear = { save(look.copy(head = null)) })
+        PlaceRow(Slot.HEAD, look.head, "달력 맨 위에 가로로 길게 보여요", onPick = { choose(Slot.HEAD) }, onClear = { asking = "머리 그림을 없앨까요?" to { save(look.copy(head = null)) } })
         PlaceRow(Slot.WIDGET, look.widget, "홈 화면 위젯 뒤에 깔려요. 글자가 보이게 덮개를 씌워요", onPick = { choose(Slot.WIDGET) },
-            onClear = { save(look.copy(widget = null)) })
+            onClear = { asking = "위젯 배경 사진을 없앨까요?" to { save(look.copy(widget = null)) } })
         // 근무 그림: the active calendar's kinds of day, each with its own round picture.
         val active by c.calendars.active.collectAsState()
         val snap by remember(active) { c.scopeOf(active).schedule.snapshot }.collectAsState(null)
@@ -125,7 +131,7 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
                         ShiftBadge(t)
                         Text(if (has) " 바꾸기" else " 사진", style = MaterialTheme.typography.labelMedium)
                     }
-                    if (has) TextButton(onClick = { save(look.copy(icons = look.icons - t.id)) }) { Text("${t.name} 그림 없애기") }
+                    if (has) TextButton(onClick = { asking = "${t.name} 그림을 없앨까요?" to { save(look.copy(icons = look.icons - t.id)) } }) { Text("${t.name} 그림 없애기") }
                 }
             }
         }
@@ -134,9 +140,17 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
             save(look.copy(corners = k.takeIf { it != "soft" }))
         }
         Row {
-            if (!look.isDefault) TextButton(onClick = { save(PhotoLook()) }) { Text("처음으로") }
+            if (!look.isDefault) TextButton(onClick = { asking = "사진·모서리를 모두 처음으로 돌릴까요?" to { save(PhotoLook()) } }) { Text("처음으로") }
             com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.PHOTO_LOOK)
         }
+    }
+    asking?.let { (q, act) ->
+        AlertDialog(
+            onDismissRequest = { asking = null },
+            text = { Text(q) },
+            confirmButton = { TextButton(onClick = { asking = null; act() }) { Text(if ("처음으로" in q) "처음으로" else "없애기") } },
+            dismissButton = { TextButton(onClick = { asking = null }) { Text("그대로 두기") } },
+        )
     }
     val uri = framing
     val t = target
@@ -251,4 +265,26 @@ private fun FrameDialog(uri: Uri, slot: Slot, onDismiss: () -> Unit, onDone: (Re
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
+}
+
+/**
+ * [FREE-05] A photo for any place: returns what starts the picker. The photo picked is framed for [slot]'s shape, made small and kept
+ * on the phone ([LookImages.import]); [onPicked] gets its id, [onProblem] what went wrong.
+ */
+@Composable
+fun rememberPhotoPicker(slot: Slot, onPicked: (String) -> Unit, onProblem: (String) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var framing by remember { mutableStateOf<Uri?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> framing = uri }
+    framing?.let { uri ->
+        FrameDialog(uri, slot, onDismiss = { framing = null }) { crop ->
+            framing = null
+            scope.launch {
+                val id = runCatching { LookImages.import(context, uri, slot, crop) }.getOrNull()
+                if (id == null) onProblem("사진을 읽지 못했어요. 다른 사진을 골라 주세요") else onPicked(id)
+            }
+        }
+    }
+    return { runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } }
 }

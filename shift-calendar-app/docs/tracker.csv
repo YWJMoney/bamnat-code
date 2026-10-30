@@ -1524,3 +1524,4 @@ J135-03,"1.35 컴퓨터 점검 F-38: 관리자가 답해도 문의를 다시 열
 J135-04,1.35 컴퓨터 점검 F-39: 문의 앞 ‘[설정 > …]’ 꼬리표가 개발사항 제목에 따라감 → 제목에서 뺌,2 (1.35.0),완료,,inbox.js titleFrom admin-lib.js copyTitle inbox.test.mjs
 J135-05,"1.35 컴퓨터 점검 F-61: 그림 꾸미기 사진을 골라 자리 맞춘 뒤 이대로 쓰기 → 칸이 빈 채로, 저장 안 됨 (사진 크기만 읽는 단계가 늘 실패로 처리됨) → 고침, 못 읽을 때 안내를 사진 칸 바로 위에",2 (1.35.0),완료,,LookImages.kt PhotoLookRows.kt LookImagesTest.kt
 J135-06,"1.35 컴퓨터 점검 F-62~64: 메모 틀 숫자 칸에 글자 입력됨 → 숫자만, 체크 목록 틀의 답이 길면 제목이 길어짐 → 30자에서 줄임, 현장·가게·투자 달력의 첫 카드 이름 ‘오늘 일감·매출·투자’ → 오늘 일감/오늘 매출/오늘 투자",2 (1.35.0),완료,,MemoTemplate.kt MemoEditorScreen.kt CalendarLayout.kt RecipeStudio.kt FreedomPiecesTest.kt
+J135-07,"1.35 컴퓨터 재점검 F-65~67: 체크 목록 틀의 긴 답이 제목에서 잘려 사라짐 → 답은 목록 위 메모 칸에 그대로(제목엔 넣지 않음), 처음으로 뒤 홈 위젯이 몇 분 옛 사진 → 저장된 뒤 다시 그림, 현장·가게·투자 하루 카드 설명 유형별, 그림 꾸미기 없애기·처음으로 확인",2 (1.35.0),완료,,MemoTemplate.kt MemoEditorScreen.kt MemoListScreen.kt PhotoLookRows.kt CalendarLayout.kt FreedomPiecesTest.kt

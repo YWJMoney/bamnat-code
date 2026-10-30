@@ -409,17 +409,24 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
 @Composable
 private fun DayHeader(date: LocalDate, expense: Long, income: Long) {
     val cal = LocalCalendarColors.current
+    // [FREE-06] 가계부 모양's 날짜 줄: a line (the app's own), a band of colour, or a big date.
+    val look = com.bamnat.app.ui.theme.LocalMoneyLook.current
+    val band = look.dayHead == "band"
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = 8.dp)
+        Modifier.fillMaxWidth().background(if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = if (look.dayHead == "big") 10.dp else 8.dp)
             .semantics(mergeDescendants = true) { heading() },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(Fmt.dayTitle(date) + if (date.year != Today.date().year) " ${date.year}" else "", style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-        if (expense != 0L) Text("-" + Fmt.won(expense), style = MaterialTheme.typography.labelMedium.merge(NumberStyle), color = cal.expense)
+        Text(Fmt.dayTitle(date) + if (date.year != Today.date().year) " ${date.year}" else "",
+            style = if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge,
+            color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+        if (expense != 0L) Text("-" + Fmt.won(expense), style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+            color = moneyInks().second)
         if (income != 0L) {
             Spacer(Modifier.width(8.dp))
-            Text("+" + Fmt.won(income), style = MaterialTheme.typography.labelMedium.merge(NumberStyle), color = cal.income)
+            Text("+" + Fmt.won(income), style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+                color = moneyInks().first)
         }
     }
 }
@@ -539,10 +546,15 @@ private fun LedgerRow(
                     )
                 },
         ) {
-            Row(Modifier.heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // [FREE-06] 가계부 모양: how close the lines sit, how a record's kind is marked and how big its amount is.
+            val look = com.bamnat.app.ui.theme.LocalMoneyLook.current
+            val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
+            Row(Modifier.heightIn(min = minH).padding(horizontal = 16.dp, vertical = padV), verticalAlignment = Alignment.CenterVertically) {
                 if (selecting) {
                     Checkbox(checked = selected, onCheckedChange = { onToggle() }, modifier = Modifier.size(40.dp))
-                } else {
+                } else if (look.mark == "dot") {
+                    Box(Modifier.size(12.dp).clip(CircleShape).background(amountColor(e)))
+                } else if (look.mark != "none") {
                     Box {
                         CategoryAvatar(e.category)
                         if (!e.reviewed) Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).align(Alignment.TopEnd))
@@ -562,7 +574,11 @@ private fun LedgerRow(
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(signedWon(e), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e), maxLines = 1)
+                    Text(signedWon(e), style = when (look.amount) {
+                        "s" -> MaterialTheme.typography.bodyMedium
+                        "l" -> MaterialTheme.typography.titleLarge
+                        else -> MaterialTheme.typography.titleSmall
+                    }.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e), maxLines = 1)
                     when {
                         // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay.
                         e.installments > 1 -> Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) ?: "${e.installments}개월 할부",

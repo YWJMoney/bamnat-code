@@ -351,6 +351,12 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 )
                 Spacer(Modifier.size(8.dp))
                 if (memo.isChecklist) {
+                    // [J135-07] F-65: a list started from a template keeps the answers whole here, above the list.
+                    if (memo.body.isNotBlank()) {
+                        PlainField(value = memo.body, onValueChange = vm::setBody, placeholder = "메모",
+                            textStyle = MaterialTheme.typography.bodyMedium, singleLine = false)
+                        Spacer(Modifier.size(8.dp))
+                    }
                     ChecklistEditor(memo = memo, vm = vm)
                 } else CompositionLocalProvider(LocalEdgeScroll provides edge) {
                     MemoBodyField(
@@ -788,7 +794,7 @@ private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> U
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (m in memos) Column {
                     if (m.title.isNotBlank()) Text(m.title, style = MaterialTheme.typography.titleSmall)
-                    val body = if (m.isChecklist) m.checklist.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.checked) "☑ " else "☐ ") + it.text } else m.body
+                    val body = if (m.isChecklist) (listOfNotNull(m.body.ifBlank { null }) + m.checklist.filter { it.text.isNotBlank() }.map { (if (it.checked) "☑ " else "☐ ") + it.text }).joinToString("\n") else m.body
                     Text(com.bamnat.core.memo.MemoSearch.excerpt(body, ""), style = MaterialTheme.typography.bodyMedium)
                 }
             }

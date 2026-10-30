@@ -189,9 +189,15 @@ object LookImages {
      * the pictures it put back.
      */
     suspend fun tidy(context: Context, used: Set<String>, now: Long = com.bamnat.core.time.Today.millis()) = withContext(Dispatchers.IO) {
+        // [FREE-05] 화면 색·배경's pictures are in use too, whichever look asked for the tidy.
+        val inUse = used + runCatching {
+            (context.applicationContext as? com.bamnat.app.BamnatApp)?.container?.settingsRepository?.current?.let { s ->
+                PhotoLook.decode(s.photoLook).images + com.bamnat.core.recipe.ScreenLooks.decode(s.screenLooks).images
+            }.orEmpty()
+        }.getOrDefault(emptySet())
         dir(context).listFiles()?.forEach { f ->
             val id = f.name.removeSuffix(".webp").removeSuffix(".tmp")
-            if (id !in used && now - f.lastModified() > 8L * 24 * 60 * 60 * 1000) { f.delete(); cache.remove(id) }
+            if (id !in inUse && now - f.lastModified() > 8L * 24 * 60 * 60 * 1000) { f.delete(); cache.remove(id) }
         }
     }
 }

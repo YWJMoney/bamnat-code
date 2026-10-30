@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -408,10 +411,35 @@ private fun FilterRow(state: MemoListState, vm: MemoListViewModel) = Column {
 
 @Composable
 private fun CalendarMemoList(state: MemoListState, today: LocalDate, actions: CardActions) {
+    val look = com.bamnat.app.ui.theme.LocalMemoLook.current
+    // [FREE-04] 메모장 모양: in columns, the dates and sections stay a whole line each.
+    if (look.columns > 1) {
+        LazyVerticalStaggeredGrid(
+            columns = StaggeredGridCells.Fixed(look.columns),
+            modifier = Modifier.fillMaxSize().memoPaper(look),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalItemSpacing = 10.dp,
+        ) {
+            fun section(label: String, groups: List<MemoDateGroup>) {
+                if (groups.isEmpty()) return
+                item(key = "label-$label", span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) { SectionLabel(label) }
+                for (group in groups) {
+                    item(key = "date-${group.date}", span = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan.FullLine) { DateHeader(group.date, group.day, today) }
+                    items(group.memos, key = { it.id }) { memo ->
+                        MemoCard(memo, state.query, selected = memo.id in state.selection, selecting = state.selecting, showDate = false, actions = actions)
+                    }
+                }
+            }
+            section("오늘과 다가오는 날", state.upcoming)
+            section("지난 날", state.past)
+        }
+        return
+    }
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().memoPaper(look),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(if (look.layout == "compact") 4.dp else 8.dp),
     ) {
         fun section(label: String, groups: List<MemoDateGroup>) {
             if (groups.isEmpty()) return
@@ -431,18 +459,33 @@ private fun CalendarMemoList(state: MemoListState, today: LocalDate, actions: Ca
 
 @Composable
 private fun GeneralMemoGrid(state: MemoListState, actions: CardActions) {
+    val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Adaptive(minSize = 160.dp),
-        modifier = Modifier.fillMaxSize(),
+        // [FREE-04] The app's own: as many 160dp columns as fit; else the look's.
+        columns = if (look.layout == null) StaggeredGridCells.Adaptive(minSize = 160.dp) else StaggeredGridCells.Fixed(look.columns),
+        modifier = Modifier.fillMaxSize().memoPaper(look),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalItemSpacing = 10.dp,
+        verticalItemSpacing = if (look.layout == "compact") 4.dp else 10.dp,
     ) {
         items(state.general, key = { it.id }) { memo ->
             MemoCard(memo, state.query, selected = memo.id in state.selection, selecting = state.selecting,
                 showDate = true, actions = actions)
         }
     }
+}
+
+/** [FREE-04] The memo screen's own paper colour, and a diary's ruled lines under the memos. */
+internal fun Modifier.memoPaper(look: com.bamnat.core.recipe.MemoLook): Modifier = this
+    .then(look.bg?.let { Modifier.background(Color((it or 0xFF000000L).toInt())) } ?: Modifier)
+
+/** [FREE-04] 메모장 모양's 글꼴. */
+internal fun memoFont(font: String?): androidx.compose.ui.text.font.FontFamily? = when (font) {
+    "serif" -> androidx.compose.ui.text.font.FontFamily.Serif
+    "mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
+    "hand" -> androidx.compose.ui.text.font.FontFamily.Cursive
+    "sans" -> androidx.compose.ui.text.font.FontFamily.SansSerif
+    else -> null
 }
 
 @Composable
@@ -521,18 +564,40 @@ private fun MemoCard(
     actions: CardActions,
 ) {
     var menu by remember { mutableStateOf(false) }
-    Box {
+    // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
+    val look = com.bamnat.app.ui.theme.LocalMemoLook.current
+    val shape = look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large
+    val own = memoBackground(memo.colorIndex)
+    val cardColor = when (look.card) {
+        "one" -> look.cardColor?.let { Color((it or 0xFF000000L).toInt()) } ?: own
+        "none" -> Color.Transparent
+        else -> if (look.layout == "sticky" && memo.colorIndex == 0) memoBackground(1 + (memo.id % 7).toInt().let { if (it < 0) -it else it }) else own
+    }
+    val edge = when {
+        selected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        look.border == "none" || look.card == "none" -> null
+        else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (look.border == "thin") 1f else 0.5f))
+    }
+    val ink = if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
+    Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)) {
         Surface(
-            shape = MaterialTheme.shapes.large,
-            color = memoBackground(memo.colorIndex),
-            border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-            else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            shape = shape,
+            color = cardColor,
+            contentColor = if (ink != Color.Unspecified) ink else androidx.compose.material3.contentColorFor(cardColor).takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurface,
+            shadowElevation = if (look.layout == "sticky") 3.dp else 0.dp,
+            border = edge,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.large)
+                .clip(shape)
+                .then(if (look.layout == "diary") Modifier.drawBehind {
+                    val gap = 22.dp.toPx()
+                    var y = gap
+                    while (y < size.height) { drawLine(Color(0x22000000), androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 1f); y += gap }
+                } else Modifier)
                 .combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),
         ) {
-            Column(Modifier.padding(start = 14.dp, top = 10.dp, bottom = 12.dp, end = 4.dp)) {
+          androidx.compose.runtime.CompositionLocalProvider(LocalMemoCardLook provides look) {
+            Column(Modifier.padding(start = 14.dp, top = if (look.layout == "compact") 6.dp else 10.dp, bottom = if (look.layout == "compact") 6.dp else 12.dp, end = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
                         Icon(
@@ -545,8 +610,13 @@ private fun MemoCard(
                     }
                     Text(
                         highlighted(memo.title.ifBlank { memo.preview.take(com.bamnat.core.memo.MemoSearch.CARD_CHARS) }, query),
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2,
+                        style = when (look.title) {
+                            "s" -> MaterialTheme.typography.labelLarge
+                            "l" -> MaterialTheme.typography.titleMedium
+                            else -> MaterialTheme.typography.titleSmall
+                        }.let { st -> memoFont(look.font)?.let { st.copy(fontFamily = it) } ?: st }
+                            .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } },
+                        maxLines = if (look.layout == "compact") 1 else 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
@@ -562,10 +632,11 @@ private fun MemoCard(
                     }
                 }
                 Column(Modifier.padding(end = 10.dp)) {
-                    MemoContent(memo, query)
-                    Footer(memo, showDate)
+                    if (look.layout != "compact") MemoContent(memo, query)
+                    Footer(memo, showDate && look.date != false)
                 }
             }
+          }
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(
@@ -592,12 +663,20 @@ private fun MemoCard(
     }
 }
 
+/** [FREE-04] The memo look inside a card (lines, font). */
+private val LocalMemoCardLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.MemoLook() }
+
 @Composable
 private fun MemoContent(memo: Memo, query: String) {
     // The title row already shows the preview line when there is no title.
     if (memo.isChecklist) {
+        // [J135-07] A template's answers kept above the list.
+        if (memo.body.isNotBlank()) Text(highlighted(memo.body, query), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         val items = memo.checklist.filter { it.text.isNotBlank() }
-        for (item in items.take(6)) {
+        val cardLook = LocalMemoCardLook.current
+        val shown = cardLook.lines ?: 6
+        for (item in items.take(shown)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 Icon(
                     if (item.checked) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
@@ -616,16 +695,17 @@ private fun MemoContent(memo: Memo, query: String) {
                 )
             }
         }
-        if (items.size > 6) {
-            Text("외 ${items.size - 6}개", style = MaterialTheme.typography.labelSmall,
+        if (items.size > shown) {
+            Text("외 ${items.size - shown}개", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
+        val cardLook = LocalMemoCardLook.current
         Text(
             highlighted(com.bamnat.core.memo.MemoSearch.excerpt(memo.body, query), query),
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 8,
+            style = memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium,
+            maxLines = cardLook.lines ?: 8,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp),
         )
@@ -752,3 +832,30 @@ internal fun highlighted(text: String, query: String): AnnotatedString {
 
 private const val MAX_TAG_CHIPS = 12
 private const val MAX_SHIFT_CHIPS = 6
+
+/**
+ * [FREE-06] 화면 꾸미기's example memo screen: four memos drawn by the real card in [look]'s layout, in rows of its columns; a tap
+ * anywhere is [onTap] (the look's editor).
+ */
+@Composable
+fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook, onTap: () -> Unit) {
+    val memos = listOf(
+        Memo(id = 1, title = "장보기", isChecklist = true, colorIndex = 1,
+            checklist = listOf(com.bamnat.core.memo.ChecklistItem("우유"), com.bamnat.core.memo.ChecklistItem("달걀", checked = true), com.bamnat.core.memo.ChecklistItem("두부"))),
+        Memo(id = 2, title = "인수인계", body = "3층 장비 점검 끝\n다음 근무자에게 열쇠 전달", colorIndex = 0),
+        Memo(id = 3, title = "여행 계획", body = "11월 셋째 주 쉬는 날에 바다 보러 가기", colorIndex = 4, pinned = true),
+        Memo(id = 4, title = "월급날", body = "적금 넣기", colorIndex = 6),
+    )
+    val actions = CardActions({ onTap() }, { onTap() }, {}, {}, {})
+    androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalMemoLook provides look) {
+        Column(Modifier.fillMaxWidth().memoPaper(look).padding(8.dp), verticalArrangement = Arrangement.spacedBy(if (look.layout == "compact") 4.dp else 8.dp)) {
+            val cols = if (look.layout == null) 2 else look.columns
+            memos.chunked(cols).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { m -> Box(Modifier.weight(1f)) { MemoCard(m, "", selected = false, selecting = false, showDate = true, actions = actions) } }
+                    repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}

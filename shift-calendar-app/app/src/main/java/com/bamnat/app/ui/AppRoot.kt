@@ -825,8 +825,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     }
                 }
             }
+            // [FREE-05] 1.35 화면 색·배경: the screen on show and its tab bar in that screen's look.
+            com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(route, activeStyle), Modifier.weight(1f)) {
             Scaffold(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 snackbarHost = { SnackbarHost(snackbar) },
                 // Inner screens with their own top bar handle insets themselves.
                 contentWindowInsets = if (showNav) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
@@ -879,6 +881,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         if (wide) TabEditHint(tabEdit.said, saveTabs, Modifier.align(Alignment.BottomCenter))
                     }
                 }
+            }
             }
         }
     }

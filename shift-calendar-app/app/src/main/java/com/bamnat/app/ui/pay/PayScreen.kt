@@ -106,6 +106,9 @@ import com.bamnat.core.time.Today
 
 internal fun won(v: Long): String = "%,d원".format(v)
 
+/** [FREE-07] 1.35 급여 모양 of the pay on screen. */
+internal val LocalPayLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.PayLook() }
+
 /** [PAYS-12] 자세히 고치기 opened from the easy setup, with the setup it had come to (null: none yet). */
 private class DetailedStart(val from: PayProfile?)
 
@@ -292,10 +295,14 @@ fun PayScreen(
                     val month by vm.month.collectAsStateWithLifecycle()
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
-                else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
+                // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
+                else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
+                    (com.bamnat.app.ui.theme.LocalPayLooks.current[workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT] ?: com.bamnat.core.recipe.PayLook())) {
+                    PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, startMatching = startMatching,
                     focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
+                }
             }
         }
     }
@@ -332,6 +339,7 @@ private fun PayResult(
     val bulkOpen = gate.allows(Feature.PAY_BULK_EDIT)
     val closed by vm.closed.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val payLook = LocalPayLook.current
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
     // [UX-10] 1.25 Z (U7): opened again, the month shows at once as it was left; worked out again only when something changed.
     val viewKey = "pay:${vm.calendarId}:$month"
@@ -528,7 +536,7 @@ private fun PayResult(
         }
 
         // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
-        var explainAll by rememberSaveable { mutableStateOf(false) }
+        var explainAll by rememberSaveable { mutableStateOf(payLook.open == true) }
         SectionCard(title = "항목별 내역", trailing = {
             if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
             else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -543,7 +551,7 @@ private fun PayResult(
             if (shown.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
         }
 
-        DayLedger(result, unlocked)
+        if (payLook.days != false) DayLedger(result, unlocked)
 
         } // RESULT
         // U 1.32 [UX132-03] 도구: 만약에, 연말정산, 마감, 리포트.
@@ -827,16 +835,20 @@ private fun TotalCard(
     monthly: Boolean = true,
 ) {
     val checks = range?.effects?.size ?: 0
+    // [FREE-07] 급여 모양: the total card's own colour (its words black or white on it) and the figure's size.
+    val look = LocalPayLook.current
+    val fill = look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
+    val onFill = if (look.plus != null) com.bamnat.app.ui.components.contentColorOn(fill) else MaterialTheme.colorScheme.onPrimaryContainer
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.primaryContainer)
+            .background(fill)
             .clickable(enabled = unlocked && checks > 0, onClickLabel = "확인 필요한 답 보기", onClick = onChecks)
             .padding(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${result.month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = onFill)
                 // [PAYX-15] Which days it covers and when it arrives.
                 val from = result.periodStart
                 val to = result.periodEnd
@@ -845,7 +857,7 @@ private fun TotalCard(
                     result.payDate?.let { "${it.monthValue}월 ${it.dayOfMonth}일 지급" },
                 ).joinToString(" · ")
                 if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                    color = onFill.copy(alpha = 0.8f))
             }
             if (closed) { EstimatedChip("마감"); Spacer(Modifier.width(6.dp)) }
             if (checks > 0) EstimatedChip("확인 필요 $checks") else if (result.estimated) EstimatedChip(onClick = onEstimate.takeIf { unlocked })
@@ -861,18 +873,22 @@ private fun TotalCard(
         }
         Text(
             text,
-            style = (if (spread) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.displaySmall).copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = (if (spread) MaterialTheme.typography.headlineMedium else when (look.total) {
+                "m" -> MaterialTheme.typography.headlineMedium
+                "xl" -> MaterialTheme.typography.displayMedium
+                else -> MaterialTheme.typography.displaySmall
+            }).copy(fontWeight = FontWeight.Bold),
+            color = onFill,
             modifier = if (unlocked || Build.VERSION.SDK_INT < 31) Modifier else Modifier.blur(6.dp),
         )
         if (spread && unlocked) {
             Text("지금 답으로는 ${won(result.total)} · 눌러서 확인 필요 ${checks}개 보기", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                color = onFill)
         } else if (checks > 0 && unlocked) {
-            Text("눌러서 확인 필요 ${checks}개 보기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text("눌러서 확인 필요 ${checks}개 보기", style = MaterialTheme.typography.bodySmall, color = onFill)
         }
         if (monthly) Text("통상시급 ${if (unlocked) won(result.ordinaryHourly) else "●●,●●●원"}",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            style = MaterialTheme.typography.bodySmall, color = onFill)
     }
 }
 
@@ -1058,8 +1074,10 @@ private fun Legend(color: Color, label: String) {
 
 @Composable
 private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {}, onClick: () -> Unit) {
+    val look = LocalPayLook.current
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = unlocked, onClick = onClick).padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = unlocked, onClick = onClick)
+            .padding(vertical = when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(kindColor(line.kind)))
@@ -1074,7 +1092,9 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text(if (unlocked) won(line.amount) else "●●●,●●●원", style = MaterialTheme.typography.titleSmall)
+        // [FREE-07] What is taken off in 급여 모양's own colour, when it reads on the page.
+        val minus = look.minus?.takeIf { line.amount < 0 }?.let { Color((it or 0xFF000000L).toInt()) }
+        Text(if (unlocked) won(line.amount) else "●●●,●●●원", style = MaterialTheme.typography.titleSmall, color = minus ?: Color.Unspecified)
     }
 }
 

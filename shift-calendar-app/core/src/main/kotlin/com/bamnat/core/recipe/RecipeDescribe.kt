@@ -97,7 +97,31 @@ object RecipeDescribe {
             (p.values["memo"] as? Number)?.toInt()?.let { if (it == 0) "칸에 메모 안 보임" else "칸에 메모 ${it}줄" },
             "근무 시간".takeIf { p.values["hours"] == true }, "음력".takeIf { p.values["lunar"] == true }, "그날 쓴 돈".takeIf { p.values["spend"] == true },
             (p.values["order"] as? String)?.takeIf { it.isNotEmpty() }?.let { o -> "순서 " + o.split(',').joinToString("→") { LINE_NAMES[it] ?: it } },
+            // [FREE-01][FREE-02]
+            CellLook.decodeAll(p.values["looks"] as? String).size.takeIf { it > 0 }?.let { "칸 모양 ${it}개" },
+            (p.values["pattern"] as? String)?.let { PATTERN_NAMES[CellPattern.decode(it).mode] },
+            "오늘 칸 따로".takeIf { p.values["today"] != null },
         ).joinToString(" · ").ifEmpty { "달력 모양" }
+        // [FREE-04]
+        PieceKind.MEMO_LOOK -> listOfNotNull(
+            (p.values["layout"] as? String)?.let { FREE_NAMES["layout.$it"] }, (p.values["card"] as? String)?.let { FREE_NAMES["card.$it"] },
+            (p.values["font"] as? String)?.let { FREE_NAMES["font.$it"] }, (p.values["lines"] as? Number)?.let { "${it.toInt()}줄 보기" },
+            "배경색".takeIf { p.values["bg"] != null },
+        ).joinToString(" · ").ifEmpty { "메모장 모양" }
+        // [FREE-06]
+        PieceKind.MONEY_LOOK -> listOfNotNull(
+            (p.values["rows"] as? String)?.let { FREE_NAMES["rows.$it"] }, (p.values["amount"] as? String)?.let { FREE_NAMES["amount.$it"] },
+            "수입·지출 색".takeIf { p.values["income"] != null || p.values["expense"] != null },
+            (p.values["dayHead"] as? String)?.let { FREE_NAMES["dayHead.$it"] },
+        ).joinToString(" · ").ifEmpty { "가계부 모양" }
+        // [FREE-05][FREE-07]
+        PieceKind.SCREEN_LOOK -> listOfNotNull(
+            ScreenLooks.decode(p.values["screens"] as? String).looks.filterValues { !it.isDefault }.keys
+                .map { it.substringBefore('.') }.distinct().mapNotNull { SCREEN_NAMES[it] }.takeIf { it.isNotEmpty() }
+                ?.let { "화면 색·배경: " + it.joinToString("·") },
+            PayLook.decodeAll(p.values["pay"] as? String).size.takeIf { it > 0 }?.let { "급여 모양 ${it}가지 유형" },
+            "그림 있음".takeIf { ScreenLooks.decode(p.values["screens"] as? String).images.isNotEmpty() },
+        ).joinToString(" · ").ifEmpty { "화면 색·배경" }
         // [CVW-07]
         PieceKind.APP_FEEL -> listOfNotNull(
             (p.values["theme"] as? String)?.let { RecipeWords.PICKS[it] }, "기기 색".takeIf { p.values["dynamic"] == true },
@@ -118,6 +142,26 @@ object RecipeDescribe {
 
     /** [CVW-01] What each line under a day's mark is. */
     val LINE_NAMES = mapOf("holiday" to "공휴일 이름", "memo" to "메모", "money" to "수입·매출", "hours" to "근무 시간", "spend" to "쓴 돈", "lunar" to "음력")
+
+    /** [FREE-02] How the cell looks take turns. */
+    val PATTERN_NAMES = mapOf(
+        CellPattern.ONE to "모든 칸 같게", CellPattern.CYCLE to "몇 칸씩 번갈아", CellPattern.WEEK to "요일별 모양", CellPattern.SHIFT to "근무별 모양",
+    )
+
+    /** [FREE-04][FREE-06] Words for 메모장·가계부 모양's choices. */
+    val FREE_NAMES = mapOf(
+        "layout.list" to "목록", "layout.grid2" to "2열 격자", "layout.grid3" to "3열 격자", "layout.sticky" to "포스트잇", "layout.diary" to "다이어리",
+        "layout.compact" to "촘촘히", "card.own" to "메모마다 색", "card.one" to "카드 한 색", "card.none" to "카드 없이",
+        "font.sans" to "기본 글꼴", "font.serif" to "명조", "font.mono" to "고정폭", "font.hand" to "손글씨 느낌",
+        "rows.compact" to "줄 촘촘히", "rows.normal" to "줄 보통", "rows.roomy" to "줄 넉넉히", "amount.s" to "금액 작게", "amount.m" to "금액 보통",
+        "amount.l" to "금액 크게", "dayHead.line" to "날짜 줄", "dayHead.band" to "날짜 띠", "dayHead.big" to "날짜 크게",
+    )
+
+    /** [FREE-05] The screens a 화면 색·배경 piece can colour. */
+    val SCREEN_NAMES = mapOf(
+        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모", "stats" to "통계", "pay" to "급여", "plaza" to "광장",
+        "settings" to "설정", "alarm" to "알람", "guarded" to "결제·약관",
+    )
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
 

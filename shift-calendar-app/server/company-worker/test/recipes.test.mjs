@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn } from "./helpers.mjs";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical } from "../src/recipes.js";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -244,4 +244,52 @@ test("[RCX-32] every 보여주기 판 core wrote reads the same on the server, f
     assert.equal(r.text, recipeCanonical(s.recipe), s.recipe.title);
   }
   for (const style of ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"]) assert.equal(shows.filter((s) => s.recipe.styles[0] === style).length, 5, style);
+});
+
+test("[FREE-07][FREE-08] 꾸미기 pieces read as core does, a list card carries the look, and 종류로 보기 keeps only that kind", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const skin = {
+    kind: "screenLook", screens: "all~bg:FFFFF8EE|cd:FFFFFFFF|ik:FF2B2B2B|ac:FFE07A5F/plaza~em:1f338", pay: "SHIFT~tt:xl|pl:FFE07A5F",
+  };
+  const view = { kind: "calView", looks: "bg:shift|ba:30|cr:8|dp:tl|ds:l|dw:b|mk:dot|mp:bottom/bg:none|bd:thin|dp:mc", pattern: "cycle:2", today: 1 };
+  const memo = { kind: "memoLook", layout: "sticky", card: "own", corner: 4, lines: 6, font: "hand" };
+  const money = { kind: "moneyLook", rows: "roomy", amount: "l", dayHead: "band" };
+  const good = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, skin, view, memo, money] })));
+  assert.ok(good.text.includes('"kind":"screenLook"'));
+  for (const [bad, code] of [
+    [{ ...view, looks: "bg:shift|bg:none" }, "looks"], [{ ...view, pattern: "cycle:9" }, "pattern"],
+    [{ ...skin, screens: "lock~bg:FF000000" }, "screens"], [{ ...skin, screens: "all~ph:../../x" }, "screens"], [{ ...skin, pay: "BOSS~tt:xl" }, "pay"],
+    [{ ...memo, layout: "free" }, "pick"],
+  ]) {
+    await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, bad] }))), (e) => e.code !== undefined, JSON.stringify(bad));
+    void code;
+  }
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "벚꽃 교대 테마", pieces: [...recipe().pieces, skin, view, memo] }), showcase: true }, admin);
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "알람만 세트", pieces: [{ kind: "alarms", byRole: [{ role: "day", before: [60] }] }] }) }, admin);
+  const all = await call("GET", "/api/recipes?style=SHIFT&sort=new");
+  const themed = all.data.items.find((i) => i.title === "벚꽃 교대 테마");
+  assert.equal(themed.look.bg, "FFFFF8EE");
+  assert.equal(themed.look.accent, "FFE07A5F");
+  assert.equal(themed.look.pattern, "cycle:2");
+  assert.equal(themed.look.memo, "sticky");
+  assert.equal(themed.look.days.length, 2);
+  assert.equal(all.data.items.find((i) => i.title === "알람만 세트").look, undefined);
+  const skins = await call("GET", "/api/recipes?style=SHIFT&sort=new&kind=skin");
+  assert.deepEqual(skins.data.items.map((i) => i.title), ["벚꽃 교대 테마"]);
+  const rules = await call("GET", "/api/recipes?style=SHIFT&sort=new&kind=rules");
+  assert.deepEqual(rules.data.items.map((i) => i.title), ["알람만 세트"]);
+});
+
+test("[FREE-09] every 추천 테마 core wrote reads the same on the server, eight for each kind of work, each with its look for the list", async () => {
+  const themes = JSON.parse(readFileSync(new URL("../../../docs/recipes/theme-recipes.json", import.meta.url), "utf8"));
+  assert.equal(themes.length, 48);
+  for (const s of themes) {
+    const r = await cleanRecipe(recipeCanonical(s.recipe));
+    assert.equal(r.text, recipeCanonical(s.recipe), s.recipe.title);
+    const look = lookOf(r.text);
+    assert.ok(look && look.bg && look.cells && look.pattern, s.recipe.title);
+  }
+  for (const style of ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"]) assert.equal(themes.filter((s) => s.recipe.styles[0] === style).length, 8, style);
 });

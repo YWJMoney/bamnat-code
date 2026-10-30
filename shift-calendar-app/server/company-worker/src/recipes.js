@@ -66,6 +66,50 @@ const DAY_GROUPS = ["work", "extra", "leave", "alarm", "memo", "money", "body", 
 const dayOrder = (s) => (s === "" || (s.split(",").every((x) => DAY_GROUPS.includes(x)) && new Set(s.split(",")).size === s.split(",").length) ? null : "dayOrder");
 const cellOrder = (s) => (s === "" || (s.split(",").every((x) => CELL_LINES.includes(x)) && new Set(s.split(",")).size === s.split(",").length) ? null : "order");
 
+// [FREE-01..07] 1.35 꾸미기, as core FreeLook checks them (same parts, same limits).
+const CELL_PART = /^(bg:([0-9A-F]{8}|shift|none)|ba:(100|[1-9]?[0-9])|bd:(none|thin|thick|dash)|bc:[0-9A-F]{8}|cr:(1[0-6]|[0-9])|dp:(tl|tc|tr|ml|mc|mr|bl|bc|br)|ds:(s|m|l|xl)|dw:[nb]|dsh:(none|circle|square)|df:[0-9A-F]{8}|dc:[0-9A-F]{8}|mk:(big|small|line|dot|fill|none)|mp:(side|below|bottom)|pd:[0-8])$/;
+const PATTERN_RULE = /^(one|cycle:[2-6]|week:[0-5](,[0-5]){6}|shift:(day|eve|night|long|off|other)=[0-5](,(day|eve|night|long|off|other)=[0-5]){0,5})$/;
+const SCREEN_PART = /^(bg:[0-9A-F]{8}|ph:[0-9a-f]{16}|dm:([0-7]?[0-9]|80)|cd:[0-9A-F]{8}|ik:[0-9A-F]{8}|ac:[0-9A-F]{8}|em:[0-9a-f]{2,6}(\+[0-9a-f]{2,6}){0,7})$/;
+const SCREEN_KEY = /^(all|calendar|money|memo|stats|pay|plaza|settings|alarm|guarded|pay\.(SHIFT|DAY|HOURLY|FIELD|BUSINESS|INVEST))$/;
+const PAY_PART = /^(tt:(m|l|xl)|pl:[0-9A-F]{8}|mn:[0-9A-F]{8}|rw:(compact|normal|roomy)|op:[01]|dy:[01])$/;
+const onceEach = (parts) => new Set(parts.map((x) => x.split(":")[0])).size === parts.length;
+const cellLooks = (s) => {
+  if (s === "") return null;
+  const looks = s.split("/");
+  if (looks.length > 6) return "looks";
+  for (const l of looks) {
+    if (l === "") continue;
+    const parts = l.split("|");
+    if (!parts.every((x) => CELL_PART.test(x)) || !onceEach(parts)) return "looks";
+  }
+  return null;
+};
+const cellPattern = (s) => (s === "" || PATTERN_RULE.test(s) ? null : "pattern");
+const screenLooks = (s) => {
+  if (s === "") return null;
+  const entries = s.split("/");
+  if (entries.length > 16) return "screens";
+  const keys = entries.map((e) => (e.includes("~") ? e.slice(0, e.indexOf("~")) : ""));
+  if (keys.some((k) => !SCREEN_KEY.test(k)) || new Set(keys).size !== keys.length) return "screens";
+  for (const e of entries) {
+    const parts = e.slice(e.indexOf("~") + 1).split("|").filter((x) => x !== "");
+    if (!parts.every((x) => SCREEN_PART.test(x)) || !onceEach(parts)) return "screens";
+  }
+  return null;
+};
+const PAY_KINDS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
+const payLooks = (s) => {
+  if (s === "") return null;
+  const entries = s.split("/");
+  const keys = entries.map((e) => (e.includes("~") ? e.slice(0, e.indexOf("~")) : ""));
+  if (keys.some((k) => !PAY_KINDS.includes(k)) || new Set(keys).size !== keys.length) return "pay";
+  for (const e of entries) {
+    const parts = e.slice(e.indexOf("~") + 1).split("|").filter((x) => x !== "");
+    if (!parts.every((x) => PAY_PART.test(x)) || !onceEach(parts)) return "pay";
+  }
+  return null;
+};
+
 const companyCheck = (text) => {
   try {
     const v = JSON.parse(text);
@@ -116,12 +160,27 @@ export const RECIPE_PIECES = {
   // 1.35 [CVW-01] 달력 모양: cell size, mark, date place, text, lines, memo lines and the order of what stands under the mark.
   calView: { styles: STYLES, fields: [P("size", ["short", "normal", "tall", "huge"], { optional: true }), P("badge", ["big", "small", "line"], { optional: true }),
     P("date", ["center", "left"], { optional: true }), P("text", ["small", "normal", "large"], { optional: true }), P("grid", ["none", "line"], { optional: true }),
-    N("memo", 0, 4, { optional: true }), F("hours"), F("lunar"), F("spend"), T("order", 80, { optional: true, guard: false, check: cellOrder })] },
+    N("memo", 0, 4, { optional: true }), F("hours"), F("lunar"), F("spend"), T("order", 80, { optional: true, guard: false, check: cellOrder }),
+    // [FREE-01][FREE-02] 1.35 칸 디자이너: the cells' own looks, how they take turns, today's own.
+    T("looks", 760, { optional: true, guard: false, check: cellLooks }), T("pattern", 80, { optional: true, guard: false, check: cellPattern }),
+    N("today", 0, 5, { optional: true })] },
   // 1.35 [CVW-07] 앱 동작: never the alarm's 끄기, 잠금, 동의, 결제·광고 or where a backup goes.
   appFeel: { styles: STYLES, fields: [P("theme", ["system", "light", "dark", "night"], { optional: true }), F("dynamic"), C("accent", { optional: true }),
     N("textStep", 0, 4, { optional: true }), F("compact"), F("clock12"), P("tap", ["preview", "sheet", "week"], { optional: true }),
     P("hold", ["menu", "memo", "open"], { optional: true }), T("dayOrder", 120, { optional: true, guard: false, check: dayOrder }),
     F("flow"), F("rest"), F("payPeriod")] },
+  // [FREE-04] 1.35 메모장 모양.
+  memoLook: { styles: STYLES, fields: [P("layout", ["list", "grid2", "grid3", "sticky", "diary", "compact"], { optional: true }),
+    P("card", ["own", "one", "none"], { optional: true }), C("cardColor", { optional: true }), P("border", ["none", "thin"], { optional: true }),
+    N("corner", 0, 24, { optional: true }), N("lines", 1, 10, { optional: true }), P("title", ["s", "m", "l"], { optional: true }), F("bold"),
+    P("font", ["sans", "serif", "mono", "hand"], { optional: true }), F("date"), C("bg", { optional: true })] },
+  // [FREE-06] 1.35 가계부 모양.
+  moneyLook: { styles: STYLES, fields: [P("rows", ["compact", "normal", "roomy"], { optional: true }), P("amount", ["s", "m", "l"], { optional: true }),
+    P("mark", ["emoji", "dot", "none"], { optional: true }), C("income", { optional: true }), C("expense", { optional: true }),
+    P("dayHead", ["line", "band", "big"], { optional: true })] },
+  // [FREE-05][FREE-07] 1.35 화면 색·배경 (pictures by recipe_images id, looked at before others see them) and 급여 모양 by kind of work.
+  screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
+    T("pay", 400, { optional: true, guard: false, check: payLooks })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
@@ -689,9 +748,58 @@ export function newCode() {
 
 const kstDayOf = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
 
+/**
+ * [FREE-08] What a list card draws its small calendar from (사용자 2026-10-30 "잘 만든 테마를 골라 사용"): the recipe's own colours,
+ * kinds of day, first cell look, pattern and memo layout, so a theme is picked by eye. Only what the recipe carries; null if it
+ * carries no look at all.
+ */
+export function lookOf(body) {
+  let rec;
+  try {
+    rec = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const piece = (k) => (rec.pieces ?? []).find((p) => p.kind === k);
+  const out = {};
+  const screens = piece("screenLook")?.screens;
+  if (typeof screens === "string" && screens) {
+    const of = (key) => screens.split("/").find((e) => e.startsWith(key + "~"))?.slice(key.length + 1) ?? "";
+    for (const part of [...of("all").split("|"), ...of("calendar").split("|")]) {
+      const [k, v] = [part.slice(0, 2), part.slice(3)];
+      if (k === "bg" || k === "cd" || k === "ik" || k === "ac") out[{ bg: "bg", cd: "card", ik: "ink", ac: "accent" }[k]] = v;
+    }
+  }
+  const theme = piece("calTheme");
+  for (const k of ["today", "sat", "sun"]) if (typeof theme?.[k] === "number") out[k] = theme[k];
+  const days = piece("shiftLook")?.items;
+  if (Array.isArray(days)) out.days = days.slice(0, 4).map((d) => ({ c: d.color && typeof d.color === "number" ? d.color : null, l: d.label ?? "", e: d.emoji ?? null, r: d.role }));
+  const view = piece("calView");
+  if (typeof view?.looks === "string" && view.looks) out.cells = view.looks.split("/").slice(0, 6).join("/");
+  if (typeof view?.pattern === "string" && view.pattern) out.pattern = view.pattern;
+  if (typeof view?.badge === "string") out.badge = view.badge;
+  const memo = piece("memoLook");
+  if (memo?.layout) out.memo = memo.layout;
+  if (piece("photoLook")?.bg || (typeof screens === "string" && screens.includes("ph:"))) out.photo = true;
+  return Object.keys(out).length ? out : null;
+}
+
+/** [FREE-08] 종류로 보기: what kind of piece a recipe must carry to show under each chip. */
+export const RECIPE_KINDS = {
+  skin: ["screenLook", "calTheme", "calView", "photoLook", "shiftLook"],
+  layout: ["layout", "cards", "appFeel"],
+  memo: ["memoLook", "memoTpl"],
+  money: ["moneyLook", "shop", "field"],
+  rules: ["alarms", "hourly", "invest", "company"],
+};
+
+const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`));
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
+  const look = r.body ? lookOf(r.body) : null;
   return {
+    ...(look ? { look } : {}),
     code: r.code, title: r.title, summary: r.summary, styles: r.styles.split(","), cover: JSON.parse(r.cover), nick: r.nick ?? null,
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
     official: r.official === 1, publicData: r.public_data === 1, parent: r.parent ?? null, at: new Date(r.updated_at).toISOString(),
@@ -745,8 +853,11 @@ async function recipeList(d, env, url) {
     args.push(like, like, like, `%${nameSkeleton(q)}%`);
   }
   // 좋은 순 and 요즘 뜨는 are worked out here from the counts (a few hundred rows a plaza); 새로 is by time.
-  const rows = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}
+  const rows0 = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}
     ORDER BY r.updated_at DESC LIMIT 600`, ...args);
+  // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
+  const kind = RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
+  const rows = kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {
     scored = rows.map((r) => ({ r, s: rankGood(r.wlikes, r.wdislikes, r.applied, r.kept7) })).filter((x) => x.s !== null)
@@ -755,7 +866,7 @@ async function recipeList(d, env, url) {
     scored = rows.map((r) => ({ r, s: rankHot(r.wlikes, r.applied, (now - r.created_at) / HOUR) })).sort((a, b) => b.s - a.s).map((x) => x.r);
   }
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
-  return d.json({ style: style ?? null, sort, items: page.map((r) => listItem(r, now)),
+  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), items: page.map((r) => listItem(r, now)),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }

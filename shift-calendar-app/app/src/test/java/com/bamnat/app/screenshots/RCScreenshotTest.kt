@@ -66,7 +66,7 @@ class RCScreenshotTest : ScreenshotBase() {
         }
         var applied = 0
         override val enabled = true
-        override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int) = RecipePage(
+        override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) = RecipePage(
             recipes.indices.filter { i -> (style == null || style in recipes[i].first.styles) && (sort == "data") == recipes[i].second }
                 .map(::item).filter { q.isBlank() || q in it.title }, null)
         override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc {
@@ -269,7 +269,7 @@ class RCScreenshotTest : ScreenshotBase() {
     @Test fun theStudioStartsFromAShowcaseAndPutsItOnMine() = shoot("1352_stu_studio_start", PHONE) {
         val api = object : Starters() {
             var sent = 0
-            override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int) =
+            override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
                 if (sort == "showcase") RecipePage(listOf(item(0).copy(showcase = true)), null) else super.list(style, sort, q, cursor)
             override suspend fun publish(device: String, recipe: Recipe, scope: String): Sent { sent++; return super.publish(device, recipe, scope) }
         }

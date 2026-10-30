@@ -168,7 +168,8 @@ internal fun ShowcaseStrip(items: List<RecipeItem>, onItem: (String) -> Unit) {
         items.take(SHOWCASE_SHOWN).forEach { item ->
             OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) }) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    RecipeCover(item.cover, size = 56.dp)
+                    // [FREE-08] A theme shows as itself; the rest by their cover.
+                    item.look?.let { ThemeThumb(it, width = 148.dp) } ?: RecipeCover(item.cover, size = 56.dp)
                     Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.heightIn(min = 40.dp))
                     Text(item.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -257,6 +258,13 @@ fun RecipeListScreen(
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
                     }
+                    // [FREE-08] 종류로 보기: 테마·스킨, 배치, 메모장, 가계부, 알람·규칙.
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = state.kind == null, onClick = { vm.kind(null) }, label = { Text("모든 종류") })
+                        com.bamnat.app.recipe.RecipeClient.KINDS.forEach { k ->
+                            FilterChip(selected = state.kind == k, onClick = { vm.kind(k) }, label = { Text(KIND_NAMES[k] ?: k) })
+                        }
+                    }
                     if (vm.style != null) Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("다른 유형 레시피도 보기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         Switch(state.allStyles, vm::allStyles)
@@ -302,6 +310,8 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Un
                     append(" · ").append(RecipeDescribe.styles(com.bamnat.core.recipe.Recipe(item.title, styles = item.styles, pieces = emptyList())))
                 }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // [FREE-08] The theme itself, to pick by eye.
+            item.look?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
         }
     }
 }
@@ -312,6 +322,9 @@ private fun Badge(text: String) {
     Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
         modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 1.dp))
 }
+
+/** [FREE-08] The words of 종류로 보기's chips. */
+internal val KIND_NAMES = mapOf("skin" to "테마·스킨", "layout" to "배치", "memo" to "메모장", "money" to "가계부", "rules" to "알람·규칙")
 
 /** [RCP-22] 코드로 받기: 8 letters, or a link or message pasted whole. */
 @Composable

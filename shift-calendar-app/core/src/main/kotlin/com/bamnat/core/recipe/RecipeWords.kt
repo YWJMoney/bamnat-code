@@ -24,7 +24,16 @@ object RecipeWords {
     "dayOrder" to "하루 화면 순서", "flow" to "오늘의 흐름", "rest" to "휴식 점검", "payPeriod" to "통계를 급여 기간으로", "tabs" to "아래 탭 순서",
     "calendar" to "달력 화면 카드", "stats" to "통계 카드", "money" to "가계부 카드", "bg" to "배경 그림", "head" to "머리 그림", "widget" to "위젯 배경", "icons" to "근무 그림",
     "setup" to "회사 설정",
+    // [FREE-04][FREE-06] 메모장·가계부 모양
+    "layout" to "배치", "card" to "카드 색", "cardColor" to "카드 한 색", "border" to "테두리", "corner" to "모서리(dp)", "lines" to "미리 보이는 줄",
+    "bold" to "제목 굵게", "font" to "글꼴", "rows" to "줄 간격", "amount" to "금액 크기", "mark" to "종류 표시", "income" to "수입 색", "expense" to "지출 색",
+    "dayHead" to "날짜 머리", "looks" to "칸 모양", "pattern" to "칸 패턴", "screens" to "화면 색·배경", "pay" to "급여 모양",
 )
+
+    /** [FREE-04] A key's words where a piece means something else by it than the rest ("piece.key"). */
+    val KIND_KEYS = mapOf(
+        "memoLook.title" to "제목 크기", "memoLook.date" to "날짜 보이기", "memoLook.bg" to "화면 배경색", "calView.today" to "오늘 칸 모양",
+    )
 
     val PICKS = mapOf(
     "fill" to "진하게", "tint" to "옅게", "dot" to "점만", "none" to "없음", "math" to "계산 문제", "shake" to "흔들기",
@@ -35,6 +44,9 @@ object RecipeWords {
     "short" to "낮게", "normal" to "보통", "tall" to "높게", "huge" to "아주 높게", "big" to "크게", "small" to "작게", "line" to "선·띠",
     "center" to "가운데", "left" to "왼쪽 위", "large" to "크게", "night" to "야간 근무 때 어둡게", "preview" to "아래에 짧게", "sheet" to "하루 화면",
     "week" to "그 주만", "menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기", "text" to "글", "num" to "숫자", "star" to "별점", "pick" to "고르기",
+    "list" to "목록", "grid2" to "2열 격자", "grid3" to "3열 격자", "sticky" to "포스트잇", "diary" to "다이어리", "compact" to "촘촘히",
+    "own" to "메모마다 색", "one" to "한 가지 색", "thin" to "가늘게", "s" to "작게", "m" to "보통", "l" to "크게",
+    "sans" to "기본", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨 느낌", "roomy" to "넉넉히", "emoji" to "이모지", "band" to "색 띠",
     "MONDAY" to "월", "TUESDAY" to "화", "WEDNESDAY" to "수", "THURSDAY" to "목", "FRIDAY" to "금", "SATURDAY" to "토", "SUNDAY" to "일",
 ) + ShiftRole.entries.associate { it.key to it.label }
 }

@@ -41,6 +41,14 @@ enum class CalendarPart(val id: String, val label: String, val what: String, val
         else -> label
     }
 
+    /** [J135-07] F-67: what it holds on this kind of work (no 특근·알람 on a 현장·가게·투자 calendar). */
+    fun whatFor(style: com.bamnat.core.work.WorkStyle?): String = if (this != DAY_CARD) what else when (style) {
+        com.bamnat.core.work.WorkStyle.FIELD -> "누른 날의 일감·받을 돈"
+        com.bamnat.core.work.WorkStyle.BUSINESS -> "누른 날의 매출·영업 여부"
+        com.bamnat.core.work.WorkStyle.INVEST -> "누른 날의 매매·손익"
+        else -> what
+    }
+
     companion object {
         fun byId(id: String) = entries.firstOrNull { it.id == id }
     }
@@ -121,7 +129,7 @@ internal fun calendarEditGroups(
 ): List<EditGroup> {
     val above = calendarAbove(placed.map { it.part })
     fun rows(up: Boolean) = placed.filter { above(it.part) == up && fits(it.part) && it.part != CalendarPart.MONTH }.sortedBy { if (it.part.movable) 0 else 1 }.map {
-        EditRow(it.part.id, it.part.labelFor(style), it.part.what, it.shown, it.part.movable, it.isNew)
+        EditRow(it.part.id, it.part.labelFor(style), it.part.whatFor(style), it.shown, it.part.movable, it.isNew)
     }
     return listOf(EditGroup("위쪽 (달력 위)", rows(true)), EditGroup("아래쪽 (달력 아래)", rows(false)))
 }

@@ -219,7 +219,8 @@ fun PlazaHomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(plan.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
+                title = { Text(listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },

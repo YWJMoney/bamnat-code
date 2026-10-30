@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
@@ -537,6 +538,20 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             }
         }
         // [SET-02] 근무표 공유 and 동료 근무표 받기 live in the calendar's 도구 only; settings search still finds them.
+    }
+    // [FREE-03] 1.35 화면 꾸미기: every screen's colours, background, the calendar's cells and patterns, memo, money and pay looks in one
+    // place, with the example on top.
+    var freeLook by rememberSaveable { mutableStateOf<FreeTarget?>(null) }
+    SectionCard(title = "꾸미기") {
+        NavRow(FREE_LOOK_ROW, "달력 칸·패턴, 메모장, 가계부, 급여, 모든 화면의 색과 배경을 미리 보며 바꿔요") { freeLook = FreeTarget.CALENDAR }
+    }
+    freeLook?.let { start ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { freeLook = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
+                FreeLookScreen(settings, { f -> vm.update(f) }, onBack = { freeLook = null }, start = start)
+            }
+        }
     }
     // U 1.32 [UX132-05][UX132-06] G [WTYP-07]: 글자 크기, 촘촘하게, 오전/오후 — first, as most people come here for them.
     SectionCard(title = "글자와 배치") {
@@ -1110,6 +1125,9 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
 
 /** [PLAZA-06] The row's name, for 설정 찾기 and the tests. */
 const val SETUP_AGAIN_ROW = "처음 설정 다시 받기"
+
+/** [FREE-03] 설정 › 화면과 글자's way into 화면 꾸미기, for 설정 찾기 and the tests. */
+internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"

@@ -91,6 +91,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var flagging by remember { mutableStateOf(false) }
     var disliking by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf(false) }
+    var tryOn by remember { mutableStateOf(false) }
     var folded by remember { mutableStateOf(true) }
     var undoing by remember { mutableStateOf(false) }
     LaunchedEffect(s.message) {
@@ -190,6 +191,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // 1.35 실사용 점검: the field already says the range in red; here only why the button waits, not a second red line.
                 else if (outside.isNotEmpty()) Text("위 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
+                // [FREE-08] 앱 전체 입어 보기: every tab in the recipe's looks before anything is put in (free, nothing changes).
+                OutlinedButton(onClick = { tryOn = true }, enabled = chosen > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("앱 전체 입어 보기") }
+                if (tryOn) TryOnDialog(r.copy(pieces = r.pieces.filter { p -> s.pieces.any { it.kind == p.kind && it.on && it.fits } }), vm.style) { tryOn = false }
                 Button(onClick = { confirming = true }, enabled = chosen > 0 && missing.isEmpty() && outside.isEmpty() && !s.applying,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
 
@@ -585,6 +589,28 @@ private fun DiffRow(label: String, change: String?, pickable: Boolean, on: Boole
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             change?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+
+/**
+ * [FREE-08] 1.35 입어 보기 (사용자 2026-10-30 "미리보기를 보여주고 적용해보기"): the example phone in the recipe's looks, every tab a tap away,
+ * before anything is put in. Nothing on the phone changes; 닫기 leaves it as it was.
+ */
+@Composable
+private fun TryOnDialog(r: com.bamnat.core.recipe.Recipe, style: com.bamnat.core.work.WorkStyle?, onDismiss: () -> Unit) {
+    var tab by remember { mutableStateOf(com.bamnat.core.layout.TabOrder.CALENDAR) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        androidx.compose.material3.Surface(Modifier.fillMaxWidth().padding(12.dp), shape = MaterialTheme.shapes.extraLarge) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("입어 보기 · ${r.title}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                Text("아래 탭을 눌러 화면마다 봐요. 내 기록과 설정은 바뀌지 않아요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MockPhone(r, style, tab, onTab = { tab = it })
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("닫기") }
+            }
         }
     }
 }

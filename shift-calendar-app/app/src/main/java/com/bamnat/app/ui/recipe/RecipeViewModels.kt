@@ -37,7 +37,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
-        val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false)
+        val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false,
+        /** [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. */
+        val kind: String? = null)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -46,6 +48,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
     fun query(q: String) { _state.value = _state.value.copy(query = q) }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
+    fun kind(k: String?) { _state.value = _state.value.copy(kind = k); load() }
 
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "나눔 판은 아직 열리지 않았어요"); return }
@@ -54,7 +57,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         _state.value = s.copy(loading = true, error = null)
         viewModelScope.launch {
             _state.value = try {
-                val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0)
+                val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
                 _state.value.copy(items = if (more) _state.value.items + page.items else page.items, next = page.next, loading = false)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
