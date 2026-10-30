@@ -81,7 +81,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     /** [RCX-01][RCX-05][RCX-11] 1.35: another recipe (계보, 묶음) and a maker's page. */
     onOpen: (String) -> Unit = {}, onMaker: (String) -> Unit = {},
     /** [RCX-31] 1.35: my own recipe, made again as its next 판 (받은 분들께 새 판으로 알려져요). */
-    onNewVersion: (String) -> Unit = {}) {
+    onNewVersion: (String) -> Unit = {},
+    /** [LIN-03] 1.35: my recipe (code) made again with what a 수정판 changed (its written form). */
+    onTakeInto: (String, String) -> Unit = { _, _ -> }) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
@@ -202,6 +204,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 // [RCX-01] 계보: what it was made from, and what others made from it.
                 s.lineage?.let { l -> LineageSection(l, onOpen) }
+                // [LIN-02][LIN-03] 1.35 달라진 점, and for the maker of the recipe it came from, 내 판에 가져오기.
+                s.parentDoc?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
                 HorizontalDivider()
                 if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일(11월 10일 예정)부터 열려요", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(32.dp))
@@ -523,6 +527,61 @@ private fun AppliedCard(at: Long, onUndo: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+        }
+    }
+}
+
+/**
+ * [LIN-02] 1.35 원래 판과 달라진 점: each piece this 수정판 added, took away or changed, and each changed field before → after. [LIN-03]
+ * The maker of the original ticks what to take and makes their next 판 with it (사용자 2026-10-30 "내꺼랑 어떤점이 달라졌는지").
+ */
+@Composable
+private fun DiffSection(parent: com.bamnat.app.recipe.RecipeDoc, diff: List<com.bamnat.core.recipe.RecipeDiff.Piece>, onOpen: (String) -> Unit,
+                        onTake: (Set<Pair<PieceKind, String>>) -> Unit) {
+    val mine = parent.mine
+    var picked by remember(diff) { mutableStateOf(diff.flatMap { d -> if (d.lines.isEmpty()) listOf(d.kind to "*") else d.lines.map { d.kind to it.path } }.toSet()) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(if (mine) "내 판과 달라진 점" else "원래 판과 달라진 점", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            TextButton(onClick = { onOpen(parent.item.code) }) { Text("원래 판 ‘${parent.item.title}’ 보기") }
+            if (diff.isEmpty()) Text("조각은 원래 판과 같아요. 이름·설명·표지만 달라요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            diff.forEach { d ->
+                val head = d.kind.label + when (d.change) {
+                    com.bamnat.core.recipe.RecipeDiff.Kind.ADDED -> " · 새로 넣음"
+                    com.bamnat.core.recipe.RecipeDiff.Kind.REMOVED -> " · 뺌"
+                    else -> " · 바꿈"
+                }
+                if (d.lines.isEmpty() || d.change != com.bamnat.core.recipe.RecipeDiff.Kind.CHANGED) {
+                    DiffRow(head, null, mine, d.kind to "*" in picked) { on -> picked = if (on) picked + (d.kind to "*") else picked - (d.kind to "*") }
+                } else {
+                    Text(head, style = MaterialTheme.typography.labelLarge)
+                    d.lines.take(20).forEach { l ->
+                        DiffRow(l.label, (l.before ?: "없음") + " → " + (l.after ?: "없음"), mine, d.kind to l.path in picked) { on ->
+                            picked = if (on) picked + (d.kind to l.path) else picked - (d.kind to l.path)
+                        }
+                    }
+                    if (d.lines.size > 20) Text("그 밖에 ${d.lines.size - 20}칸", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (mine && diff.isNotEmpty()) {
+                Text("고른 것만 내 판의 새 판으로 가져와요. 올리기 전에 한 번 더 보고 고칠 수 있고, 이 수정판 이름이 '도움 준 수정판'으로 설명에 남아요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.material3.Button(onClick = { onTake(picked) }, enabled = picked.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("고른 ${picked.size}개 내 판에 가져오기")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiffRow(label: String, change: String?, pickable: Boolean, on: Boolean, onPick: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (pickable) androidx.compose.material3.Checkbox(on, onPick)
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            change?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }

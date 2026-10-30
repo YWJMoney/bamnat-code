@@ -1037,7 +1037,8 @@ export function adminLib() {
 
   /** A question's title: the first line the asker wrote, 60 letters at most. */
   function copyTitle(q) {
-    return oneLine(askText(q).split("\n").find((l) => l.trim()) ?? "", 60) || "(내용 없음)";
+    // [F-39] Without the '[설정 > …]' tag the app puts before a question asked from a screen.
+    return oneLine(askText(q).replace(/^\s*\[[^\]\n]{1,40}\]\s*/, "").split("\n").find((l) => l.trim()) ?? "", 60) || "(내용 없음)";
   }
 
   /** The address of a question in the developer app (never a photo's own address), or its id without [base]. */

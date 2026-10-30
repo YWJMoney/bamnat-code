@@ -280,9 +280,14 @@ async function rcNews(d, env, request, url) {
     JOIN posts a ON a.parent = q.id AND a.company_id = 'recipe' AND a.status = 'shown'
     JOIN recipes r ON r.code = q.grp AND a.device = r.owner
     WHERE q.company_id = 'recipe' AND q.device = ? AND q.kind = 'question' AND a.created_at > ? ORDER BY a.created_at DESC LIMIT 20`, dev, since);
+  // [LIN-04] 1.35 수정판: someone else's new recipe made from one of this phone's (사용자 2026-10-30 "초기 제작자의 제작물 밑으로").
+  const remixes = await d.all(env, `SELECT r.*, n.nick, p.title AS parent_title FROM recipes r JOIN recipes p ON p.code = r.parent
+    LEFT JOIN nicks n ON n.device = r.owner
+    WHERE p.owner = ? AND r.owner != ? AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ? ORDER BY r.created_at DESC LIMIT 20`, dev, dev, since);
   return d.json({
     recipes: await rcWithMaker(d, env, fresh, now),
     replies: replies.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 80), at: new Date(x.created_at).toISOString() })),
+    remixes: (await rcWithMaker(d, env, remixes, now)).map((x, i) => ({ ...x, parentTitle: remixes[i].parent_title })),
   });
 }
 

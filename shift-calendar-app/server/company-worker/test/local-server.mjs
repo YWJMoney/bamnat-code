@@ -150,6 +150,8 @@ async function seedAdmins(cookie) {
   const reviewer = { review: "edit", inquiries: "edit", companies: "view", rewards: "none", settings: "none", audit: "view" };
   for (const [email, name, approve] of [["minji@example.com", "민지", true], ["junho@example.com", "준호", false]]) {
     const inv = await asOwner("/invites", { email, perms: reviewer, note: approve ? "검토 담당" : "" });
+    // A second --seed on a kept database: the admin is there already (409 exists), so there is no invite to join.
+    if (!inv.link) continue;
     await worker.fetch(new Request(`http://localhost:${port}/api/admin/join`, {
       method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.20" },
       body: JSON.stringify({ token: inv.link.split("#")[1], name, password: "minji-review-2026" }),

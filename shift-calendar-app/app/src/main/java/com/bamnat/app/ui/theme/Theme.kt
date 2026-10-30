@@ -273,6 +273,8 @@ fun BamnatTheme(
     compact: Boolean = true,
     /** [RCX-30] 그림 꾸미기의 모서리 ([shapesFor]). */
     corners: String? = null,
+    /** [CVW-08] 1.35 앱 강조색 (ARGB, 0 = the app's own): buttons, the picked tab and the selected things. */
+    accent: Long = 0L,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -288,7 +290,7 @@ fun BamnatTheme(
         }
         dark -> DarkColors
         else -> LightColors
-    }
+    }.let { if (accent == 0L) it else accented(it, accent, dark) }
     CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
@@ -301,6 +303,23 @@ fun BamnatTheme(
             MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = shapesFor(corners), content = content)
         }
     }
+}
+
+/**
+ * [CVW-08] The scheme with [accent] as its primary: on a dark surface it is lifted toward white so it reads, the containers are
+ * washes of it over the surface, and every text on it is black or white by [com.bamnat.core.layout.Contrast] (A11Y 4.5:1).
+ */
+fun accented(base: ColorScheme, accent: Long, dark: Boolean): ColorScheme {
+    val a = Color(accent or 0xFF000000L)
+    val primary = if (dark) androidx.compose.ui.graphics.lerp(a, Color.White, 0.35f) else a
+    val container = androidx.compose.ui.graphics.lerp(base.surface, a, if (dark) 0.35f else 0.18f)
+    val secondary = androidx.compose.ui.graphics.lerp(base.surface, a, if (dark) 0.25f else 0.12f)
+    fun on(c: Color) = com.bamnat.app.ui.components.contentColorOn(c)
+    return base.copy(
+        primary = primary, onPrimary = on(primary), primaryContainer = container, onPrimaryContainer = on(container),
+        secondaryContainer = secondary, onSecondaryContainer = on(secondary), surfaceTint = primary,
+        inversePrimary = androidx.compose.ui.graphics.lerp(a, if (dark) Color.Black else Color.White, 0.4f),
+    )
 }
 
 /** U 1.32 [UX132-05] 설정 › 화면과 글자 › 글자 크기: five steps, times the phone's own 글꼴 크기. */

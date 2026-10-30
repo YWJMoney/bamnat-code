@@ -87,6 +87,8 @@ fun PageEditSheet(
     onAdd: (id: String, added: Boolean) -> Unit = { _, _ -> },
     /** [RCX-12] 1.35: which recipe piece this arrangement is, for "이 설정 나누기". */
     share: com.bamnat.core.recipe.PieceKind = com.bamnat.core.recipe.PieceKind.CARDS,
+    /** [CVW-06] 1.35: a part moves across the middle into the next group (달력 위 ↔ 아래), not only within its own. */
+    crossGroups: Boolean = false,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
@@ -101,11 +103,18 @@ fun PageEditSheet(
             Text("바꾸는 대로 저장되고 화면에 바로 보여요. 아래 미리보기에서 순서를 확인하세요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LayoutPreview(groups, middle)
-            groups.forEach { group ->
+            groups.forEachIndexed { g, group ->
                 Text(group.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+                val lastMovable = group.rows.indexOfLast { it.movable }
                 group.rows.forEachIndexed { i, row ->
-                    EditRowLine(row, first = i == 0, last = i == group.rows.lastIndex, onShow = { onShow(row.id, it) }, onMove = { onMove(row.id, it) })
+                    EditRowLine(row,
+                        first = i == 0 && (!crossGroups || g == 0),
+                        last = if (crossGroups) g == groups.lastIndex && i >= lastMovable else i == group.rows.lastIndex,
+                        crossUp = crossGroups && g > 0 && i == 0, crossDown = crossGroups && g < groups.lastIndex && i == lastMovable,
+                        onShow = { onShow(row.id, it) }, onMove = { onMove(row.id, it) })
                 }
+                if (crossGroups && g < groups.lastIndex) Text("카드의 화살표로 ${middle} 위아래를 오갈 수 있어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FitMore(others, onAdd)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -118,7 +127,8 @@ fun PageEditSheet(
 }
 
 @Composable
-private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Boolean) -> Unit, onMove: (Int) -> Unit) {
+private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Boolean) -> Unit, onMove: (Int) -> Unit,
+                        crossUp: Boolean = false, crossDown: Boolean = false) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,8 +142,8 @@ private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Bo
             Text(row.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (row.movable) {
-            IconButton(onClick = { onMove(-1) }, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, "${row.label} 위로") }
-            IconButton(onClick = { onMove(1) }, enabled = !last) { Icon(Icons.Filled.KeyboardArrowDown, "${row.label} 아래로") }
+            IconButton(onClick = { onMove(-1) }, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, if (crossUp) "${row.label} 달력 위로 옮기기" else "${row.label} 위로") }
+            IconButton(onClick = { onMove(1) }, enabled = !last) { Icon(Icons.Filled.KeyboardArrowDown, if (crossDown) "${row.label} 달력 아래로 옮기기" else "${row.label} 아래로") }
         }
         Switch(checked = row.shown, onCheckedChange = onShow, modifier = Modifier.padding(start = 4.dp))
     }

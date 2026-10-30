@@ -1469,6 +1469,11 @@ private fun AppNavHost(
                     // [RCX-31] The same code, its next 판.
                     com.bamnat.app.recipe.RecipeLinks.remake = body to code
                     nav.navigate(Routes.recipeMake(calendar, code = code))
+                },
+                onTakeInto = { mine, body ->
+                    // [LIN-03] My recipe's next 판, with what the 수정판 changed in it.
+                    com.bamnat.app.recipe.RecipeLinks.remake = body to mine
+                    nav.navigate(Routes.recipeMake(calendar, code = mine))
                 })
         }
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->

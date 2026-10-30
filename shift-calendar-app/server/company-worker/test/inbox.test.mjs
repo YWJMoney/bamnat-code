@@ -117,6 +117,7 @@ test("[INBOX-06] 결과 lines are read in the forms Claude writes them", () => {
       { id: "d0123456789abcdf", status: "doing", version: null, reason: "" },
       { id: "d0123456789abcdg", status: "rejected", version: null, reason: "시스템 설정을 따라요" }]);
   assert.equal(titleFrom("위젯에서 내일 근무도 보이면 좋겠어요. 그리고 색도요"), "위젯에서 내일 근무도 보이면 좋겠어요.");
+  assert.equal(titleFrom("[설정 > 함께 만들어요] 위젯 색을 바꾸고 싶어요"), "위젯 색을 바꾸고 싶어요");
 });
 
 test("[INBOX-03] 정리함 needs 문의 보기 to read and 개발사항 고치기 to make or tie an item", async () => {

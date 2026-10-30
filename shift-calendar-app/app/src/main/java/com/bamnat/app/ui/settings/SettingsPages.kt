@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.dp
@@ -555,8 +558,12 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow("휴대폰 배경색에 맞추기", "배경화면 색으로 앱의 색을 바꿔요", settings.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
         }
+        // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
+        AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
         TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
+        // [CVW-07] 1.35 앱 동작: this section and the day's taps, shared as one piece.
+        com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.APP_FEEL)
     }
     SectionCard(title = "달력") {
         // [CAL-02] Sunday first, as most Korean calendars are.
@@ -575,6 +582,12 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
+        // [CVW-02] 1.35 달력 모양: cells, marks, memo lines and their order.
+        HorizontalDivider()
+        com.bamnat.app.ui.calendar.CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v ->
+            vm.update { with(com.bamnat.app.ui.calendar.CalendarViewSettings) { it.withView(v) } }
+        })
+        com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.CAL_VIEW)
         // [RCP-09] 1.34 달력 테마.
         HorizontalDivider()
         CalendarThemeRows(settings.calTheme) { t -> vm.update { it.copy(calTheme = t) } }
@@ -627,6 +640,12 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }, listOf(PhoneDayView.SHEET to "하루 화면 열기", PhoneDayView.WEEK to "그 주만 보기"), settings.phoneDayView) { v ->
             vm.update { it.copy(phoneDayView = v) }
         }
+        // [CVW-09] 1.35 날짜를 길게 누르면.
+        ChoiceRow(LONG_PRESS_ROW, when (settings.longPress) {
+            "memo" -> "그 날의 새 메모가 바로 열려요"
+            "open" -> "그 날의 하루 화면이 바로 열려요"
+            else -> "근무 바꾸기·휴가·알람 끄기·메모가 있는 작은 메뉴가 떠요"
+        }, listOf("menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기"), settings.longPress) { v -> vm.update { it.copy(longPress = v) } }
         // B 1.32 [CALX-04] (사용자 2026-10-28 "달력 화면 요소 모두 켜고 끄기"): every card at once; 화면 꾸미기 picks them one by one.
         SwitchRow("달력만 보기", "달력 위아래의 카드(요약·오늘의 흐름·근무시간 줄·메모 목록 등)를 모두 숨겨요. 하나씩 고르려면 달력 › 도구 › 화면 꾸미기",
             settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on) } }
@@ -1126,4 +1145,27 @@ internal fun MoveToNewPhoneDialog(onSave: () -> Unit, onDismiss: () -> Unit) {
         confirmButton = { TextButton(onClick = onSave) { Text("백업 저장") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+/** [CVW-09] The row 설정 찾기 points at. */
+const val LONG_PRESS_ROW = "날짜를 길게 누르면"
+const val ACCENT_ROW = "앱 강조색"
+
+/** [CVW-08] 1.35 앱 강조색: the app's own or a colour; the buttons and picked tab take it at once. */
+@Composable
+private fun AccentRow(accent: Long, onPick: (Long) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(ACCENT_ROW, style = MaterialTheme.typography.bodyLarge)
+            Text(if (accent == 0L) "앱 기본 파란색이에요. 버튼과 고른 탭의 색을 바꿔요" else "버튼·고른 탭·선택 표시가 이 색이에요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (accent != 0L) TextButton(onClick = { onPick(0L) }) { Text("처음대로") }
+        androidx.compose.foundation.layout.Box(
+            Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+                .clickable(onClickLabel = "강조색 고르기") { picking = true },
+        )
+    }
+    if (picking) com.bamnat.app.ui.recipe.ColorPickerDialog(if (accent == 0L) 0xFF2F5BEAL else accent, { c -> onPick(c); picking = false }, { picking = false }, "앱 강조색")
 }

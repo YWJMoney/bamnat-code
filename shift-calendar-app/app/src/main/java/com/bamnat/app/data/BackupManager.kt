@@ -508,7 +508,7 @@ class BackupManager(
                 .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
-                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("photoLook", s.photoLook).put("rateHint", s.rateHint)
+                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
@@ -998,6 +998,9 @@ class BackupManager(
                     calTheme = o.optString("calTheme", s.calTheme),
                     widgetLook = o.optString("widgetLook", s.widgetLook),
                     photoLook = o.optString("photoLook", s.photoLook),
+                    calView = o.optString("calView", s.calView),
+                    accentColor = o.optLong("accentColor", s.accentColor),
+                    longPress = o.optString("longPress", s.longPress).takeIf { it in com.bamnat.core.recipe.AppFeel.HOLDS } ?: s.longPress,
                     memoLayout = o.optString("memoLayout", s.memoLayout),
                     rateHint = o.optBoolean("rateHint", s.rateHint),
                     alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),

@@ -167,12 +167,15 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 lines += "‘${e.title}’은(는) 내일까지 되돌릴 수 있어요 (설정 › 나눔 판)"
                 prefs.edit().putBoolean("$K_UNDO_SAID${e.id}", true).apply()
             }
-        if (followNews() && c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
+        // [LIN-04] 1.35 A 수정판 of my recipe is news whether or not I follow anyone (the news call says it).
+        if (c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
             val since = prefs.getString(K_NEWS_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
             runCatching { c.recipeApi.news(c.companyStore.device, since) }.onSuccess { n ->
                 prefs.edit().putString(K_NEWS_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
-                n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
-                n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
+                if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
+                if (followNews()) n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
+                n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’을 고친 수정판 ‘${r.title}’이 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
+                    if (n.remixes.size > 1) " (외 ${n.remixes.size - 1}개)" else "" }
             }
         }
         return lines

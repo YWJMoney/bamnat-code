@@ -19,6 +19,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.AlarmOff
@@ -524,11 +525,15 @@ private fun DayCell(
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    // [CVW-01] 1.35 달력 모양; the app's own cells when it is the default.
+    val view = LocalCalendarView.current
+    val hold = LocalDayHold.current
+    val custom = !view.isDefault
+    val shape = if (view.grid == "line") RoundedCornerShape(3.dp) else RoundedCornerShape(10.dp)
     // [CAL-01] Date 14sp and the line under it 11sp, growing with the font setting only as far as the cell holds.
     val density = LocalDensity.current
-    val dateSize = with(density) { minOf(14.sp.toDp(), 17.dp).toSp() }
-    val footerSize = with(density) { minOf(11.sp.toDp(), 13.dp).toSp() }
+    val dateSize = with(density) { minOf((14 + view.textBump * 2).sp.toDp(), (17 + view.textBump * 2).dp).toSp() }
+    val footerSize = with(density) { minOf((11 + view.textBump * 1.5f).sp.toDp(), (13 + view.textBump * 2).dp).toSp() }
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
@@ -596,7 +601,8 @@ private fun DayCell(
 
     Box(
         modifier
-            .padding(1.5.dp)
+            .padding(if (view.grid == "line") 0.5.dp else 1.5.dp)
+            .then(if (view.grid == "line") Modifier.border(0.6.dp, scheme.outlineVariant, shape) else Modifier)
             .clip(shape)
             .background(tint ?: Color.Transparent)
             .then(
@@ -618,13 +624,18 @@ private fun DayCell(
                     })
                     quickMenu -> ({
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        menu = true
+                        // [CVW-09] 1.35 날짜를 길게 누르면: the quick menu, a memo for the day at once, or the whole day.
+                        when (hold) {
+                            "memo" -> onQuickAction(QuickAction.Memo)
+                            "open" -> onQuickAction(QuickAction.Open)
+                            else -> menu = true
+                        }
                     })
                     else -> null
                 },
                 onLongClickLabel = when {
                     onLongPress != null -> "여기부터 칠하기"
-                    quickMenu -> "빠른 설정"
+                    quickMenu -> when (hold) { "memo" -> "메모 쓰기"; "open" -> "자세히 열기"; else -> "빠른 설정" }
                     else -> null
                 },
             )
@@ -641,6 +652,55 @@ private fun DayCell(
         // 1.32 [WTYP-11] 희망 오프: a small ♡ in the top right corner, over the badge's row.
         if (wishOff) Text(com.bamnat.core.work.WishOff.MARK, Modifier.align(Alignment.TopEnd).padding(end = 2.dp),
             style = MaterialTheme.typography.labelSmall, color = scheme.tertiary)
+        val fullLeave = day.leave?.takeIf { it.isFullDay }
+        val hourlyRange = hourly?.let { HourlyWork.timeRange(day) }
+        val covered = day.coveredShift
+        val badgeKind = day.extras.firstOrNull()?.kind?.takeIf { !day.isWorkDay && covered == null && day.leave == null }
+        // [CAL-05] For field and shop work a job outranks a day-off mark; a painted 휴무 is not the day's news.
+        val jobFirst = focus != CalendarFocus.SHIFTS && jobs > 0 && (type == null || type.isOff) && !day.hasCustomTimes &&
+            fullLeave == null && covered == null && badgeKind == null
+        val dayMark: @Composable (Dp) -> Unit = { size ->
+            if (jobFirst && !fieldJobs.isNullOrEmpty()) {
+                FieldJobMarks(fieldJobs, date)
+            } else if (jobFirst) {
+                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
+            } else if (fullLeave != null) {
+                // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
+                LeaveMark(fullLeave, size = size)
+            } else if (covered != null && day.isWorkDay && type != null) {
+                // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
+                    ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                }
+            } else if (covered != null) {
+                // [EXTRA-01] A 대근 on a day off: the covered shift's badge.
+                ShiftBadge(type = covered, size = size)
+            } else if (badgeKind != null) {
+                // [EXTRA-01] Other extra work on a day off (특근 09–18): the kind itself is the day's mark.
+                ExtraKindMark(badgeKind, size = size)
+            } else if (hourly != null && hourlyRange != null) {
+                // [HRLY-03] An 알바 day's hours are its mark, not the shift code.
+                HourlyTimeMark(day, hourlyRange)
+            } else if (invest != null && invest.trades(date) > 0 && (type == null || type.isOff)) {
+                // [INV-01] A day with trades: how many.
+                com.bamnat.app.ui.invest.InvestDayMark(invest, date)
+            } else if ((type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))) {
+                ShiftBadge(type = type, text = type?.label ?: "근", size = size, outlined = type?.isOff == true)
+            } else {
+                Spacer(Modifier.height(size))
+            }
+        }
+        if (custom) CustomCellBody(
+            view = view, date = date, isToday = isToday, numberColor = numberColor, dateSize = dateSize, footerSize = footerSize,
+            todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
+            marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
+            barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
+                ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
+            dayMark = dayMark,
+            texts = cellTexts(day, focus, memoText, showMoney, showSpend, showHours, showLunar, money, sales, hourly, invest, fieldJobs),
+            moneyColor = if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income,
+        ) else
         // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
             Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp),
@@ -685,43 +745,7 @@ private fun DayCell(
                 else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
                 else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
             }
-            val fullLeave = day.leave?.takeIf { it.isFullDay }
-            val hourlyRange = hourly?.let { HourlyWork.timeRange(day) }
-            val covered = day.coveredShift
-            val badgeKind = day.extras.firstOrNull()?.kind?.takeIf { !day.isWorkDay && covered == null && day.leave == null }
-            // [CAL-05] For field and shop work a job outranks a day-off mark; a painted 휴무 is not the day's news.
-            val jobFirst = focus != CalendarFocus.SHIFTS && jobs > 0 && (type == null || type.isOff) && !day.hasCustomTimes &&
-                fullLeave == null && covered == null && badgeKind == null
-            if (jobFirst && !fieldJobs.isNullOrEmpty()) {
-                FieldJobMarks(fieldJobs, date)
-            } else if (jobFirst) {
-                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
-            } else if (fullLeave != null) {
-                // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
-                LeaveMark(fullLeave, size = 22.dp)
-            } else if (covered != null && day.isWorkDay && type != null) {
-                // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ShiftBadge(type = type, size = 18.dp, outlined = type.isOff, showIcon = false)
-                    ShiftBadge(type = covered, size = 18.dp, showIcon = false)
-                }
-            } else if (covered != null) {
-                // [EXTRA-01] A 대근 on a day off: the covered shift's badge.
-                ShiftBadge(type = covered, size = 22.dp)
-            } else if (badgeKind != null) {
-                // [EXTRA-01] Other extra work on a day off (특근 09–18): the kind itself is the day's mark.
-                ExtraKindMark(badgeKind, size = 22.dp)
-            } else if (hourly != null && hourlyRange != null) {
-                // [HRLY-03] An 알바 day's hours are its mark, not the shift code.
-                HourlyTimeMark(day, hourlyRange)
-            } else if (invest != null && invest.trades(date) > 0 && (type == null || type.isOff)) {
-                // [INV-01] A day with trades: how many.
-                com.bamnat.app.ui.invest.InvestDayMark(invest, date)
-            } else if ((type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))) {
-                ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
-            } else {
-                Spacer(Modifier.height(22.dp))
-            }
+            dayMark(22.dp)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 val extraMinutes = day.extraMinutes
                 // [CAL-05] A shop's cell says its sales; field work says what came in.
@@ -965,5 +989,119 @@ internal fun CornerMark(mark: Corner, dot: Boolean = false) {
         // Days the user changed by hand.
         Corner.Changed -> Box(Modifier.padding(2.dp).size(5.dp).clip(CircleShape).background(LocalCalendarColors.current.changed))
         is Corner.Attend -> AttendanceMark(mark.attendance)
+    }
+}
+
+/**
+ * [CVW-01] What can stand under a day's mark in 달력 모양, by line id (core CalendarView.LINES): only the ones this day has and the
+ * user turned on. The memo is its lines ("\n" between them).
+ */
+private fun cellTexts(
+    day: ResolvedDay, focus: CalendarFocus, memoText: String?, showMoney: Boolean, showSpend: Boolean, showHours: Boolean, showLunar: Boolean,
+    money: DayMoney?, sales: Long?, hourly: HourlyCells?, invest: com.bamnat.app.ui.invest.InvestCells?, fieldJobs: List<com.bamnat.core.money.Job>?,
+): Map<String, String> = buildMap {
+    val date = day.date
+    KoreanHolidays.nameOf(date)?.let { put("holiday", it) }
+    memoText?.takeIf { it.isNotBlank() }?.let { put("memo", it) }
+    val moneyText = invest?.footer(date)
+        ?: (if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null)
+        ?: (if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })?.let { Fmt.wonShort(it) })
+        ?: hourly?.payText(day)
+    moneyText?.let { put("money", it) }
+    val hours = buildString {
+        if (showHours && day.scheduledMinutes > 0) append(HoursFormat.short(day.scheduledMinutes))
+        if (day.extraMinutes > 0) { if (isNotEmpty()) append(" "); append("+").append(HoursFormat.short(day.extraMinutes)) }
+    }
+    if (hours.isNotEmpty()) put("hours", hours)
+    if (showSpend && focus == CalendarFocus.SHIFTS) money?.expense?.takeIf { it > 0 }?.let { put("spend", "−" + Fmt.wonShort(it)) }
+    if (showLunar) put("lunar", KoreanLunar.fromSolar(date).short)
+}
+
+/** [CVW-01] A day cell drawn the way 달력 모양 says: the date's place, the mark's size or a bar, then the lines in order. */
+@Composable
+private fun CustomCellBody(
+    view: com.bamnat.core.recipe.CalendarView, date: LocalDate, isToday: Boolean, numberColor: Color, dateSize: androidx.compose.ui.unit.TextUnit,
+    footerSize: androidx.compose.ui.unit.TextUnit, todayColor: Color?, holidayName: String?, hasMemo: Boolean, alarmOff: Boolean, marks: List<Corner>,
+    barColor: Color?, dayMark: @Composable (Dp) -> Unit, texts: Map<String, String>, moneyColor: Color,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val cal = LocalCalendarColors.current
+    val left = view.date == "left"
+    val memoShown = texts.containsKey("memo")
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 2.dp),
+        horizontalAlignment = if (left) Alignment.Start else Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (left) Arrangement.Start else Arrangement.Center) {
+            Box(
+                Modifier.size(with(LocalDensity.current) { dateSize.toDp() } + 6.dp).clip(CircleShape)
+                    .background(if (isToday) todayColor ?: scheme.primary else Color.Transparent),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    date.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                    fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold, fontSize = dateSize, lineHeight = dateSize,
+                    color = if (isToday) todayColor?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: scheme.onPrimary else numberColor,
+                )
+            }
+            if (left) Spacer(Modifier.weight(1f))
+            if (alarmOff) Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff, modifier = Modifier.size(10.dp))
+            marks.take(2).forEach { CornerMark(it, dot = true) }
+            if (hasMemo && !memoShown) { Spacer(Modifier.width(2.dp)); ColorDot(cal.memoDot, size = 5.dp) }
+            if (left && view.badge != "line") dayMark(if (view.badge == "big") 20.dp else 15.dp)
+        }
+        when {
+            // The shift as a bar in its colour: the room under it goes to the lines.
+            view.badge == "line" && barColor != null -> Box(Modifier.fillMaxWidth().height(4.dp).background(barColor, RoundedCornerShape(2.dp)))
+            view.badge == "line" -> dayMark(14.dp)
+            !left -> dayMark(if (view.badge == "small") 15.dp else 22.dp)
+        }
+        for (id in view.lines) {
+            val t = texts[id] ?: continue
+            val color = when (id) {
+                "memo" -> cal.memoDot
+                "holiday" -> cal.sunday
+                "money" -> moneyColor
+                "spend" -> cal.expense
+                "hours" -> if (t.startsWith("+")) cal.holidayWork else scheme.onSurfaceVariant
+                else -> scheme.onSurfaceVariant
+            }
+            val lines = if (id == "memo") t.split('\n') else listOf(t)
+            lines.forEach { line ->
+                Text(
+                    line, fontSize = footerSize, lineHeight = footerSize * FOOTER_LINE, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = NumberStyle.merge(FooterTrim), color = color, textAlign = if (left) TextAlign.Start else TextAlign.Center,
+                    fontWeight = if (id == "money") FontWeight.Bold else FontWeight.Normal,
+                    modifier = if (id == "memo" && view.memo != null) Modifier.fillMaxWidth().background(cal.memoDot.copy(alpha = 0.10f), RoundedCornerShape(2.dp))
+                        .padding(horizontal = 1.dp) else Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/** [CVW-01] 1.35 달력 모양 for every calendar grid; MainActivity provides the user's. */
+val LocalCalendarView = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.CalendarView() }
+
+/** [CVW-09] 1.35 날짜를 길게 누르면 (menu, memo, open). */
+val LocalDayHold = androidx.compose.runtime.staticCompositionLocalOf { "menu" }
+
+/** [CVW-01] The extra size steps of 달력 모양's 글씨: −1, 0, +1. */
+internal val com.bamnat.core.recipe.CalendarView.textBump: Int get() = when (text) { "small" -> -1; "large" -> 1; else -> 0 }
+
+/**
+ * [CVW-01] A month cell's height for a grid [width] wide: the app's own ×1.3 of a column (66~100dp), or 달력 모양's
+ * 낮게 ×1.0 (56~84), 높게 ×1.9 (90~150) or 아주 높게 ×2.7 (120~210). [sideways] phones keep their short cells.
+ */
+fun com.bamnat.core.recipe.CalendarView.cellHeight(width: Dp, sideways: Boolean = false): Dp {
+    if (sideways) return 66.dp
+    val col = width / 7
+    return when (size) {
+        "short" -> (col * 1.0f).coerceIn(56.dp, 84.dp)
+        "tall" -> (col * 1.9f).coerceIn(90.dp, 150.dp)
+        "huge" -> (col * 2.7f).coerceIn(120.dp, 210.dp)
+        else -> (col * 1.3f).coerceIn(66.dp, 100.dp)
     }
 }

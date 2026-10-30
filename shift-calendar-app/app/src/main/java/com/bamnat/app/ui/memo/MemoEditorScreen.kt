@@ -5,6 +5,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -131,8 +132,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     // [RCP-11] 1.34 메모 틀.
     val templates by vm.templates.collectAsStateWithLifecycle()
     var pickTemplate by remember { mutableStateOf(false) }
-    if (pickTemplate) MemoTemplateDialog(templates, onPick = { vm.startFrom(it); pickTemplate = false }, onRemove = vm::removeTemplate,
-        onDismiss = { pickTemplate = false })
+    // [CVW-10] 1.35 A template with 입력 칸 asks them first.
+    var asking by remember { mutableStateOf<com.bamnat.core.memo.MemoTemplate?>(null) }
+    if (pickTemplate) MemoTemplateDialog(templates, onPick = { t -> if (t.asks.isEmpty()) vm.startFrom(t) else asking = t; pickTemplate = false },
+        onRemove = vm::removeTemplate, onDismiss = { pickTemplate = false })
+    asking?.let { t -> TemplateAskDialog(t, onDone = { answers -> vm.startFrom(t, answers); asking = null }, onDismiss = { asking = null }) }
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -812,6 +816,7 @@ private fun MemoTemplateDialog(
                         Column(Modifier.weight(1f)) {
                             Text(listOfNotNull(t.emoji, t.title).joinToString(" "), style = MaterialTheme.typography.bodyLarge)
                             val what = buildList {
+                                if (t.asks.isNotEmpty()) add("입력 칸 ${t.asks.size}개")
                                 if (t.check.isNotEmpty()) add("체크 ${t.check.size}개")
                                 com.bamnat.core.memo.MemoRepeat.label(t.repeat).takeIf { it.isNotEmpty() }?.let { add(it) }
                                 if (t.from != null) add("나눔 판에서 받음")
@@ -824,5 +829,51 @@ private fun MemoTemplateDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
+/**
+ * [CVW-10] 1.35 메모 틀의 입력 칸: each thing the template asks, as its kind — a line, a number, 별점 1~5 or one of its choices — then
+ * the memo starts with "칸: 값" lines. Anything left empty is left out; 건너뛰기 starts the memo with none.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Map<String, String>) -> Unit, onDismiss: () -> Unit) {
+    val answers = remember(t.id) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(listOfNotNull(t.emoji, t.title).joinToString(" ")) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                t.asks.forEach { a ->
+                    val v = answers[a.label].orEmpty()
+                    when (a.type) {
+                        "star" -> Column {
+                            Text(a.label, style = MaterialTheme.typography.bodyMedium)
+                            Row {
+                                (1..5).forEach { n ->
+                                    val on = (v.toIntOrNull() ?: 0) >= n
+                                    TextButton(onClick = { answers[a.label] = if (v == "$n") "" else "$n" }, modifier = Modifier.semantics { contentDescription = "${a.label} 별 ${n}개" }) {
+                                        Text(if (on) "★" else "☆", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
+                        "pick" -> Column {
+                            Text(a.label, style = MaterialTheme.typography.bodyMedium)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[a.label] = if (v == c) "" else c }, label = { Text(c) }) }
+                            }
+                        }
+                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[a.label] = it.take(100) }, label = { Text(a.label) },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = if (a.type == "num") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                                else androidx.compose.foundation.text.KeyboardOptions.Default)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(answers.toMap()) }) { Text("메모 시작") } },
+        dismissButton = { TextButton(onClick = { onDone(emptyMap()) }) { Text("건너뛰기") } },
     )
 }

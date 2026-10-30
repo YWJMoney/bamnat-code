@@ -111,14 +111,17 @@ class MainActivity : ComponentActivity() {
         com.bamnat.app.ui.Fmt.clock12 = settings.clock12
         val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
-            corners = photoLook.corners) {
+            corners = photoLook.corners, accent = settings.accentColor) {
             // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
             val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
             val look = androidx.compose.runtime.remember(settings.calTheme, darkSurface) {
                 com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(settings.calTheme), darkSurface)
             }
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds,
-                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook) {
+                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook,
+                // [CVW-01][CVW-09] 1.35 달력 모양 and 날짜를 길게 누르면.
+                com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
+                com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress) {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.

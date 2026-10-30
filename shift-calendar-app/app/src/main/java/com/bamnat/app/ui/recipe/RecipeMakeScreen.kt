@@ -36,6 +36,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -107,6 +110,12 @@ class RecipeMakeViewModel(
         val draftId: Long = 0,
         /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
         val bundleChoices: List<Pair<String, String>> = emptyList(),
+        /** [STU-02] 1.35 보여주기 판 to start the studio from (its code becomes the parent). */
+        val showcases: List<com.bamnat.app.recipe.RecipeItem> = emptyList(),
+        /** [STU-05] Put on this phone only (내 앱에만 넣기): the record 되돌리기 reads. */
+        val putMine: Long? = null,
+        /** [LIN-01] The recipe this one is a 수정판 of, as its title (for the line that says so). */
+        val parentTitle: String? = null,
     )
 
     private val _state = MutableStateFlow(State(recipe = blank(), draftId = draftId))
@@ -129,8 +138,73 @@ class RecipeMakeViewModel(
             val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
             val mineUp = runCatching { c.recipeApi.mine(c.companyStore.device).items.map { it.first.code to it.first.title } }.getOrDefault(emptyList())
             _state.value = _state.value.copy(bundleChoices = (mineUp + put).filter { it.first != code }.distinctBy { it.first }.take(20))
+            val shows = runCatching { c.recipeApi.list(style, "showcase").items.filter { it.showcase } }.getOrDefault(emptyList())
+            _state.value = _state.value.copy(showcases = shows)
+            _state.value.recipe.parent?.let { p -> parentTitleOf(p) }
         }
     }
+
+    private suspend fun parentTitleOf(code: String) {
+        val t = runCatching { c.recipeApi.show(code, null).item.title }.getOrNull() ?: _state.value.showcases.firstOrNull { it.code == code }?.title
+        _state.value = _state.value.copy(parentTitle = t)
+    }
+
+    // ---- [STU-01]..[STU-05] 1.35 꾸미기 스튜디오 ----
+
+    /** Start from a 보여주기 판 (or any recipe on the plaza): its pieces and look, with it as the parent; the name is the maker's to give. */
+    fun startFrom(item: com.bamnat.app.recipe.RecipeItem) = viewModelScope.launch {
+        val r = runCatching { c.recipeApi.show(item.code, c.companyStore.device).recipe() }.getOrNull() ?: run {
+            _state.value = _state.value.copy(error = "판을 받지 못했어요. 인터넷을 확인해 주세요"); return@launch
+        }
+        _state.value = _state.value.copy(recipe = r.copy(title = "", parent = item.code), chosen = r.pieces.map { it.kind }.toSet(),
+            parentTitle = item.title, error = null)
+    }
+
+    /**
+     * Start from what this phone has now: every piece it can share for this kind of work. When a recipe I put on is still in use, the
+     * new one is its 수정판 (사용자 2026-10-30 "공유를 한다면 거져온 판의 수정판으로").
+     */
+    fun startMine() = viewModelScope.launch {
+        val s = _state.value
+        val fits = PieceKind.entries.filter { it != PieceKind.BUNDLE && it != PieceKind.COMPANY && (style == null || style in it.styles) && s.mine[it] != null }.toSet()
+        val from = runCatching { c.recipes.inUse().maxByOrNull { it.appliedAt } }.getOrNull()
+        val r = withPieces(blank().copy(parent = from?.code), fits, s.mine)
+        _state.value = s.copy(recipe = r, chosen = fits, parentTitle = from?.title, error = null)
+    }
+
+    /** Start from nothing: the example app shows the app's own look until a piece is turned on. */
+    fun startBlank() { _state.value = _state.value.copy(recipe = blank(), chosen = emptySet(), parentTitle = null, error = null) }
+
+    /** A piece on with [values], or taken away (null). */
+    fun setPiece(kind: PieceKind, values: Map<String, Any?>?) {
+        val s = _state.value
+        val rest = s.recipe.pieces.filter { it.kind != kind }
+        val pieces = if (values == null) rest else (rest + Piece(kind, values.filterValues { it != null })).sortedBy { it.kind.ordinal }
+        _state.value = s.copy(recipe = s.recipe.copy(pieces = pieces), chosen = pieces.map { it.kind }.toSet())
+    }
+
+    /** One field of [kind]: the piece is made when it is not there yet; null takes the field away. */
+    fun setValue(kind: PieceKind, key: String, value: Any?) {
+        val now = _state.value.recipe.pieces.firstOrNull { it.kind == kind }?.values ?: emptyMap()
+        val next = if (value == null) now - key else now + (key to value)
+        setPiece(kind, next.takeIf { it.isNotEmpty() || kind.fields.none { f -> !f.optional } })
+    }
+
+    /** What a piece starts with when it is turned on: what this phone has, or example values that pass the catalog. */
+    fun starter(kind: PieceKind): Map<String, Any?> = _state.value.mine[kind]?.filterValues { it != null } ?: StudioStarters.of(kind, style)
+
+    /** [STU-05] 내 앱에만 넣기: put the recipe on this phone without sending it; 되돌리기 works as for any recipe for 7 days. */
+    fun putOnMine() = viewModelScope.launch {
+        val s = _state.value
+        val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
+        val answers = s.recipe.inputs.associate { it.id to it.default }
+        val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }.getOrNull()
+        _state.value = _state.value.copy(putMine = id ?: -1L)
+        saveDraft()
+    }
+
+    /** [STU-05] 만들기만: kept as a draft on this phone, to finish or put on later. */
+    fun keepDraft() = saveDraft()
 
     private fun blank() = Recipe(title = "", styles = setOfNotNull(style ?: WorkStyle.SHIFT), pieces = emptyList(),
         cover = Cover(emoji = when (style) { WorkStyle.HOURLY -> "☕"; WorkStyle.FIELD -> "🛠️"; WorkStyle.BUSINESS -> "🏪"; WorkStyle.INVEST -> "📈"; WorkStyle.DAY -> "🗓️"; else -> "🌙" }))
@@ -279,7 +353,8 @@ class RecipeMakeViewModel(
 @Composable
 fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (String) -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
-    val titles = listOf("고르기", "받는 사람이 정할 칸", "꾸미기", "설명", "검사하고 올리기")
+    // [STU-01] 1.35: 꾸미기 스튜디오 first; what was 고르기 lives under it.
+    val titles = listOf("꾸미기", "받는 분이 넣을 값", "이름·표지", "설명", "마치기")
     Scaffold(topBar = {
         TopAppBar(title = { Text((if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") + " ${s.step}/5 · ${titles[s.step - 1]}") },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
@@ -290,7 +365,23 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 LinearProgressIndicator(progress = { s.step / 5f }, modifier = Modifier.fillMaxWidth())
                 s.sent?.let { sent -> SentCard(s.recipe.title, sent, onOpen); return@Column }
                 when (s.step) {
-                    1 -> StepPick(s, vm)
+                    1 -> {
+                        RecipeStudio(s, vm)
+                        var more by rememberSaveable { mutableStateOf(false) }
+                        OutlinedCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("내 설정에서 더하기 · 다른 판 묶기", style = MaterialTheme.typography.titleSmall)
+                                        Text("회사 근무 주기, 그림, 다른 판 묶음처럼 예시 앱에 없는 것", style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(onClick = { more = !more }) { Text(if (more) "접기" else "열기") }
+                                }
+                                if (more) StepPick(s, vm)
+                            }
+                        }
+                    }
                     2 -> StepInputs(s, vm)
                     3 -> StepLook(s, vm)
                     4 -> StepWords(s, vm)
@@ -304,6 +395,12 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                         (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
                 }
+                // 1.35 실사용 점검: say why 다음 does not go on.
+                when {
+                    s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
+                    s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
+                    else -> null
+                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 설정 › 나눔 판에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(24.dp))
@@ -499,10 +596,31 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         Spacer(Modifier.width(8.dp))
         Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall)
     }
+    // [LIN-01] 1.35 수정판: what this is made from, said before it goes up.
+    s.recipe.parent?.let { Text("‘${s.parentTitle ?: it}’의 수정판으로 그 판 밑에 올라가요. 원래 만든 분 표시는 늘 남고, 그분이 달라진 점을 보고 자기 판에 가져갈 수 있어요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     if (!vm.canPublish) Text("올리기는 정식 출시일(11월 10일 예정)부터 열려요. 그동안 만들던 것으로 이 휴대폰에 저장돼요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
+    // 1.35 실사용 점검: why 올리기 is off, in one line.
+    when {
+        !RecipeLint.ready(lines) -> "위 검사의 ✕를 먼저 고쳐 주세요"
+        s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜면 올릴 수 있어요"
+        else -> null
+    }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+    // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
+    HorizontalDivider()
+    Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = vm::keepDraft, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }
+        OutlinedButton(onClick = vm::putOnMine, enabled = s.putMine == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("내 앱에만 넣기") }
+    }
+    Text(when (s.putMine) {
+        null -> "만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요"
+        -1L -> "지금 내 설정과 같아서 바뀐 것이 없어요"
+        else -> "내 앱에 넣었어요. 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요"
+    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

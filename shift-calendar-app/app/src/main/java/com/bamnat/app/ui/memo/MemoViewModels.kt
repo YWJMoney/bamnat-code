@@ -450,7 +450,7 @@ class MemoEditorViewModel(
     val templates: StateFlow<List<com.bamnat.core.memo.MemoTemplate>> = container.memoTemplates.items
 
     /** [RCP-11] 틀에서 시작: the template's title, list or text and repeat; the date and calendars stay as they are. */
-    fun startFrom(t: com.bamnat.core.memo.MemoTemplate) = update { t.start(it.date, com.bamnat.core.time.Today.date(), it) }
+    fun startFrom(t: com.bamnat.core.memo.MemoTemplate, answers: Map<String, String> = emptyMap()) = update { t.start(it.date, com.bamnat.core.time.Today.date(), it, answers) }
 
     /** [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. */
     fun saveAsTemplate(): Boolean {

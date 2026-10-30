@@ -115,7 +115,7 @@ private fun StudioStart(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
             if (s.showcases.isNotEmpty()) {
                 Text("이런 느낌으로 시작", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    s.showcases.forEach { sc ->
+                    s.showcases.forEach { sc: com.bamnat.app.recipe.RecipeItem ->
                         OutlinedCard(Modifier.width(150.dp).clickable(onClickLabel = "이 판으로 시작") { vm.startFrom(sc); open = false }) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 RecipeCover(sc.cover, size = 40.dp)
@@ -134,6 +134,9 @@ private fun StudioStart(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         }
     }
 }
+
+/** The recipe's piece of [kind], if it has one. */
+internal fun Recipe.piece(kind: PieceKind) = pieces.firstOrNull { it.kind == kind }
 
 // ---- the example phone ----
 
@@ -195,54 +198,44 @@ private fun day(name: String, role: String, label: String, color: Long) = mapOf(
 @Composable
 private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkStyle?) {
     val line = resolved[PieceKind.LAYOUT]?.get("calendar") as? String
-    val placed = PageLayout.decode(line).arrange(CalendarPart.entries.toList()) { it.id }.filter { it.shown }
-    placed.filter { it.part.above && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.label, it.part.what) }
+    val all = PageLayout.decode(line).arrange(CalendarPart.entries.toList()) { it.id }
+    // [CVW-06] The cards above and under the month as the recipe orders them, the month among them.
+    val above = com.bamnat.app.ui.calendar.calendarAbove(all.map { it.part })
+    val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL }
+    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.label, it.part.what) }
     if (placed.any { it.part == CalendarPart.SUMMARY }) MockSummary()
     val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
     if (placed.any { it.part == CalendarPart.COUNTS }) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         days.forEach { d -> Text("${d["label"]} ${if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
-    MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty())
-    placed.filter { !it.part.above }.forEach { MockCard(it.part.label, it.part.what) }
+    MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]))
+    placed.filter { !above(it.part) }.forEach { MockCard(it.part.label, it.part.what) }
 }
 
-/** An example month: the kinds of day in turn (2 days each), today ringed, 토·일 in the theme's colours. */
+/** [CVW-01] 달력 모양's values as the calendar reads them. */
+internal fun viewOf(v: Map<String, Any?>?): com.bamnat.core.recipe.CalendarView = if (v == null) com.bamnat.core.recipe.CalendarView() else
+    com.bamnat.core.recipe.CalendarView(size = v["size"] as? String, badge = v["badge"] as? String, date = v["date"] as? String, text = v["text"] as? String,
+        grid = v["grid"] as? String, memo = (v["memo"] as? Number)?.toInt(), order = (v["order"] as? String)?.split(',')?.filter { it.isNotEmpty() }?.ifEmpty { null })
+
+/** [CVW-01] [CalendarView] back as a piece's values (what is the app's own is left out). */
+internal fun valuesOf(v: com.bamnat.core.recipe.CalendarView, keep: Map<String, Any?>): Map<String, Any?> =
+    keep.filterKeys { it in setOf("hours", "lunar", "spend") } + listOfNotNull(v.size?.let { "size" to it }, v.badge?.let { "badge" to it },
+        v.date?.let { "date" to it }, v.text?.let { "text" to it }, v.grid?.let { "grid" to it }, v.memo?.let { "memo" to it.toLong() },
+        v.order?.let { "order" to it.joinToString(",") }).toMap()
+
+/** An example month in the recipe's 달력 모양 and theme: the kinds of day in turn (2 days each), example memos, today ringed. */
 @Composable
-private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>) {
-    val cell = theme["cell"] as? String ?: "tint"
-    val today = (theme["today"] as? Long)?.asColor() ?: MaterialTheme.colorScheme.primary
-    val sat = (theme["sat"] as? Long)?.asColor() ?: Color(0xFF1565C0)
-    val sun = (theme["sun"] as? Long)?.asColor() ?: Color(0xFFC62828)
-    val names = listOf("일", "월", "화", "수", "목", "금", "토")
+private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, view: com.bamnat.core.recipe.CalendarView) {
+    val memos = listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+    val sample = (0 until 14).map { i ->
+        val d = days[(i / 2) % days.size]
+        com.bamnat.app.ui.calendar.SampleDay(((d["emoji"] as? String) ?: d["label"]?.toString()).orEmpty(), (d["color"] as? Long) ?: 0xFF757575L,
+            memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", holiday = if (i == 9) "개천절" else null, off = d["role"] == "off")
+    }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("11월", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Row { names.forEachIndexed { i, n -> Text(n, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall,
-            color = when (i) { 0 -> sun; 6 -> sat; else -> MaterialTheme.colorScheme.onSurfaceVariant }) } }
-        for (week in 0 until 5) Row {
-            for (dow in 0 until 7) {
-                val n = week * 7 + dow - 5 + 1
-                Box(Modifier.weight(1f).aspectRatio(0.8f).padding(1.dp)) {
-                    if (n in 1..30) {
-                        val d = days[((n - 1) / 2) % days.size]
-                        val color = ((d["color"] as? Long) ?: 0xFF757575L)
-                        val bg = when (cell) { "fill" -> color.asColor().copy(alpha = 0.85f); "dot" -> Color.Transparent; else -> color.asColor().copy(alpha = 0.16f) }
-                        Column(Modifier.fillMaxSize().background(bg, MaterialTheme.shapes.extraSmall)
-                            .then(if (n == 12) Modifier.border(2.dp, today, MaterialTheme.shapes.extraSmall) else Modifier),
-                            horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("$n", fontSize = 9.sp, color = when {
-                                cell == "fill" -> contentColorOn(color)
-                                dow == 0 -> sun; dow == 6 -> sat
-                                else -> MaterialTheme.colorScheme.onSurface
-                            })
-                            if (cell == "dot") Box(Modifier.size(6.dp).background(color.asColor(), CircleShape))
-                            else Text((d["emoji"] as? String) ?: d["label"].toString(), fontSize = 10.sp, maxLines = 1,
-                                color = if (cell == "fill") contentColorOn(color) else color.asColor(), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
+        com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2, start = 9)
     }
 }
 
@@ -341,7 +334,7 @@ private fun piecesOn(tab: String): List<PieceKind> = when (tab) {
     TabOrder.MONEY -> listOf(PieceKind.SHOP, PieceKind.FIELD_SHEET)
     TabOrder.MEMOS -> listOf(PieceKind.MEMO_TEMPLATES, PieceKind.INVEST)
     TabOrder.STATS -> listOf(PieceKind.HOURLY_RULES)
-    TabOrder.SETTINGS -> listOf(PieceKind.WIDGET)
+    TabOrder.SETTINGS -> listOf(PieceKind.APP_FEEL, PieceKind.WIDGET)
     else -> emptyList()
 }
 
@@ -350,8 +343,17 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
     val fits: (PieceKind) -> Boolean = { k -> vm.style == null || vm.style in k.styles }
     @Suppress("UNCHECKED_CAST")
     when (tab) {
-        TabOrder.CALENDAR -> PartsEditor("달력 화면 카드", CalendarPart.entries.map { Triple(it.id, it.label, it.movable) },
-            r.piece(PieceKind.LAYOUT)?.values?.get("calendar") as? String) { line -> vm.setValue(PieceKind.LAYOUT, "calendar", line) }
+        TabOrder.CALENDAR -> {
+            // [CVW-02] 달력 모양 first: the phone above shows it at once.
+            val cv = r.piece(PieceKind.CAL_VIEW)
+            StudioCard("달력 모양", "칸 높이, 근무 표시, 메모 줄을 바꾸면 위 예시 달력이 바로 바뀌어요",
+                trailing = { Switch(cv != null, { on -> vm.setPiece(PieceKind.CAL_VIEW, if (on) vm.starter(PieceKind.CAL_VIEW) else null) },
+                    modifier = Modifier.semantics { contentDescription = "달력 모양 넣기" }) }) {
+                if (cv != null) com.bamnat.app.ui.calendar.CalendarViewEditor(viewOf(cv.values), { v -> vm.setPiece(PieceKind.CAL_VIEW, valuesOf(v, cv.values)) }, sample = {})
+            }
+            PartsEditor("달력 화면 카드", CalendarPart.entries.filter { it != CalendarPart.ASK && it != CalendarPart.JOURNAL }.map { Triple(it.id, it.label, it.movable) },
+                r.piece(PieceKind.LAYOUT)?.values?.get("calendar") as? String) { line -> vm.setValue(PieceKind.LAYOUT, "calendar", line) }
+        }
         TabOrder.MONEY -> PartsEditor("가계부 카드", MoneyPart.entries.map { Triple(it.id, it.label, it.movable) },
             r.piece(PieceKind.CARDS)?.values?.get("money") as? String) { line -> vm.setValue(PieceKind.CARDS, "money", line) }
         TabOrder.MEMOS -> PartsEditor("메모 화면", MemoPart.entries.map { Triple(it.id, it.label, it.movable) },
@@ -573,3 +575,28 @@ private fun newItem(f: Field.Items): Map<String, Any?> = f.fields.mapNotNull { x
         else -> null
     }
 }.toMap()
+
+/**
+ * [STU-04] What a piece starts with in the studio when this phone has none of it: example values that pass the catalog, close to
+ * what that kind of work usually has, so turning a piece on shows something on the example app at once.
+ */
+internal object StudioStarters {
+    fun of(kind: PieceKind, style: WorkStyle?): Map<String, Any?> = when (kind) {
+        PieceKind.SHIFT_LOOK -> mapOf("items" to exampleDays(style).map { it + ("emoji" to when (it["role"]) { "night" -> "🌙"; "off" -> "🌿"; else -> "☀️" }) })
+        PieceKind.CAL_THEME -> mapOf("cell" to "tint", "sun" to 0xFFC62828L, "sat" to 0xFF1565C0L)
+        PieceKind.ALARMS -> mapOf("byRole" to listOf(mapOf("role" to "day", "before" to listOf(60L))), "snooze" to 5L)
+        PieceKind.MEMO_TEMPLATES -> mapOf("items" to listOf(mapOf("title" to "하루 기록", "emoji" to "📝",
+            "asks" to listOf(mapOf("label" to "기분", "type" to "star"), mapOf("label" to "한 줄", "type" to "text")))))
+        PieceKind.HOURLY_RULES -> mapOf("weeklyPay" to true, "legalBreaks" to true)
+        PieceKind.FIELD_SHEET -> mapOf("mode" to "DAY_RATE", "chips" to listOf(0.5, 1.0, 1.5), "kinds" to listOf("철거", "설치"), "costs" to listOf("자재", "식대"))
+        PieceKind.SHOP -> mapOf("open" to WEEK_DAYS.take(6), "opens" to "10:00", "closes" to "21:00", "closing" to listOf("시재 확인", "카드 정산"))
+        PieceKind.INVEST -> mapOf("rules" to listOf(mapOf("text" to "한 종목에 자산의 20%를 넘기지 않아요")), "journal" to listOf("산 이유", "팔 기준"))
+        PieceKind.LAYOUT -> mapOf("tabs" to TabOrder.DEFAULT)
+        PieceKind.CARDS -> mapOf("stats" to "")
+        PieceKind.WIDGET -> mapOf("alpha" to 90L, "theme" to "system", "memo" to true)
+        PieceKind.PHOTO_LOOK -> mapOf("corners" to "round")
+        PieceKind.CAL_VIEW -> valuesOf(com.bamnat.core.recipe.CalendarView.PRESETS.first { it.first == "메모 중심" }.second, emptyMap())
+        PieceKind.APP_FEEL -> mapOf("theme" to "system", "hold" to "menu")
+        PieceKind.COMPANY, PieceKind.BUNDLE -> emptyMap()
+    }
+}

@@ -73,7 +73,9 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.MEMO_TEMPLATES -> c.memoTemplates.items.value.filter { it.from == null }.take(8).takeIf { it.isNotEmpty() }?.let { list ->
             mapOf("items" to list.map { t ->
                 mapOf("title" to t.title.take(30), "emoji" to t.emoji, "check" to t.check.take(20).map { it.take(60) },
-                    "body" to t.body.take(300).ifEmpty { null }, "repeat" to t.repeat.ifEmpty { null })
+                    "body" to t.body.take(300).ifEmpty { null }, "repeat" to t.repeat.ifEmpty { null },
+                    // [CVW-10]
+                    "asks" to t.asks.take(8).map { a -> mapOf("label" to a.label.take(20), "type" to a.type, "choices" to a.choices.take(8).map { it.take(16) }) }.ifEmpty { null })
             })
         }
         PieceKind.HOURLY_RULES -> c.scopeOf(cal).pay.profile.value?.let { p ->
@@ -122,6 +124,20 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.WIDGET -> c.settingsRepository.current.let { s ->
             val w = com.bamnat.core.recipe.WidgetLook.decode(s.widgetLook)
             mapOf("alpha" to w.alpha.toLong(), "theme" to w.theme, "memo" to s.widgetMemo)
+        }
+        // [CVW-01] 1.35 달력 모양 with the cells' own switches.
+        PieceKind.CAL_VIEW -> c.settingsRepository.current.let { s ->
+            val v = com.bamnat.core.recipe.CalendarView.decode(s.calView)
+            mapOf("size" to v.size, "badge" to v.badge, "date" to v.date, "text" to v.text, "grid" to v.grid,
+                "memo" to (v.memo ?: if (s.memoInCells) null else 0)?.toLong(), "hours" to s.showHoursInCells, "lunar" to s.showLunar, "spend" to s.spendInCells,
+                "order" to v.order?.joinToString(","))
+        }
+        // [CVW-07] 1.35 앱 동작.
+        PieceKind.APP_FEEL -> c.settingsRepository.current.let { s ->
+            mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
+                "accent" to s.accentColor.takeIf { it != 0L }, "textStep" to s.textStep.toLong(), "compact" to s.compact, "clock12" to s.clock12,
+                "tap" to s.phoneDayView.name.lowercase(), "hold" to s.longPress, "dayOrder" to s.dayGroupOrder.joinToString(",").ifEmpty { null },
+                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod)
         }
         // [RCX-30] The phone's own picture ids; they become the server's when the recipe is sent ([LookImages.upload]).
         PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(c.settingsRepository.current.photoLook).takeIf { !it.isDefault }?.let { l ->
@@ -222,7 +238,7 @@ class RecipePieces(private val c: AppContainer) {
                 (values["corners"] as? String)?.let { Change(com.bamnat.core.recipe.RecipeDescribe.CORNER_NAMES[it] ?: "모서리") },
             ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
-        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET ->
+        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL ->
             settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
                 .ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
     }
@@ -302,7 +318,9 @@ class RecipePieces(private val c: AppContainer) {
                 items(values, "items").forEachIndexed { i, t ->
                     val id = "r$code$i"
                     c.memoTemplates.add(MemoTemplate(id, (t["title"] as? String).orEmpty(), t["emoji"] as? String,
-                        (t["check"] as? List<*>)?.map { it.toString() }.orEmpty(), (t["body"] as? String).orEmpty(), (t["repeat"] as? String).orEmpty(), code))
+                        (t["check"] as? List<*>)?.map { it.toString() }.orEmpty(), (t["body"] as? String).orEmpty(), (t["repeat"] as? String).orEmpty(), code,
+                        asks = items(t, "asks").map { a -> com.bamnat.core.memo.TemplateAsk((a["label"] as? String).orEmpty(), (a["type"] as? String) ?: "text",
+                            (a["choices"] as? List<*>)?.map { it.toString() }.orEmpty()) }))
                     ids.put(id)
                 }
                 JSONObject().put("templates", ids).put("replaced", com.bamnat.app.data.MemoTemplateStore.encode(replaced))
@@ -388,7 +406,7 @@ class RecipePieces(private val c: AppContainer) {
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
             PieceKind.BUNDLE -> null
-            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK -> {
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
                 if (kind == PieceKind.PHOTO_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
@@ -597,7 +615,7 @@ class RecipePieces(private val c: AppContainer) {
                 before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
             }
             PieceKind.BUNDLE -> {}
-            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK -> {
+            PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL -> {
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -643,6 +661,40 @@ class RecipePieces(private val c: AppContainer) {
                     corners = (values["corners"] as? String)?.takeIf { it in com.bamnat.core.recipe.PhotoLook.CORNERS } ?: l.corners, icons = icons)
                 mapOf("photoLook" to after.encode())
             }
+            // [CVW-01] What the piece names takes its place; what it leaves out stays as it is.
+            PieceKind.CAL_VIEW -> {
+                val v = com.bamnat.core.recipe.CalendarView.decode(cur.calView)
+                fun pick(k: String, from: List<String>) = (values[k] as? String)?.takeIf { it in from }
+                val memo = (values["memo"] as? Number)?.toInt()?.coerceIn(0, com.bamnat.core.recipe.CalendarView.MAX_MEMO)
+                val after = v.copy(
+                    size = pick("size", com.bamnat.core.recipe.CalendarView.SIZES) ?: v.size, badge = pick("badge", com.bamnat.core.recipe.CalendarView.BADGES) ?: v.badge,
+                    date = pick("date", com.bamnat.core.recipe.CalendarView.DATES) ?: v.date, text = pick("text", com.bamnat.core.recipe.CalendarView.TEXTS) ?: v.text,
+                    grid = pick("grid", com.bamnat.core.recipe.CalendarView.GRIDS) ?: v.grid, memo = memo ?: v.memo,
+                    order = (values["order"] as? String)?.takeIf { com.bamnat.core.recipe.CalendarView.orderProblem(it) == null && it.isNotEmpty() }?.split(',') ?: v.order,
+                )
+                listOfNotNull(
+                    "calView" to after.encode(),
+                    memo?.let { "memoInCells" to (it > 0).toString() },
+                    (values["hours"] as? Boolean)?.let { "showHoursInCells" to it.toString() },
+                    (values["lunar"] as? Boolean)?.let { "showLunar" to it.toString() },
+                    (values["spend"] as? Boolean)?.let { "spendInCells" to it.toString() },
+                ).toMap()
+            }
+            // [CVW-07] Each choice the piece names; never the alarm's 끄기, 잠금, 동의 or 결제.
+            PieceKind.APP_FEEL -> listOfNotNull(
+                (values["theme"] as? String)?.let { THEMES[it] }?.let { "themeMode" to it.name },
+                (values["dynamic"] as? Boolean)?.let { "dynamicColor" to it.toString() },
+                (values["accent"] as? Long)?.let { "accentColor" to (it or 0xFF000000L).toString() },
+                (values["textStep"] as? Number)?.let { "textStep" to it.toInt().coerceIn(0, 4).toString() },
+                (values["compact"] as? Boolean)?.let { "compact" to it.toString() },
+                (values["clock12"] as? Boolean)?.let { "clock12" to it.toString() },
+                (values["tap"] as? String)?.takeIf { it in com.bamnat.core.recipe.AppFeel.TAPS }?.let { "phoneDayView" to it.uppercase() },
+                (values["hold"] as? String)?.takeIf { it in com.bamnat.core.recipe.AppFeel.HOLDS }?.let { "longPress" to it },
+                (values["dayOrder"] as? String)?.takeIf { com.bamnat.core.recipe.AppFeel.dayOrderProblem(it) == null }?.let { "dayGroupOrder" to it },
+                (values["flow"] as? Boolean)?.let { "sleepTips" to it.toString() },
+                (values["rest"] as? Boolean)?.let { "restCheck" to it.toString() },
+                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to it.toString() },
+            ).toMap()
             else -> emptyMap()
         }
     }
@@ -656,6 +708,23 @@ class RecipePieces(private val c: AppContainer) {
         "widgetLook" -> s.widgetLook
         "widgetMemo" -> s.widgetMemo.toString()
         "photoLook" -> s.photoLook
+        "calView" -> s.calView
+        "memoInCells" -> s.memoInCells.toString()
+        "showHoursInCells" -> s.showHoursInCells.toString()
+        "showLunar" -> s.showLunar.toString()
+        "spendInCells" -> s.spendInCells.toString()
+        "themeMode" -> s.themeMode.name
+        "dynamicColor" -> s.dynamicColor.toString()
+        "accentColor" -> s.accentColor.toString()
+        "textStep" -> s.textStep.toString()
+        "compact" -> s.compact.toString()
+        "clock12" -> s.clock12.toString()
+        "phoneDayView" -> s.phoneDayView.name
+        "longPress" -> s.longPress
+        "dayGroupOrder" -> s.dayGroupOrder.joinToString(",")
+        "sleepTips" -> s.sleepTips.toString()
+        "restCheck" -> s.restCheck.toString()
+        "statsByPayPeriod" -> s.statsByPayPeriod.toString()
         else -> ""
     }
 
@@ -668,6 +737,23 @@ class RecipePieces(private val c: AppContainer) {
         "widgetLook" -> s.copy(widgetLook = v)
         "photoLook" -> s.copy(photoLook = v)
         "widgetMemo" -> s.copy(widgetMemo = v == "true")
+        "calView" -> s.copy(calView = v)
+        "memoInCells" -> s.copy(memoInCells = v == "true", calendarMemos = s.calendarMemos || v == "true")
+        "showHoursInCells" -> s.copy(showHoursInCells = v == "true")
+        "showLunar" -> s.copy(showLunar = v == "true")
+        "spendInCells" -> s.copy(spendInCells = v == "true")
+        "themeMode" -> runCatching { com.bamnat.app.data.ThemeMode.valueOf(v) }.getOrNull()?.let { s.copy(themeMode = it) } ?: s
+        "dynamicColor" -> s.copy(dynamicColor = v == "true")
+        "accentColor" -> s.copy(accentColor = v.toLongOrNull() ?: 0L)
+        "textStep" -> s.copy(textStep = (v.toIntOrNull() ?: s.textStep).coerceIn(0, 4))
+        "compact" -> s.copy(compact = v == "true")
+        "clock12" -> s.copy(clock12 = v == "true")
+        "phoneDayView" -> runCatching { com.bamnat.app.data.PhoneDayView.valueOf(v) }.getOrNull()?.let { s.copy(phoneDayView = it) } ?: s
+        "longPress" -> s.copy(longPress = v.takeIf { it in com.bamnat.core.recipe.AppFeel.HOLDS } ?: s.longPress)
+        "dayGroupOrder" -> s.copy(dayGroupOrder = v.split(',').filter { it.isNotEmpty() })
+        "sleepTips" -> s.copy(sleepTips = v == "true")
+        "restCheck" -> s.copy(restCheck = v == "true")
+        "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
         else -> s
     }
 
@@ -766,7 +852,14 @@ class RecipePieces(private val c: AppContainer) {
     companion object {
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄",
-            "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)")
+            "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",
+            "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
+            "showLunar" to "음력 날짜", "spendInCells" to "날짜 밑 쓴 돈", "themeMode" to "밝기", "dynamicColor" to "휴대폰 배경색에 맞추기", "accentColor" to "앱 강조색",
+            "textStep" to "글자 크기", "compact" to "촘촘하게", "clock12" to "오전/오후로 보기", "phoneDayView" to "날짜를 누르면", "longPress" to "날짜를 길게 누르면",
+            "dayGroupOrder" to "하루 화면 순서", "sleepTips" to "오늘의 흐름", "restCheck" to "휴식 점검", "statsByPayPeriod" to "통계를 급여 기간으로")
+        /** [CVW-07] 앱 동작's 밝기 and the settings' own. */
+        private val THEMES = mapOf("system" to com.bamnat.app.data.ThemeMode.SYSTEM, "light" to com.bamnat.app.data.ThemeMode.LIGHT,
+            "dark" to com.bamnat.app.data.ThemeMode.DARK, "night" to com.bamnat.app.data.ThemeMode.NIGHT_SHIFT)
         const val CLOSING_TITLE = "마감 체크"
         const val JOURNAL_TITLE = "투자일지"
         const val PRINCIPLES_MAX = 20

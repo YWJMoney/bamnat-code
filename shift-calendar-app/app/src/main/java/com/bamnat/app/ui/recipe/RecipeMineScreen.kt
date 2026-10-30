@@ -131,6 +131,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
                                 Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users} · 코드 ${item.code}",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                RemixCount(item.code)
                                 Row {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
                                     TextButton(onClick = { asking = "‘${item.title}’을(를) 광장에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
@@ -244,4 +245,21 @@ private fun NewsSwitches() {
     }
     line("팔로우·답 알림", "팔로우한 분의 새 레시피와, 내 질문에 만든 분이 단 답을 알려요", follow) { c.recipes.setFollowNews(it); follow = it }
     line("요청 판 보이기", "광장의 나눔 판 칸에 ‘이런 레시피 있었으면’이 보여요", requests, c.recipes::setRequestsOn)
+}
+
+/**
+ * [LIN-04] 1.35 수정판 of my recipe: how many others made from it, and how many came since I last looked (a dot), so I open it and
+ * see what each changed (사용자 2026-10-30 "제작자는 해당 내용을 보고 수정을 할수 있게").
+ */
+@Composable
+private fun RemixCount(code: String) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val prefs = remember { c.appContext.getSharedPreferences("recipe_remix_seen", android.content.Context.MODE_PRIVATE) }
+    val kids by androidx.compose.runtime.produceState<Int?>(null, code) { value = runCatching { c.recipeApi.lineage(code).children.size }.getOrNull() }
+    val n = kids ?: return
+    if (n == 0) return
+    val seen = remember(code) { prefs.getInt(code, 0) }
+    androidx.compose.runtime.LaunchedEffect(n) { prefs.edit().putInt(code, n).apply() }
+    Text("고쳐 만든 수정판 ${n}개" + (if (n > seen) " · 새로 ${n - seen}개" else "") + " · 열어서 달라진 점을 보고 가져올 수 있어요",
+        style = MaterialTheme.typography.labelMedium, color = if (n > seen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
 }

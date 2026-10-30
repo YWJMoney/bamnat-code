@@ -38,7 +38,9 @@ class MemoTemplateStore(private val context: Context) {
         fun encode(list: List<MemoTemplate>): JSONArray = JSONArray().apply {
             list.forEach { t ->
                 put(JSONObject().put("id", t.id).put("title", t.title).put("emoji", t.emoji ?: JSONObject.NULL)
-                    .put("check", JSONArray(t.check)).put("body", t.body).put("repeat", t.repeat).put("from", t.from ?: JSONObject.NULL))
+                    .put("check", JSONArray(t.check)).put("body", t.body).put("repeat", t.repeat).put("from", t.from ?: JSONObject.NULL)
+                    // [CVW-10]
+                    .put("asks", JSONArray(t.asks.map { a -> JSONObject().put("label", a.label).put("type", a.type).put("choices", JSONArray(a.choices)) })))
             }
         }
 
@@ -47,7 +49,11 @@ class MemoTemplateStore(private val context: Context) {
             val check = o.optJSONArray("check")?.let { c -> (0 until c.length()).map { c.optString(it) } }.orEmpty()
             MemoTemplate(o.optString("id").ifEmpty { return@mapNotNull null }, o.optString("title"),
                 o.optString("emoji").takeIf { !o.isNull("emoji") && it.isNotEmpty() }, check, o.optString("body"), o.optString("repeat"),
-                o.optString("from").takeIf { !o.isNull("from") && it.isNotEmpty() })
+                o.optString("from").takeIf { !o.isNull("from") && it.isNotEmpty() },
+                asks = o.optJSONArray("asks")?.let { a -> (0 until a.length()).mapNotNull { j -> a.optJSONObject(j)?.let { x ->
+                    com.bamnat.core.memo.TemplateAsk(x.optString("label"), x.optString("type", "text"),
+                        x.optJSONArray("choices")?.let { c -> (0 until c.length()).map { c.optString(it) } }.orEmpty())
+                }?.takeIf { it.label.isNotEmpty() } } }.orEmpty())
         }
     }
 }

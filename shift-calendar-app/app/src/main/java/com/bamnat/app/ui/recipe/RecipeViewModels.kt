@@ -88,6 +88,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val looks: List<Pair<com.bamnat.core.model.ShiftType, com.bamnat.core.model.ShiftType>> = emptyList(),
         /** [RCX-01] 1.35 계보. */
         val lineage: com.bamnat.app.recipe.Lineage? = null,
+        /** [LIN-02] 1.35 수정판: the recipe it was made from and what it changed from it, piece by piece. */
+        val parentDoc: RecipeDoc? = null,
+        val diff: List<com.bamnat.core.recipe.RecipeDiff.Piece> = emptyList(),
         /** [RCX-24] When this recipe went on this phone, while it can still be taken back (넣은 지 7일 안). */
         val appliedAt: Long? = null,
     )
@@ -111,12 +114,44 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 }
                 if (canTalk) loadTalk()
                 if (doc.scope != "private") runCatching { c.recipeApi.lineage(code) }.onSuccess { _state.value = _state.value.copy(lineage = it) }
+                // [LIN-02] What this 수정판 changed from the recipe it was made from (the parent's version now).
+                r.parent?.let { p -> runCatching { c.recipeApi.show(p, device) }.getOrNull()?.let { pd ->
+                    runCatching { pd.recipe() }.getOrNull()?.let { pr -> _state.value = _state.value.copy(parentDoc = pd, diff = com.bamnat.core.recipe.RecipeDiff.of(pr, r)) }
+                } }
             } catch (e: com.bamnat.core.recipe.RecipeException) {
                 _state.value = _state.value.copy(error = "레시피가 오는 길에 바뀌었어요. 받지 않았어요")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(error = RecipeClient.problem(e))
             }
         }
+    }
+
+    /**
+     * [LIN-03] 1.35 내 판에 가져오기 (사용자 2026-10-30 "제작자는 해당 내용을 보고 수정을 할수 있게"): my recipe (the parent) with the
+     * [picked] fields of this 수정판 in it — a changed field by [com.bamnat.core.recipe.Merge3.apply], an added piece whole, a taken-away
+     * one out — and a line in its words naming the 수정판 that helped. The written form to make my next 판 from, or null.
+     */
+    fun takeInto(picked: Set<Pair<PieceKind, String>>): String? {
+        val s = _state.value
+        val mine = runCatching { s.parentDoc?.recipe() }.getOrNull() ?: return null
+        val theirs = s.recipe ?: return null
+        var pieces = mine.pieces
+        for (d in s.diff) {
+            val paths = picked.filter { it.first == d.kind }.map { it.second }.toSet()
+            when (d.change) {
+                com.bamnat.core.recipe.RecipeDiff.Kind.ADDED -> if (d.kind to "*" in picked) pieces = pieces + theirs.pieces.first { it.kind == d.kind }
+                com.bamnat.core.recipe.RecipeDiff.Kind.REMOVED -> if (d.kind to "*" in picked) pieces = pieces.filter { it.kind != d.kind }
+                com.bamnat.core.recipe.RecipeDiff.Kind.CHANGED -> if (paths.isNotEmpty()) pieces = pieces.map { p ->
+                    if (p.kind != d.kind) p else com.bamnat.core.recipe.Piece(p.kind,
+                        com.bamnat.core.recipe.Merge3.apply(p.values, theirs.pieces.first { it.kind == d.kind }.values, paths))
+                }
+            }
+        }
+        val ids = mine.inputs.map { it.id }.toSet()
+        val credit = "\n도움 준 수정판: ‘${theirs.title}’"
+        val merged = mine.copy(pieces = pieces.sortedBy { it.kind.ordinal }, inputs = mine.inputs + theirs.inputs.filter { it.id !in ids },
+            desc = if (mine.desc.contains(credit.trim()) || mine.desc.length + credit.length > 600) mine.desc else mine.desc + credit)
+        return com.bamnat.core.recipe.RecipeCodec.write(merged)
     }
 
     fun toggle(kind: PieceKind, on: Boolean) = set(kind) { it.copy(on = on) }

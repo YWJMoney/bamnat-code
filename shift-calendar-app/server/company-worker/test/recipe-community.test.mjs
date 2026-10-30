@@ -134,3 +134,21 @@ test("[RCX-15] 그림 표지: WebP only, small, shown to others once the operato
   // A recipe may point at it.
   assert.equal((await up(call, 1, { cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙", image: id } })).status, 201);
 });
+
+test("[LIN-04] 수정판 소식: someone else's public recipe made from mine comes in my 소식 with my recipe's title", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const a = (await up(call, 1, { title: "내 교대 세트" }, "public")).data.code;
+  await call("POST", `/api/admin/recipes/${a}/approve`, {}, admin);
+  const b = (await up(call, 2, { title: "야간 더 잘 보이게", parent: a }, "public")).data.code;
+  await call("POST", `/api/admin/recipes/${b}/approve`, {}, admin);
+  // My own new version of it and a link-only one are not news.
+  await up(call, 1, { title: "내가 또 고친 것", parent: a }, "public");
+  await up(call, 3, { title: "링크로만", parent: a });
+  const since = new Date(AFTER - 1000).toISOString();
+  const news = (await call("GET", `/api/recipes/news?since=${since}`, undefined, dev(1))).data;
+  assert.deepEqual(news.remixes.map((r) => [r.code, r.parentTitle]), [[b, "내 교대 세트"]]);
+  assert.equal(JSON.stringify(news).includes(device(2)), false, "never the install");
+  assert.deepEqual((await call("GET", `/api/recipes/news?since=${since}`, undefined, dev(2))).data.remixes, []);
+});
