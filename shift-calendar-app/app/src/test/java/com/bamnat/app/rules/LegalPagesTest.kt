@@ -417,5 +417,10 @@ class LegalPagesTest {
         }
         assertEquals("3.9", com.bamnat.core.ops.PolicyConsent.VERSION)
         assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.9"), "3.1"))
+        // 1.35 테마 기간(사용자 2026-10-30): 1-8 보상형 광고로 남의 테마 입기, 약관 1.2 같은 날.
+        assertTrue(text.contains("처음 2개는 광고 없이 입고"))
+        val terms = File(site, "terms/index.html").readText()
+        assertTrue(terms.contains("이용약관 1.2 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue(terms.contains("테마 옷장(테마 10벌 저장, 광고·기간 없이)"))
     }
 }
