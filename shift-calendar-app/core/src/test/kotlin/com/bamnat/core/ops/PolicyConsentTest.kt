@@ -14,7 +14,7 @@ class PolicyConsentTest {
     @Test fun aTesterIsAskedAndTheSwitchWaitsUntilTheOldDate() {
         assertTrue(PolicyConsent.asks(tester, agreed = false, today = nov11))
         assertTrue(PolicyConsent.holdsLaunch(tester, agreed = false, today = LocalDate.of(2026, 11, 23)))
-        assertFalse(PolicyConsent.holdsLaunch(tester, agreed = false, today = PolicyConsent.HELD_UNTIL))
+        assertFalse(PolicyConsent.holdsLaunch(tester, agreed = false, today = PolicyConsent.LAUNCH_HELD_UNTIL))
     }
 
     @Test fun aYesOrALaterInstallIsNotHeld() {

@@ -200,6 +200,8 @@ test("[FLAG-37] D101: a legal flag's day-before news reaches an admin inside qui
   const keys = await vapidKeys();
   const { call, env } = server(keys);
   const owner = await signIn(call);
+  // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
+  await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   await call("POST", "/api/admin/me/push", { subscription: subscription(1), kinds: ["flags", "inquiry"], quiet: { from: 22, to: 7 } }, owner);
   const sent = [];
   t.mock.method(globalThis, "fetch", async (url) => (sent.push(url), new Response(null, { status: 201 })));

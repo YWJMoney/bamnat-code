@@ -113,7 +113,7 @@ test("[FIN130-14] a held version the developer adopts no longer tells its sender
   assert.equal(now.reason, null);
 });
 
-test("[FIN130-15] a company's one amount is taken only once 처리방침 3.4 is in force, quietly dropped before", async (t) => {
+test("[FIN130-15][PRIV-05] a company's one amount is taken only once 처리방침 3.9 (3.4 brought to 정식 출시일) is in force, quietly dropped before", async (t) => {
   const { call, DB } = server({ plaza: true });
   const meal = async (company, n) => {
     const r = await call("POST", "/api/reports", report(n, { company, setup: withMeal() }), from(n));
@@ -121,17 +121,17 @@ test("[FIN130-15] a company's one amount is taken only once 처리방침 3.4 is 
     const page = (await call("GET", `/api/companies/${r.data.company.id}`, undefined, as(n))).data;
     return page.setups[0].setup.pay.items.find((i) => i.name === "식대");
   };
-  // Before 2026-11-27 (the calendar's 3.4): no refusal, the allowance stays 회사 공통, its amount does not come.
-  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-26T14:00:00Z") });
+  // Before 2026-11-10 (the calendar's 3.9): no refusal, the allowance stays 회사 공통, its amount does not come.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-09T14:00:00Z") });
   const before = await meal("금액상사", 1);
   assert.equal(before.share, "FIXED");
   assert.equal("fixedAmount" in before, false);
   // From the day it is in force (KST), it comes.
-  t.mock.timers.setTime(Date.parse("2026-11-26T15:00:00Z"));
+  t.mock.timers.setTime(Date.parse("2026-11-09T15:00:00Z"));
   assert.equal((await meal("금액물산", 2)).fixedAmount, 100000);
-  // The owner moved 3.4 later in the developer app: the server follows its own calendar.
+  // The owner moved 3.9 later in the developer app: the server follows its own calendar.
   await DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
-    .bind(JSON.stringify({ "3.4": { posted: "2026-10-28", effective: "2026-12-20", heldUntil: null, unfavourable: false } })).run();
+    .bind(JSON.stringify({ "3.9": { posted: "2026-10-28", effective: "2026-12-20", heldUntil: null, unfavourable: false } })).run();
   assert.equal("fixedAmount" in (await meal("금액전자", 3)), false);
   t.mock.timers.reset();
   // pure

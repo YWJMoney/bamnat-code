@@ -334,7 +334,7 @@ class RecipeClient(
             val c = (e as? CompanyException)?.code ?: return "잠시 뒤 다시 해 주세요"
             return when (c) {
                 "offline" -> "인터넷에 연결되지 않았어요"
-                "not_yet" -> "처리방침 3.8이 시행되는 11월 29일부터 쓸 수 있어요"
+                "not_yet" -> "정식 출시일(11월 10일 예정)부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
                 "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
                 "rate_limited" -> "오늘은 더 올릴 수 없어요. 내일 다시 해 주세요"

@@ -995,7 +995,8 @@ export function adminLib() {
    */
   function noticeWarnings(flag, conds, policy = []) {
     const out = [];
-    const v = String(flag.basis?.policy ?? "").split(" ")[0];
+    // [PRIV-05] The version the date condition waits for (3.9 brings 3.2~3.8 forward), else the one the basis names.
+    const v = (conds ?? []).find((c) => c.type === "date" && c.policy)?.policy ?? String(flag.basis?.policy ?? "").split(" ")[0];
     const p = v ? (policy ?? []).find((x) => x.version === v) : null;
     if (!p) return out;
     const gap = Math.round((Date.parse(`${p.effective}T00:00:00Z`) - Date.parse(`${p.posted}T00:00:00Z`)) / 86400000);

@@ -18,6 +18,7 @@
 - 문서는 바뀐 부분만 고치거나 더해요.
 - `play-services-ads`는 25.2.0에 묶어 둬요. 25.3.0부터 Kotlin 2.3 메타데이터라 지금 Kotlin(2.1.21)이 읽지 못해요. Kotlin을 올릴 때 같이 올려요.
 - 처리방침(`../privacy/index.html`)·이용약관(`../terms/index.html`)의 판이나 시행일을 바꾸면 `LegalPagesTest`와 프로젝트 파일 `legal/` 복사본, 공개 저장소 `YWJMoney/-`도 같이 고쳐요. 결제·광고는 기능 플래그 `billing`·`ads`(core `flags/FlagCatalog`, 처리방침 3.1 시행·보류·Play 승인·정기 결제 조건, 1.28부터 정식 출시 스위치를 대신함)가 켜지기 전에는 꺼져 있어야 해요. 법적(LEGAL) 플래그는 서버 시각으로 판단하고 처리방침 조건을 서버 강제로도 건너뛰지 않아요.
+- **처리방침 시행일 규칙(사용자 2026-10-30, 결정 D111).** 정식 출시(Play 프로덕션 승인) **전에 개발한 기능은 모두 정식 출시일에 시행**해요. 그래서 출시 전에는 처리방침 개정판의 시행일을 정식 출시일(지금 2026-11-10 예정)로 두고, 그 판을 게시하기 전에 깐 휴대폰(테스터)에만 달력 위 동의 카드(`ops/PolicyConsent`)로 한 번 묻고, 동의하지 않은 휴대폰은 처음 알린 날까지 기다리게 해요(처리방침 9항 단서, 3.1·3.9). 새 LEGAL 플래그는 `Condition.Date(policy = 판)`과 `Condition.Policy(판)`을 함께 걸어요. **정식 출시 뒤의 개정은 9항대로** 시행 7일 전(이용자에게 불리하면 30일 전)에 알리고 그날부터 켜요. 출시가 늦어지면 관리자 앱 › 기능 관리 › 일정 › 처리방침 일정에서 날짜만 옮겨요(앱 업데이트 없음). 근거: 프로젝트 파일 `legal/처리방침-시행일-앞당기기-검토.md`.
 - 서버로 새로 보내는 정보(예: 사용 통계에 새 항목)는 처리방침 개정판과 그 항목의 따로 동의를 조건으로 하는 LEGAL 플래그(1.28의 `stats.more`처럼) 뒤에서만 보내요. 플래그 장부의 글·조건은 core `FlagCatalog.kt`만 고치고 `BAMNAT_WRITE_FLAG_CATALOG=1 ./gradlew -p core test --tests '*FlagCatalogExportTest*' --rerun` 다음 `(cd server/company-worker && npm test)`를 돌려요(서버 `src/flag-catalog.js`를 손으로 고치지 않아요).
 
 ## 판을 끝낼 때 (문서 갱신 점검표)

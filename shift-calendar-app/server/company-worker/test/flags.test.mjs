@@ -150,6 +150,8 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   t.mock.timers.enable({ apis: ["Date"], now: eve });
   const { call, env } = server(await vapidKeys());
   const owner = await signIn(call);
+  // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
+  await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   const b = await browser(1);
   assert.equal((await call("POST", "/api/admin/me/push", { subscription: b.subscription, kinds: ["flags"] }, owner)).data.ready, true);
   const sent = [];
@@ -306,12 +308,13 @@ test("[FLAG-29][FLAG-33] the owner moves a policy's dates; too little notice is 
   const statsMore = async () => (await call("GET", "/api/admin/flags", undefined, owner)).data.flags.find((f) => f.key === "stats.more");
   assert.deepEqual((await statsMore()).warnings, []);
   assert.equal((await call("POST", "/api/admin/policy", { version: "3.2", posted: "2026-10-28", effective: "2026-10-20", why: "x" }, owner)).data.error, "policy");
-  const moved = await call("POST", "/api/admin/policy", { version: "3.2", posted: "2026-10-28", effective: "2026-11-15", unfavourable: true, why: "검토 끝나 앞당김" }, owner);
+  // [PRIV-05] stats.more follows 3.9 (3.2 brought to 정식 출시일).
+  const moved = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐" }, owner);
   assert.equal(moved.status, 200);
   const row = await statsMore();
-  assert.match(row.warnings[0], /18일.*30일/);
+  assert.match(row.warnings[0], /15일.*30일/);
   assert.equal(row.next, "2026-11-15", "the date condition follows the calendar");
-  assert.deepEqual((await call("GET", "/api/config")).data.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-15", heldUntil: null });
+  assert.equal((await call("GET", "/api/config")).data.policy.find((p) => p.version === "3.9").effective, "2026-11-15");
   assert.ok((await adminHome(call, owner)).data.flagsDue >= 1);
 });
 

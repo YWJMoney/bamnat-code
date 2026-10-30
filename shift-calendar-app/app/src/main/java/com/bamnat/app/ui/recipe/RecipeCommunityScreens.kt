@@ -156,7 +156,7 @@ fun MakerScreen(vm: MakerViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
                 } else if (vm.canFollow) {
                     if (p.following) OutlinedButton(onClick = { vm.follow(false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("팔로우 그만두기") }
                     else Button(onClick = { vm.follow(true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("팔로우 (새 레시피 소식 받기)") }
-                } else Text("팔로우는 처리방침 3.8이 시행되는 11월 29일부터 돼요", style = MaterialTheme.typography.bodySmall)
+                } else Text("팔로우는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
                 Text("만든 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 if (p.recipes.isEmpty()) Text("광장에 올린 레시피가 아직 없어요", style = MaterialTheme.typography.bodySmall)
                 p.recipes.forEach { r -> RecipeRow(r) { onOpen(r.code) } }
@@ -251,7 +251,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 Text("‘이런 레시피 있었으면’을 적으면 좋아요가 모이고, 만들 분이 ‘만들게요’를 눌러 완성하면 그 레시피로 이어져요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (vm.canWrite) Button(onClick = { writing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("요청 쓰기") }
-                else Text("요청 쓰기·좋아요는 처리방침 3.8이 시행되는 11월 29일부터 돼요", style = MaterialTheme.typography.bodySmall)
+                else Text("요청 쓰기·좋아요는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
                 val items = s.items
                 when {
                     items == null && s.error != null -> { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } }

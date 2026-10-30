@@ -147,7 +147,7 @@ fun ShareDialog(
     val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
     val setupFrom = remember {
-        container.remoteConfig.config.value.calendar.of("3.7")?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "처리방침 3.7 시행일"
+        container.remoteConfig.config.value.calendar.of(com.bamnat.core.ops.PolicyConsent.VERSION)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "정식 출시일"
     }
 
     fun run(action: suspend () -> Unit) {
