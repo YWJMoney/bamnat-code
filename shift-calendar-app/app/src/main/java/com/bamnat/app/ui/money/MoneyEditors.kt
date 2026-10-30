@@ -28,11 +28,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.Fmt
@@ -83,26 +80,8 @@ internal fun amountInput(typed: String, allowZero: Boolean = false): String {
 fun amountDigits(amount: Long): String = if (amount <= 0) "" else amount.toString()
 fun String.toAmount(): Long = toLongOrNull() ?: 0L
 
-internal object ThousandsTransformation : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        val d = text.text
-        val n = d.length
-        val out = StringBuilder()
-        for (k in 0 until n) {
-            if (k > 0 && (n - k) % 3 == 0) out.append(',')
-            out.append(d[k])
-        }
-        val formatted = out.toString()
-        val mapping = object : OffsetMapping {
-            override fun originalToTransformed(offset: Int): Int =
-                offset + (1 until offset.coerceIn(0, n)).count { k -> (n - k) % 3 == 0 }
-
-            override fun transformedToOriginal(offset: Int): Int =
-                formatted.take(offset.coerceIn(0, formatted.length)).count(Char::isDigit)
-        }
-        return TransformedText(AnnotatedString(formatted), mapping)
-    }
-}
+/** Amounts in 1,000 groups as they are typed (now the same as every number box, [com.bamnat.app.ui.components.GroupedNumber]). */
+internal val ThousandsTransformation: VisualTransformation = com.bamnat.app.ui.components.GroupedNumber
 
 /** Books or edits a job for field and freelance work [WORK-02]. */
 @OptIn(ExperimentalLayoutApi::class)

@@ -335,7 +335,7 @@ fun InputField(i: Input, value: Any?, onChange: (Any?) -> Unit) {
                     text = t.filter { it.isDigit() || it == '.' }.take(12)
                     onChange(if (i.kind == InputKind.MONEY) text.toLongOrNull() else text.toLongOrNull() ?: text.toDoubleOrNull())
                 }, label = { Text(i.label + if (i.kind == InputKind.MONEY) " (원)" else "") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
             }
             InputKind.TIME, InputKind.TEXT -> {
                 var text by remember(i.id) { mutableStateOf(shown?.toString().orEmpty()) }

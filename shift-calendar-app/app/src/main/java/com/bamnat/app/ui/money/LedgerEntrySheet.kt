@@ -348,7 +348,7 @@ fun EntryDialog(
                     if (installments > 1) {
                         OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) },
                             label = { Text("할부 수수료 (연 %)") }, placeholder = { Text("무이자면 비워 두세요") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                            visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                         val fees = remember(amount, installments, rateText) {
                             rateText.toDoubleOrNull()?.takeIf { it > 0 && amount > 0 }?.let { r ->
                                 com.bamnat.core.money.LedgerChecks.installmentFees(MoneyEntry(date = onDay, kind = MoneyKind.EXPENSE, amount = amount, category = "",

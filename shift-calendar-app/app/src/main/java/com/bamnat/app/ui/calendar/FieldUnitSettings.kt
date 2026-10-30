@@ -59,7 +59,7 @@ internal fun PlatformCutDialog(platform: String, cut: PlatformWork.Cut, onDismis
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(fee, { fee = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("수수료 (%)") },
                     singleLine = true, isError = feeValue == null, modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     supportingText = if (feeValue == null) ({ Text("0에서 100 사이로 적어 주세요") }) else null)
                 AmountField("건당 보험료", call, { call = it })
                 Text("플랫폼에 찍힌 금액에서 수수료를 떼고 건수만큼 보험료를 빼서, 남은 돈·시간당 순수익·입금 확인에 써요. " +
@@ -145,7 +145,7 @@ private fun UnitsDialog(title: String, start: Double, time: LocalTime?, onDismis
                     step = 0.25, range = 0.25..5.0, unit = "공")
                 OutlinedTextField(typed, { t -> typed = t.take(6); DayRate.parse(t)?.let { picked = it } },
                     label = { Text("직접 (0.125처럼 소수 셋째 자리까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
             }
         },
         confirmButton = { TextButton(onClick = { onSave(picked, at) }) { Text("추가") } },

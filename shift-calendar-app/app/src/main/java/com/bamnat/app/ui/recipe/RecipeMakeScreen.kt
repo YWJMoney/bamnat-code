@@ -355,7 +355,7 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
                                 val d = text.toDoubleOrNull()
                                 change { if (label == "가장 작게") it.copy(min = d) else it.copy(max = d) }
                             }, label = { Text("$label (선택)") }, singleLine = true, modifier = Modifier.weight(1f),
-                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                                visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                         }
                     }
                     if (i.min != null && i.max != null && i.min!! > i.max!!) Text("가장 작게가 가장 크게보다 커요", style = MaterialTheme.typography.labelSmall,

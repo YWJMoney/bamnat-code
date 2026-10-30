@@ -130,7 +130,7 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
                 )
                 androidx.compose.material3.OutlinedTextField(typed, { t -> typed = t.take(6); DayRate.parse(t)?.let { picked = it } },
                     label = { Text("직접 (0.125처럼 소수 셋째 자리까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
                 AmountField("일당 (1공)", rate, { rate = it })
                 val changed = rate.toAmount() > 0 && inForce > 0 && rate.toAmount() != inForce
                 if (changed) {

@@ -195,7 +195,7 @@ internal fun CaptureTuneDialog(onDismiss: () -> Unit) {
                 HorizontalDivider()
                 Text("해외 결제", style = MaterialTheme.typography.titleSmall)
                 OutlinedTextField(fee, { fee = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, label = { Text("해외 이용 수수료 (%)") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 Muted("카드사 안내문의 ‘해외 이용 수수료’예요. 보통 브랜드 1% + 해외 서비스 0.18~0.25%예요")
                 if (prefs.rates.isNotEmpty()) {
                     Text("내 환율", style = MaterialTheme.typography.labelLarge)
@@ -209,7 +209,7 @@ internal fun CaptureTuneDialog(onDismiss: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(cur, { cur = it.filter { ch -> ch.isLetter() }.uppercase().take(3) }, label = { Text("통화") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(rate, { rate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(9) }, label = { Text("1단위 원") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1.4f))
+                        visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1.4f))
                     TextButton(enabled = cur.length == 3 && (rate.toDoubleOrNull() ?: 0.0) > 0, onClick = {
                         c.autoRecordPrefs.setRate(cur, rate.toDoubleOrNull()); cur = ""; rate = ""
                     }) { Text("넣기") }

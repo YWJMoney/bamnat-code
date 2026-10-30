@@ -222,7 +222,7 @@ internal fun SlipLineEditor(line: SlipLine?, onDismiss: () -> Unit, onDelete: ((
             MoneyField("금액", amount, { amount = it })
             if (role in TIMED) OutlinedTextField(hours, { v -> hours = v.filter { it.isDigit() || it == '.' }.take(6) }, label = { Text("시간 (선택)") },
                 suffix = { Text("시간") }, singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth())
             if (line != null && line.role != role) Text("다음 명세서부터 ‘${name.ifBlank { line.name }}’ 줄은 ${role.label}(으)로 읽어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -107,7 +107,7 @@ fun DecimalField(
         suffix = suffix?.let { { Text(it) } },
         supportingText = supporting?.let { { Text(it) } },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = imeAction),
+        visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = imeAction),
         modifier = modifier,
     )
 }
