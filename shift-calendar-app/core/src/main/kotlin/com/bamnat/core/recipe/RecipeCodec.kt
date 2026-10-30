@@ -16,8 +16,8 @@ import kotlin.math.roundToLong
  */
 object RecipeCodec {
     const val MAX_BYTES = 32 * 1024
-    const val MAX_DEPTH = 6
-    const val MAX_PIECES = 12
+    const val MAX_DEPTH = 8
+    const val MAX_PIECES = 16
     const val MAX_INPUTS = 20
     const val MAX_TOKENS = 12
     const val TITLE = 30

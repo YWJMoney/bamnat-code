@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -44,16 +47,29 @@ import com.bamnat.core.work.WorkStyle
 internal fun ThemeTokens(r: Recipe, edit: ((Recipe) -> Recipe) -> Unit) {
     val hasColours = r.pieces.any { it.kind == PieceKind.SHIFT_LOOK || it.kind == PieceKind.CAL_THEME }
     if (!hasColours && r.tokens.isEmpty()) return
+    val picked = r.inputs.any { it.kind == com.bamnat.core.recipe.InputKind.COLOR }
     Text("테마 색", style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
-    if (r.tokens.isEmpty()) {
+    if (r.tokens.isEmpty() && !picked) {
         Text("같은 색을 한 이름으로 묶으면, 그 색 하나만 바꿔도 근무 색·달력 색이 함께 바뀌어요 (12개까지)",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = { edit(RecipeTokens::bind) }) { Text("색을 테마 색으로 묶기") }
         return
     }
     r.tokens.forEach { t ->
-        ColorSwatch(t.light, "${t.name} · ${RecipeTokens.uses(r, t.name)}곳", { c -> edit { RecipeTokens.set(it, t.name, c) } })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { ColorSwatch(t.light, "${t.name} · ${RecipeTokens.uses(r, t.name)}곳에 쓰여요", { c -> edit { RecipeTokens.set(it, t.name, c) } }) }
+            // 1.35 받는 분이 고르는 색: the receiver picks this one, the maker's colour first.
+            TextButton(onClick = { edit { RecipeTokens.toInput(it, t.name) ?: it } }) { Text("받는 분이 고르게") }
+        }
     }
+    r.inputs.filter { it.kind == com.bamnat.core.recipe.InputKind.COLOR }.forEach { i ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🎨 ‘${i.label}’은 받는 분이 골라요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { edit { RecipeTokens.fromInput(it, i.id) ?: it } }) { Text("내 색으로 정하기") }
+        }
+    }
+    Text("받는 분이 고르게 하면 넣을 때 자기 색을 골라요. 근무 색을 사람마다 다르게 쓰고 싶을 때 좋아요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     TextButton(onClick = { edit(RecipeTokens::unbind) }) { Text("테마 색 풀기 (색을 칸마다 따로)") }
 }
 
@@ -202,4 +218,97 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
     },
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/**
+ * 1.35 화면이 이렇게 바뀌어요 (사용자 2026-10-30 "멋지고 이쁘게"): what 화면 배치·카드·위젯 모양·모서리 do, drawn rather than told —
+ * the bottom tabs in their new order, each page's parts in order with the hidden ones struck through, the widget's see-through
+ * card and the corners. [on] says which pieces are switched on (the receiver's choice, or all of them while making).
+ */
+@Composable
+internal fun ScreenPreview(r: Recipe, on: (PieceKind) -> Boolean = { true }) {
+    fun values(k: PieceKind) = r.pieces.firstOrNull { it.kind == k && on(k) }?.values
+    val layout = values(PieceKind.LAYOUT)
+    val cards = values(PieceKind.CARDS)
+    val widget = values(PieceKind.WIDGET)
+    val corners = values(PieceKind.PHOTO_LOOK)?.get("corners") as? String
+    if (layout == null && cards == null && widget == null && corners == null) return
+    Text("화면이 이렇게 바뀌어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+    Card(Modifier.fillMaxWidth(), shape = com.bamnat.app.ui.theme.shapesFor(corners).medium) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            @Suppress("UNCHECKED_CAST")
+            (layout?.get("tabs") as? List<String>)?.takeIf { it.isNotEmpty() }?.let { tabs ->
+                Text("아래 탭 순서", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    com.bamnat.core.layout.TabOrder.of(tabs).forEach { key ->
+                        val t = com.bamnat.app.ui.TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            androidx.compose.material3.Icon(t.icon, null, Modifier.size(22.dp))
+                            Text(t.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
+                }
+            }
+            (layout?.get("calendar") as? String)?.let { PartsPreview("달력 화면", it, com.bamnat.app.ui.calendar.CalendarPart.entries.associate { p -> p.id to p.label }) }
+            (cards?.get("stats") as? String)?.let { PartsPreview("통계 카드", it, com.bamnat.app.ui.stats.StatsPart.entries.associate { p -> p.id to p.label }) }
+            (cards?.get("money") as? String)?.let { PartsPreview("가계부 카드", it, com.bamnat.app.ui.money.MoneyPart.entries.associate { p -> p.id to p.label }) }
+            (cards?.get("memo") as? String)?.let { PartsPreview("메모 화면", it, com.bamnat.app.ui.memo.MemoPart.entries.associate { p -> p.id to p.label }) }
+            widget?.let { w ->
+                val alpha = ((w["alpha"] as? Number)?.toInt() ?: 100).coerceIn(30, 100)
+                val dark = when (w["theme"] as? String) { "dark" -> true; "light" -> false; else -> com.bamnat.app.ui.components.isDarkSurface() }
+                val bg = if (dark) androidx.compose.ui.graphics.Color(0xFF1E1E24) else androidx.compose.ui.graphics.Color(0xFFFAFAFA)
+                Text("위젯", style = MaterialTheme.typography.labelLarge)
+                Box(Modifier.fillMaxWidth().height(64.dp).background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF5C6BC0), androidx.compose.ui.graphics.Color(0xFF26A69A))),
+                    RoundedCornerShape(12.dp)).padding(10.dp)) {
+                    Column(Modifier.fillMaxWidth().height(44.dp).background(bg.copy(alpha = alpha / 100f), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.Center) {
+                        Text("오늘 · 주간 07:00", style = MaterialTheme.typography.labelMedium, color = if (dark) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFF1B1B1F))
+                        if (w["memo"] == true) Text("메모 한 줄도 보여요", style = MaterialTheme.typography.labelSmall,
+                            color = (if (dark) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFF1B1B1F)).copy(alpha = 0.7f))
+                    }
+                }
+                Text("배경이 ${alpha}% 보이게 · " + when (w["theme"] as? String) { "dark" -> "늘 어둡게"; "light" -> "늘 밝게"; else -> "휴대폰 화면을 따라" },
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            corners?.let { cn ->
+                Text("모서리", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("round" to "둥글게", "soft" to "보통", "square" to "각지게").forEach { (k, label) ->
+                        val chosen = k == cn
+                        Box(Modifier.size(width = 72.dp, height = 40.dp)
+                            .background(if (chosen) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, com.bamnat.app.ui.theme.shapesFor(k).medium)
+                            .then(if (chosen) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, com.bamnat.app.ui.theme.shapesFor(k).medium) else Modifier),
+                            contentAlignment = Alignment.Center) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One page's parts as [line] puts them: in order, the hidden ones struck through. */
+@Composable
+private fun PartsPreview(title: String, line: String, labels: Map<String, String>) {
+    val l = com.bamnat.core.layout.PageLayout.decode(line)
+    val parts = l.order.filter { it in labels }
+    if (parts.isEmpty()) return
+    Text(title, style = MaterialTheme.typography.labelLarge)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        parts.forEachIndexed { i, id ->
+            val hidden = id in l.hidden
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (hidden) "–" else "${i + 1 - parts.take(i).count { it in l.hidden }}", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(22.dp))
+                Box(Modifier.weight(1f).background(
+                    if (hidden) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Text(labels.getValue(id) + if (hidden) " · 숨김" else "", style = MaterialTheme.typography.bodySmall,
+                        color = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSecondaryContainer,
+                        textDecoration = if (hidden) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+                }
+            }
+        }
+    }
 }

@@ -176,6 +176,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 MyMonthPreview(vm.calendar, if (lookOn) s.looks else emptyList(),
                     themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) },
                     company = r.pieces.firstOrNull { it.kind == PieceKind.COMPANY }?.takeIf { companyOn }?.values?.get("setup") as? String)
+                ScreenPreview(r) { k -> s.pieces.any { it.kind == k && it.on && it.fits } }
                 val chosen = s.pieces.count { it.on && it.fits }
                 val used = s.pieces.filter { it.on && it.fits }.flatMap { p -> RecipeResolve.inputsOf(r, r.pieces.first { it.kind == p.kind }) }.map { it.id }.toSet()
                 val missing = r.inputs.filter { it.id in used && it.required && s.answers[it.id] == null && it.default == null }

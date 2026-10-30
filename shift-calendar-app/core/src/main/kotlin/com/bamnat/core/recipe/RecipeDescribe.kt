@@ -89,7 +89,35 @@ object RecipeDescribe {
             items(p, "icons").size.takeIf { it > 0 }?.let { "근무 그림 ${it}개" }, "위젯 배경".takeIf { p.values["widget"] != null },
             (p.values["corners"] as? String)?.let { CORNER_NAMES[it] },
         ).joinToString(" · ").ifEmpty { "그림 꾸미기" }
+        // [CVW-01]
+        PieceKind.CAL_VIEW -> listOfNotNull(
+            (p.values["size"] as? String)?.let { VIEW_NAMES["size.$it"] }, (p.values["badge"] as? String)?.let { VIEW_NAMES["badge.$it"] },
+            (p.values["date"] as? String)?.let { VIEW_NAMES["date.$it"] }, (p.values["text"] as? String)?.let { VIEW_NAMES["text.$it"] },
+            (p.values["grid"] as? String)?.let { VIEW_NAMES["grid.$it"] },
+            (p.values["memo"] as? Number)?.toInt()?.let { if (it == 0) "칸에 메모 안 보임" else "칸에 메모 ${it}줄" },
+            "근무 시간".takeIf { p.values["hours"] == true }, "음력".takeIf { p.values["lunar"] == true }, "그날 쓴 돈".takeIf { p.values["spend"] == true },
+            (p.values["order"] as? String)?.takeIf { it.isNotEmpty() }?.let { o -> "순서 " + o.split(',').joinToString("→") { LINE_NAMES[it] ?: it } },
+        ).joinToString(" · ").ifEmpty { "달력 모양" }
+        // [CVW-07]
+        PieceKind.APP_FEEL -> listOfNotNull(
+            (p.values["theme"] as? String)?.let { RecipeWords.PICKS[it] }, "기기 색".takeIf { p.values["dynamic"] == true },
+            "강조색".takeIf { p.values["accent"] != null }, (p.values["textStep"] as? Number)?.let { "글자 ${listOf("작게", "보통", "크게", "더 크게", "아주 크게").getOrElse(it.toInt()) { "" }}" },
+            (p.values["compact"] as? Boolean)?.let { if (it) "촘촘하게" else "넉넉하게" }, "12시간제".takeIf { p.values["clock12"] == true },
+            (p.values["tap"] as? String)?.let { "누르면 " + RecipeWords.PICKS[it] }, (p.values["hold"] as? String)?.let { "길게 누르면 " + RecipeWords.PICKS[it] },
+            (p.values["dayOrder"] as? String)?.takeIf { it.isNotEmpty() }?.let { "하루 화면 순서" },
+        ).joinToString(" · ").ifEmpty { "앱 동작" }
     }
+
+    /** [CVW-01] Words for 달력 모양's choices, as the settings and the studio say them. */
+    val VIEW_NAMES = mapOf(
+        "size.short" to "칸 낮게", "size.normal" to "칸 보통", "size.tall" to "칸 높게", "size.huge" to "칸 아주 높게",
+        "badge.big" to "근무 표시 크게", "badge.small" to "근무 표시 작게", "badge.line" to "근무는 색 띠로",
+        "date.center" to "날짜 가운데", "date.left" to "날짜 왼쪽 위", "text.small" to "글씨 작게", "text.normal" to "글씨 보통", "text.large" to "글씨 크게",
+        "grid.none" to "칸 선 없음", "grid.line" to "칸마다 선",
+    )
+
+    /** [CVW-01] What each line under a day's mark is. */
+    val LINE_NAMES = mapOf("holiday" to "공휴일 이름", "memo" to "메모", "money" to "수입·매출", "hours" to "근무 시간", "spend" to "쓴 돈", "lunar" to "음력")
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
 

@@ -17,7 +17,7 @@ import { DAY, HOUR } from "./units.js";
 // ---- the format (core recipe/*.kt) ----
 
 export const RECIPE = {
-  format: "bamnat-recipe", version: 1, maxBytes: 32 * 1024, maxDepth: 6, maxPieces: 12, maxInputs: 20, maxTokens: 12,
+  format: "bamnat-recipe", version: 1, maxBytes: 32 * 1024, maxDepth: 8, maxPieces: 16, maxInputs: 20, maxTokens: 12,
   title: 30, summary: 60, desc: 600, tokenName: 10, inputLabel: 20,
 };
 const STYLES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
@@ -60,6 +60,11 @@ const imageId = (s) => (s === "" || /^[0-9a-f]{16}$/.test(s) ? null : "image");
 
 const LAYOUT_LINE = /^-?[A-Za-z][A-Za-z0-9]{0,23}(,-?[A-Za-z][A-Za-z0-9]{0,23}){0,39}$/;
 const layoutLine = (s) => (s === "" || LAYOUT_LINE.test(s) ? null : "layout");
+// [CVW-01] 달력 모양's order: the lines under a day's mark, each once (core CalendarView.orderProblem).
+const CELL_LINES = ["holiday", "memo", "money", "hours", "spend", "lunar"];
+const DAY_GROUPS = ["work", "extra", "leave", "alarm", "memo", "money", "body", "record"];
+const dayOrder = (s) => (s === "" || (s.split(",").every((x) => DAY_GROUPS.includes(x)) && new Set(s.split(",")).size === s.split(",").length) ? null : "dayOrder");
+const cellOrder = (s) => (s === "" || (s.split(",").every((x) => CELL_LINES.includes(x)) && new Set(s.split(",")).size === s.split(",").length) ? null : "order");
 
 const companyCheck = (text) => {
   try {
@@ -80,7 +85,9 @@ export const RECIPE_PIECES = {
     N("snooze", 1, 30, { optional: true }), N("ring", 1, 30, { optional: true }), F("gradual"), F("vibrate"),
     P("mission", ["none", "math", "shake"], { optional: true })] },
   memoTpl: { styles: STYLES, fields: [I("items", 8, [T("title", 30, { min: 1 }), E("emoji"), TS("check", 20, 60),
-    T("body", 300, { lines: true, optional: true }), T("repeat", 4, { optional: true, check: (s) => (s === "" || REPEAT.test(s) ? null : "repeat") })], { min: 1 })] },
+    T("body", 300, { lines: true, optional: true }), T("repeat", 4, { optional: true, check: (s) => (s === "" || REPEAT.test(s) ? null : "repeat") }),
+    // 1.35 [CVW-10] 입력 칸
+    I("asks", 8, [T("label", 20, { min: 1 }), P("type", ["text", "num", "star", "pick"]), TS("choices", 8, 16)], { optional: true })], { min: 1 })] },
   hourly: { styles: ["HOURLY"], fields: [M("wage", 0, 1_000_000, { optional: true }), F("five"), F("weeklyPay"), P("weekStart", WEEK_DAYS, { optional: true }),
     P("breakPay", ["UNPAID", "PAID", "AS_WORK"], { optional: true }), F("legalBreaks"), N("night", 0, 200, { optional: true }), F("partTime"),
     P("rounding", ["HOURLY_FIRST", "AT_END", "AT_END_UP", "AT_END_DOWN"], { optional: true }),
@@ -106,6 +113,15 @@ export const RECIPE_PIECES = {
     T("head", 16, { optional: true, guard: false, check: imageId }), T("widget", 16, { optional: true, guard: false, check: imageId }),
     P("corners", ["round", "soft", "square"], { optional: true }),
     I("icons", 6, [P("role", ROLES), T("image", 16, { min: 16, guard: false, check: imageId })], { optional: true })] },
+  // 1.35 [CVW-01] 달력 모양: cell size, mark, date place, text, lines, memo lines and the order of what stands under the mark.
+  calView: { styles: STYLES, fields: [P("size", ["short", "normal", "tall", "huge"], { optional: true }), P("badge", ["big", "small", "line"], { optional: true }),
+    P("date", ["center", "left"], { optional: true }), P("text", ["small", "normal", "large"], { optional: true }), P("grid", ["none", "line"], { optional: true }),
+    N("memo", 0, 4, { optional: true }), F("hours"), F("lunar"), F("spend"), T("order", 80, { optional: true, guard: false, check: cellOrder })] },
+  // 1.35 [CVW-07] 앱 동작: never the alarm's 끄기, 잠금, 동의, 결제·광고 or where a backup goes.
+  appFeel: { styles: STYLES, fields: [P("theme", ["system", "light", "dark", "night"], { optional: true }), F("dynamic"), C("accent", { optional: true }),
+    N("textStep", 0, 4, { optional: true }), F("compact"), F("clock12"), P("tap", ["preview", "sheet", "week"], { optional: true }),
+    P("hold", ["menu", "memo", "open"], { optional: true }), T("dayOrder", 120, { optional: true, guard: false, check: dayOrder }),
+    F("flow"), F("rest"), F("payPeriod")] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 

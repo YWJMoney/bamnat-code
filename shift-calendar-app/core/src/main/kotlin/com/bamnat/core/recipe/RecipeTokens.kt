@@ -39,6 +39,43 @@ object RecipeTokens {
     fun set(r: Recipe, name: String, light: Long, dark: Long = Contrast.onBlack(light)): Recipe =
         r.copy(tokens = r.tokens.map { if (it.name == name) it.copy(light = light, dark = dark) else it })
 
+    /**
+     * 1.35 받는 분이 고르는 색: token [name] becomes a colour the receiver picks (an [InputKind.COLOR] input with the token's
+     * colour first), and every field that pointed at it points at that input. Null when the recipe has no room for one more input.
+     */
+    fun toInput(r: Recipe, name: String): Recipe? {
+        val t = r.token(name) ?: return null
+        val id = (1..RecipeCodec.MAX_INPUTS).map { "i$it" }.firstOrNull { c -> r.inputs.none { it.id == c } } ?: return null
+        if (r.inputs.size >= RecipeCodec.MAX_INPUTS) return null
+        val input = Input(id, t.name.take(20), InputKind.COLOR, default = t.light, hint = "내 색을 골라요. 처음 색은 만든 분의 색이에요")
+        return r.copy(tokens = r.tokens - t, inputs = r.inputs + input, pieces = r.pieces.map { p ->
+            p.copy(values = mapRefs(p.kind.fields, p.values) { ref -> if (ref.name == name) Ref.Input(id) else ref })
+        })
+    }
+
+    /** The receiver's colour [id] made a theme colour again (the reverse of [toInput]). */
+    fun fromInput(r: Recipe, id: String): Recipe? {
+        val i = r.inputs.firstOrNull { it.id == id && it.kind == InputKind.COLOR } ?: return null
+        if (r.tokens.size >= RecipeCodec.MAX_TOKENS) return null
+        val light = (i.default as? Long) ?: return null
+        var name = i.label.trim().ifEmpty { "색" }.take(RecipeCodec.TOKEN_NAME)
+        var n = 2
+        while (r.tokens.any { it.name == name }) name = (i.label.take(RecipeCodec.TOKEN_NAME - 2) + " $n").also { n++ }
+        return r.copy(inputs = r.inputs - i, tokens = r.tokens + Token(name, light, Contrast.onBlack(light)), pieces = r.pieces.map { p ->
+            p.copy(values = mapInputs(p.kind.fields, p.values, id, Ref.Token(name)))
+        })
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun mapInputs(fields: List<Field>, values: Map<String, Any?>, id: String, to: Any): Map<String, Any?> =
+        values.mapValues { (k, v) ->
+            when (val field = fields.firstOrNull { it.key == k }) {
+                is Field.Color -> if (v is Ref.Input && v.id == id) to else v
+                is Field.Items -> (v as? List<Any?>)?.map { item -> (item as? Map<String, Any?>)?.let { mapInputs(field.fields, it, id, to) } ?: item } ?: v
+                else -> v
+            }
+        }
+
     /** How many colour fields point at [name]. */
     fun uses(r: Recipe, name: String): Int {
         var n = 0

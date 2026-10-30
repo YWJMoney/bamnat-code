@@ -16,9 +16,11 @@ data class MemoTemplate(
     val repeat: String = "",
     /** The recipe code it came with, or null for the user's own. */
     val from: String? = null,
+    /** [CVW-10] 1.35 입력 칸: what starting from this template asks first. */
+    val asks: List<TemplateAsk> = emptyList(),
 ) {
     /** A new memo from this template on [date] (or none): a repeat moves the date to its next day from [date] or [today]. */
-    fun start(date: LocalDate?, today: LocalDate, base: Memo = Memo()): Memo {
+    fun start(date: LocalDate?, today: LocalDate, base: Memo = Memo(), answers: Map<String, String> = emptyMap()): Memo {
         val title = listOfNotNull(emoji, title).joinToString(" ")
         val day = when {
             repeat.startsWith("W") -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
@@ -27,9 +29,11 @@ data class MemoTemplate(
         }
         return base.copy(
             title = title,
-            body = if (check.isEmpty()) body else "",
+            // [CVW-10] The answers as "칸: 값" lines before the template's own text; a list keeps them at its top, ticked.
+            body = if (check.isEmpty()) listOfNotNull(TemplateAsk.lines(asks, answers).ifEmpty { null }, body.ifEmpty { null }).joinToString("\n") else "",
             isChecklist = check.isNotEmpty(),
-            checklist = check.map { ChecklistItem(it) },
+            checklist = TemplateAsk.lines(asks, answers).lines().filter { it.isNotEmpty() }.map { ChecklistItem(it, checked = true) } +
+                check.map { ChecklistItem(it) },
             date = day,
             repeat = if (day != null && repeat.isNotEmpty()) repeat else "",
         )
@@ -45,5 +49,22 @@ data class MemoTemplate(
             val next = from.plusMonths(1).withDayOfMonth(1)
             return next.withDayOfMonth(minOf(d, next.lengthOfMonth()))
         }
+    }
+}
+
+/**
+ * [CVW-10] 1.35 메모 틀의 입력 칸 (사용자 2026-10-30 "입력하는 부분등 모든 부분에서 자유도"): one thing a template asks when a memo starts
+ * from it — free text, a number, 별점 1~5 or one of [choices] — written into the memo as "label: 값".
+ */
+data class TemplateAsk(val label: String, val type: String = "text", val choices: List<String> = emptyList()) {
+    companion object {
+        val TYPES = listOf("text", "num", "star", "pick")
+
+        /** The answered ones, in the template's order, one "label: 값" a line; 별점 as ★★★☆☆. */
+        fun lines(asks: List<TemplateAsk>, answers: Map<String, String>): String = asks.mapNotNull { a ->
+            val v = answers[a.label]?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val shown = if (a.type == "star") v.toIntOrNull()?.coerceIn(1, 5)?.let { n -> "★".repeat(n) + "☆".repeat(5 - n) } ?: return@mapNotNull null else v
+            "${a.label}: $shown"
+        }.joinToString("\n")
     }
 }

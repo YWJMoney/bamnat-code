@@ -119,6 +119,15 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                     Field.Texts("check", 20, 60),
                     Field.Text("body", 300, lines = true, optional = true),
                     Field.Text("repeat", 4, optional = true, check = { if (it.isEmpty() || REPEAT.matches(it)) null else "repeat" }),
+                    // [CVW-10] 1.35 입력 칸: asked one by one when a memo starts from the template, written as "칸: 값" lines.
+                    Field.Items(
+                        "asks", 8, optional = true,
+                        fields = listOf(
+                            Field.Text("label", 20, min = 1),
+                            Field.Pick("type", com.bamnat.core.memo.TemplateAsk.TYPES),
+                            Field.Texts("choices", 8, 16),
+                        ),
+                    ),
                 ),
             ),
         ),
@@ -251,6 +260,50 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                 fields = listOf(Field.Pick("role", ShiftRole.KEYS), Field.Text("image", 16, min = 16, guard = false, check = PhotoLook::idProblem)),
             ),
         ),
+    ),
+
+    /**
+     * [CVW-01] 1.35 달력 모양 (사용자 2026-10-30 "달력을 커스텀 하는부분도 자유도를 크게해서 메모중점의 달력을 만들게"): how tall the
+     * month's cells are, how big the day's mark is, where the date sits, the cells' text size and lines, how many memo lines a
+     * cell shows, which lines show under the mark and in what order.
+     */
+    CAL_VIEW(
+        "calView", "달력 모양", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Pick("size", CalendarView.SIZES, optional = true),
+            Field.Pick("badge", CalendarView.BADGES, optional = true),
+            Field.Pick("date", CalendarView.DATES, optional = true),
+            Field.Pick("text", CalendarView.TEXTS, optional = true),
+            Field.Pick("grid", CalendarView.GRIDS, optional = true),
+            Field.Num("memo", 0.0, CalendarView.MAX_MEMO.toDouble(), optional = true),
+            Field.Flag("hours"),
+            Field.Flag("lunar"),
+            Field.Flag("spend"),
+            Field.Text("order", 80, optional = true, guard = false, check = CalendarView::orderProblem),
+        ),
+    ),
+
+    /**
+     * [CVW-07] 1.35 앱 동작 (사용자 2026-10-30 "상호작용부분 입력하는 부분등 모든 부분에서 자유도"): how the whole app looks and answers
+     * a finger — 밝기, 기기 색, 강조색, 글자 크기, 간격, 12시간제, what a tap and a long press on a date do, the day view's order and
+     * the calendar's helpers. Never the alarm's 끄기, 잠금, 동의, 결제·광고 or where a backup goes.
+     */
+    APP_FEEL(
+        "appFeel", "앱 동작", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Pick("theme", AppFeel.THEMES, optional = true),
+            Field.Flag("dynamic"),
+            Field.Color("accent", optional = true),
+            Field.Num("textStep", 0.0, 4.0, optional = true),
+            Field.Flag("compact"),
+            Field.Flag("clock12"),
+            Field.Pick("tap", AppFeel.TAPS, optional = true),
+            Field.Pick("hold", AppFeel.HOLDS, optional = true),
+            Field.Text("dayOrder", 120, optional = true, guard = false, check = AppFeel::dayOrderProblem),
+            Field.Flag("flow"),
+            Field.Flag("rest"),
+            Field.Flag("payPeriod"),
+        ),
     );
 
     companion object {
@@ -335,6 +388,84 @@ data class CalendarTheme(
             return CalendarTheme(color("today"), color("sat"), color("sun"), color("holiday"), m["cell"]?.takeIf { it in CELLS })
         }
     }
+}
+
+/**
+ * [CVW-01] 1.35 달력 모양, as the settings keep it ("size=tall;badge=small;date=left;text=large;grid=line;memo=3;order=memo,hours"):
+ * each part null is the app's own. Which lines show is still the cells' own switches (근무 시간, 음력, 쓴 돈, 메모); [order] puts the
+ * shown ones in order, and [memo] is how many memo lines a cell gives (null: the first few letters of one memo, as before).
+ */
+data class CalendarView(
+    val size: String? = null,
+    val badge: String? = null,
+    val date: String? = null,
+    val text: String? = null,
+    val grid: String? = null,
+    val memo: Int? = null,
+    val order: List<String>? = null,
+) {
+    val isDefault: Boolean get() = this == CalendarView()
+
+    /** The lines under the mark in this view's order: the ones it names first, then the rest in the app's own order. */
+    val lines: List<String> get() = (order.orEmpty().filter { it in LINES } + LINES).distinct()
+
+    fun encode(): String = if (isDefault) "" else listOfNotNull(
+        size?.let { "size=$it" }, badge?.let { "badge=$it" }, date?.let { "date=$it" }, text?.let { "text=$it" }, grid?.let { "grid=$it" },
+        memo?.let { "memo=$it" }, order?.takeIf { it.isNotEmpty() }?.let { "order=" + it.joinToString(",") },
+    ).joinToString(";")
+
+    companion object {
+        /** short ×1.0, normal ×1.3 (the app's own), tall ×1.9, huge ×2.7 of a cell's width. */
+        val SIZES = listOf("short", "normal", "tall", "huge")
+        /** big: the 22dp badge (the app's own); small: 16dp; line: a bar in the day's colour, leaving the room to the lines. */
+        val BADGES = listOf("big", "small", "line")
+        val DATES = listOf("center", "left")
+        val TEXTS = listOf("small", "normal", "large")
+        /** none: cells float (the app's own); line: a thin line round each cell, like a paper diary. */
+        val GRIDS = listOf("none", "line")
+        const val MAX_MEMO = 4
+        /** What can stand under a day's mark, in the app's own order. */
+        val LINES = listOf("holiday", "memo", "money", "hours", "spend", "lunar")
+
+        fun orderProblem(s: String): String? =
+            if (s.isEmpty() || s.split(',').let { l -> l.all { it in LINES } && l.size == l.distinct().size }) null else "order"
+
+        fun decode(s: String): CalendarView {
+            if (s.isBlank()) return CalendarView()
+            val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+            return CalendarView(
+                size = m["size"]?.takeIf { it in SIZES }, badge = m["badge"]?.takeIf { it in BADGES }, date = m["date"]?.takeIf { it in DATES },
+                text = m["text"]?.takeIf { it in TEXTS }, grid = m["grid"]?.takeIf { it in GRIDS },
+                memo = m["memo"]?.toIntOrNull()?.coerceIn(0, MAX_MEMO),
+                order = m["order"]?.split(',')?.filter { it in LINES }?.distinct()?.takeIf { it.isNotEmpty() },
+            )
+        }
+
+        /**
+         * Ready-made looks, so a first try is one tap: 메모 중심 (tall cells, the date at the left, a bar for the shift and three
+         * memo lines first), 다이어리 (huge cells with lines, four memo lines), 한눈에 (short cells, big marks) and the app's own.
+         */
+        val PRESETS: List<Pair<String, CalendarView>> = listOf(
+            "기본" to CalendarView(),
+            "메모 중심" to CalendarView(size = "tall", badge = "line", date = "left", memo = 3, order = listOf("memo", "holiday")),
+            "다이어리" to CalendarView(size = "huge", badge = "small", date = "left", grid = "line", memo = 4, order = listOf("memo", "holiday", "hours")),
+            "한눈에" to CalendarView(size = "short", badge = "big", text = "small"),
+            "큰 글씨" to CalendarView(size = "tall", badge = "big", text = "large"),
+        )
+    }
+}
+
+/** [CVW-07] 1.35 앱 동작's choices, as a recipe writes them. */
+object AppFeel {
+    val THEMES = listOf("system", "light", "dark", "night")
+    val TAPS = listOf("preview", "sheet", "week")
+    /** menu: the quick menu (the app's own); memo: a memo for that day at once; open: the whole day. */
+    val HOLDS = listOf("menu", "memo", "open")
+    /** The day view's groups (DayGroupKey). */
+    val DAY_GROUPS = listOf("work", "extra", "leave", "alarm", "memo", "money", "body", "record")
+
+    fun dayOrderProblem(s: String): String? =
+        if (s.isEmpty() || s.split(',').let { l -> l.all { it in DAY_GROUPS } && l.size == l.distinct().size }) null else "dayOrder"
 }
 
 /** [RCP-16] The company file inside a recipe: the phone's own reader checks it whole when it is previewed. */

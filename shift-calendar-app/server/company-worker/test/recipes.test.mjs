@@ -126,7 +126,7 @@ test("[RCP-28][RCP-40] what the server refuses: too big, too deep, an operator's
   const { call } = server({ plaza: true });
   const big = await call("POST", "/api/recipes", { device: device(1), recipe: recipe({ desc: "가".repeat(40_000) }) }, from(1));
   assert.equal(big.status, 413);
-  const deep = await call("POST", "/api/recipes", { device: device(1), recipe: recipe({ pieces: [{ kind: "shiftLook", items: [{ name: "a", role: "day", label: "a", color: { input: { a: { b: 1 } } } }] }] }) }, from(1));
+  const deep = await call("POST", "/api/recipes", { device: device(1), recipe: recipe({ pieces: [{ kind: "shiftLook", items: [{ name: "a", role: "day", label: "a", color: { input: { a: { b: { c: { d: 1 } } } } } }] }] }) }, from(1));
   assert.equal(deep.data.error, "too_deep");
   assert.equal((await up(call, 2, { title: "밤낮 공식 세트" })).data.error, "name_taken");
   assert.equal((await up(call, 2, { title: "세트‮ 야간" }, "link")).status, 201, "a direction override is cleaned away, not kept");

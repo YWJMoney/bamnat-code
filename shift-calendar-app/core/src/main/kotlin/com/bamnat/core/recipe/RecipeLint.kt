@@ -125,6 +125,8 @@ object RecipeLint {
 
     /** A word ending like this describes (하는 사장님, 좋은 선배): not a name. */
     private const val ENDINGS = "는를을의에한할된던운쁜"
+    /** 1.35: a shop or a place before the title (소매점 사장님, 공장 반장님), never a name. */
+    private val PLACES = Regex("(점|숍|몰|당|게|터|매장|공장|현장|식당|학원|병원|약국|가게)$")
     private const val SURNAMES = "김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유남심노하곽성차주우구민진나지엄채원천방공현함변염여추도소석선설마길연위표명기반왕금옥육인맹제모탁국어은편용예봉경"
 
     fun nameLike(r: Recipe): List<String> {
@@ -133,7 +135,7 @@ object RecipeLint {
             NAME.findAll(s).forEach { m ->
                 val who = m.groupValues[1]
                 // A name starts with a family name (김철수 과장, 민수 씨 is too short to tell); 카페 사장님 or 동네 손님 does not.
-                if (who.first() in SURNAMES && who.last() !in ENDINGS && ROLES.none { who.endsWith(it) }) words += m.value
+                if (who.first() in SURNAMES && who.last() !in ENDINGS && ROLES.none { who.endsWith(it) } && !PLACES.containsMatchIn(who)) words += m.value
             }
         }
         scan(r.desc)

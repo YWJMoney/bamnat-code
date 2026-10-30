@@ -21,7 +21,7 @@ class RecipeCoreTest {
     @Test fun aBigOrDeepRecipeIsRefusedBeforeItIsRead() {
         val big = RecipeCodec.write(hourly(null)).replace("\"title\"", "\"x\":\"${"가".repeat(12_000)}\",\"title\"")
         assertEquals("too_big", refused(big))
-        assertEquals("too_deep", refused("[[[[[[[1]]]]]]]"))
+        assertEquals("too_deep", refused("[[[[[[[[[1]]]]]]]]]"))
         assertEquals("json", refused("{\"format\":\"bamnat-recipe\",}"))
     }
 
@@ -62,6 +62,9 @@ class RecipeCoreTest {
     @Test fun aNameBeforeATitleIsCaught() {
         val r = hourly(null).copy(desc = "김철수 과장님이 알려 준 방법")
         assertEquals(listOf("김철수 과장"), RecipeLint.nameLike(r))
+        // 1.35: a shop or a place before the title is who the recipe is for, not a person.
+        val shops = hourly(null).copy(desc = "소매점 사장님, 편의점 점장님, 공장 반장님, 카페 사장님께 좋아요")
+        assertEquals(emptyList<String>(), RecipeLint.nameLike(shops))
     }
 
     @Test fun similarRecipesAreFound() {
