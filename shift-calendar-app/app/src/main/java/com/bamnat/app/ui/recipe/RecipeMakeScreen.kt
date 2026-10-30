@@ -44,6 +44,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material3.Surface
@@ -370,7 +372,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
         var tab by rememberSaveable { mutableStateOf(com.bamnat.core.layout.TabOrder.CALENDAR) }
         var mockShown by remember { mutableStateOf(true) }
         val scope = rememberCoroutineScope()
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        var boxTop by remember { mutableStateOf(0f) }
+        Box(Modifier.fillMaxSize().padding(padding).onGloballyPositioned { boxTop = it.boundsInWindow().top }) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -378,7 +381,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 s.sent?.let { sent -> SentCard(s.recipe.title, sent, onOpen); return@Column }
                 when (s.step) {
                     1 -> {
-                        RecipeStudio(s, vm, tab, { tab = it }) { mockShown = it }
+                        RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
+                            onEdit = { top -> scope.launch { scroll.animateScrollTo((scroll.value + top - boxTop - 8f).toInt().coerceAtLeast(0)) } })
                         var more by rememberSaveable { mutableStateOf(false) }
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -419,9 +423,14 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             }
         }
         // [STU-03] While the fields are changed below, the example stays in view, small, at the top corner.
+        // F-57: it can be put away to a small pill when it covers a field, and brought back.
+        var miniOpen by rememberSaveable { mutableStateOf(true) }
         if (s.step == 1 && s.sent == null && !mockShown) {
-            MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } },
-                Modifier.align(Alignment.TopEnd).padding(8.dp).shadow(6.dp, RoundedCornerShape(14.dp)))
+            if (miniOpen) Column(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalAlignment = Alignment.End) {
+                MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, RoundedCornerShape(14.dp)))
+                androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
+            } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
         }
         }
     }

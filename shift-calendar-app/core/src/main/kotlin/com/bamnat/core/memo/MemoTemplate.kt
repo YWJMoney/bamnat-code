@@ -21,7 +21,10 @@ data class MemoTemplate(
 ) {
     /** A new memo from this template on [date] (or none): a repeat moves the date to its next day from [date] or [today]. */
     fun start(date: LocalDate?, today: LocalDate, base: Memo = Memo(), answers: Map<String, String> = emptyMap()): Memo {
-        val title = listOfNotNull(emoji, title).joinToString(" ")
+        val said = TemplateAsk.lines(asks, answers)
+        // [CVW-10] A list keeps only its own items (자유도 점검 F-56: answers ticked in 완료 read as done tasks); its answers go after the title.
+        val title = listOfNotNull(emoji, title).joinToString(" ") +
+            if (check.isNotEmpty() && said.isNotEmpty()) " (" + said.lines().joinToString(" · ") + ")" else ""
         val day = when {
             repeat.startsWith("W") -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
             repeat.startsWith("M") -> nextDayOfMonth(date ?: today, repeat.drop(1).toInt())
@@ -30,10 +33,9 @@ data class MemoTemplate(
         return base.copy(
             title = title,
             // [CVW-10] The answers as "칸: 값" lines before the template's own text; a list keeps them at its top, ticked.
-            body = if (check.isEmpty()) listOfNotNull(TemplateAsk.lines(asks, answers).ifEmpty { null }, body.ifEmpty { null }).joinToString("\n") else "",
+            body = if (check.isEmpty()) listOfNotNull(said.ifEmpty { null }, body.ifEmpty { null }).joinToString("\n") else "",
             isChecklist = check.isNotEmpty(),
-            checklist = TemplateAsk.lines(asks, answers).lines().filter { it.isNotEmpty() }.map { ChecklistItem(it, checked = true) } +
-                check.map { ChecklistItem(it) },
+            checklist = check.map { ChecklistItem(it) },
             date = day,
             repeat = if (day != null && repeat.isNotEmpty()) repeat else "",
         )
@@ -60,9 +62,12 @@ data class TemplateAsk(val label: String, val type: String = "text", val choices
     companion object {
         val TYPES = listOf("text", "num", "star", "pick")
 
-        /** The answered ones, in the template's order, one "label: 값" a line; 별점 as ★★★☆☆. */
-        fun lines(asks: List<TemplateAsk>, answers: Map<String, String>): String = asks.mapNotNull { a ->
-            val v = answers[a.label]?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        /**
+         * The answered ones, in the template's order, one "label: 값" a line; 별점 as ★★★☆☆. An answer is found by its place ("#0", "#1"…)
+         * first, so two 칸 with the same name keep their own answers (자유도 점검 F-55), and by its name as before.
+         */
+        fun lines(asks: List<TemplateAsk>, answers: Map<String, String>): String = asks.withIndex().mapNotNull { (i, a) ->
+            val v = (answers["#$i"] ?: answers[a.label])?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             val shown = if (a.type == "star") v.toIntOrNull()?.coerceIn(1, 5)?.let { n -> "★".repeat(n) + "☆".repeat(5 - n) } ?: return@mapNotNull null else v
             "${a.label}: $shown"
         }.joinToString("\n")

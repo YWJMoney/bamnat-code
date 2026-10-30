@@ -95,10 +95,13 @@ import com.bamnat.core.work.WorkStyle
 @Composable
 internal fun RecipeStudio(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, tab: String, onTab: (String) -> Unit,
                           /** Whether the big example is out of sight (scrolled past), for the small one that stays in view. */
-                          onMockShown: (Boolean) -> Unit = {}) {
+                          onMockShown: (Boolean) -> Unit = {},
+                          /** Scrolls the screen so the fields start at its top (F-46: tapping the example only nudged it). */
+                          onEdit: ((Float) -> Unit)? = null) {
     val r = s.recipe
     val editors = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var editorsTop by remember { mutableStateOf(0f) }
     StudioStart(s, vm)
     Text("예시 앱에서 바로 꾸며요. 화면을 누르면 고치는 칸으로 가요. 내 앱은 바뀌지 않아요", style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -107,10 +110,10 @@ internal fun RecipeStudio(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel,
         val b = c.boundsInWindow()
         onMockShown(b.height > c.size.height / 5f)
     }) {
-        MockPhone(r, vm.style, tab, onTab, onPick = { scope.launch { editors.bringIntoView() } })
+        MockPhone(r, vm.style, tab, onTab, onPick = { onEdit?.invoke(editorsTop) ?: scope.launch { editors.bringIntoView() } })
     }
     Text(TopLevel.entries.firstOrNull { it.route == tab }?.labelFor(vm.style).orEmpty() + " 화면에서 고칠 것", style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.semantics { heading() }.bringIntoViewRequester(editors))
+        modifier = Modifier.semantics { heading() }.bringIntoViewRequester(editors).onGloballyPositioned { editorsTop = it.boundsInWindow().top })
     StudioEditors(r, vm, tab)
 }
 
@@ -230,7 +233,23 @@ private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String)
 private fun exampleDays(style: WorkStyle?): List<Map<String, Any?>> = when (style) {
     WorkStyle.SHIFT, null -> listOf(day("주간", "day", "주", 0xFFEF6C00), day("야간", "night", "야", 0xFF3949AB), day("휴무", "off", "휴", 0xFF757575))
     WorkStyle.HOURLY -> listOf(day("근무", "day", "근", 0xFF2E7D32), day("휴무", "off", "휴", 0xFF757575))
+    // F-54: each kind of work's own words on the example days.
+    WorkStyle.FIELD -> listOf(day("현장", "day", "현", 0xFF6D4C41), day("쉬는 날", "off", "휴", 0xFF757575))
+    WorkStyle.BUSINESS -> listOf(day("영업", "day", "영", 0xFF00897B), day("휴무", "off", "휴", 0xFF757575))
+    WorkStyle.INVEST -> listOf(day("장 열림", "day", "장", 0xFF1E88E5), day("휴장", "off", "휴", 0xFF757575))
     else -> listOf(day("근무", "day", "근", 0xFF1E88E5), day("휴무", "off", "휴", 0xFF757575))
+}
+
+/** What a calendar card says in the example, in this kind of work's words (F-54). */
+private fun mockWhat(part: CalendarPart, style: WorkStyle?): String = when {
+    part == CalendarPart.DAY_CARD -> when (style) {
+        WorkStyle.FIELD -> "누른 날의 현장·공수·받을 돈"
+        WorkStyle.BUSINESS -> "누른 날의 매출·지출·메모"
+        WorkStyle.INVEST -> "누른 날의 매매·투자일지"
+        WorkStyle.HOURLY -> "누른 날의 출퇴근·시급·알람"
+        else -> part.what
+    }
+    else -> part.what
 }
 
 private fun day(name: String, role: String, label: String, color: Long) = mapOf("name" to name, "role" to role, "label" to label, "color" to color)
@@ -245,7 +264,7 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     // Only the cards this kind of work has, as on the phone (no 오늘 일감·매출 on a 교대 example, 자유도 점검).
     val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL &&
         fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
-    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.label, it.part.what) }
+    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.label, mockWhat(it.part, style)) }
     if (placed.any { it.part == CalendarPart.SUMMARY }) MockSummary(style)
     val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
     if (placed.any { it.part == CalendarPart.COUNTS }) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -253,7 +272,7 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
     MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]))
-    placed.filter { !above(it.part) }.forEach { MockCard(it.part.label, it.part.what) }
+    placed.filter { !above(it.part) }.forEach { MockCard(it.part.label, mockWhat(it.part, style)) }
 }
 
 /** [CVW-01] 달력 모양's values as the calendar reads them. */
@@ -610,13 +629,14 @@ private fun ItemsEditor(label: String, f: Field.Items, list: List<Map<String, An
             }
         }
     }
-    if (list.size < f.max) TextButton(onClick = { onChange(list + newItem(f)) }) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
+    if (list.size < f.max) TextButton(onClick = { onChange(list + newItem(f, list.size + 1)) }) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
 }
 
 /** A new row of [f]: what each field needs to be valid, so it can be filled in from there. */
-private fun newItem(f: Field.Items): Map<String, Any?> = f.fields.mapNotNull { x ->
+/** [n] numbers the default name, so two new rows never share one (F-55). */
+private fun newItem(f: Field.Items, n: Int = 1): Map<String, Any?> = f.fields.mapNotNull { x ->
     when (x) {
-        is Field.Text -> if (x.optional) null else x.key to if (x.min > 0) (if (x.key == "label") "새" else "새로") else ""
+        is Field.Text -> if (x.optional) null else x.key to if (x.min > 0) (if (x.key == "label") (if (x.max >= 4) "칸 $n" else "새") else if (x.max >= 5) "새로 $n" else "새로") else ""
         is Field.Pick -> if (x.optional) null else x.key to x.values.first()
         is Field.Color -> if (x.optional) null else x.key to 0xFF5C6BC0L
         is Field.Nums -> x.key to listOf(60L)

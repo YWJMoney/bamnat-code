@@ -853,15 +853,17 @@ internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Ma
         title = { Text(listOfNotNull(t.emoji, t.title).joinToString(" ")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                t.asks.forEach { a ->
-                    val v = answers[a.label].orEmpty()
+                t.asks.forEachIndexed { i, a ->
+                    // By place, so two 칸 with one name keep their own answers (F-55).
+                    val key = "#$i"
+                    val v = answers[key].orEmpty()
                     when (a.type) {
                         "star" -> Column {
                             Text(a.label, style = MaterialTheme.typography.bodyMedium)
                             Row {
                                 (1..5).forEach { n ->
                                     val on = (v.toIntOrNull() ?: 0) >= n
-                                    TextButton(onClick = { answers[a.label] = if (v == "$n") "" else "$n" }, modifier = Modifier.semantics { contentDescription = "${a.label} 별 ${n}개" }) {
+                                    TextButton(onClick = { answers[key] = if (v == "$n") "" else "$n" }, modifier = Modifier.semantics { contentDescription = "${a.label} 별 ${n}개" }) {
                                         Text(if (on) "★" else "☆", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
@@ -870,10 +872,10 @@ internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Ma
                         "pick" -> Column {
                             Text(a.label, style = MaterialTheme.typography.bodyMedium)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[a.label] = if (v == c) "" else c }, label = { Text(c) }) }
+                                a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) }) }
                             }
                         }
-                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[a.label] = it.take(100) }, label = { Text(a.label) },
+                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = it.take(100) }, label = { Text(a.label) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = if (a.type == "num") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
                                 else androidx.compose.foundation.text.KeyboardOptions.Default)

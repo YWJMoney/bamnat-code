@@ -42,8 +42,12 @@ class FreedomPiecesTest {
         // Nothing answered: the template's own text, as before.
         assertEquals("오늘 한 줄:", t.start(null, LocalDate.of(2026, 10, 30)).body)
         val list = t.copy(check = listOf("물 마시기")).start(null, LocalDate.of(2026, 10, 30), answers = mapOf("기분" to "2"))
-        assertEquals(listOf("기분: ★★☆☆☆", "물 마시기"), list.checklist.map { it.text })
-        assertTrue(list.checklist.first().checked)
+        // A list keeps its own items; the answers go after the title (F-56).
+        assertEquals(listOf("물 마시기"), list.checklist.map { it.text })
+        assertEquals("🌤️ 컨디션 일지 (기분: ★★☆☆☆)", list.title)
+        // Two 칸 with one name keep their own answers, found by place (F-55).
+        val twin = MemoTemplate("t2", "둘", asks = listOf(TemplateAsk("새", "pick", listOf("좋음", "나쁨")), TemplateAsk("새", "num")))
+        assertEquals("새: 나쁨\n새: 12345", twin.start(null, LocalDate.of(2026, 10, 30), answers = mapOf("#0" to "나쁨", "#1" to "12345")).body)
     }
 
     @Test fun aRemixSaysWhatItChanged() {
