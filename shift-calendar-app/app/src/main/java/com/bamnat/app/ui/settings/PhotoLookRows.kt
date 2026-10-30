@@ -100,6 +100,7 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
         Text(PHOTO_LOOK_ROW, style = MaterialTheme.typography.bodyLarge)
         Text("내 사진으로 달력 배경, 달력 위 그림, 근무 표시, 위젯 바탕을 꾸며요. 사진은 휴대폰 안에서 작게 줄여 위치·기기 정보 없이 저장해요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         PlaceRow(Slot.BG, look.bg, "글자가 잘 보이게 사진 위를 흐리게 덮어요", onPick = { choose(Slot.BG) }, onClear = { save(look.copy(bg = null)) })
         if (look.bg != null) {
             var dim by remember(look.dim) { mutableFloatStateOf(look.dim.toFloat()) }
@@ -132,7 +133,6 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
             listOf("round" to "둥글게", "soft" to "보통 (처음)", "square" to "각지게"), look.corners ?: "soft") { k ->
             save(look.copy(corners = k.takeIf { it != "soft" }))
         }
-        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Row {
             if (!look.isDefault) TextButton(onClick = { save(PhotoLook()) }) { Text("처음으로") }
             com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.PHOTO_LOOK)
@@ -143,7 +143,7 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
     if (uri != null && t != null) FrameDialog(uri, t.first, onDismiss = { framing = null }) { crop ->
         framing = null
         scope.launch {
-            val id = LookImages.import(context, uri, t.first, crop)
+            val id = runCatching { LookImages.import(context, uri, t.first, crop) }.getOrNull()
             if (id == null) { problem = "사진을 읽지 못했어요. 다른 사진을 골라 주세요"; return@launch }
             val now = PhotoLook.decode(c.settingsRepository.current.photoLook)
             save(when (t.first) {

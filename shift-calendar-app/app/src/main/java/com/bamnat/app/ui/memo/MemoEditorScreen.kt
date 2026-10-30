@@ -875,7 +875,7 @@ internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Ma
                                 a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) }) }
                             }
                         }
-                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = it.take(100) }, label = { Text(a.label) },
+                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = (if (a.type == "num") numberOnly(it) else it).take(100) }, label = { Text(a.label) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = if (a.type == "num") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
                                 else androidx.compose.foundation.text.KeyboardOptions.Default)
@@ -886,4 +886,18 @@ internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Ma
         confirmButton = { TextButton(onClick = { onDone(answers.toMap()) }) { Text("메모 시작") } },
         dismissButton = { TextButton(onClick = { onDone(emptyMap()) }) { Text("건너뛰기") } },
     )
+}
+
+/** [J135-06] F-62: a 숫자 칸 keeps digits, one point and a leading minus, so a typed letter or a pasted word does not stay. */
+internal fun numberOnly(typed: String): String {
+    val sb = StringBuilder()
+    var point = false
+    typed.forEachIndexed { i, ch ->
+        when {
+            ch.isDigit() -> sb.append(ch)
+            ch == '.' && !point -> { point = true; sb.append(ch) }
+            ch == '-' && i == 0 -> sb.append(ch)
+        }
+    }
+    return sb.toString()
 }

@@ -1522,3 +1522,5 @@ LIN-04,1.35: 새 수정판 소식(서버 news remixes)과 내 레시피의 ‘�
 LIN-05,1.35: 계보는 서버 스키마 변경 없이 이미 있는 parent·lineage를 씀,2 (1.35.0),완료,,recipe-community.js lineage
 J135-03,"1.35 컴퓨터 점검 F-38: 관리자가 답해도 문의를 다시 열면 ‘답을 기다려요’ 그대로 → 내 문의·문의 열 때 다시 읽고, 보는 동안 30초마다 읽음",2 (1.35.0),완료,,InquiryScreen
 J135-04,1.35 컴퓨터 점검 F-39: 문의 앞 ‘[설정 > …]’ 꼬리표가 개발사항 제목에 따라감 → 제목에서 뺌,2 (1.35.0),완료,,inbox.js titleFrom admin-lib.js copyTitle inbox.test.mjs
+J135-05,"1.35 컴퓨터 점검 F-61: 그림 꾸미기 사진을 골라 자리 맞춘 뒤 이대로 쓰기 → 칸이 빈 채로, 저장 안 됨 (사진 크기만 읽는 단계가 늘 실패로 처리됨) → 고침, 못 읽을 때 안내를 사진 칸 바로 위에",2 (1.35.0),완료,,LookImages.kt PhotoLookRows.kt LookImagesTest.kt
+J135-06,"1.35 컴퓨터 점검 F-62~64: 메모 틀 숫자 칸에 글자 입력됨 → 숫자만, 체크 목록 틀의 답이 길면 제목이 길어짐 → 30자에서 줄임, 현장·가게·투자 달력의 첫 카드 이름 ‘오늘 일감·매출·투자’ → 오늘 일감/오늘 매출/오늘 투자",2 (1.35.0),완료,,MemoTemplate.kt MemoEditorScreen.kt CalendarLayout.kt RecipeStudio.kt FreedomPiecesTest.kt

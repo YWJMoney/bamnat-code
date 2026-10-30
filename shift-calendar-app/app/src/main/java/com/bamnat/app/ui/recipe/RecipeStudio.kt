@@ -264,7 +264,7 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     // Only the cards this kind of work has, as on the phone (no 오늘 일감·매출 on a 교대 example, 자유도 점검).
     val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL &&
         fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
-    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.label, mockWhat(it.part, style)) }
+    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
     if (placed.any { it.part == CalendarPart.SUMMARY }) MockSummary(style)
     val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
     if (placed.any { it.part == CalendarPart.COUNTS }) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -272,7 +272,7 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
     MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]))
-    placed.filter { !above(it.part) }.forEach { MockCard(it.part.label, mockWhat(it.part, style)) }
+    placed.filter { !above(it.part) }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
 }
 
 /** [CVW-01] 달력 모양's values as the calendar reads them. */
@@ -421,7 +421,7 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
                     modifier = Modifier.semantics { contentDescription = "달력 모양 넣기" }) }) {
                 if (cv != null) com.bamnat.app.ui.calendar.CalendarViewEditor(viewOf(cv.values), { v -> vm.setPiece(PieceKind.CAL_VIEW, valuesOf(v, cv.values)) }, sample = {})
             }
-            PartsEditor("달력 화면 카드", CalendarPart.entries.filter { it != CalendarPart.ASK && it != CalendarPart.JOURNAL && it != CalendarPart.MONTH && fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.id, vm.style) }.map { Triple(it.id, it.label, it.movable) },
+            PartsEditor("달력 화면 카드", CalendarPart.entries.filter { it != CalendarPart.ASK && it != CalendarPart.JOURNAL && it != CalendarPart.MONTH && fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.id, vm.style) }.map { Triple(it.id, it.labelFor(vm.style), it.movable) },
                 r.piece(PieceKind.LAYOUT)?.values?.get("calendar") as? String) { line -> vm.setValue(PieceKind.LAYOUT, "calendar", line) }
         }
         TabOrder.MONEY -> PartsEditor("가계부 카드", MoneyPart.entries.filter { fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, vm.style) }.map { Triple(it.id, it.label, it.movable) },

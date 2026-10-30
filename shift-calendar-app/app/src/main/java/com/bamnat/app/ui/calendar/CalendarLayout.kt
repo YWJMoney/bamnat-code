@@ -33,6 +33,14 @@ enum class CalendarPart(val id: String, val label: String, val what: String, val
     MEMOS("memos", "이번 달 메모", "날짜가 있는 메모 목록", above = false),
     ;
 
+    /** [J135-06] F-64: the name this kind of work calls it (오늘 일감 on 현장, 오늘 매출 on 가게, 오늘 투자 on 투자). */
+    fun labelFor(style: com.bamnat.core.work.WorkStyle?): String = if (this != TODAY_WORK) label else when (style) {
+        com.bamnat.core.work.WorkStyle.FIELD -> "오늘 일감"
+        com.bamnat.core.work.WorkStyle.BUSINESS -> "오늘 매출"
+        com.bamnat.core.work.WorkStyle.INVEST -> "오늘 투자"
+        else -> label
+    }
+
     companion object {
         fun byId(id: String) = entries.firstOrNull { it.id == id }
     }
@@ -106,10 +114,14 @@ internal fun AppSettings.withPartMoved(part: CalendarPart, by: Int, seen: (Calen
     return copy(calendarLayout = PageLayout.of(fixed + movable) { it.id }.encode())
 }
 
-internal fun calendarEditGroups(placed: List<PageLayout.Placed<CalendarPart>>, fits: (CalendarPart) -> Boolean = { true }): List<EditGroup> {
+internal fun calendarEditGroups(
+    placed: List<PageLayout.Placed<CalendarPart>>,
+    style: com.bamnat.core.work.WorkStyle? = null,
+    fits: (CalendarPart) -> Boolean = { true },
+): List<EditGroup> {
     val above = calendarAbove(placed.map { it.part })
     fun rows(up: Boolean) = placed.filter { above(it.part) == up && fits(it.part) && it.part != CalendarPart.MONTH }.sortedBy { if (it.part.movable) 0 else 1 }.map {
-        EditRow(it.part.id, it.part.label, it.part.what, it.shown, it.part.movable, it.isNew)
+        EditRow(it.part.id, it.part.labelFor(style), it.part.what, it.shown, it.part.movable, it.isNew)
     }
     return listOf(EditGroup("위쪽 (달력 위)", rows(true)), EditGroup("아래쪽 (달력 아래)", rows(false)))
 }
@@ -131,7 +143,7 @@ internal fun CalendarEditSheet(
         share = com.bamnat.core.recipe.PieceKind.LAYOUT,
         crossGroups = true,
         title = "달력 화면 꾸미기",
-        groups = calendarEditGroups(placed) { settings.partFits(it, added) },
+        groups = calendarEditGroups(placed, settings.workStyle) { settings.partFits(it, added) },
         others = com.bamnat.app.ui.guide.fitOthers(FitSurface.CALENDAR_PARTS, settings.workStyle, added) { id ->
             CalendarPart.byId(id)?.let { it.label to it.what }
         },

@@ -48,7 +48,8 @@ object LookImages {
      */
     suspend fun import(context: Context, uri: Uri, slot: Slot, crop: RectF? = null): String? = withContext(Dispatchers.IO) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return@withContext null
+        // Only the size is read here, and decodeStream gives null for that, so whether the photo opened is the stream's.
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds); true } ?: return@withContext null
         if (bounds.outWidth < 64 || bounds.outHeight < 64) return@withContext null
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= slot.side && bounds.outHeight / (sample * 2) >= slot.side) sample *= 2
