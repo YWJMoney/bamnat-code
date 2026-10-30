@@ -222,18 +222,21 @@ internal fun entryLine(style: WorkStyle?): String = when (style) {
 @Composable
 fun RecipeListScreen(
     vm: RecipeListViewModel,
-    onBack: () -> Unit,
+    /** Null in 마을's 장터, a place of the tab ([HUB-01]). */
+    onBack: (() -> Unit)?,
     onOpen: (String) -> Unit,
     onMake: () -> Unit,
     onMine: () -> Unit,
+    title: String = "나눔 판",
+    askCode: Boolean = false,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var codeAsk by remember { mutableStateOf(false) }
+    var codeAsk by remember { mutableStateOf(askCode) }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("나눔 판" + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: "")) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                title = { Text(title + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: "")) },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     TextButton(onClick = { codeAsk = true }) { Text("코드로 받기") }
                     TextButton(onClick = onMine) { Text("내 레시피") }

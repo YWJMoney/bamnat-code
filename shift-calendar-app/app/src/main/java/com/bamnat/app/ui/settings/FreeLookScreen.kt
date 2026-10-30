@@ -34,6 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -105,6 +106,8 @@ import java.time.LocalDate
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FreeLookScreen(settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onBack: () -> Unit, start: FreeTarget = FreeTarget.CALENDAR) {
+    // 1.35 [J135-17] Its own full-screen window: the clock and icons on top follow this page's ground (white on a light page was unreadable).
+    com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.surface.luminance() > 0.5f)
     val before = remember { settings }
     var target by rememberSaveable { mutableStateOf(start) }
     var dock by rememberSaveable { mutableStateOf(Dock.BIG) }

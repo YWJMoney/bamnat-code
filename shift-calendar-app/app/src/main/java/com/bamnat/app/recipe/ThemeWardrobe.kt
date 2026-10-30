@@ -64,8 +64,10 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
 
     /** [looks] are on: the theme worn from today, its days running for someone else's (not [own]) under the ads switch. */
     suspend fun afterWear(looks: Recipe, code: String, own: Boolean) {
-        prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString()).apply()
         val l = _lease.value
+        // [J135-16] What was worn before, so 되돌리기 of this one puts its name back with its look.
+        prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString())
+            .putString(K_PREV, ThemeLease.encode(ThemeLease(worn = l.worn))).apply()
         val free = !own && adsOn() && !pro() && l.freeUsed < ThemeLease.FREE_FIRST
         val only = looks.copy(pieces = looks.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         save(l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own), Today.date().toEpochDay(), free))
@@ -86,7 +88,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
             l = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
         }
         readMap(K_MINE)?.let { c.recipes.pieces.restoreLook(it) }
-        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).apply()
+        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).apply()
         save(l.takeOff())
         refreshWidgets()
     }
@@ -154,8 +156,15 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     /** A theme taken back by 되돌리기 (the recipe's own undo put the look back): no longer worn. */
     fun forget(code: String) {
         if (_lease.value.worn?.code != code) return
-        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).apply()
-        save(_lease.value.takeOff())
+        val prev = ThemeLease.decode(prefs.getString(K_PREV, null)).worn
+        if (prev == null) {
+            prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).apply()
+            save(_lease.value.takeOff())
+        } else {
+            // [J135-16] The theme worn before comes back on screen with the undo, and so does its name and its days.
+            prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString()).remove(K_PREV).apply()
+            save(_lease.value.copy(worn = prev, askedDay = null))
+        }
     }
 
     companion object {
@@ -167,5 +176,6 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_WORN_LOOK = "worn_look"
         private const val K_SOON = "soon_said"
         private const val K_WAS_PRO = "was_pro"
+        private const val K_PREV = "prev_worn"
     }
 }

@@ -8,10 +8,10 @@ import com.bamnat.core.work.WorkStyle
  * had 근무 횟수 줄 and its 도구 had 근무 주기 설정.
  */
 enum class FitSurface(val label: String) {
-    CALENDAR_PARTS("달력 화면 꾸미기"),
+    CALENDAR_PARTS("달력 카드 배치"),
     CALENDAR_TOOLS("달력 도구"),
-    STATS_PARTS("근무·급여 화면 꾸미기"),
-    MONEY_PARTS("돈 화면 꾸미기"),
+    STATS_PARTS("근무·급여 카드 배치"),
+    MONEY_PARTS("돈 카드 배치"),
 }
 
 /**

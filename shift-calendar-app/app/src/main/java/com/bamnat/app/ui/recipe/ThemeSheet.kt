@@ -116,7 +116,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier) {
         val mineCount = lease.history.count { it.own }
         val limit = c.wardrobe.outfitLimit()
         OutlinedButton(onClick = {
-            scope.launch { saveNote = if (c.wardrobe.saveMine("내 테마 ${mineCount + 1}")) "지금 모양을 ‘내 테마 ${mineCount + 1}’로 저장했어요" else "더 저장할 수 없어요" }
+            scope.launch { saveNote = if (kotlinx.coroutines.withContext(c.appScope.coroutineContext) { c.wardrobe.saveMine("내 테마 ${mineCount + 1}") }) "지금 모양을 ‘내 테마 ${mineCount + 1}’로 저장했어요" else "더 저장할 수 없어요" }
         }, enabled = mineCount < limit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("지금 모양을 내 테마로 저장 ($mineCount/$limit)") }
         Text(saveNote ?: if (limit <= com.bamnat.app.recipe.ThemeWardrobe.FREE_OUTFITS) "무료는 ${limit}벌까지예요. 프로는 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 바꿔 입어요"
             else "내 테마는 기간 없이 언제든 다시 입어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -128,7 +128,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier) {
         onDismissRequest = { takingOff = false },
         title = { Text("테마를 벗을까요?") },
         text = { Text("입기 전 내 모양으로 돌아가요. 입었던 테마에 남아서 다시 입을 수 있고, 테마를 입은 채 고친 것은 ‘내가 고친 …’으로 따로 남아요") },
-        confirmButton = { TextButton(onClick = { takingOff = false; scope.launch { c.wardrobe.takeOff() } }) { Text("벗기") } },
+        confirmButton = { TextButton(onClick = { takingOff = false; c.appScope.launch { c.wardrobe.takeOff() } }) { Text("벗기") } },
         dismissButton = { TextButton(onClick = { takingOff = false }) { Text("닫기") } },
     )
 }
@@ -141,16 +141,19 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier) {
 fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(TabOrder.CALENDAR) }
     var note by remember { mutableStateOf<String?>(null) }
     val own = code.isEmpty()
     val needsAd = remember { c.wardrobe.needsAd(own) }
-    fun wear(after: () -> Unit = {}) = scope.launch {
+    // [J135-15] Worn on the app's scope: the look changing redraws the screens under this sheet, and a coroutine of the sheet would be
+    // cancelled half way (the look on, 입는 중 never written).
+    fun wear(after: () -> Unit = {}) = c.appScope.launch {
         if (c.wardrobe.wear(r, code, own)) {
             after()
-            Toast.makeText(context, "‘${r.title}’을(를) 입었어요. 기록은 그대로예요", Toast.LENGTH_SHORT).show()
-            onDismiss()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                Toast.makeText(context.applicationContext, "‘${r.title}’을(를) 입었어요. 기록은 그대로예요", Toast.LENGTH_SHORT).show()
+                onDismiss()
+            }
         }
     }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
@@ -184,7 +187,6 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
 fun ThemeExpiryAsk() {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val worn = lease.worn ?: return
     var shown by remember { mutableStateOf(true) }
@@ -224,6 +226,6 @@ fun ThemeExpiryAsk() {
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = { shown = false; scope.launch { c.wardrobe.takeOff() } }) { Text("아니요, 내 모양으로") } },
+        dismissButton = { TextButton(onClick = { shown = false; c.appScope.launch { c.wardrobe.takeOff() } }) { Text("아니요, 내 모양으로") } },
     )
 }

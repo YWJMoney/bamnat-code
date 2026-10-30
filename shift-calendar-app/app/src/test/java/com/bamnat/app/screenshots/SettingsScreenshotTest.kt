@@ -108,7 +108,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
     @Test fun smallPhoneWhatsNew() = shoot("362_small_phone_whats_new", SMALL_PHONE) { whatsNew() }
     @Test fun phoneStatsCustomize() = shoot("363_phone_stats_customize", PHONE) {
         tab(3, wide = false)
-        tapText("화면 꾸미기", exact = true, scrolls = 0)
+        tapText("카드 배치", exact = true, scrolls = 0)
     }
     @Test fun smallPhoneSettings() = shoot("365_small_phone_settings", SMALL_PHONE) { tab(SETTINGS_TAB, wide = false) }
     @Test fun phoneLockCover() = shoot("373_phone_lock_cover", PHONE) { content { com.bamnat.app.ui.LockCover {} } }
@@ -250,7 +250,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
 
     @Test fun e487FoldedMemoCustomize() = shoot("487_folded_memo_customize", FOLDED) {
         tab(2, wide = false)
-        tapText("화면 꾸미기", exact = true, scrolls = 0)
+        tapText("카드 배치", exact = true, scrolls = 0)
     }
     /** [BACK-01] 사진도 백업 in 설정 › 데이터, and the 암호 dialog saying how many photos go in. */
     @Test fun e494FoldedSettingsBackupPhotos() = shoot("494_folded_settings_backup_photos", FOLDED) {

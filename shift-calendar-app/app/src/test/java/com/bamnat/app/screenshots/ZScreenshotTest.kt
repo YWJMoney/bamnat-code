@@ -99,7 +99,7 @@ class ZScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun everyCalendarToolBacksToTheCalendar() = open(FOLDED) { scenario ->
-        for (tool in listOf("근무표 공유", "1년 달력", "근무 주기 설정", "새 달력 만들기", "화면 꾸미기", "이번 달 전부 넣기")) {
+        for (tool in listOf("근무표 공유", "1년 달력", "근무 주기 설정", "새 달력 만들기", "카드 배치", "이번 달 전부 넣기")) {
             tapText("도구", exact = false)
             tapText(tool, exact = true)
             assertNotEquals("$tool must not open the settings tab", "설정", tabNow())

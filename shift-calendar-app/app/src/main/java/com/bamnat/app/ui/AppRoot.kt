@@ -159,7 +159,8 @@ internal enum class TopLevel(val route: String, val label: String, val icon: Ima
     /** [NAV-01] Hours and pay of the month together; field and shop work, paid in 돈, keep 통계. */
     STATS("stats", "근무·급여", Icons.Outlined.Insights, Icons.Filled.Insights),
     /** 1.35 [RCX-29] 광장 and its 나눔 판, a tab of their own (they were behind 설정 and the pay screen). */
-    PLAZA("plaza", "광장", Icons.Outlined.Forum, Icons.Filled.Forum),
+    // 1.35 [HUB-01] (사용자 2026-10-30 18:46): 마을, 광장 with 테마·장터(나눔 판)·공방(스튜디오) in it.
+    PLAZA("plaza", com.bamnat.app.ui.hub.HUB_NAME, Icons.Outlined.Forum, Icons.Filled.Forum),
     SETTINGS("settings", "설정", Icons.Outlined.Settings, Icons.Filled.Settings),
     ;
 
@@ -243,8 +244,9 @@ private object Routes {
     const val COMPANY_BOARD = "company_board?calendar={calendar}"
     const val PLAZA_RATES = "plaza_rates"
     /** [RCP-21..38] 1.34 나눔 판: the list of one calendar's kind of work, one recipe, 만들기 and 설정 › 나눔 판. */
-    const val RECIPES = "recipes?calendar={calendar}"
-    fun recipes(calendar: String = PersonalCalendar.MAIN) = "recipes?calendar=$calendar"
+    const val RECIPES = "recipes?calendar={calendar}&kind={kind}&code={code}"
+    /** [HUB-02] [kind] opens on one kind (RecipeClient.KINDS, "" for all); [code] opens with 코드로 받기 asked. */
+    fun recipes(calendar: String = PersonalCalendar.MAIN, kind: String = "", code: Boolean = false) = "recipes?calendar=$calendar&kind=$kind&code=$code"
     const val RECIPE = "recipe/{code}?calendar={calendar}"
     fun recipe(code: String, calendar: String = PersonalCalendar.MAIN) = "recipe/$code?calendar=$calendar"
     const val RECIPE_MAKE = "recipe_make?calendar={calendar}&draft={draft}&kind={kind}&code={code}"
@@ -1420,7 +1422,26 @@ private fun AppNavHost(
         // 1.35 [RCX-29] (사용자 2026-10-30 "광장이나 나눔판이 사람들에게 노출이 잘되게 위치를 바꿔줘 지금 너무 숨어있어"): 광장 is a tab
         // of its own, with the 나눔 판 at its top; no back arrow, it is a place of the app like 달력.
         composable(TopLevel.PLAZA.route) {
-            PlazaHost(nav, container, null, onBack = null)
+            // 1.35 [HUB-01] 마을: 광장, 테마, 장터 (나눔 판) and 공방 (스튜디오) of the calendar's kind of work, one tab.
+            val calendar = remember { companyCalendarOf(container, null) }
+            val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+            val recipeCal = PersonalCalendar.MAIN
+            com.bamnat.app.ui.hub.HubScreen(container, style,
+                talk = { PlazaHost(nav, container, null, onBack = null, inHub = true) },
+                share = {
+                    val vm = appViewModel(key = "recipes-$recipeCal") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, recipeCal) }
+                    com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = null,
+                        onOpen = { code -> nav.navigate(Routes.recipe(code, recipeCal)) },
+                        onMake = { nav.navigate(Routes.recipeMake(recipeCal)) },
+                        onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
+                        title = com.bamnat.app.ui.hub.HubSection.SHARE.label)
+                },
+                onThemesAll = { nav.navigate(Routes.recipes(recipeCal, kind = "skin")) { launchSingleTop = true } },
+                onMake = { nav.navigate(Routes.recipeMake(recipeCal)) },
+                onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
+                onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
+                onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
+            )
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
@@ -1453,13 +1474,19 @@ private fun AppNavHost(
                 onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             )
         }
-        composable(Routes.RECIPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.RECIPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("kind") { type = NavType.StringType; defaultValue = "" },
+            navArgument("code") { type = NavType.BoolType; defaultValue = false })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
-            val vm = appViewModel(key = "recipes-$calendar") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, calendar) }
+            val kind = entry.arguments?.getString("kind").orEmpty()
+            val vm = appViewModel(key = "recipes-$calendar-$kind") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, calendar) }
+            LaunchedEffect(kind) { if (kind.isNotEmpty() && vm.state.value.kind != kind) vm.kind(kind) }
             com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = { nav.popFrom(Routes.RECIPES) },
                 onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) },
                 onMake = { nav.navigate(Routes.recipeMake(calendar)) },
-                onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } })
+                onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
+                title = if (kind == "skin") "다른 분들이 만든 테마" else com.bamnat.app.ui.hub.HubSection.SHARE.label,
+                askCode = entry.arguments?.getBoolean("code") == true)
         }
         composable(Routes.RECIPE, arguments = listOf(navArgument("code") { type = NavType.StringType },
             navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
@@ -1873,7 +1900,7 @@ private fun NavHostController.fixCompanySetup(place: FixPlace, calendar: String 
  * [onBack] null when it is the 광장 tab (1.35 [RCX-29]).
  */
 @Composable
-private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarArg: String?, onBack: (() -> Unit)?) {
+private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarArg: String?, onBack: (() -> Unit)?, inHub: Boolean = false) {
     // [CALI-08] 1.30 BB: the 광장 of one calendar's company; with two calendars or more, chips above choose which.
     var calendar by rememberSaveable { mutableStateOf(companyCalendarOf(container, calendarArg)) }
     val company = remember(calendar) { container.companyOf(calendar) }
@@ -1882,7 +1909,8 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
-        if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
+        // [HUB-01] In 마을 the recipes have their own 장터 next to 광장.
+        if (!inHub && recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
             onMake = { nav.navigate(Routes.recipeMake(calendar)) },
             onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },

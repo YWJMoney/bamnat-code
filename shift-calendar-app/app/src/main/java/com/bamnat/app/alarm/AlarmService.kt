@@ -181,7 +181,11 @@ class AlarmService : Service() {
                 if (intent.action == Intent.ACTION_SCREEN_OFF && AlarmButtons.screenOffIsPress(screenShownAt, screenHiddenAt, Today.millis())) pressed()
                 // 1.35 [J135-08] With 전체 화면 알림 off the ringing notice drops into the shade when the screen goes off: back on
                 // (or unlocked) with no ringing screen, the notice is put up again so 끄기 is in sight while it still rings.
-                if ((intent.action == Intent.ACTION_SCREEN_ON || intent.action == Intent.ACTION_USER_PRESENT) && screenShownAt == 0L) showAgain()
+                if ((intent.action == Intent.ACTION_SCREEN_ON || intent.action == Intent.ACTION_USER_PRESENT) && screenShownAt == 0L) {
+                    // A notice put up while the screen is still lighting is not popped up: once it is on.
+                    handler.removeCallbacks(again)
+                    handler.postDelayed(again, AGAIN_DELAY_MS)
+                }
             }
         }
         val filter = android.content.IntentFilter(Intent.ACTION_SCREEN_OFF).apply {
@@ -320,6 +324,8 @@ class AlarmService : Service() {
             .atZone(Today.zone()).toInstant().toEpochMilli()
         return com.bamnat.core.alarm.AlarmSuggest.offDetail(ring.shiftTypeId, due, ring.offsetMinutes)
     }
+
+    private val again = Runnable { if (screenShownAt == 0L) showAgain() }
 
     /** [J135-08] The ringing notice again (it pops up once more), while ringing out of a call. */
     private fun showAgain() {
@@ -508,6 +514,7 @@ class AlarmService : Service() {
         _quiet.value = false
         screenOff?.let { runCatching { unregisterReceiver(it) } }
         screenOff = null
+        handler.removeCallbacks(again)
     }
 
     private fun finish() {
@@ -540,6 +547,8 @@ class AlarmService : Service() {
     }
 
     companion object {
+        /** [J135-08] How long after the screen comes on the ringing notice is put up again. */
+        private const val AGAIN_DELAY_MS = 1_200L
         /**
          * The sounds to try, in order: the shift's or the app's own, then this phone's alarm sound and the system's.
          * 1.32 [WTYP-13] 조사 대조 W10: a sound file from the old phone that is not on this one gives way to these, never silence.

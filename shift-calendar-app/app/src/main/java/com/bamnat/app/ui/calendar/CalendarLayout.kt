@@ -150,7 +150,7 @@ internal fun CalendarEditSheet(
     com.bamnat.app.ui.components.PageEditSheet(
         share = com.bamnat.core.recipe.PieceKind.LAYOUT,
         crossGroups = true,
-        title = "달력 화면 꾸미기",
+        title = "달력 카드 배치",
         groups = calendarEditGroups(placed, settings.workStyle) { settings.partFits(it, added) },
         others = com.bamnat.app.ui.guide.fitOthers(FitSurface.CALENDAR_PARTS, settings.workStyle, added) { id ->
             CalendarPart.byId(id)?.let { it.label to it.what }
@@ -162,7 +162,7 @@ internal fun CalendarEditSheet(
         onReset = { update { it.copy(calendarLayout = "", showDayCard = false, restCheck = AppSettings().restCheck, calendarMemos = AppSettings().calendarMemos) } },
         onAsk = {
             onDismiss()
-            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "카드 배치"))
         },
         onDismiss = onDismiss,
         options = {

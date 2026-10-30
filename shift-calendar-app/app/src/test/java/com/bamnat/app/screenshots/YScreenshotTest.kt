@@ -70,7 +70,7 @@ class YScreenshotTest : ScreenshotBase() {
 
     @Test fun investCustomizeHasNoShiftParts() = shoot("892_y_invest_customize", FOLDED, style(WorkStyle.INVEST) {
         tools()
-        tapText("화면 꾸미기", exact = true)
+        tapText("카드 배치", exact = true)
         assertTrue(gone("근무 횟수 줄", exact = true))
         assertTrue(gone("주 근무시간 줄", exact = true))
         assertTrue(gone("휴식 점검", exact = true))
@@ -80,7 +80,7 @@ class YScreenshotTest : ScreenshotBase() {
 
     @Test fun investAddsAPartToTheCalendarPage() = shoot("893_y_invest_part_added", FOLDED, style(WorkStyle.INVEST) {
         tools()
-        tapText("화면 꾸미기", exact = true)
+        tapText("카드 배치", exact = true)
         tapText("이 달력에 안 맞아 숨긴 기능")
         tapText("더하기", exact = true)
         assertTrue(added.single().startsWith(FitSurface.CALENDAR_PARTS.name + ":"))

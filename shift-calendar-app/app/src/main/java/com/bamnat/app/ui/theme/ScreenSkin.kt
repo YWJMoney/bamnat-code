@@ -68,45 +68,46 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val raw = all.of(key)
     val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji) else raw
     val base = MaterialTheme.colorScheme
-    if (look.isDefault) {
-        if (bars) BarIcons(light = Palette.luminance(base.background.argb()) > 0.5)
-        Box(modifier) { CompositionLocalProvider(LocalScreenLook provides look) { content() } }
-        return
-    }
     val photo = rememberLookPicture(look.photo)
-    val scheme = skinned(base, look, photo?.second)
-    val dark = Palette.luminance(groundOf(base, look, photo?.second).argb()) < 0.3
+    val plain = look.isDefault
+    val scheme = if (plain) base else skinned(base, look, photo?.second)
+    val dark = Palette.luminance((if (plain) base.background else groundOf(base, look, photo?.second)).argb()) < if (plain) 0.5 else 0.3
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
     // so a 허용 on an alarm warning card reads on a dark theme too.
     val cal = LocalCalendarColors.current
-    val tone = if (dark) DarkCalendarColors else LightCalendarColors
-    val fitted = cal.copy(warning = tone.warning, warningContainer = tone.warningContainer, income = tone.income, expense = tone.expense,
-        alarmOff = tone.alarmOff, changed = tone.changed, holidayWork = tone.holidayWork)
+    val fitted = if (plain) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
+        cal.copy(warning = tone.warning, warningContainer = tone.warningContainer, income = tone.income, expense = tone.expense,
+            alarmOff = tone.alarmOff, changed = tone.changed, holidayWork = tone.holidayWork)
+    }
+    // [J135-15] One shape of tree for the user's own look and for a theme: putting a theme on or taking it off only changes colours.
+    // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        Box(modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
-            if (photo != null) {
+        Box(if (plain) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
+            if (photo != null && !plain) {
                 Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
                 Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
-                androidx.compose.material3.LocalContentColor provides scheme.onBackground) { content() }
+                androidx.compose.material3.LocalContentColor provides if (plain) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
+                content()
+            }
         }
     }
 }
 
-/** [J135-11] The status and navigation bar icons dark ([light] ground) or light, on the activity that draws this. */
+/** [J135-11] The status and navigation bar icons dark ([light] ground) or light, on the window that draws this (a full-screen dialog's own). */
 @Composable
-private fun BarIcons(light: Boolean) {
+fun BarIcons(light: Boolean) {
     val view = androidx.compose.ui.platform.LocalView.current
     if (view.isInEditMode) return
     androidx.compose.runtime.SideEffect {
         var c = view.context
         while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
-        (c as? android.app.Activity)?.window?.let { w ->
+        ((view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window ?: (c as? android.app.Activity)?.window)?.let { w ->
             androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
                 isAppearanceLightStatusBars = light
                 isAppearanceLightNavigationBars = light

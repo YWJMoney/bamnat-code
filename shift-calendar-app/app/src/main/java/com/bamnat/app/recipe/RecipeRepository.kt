@@ -196,6 +196,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             runCatching { pieces.restore(kind, snap, e.calendarId) }
         }
         dao.upsertApplied(e.copy(undoneAt = Today.millis()))
+        // [J135-16] A theme's looks taken back here (내 레시피 or the recipe's own page): 입는 중 goes back to what was worn before.
+        if (e.code.isNotEmpty()) runCatching { c.wardrobe.forget(e.code) }
         return true
     }
 

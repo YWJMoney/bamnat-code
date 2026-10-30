@@ -265,7 +265,7 @@ internal fun MemoEditSheet(layout: String, update: ((com.bamnat.app.data.AppSett
         placed.filter { it.part.movable == movable }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
-        title = "메모 화면 꾸미기",
+        title = "메모 카드 배치",
         groups = listOf(
             com.bamnat.app.ui.components.EditGroup("위쪽 줄 순서", rows(true)),
             com.bamnat.app.ui.components.EditGroup("위쪽 필터", rows(false)),
@@ -280,7 +280,7 @@ internal fun MemoEditSheet(layout: String, update: ((com.bamnat.app.data.AppSett
         onReset = { update { it.copy(memoLayout = "") } },
         onAsk = {
             onDismiss()
-            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "카드 배치"))
         },
         onDismiss = onDismiss,
     )
@@ -322,7 +322,7 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
             }
         }
         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
-        IconButton(onClick = onArrange) { Icon(Icons.Outlined.Dashboard, contentDescription = "화면 꾸미기") }
+        IconButton(onClick = onArrange) { Icon(Icons.Outlined.Dashboard, contentDescription = "카드 배치") }
         IconButton(onClick = onOpenTrash) {
             BadgedBox(badge = { if (state.trashCount > 0) IconCountBadge(state.trashCount, "메모 ${state.trashCount}개") }) {
                 Icon(Icons.Outlined.Delete, contentDescription = "휴지통")

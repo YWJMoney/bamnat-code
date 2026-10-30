@@ -697,7 +697,7 @@ fun MoneyScreen(
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
                         DropdownMenuItem(text = { Text("분류 편집") }, onClick = { menuOpen = false; editingCategories = true })
                         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
-                        DropdownMenuItem(text = { Text("화면 꾸미기") }, onClick = { menuOpen = false; arranging = true })
+                        DropdownMenuItem(text = { Text("카드 배치") }, onClick = { menuOpen = false; arranging = true })
                     }
                 }
             }
@@ -978,7 +978,7 @@ internal fun MoneyEditSheet(
         placed.filter { it.part.movable == movable && com.bamnat.core.guide.FitTable.visible(surface, it.part.id, style, added) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
-        title = "가계부 화면 꾸미기",
+        title = "가계부 카드 배치",
         groups = listOf(
             com.bamnat.app.ui.components.EditGroup("위쪽", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
@@ -995,7 +995,7 @@ internal fun MoneyEditSheet(
         onReset = { update { it.copy(moneyLayout = "") } },
         onAsk = {
             onDismiss()
-            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "카드 배치"))
         },
         onDismiss = onDismiss,
     )
