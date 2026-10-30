@@ -716,14 +716,16 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         val days = dates.mapNotNull { com.bamnat.core.alarm.AlarmPlanner.restDay(before.resolver, after.resolver, it) }
         // 1.35 [J135-10] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
         // nobody misses a wake-up they still wanted. Closing the ask changes nothing more.
+        // [J135-13] The change's message says nothing of alarms while the ask is open: the answer says it.
         if (days.isNotEmpty()) _restAlarms.value = RestAlarmAsk(days, schedule)
-        val gone = days.filter { it.left.isEmpty() }
-        return when {
-            gone.isEmpty() -> ""
-            gone.size == 1 -> " · ${Fmt.time(gone[0].was.first().triggerAt.toLocalTime())} 알람도 울리지 않아요"
-            else -> " · ${gone.size}일 근무 알람도 울리지 않아요"
-        }
+        return ""
     }
+
+    /** [J135-10] The alarms a day had that stopped with its shift (not the ones set by hand), as that day's own alarms. */
+    private fun stoppedAlarms(ask: RestAlarmAsk): Map<LocalDate, List<DayAlarm>> = ask.days.associate { d ->
+        d.date to d.was.filter { w -> d.left.none { it.triggerAt == w.triggerAt } }
+            .map { a -> DayAlarm(a.triggerAt.toLocalTime(), dayBefore = a.triggerAt.toLocalDate() < d.date) }.distinct()
+    }.filterValues { it.isNotEmpty() }
 
     /** [J135-10] The ask closed without an answer: nothing more changes (the shift's own alarms stay off, alarms set by hand on). */
     fun closeRestAlarms() { _restAlarms.value = null }
@@ -735,10 +737,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun answerRestAlarms(ask: RestAlarmAsk, turnOff: Boolean) {
         _restAlarms.value = null
         if (!turnOff) {
-            val keep = ask.days.associate { d ->
-                d.date to d.was.filter { w -> d.left.none { it.triggerAt == w.triggerAt } }
-                    .map { a -> DayAlarm(a.triggerAt.toLocalTime(), dayBefore = a.triggerAt.toLocalDate() < d.date) }.distinct()
-            }.filterValues { it.isNotEmpty() }
+            val keep = stoppedAlarms(ask)
             if (keep.isEmpty()) return
             viewModelScope.launch {
                 val before = ask.schedule.updateDays(keep.keys.toList()) { e -> e.copy(customAlarms = (e.customAlarms.orEmpty() + keep[e.date].orEmpty()).distinct()) }
@@ -753,8 +752,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val dates = ask.days.map { it.date }
             val before = ask.schedule.updateDays(dates) { it.copy(alarmSkipped = true) }
             val text = if (dates.size == 1) "${Fmt.monthDay(dates[0])} 알람을 껐어요" else "${dates.size}일 알람을 껐어요"
+            // [J135-14] 되돌리기 brings every alarm the day had back: those set by hand, and the shift's that stopped with it.
+            val keep = stoppedAlarms(ask)
             _messages.emit(UndoMessage(text) {
-                ask.schedule.updateDays(before.keys.toList()) { now -> now.copy(alarmSkipped = before[now.date]?.alarmSkipped == true) }
+                ask.schedule.updateDays(before.keys.toList()) { now ->
+                    now.copy(alarmSkipped = before[now.date]?.alarmSkipped == true,
+                        customAlarms = keep[now.date]?.let { (now.customAlarms.orEmpty() + it).distinct() } ?: now.customAlarms)
+                }
             })
         }
     }

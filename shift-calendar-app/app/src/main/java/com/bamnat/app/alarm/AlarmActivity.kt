@@ -133,7 +133,7 @@ class AlarmActivity : ComponentActivity() {
         setContent {
             BamnatTheme(themeMode = ThemeMode.DARK) {
               androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skins) {
-              com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.SCREEN_ALARM, androidx.compose.ui.Modifier.fillMaxSize()) {
+              com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.SCREEN_ALARM, androidx.compose.ui.Modifier.fillMaxSize(), bars = true) {
                 val ring by AlarmService.ringing.collectAsStateWithLifecycle()
                 // Leave as soon as the alarm stops, whether from here, the notification or the timeout.
                 LaunchedEffect(ring) {

@@ -63,17 +63,27 @@ const val SCREEN_ALARM = ScreenLooks.ALARM
  * 광장 takes only the background and its emoji; the error colours never change.
  */
 @Composable
-fun ScreenSkin(key: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false, content: @Composable () -> Unit) {
     val all = LocalScreenLooks.current
     val raw = all.of(key)
     val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji) else raw
+    val base = MaterialTheme.colorScheme
     if (look.isDefault) {
+        if (bars) BarIcons(light = Palette.luminance(base.background.argb()) > 0.5)
         Box(modifier) { CompositionLocalProvider(LocalScreenLook provides look) { content() } }
         return
     }
-    val base = MaterialTheme.colorScheme
     val photo = rememberLookPicture(look.photo)
     val scheme = skinned(base, look, photo?.second)
+    val dark = Palette.luminance(groundOf(base, look, photo?.second).argb()) < 0.3
+    // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
+    if (bars) BarIcons(light = !dark)
+    // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
+    // so a 허용 on an alarm warning card reads on a dark theme too.
+    val cal = LocalCalendarColors.current
+    val tone = if (dark) DarkCalendarColors else LightCalendarColors
+    val fitted = cal.copy(warning = tone.warning, warningContainer = tone.warningContainer, income = tone.income, expense = tone.expense,
+        alarmOff = tone.alarmOff, changed = tone.changed, holidayWork = tone.holidayWork)
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
         Box(modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
             if (photo != null) {
@@ -81,9 +91,36 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, content: @Composable 
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
                 Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
-            CompositionLocalProvider(LocalScreenLook provides look) { content() }
+            // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
+            CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
+                androidx.compose.material3.LocalContentColor provides scheme.onBackground) { content() }
         }
     }
+}
+
+/** [J135-11] The status and navigation bar icons dark ([light] ground) or light, on the activity that draws this. */
+@Composable
+private fun BarIcons(light: Boolean) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (view.isInEditMode) return
+    androidx.compose.runtime.SideEffect {
+        var c = view.context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        (c as? android.app.Activity)?.window?.let { w ->
+            androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
+            }
+        }
+    }
+}
+
+/** The colour the screen's text stands on: the page, or what a picture and its veil come to. */
+private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): Color {
+    val page = look.bg?.let { Color(it) } ?: base.background
+    if (photoLight == null) return page
+    val veil = (look.dim ?: 30).coerceIn(20, 80) / 100f
+    return lerp(if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
 }
 
 /**
@@ -92,10 +129,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, content: @Composable 
  */
 fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): ColorScheme {
     val page = look.bg?.let { Color(it) } ?: base.background
-    val ground = if (photoLight == null) page else {
-        val veil = (look.dim ?: 30).coerceIn(20, 80) / 100f
-        lerp(if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
-    }
+    val ground = groundOf(base, look, photoLight)
     val card = look.card?.let { Color(it) }
     val cardLow = card ?: base.surfaceContainerLow
     val inkArgb = Palette.inkOn(look.ink, ground.argb(), cardLow.argb(), (card ?: base.surfaceContainerHigh).argb())

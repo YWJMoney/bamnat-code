@@ -327,7 +327,12 @@ class AlarmService : Service() {
         if (inCallNow) return
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        runCatching { NotificationManagerCompat.from(this).notify(Notifications.ALARM_NOTIFICATION_ID, buildNotification(ring)) }
+        // A new notice pops up over what is on screen; the first one stays as the service's.
+        runCatching {
+            val nm = NotificationManagerCompat.from(this)
+            nm.cancel(Notifications.ALARM_AGAIN_ID)
+            nm.notify(Notifications.ALARM_AGAIN_ID, buildNotification(ring))
+        }
     }
 
     private fun startInForeground(ring: RingRequest?) {
@@ -523,6 +528,7 @@ class AlarmService : Service() {
         _inCall.value = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)
+        NotificationManagerCompat.from(this).cancel(Notifications.ALARM_AGAIN_ID)
         stopSelf()
     }
 

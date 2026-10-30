@@ -372,7 +372,7 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
             }
             MemoPart.NOTEBOOKS -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("전체", "근무", "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
-                    style = MaterialTheme.typography.labelSmall) }
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
             }
             else -> Unit
         }
