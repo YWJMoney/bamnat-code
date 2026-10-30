@@ -66,7 +66,7 @@ const PLAZA = { owner: false, perms: { review: "edit", community: "view", compan
 test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees only the hubs and tabs they may use", () => {
   assert.deepEqual(L.HUBS.map((h) => h.label), ["오늘", "문의", "광장", "출시", "분석", "관리"]);
   // 1.28 통합계획 2-2, plus 기능별 효과 (AN-D2).
-  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home"], ["inquiries", "dev", "templates", "sla"], ["review", "versions", "community", "recipes", "companies", "shares", "adopt"],
+  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home"], ["inquiries", "sort", "dev", "templates", "sla"], ["review", "versions", "community", "recipes", "companies", "shares", "adopt"],
     ["flags", "types", "notices", "chores", "gates"], ["metrics", "effects", "audit"], ["admins", "rewards", "server", "account"]]);
   const tabs = L.HUBS.flatMap((h) => h.tabs);
   assert.equal(new Set(tabs).size, tabs.length, "each tab once");
@@ -76,7 +76,7 @@ test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees 
     assert.ok(L.hubOf(old), `${old} has a hub`);
   }
   assert.deepEqual(L.visibleHubs(OWNER).map((h) => h.key), ["today", "ask", "plaza", "release", "insight", "manage"]);
-  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home"]], ["ask", ["inquiries", "templates"]], ["manage", ["account"]]]);
+  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home"]], ["ask", ["inquiries", "sort", "templates"]], ["manage", ["account"]]]);
   assert.deepEqual(L.visibleHubs(PLAZA).map((h) => h.key), ["today", "plaza", "manage"]);
   assert.deepEqual(L.visibleHubs(PLAZA).find((h) => h.key === "plaza").tabs, ["review", "versions", "community", "recipes", "companies"]);
   // 1.28 통합: 기능 관리·근무 유형 follow the flags area (the server gives it to 1.27 운영 보기 admins, SINCE.flags), so

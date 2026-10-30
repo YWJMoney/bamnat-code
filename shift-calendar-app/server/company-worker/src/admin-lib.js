@@ -282,7 +282,7 @@ export function adminLib() {
   /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
   const HUBS = [
     { key: "today", label: "오늘", icon: "home", tabs: ["home"] },
-    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "dev", "templates", "sla"] },
+    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "dev", "templates", "sla"] },
     { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
     { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
@@ -298,6 +298,8 @@ export function adminLib() {
   const TABS = {
     home: { label: "오늘", old: "홈 받은함 할 일 지금 할 일 inbox home" },
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
+    // 1.35 [INBOX-01] 정리함: the same waiting questions, sorted by the server into piles with their answers written.
+    sort: { label: "정리함", area: "inquiries", old: "정리함 문의 정리 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 sort" },
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
     dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
     templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },

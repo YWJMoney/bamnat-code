@@ -621,6 +621,8 @@ function adminApp(L, BUILD, M) {
       if (name === "inquiries" && (!id || wide())) jobs.push(loadInquiries(n));
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
+      // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
+      if (name === "sort") jobs.push(api("/inquiries/sort").then(keep((d) => { S.data.sort = d; })), api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
@@ -994,6 +996,7 @@ function adminApp(L, BUILD, M) {
     home: () => V.homeView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
+    sort: () => sortView(),
     templates: () => templatesView(),
     sla: () => slaView(),
     review: () => V.reviewView(),
@@ -1034,7 +1037,7 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
+      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -1446,6 +1449,107 @@ function adminApp(L, BUILD, M) {
   }
 
   // ---- 개발사항 [ADMIN-10][ADMIN-11] ----
+
+  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계") ----
+  // Every waiting question already sorted by the server into what it is (이미 고침, 개발 목록에 있음, 전에 답한 것과 같음, 자주
+  // 쓰는 답, 새 문제 …) with its answer written; one tap does a card, one tap does a whole pile. Above it, 자동 대응 (owner)
+  // and Claude에게 넘기기: the 개발사항 not handed over yet as one text, and 개발 결과 붙여 넣기 for what comes back.
+
+  const PILE_HELP = {
+    fixed: ["이미 고친 문제예요", "고친 버전보다 오래된 앱에서 온 문의예요. 업데이트 안내로 답해요."],
+    known: ["개발 목록에 있는 내용이에요", "같은 개발사항에 묶고, 진행 중이라고 답해요. 고치면 한 번에 알려요."],
+    again: ["고친 뒤 다시 생겼어요", "고친 버전 이후의 앱에서 온 문의예요. 개발사항을 다시 접수해요."],
+    declined: ["반려한 요청과 같아요", "반려 이유로 답해요."],
+    answered: ["전에 답한 문의와 같아요", "그때 보낸 답을 다시 보내요. 고쳐서 보내도 돼요."],
+    faq: ["자주 쓰는 답으로 충분해요", "저장해 둔 답을 보내요."],
+    new: ["새 문제·개선이에요", "비슷한 문의끼리 묶었어요. 개발사항으로 넘기면 다음 개발에 들어가요."],
+  };
+  const PILE_DO = { fixed: "답 보내기", known: "묶고 답하기", again: "다시 접수하고 답하기", declined: "답 보내기", answered: "이 답 보내기", faq: "이 답 보내기", new: "개발사항으로 넘기기" };
+  const PILE_TONE = { fixed: "good", known: "info", again: "bad", declined: "", answered: "info", faq: "info", new: "warn" };
+
+  function sortView() {
+    const d = S.data.sort;
+    if (!d) return skeleton(3);
+    const owner = S.me?.owner;
+    const order = ["new", "again", "fixed", "known", "answered", "faq", "declined"];
+    const strip = `<div class="pile-strip" role="list">${order.map((k) => d.counts[k] ? `<a role="listitem" class="pile-card ${PILE_TONE[k]}" href="#pile-${k}" data-act="sort-jump" data-key="${k}">
+        <span class="pile-n">${d.counts[k]}</span><span class="pile-name">${esc(d.names[k])}</span></a>`
+      : `<span role="listitem" class="pile-card zero"><span class="pile-n">0</span><span class="pile-name">${esc(d.names[k])}</span></span>`).join("")}</div>`;
+    const auto = `<div class="card auto-card"><div class="auto-head"><b>자동 대응</b>
+        <small>${owner ? "켜 두면 문의가 들어오는 순간 서버가 묶고 답해요. 답에는 ‘자동 정리’가 이름으로 붙어요." : "최고 관리자가 켜고 꺼요."}</small></div>
+      ${["fixed", "known"].map((k) => `<label class="switch"><input type="checkbox" data-act="sort-auto" data-key="${k}"${d.auto[k] ? " checked" : ""}${owner ? "" : " disabled"}>
+        <span class="track" aria-hidden="true"></span><span>${esc(d.names[k])}</span></label>`).join("")}</div>`;
+    const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
+      : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
+    // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
+    const n = S.data.handoff?.items?.length ?? 0;
+    const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
+        <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
+    return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
+      ${strip.replace("</div>", `${go}</div>`)}<div class="sort-top" id="sort-tools">${auto}${handoffCard()}</div>${body}</div>`;
+  }
+
+  function pileSection(k, items) {
+    const [title, help] = PILE_HELP[k];
+    const all = k === "new" || items.length < 2 ? "" : `<button class="btn small primary" data-act="sort-pile" data-key="${k}">${items.length}건 모두 ${esc(PILE_DO[k])}</button>`;
+    return `<section class="pile" id="pile-${k}" aria-labelledby="pile-${k}-h"><div class="pile-head"><div><h3 id="pile-${k}-h">${esc(title)} <span class="pill ${PILE_TONE[k]}">${k === "new" ? items.reduce((n, g) => n + g.group.length, 0) : items.length}</span></h3>
+        <small>${esc(help)}</small></div>${all}</div><ul class="rows">${items.map((x) => sortCard(k, x)).join("")}</ul></section>`;
+  }
+
+  function sortCard(k, x) {
+    const m = x.match;
+    const meta = [esc(KIND_NAMES[x.kind] ?? x.kind), esc(x.topicName ?? ""), x.app ? `앱 ${esc(String(x.app).split(" ")[0])}` : "", esc(ago(x.at)), x.same ? `나도 그래요 ${x.same}` : ""]
+      .filter(Boolean).join(" · ");
+    const matched = m ? `<small class="match">≈ ${m.type === "dev" ? `<a href="${href("dev", m.id)}">개발사항 ‘${esc(m.title)}’</a> · ${esc(DEV_NAMES[m.status] ?? "")}${m.releasedIn ? ` ${esc(m.releasedIn)}` : ""}`
+      : m.type === "inquiry" ? `<a href="${href("inquiries", m.id)}">전에 답한 문의 ‘${esc(m.title)}’</a>` : `자주 쓰는 답 ‘${esc(m.title)}’`} · 비슷함 ${Math.round(m.score * 100)}%</small>` : "";
+    const others = k === "new" && x.others?.length ? `<details><summary>같은 내용 ${x.others.length}건 더</summary><ul class="mini">${x.others.map((o) =>
+      `<li><a href="${href("inquiries", o.id)}">${esc(o.preview)}</a> <small>${esc(o.app ? String(o.app).split(" ")[0] : "")}</small></li>`).join("")}</ul></details>` : "";
+    const title = k === "new" ? `<label class="sort-field"><span>개발사항 제목</span><input id="sort-title-${x.id}" value="${esc(x.title)}" maxlength="100"></label>` : "";
+    const reply = `<label class="sort-field"><span>${k === "new" ? "함께 보낼 답 (비우면 답 없이 넘겨요)" : "보낼 답"}</span><textarea id="sort-reply-${x.id}" rows="3">${esc(x.reply ?? "")}</textarea></label>`;
+    return `<li class="sort-card"><div class="sort-ask"><b><a href="${href("inquiries", x.id)}">${esc(x.preview)}</a></b><small>${meta}</small>${matched}${others}</div>
+      <div class="sort-answer">${title}${reply}
+      <div class="actions"><button class="btn small primary" data-act="sort-do" data-key="${k}" data-id="${x.id}">${esc(k === "new" && x.group.length > 1 ? `${x.group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
+        ${k === "new" ? `<button class="btn small" data-act="sort-reply-only" data-id="${x.id}">답만 보내기</button>` : ""}
+        <button class="btn small ghost" data-act="sort-skip" data-id="${x.id}">빼 두기</button></div></div></li>`;
+  }
+
+  /** The action of one card as the server takes it (sortApply). */
+  function sortAction(k, x) {
+    const text = document.getElementById(`sort-reply-${x.id}`)?.value?.trim() ?? x.reply;
+    if (k === "new") {
+      const title = document.getElementById(`sort-title-${x.id}`)?.value?.trim() || x.title;
+      return { do: "dev", ids: x.group, title, body: [x.preview, ...(x.others ?? []).map((o) => o.preview)].map((t) => `- ${t}`).join("\n").slice(0, 4000), ...(text ? { text } : {}) };
+    }
+    if (k === "known") return { do: "reply", id: x.id, item: x.match.id, text };
+    if (k === "again") return { do: "reopen", id: x.id, item: x.match.id, text };
+    return { do: "reply", id: x.id, text };
+  }
+
+  async function sortApply(actions, done) {
+    const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (r) => [r.replied && `답 ${r.replied}건`, r.linked && `묶음 ${r.linked}건`,
+      r.created?.length && `개발사항 ${r.created.length}개`, r.reopened && `다시 접수 ${r.reopened}개`, r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || done);
+    if (r) { S.data.sort = null; S.data.handoff = null; render({ keepScroll: true }); load(); }
+  }
+
+  /** [INBOX-05][INBOX-06] Claude에게 넘기기 and 개발 결과 붙여 넣기. */
+  function handoffCard() {
+    const h = S.data.handoff;
+    const n = h?.items?.length ?? 0;
+    const res = S.sortResult;
+    const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(DEV_NAMES[l.status] ?? l.status)}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}</ul>
+      <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
+      <div class="actions"><button class="btn small primary" data-act="sort-result-go"${res.lines.some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
+        <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
+    return `<div class="card handoff-card"><b>Claude에게 넘기기</b>
+      <small>${h ? (n ? `아직 넘기지 않은 개발사항 ${n}개 (문의 ${h.items.reduce((a, i) => a + i.asks, 0)}건). 복사해서 Claude에게 붙여 넣으면 다음 개발에 들어가요.` : "새로 넘길 개발사항이 없어요.") : "불러오는 중이에요"}</small>
+      <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (${n})</button>
+        <button class="btn small" data-act="sort-handoff-all">진행 중인 것 모두 복사</button></div>
+      <details${res ? " open" : ""}><summary>개발 결과 붙여 넣기</summary>
+        <p class="hint">Claude가 개발을 마치고 준 ‘결과’ 줄(예: d0123… 완료 1.36.0)을 붙여 넣어요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
+        ${res ? lines : `<textarea id="sort-result" rows="4" placeholder="d0123456789abcde 완료 1.36.0"></textarea>
+        <div class="actions"><button class="btn small" data-act="sort-result-check">무엇이 바뀌는지 보기</button></div>`}</details></div>`;
+  }
 
   function devListView() {
     const d = S.data.devList;
@@ -3527,6 +3631,57 @@ function adminApp(L, BUILD, M) {
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
+    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함.
+    "sort-do": ({ key, id }) => {
+      const x = S.data.sort?.piles[key]?.find((i) => i.id === id);
+      if (x) sortApply([sortAction(key, x)], "처리했어요");
+    },
+    "sort-reply-only": ({ id }) => {
+      const x = S.data.sort?.piles.new.find((i) => i.id === id);
+      const text = document.getElementById(`sort-reply-${id}`)?.value?.trim();
+      if (!x || !text) return toast("보낼 답을 적어 주세요");
+      sortApply([{ do: "reply", id, text }], "답했어요");
+    },
+    // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
+    "sort-jump": ({ key }) => document.getElementById(key === "tools" ? "sort-tools" : `pile-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    "sort-skip": ({ id }) => sortApply([{ do: "skip", id }], "정리함에서 뺐어요"),
+    "sort-pile": ({ key }) => {
+      const items = S.data.sort?.piles[key] ?? [];
+      if (!items.length) return;
+      // Read the cards now: what the admin changed in them is what goes, not what the server first wrote.
+      const actions = items.map((x) => sortAction(key, x));
+      confirmBox(`${items.length}건 모두 ${PILE_DO[key]}`, "카드마다 적힌 답이 그대로 가요. 보낸 답은 되돌릴 수 없어요.", PILE_DO[key],
+        () => sortApply(actions, "처리했어요"), "primary");
+    },
+    "sort-auto": async ({ key }, el) => {
+      // The click is default-prevented, so the box springs back: the state is drawn again from the answer.
+      const on = el.checked;
+      const r = await act(() => api("/inquiries/sort/auto", "POST", { ...(S.data.sort?.auto ?? {}), [key]: on }), on ? "자동 대응을 켰어요" : "자동 대응을 껐어요");
+      if (r && S.data.sort) S.data.sort.auto = r;
+      render({ keepScroll: true });
+    },
+    "sort-handoff": async (_, __, all = false) => {
+      const h = all ? await act(() => api("/inquiries/handoff?all=1")) : S.data.handoff;
+      if (!h?.items?.length) return toast("넘길 개발사항이 없어요");
+      if (!(await toClipboard(h.text))) return toast("복사하지 못했어요. 다시 해 주세요");
+      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id) }), `개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
+      S.data.handoff = null; load();
+    },
+    "sort-handoff-all": (a, el) => ACTIONS["sort-handoff"](a, el, true),
+    "sort-result-check": async () => {
+      const text = document.getElementById("sort-result")?.value ?? "";
+      if (!text.trim()) return toast("결과 줄을 붙여 넣어 주세요");
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text, dry: true }));
+      if (r) { S.sortResult = { ...r, text }; render({ keepScroll: true }); }
+    },
+    "sort-result-clear": () => { S.sortResult = null; render({ keepScroll: true }); },
+    "sort-result-go": async () => {
+      const res = S.sortResult;
+      if (!res) return;
+      const notify = document.getElementById("sort-notify")?.checked === true;
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => `개발사항 ${r.changed}개 반영${r.answered ? ` · 문의 ${r.answered}건에 답` : ""}`);
+      if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
+    },
     ...FLAG_ACTIONS,
     refresh: () => load(),
     close: () => dialog.close(),

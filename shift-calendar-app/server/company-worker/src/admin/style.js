@@ -685,4 +685,40 @@ details.card.events>summary h2{display:inline;font-size:1.06rem}
 /* [ADMX-08] Search in the palette: the server's groups under a heading each. */
 .palette .group-head{padding:.5rem 1rem .2rem;font-size:.75rem;font-weight:800;color:var(--muted);background:var(--soft)}
 .palette .row small.hint2{display:block;font-size:.75rem;color:var(--muted)}
+/* 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: the piles as a strip of counts, the cards with their answers ready. */
+.pile-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:.5rem;margin:0 0 .9rem}
+.pile-card{display:flex;flex-direction:column;gap:.1rem;padding:.65rem .8rem;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);color:inherit;text-decoration:none;box-shadow:var(--shadow)}
+.pile-card .pile-n{font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}
+.pile-card .pile-name{font-size:.78rem;color:var(--muted);font-weight:700}
+.pile-card.good .pile-n{color:var(--ok)}.pile-card.warn .pile-n{color:var(--warn)}.pile-card.bad .pile-n{color:var(--bad)}.pile-card.info .pile-n{color:var(--info)}
+.sort-top{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem;margin:0 0 .5rem}
+@media (min-width:800px){.sort-top{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr)}.sort-top>.card{margin:0}}
+.auto-head small,.handoff-card>small{display:block;margin:.2rem 0 0;font-size:.82rem;color:var(--muted)}
+.handoff-card>b,.auto-head b{font-size:1rem}
+.pile{margin:1.4rem 0 0;scroll-margin-top:4.5rem}
+.pile-head{display:flex;align-items:flex-end;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin:0 .25rem .6rem}
+.pile-head h3{font-size:1rem;display:flex;align-items:center;gap:.4rem;margin:0}
+.pile-head small{display:block;font-size:.82rem;color:var(--muted)}
+.pile-card.zero{box-shadow:none;background:none;opacity:.5}
+.sort-view{display:flex;flex-direction:column}
+.sort-top{scroll-margin-top:4.5rem}
+/* A phone: the piles in one swipeable line (empty ones left out), the questions first, 자동 대응·넘기기 at the end. */
+@media (max-width:599px){.pile-strip{display:flex;overflow-x:auto;scrollbar-width:none;margin:0 -1rem .75rem;padding:0 1rem .2rem}
+.pile-strip::-webkit-scrollbar{display:none}.pile-strip .pile-card{flex:none;min-width:6.5rem}.pile-strip .pile-card.zero:not(.handoff-chip){display:none}
+.sort-view>.sort-top{order:2;margin-top:1.4rem}.sort-view>.pile,.sort-view>.empty{order:1}}
+.sort-card{display:grid;grid-template-columns:minmax(0,1fr);gap:.25rem 1.25rem;border-bottom:1px solid var(--line);padding:.85rem 1rem}
+.sort-card:last-child{border-bottom:0}
+@media (min-width:1024px){.sort-card{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}.sort-answer .sort-field:first-child{margin-top:0}}
+.sort-ask{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.sort-ask>b a{color:inherit;text-decoration:none}
+.sort-ask>b a:hover{text-decoration:underline}
+.sort-ask>small{font-size:.8rem;color:var(--muted)}
+.sort-card .match{display:block;margin:.35rem 0 0;font-size:.82rem;color:var(--info);font-weight:700}
+.sort-card details{margin:.4rem 0 0;padding-top:.25rem}
+.sort-card .actions{margin:.5rem 0 0}
+.sort-field{display:block;margin:.6rem 0 0;font-weight:700}
+.sort-field>span{display:block;font-size:.8rem;color:var(--muted);margin:0 0 .25rem}
+.sort-field textarea{min-height:4.5rem}
+ul.mini{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem;font-size:.86rem}
+ul.mini small{color:var(--muted);margin-left:.3rem}
 `;

@@ -1,5 +1,6 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
+import { autoAnswer } from "./inbox.js";
 import { kstDay } from "./usage.js";
 // ---- questions from the app [ADMIN-02] ----
 //
@@ -187,6 +188,8 @@ export async function ask(request, env) {
     body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식" })[body.kind] ?? "문의"} 1건`,
     url: "/admin/#/inquiries",
   }, now);
+  // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
+  await autoAnswer(env, id, now);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
   return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);

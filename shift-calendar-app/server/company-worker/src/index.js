@@ -74,6 +74,7 @@ import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.
 import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
+import { inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
@@ -740,6 +741,9 @@ const COLUMNS = [
   // [ADMCP-03] 복사함: when a question was last copied for development and by whom (the activity log keeps each copy).
   "ALTER TABLE inquiries ADD COLUMN copied_at INTEGER",
   "ALTER TABLE inquiries ADD COLUMN copied_by TEXT",
+  // 1.35 [INBOX-03] 정리함에서 빼 둠, and [INBOX-05] when a 개발사항 went to Claude.
+  "ALTER TABLE inquiries ADD COLUMN sorted_at INTEGER",
+  "ALTER TABLE dev_items ADD COLUMN handed_at INTEGER",
   // AT 1.29 끝
   // S 1.32 [SECX-01] Flags an approved admin phone sees before everyone (미리 보기), as a JSON array the developer app sets.
   "ALTER TABLE admin_devices ADD COLUMN previews TEXT",
@@ -4228,6 +4232,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/versions" && method === "GET") return json(await versions(env, url.searchParams.get("show")));
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})\/promote$/);
   if (m && method === "POST") return promote(env, m[1], now);
+  // 1.35 [INBOX-01] 문의 정리함 and [INBOX-05] Claude에게 넘기기, before the question routes.
+  if (path.startsWith("/inquiries/sort") || path.startsWith("/inquiries/handoff")) {
+    const r = inboxRoute(request, env, url, path, now);
+    if (r) return r;
+  }
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
