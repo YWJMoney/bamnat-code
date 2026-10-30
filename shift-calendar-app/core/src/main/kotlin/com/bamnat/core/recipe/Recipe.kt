@@ -23,7 +23,7 @@ data class Recipe(
     val tokens: List<Token> = emptyList(),
     val inputs: List<Input> = emptyList(),
     val pieces: List<Piece>,
-    /** [RCP-46] 1.35: the recipe this one was made from (고쳐 만들기), by its code; null for an original. */
+    /** [RCX-01] 1.35: the recipe this one was made from (고쳐 만들기), by its code; null for an original. */
     val parent: String? = null,
 ) {
     /** The kinds of work a piece of it applies to, as [style] sees it (유형 렌즈). */

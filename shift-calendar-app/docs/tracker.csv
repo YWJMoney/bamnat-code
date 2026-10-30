@@ -1451,3 +1451,25 @@ RCP-40,"1.34 나눔 판 기반(순번 784): 보안 시험: 큰 본문, 깊은 JS
 REPO-01,"1.34 나눔 판 기반(순번 785): 저장소 나누기 준비: 공개 파일 묶음, CI 줄이기(비공개 2,000분), 문서의 '이 저장소는 공개' 말 고치기",2 (1.34.0),완료,,공개저장소 묶음 (release/1.34.0/공개저장소) ci.yml
 RCP-41,"1.34 나눔 판 기반(순번 786): 화면 시험(만들기·보기·미리 보기·적용·되돌리기·광장 6개)과 단위 시험, 서버 시험",2 (1.34.0),완료,,RCScreenshotTest.kt RecipeApplyTest.kt recipes.test.mjs
 RCP-42,"1.34 나눔 판 기반(순번 787): PC 에뮬레이터로 6유형마다 만들기 → 올리기 → 다른 휴대폰에서 받기 → 미리 보기 → 일부 적용 → 되돌리기, 처음 쓰는 사람이 3분 안에 첫 레시피를 올리는지(누른 횟수·막힌 곳)",2 (1.34.0),대기,,
+RCX-01,"1.35 나눔 판 완성(순번 788): 고쳐 만들기 계보: 부모·자식 목록, 원작자 표시 유지",2 (1.35.0),완료,,recipe-community.js(/lineage) RecipeDetailScreen.kt(LineageSection) recipe-community.test.mjs
+RCX-02,"1.35 나눔 판 완성(순번 789): 구독(휴대폰에만)과 새 판 소식, 코드만 묻기",2 (1.35.0),완료,,RecipeRepository.kt(newer, subscribed) /api/recipes/versions recipe-community.test.mjs
+RCX-03,"1.35 나눔 판 완성(순번 790): 새 판 3-way 반영: 내가 고친 칸 지키고 바뀐 칸만 골라 반영",2 (1.35.0),완료,,Merge3.kt Merge3Test.kt RecipeMineScreen.kt(UpdateDialog) RCScreenshotTest 1347
+RCX-04,"1.35 나눔 판 완성(순번 791): 요청 판: 쓰기·좋아요·만들게요·완성, 운영자 가리기",2 (1.35.0),완료,,recipe-community.js RecipeCommunityScreens.kt admin-app.js(요청 판 탭) RCScreenshotTest 1349
+RCX-05,"1.35 나눔 판 완성(순번 792): 제작자 페이지: 얼굴·숫자·만든 레시피",2 (1.35.0),완료,,recipe-community.js(/makers) RecipeCommunityScreens.kt(MakerScreen) RCScreenshotTest 1348
+RCX-06,"1.35 나눔 판 완성(순번 793): 배지(돈 없음): 첫 레시피·100명·고쳐 만든 10개·요청 5번·도우미",2 (1.35.0),완료,,recipe-community.js(RECIPE_BADGES) admin-app.js(도우미 배지)
+RCX-07,"1.35 나눔 판 완성(순번 794): 팔로우와 새 레시피 소식",2 (1.35.0),완료,,recipe-community.js(/follow,/news) PlazaNewsJob.kt
+RCX-08,"1.35 나눔 판 완성(순번 795): 이번 주 고른 것: 운영자가 유형마다 3개",2 (1.35.0),완료,,recipe-community.js(/picks) admin-app.js(이번 주 고른 것 탭) RecipeListScreen.kt
+RCX-09,"1.35 나눔 판 완성(순번 796): 7일 유지율 순위 반영(Wilson 7:유지율 3)",2 (1.35.0),완료,,Rank.kt recipes.js(rankGood)
+RCX-10,"1.35 나눔 판 완성(순번 797): 답 알림: 내 질문에 만든 분이 답하면 소식",2 (1.35.0),완료,,recipe-community.js(/news replies) RecipeRepository.newsLines
+RCX-11,"1.35 나눔 판 완성(순번 798): 묶음: 레시피 여러 개를 한 번에",2 (1.35.0),완료,,PieceCatalog.kt(BUNDLE) RecipeMakeScreen.kt RecipeDetailScreen.kt
+RCX-12,"1.35 나눔 판 완성(순번 799): 화면 배치 조각: 탭 순서·달력 카드",2 (1.35.0),완료,,PieceCatalog.kt(LAYOUT) RecipePieces.kt TabOrderRows.kt CalendarLayout.kt
+RCX-13,"1.35 나눔 판 완성(순번 800): 통계·가계부·메모 카드 조각",2 (1.35.0),완료,,PieceCatalog.kt(CARDS) PageEditSheet.kt(이 설정 나누기)
+RCX-14,"1.35 나눔 판 완성(순번 801): 위젯 모양 조각과 위젯 모양 설정",2 (1.35.0),완료,,PieceCatalog.kt(WIDGET) WidgetLookTheme.kt SettingsPages.kt
+RCX-15,"1.35 나눔 판 완성(순번 802): 그림 표지: 512px WebP로 다시 만들고 운영자 검토",2 (1.35.0),완료,,CoverImages.kt recipe-community.js(/images) admin-app.js(그림 표지 검토 탭)
+RCX-16,"1.35 나눔 판 완성(순번 803): 아이폰판 형식: JVM 전용 호출은 RecipePlatform.kt 하나",2 (1.35.0),완료,,RecipePlatform.kt RecipePlatformTest.kt
+RCX-17,"1.35 나눔 판 완성(순번 804): 예시 달력 미리 보기(만들기 5단계)",2 (1.35.0),완료,,RecipeExtras.kt(ExampleCalendars) RecipeMakeScreen.kt
+RCX-18,"1.35 나눔 판 완성(순번 805): 테마 색: 이름 붙인 색 12개",2 (1.35.0),완료,,RecipeTokens.kt RecipeTokensTest.kt RecipeExtras.kt(ThemeTokens)
+RCX-19,"1.35 나눔 판 완성(순번 806): 처리방침 3.8 문구 확인(1.35 항목 포함), 팔로우·그림은 recipe.talk·recipe.publish 날짜 조건",2 (1.35.0),완료,,privacy/index.html FlagCatalog.kt
+RCX-20,"1.35 나눔 판 완성(순번 807): 안내·도움말·끄기(새 판 알림·팔로우·답 알림·요청 판)",2 (1.35.0),완료,,FeatureRegistry.kt WhatsNew.kt(47) HelpFaq.kt FeatureLinks.kt RecipeMineScreen.kt
+RCX-21,"1.35 나눔 판 완성(순번 808): 시험: core 사례, 서버 시험, 화면 시험",2 (1.35.0),완료,,Merge3Test RecipeTokensTest RecipePlatformTest recipe-community.test.mjs RCScreenshotTest 1347-1349
+RCX-22,"1.35 나눔 판 완성(순번 809): PC 에뮬레이터 6유형 직접 써 보기",2 (1.35.0),진행 중,,

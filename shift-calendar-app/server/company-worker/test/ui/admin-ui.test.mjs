@@ -576,7 +576,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual(bottom(t), ["today", "ask", "plaza", "release", "more"]);
   // A hub's tabs sit under the title, and in the sidebar under the open hub.
   await t.go("#/review");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "companies", "shares", "adopt"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "recipes", "companies", "shares", "adopt"]);
   assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
   assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
@@ -603,7 +603,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   const v = await asMember(s, plaza, "", "junho@example.com", 41);
   assert.deepEqual(sideHubs(v), ["today", "plaza", "manage"]);
   await v.go("#/review");
-  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "companies"]);
+  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "recipes", "companies"]);
   assert.equal(Number(v.text('.tabs [data-badge="hub:plaza"]')), 1, "the one report");
   await v.go("#/inquiries");
   assert.equal(v.window.location.hash, "#/home");
