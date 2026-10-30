@@ -815,7 +815,7 @@ private fun MemoTemplateDialog(
     var removing by remember { mutableStateOf<com.bamnat.core.memo.MemoTemplate?>(null) }
     removing?.let { t ->
         androidx.compose.material3.AlertDialog(onDismissRequest = { removing = null }, title = { Text("이 틀을 지울까요?") },
-            text = { Text("‘${t.title}’ 틀만 지워요. 이 틀로 쓴 메모는 그대로예요" + if (t.from != null) ". 나눔 판에서 받은 틀은 레시피를 다시 넣으면 돌아와요" else "") },
+            text = { Text("‘${t.title}’ 틀만 지워요. 이 틀로 쓴 메모는 그대로예요" + if (t.from != null) ". 장터에서 받은 틀은 레시피를 다시 넣으면 돌아와요" else "") },
             confirmButton = { TextButton(onClick = { removing = null; onRemove(t.id) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("닫기") } })
     }
@@ -833,7 +833,7 @@ private fun MemoTemplateDialog(
                                 if (t.asks.isNotEmpty()) add("입력 칸 ${t.asks.size}개")
                                 if (t.check.isNotEmpty()) add("체크 ${t.check.size}개")
                                 com.bamnat.core.memo.MemoRepeat.label(t.repeat).takeIf { it.isNotEmpty() }?.let { add(it) }
-                                if (t.from != null) add("나눔 판에서 받음")
+                                if (t.from != null) add("장터에서 받음")
                             }.joinToString(" · ")
                             if (what.isNotEmpty()) Text(what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

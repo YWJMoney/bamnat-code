@@ -299,7 +299,7 @@ internal object SettingsIndex {
         screen("설정", "기능 켜고 끄기", SettingsGo.FEATURES, "기능 끄기", "기능 켜기", "숨기기", "안 보이게", "카드 끄기", "안내 끄기", "팁 끄기", "위젯 줄"),
         // [EASY-08][OBS-02] 1.23 N, the card at the top of settings (shown "설정 › 맨 위 카드").
         screen("맨 위 카드", "내 정보", SettingsGo.PROFILE, "프로필", "질문 카드", "입사일", "월급날", "다시 묻기", "모두 처음부터", "내 설정"),
-        screen("맨 위 카드", "나눔 판", SettingsGo.RECIPES, "레시피", "나눔", "되돌리기", "받은 레시피", "내 레시피", "테마 나누기", "공유 설정"), // [RCP-38] 1.34
+        screen("맨 위 카드", "장터·내 레시피", SettingsGo.RECIPES, "레시피", "나눔 판", "장터", "마을", "나눔", "되돌리기", "받은 레시피", "내 레시피", "테마 나누기", "공유 설정"), // [RCP-38] 1.34
         screen("맨 위 카드", "밤낮이 한 일", SettingsGo.JOURNAL, "한 일", "한 일 기록", "알아서", "자동", "로그", "관측"),
         screen("설정 › 도움말과 문의", "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
         screen("설정 › 도움말과 문의", "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),

@@ -233,7 +233,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             color = if (l.skipped) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                Text("7일 안에는 설정 › 나눔 판에서 되돌릴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("7일 안에는 설정 › 장터·내 레시피에서 되돌릴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -302,12 +302,12 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() ->
 }
 
 fun stateLabel(state: String?, scope: String): String = when (state) {
-    "review" -> "운영자가 살펴보고 있어요. 곧 광장에 다시 보여요"
+    "review" -> "운영자가 살펴보고 있어요. 곧 장터에 다시 보여요"
     // [RCX-31] Waiting from before 1.35 dropped the first look: the operator lets it show soon.
-    "pending" -> "운영자 확인을 기다려요. 확인되면 광장과 코드로 열려요"
+    "pending" -> "운영자 확인을 기다려요. 확인되면 장터와 코드로 열려요"
     "returned" -> "돌려받았어요. 메모를 보고 고쳐서 다시 올려 주세요"
     "hidden" -> "가려졌어요"
-    else -> when (scope) { "link" -> "링크로만 열려요"; "private" -> "나만 봐요"; else -> "광장에 올라가 있어요" }
+    else -> when (scope) { "link" -> "링크로만 열려요"; "private" -> "나만 봐요"; else -> "장터에 올라가 있어요" }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

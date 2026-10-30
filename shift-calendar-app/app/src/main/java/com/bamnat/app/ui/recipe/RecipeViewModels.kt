@@ -51,7 +51,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     fun kind(k: String?) { _state.value = _state.value.copy(kind = k); load() }
 
     fun load(more: Boolean = false) {
-        if (!enabled) { _state.value = _state.value.copy(error = "나눔 판은 아직 열리지 않았어요"); return }
+        if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
         val s = _state.value
         if (more && s.next == null) return
         _state.value = s.copy(loading = true, error = null)

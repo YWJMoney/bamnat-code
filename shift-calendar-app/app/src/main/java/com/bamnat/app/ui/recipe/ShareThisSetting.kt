@@ -17,5 +17,5 @@ fun ShareThisSetting(kind: PieceKind, modifier: Modifier = Modifier) {
     val c = LocalContext.current.appContainer
     val on by c.recipes.on.collectAsStateWithLifecycle()
     if (!on || !c.recipeApi.enabled) return
-    TextButton(onClick = { RecipeLinks.share(kind) }, modifier = modifier) { Text("이 설정 나누기 (나눔 판)") }
+    TextButton(onClick = { RecipeLinks.share(kind) }, modifier = modifier) { Text("이 설정 나누기 (장터)") }
 }

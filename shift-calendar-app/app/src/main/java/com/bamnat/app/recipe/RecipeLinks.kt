@@ -25,7 +25,7 @@ object RecipeLinks {
     fun app(code: String) = "bamnat://r/$code"
 
     /** What 링크 보내기 sends: the title, the link and the code to type in. */
-    fun shareText(title: String, code: String) = "‘$title’ 레시피 · 밤낮 나눔 판\n${web(code)}\n코드: $code"
+    fun shareText(title: String, code: String) = "‘$title’ 레시피 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
 
     /** A link tapped outside the app, waiting for the app to open the recipe. */
     private val _opening = MutableStateFlow<String?>(null)

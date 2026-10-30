@@ -158,7 +158,7 @@ fun MakerScreen(vm: MakerViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
                     else Button(onClick = { vm.follow(true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("팔로우 (새 레시피 소식 받기)") }
                 } else Text("팔로우는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
                 Text("만든 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                if (p.recipes.isEmpty()) Text("광장에 올린 레시피가 아직 없어요", style = MaterialTheme.typography.bodySmall)
+                if (p.recipes.isEmpty()) Text("장터에 올린 레시피가 아직 없어요", style = MaterialTheme.typography.bodySmall)
                 p.recipes.forEach { r -> RecipeRow(r) { onOpen(r.code) } }
                 Spacer(Modifier.height(24.dp))
             }

@@ -806,7 +806,7 @@ private fun SettingsHub(
             GroupRow(Icons.Outlined.Forum, boardTitle, boardLine, false, onClick = onOpenBoard)
         }
         // [RCP-38] 1.34 나눔 판: on and off, recipes put on (되돌리기), mine, and those being made.
-        GroupRow(Icons.Outlined.Forum, "나눔 판", "받은 레시피 되돌리기 · 내가 올린 레시피 · 만들던 레시피 · 켜고 끄기", false) {
+        GroupRow(Icons.Outlined.Forum, "장터·내 레시피", "받은 레시피 되돌리기 · 내가 올린 레시피 · 만들던 레시피 · 켜고 끄기", false) {
             SettingsLinks.go(SettingsGo.RECIPES)
         }
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.

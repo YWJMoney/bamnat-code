@@ -308,7 +308,7 @@ export function adminLib() {
     versions: { label: "여러 판", area: "companies", badge: (o) => o.versionConflicts ?? 0, count: false, old: "versions" },
     community: { label: "토론·임금표", area: "community", badge: (o) => o.flaggedPosts ?? 0, strip: "신고 글", old: "토론 임금표 신고된 글 community" },
     // [RCP-39] 1.34 나눔 판: 첫 3개 검토, 신고된 레시피, 가린 것, 공식·공개 자료, 처리 기록.
-    recipes: { label: "나눔 판", area: "community", badge: (o) => (o.recipeQueue ?? 0) + (o.recipeFlagged ?? 0), strip: "레시피 검토", old: "레시피 나눔 판 recipes" },
+    recipes: { label: "마을 장터", area: "community", badge: (o) => (o.recipeQueue ?? 0) + (o.recipeFlagged ?? 0), strip: "레시피 검토", old: "레시피 나눔 판 recipes" },
     companies: { label: "회사", area: "companies", old: "회사·규칙 companies" },
     shares: { label: "공유 링크", area: "shares", old: "공유 링크 신고 shares" },
     adopt: { label: "채택 규칙", area: "settings", old: "설정 자동 채택 맞았어요 비율 채택 보상 상한 settings" },

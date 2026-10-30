@@ -138,7 +138,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
-        assertTrue(appears("7일 안에는 설정 › 나눔 판에서 되돌릴 수 있어요", exact = true))
+        assertTrue(appears("7일 안에는 설정 › 장터·내 레시피에서 되돌릴 수 있어요", exact = true))
     }
 
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {
@@ -155,7 +155,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeMineViewModel(c)
         content { RecipeMineScreen(model, onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
         settle()
-        assertTrue(appears("나눔 판 쓰기", exact = true))
+        assertTrue(appears("장터 쓰기", exact = true))
         assertTrue(appears("받은 레시피", exact = true))
         assertTrue(appears("앞으로 3개는 운영자가 보고 올려요", exact = false))
     }

@@ -130,7 +130,7 @@ class PlazaNewsJob : JobService() {
             if (lines.isEmpty()) return
             val n = NotificationCompat.Builder(c.appContext, Notifications.PLAZA_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("나눔 판 소식")
+                .setContentTitle("마을 장터 소식")
                 .setContentText(lines.first())
                 .setStyle(NotificationCompat.InboxStyle().also { s -> lines.forEach(s::addLine) })
                 .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PLAZA, 2204))

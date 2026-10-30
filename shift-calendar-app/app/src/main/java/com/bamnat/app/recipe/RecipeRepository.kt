@@ -164,7 +164,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         val now = Today.millis()
         inUse().filter { canUndo(it, now) && now - it.appliedAt >= (UNDO_DAYS - 1) * DAY_MILLIS && !prefs.getBoolean("$K_UNDO_SAID${it.id}", false) }
             .forEach { e ->
-                lines += "‘${e.title}’은(는) 내일까지 되돌릴 수 있어요 (설정 › 나눔 판)"
+                lines += "‘${e.title}’은(는) 내일까지 되돌릴 수 있어요 (설정 › 장터·내 레시피)"
                 prefs.edit().putBoolean("$K_UNDO_SAID${e.id}", true).apply()
             }
         // [LIN-04] 1.35 A 수정판 of my recipe is news whether or not I follow anyone (the news call says it).

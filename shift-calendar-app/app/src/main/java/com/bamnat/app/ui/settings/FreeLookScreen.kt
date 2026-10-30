@@ -252,7 +252,7 @@ fun FreeLookScreen(settings: AppSettings, update: ((AppSettings) -> AppSettings)
 /** [FREE-03] The screens 화면 꾸미기 changes. The restricted ones keep their layout; only their colours and background change. */
 enum class FreeTarget(val label: String, val restricted: Boolean = false, val note: String = "") {
     CALENDAR("달력"), MEMO("메모장"), MONEY("가계부"), PAY("급여"), STATS("통계"),
-    PLAZA("광장", true, "광장은 배경과 이모티콘만 바꿔요. 이 휴대폰에서만 보이고 다른 분께는 보이지 않아요"),
+    PLAZA("마을", true, "마을은 배경과 이모티콘만 바꿔요. 이 휴대폰에서만 보이고 다른 분께는 보이지 않아요"),
     SETTINGS("설정"),
     ALARM("알람 화면", true, "알람 화면은 배치를 그대로 두고 색과 배경만 바꿔요. 끄기 단추는 어떤 배경에서도 또렷하게 보여요"),
     GUARDED("결제·처리방침", true, "결제, 처리방침, 동의 화면은 배치를 그대로 두고 색과 배경만 바꿔요"),
@@ -714,7 +714,7 @@ private fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLoo
     }
     if (target == FreeTarget.PLAZA) {
         Group("이모티콘") {
-            Text("광장 제목 앞에 붙어요. 이 휴대폰에서만 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("마을 제목 앞에 붙어요. 이 휴대폰에서만 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Chips(listOf<Pair<String?, String>>(null to "없음") + listOf("🌙", "☀️", "🌿", "🐻", "🍀", "⭐", "💬", "🔥", "🎈", "🧸").map { it to it }, l.emoji) { onChange(l.copy(emoji = it)) }
         }
         return

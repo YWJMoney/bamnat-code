@@ -69,16 +69,16 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     LaunchedEffect(message) { message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text("나눔 판") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        topBar = { TopAppBar(title = { Text("장터·내 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("나눔 판 쓰기", style = MaterialTheme.typography.bodyLarge)
-                        Text(if (on) "광장에 레시피 칸과 설정 화면의 ‘이 설정 나누기’가 보여요"
-                            else "꺼져 있어요. 다시 켜려면 여기(설정 › 나눔 판)로 오세요. 넣어 둔 레시피는 그대로예요",
+                        Text("장터 쓰기", style = MaterialTheme.typography.bodyLarge)
+                        Text(if (on) "마을에 장터 칸과 설정 화면의 ‘이 설정 나누기’가 보여요"
+                            else "꺼져 있어요. 다시 켜려면 여기(설정 › 장터·내 레시피)로 오세요. 넣어 둔 레시피는 그대로예요",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(on, vm::setOn)
@@ -111,6 +111,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                             }
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")
+                                e.replacedAt == com.bamnat.app.data.RecipeBackup.RESTORED -> Muted("백업에서 돌아왔어요 · 되돌리기는 넣은 휴대폰에서만 돼요")
                                 e.replacedAt != null -> Muted("다른 레시피가 그 자리에 들어갔어요")
                                 vm.canUndo(e) -> TextButton(onClick = { undoing = e.title to { vm.undo(e.id) } }) { Text("되돌리기 (넣은 지 7일 안)") }
                                 else -> Muted("7일이 지나 그대로 쓰고 있어요")
@@ -137,7 +138,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 RemixCount(item.code)
                                 Row {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
-                                    TextButton(onClick = { asking = "‘${item.title}’을(를) 광장에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
+                                    TextButton(onClick = { asking = "‘${item.title}’을(를) 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
                                         Text("지우기", color = MaterialTheme.colorScheme.error)
                                     }
                                 }
@@ -253,7 +254,7 @@ private fun NewsSwitches() {
         c.recipes.setNewVersionNews(it); newer = it
     }
     line("팔로우·답 알림", "팔로우한 분의 새 레시피와, 내 질문에 만든 분이 단 답을 알려요", follow) { c.recipes.setFollowNews(it); follow = it }
-    line("요청 판 보이기", "광장의 나눔 판 칸에 ‘이런 레시피 있었으면’이 보여요", requests, c.recipes::setRequestsOn)
+    line("요청 판 보이기", "마을 › 공방의 ‘이런 거 있었으면’ 칸에 ‘이런 레시피 있었으면’이 보여요", requests, c.recipes::setRequestsOn)
 }
 
 /**

@@ -36,8 +36,10 @@ object RecipeDescribe {
         PieceKind.CAL_THEME -> listOfNotNull(
             "오늘".takeIf { p.values["today"] != null }, "토요일".takeIf { p.values["sat"] != null },
             "일요일".takeIf { p.values["sun"] != null }, "공휴일".takeIf { p.values["holiday"] != null },
-        ).joinToString("·").let { if (it.isEmpty()) "" else "$it 색" } +
-            ((p.values["cell"] as? String)?.let { " · " + CELLS[it] } ?: "")
+        ).joinToString("·").let { if (it.isEmpty()) null else "$it 색" }.let { colors ->
+            // 1.35 [J135-20] Never an empty line after "달력 테마:" (스튜디오 요약 F-88): what is in it, or that it keeps the colours.
+            listOfNotNull(colors, (p.values["cell"] as? String)?.let { CELLS[it] }).joinToString(" · ").ifEmpty { "달력 색은 그대로" }
+        }
         PieceKind.ALARMS -> {
             val n = items(p, "byRole").sumOf { (it["before"] as? List<*>)?.size ?: 0 }
             listOfNotNull(
@@ -165,7 +167,7 @@ object RecipeDescribe {
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
 
-    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "plaza" to "광장", "settings" to "설정")
+    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "plaza" to "마을", "settings" to "설정")
 
     /** "보이는 카드 n개, 숨긴 카드 m개" of a layout line. */
     private fun parts(line: String): String {

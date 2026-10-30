@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -373,6 +375,26 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     Scaffold(topBar = {
         TopAppBar(title = { Text((if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") + " ${s.step}/5 · ${titles[s.step - 1]}") },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
+    }, bottomBar = {
+        // 1.35 [J135-22] (실사용 F-87 '다음'까지 큰 스크롤 10번): 이전·다음 stay at the bottom of every step, with why 다음 waits.
+        if (s.sent == null) Surface(tonalElevation = 3.dp) {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 1.35 실사용 점검: say why 다음 does not go on.
+                when {
+                    s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
+                    s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
+                    else -> null
+                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이전") }
+                    Spacer(Modifier.weight(1f))
+                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()) &&
+                        (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
+                }
+            }
+        }
     }) { padding ->
         val scroll = rememberScrollState()
         var tab by rememberSaveable { mutableStateOf(com.bamnat.core.layout.TabOrder.CALENDAR) }
@@ -410,33 +432,25 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     else -> StepCheck(s, vm)
                 }
                 s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이전") }
-                    Spacer(Modifier.weight(1f))
-                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()) &&
-                        (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
-                }
-                // 1.35 실사용 점검: say why 다음 does not go on.
-                when {
-                    s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
-                    s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
-                    else -> null
-                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
-                Text("만들던 내용은 이 휴대폰에 저장돼요. 설정 › 나눔 판에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
+                Text("만들던 내용은 이 휴대폰에 저장돼요. 설정 › 장터·내 레시피에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(24.dp))
+                // Room for the small example (or its pill) at the bottom corner, so nothing stays under it.
+                Spacer(Modifier.height(if (s.step == 1) 300.dp else 24.dp))
             }
         }
-        // [STU-03] While the fields are changed below, the example stays in view, small, at the top corner.
+        // [STU-03] While the fields are changed below, the example stays in view, small, in a corner.
         // F-57: it can be put away to a small pill when it covers a field, and brought back.
-        var miniOpen by rememberSaveable { mutableStateOf(true) }
+        // 1.35 [J135-22] (실사용 F-87 떠 있는 예시가 입력칸·칩을 가려요): on a phone it starts put away, as a pill at the bottom corner
+        // over the screen's empty bottom margin; opened, it sits at the bottom corner (the fields being typed in are at the top) and
+        // the page gets room under it so the last field can scroll out from beneath it.
+        val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+        var miniOpen by rememberSaveable { mutableStateOf(wide) }
         if (s.step == 1 && s.sent == null && !mockShown) {
-            if (miniOpen) Column(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalAlignment = Alignment.End) {
+            if (miniOpen) Column(Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalAlignment = Alignment.End) {
                 MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, RoundedCornerShape(14.dp)))
                 androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
             } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
         }
         }
     }
@@ -616,7 +630,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }
     ExampleCalendars(s.recipe)
     Text("어디에 둘까요?", style = MaterialTheme.typography.titleSmall)
-    listOf("public" to "광장에 올리기 (바로 모두에게 보여요)", "link" to "링크로만 (링크를 받은 분만 열어요)", "private" to "나만 (내 휴대폰들에서만 열어요)").forEach { (k, label) ->
+    listOf("public" to "장터에 올리기 (바로 모두에게 보여요)", "link" to "링크로만 (링크를 받은 분만 열어요)", "private" to "나만 (내 휴대폰들에서만 열어요)").forEach { (k, label) ->
         Row(Modifier.fillMaxWidth().selectable(s.scope == k, role = Role.RadioButton) { vm.scope(k) }, verticalAlignment = Alignment.CenterVertically) {
             RadioButton(s.scope == k, null); Text(label, style = MaterialTheme.typography.bodyMedium)
         }
@@ -647,13 +661,13 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
     // 자유도 점검 F-47: what happened shows above the buttons, where the eye is, not under them off the screen.
     var kept by rememberSaveable { mutableStateOf(false) }
-    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요" }
+    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 설정 › 장터·내 레시피 › 받은 레시피에서 되돌릴 수 있어요" }
         ?: if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
-        ?: if (kept) "저장했어요. 설정 › 나눔 판 › 만들던 레시피에서 이어서 만들어요" else null
+        ?: if (kept) "저장했어요. 설정 › 장터·내 레시피 › 만들던 레시피에서 이어서 만들어요" else null
     if (done != null) Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
-    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요",
+    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 설정 › 장터·내 레시피 › 받은 레시피에서 되돌릴 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { vm.keepDraft(); kept = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }

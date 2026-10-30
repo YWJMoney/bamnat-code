@@ -109,7 +109,7 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
     showcase: List<RecipeItem> = emptyList()) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("나눔 판 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("장터 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text(entryLine(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (showcase.isNotEmpty()) ShowcaseStrip(showcase, onItem)
@@ -227,7 +227,7 @@ fun RecipeListScreen(
     onOpen: (String) -> Unit,
     onMake: () -> Unit,
     onMine: () -> Unit,
-    title: String = "나눔 판",
+    title: String = "장터",
     askCode: Boolean = false,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -274,7 +274,7 @@ fun RecipeListScreen(
                     }
                     if (state.tab == RecipeListViewModel.Tab.GOOD) Text("좋아요가 5개 넘은 레시피만 여기 나와요. 표가 적으면 ‘새로’에서 볼 수 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (state.tab == RecipeListViewModel.Tab.SHOWCASE) Text("나눔 판으로 이만큼 꾸밀 수 있다는 걸 보여 주려고 운영자가 만든 판이에요. 미리 보고 마음에 드는 것만 넣어요",
+                    if (state.tab == RecipeListViewModel.Tab.SHOWCASE) Text("장터 레시피로 이만큼 꾸밀 수 있다는 걸 보여 주려고 운영자가 만든 판이에요. 미리 보고 마음에 드는 것만 넣어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.tab == RecipeListViewModel.Tab.DATA) Text("공공 자료를 바탕으로 운영자가 만든 레시피예요. 출처가 함께 적혀 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

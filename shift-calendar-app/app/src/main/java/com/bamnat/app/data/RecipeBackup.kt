@@ -31,13 +31,19 @@ object RecipeBackup {
             })
     }
 
+    /**
+     * 1.35 [J135-21] The replacedAt of a record that came back from a backup: no recipe took its place, it only cannot be taken
+     * back here (F-84: a worn theme read "다른 레시피가 그 자리에 들어갔어요" after a restore).
+     */
+    const val RESTORED = 1L
+
     fun read(o: JSONObject, restoredAt: Long): Rows = Rows(
         applied = o.objects("applied").map { r ->
             AppliedRecipeEntity(
                 id = r.getLong("id"), code = r.optString("code"), version = r.optInt("version"), hash = r.optString("hash"),
                 title = r.optString("title"), calendarId = r.optString("calendar", PersonalCalendar.MAIN), body = r.optString("body"),
                 inputs = r.optString("inputs", "{}"), pieces = r.optString("pieces"), before = "{}", appliedAt = r.optLong("at"),
-                undoneAt = r.optLongOrNull("undone"), replacedAt = r.optLongOrNull("replaced") ?: restoredAt.takeIf { r.optLongOrNull("undone") == null },
+                undoneAt = r.optLongOrNull("undone"), replacedAt = r.optLongOrNull("replaced") ?: RESTORED.takeIf { r.optLongOrNull("undone") == null },
                 keptSent = r.optBoolean("kept"),
             )
         },
