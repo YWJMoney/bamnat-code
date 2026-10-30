@@ -24,6 +24,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.launch
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -32,7 +39,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -86,16 +93,41 @@ import com.bamnat.core.work.WorkStyle
  * picture (알람, 메모 틀, 급여·현장·가게 규칙, 투자 원칙) are edited there as forms built from the piece catalog.
  */
 @Composable
-internal fun RecipeStudio(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
-    var tab by rememberSaveable { mutableStateOf(TabOrder.CALENDAR) }
+internal fun RecipeStudio(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, tab: String, onTab: (String) -> Unit,
+                          /** Whether the big example is out of sight (scrolled past), for the small one that stays in view. */
+                          onMockShown: (Boolean) -> Unit = {}) {
     val r = s.recipe
+    val editors = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     StudioStart(s, vm)
-    Text("예시 앱에서 바로 꾸며요. 내 앱은 바뀌지 않아요", style = MaterialTheme.typography.bodyMedium,
+    Text("예시 앱에서 바로 꾸며요. 화면을 누르면 고치는 칸으로 가요. 내 앱은 바뀌지 않아요", style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    MockPhone(r, vm.style, tab) { tab = it }
-    Text(TopLevel.entries.firstOrNull { it.route == tab }?.label.orEmpty() + " 화면에서 고칠 것", style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.semantics { heading() })
+    Box(Modifier.onGloballyPositioned { c ->
+        // Out of sight once less than a fifth of it is on the screen.
+        val b = c.boundsInWindow()
+        onMockShown(b.height > c.size.height / 5f)
+    }) {
+        MockPhone(r, vm.style, tab, onTab, onPick = { scope.launch { editors.bringIntoView() } })
+    }
+    Text(TopLevel.entries.firstOrNull { it.route == tab }?.labelFor(vm.style).orEmpty() + " 화면에서 고칠 것", style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.semantics { heading() }.bringIntoViewRequester(editors))
     StudioEditors(r, vm, tab)
+}
+
+/**
+ * [STU-03] 1.35 자유도 점검 ‘보면서 꾸미기’: the example, small, kept at the top corner while the fields under it are changed, so each
+ * change shows at once; a tap goes back up to the big one.
+ */
+@Composable
+internal fun MiniPhone(r: Recipe, style: WorkStyle?, tab: String, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val scale = 0.42f
+    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clip(RoundedCornerShape(14.dp))
+        .clickable(onClickLabel = "예시 앱 크게 보기", onClick = onOpen).semantics(mergeDescendants = true) { contentDescription = "작은 예시 앱. 누르면 크게 봐요" },
+        contentAlignment = Alignment.Center) {
+        Box(Modifier.requiredSize(340.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
+            MockPhone(r, style, tab, onTab = {}, onPick = onOpen)
+        }
+    }
 }
 
 /** Where a recipe starts: what I have now, one of the 보여주기 판, or nothing. */
@@ -148,7 +180,7 @@ internal fun Recipe.piece(kind: PieceKind) = pieces.firstOrNull { it.kind == kin
 
 /** The example app: the chosen tab's screen and the bottom tabs in the recipe's order, with its corners. */
 @Composable
-private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit) {
+private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, onPick: () -> Unit = {}) {
     val resolved = remember(r) { r.pieces.associate { p -> p.kind to runCatching { RecipeResolve.piece(r, p, RecipeResolve.answers(r, emptyMap())) }.getOrDefault(p.values) } }
     val corners = resolved[PieceKind.PHOTO_LOOK]?.get("corners") as? String
     @Suppress("UNCHECKED_CAST")
@@ -162,12 +194,15 @@ private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String)
                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(26.dp))
                     .semantics { contentDescription = "예시 앱 화면" },
             ) {
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f).fillMaxWidth().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(rememberScrollState()).padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (tab) {
                         TabOrder.CALENDAR -> MockCalendar(resolved, style)
-                        TabOrder.MONEY -> MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label, it.what) })
+                        TabOrder.MONEY -> MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label, it.what) },
+                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) })
                         TabOrder.MEMOS -> MockMemos(resolved)
-                        TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true)
+                        TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true,
+                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) })
                         TabOrder.PLAZA -> MockNote("광장", "광장은 모두 같은 모양이에요. 여기서 꾸밀 것은 없어요")
                         else -> MockSettings(resolved)
                     }
@@ -177,12 +212,12 @@ private fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String)
                     tabs.forEach { key ->
                         val t = TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
                         val on = key == tab
-                        Column(Modifier.clickable(onClickLabel = "${t.label} 화면 보기") { onTab(key) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        Column(Modifier.clickable(onClickLabel = "${t.labelFor(style)} 화면 보기") { onTab(key) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.background(if (on) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, CircleShape).padding(horizontal = 10.dp, vertical = 2.dp)) {
                                 Icon(if (on) t.selectedIcon else t.icon, null, Modifier.size(20.dp))
                             }
-                            Text(t.label, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp, maxLines = 1)
+                            Text(t.labelFor(style), style = MaterialTheme.typography.labelSmall, fontSize = 10.sp, maxLines = 1)
                         }
                     }
                 }
@@ -207,9 +242,11 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     val all = PageLayout.decode(line).arrange(CalendarPart.entries.toList()) { it.id }
     // [CVW-06] The cards above and under the month as the recipe orders them, the month among them.
     val above = com.bamnat.app.ui.calendar.calendarAbove(all.map { it.part })
-    val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL }
+    // Only the cards this kind of work has, as on the phone (no 오늘 일감·매출 on a 교대 example, 자유도 점검).
+    val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL &&
+        fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
     placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.label, it.part.what) }
-    if (placed.any { it.part == CalendarPart.SUMMARY }) MockSummary()
+    if (placed.any { it.part == CalendarPart.SUMMARY }) MockSummary(style)
     val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
     if (placed.any { it.part == CalendarPart.COUNTS }) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         days.forEach { d -> Text("${d["label"]} ${if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
@@ -246,9 +283,17 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
 }
 
 @Composable
-private fun MockSummary() {
+private fun MockSummary(style: WorkStyle?) {
+    // [STU-03] What this kind of work's summary card says (자유도 점검 F-45: a 투자·가게 example showed 근무·급여).
+    val items = when (style) {
+        WorkStyle.HOURLY -> listOf("일한 날" to "12일", "시간" to "64h", "급여" to "예상")
+        WorkStyle.FIELD -> listOf("일한 날" to "15일", "공수" to "16.5", "받을 돈" to "예상")
+        WorkStyle.BUSINESS -> listOf("영업" to "24일", "매출" to "합계", "순이익" to "예상")
+        WorkStyle.INVEST -> listOf("기록" to "9일", "수익률" to "이번 달", "원금" to "합계")
+        else -> listOf("근무" to "18일", "시간" to "162h", "급여" to "예상")
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf("근무" to "18일", "시간" to "162h", "급여" to "예상").forEach { (k, v) ->
+        items.forEach { (k, v) ->
             Column(Modifier.weight(1f).background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(6.dp)) {
                 Text(k, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                 Text(v, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
@@ -271,8 +316,8 @@ private fun MockCard(title: String, what: String, bars: Boolean = false) {
 }
 
 @Composable
-private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false) {
-    val placed = PageLayout.decode(line).arrange(parts) { it.first }.filter { it.shown }
+private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }) {
+    val placed = PageLayout.decode(line).arrange(parts) { it.first }.filter { it.shown && fits(it.part.first) }
     placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three")) }
 }
 
@@ -357,17 +402,17 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
                     modifier = Modifier.semantics { contentDescription = "달력 모양 넣기" }) }) {
                 if (cv != null) com.bamnat.app.ui.calendar.CalendarViewEditor(viewOf(cv.values), { v -> vm.setPiece(PieceKind.CAL_VIEW, valuesOf(v, cv.values)) }, sample = {})
             }
-            PartsEditor("달력 화면 카드", CalendarPart.entries.filter { it != CalendarPart.ASK && it != CalendarPart.JOURNAL }.map { Triple(it.id, it.label, it.movable) },
+            PartsEditor("달력 화면 카드", CalendarPart.entries.filter { it != CalendarPart.ASK && it != CalendarPart.JOURNAL && it != CalendarPart.MONTH && fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.id, vm.style) }.map { Triple(it.id, it.label, it.movable) },
                 r.piece(PieceKind.LAYOUT)?.values?.get("calendar") as? String) { line -> vm.setValue(PieceKind.LAYOUT, "calendar", line) }
         }
-        TabOrder.MONEY -> PartsEditor("가계부 카드", MoneyPart.entries.map { Triple(it.id, it.label, it.movable) },
+        TabOrder.MONEY -> PartsEditor("가계부 카드", MoneyPart.entries.filter { fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, vm.style) }.map { Triple(it.id, it.label, it.movable) },
             r.piece(PieceKind.CARDS)?.values?.get("money") as? String) { line -> vm.setValue(PieceKind.CARDS, "money", line) }
         TabOrder.MEMOS -> PartsEditor("메모 화면", MemoPart.entries.map { Triple(it.id, it.label, it.movable) },
             r.piece(PieceKind.CARDS)?.values?.get("memo") as? String) { line -> vm.setValue(PieceKind.CARDS, "memo", line) }
-        TabOrder.STATS -> PartsEditor("통계 카드", StatsPart.entries.map { Triple(it.id, it.label, it.movable) },
+        TabOrder.STATS -> PartsEditor("통계 카드", StatsPart.entries.filter { fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, it.id, vm.style) }.map { Triple(it.id, it.label, it.movable) },
             r.piece(PieceKind.CARDS)?.values?.get("stats") as? String) { line -> vm.setValue(PieceKind.CARDS, "stats", line) }
         TabOrder.SETTINGS -> {
-            TabsEditor((r.piece(PieceKind.LAYOUT)?.values?.get("tabs") as? List<String>).orEmpty()) { list -> vm.setValue(PieceKind.LAYOUT, "tabs", list) }
+            TabsEditor((r.piece(PieceKind.LAYOUT)?.values?.get("tabs") as? List<String>).orEmpty(), vm.style) { list -> vm.setValue(PieceKind.LAYOUT, "tabs", list) }
             CornersEditor(r.piece(PieceKind.PHOTO_LOOK)?.values?.get("corners") as? String) { c -> vm.setValue(PieceKind.PHOTO_LOOK, "corners", c) }
         }
         else -> Unit
@@ -403,7 +448,7 @@ private fun PartsEditor(title: String, parts: List<Triple<String, String, Boolea
 }
 
 @Composable
-private fun TabsEditor(saved: List<String>, onChange: (List<String>?) -> Unit) {
+private fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<String>?) -> Unit) {
     val order = TabOrder.of(saved)
     StudioCard("아래 탭 순서", "맨 앞 탭이 앱을 열면 처음 보이는 화면이에요", onReset = saved.takeIf { it.isNotEmpty() }?.let { { onChange(null) } }) {
         order.forEachIndexed { i, key ->
@@ -411,9 +456,9 @@ private fun TabsEditor(saved: List<String>, onChange: (List<String>?) -> Unit) {
             Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(t.icon, null, Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(t.label, Modifier.weight(1f))
-                IconButton(onClick = { onChange(TabOrder.toSave(TabOrder.move(order, key, i - 1)).ifEmpty { null }) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, "${t.label} 앞으로") }
-                IconButton(onClick = { onChange(TabOrder.toSave(TabOrder.move(order, key, i + 1)).ifEmpty { null }) }, enabled = i < order.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, "${t.label} 뒤로") }
+                Text(t.labelFor(style), Modifier.weight(1f))
+                IconButton(onClick = { onChange(TabOrder.toSave(TabOrder.move(order, key, i - 1)).ifEmpty { null }) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, "${t.labelFor(style)} 앞으로") }
+                IconButton(onClick = { onChange(TabOrder.toSave(TabOrder.move(order, key, i + 1)).ifEmpty { null }) }, enabled = i < order.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, "${t.labelFor(style)} 뒤로") }
             }
         }
     }
@@ -606,3 +651,7 @@ internal object StudioStarters {
         PieceKind.COMPANY, PieceKind.BUNDLE -> emptyMap()
     }
 }
+
+/** Whether a card belongs on this kind of work's screen, as on the phone ([com.bamnat.core.guide.FitTable]). */
+private fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, style: WorkStyle?): Boolean =
+    style == null || com.bamnat.core.guide.FitTable.visible(surface, id, style, emptySet())

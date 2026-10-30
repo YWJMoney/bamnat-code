@@ -64,6 +64,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val snack = remember { SnackbarHostState() }
     // [RCX-26] Every 지우기 here asks first (한 번 지운 것은 돌아오지 않아요).
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
+    var undoing by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     LaunchedEffect(message) { message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
@@ -110,7 +112,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")
                                 e.replacedAt != null -> Muted("다른 레시피가 그 자리에 들어갔어요")
-                                vm.canUndo(e) -> TextButton(onClick = { vm.undo(e.id) }) { Text("되돌리기 (넣은 지 7일 안)") }
+                                vm.canUndo(e) -> TextButton(onClick = { undoing = e.title to { vm.undo(e.id) } }) { Text("되돌리기 (넣은 지 7일 안)") }
                                 else -> Muted("7일이 지나 그대로 쓰고 있어요")
                             }
                         }
@@ -121,7 +123,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 val m = mine
                 if (m == null) Muted("불러오는 중이거나 인터넷이 없어요")
                 else {
-                    Muted("하루에 ${if (m.trust >= 1) 4 else 2}개까지 올릴 수 있어요" + if (m.reviewLeft > 0) " · 앞으로 ${m.reviewLeft}개는 운영자가 보고 올려요" else "")
+                    val review = if (m.reviewLeft > 0) " · 앞으로 ${m.reviewLeft}개는 운영자가 보고 올려요" else ""
+                    Muted("하루에 ${if (m.trust >= 1) 4 else 2}개까지 올릴 수 있어요$review")
                     if (m.items.isEmpty()) Muted("아직 올린 레시피가 없어요")
                     m.items.forEach { (item, st) ->
                         Card(Modifier.fillMaxWidth().clickable { onOpen(item.code) }) {
@@ -160,6 +163,12 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
         }
     }
     update?.let { UpdateDialog(it, vm) }
+    undoing?.let { (title, go) ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { undoing = null }, title = { Text("되돌릴까요?") },
+            text = { Text("‘$title’이 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") },
+            confirmButton = { TextButton(onClick = { undoing = null; go() }) { Text("되돌리기") } },
+            dismissButton = { TextButton(onClick = { undoing = null }) { Text("닫기") } })
+    }
     asking?.let { (q, go) ->
         androidx.compose.material3.AlertDialog(onDismissRequest = { asking = null }, title = { Text("지울까요?") }, text = { Text(q) },
             confirmButton = { TextButton(onClick = { asking = null; go() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },

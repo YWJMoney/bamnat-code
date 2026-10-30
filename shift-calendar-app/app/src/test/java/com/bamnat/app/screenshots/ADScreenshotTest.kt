@@ -39,7 +39,7 @@ class ADScreenshotTest : ScreenshotBase() {
         const val PHONE_393 = "w393dp-h873dp-port-440dpi"
         const val PHONE_393_NIGHT = "w393dp-h873dp-port-night-440dpi"
         const val TABLET_LAND = "w1280dp-h800dp-land-240dpi"
-        const val MEMO_FIRST = "memos,calendar,money,stats,settings"
+        const val MEMO_FIRST = "memos,calendar,money,stats,plaza,settings"
     }
 
     private val c get() = app.container
@@ -63,7 +63,7 @@ class ADScreenshotTest : ScreenshotBase() {
         }
     }
 
-    private val barNames = setOf("달력", "가계부", "메모", "근무·급여", "설정")
+    private val barNames = setOf("달력", "가계부", "메모", "근무·급여", "광장", "설정")
 
     /** The app's tabs (not a screen's own tabs), by name. */
     private fun Screen.barTabs() = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
@@ -109,12 +109,12 @@ class ADScreenshotTest : ScreenshotBase() {
 
     @Test fun longPressDragTapOutsideAndTheAppOpensOnMemos() {
         open(PHONE_393) { scenario ->
-            assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "광장", "설정"), barOrder())
             assertTrue(gone(TAB_EDIT_HINT_TOP))
             // Held still on 메모, then dragged to the front in the same touch.
             dragTab(2, 0, wide = false, hold = 40)
             assertTrue("the edit says what the first tab is", appears(TAB_EDIT_HINT_TOP))
-            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "광장", "설정"), barOrder())
             assertEquals("not saved while editing", "", saved())
             // A tab tapped while editing does not open.
             tab(SETTINGS_TAB, wide = false)
@@ -137,7 +137,7 @@ class ADScreenshotTest : ScreenshotBase() {
         // Opened again: on 메모.
         open(PHONE_393) {
             assertEquals("메모", tabNow())
-            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "광장", "설정"), barOrder())
         }
     }
 
@@ -145,7 +145,7 @@ class ADScreenshotTest : ScreenshotBase() {
         memoFirst()
         open(PHONE_393) { scenario ->
             assertEquals("메모", tabNow())
-            // Bar places now: 메모 달력 돈 근무·급여 설정.
+            // Bar places now: 메모 달력 돈 근무·급여 광장 설정.
             tab(2, wide = false)
             tab(SETTINGS_TAB, wide = false)
             assertEquals("설정", tabNow())
@@ -166,17 +166,17 @@ class ADScreenshotTest : ScreenshotBase() {
         assertTrue(appears(TAB_EDIT_HINT_TOP))
         back()
         assertTrue(gone(TAB_EDIT_HINT_TOP))
-        assertEquals("stats,calendar,money,memos,settings", saved())
+        assertEquals("stats,calendar,money,memos,plaza,settings", saved())
         assertFalse(scenario.finishing())
     }
 
     @Test fun theRailMovesUpAndDownToo() {
         open(UNFOLDED) {
-            dragTab(4, 0, wide = true, hold = 40)
+            dragTab(5, 0, wide = true, hold = 40)
             assertTrue(appears(TAB_EDIT_HINT_TOP))
             // The screen beside the rail saves.
             tap(400f, 300f)
-            assertEquals("settings,calendar,money,memos,stats", saved())
+            assertEquals("settings,calendar,money,memos,stats,plaza", saved())
         }
         open(UNFOLDED) { assertEquals("설정", tabNow()) }
     }
@@ -186,13 +186,13 @@ class ADScreenshotTest : ScreenshotBase() {
             tabAction("메모", TAB_FORWARD_ACTION)
             tabAction("메모", TAB_FORWARD_ACTION)
             assertTrue(appears(TAB_EDIT_HINT_TOP))
-            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "광장", "설정"), barOrder())
             // What TalkBack reads out after the move, from the hint's live region.
             assertTrue(nodes().any { n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("메모, 1번째") } })
             tabAction("달력", TAB_BACKWARD_ACTION)
             tabAction("가계부", TAB_SAVE_ACTION)
             assertTrue(gone(TAB_EDIT_HINT_TOP))
-            assertEquals("memos,money,calendar,stats,settings", saved())
+            assertEquals("memos,money,calendar,stats,plaza,settings", saved())
             // Outside the edit a tab offers the long press by name.
             val tabNode = nodes().first { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
             assertEquals(TAB_EDIT_ACTION, tabNode.config.getOrNull(SemanticsActions.OnLongClick)?.label)
@@ -207,10 +207,10 @@ class ADScreenshotTest : ScreenshotBase() {
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)
             tapText("가계부 위로", exact = true)
-            assertEquals("money,calendar,memos,stats,settings", saved())
+            assertEquals("money,calendar,memos,stats,plaza,settings", saved())
             // The bar behind the dialog changed at once, and the screen did not move.
             tapText("완료", exact = true)
-            assertEquals(listOf("가계부", "달력", "메모", "근무·급여", "설정"), barOrder())
+            assertEquals(listOf("가계부", "달력", "메모", "근무·급여", "광장", "설정"), barOrder())
             assertEquals("설정", tabNow())
         }
         open(PHONE_393) {

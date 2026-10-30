@@ -92,7 +92,8 @@ class RCScreenshotTest : ScreenshotBase() {
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {
         starters()
         style(WorkStyle.SHIFT)
-        content { RecipeListScreen(RecipeListViewModel(c), onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
         assertTrue(appears("요즘 뜨는", exact = true))
         assertTrue(appears("야간 파랑", exact = true))
@@ -103,7 +104,8 @@ class RCScreenshotTest : ScreenshotBase() {
     @Test fun theHourlyListHasItsOwn() = shoot("1341_rcp_list_hourly", PHONE) {
         val api = starters()
         style(WorkStyle.HOURLY)
-        content { RecipeListScreen(RecipeListViewModel(c), onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
         val first = api.recipes.first { WorkStyle.HOURLY in it.first.styles && !it.second }.first.title
         assertTrue(appears(first, exact = true))
@@ -131,7 +133,8 @@ class RCScreenshotTest : ScreenshotBase() {
     @Test fun theConfirmShowsWhatChanges() = shoot("1343_rcp_detail_confirm", "w360dp-h780dp-port-night-450dpi") {
         val api = starters()
         style(WorkStyle.SHIFT)
-        content { RecipeDetailScreen(RecipeDetailViewModel(c, api.code(0)), onBack = {}, onRemake = {}) }
+        val model = RecipeDetailViewModel(c, api.code(0))
+        content { RecipeDetailScreen(model, onBack = {}, onRemake = {}) }
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
@@ -141,14 +144,16 @@ class RCScreenshotTest : ScreenshotBase() {
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {
         starters()
         style(WorkStyle.SHIFT)
-        content { RecipeMakeScreen(RecipeMakeViewModel(c), onBack = {}, onOpen = {}) }
+        val model = RecipeMakeViewModel(c)
+        content { RecipeMakeScreen(model, onBack = {}, onOpen = {}) }
         settle()
         assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
     }
 
     @Test fun settingsOfTheBoard() = shoot("1345_rcp_mine", PHONE) {
         starters()
-        content { RecipeMineScreen(RecipeMineViewModel(c), onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
+        val model = RecipeMineViewModel(c)
+        content { RecipeMineScreen(model, onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
         settle()
         assertTrue(appears("나눔 판 쓰기", exact = true))
         assertTrue(appears("받은 레시피", exact = true))
@@ -186,7 +191,8 @@ class RCScreenshotTest : ScreenshotBase() {
         c.recipeApi = api
         style(WorkStyle.SHIFT)
         runBlocking { c.recipes.apply(old, api.code(i), 1, PersonalCalendar.MAIN, listOf(RecipeRepository.Pick(PieceKind.SHIFT_LOOK, com.bamnat.app.recipe.RecipePieces.Mode.REPLACE)), emptyMap()) }
-        content { RecipeMineScreen(RecipeMineViewModel(c), onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
+        val model = RecipeMineViewModel(c)
+        content { RecipeMineScreen(model, onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
         settle()
         assertTrue(appears("새 판 v2 있어요", exact = false))
         tapText("새 판 v2 있어요", exact = false)
@@ -207,7 +213,8 @@ class RCScreenshotTest : ScreenshotBase() {
         }
         c.recipeApi = api
         style(WorkStyle.SHIFT)
-        content { MakerScreen(MakerViewModel(c, "a1b2c3d4e5f6"), onBack = {}, onOpen = {}) }
+        val model = MakerViewModel(c, "a1b2c3d4e5f6")
+        content { MakerScreen(model, onBack = {}, onOpen = {}) }
         settle()
         assertTrue(appears("밤샘간호사", exact = false))
         assertTrue(appears("🏅 쓰는 분 100명", exact = true))
@@ -225,7 +232,8 @@ class RCScreenshotTest : ScreenshotBase() {
         }
         c.recipeApi = api
         style(WorkStyle.SHIFT)
-        content { RequestsScreen(RequestsViewModel(c), onBack = {}, onOpen = {}, onMake = {}) }
+        val model = RequestsViewModel(c)
+        content { RequestsScreen(model, onBack = {}, onOpen = {}, onMake = {}) }
         settle()
         assertTrue(appears("간호사 3교대 근무별 알람 세트", exact = false))
         assertTrue(appears("완성된 레시피 보기", exact = true))

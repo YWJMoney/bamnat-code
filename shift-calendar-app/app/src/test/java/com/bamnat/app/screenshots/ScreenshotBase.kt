@@ -536,7 +536,7 @@ abstract class ScreenshotBase {
          * slowly to place [to], along the bar (or the rail when [wide]), where [tab] would tap.
          */
         fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) = gesture { w, h, d ->
-            fun at(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / 5 to h - 40 * d
+            fun at(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / TABS to h - 40 * d  /* [RCX-29] six since 광장 */
             List(hold + 1) { at(from.toFloat()) } + (1..30).map { k -> at(from + (to - from) * k / 30f) } + listOf(at(to.toFloat()))
         }
 

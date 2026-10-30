@@ -47,6 +47,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -207,6 +209,19 @@ private fun FrameDialog(uri: Uri, slot: Slot, onDismiss: () -> Unit, onDone: (Re
                         .clip(frameShape).clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerHighest)
                         .border(2.dp, MaterialTheme.colorScheme.primary, frameShape)
                         .onSizeChanged { frame = it }
+                        // Without the two-finger gesture (TalkBack, one hand): the same moves as actions.
+                        .semantics {
+                            val step = frame.width / 8f
+                            fun move(dx: Float, dy: Float): Boolean { offset = clamp(offset + Offset(dx, dy), zoom); return true }
+                            customActions = listOf(
+                                CustomAccessibilityAction("크게") { zoom = (zoom * 1.25f).coerceIn(1f, 5f); offset = clamp(offset, zoom); true },
+                                CustomAccessibilityAction("작게") { zoom = (zoom / 1.25f).coerceIn(1f, 5f); offset = clamp(offset, zoom); true },
+                                CustomAccessibilityAction("사진을 왼쪽으로") { move(-step, 0f) },
+                                CustomAccessibilityAction("사진을 오른쪽으로") { move(step, 0f) },
+                                CustomAccessibilityAction("사진을 위로") { move(0f, -step) },
+                                CustomAccessibilityAction("사진을 아래로") { move(0f, step) },
+                            )
+                        }
                         .pointerInput(p) {
                             detectTransformGestures { _, pan, gesture, _ ->
                                 val z = (zoom * gesture).coerceIn(1f, 5f)

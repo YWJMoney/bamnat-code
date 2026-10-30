@@ -84,7 +84,8 @@ class CalendarKindsTest {
         assertEquals(DayMark.LEAVE, vm.mark.value)
         vm.paintDays(listOf(work, off))
         settle()
-        assertEquals("11월 2일에 연차를 넣었어요 · 근무 없는 1일은 빼고", vm.lastPaint.value?.text)
+        // [ALRM-20] 1.35: a day off that had an alarm says it will not ring.
+        assertEquals("11월 2일에 연차를 넣었어요 · 근무 없는 1일은 빼고 · 08:00 알람도 울리지 않아요", vm.lastPaint.value?.text)
         assertEquals(Leave(LeaveKind.ANNUAL, 4), stored(work)?.leave)
         assertNull(stored(off)?.leave)
 

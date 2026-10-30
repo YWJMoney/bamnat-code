@@ -23,7 +23,7 @@ class GroupedNumberTest {
         assertEquals("1,234,567", t.text.text)
         assertEquals(9, m.originalToTransformed(7))
         assertEquals(0, m.originalToTransformed(0))
-        assertEquals(2, m.originalToTransformed(1))
+        assertEquals(1, m.originalToTransformed(1))
         assertEquals(7, m.transformedToOriginal(9))
         assertEquals(1, m.transformedToOriginal(1))
         assertEquals(1, m.transformedToOriginal(2))

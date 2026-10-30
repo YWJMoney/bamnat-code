@@ -163,7 +163,7 @@ object LookImages {
                 conn.readTimeout = 10_000
                 conn.setRequestProperty("X-Device", c.companyStore.device)
                 try {
-                    if (conn.responseCode != 200) null else conn.inputStream.use { it.readNBytes(MAX_BYTES + 1) }.takeIf { it.size <= MAX_BYTES }
+                    if (conn.responseCode != 200) null else conn.inputStream.use { com.bamnat.app.recipe.readAtMost(it, MAX_BYTES + 1) }.takeIf { it.size <= MAX_BYTES }
                 } finally {
                     conn.disconnect()
                 }
@@ -187,7 +187,7 @@ object LookImages {
      * Lets go of pictures the look no longer uses ([used]) once they are 8 days old, so a recipe's 되돌리기 (7 days) still finds
      * the pictures it put back.
      */
-    suspend fun tidy(context: Context, used: Set<String>, now: Long = System.currentTimeMillis()) = withContext(Dispatchers.IO) {
+    suspend fun tidy(context: Context, used: Set<String>, now: Long = com.bamnat.core.time.Today.millis()) = withContext(Dispatchers.IO) {
         dir(context).listFiles()?.forEach { f ->
             val id = f.name.removeSuffix(".webp").removeSuffix(".tmp")
             if (id !in used && now - f.lastModified() > 8L * 24 * 60 * 60 * 1000) { f.delete(); cache.remove(id) }

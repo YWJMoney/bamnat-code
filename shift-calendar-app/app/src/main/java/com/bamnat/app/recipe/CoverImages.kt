@@ -31,7 +31,7 @@ object CoverImages {
                 conn.setRequestProperty("X-Device", c.companyStore.device)
                 try {
                     if (conn.responseCode != 200) return@runCatching null
-                    val bytes = conn.inputStream.use { it.readNBytes(MAX_BYTES + 1) }
+                    val bytes = conn.inputStream.use { com.bamnat.app.recipe.readAtMost(it, MAX_BYTES + 1) }
                     if (bytes.size > MAX_BYTES) null else BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 } finally {
                     conn.disconnect()
@@ -57,4 +57,16 @@ object CoverImages {
     }
 
     fun put(id: String, bitmap: Bitmap) { cache.put(id, bitmap) }
+}
+
+/** Up to [max] bytes of [input] (InputStream.readNBytes is only from Android 13; minSdk is 26). */
+internal fun readAtMost(input: java.io.InputStream, max: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(16 * 1024)
+    while (out.size() < max) {
+        val n = input.read(buf, 0, minOf(buf.size, max - out.size()))
+        if (n < 0) break
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
 }

@@ -700,7 +700,7 @@ private fun DayCell(
             dayMark = dayMark,
             texts = cellTexts(day, focus, memoText, showMoney, showSpend, showHours, showLunar, money, sales, hourly, invest, fieldJobs),
             moneyColor = if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income,
-        ) else
+        ) else {
         // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
             Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp),
@@ -799,6 +799,7 @@ private fun DayCell(
                     ColorDot(cal.memoDot, size = 5.dp)
                 }
             }
+        }
         }
 
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -1069,9 +1070,11 @@ private fun CustomCellBody(
                 else -> scheme.onSurfaceVariant
             }
             val lines = if (id == "memo") t.split('\n') else listOf(t)
+            // A tall cell gives each memo two lines and a huge one three, so a memo is read, not just its first letters (자유도 점검).
+            val wrap = if (id == "memo" && view.memo != null) when (view.size) { "huge" -> 3; "tall" -> 2; else -> 1 } else 1
             lines.forEach { line ->
                 Text(
-                    line, fontSize = footerSize, lineHeight = footerSize * FOOTER_LINE, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    line, fontSize = footerSize, lineHeight = footerSize * FOOTER_LINE, maxLines = wrap, overflow = TextOverflow.Ellipsis,
                     style = NumberStyle.merge(FooterTrim), color = color, textAlign = if (left) TextAlign.Start else TextAlign.Center,
                     fontWeight = if (id == "money") FontWeight.Bold else FontWeight.Normal,
                     modifier = if (id == "memo" && view.memo != null) Modifier.fillMaxWidth().background(cal.memoDot.copy(alpha = 0.10f), RoundedCornerShape(2.dp))

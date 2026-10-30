@@ -22,11 +22,12 @@ object GroupedNumber : VisualTransformation {
         val toShown = IntArray(s.length + 1)
         val toTyped = ArrayList<Int>(s.length + 8)
         for (k in s.indices) {
+            // The cursor before a digit stays before its comma (1|,234), as the 가계부 금액 칸 always did (LEDG-01).
+            toShown[k] = out.length
             if (k in (from + 1) until end && (end - k) % 3 == 0) {
                 out.append(',')
                 toTyped.add(k)
             }
-            toShown[k] = out.length
             out.append(s[k])
             toTyped.add(k)
         }

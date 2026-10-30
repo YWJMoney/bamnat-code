@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -160,8 +161,8 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                         verticalArrangement = Arrangement.spacedBy(1.dp)) {
                         val isToday = r == 0 && c == 2
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = if (left) Arrangement.Start else Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size((16 + bump * 2).dp).background(if (isToday) today ?: scheme.primary else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
-                                Text("$n", fontSize = (10 + bump).sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                            Box(Modifier.defaultMinSize((16 + bump * 2).dp, (16 + bump * 2).dp).background(if (isToday) today ?: scheme.primary else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+                                Text("$n", fontSize = (10 + bump).sp, lineHeight = (12 + bump).sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
                                     color = when { isToday -> contentColorOn(today ?: scheme.primary); cell == "fill" && !d.off -> contentColorOn(color)
                                         d.holiday != null || c == 0 -> cal.sunday; c == 6 -> cal.saturday; else -> scheme.onSurface })
                             }
@@ -186,7 +187,8 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                         val shown = if (custom) order.filter { it in texts } else order.filter { it in texts }.take(1)
                         shown.forEach { id ->
                             texts.getValue(id).split('\n').forEach { line ->
-                                Text(line, fontSize = (8 + bump).sp, lineHeight = (9.5f + bump).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                Text(line, fontSize = (8 + bump).sp, lineHeight = (9.5f + bump).sp,
+                                    maxLines = if (id == "memo" && view.memo != null) when (view.size) { "huge" -> 3; "tall" -> 2; else -> 1 } else 1, overflow = TextOverflow.Ellipsis,
                                     textAlign = if (left) TextAlign.Start else TextAlign.Center, modifier = Modifier.fillMaxWidth(),
                                     color = when (id) { "memo" -> cal.memoDot; "holiday" -> cal.sunday; else -> scheme.onSurfaceVariant })
                             }

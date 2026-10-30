@@ -44,6 +44,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -359,14 +366,19 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
         TopAppBar(title = { Text((if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") + " ${s.step}/5 · ${titles[s.step - 1]}") },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        val scroll = rememberScrollState()
+        var tab by rememberSaveable { mutableStateOf(com.bamnat.core.layout.TabOrder.CALENDAR) }
+        var mockShown by remember { mutableStateOf(true) }
+        val scope = rememberCoroutineScope()
+        Box(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LinearProgressIndicator(progress = { s.step / 5f }, modifier = Modifier.fillMaxWidth())
                 s.sent?.let { sent -> SentCard(s.recipe.title, sent, onOpen); return@Column }
                 when (s.step) {
                     1 -> {
-                        RecipeStudio(s, vm)
+                        RecipeStudio(s, vm, tab, { tab = it }) { mockShown = it }
                         var more by rememberSaveable { mutableStateOf(false) }
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -405,6 +417,12 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(24.dp))
             }
+        }
+        // [STU-03] While the fields are changed below, the example stays in view, small, at the top corner.
+        if (s.step == 1 && s.sent == null && !mockShown) {
+            MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } },
+                Modifier.align(Alignment.TopEnd).padding(8.dp).shadow(6.dp, RoundedCornerShape(14.dp)))
+        }
         }
     }
 }
@@ -612,15 +630,20 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
     HorizontalDivider()
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
+    // 자유도 점검 F-47: what happened shows above the buttons, where the eye is, not under them off the screen.
+    var kept by rememberSaveable { mutableStateOf(false) }
+    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요" }
+        ?: if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
+        ?: if (kept) "저장했어요. 설정 › 나눔 판 › 만들던 레시피에서 이어서 만들어요" else null
+    if (done != null) Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = vm::keepDraft, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }
+        OutlinedButton(onClick = { vm.keepDraft(); kept = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }
         OutlinedButton(onClick = vm::putOnMine, enabled = s.putMine == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("내 앱에만 넣기") }
     }
-    Text(when (s.putMine) {
-        null -> "만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요"
-        -1L -> "지금 내 설정과 같아서 바뀐 것이 없어요"
-        else -> "내 앱에 넣었어요. 7일 안에 설정 › 나눔 판 › 받은 레시피에서 되돌릴 수 있어요"
-    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
