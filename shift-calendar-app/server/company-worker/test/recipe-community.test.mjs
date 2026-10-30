@@ -69,6 +69,8 @@ test("[RCX-04] 요청 판: write, like, 만들게요, 완성 with a recipe; noth
   const admin = await signIn(call);
   await call("POST", `/api/admin/recipes/requests/${q}/hide`, {}, admin);
   assert.equal((await call("GET", "/api/recipes/requests?style=SHIFT")).data.items.length, 0);
+  const all = (await call("GET", "/api/admin/recipes/requests", undefined, admin)).data.items;
+  assert.deepEqual([all.length, all[0].hidden, "device" in all[0]], [1, true, false]);
 });
 
 test("[RCX-05][RCX-06][RCX-07][RCX-10] 제작자 page, badges, follow, and the 소식 of new recipes and the maker's answers", async (t) => {

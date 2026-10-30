@@ -457,7 +457,7 @@ class MemoEditorViewModel(
         val m = _memo.value
         if (m.isBlank) return false
         container.memoTemplates.add(com.bamnat.core.memo.MemoTemplate(
-            id = "m" + System.currentTimeMillis().toString(36),
+            id = "m" + com.bamnat.core.time.Today.millis().toString(36),
             title = m.title.ifBlank { (m.checklist.firstOrNull()?.text ?: m.body.lineSequence().firstOrNull()).orEmpty() }.take(30),
             check = if (m.isChecklist) m.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
             body = if (m.isChecklist) "" else m.body.take(300),

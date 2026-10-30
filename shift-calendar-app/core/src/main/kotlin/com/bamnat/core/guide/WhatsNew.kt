@@ -10,6 +10,19 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.35.0 나눔 판 완성 (계획/1.34-나눔판-설계서.md 1.35·1.36 몫).
+        Release(47, "1.35.0", listOf(
+            // [RCX-02][RCX-03]
+            Line("넣은 레시피에 새 판이 나오면 알려 드려요. 내가 고친 곳은 그대로 두고 바뀐 곳만 골라 넣어요", "recipe.update"),
+            // [RCX-04]
+            Line("‘이런 레시피 있었으면’에 바라는 레시피를 적으면 다른 분이 만들어 드려요", "recipe.request"),
+            // [RCX-05..07][RCX-10]
+            Line("만든 분 페이지에서 배지와 다른 레시피를 보고, 팔로우하면 새 레시피 소식을 받아요", "recipe.maker"),
+            // [RCX-08][RCX-09]
+            Line("나눔 판 맨 위에 이번 주 고른 것과 요즘 뜨는 레시피가 보여요", "recipe.picks"),
+            // [RCX-11..15]
+            Line("화면 배치·위젯 모양도 레시피로 나누고, 여러 개를 묶음으로 만들고, 표지에 사진을 넣어요", "recipe.layout"),
+        )),
         // 1.34.0 나눔 판 (계획/1.34-나눔판-설계서.md).
         Release(46, "1.34.0", listOf(
             // [RCP-21][RCP-23..26]

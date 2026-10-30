@@ -668,6 +668,8 @@ export function listItem(r, now) {
     code: r.code, title: r.title, summary: r.summary, styles: r.styles.split(","), cover: JSON.parse(r.cover), nick: r.nick ?? null,
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
     official: r.official === 1, publicData: r.public_data === 1, parent: r.parent ?? null, at: new Date(r.updated_at).toISOString(),
+    // [RCX-05] Who made it, as the public maker id only (never the install).
+    ...(r.maker ? { maker: r.maker } : {}),
     ...(r.created_at > now - 7 * DAY ? { fresh: true } : {}),
   };
 }

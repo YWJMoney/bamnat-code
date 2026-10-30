@@ -26,7 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -45,7 +45,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -151,7 +153,11 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
                                 hex = hexOf(current())
                             }
                         }
-                        .semantics { contentDescription = "채도와 밝기" },
+                        .semantics {
+                            contentDescription = "채도와 밝기"
+                            progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(value, 0f..1f, 19)
+                            setProgress { v -> value = v.coerceIn(0f, 1f); hex = hexOf(current()); true }
+                        },
                 ) {
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))))
                     Canvas(Modifier.matchParentSize()) {
@@ -166,7 +172,12 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
                         .pointerInput(Unit) {
                             detectDragGestures { change, _ -> hue = (change.position.x / size.width * 360f).coerceIn(0f, 359.9f); hex = hexOf(current()) }
                         }
-                        .semantics { contentDescription = "색상" },
+                        // [A11Y-04] TalkBack: 올리기·내리기 moves the hue, like the finger does.
+                        .semantics {
+                            contentDescription = "색상"
+                            progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(hue, 0f..359.9f, 35)
+                            setProgress { v -> hue = v.coerceIn(0f, 359.9f); hex = hexOf(current()); true }
+                        },
                 ) {
                     Canvas(Modifier.matchParentSize()) {
                         drawCircle(Color.White, 11.dp.toPx(), Offset(hue / 360f * size.width, size.height / 2), style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))

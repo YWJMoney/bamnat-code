@@ -653,7 +653,10 @@ function adminApp(L, BUILD, M) {
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
       // [RCP-39] 1.34 나눔 판: the list of one tab and the month's numbers.
       if (name === "recipes") {
-        jobs.push(api(`/recipes?tab=${S.recipeTab ?? "queue"}`).then(keep((d) => { S.data.recipes = d; })));
+        // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
+        const t = S.recipeTab ?? "queue";
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
+        jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
       }
@@ -2092,7 +2095,9 @@ function adminApp(L, BUILD, M) {
   const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
 
   // [RCP-39] 1.34 나눔 판.
-  const RECIPE_TABS = [["queue", "검토 대기"], ["flagged", "신고됨"], ["hidden", "가린 것"], ["visible", "보이는 것"], ["official", "공식·공개 자료"]];
+  const RECIPE_TABS = [["queue", "검토 대기"], ["flagged", "신고됨"], ["hidden", "가린 것"], ["visible", "보이는 것"], ["official", "공식·공개 자료"],
+    ["picks", "이번 주 고른 것"], ["images", "그림 표지 검토"], ["requests", "요청 판"]];
+  const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
     field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식" };
@@ -2114,7 +2119,10 @@ function adminApp(L, BUILD, M) {
     const chips = `<div class="chips" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`;
     const month = m ? `<p class="hint">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
-    if (!d) return chips + skeleton(2);
+    if (!d || (d.tab ?? tab) !== tab) return chips + skeleton(2);
+    if (tab === "picks") return chips + recipePicksView(d, edit);
+    if (tab === "images") return chips + recipeImagesView(d, edit);
+    if (tab === "requests") return chips + recipeRequestsView(d, edit);
     const help = {
       queue: "새 휴대폰의 첫 3개 레시피예요. 내용을 보고 올리거나, 고칠 점을 적어 돌려줘요. 하루 안에 봐 주세요.",
       flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
@@ -2132,6 +2140,7 @@ function adminApp(L, BUILD, M) {
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
           ${r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
           ${r.official ? "" : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
+          ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
     const upload = edit && tab === "official" ? `<form data-form="recipe-upload" class="card"><h3>시작 레시피·공개 자료 올리기</h3>
@@ -2143,6 +2152,37 @@ function adminApp(L, BUILD, M) {
       `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
     return `${chips}${month}<p class="hint">${esc(help)}</p>${rows}${upload}${log}`;
+  }
+
+  /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
+  function recipePicksView(d, edit) {
+    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.code);
+    return `<p class="hint">${esc(d.week)} 주. 근무 유형마다 레시피 3개까지 골라 광장 맨 위에 보여요. 새로 고르기 전까지 지난주 것이 그대로 보여요. 광장에 보이는 레시피의 코드(8자)를 넣어요.</p>
+      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-picks" data-key="${k}" class="row">
+        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "이번 주 고른 것 없음"}</small>
+        ${edit ? `<input name="codes" aria-label="${esc(label)} 레시피 코드" placeholder="코드 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
+  }
+
+  /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
+  function recipeImagesView(d, edit) {
+    if (!d.items.length) return empty("볼 그림이 없어요", "레시피 표지로 올린 그림이 여기 와요. 본 그림만 다른 분께 보여요.");
+    return `<p class="hint">사람 얼굴·개인정보·광고·남의 저작물이 보이면 가려요. 괜찮으면 보이기를 눌러요.</p>
+      <ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
+        <img src="data:image/webp;base64,${esc(i.data)}" alt="레시피 표지 그림" width="128" height="128" class="cover-img">
+        <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
+          <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
+  function recipeRequestsView(d, edit) {
+    if (!d.items.length) return empty("요청이 없어요", "앱의 ‘이런 레시피 있었으면’에서 올린 요청이 여기 보여요.");
+    const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
+    const style = Object.fromEntries(RECIPE_STYLES);
+    return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
+        <small>${esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
   function sharesView() {
@@ -4158,6 +4198,13 @@ function adminApp(L, BUILD, M) {
     // [RCP-39]
     "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
     "recipe-log": () => { S.recipeLog = true; load(); },
+    // [RCX-15][RCX-04][RCX-07] 1.35
+    "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
+    "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
+    "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
+      await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
+      load();
+    }),
     "recipe-do": async ({ id, key }) => {
       await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
       load();
@@ -4369,6 +4416,12 @@ function adminApp(L, BUILD, M) {
       if (!note) return;
       dialog.close();
       await act(() => api(`/recipes/${id}/return`, "POST", { note }), "돌려줬어요. 만든 분 앱에 메모가 보여요");
+      load();
+    },
+    // [RCX-08]
+    "recipe-picks": async (form) => {
+      const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
+      await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
       load();
     },
     "recipe-upload": async (form) => {

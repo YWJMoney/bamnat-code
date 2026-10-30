@@ -176,6 +176,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .hint{margin:.1rem 0 .75rem;font-size:.88rem;color:var(--muted)}
 .section{display:flex;align-items:center;gap:.5rem;font-size:.92rem;margin:1.5rem .25rem .6rem;color:var(--muted);font-weight:800}
 .section .count{font-size:.75rem;background:var(--soft);padding:.05rem .5rem;border-radius:99px}
+.cover-img { border-radius: 12px; object-fit: cover; }
 .pill{flex:none;display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;border-radius:999px;background:var(--soft);color:var(--muted);
 font-size:.8rem;font-weight:800;white-space:nowrap;line-height:1.5}
 .pill.warn{background:var(--warn-bg);color:var(--warn)}
