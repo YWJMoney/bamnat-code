@@ -894,7 +894,10 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
 
     fun quiet(id: String, q: Boolean) = act { c.recipeApi.followQuiet(device, id, q); c.recipes.peopleChanged() }
     fun unfollow(id: String) = act { c.recipeApi.follow(device, id, false); c.recipes.peopleChanged() }
-    fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false); c.recipes.peopleChanged(); undo(id) }
+    fun unblock(id: String, undo: Boolean = true) = act {
+        c.recipeApi.block(device, id, false); c.recipes.block(id, false); c.recipes.peopleChanged()
+        if (undo) undo(id) else _state.value = _state.value.copy(message = "목록에서 뺐어요")
+    }
     /** [PRF-05] 1.36 PC 사용성 P5: 풀었어요 · 되돌리기. */
     fun reblock(id: String) = act { c.recipeApi.block(device, id, true); c.recipes.block(id, true); c.recipes.peopleChanged() }
     private fun undo(id: String) { _state.value = _state.value.copy(unblocked = id) }
@@ -966,7 +969,12 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
                         Text("차단한 분은 서로 팔로우할 수 없고, 그분의 작품과 이야기가 내 장터에서 보이지 않아요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (s.following != null && list.isEmpty()) Text("차단한 분이 없어요", style = MaterialTheme.typography.bodyMedium)
-                        list.forEach { m -> PersonRow(m, onClick = {}) { TextButton(onClick = { vm.unblock(m.maker) }) { Text("차단 풀기") } } }
+                        // [PRF-05] 1.36 PC 사용성 P9: a maker whose profile went is taken off the list, with no 되돌리기.
+                        list.forEach { m ->
+                            PersonRow(if (m.gone) m.copy(nick = "없어진 프로필") else m, onClick = {}) {
+                                TextButton(onClick = { vm.unblock(m.maker, undo = !m.gone) }) { Text(if (m.gone) "목록에서 빼기" else "차단 풀기") }
+                            }
+                        }
                     }
                 }
             }
