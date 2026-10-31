@@ -1209,6 +1209,9 @@ async function recipeTalk(d, env, request, code) {
   const nick = new Map(nicks.map((n) => [n.device, n.nick]));
   const voted = new Map(myVotes.map((v) => [v.post_id, v.ok === 1 ? 1 : -1]));
   const hidden = await d.hiddenAuthors(env, request);
+  // [PRF-05] 1.36 차단한 분의 이야기도 빼요 (recipe_blocks holds public maker ids; a post's writer is matched by the same one-way id).
+  const blocked = dev ? new Set((await d.all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", dev)).map((b) => b.maker)) : new Set();
+  if (blocked.size) for (const p of rows) if (blocked.has(await makerId(p.device))) hidden.add(p.device);
   const key = await d.authorKey(env);
   const numbers = new Map();
   const mineIds = rows.filter((p) => p.device === dev).map((p) => p.id);

@@ -65,7 +65,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         viewModelScope.launch {
             _state.value = try {
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
-                val got = page.items.filter { RecipeClient.fits(it, s.kind) }
+                // [PRF-05] 1.36 차단한 분의 작품은 이 폰에서 빼요 (목록은 모든 폰이 같은 캐시).
+                val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
                 _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))

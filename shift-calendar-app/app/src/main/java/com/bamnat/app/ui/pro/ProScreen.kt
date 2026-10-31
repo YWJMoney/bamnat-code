@@ -101,8 +101,10 @@ val PRO_PILLARS = listOf(
         setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.NO_ADS)),
     // [FREE-10] 1.35 꾸미기 혜택 (사용자 2026-10-30 "꾸미기 혜택을 추가해서 프로의 장점을 살리는").
     Pillar("내 마음대로 꾸미기",
-        listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이"),
-        setOf(Feature.THEME_WARDROBE)),
+        listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이",
+            // [PRF-12] 1.36 창작자 꾸미기.
+            "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프"),
+        setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
 )
 
 /** [MON-04] 무료 vs 프로, row by row. Everything not listed is free. */

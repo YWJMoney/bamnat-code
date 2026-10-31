@@ -47,6 +47,40 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     fun followNews(): Boolean = prefs.getBoolean(K_NEWS_FOLLOW, true)
     fun setFollowNews(v: Boolean) = prefs.edit().putBoolean(K_NEWS_FOLLOW, v).apply()
 
+    /**
+     * [PRF-05] 1.36 차단한 분 (공개 id): the 장터 list is the same for every phone (edge-cached), so this phone leaves them out itself.
+     * Kept here and refreshed from the server's 팔로잉 call.
+     */
+    private val _blocked = MutableStateFlow(prefs.getString(K_BLOCKED, null)?.split(',')?.filter { it.isNotEmpty() }?.toSet().orEmpty())
+    val blocked: StateFlow<Set<String>> = _blocked.asStateFlow()
+    fun setBlocked(ids: Set<String>) { prefs.edit().putString(K_BLOCKED, ids.joinToString(",")).apply(); _blocked.value = ids }
+    fun block(id: String, on: Boolean) = setBlocked(if (on) _blocked.value + id else _blocked.value - id)
+    /** Whether [item] is from a maker this phone blocked. */
+    fun hides(item: RecipeItem): Boolean = item.maker != null && item.maker in _blocked.value
+
+    /**
+     * [PRF-03] 내 프로필 최근 알림: the milestones and badges already shown (the server works out where each stands, the phone
+     * remembers what it told), and since when new followers, questions and 수정판 count.
+     */
+    fun seenInbox(): Set<String> = keyList(K_SEEN_INBOX_LIST).toSet()
+    fun markInboxSeen(keys: Collection<String>) {
+        prefs.edit().putString(K_SEEN_INBOX_LIST, keyListJson(keyList(K_SEEN_INBOX_LIST), keys))
+            .putString(K_INBOX_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
+    }
+    /**
+     * Keys kept in the order they were seen, newest last, so the oldest go first past [KEYS_KEPT]
+     * (a string set has no order, and cutting it could forget a new key and say it again).
+     */
+    private fun keyList(key: String): List<String> = prefs.getString(key, null)?.let { s ->
+        runCatching { org.json.JSONArray(s).let { a -> List(a.length()) { a.getString(it) } } }.getOrNull()
+    }.orEmpty()
+    private fun keyListJson(was: List<String>, add: Collection<String>): String =
+        org.json.JSONArray((was.filterNot { it in add } + add.distinct()).takeLast(KEYS_KEPT)).toString()
+    /** Set once this phone has a public recipe, so 소식 asks about my profile only then. */
+    fun hasProfile(v: Boolean) = prefs.edit().putBoolean(K_HAS_PROFILE, v).apply()
+    fun hasProfile(): Boolean = prefs.getBoolean(K_HAS_PROFILE, false)
+    fun inboxSince(): java.time.Instant? = prefs.getString(K_INBOX_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+
     /** 요청 판 보이기: the 요청 판 way in on the 나눔 판 card. */
     private val _requestsOn = MutableStateFlow(prefs.getBoolean(K_REQUESTS, true))
     val requestsOn: StateFlow<Boolean> = _requestsOn.asStateFlow()
@@ -174,6 +208,16 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 prefs.edit().putString(K_NEWS_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
                 if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
                 if (followNews()) n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
+                // [PRF-03] 1.36 My own profile's news, once: new followers and a milestone passed (the rest waits in 내 프로필).
+                // Asked only of a phone with recipes up (내 프로필 has something to say), with the same since as 소식.
+                if (followNews() && prefs.getBoolean(K_HAS_PROFILE, false)) runCatching { c.recipeApi.inbox(c.companyStore.device, since) }.getOrNull()?.let { box ->
+                    val told = keyList(K_TOLD_LIST).toSet() + seenInbox()
+                    if (box.newFollowers > 0) lines += "새 팔로워 ${box.newFollowers}명이 생겼어요 (마을 › 내 프로필)"
+                    box.milestones.firstOrNull { it.key !in told }?.let { m ->
+                        lines += "‘${m.title}’" + (if (m.kind == "users") "을(를) 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
+                        prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()
+                    }
+                }
                 n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’을 고친 수정판 ‘${r.title}’이 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
                     if (n.remixes.size > 1) " (외 ${n.remixes.size - 1}개)" else "" }
             }
@@ -231,6 +275,12 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_UNDO_SAID = "undo_said_"
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
+        private const val K_BLOCKED = "blocked_makers"
+        private const val K_SEEN_INBOX_LIST = "seen_inbox_list"
+        private const val KEYS_KEPT = 400
+        private const val K_INBOX_SINCE = "inbox_since"
+        private const val K_TOLD_LIST = "told_inbox_list"
+        private const val K_HAS_PROFILE = "has_profile"
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000

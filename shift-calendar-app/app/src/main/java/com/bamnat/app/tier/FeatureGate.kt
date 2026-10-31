@@ -74,6 +74,8 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     TAX_FORECAST(Tier.PRO),
     /** [FREE-10] 1.35 꾸미기 혜택: themes saved as many outfits and worn with no ad and no 30 days. */
     THEME_WARDROBE(Tier.PRO),
+    /** [PRF-12] 1.36 창작자 꾸미기: 프로필 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프. 팔로우·보기는 늘 무료. */
+    CREATOR_PRO(Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
     TEAM_ROSTER(Tier.LEADER, "팀 근무표 만들기"),
     ;

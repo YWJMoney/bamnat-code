@@ -170,6 +170,10 @@ class MainActivity : ComponentActivity() {
         // Reopened from Recents, Android hands back the link the app was first opened with: it was offered then.
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         // [RCP-22] 1.34: a recipe link (bamnat://r/CODE from the recipe's public page).
+        // [PRF-11] 1.36: a maker's profile link (bamnat://m/<id> from the profile's public page).
+        if (intent.data?.scheme == "bamnat" && intent.data?.host == "m") {
+            com.bamnat.app.recipe.RecipeLinks.openMaker(com.bamnat.app.recipe.RecipeLinks.findMaker(intent.dataString)); return
+        }
         if (intent.data?.scheme == "bamnat" && intent.data?.host == "r") {
             com.bamnat.app.recipe.RecipeLinks.open(com.bamnat.app.recipe.RecipeLinks.find(intent.dataString)); return
         }
