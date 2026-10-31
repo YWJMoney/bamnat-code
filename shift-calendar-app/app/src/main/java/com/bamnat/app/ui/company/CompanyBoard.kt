@@ -394,6 +394,9 @@ fun TalkSheet(holder: TalkHolder) {
     var redoing by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
     redoing?.let { post -> ProposalRedoSheet(holder, o.company, o.setup, o.title, post) { redoing = null } }
     val rules = rememberPlazaRules()
+    // PC 확인 V21: the rules are asked as a room's talk opens, before anything is typed (asked at 보내기 it came late, and the
+    // words written could be lost); 나중에 still lets one read, and 보내기 asks again.
+    LaunchedEffect(o.company, o.setup) { if (o.room) rules.ensure {} }
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     // [J133-99] 1.33 빌드 8 확인 ("고치자는 제안에 글을 쓰고 뒤로 키 두 번이면 묻지 않고 사라져요"): words or a change not sent yet
     // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).

@@ -179,8 +179,8 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
 }
 
 @Composable
-private fun Page(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrollState(), content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             content()
             Spacer(Modifier.height(24.dp))
@@ -203,9 +203,18 @@ private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, on
 @Suppress("UNUSED_PARAMETER")
 @Composable
 private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit,
-                 onCode: () -> Unit, onPosts: () -> Unit, onRecipe: (String) -> Unit) = Page {
+                 onCode: () -> Unit, onPosts: () -> Unit, onRecipe: (String) -> Unit) {
+    // PC 확인 V20: 공방 opens at its top, also when the 완성 카드 comes in after the page drew.
+    val scroll = rememberScrollState()
+    Page(scroll) { MakeBody(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe, onTop = { scroll.scrollTo(0) }) }
+}
+
+@Suppress("UNUSED_PARAMETER")
+@Composable
+private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit,
+                 onCode: () -> Unit, onPosts: () -> Unit, onRecipe: (String) -> Unit, onTop: suspend () -> Unit) {
     // 1.36 [VIL-15] PC 확인 V2·V17: my request someone finished shows first, at once (the 소식 comes only once a day), until opened.
-    DoneRequests(c, style, onRecipe)
+    DoneRequests(c, style, onRecipe, onTop)
     Text(HubSection.MAKE.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
@@ -264,7 +273,7 @@ private fun Card(title: String, text: String, action: String, onClick: () -> Uni
 
 /** 1.36 [VIL-15] My requests that came back 완성, not yet opened from here (device-only `village_ui`). */
 @Composable
-private fun DoneRequests(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) {
+private fun DoneRequests(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit, onTop: suspend () -> Unit = {}) {
     val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
     var seen by remember { mutableStateOf(runCatching { prefs.getStringSet("req_seen", emptySet())!!.toSet() }.getOrDefault(emptySet())) }
     val done by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.RecipeRequest>(), style) {
@@ -274,6 +283,7 @@ private fun DoneRequests(c: AppContainer, style: WorkStyle?, onRecipe: (String) 
     }
     val fresh = done.filter { it.code !in seen }
     val q = fresh.firstOrNull() ?: return
+    androidx.compose.runtime.LaunchedEffect(q.code) { onTop() }
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("🎁 부탁한 레시피가 완성됐어요", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
