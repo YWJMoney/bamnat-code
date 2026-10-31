@@ -514,18 +514,38 @@ function adminApp(L, BUILD, M) {
     document.getElementById("main")?.setAttribute("aria-busy", String(S.busy > 0));
   }
 
-  /** [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back for 8 seconds. */
+  /**
+   * [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back.
+   * 1.36 P19 ('되돌리기가 8초뿐이고 작아요'): 15 seconds, held while the pointer or focus is on the note, and a bigger button.
+   */
   function toast(text, undo) {
     toastBox.innerHTML = `<span>${esc(text)}</span>${undo ? '<button class="undo" type="button" data-undo="1">되돌리기</button>' : ""}`;
     toastBox.classList.add("show");
     toastBox.classList.toggle("has-undo", Boolean(undo));
     S.undo = undo ?? null;
     clearTimeout(toastTimer);
+    toastLeft = undo ? 15000 : 3000;
+    toastRun();
+  }
+  let toastLeft = 0;
+  let toastStarted = 0;
+  function toastRun() {
+    clearTimeout(toastTimer);
+    toastStarted = Date.now();
     toastTimer = setTimeout(() => {
       toastBox.classList.remove("show", "has-undo");
       S.undo = null;
-    }, undo ? 8000 : 3000);
+    }, toastLeft);
   }
+  function toastHold() {
+    if (!toastBox.classList.contains("has-undo")) return;
+    clearTimeout(toastTimer);
+    toastLeft = Math.max(1500, toastLeft - (Date.now() - toastStarted));
+  }
+  toastBox.addEventListener("pointerenter", toastHold);
+  toastBox.addEventListener("focusin", toastHold);
+  toastBox.addEventListener("pointerleave", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
+  toastBox.addEventListener("focusout", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
 
   function fail(e) {
     if (!e.quiet) toast(e.message === "server" || !ERRORS[e.message] ? L.errorText(e.message) : ERRORS[e.message]);
@@ -2833,16 +2853,21 @@ function adminApp(L, BUILD, M) {
    * A form being sent is emptied once it went through, with what was kept of it in the browser.
    */
   async function act(work, done, undo) {
+    // 1.36 P18 ('확인이 늦게 떠요'): a step that takes a moment says so at once.
+    const slow = setTimeout(() => toast("처리 중…"), 300);
     try {
       const r = await work();
+      clearTimeout(slow);
       const form = S.submitting;
       if (form?.isConnected && !form.closest("dialog")) {
         for (const id of KEEP) if (form.querySelector(`#${id}`)) writeDraft(id, "");
         form.reset();
       }
       if (done) toast(typeof done === "function" ? done(r) : done, undo ? () => undo(r) : undefined);
+      else if (toastBox.textContent === "처리 중…") { clearTimeout(toastTimer); toastBox.classList.remove("show"); }
       return r;
     } catch (e) {
+      clearTimeout(slow);
       fail(e);
       return null;
     }

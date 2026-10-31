@@ -77,6 +77,7 @@ class FeatureTrials(context: Context?) {
             .put("ads", s.adsCount)
             .put("no", JSONObject().apply { s.declines.forEach { (b, n) -> put(b.key, n) } })
             .put("quiet", JSONObject().apply { s.quietUntil.forEach { (b, t) -> put(b.key, t.toEpochMilli()) } })
+            .put("quiets", JSONObject().apply { s.quiets.forEach { (b, n) -> put(b.key, n) } })
             .put("grants", JSONArray(s.grants.takeLast(MAX_GRANTS).map { g ->
                 JSONObject().put("b", g.bundle.key).put("at", g.at.toEpochMilli()).put("to", g.until.toEpochMilli()).put("why", g.why.key)
                     .put("r", g.reason ?: JSONObject.NULL)
@@ -90,6 +91,7 @@ class FeatureTrials(context: Context?) {
             }.orEmpty()
             val first = o.optJSONArray("first")?.let { a -> (0 until a.length()).mapNotNull { FeatureLease.Bundle.byKey(a.optString(it)) }.toSet() }.orEmpty()
             val no = o.optJSONObject("no")?.let { m -> m.keys().asSequence().mapNotNull { k -> FeatureLease.Bundle.byKey(k)?.let { it to m.getInt(k) } }.toMap() }.orEmpty()
+            val quiets = o.optJSONObject("quiets")?.let { m -> m.keys().asSequence().mapNotNull { k -> FeatureLease.Bundle.byKey(k)?.let { it to m.getInt(k) } }.toMap() }.orEmpty()
             val grants = o.optJSONArray("grants")?.let { a ->
                 (0 until a.length()).mapNotNull { i ->
                     val g = a.optJSONObject(i) ?: return@mapNotNull null
@@ -100,7 +102,7 @@ class FeatureTrials(context: Context?) {
                 }
             }.orEmpty()
             return FeatureLease.State(times("until"), first, o.optString("adsDay").takeIf { !o.isNull("adsDay") && it.isNotEmpty() }?.let(LocalDate::parse),
-                o.optInt("ads"), no, times("quiet"), grants)
+                o.optInt("ads"), no, times("quiet"), grants, quiets)
         }
 
         /** The ledger keeps the last year or so of grants. */

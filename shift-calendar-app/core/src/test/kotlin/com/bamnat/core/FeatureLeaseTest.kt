@@ -57,13 +57,18 @@ class FeatureLeaseTest {
         assertEquals(14L, FeatureLease.daysGiven(s, now.minus(days(1)), now.plus(days(1))))
     }
 
-    @Test fun threeNoesHideTheAdForThirtyDays() {
+    @Test fun threeNoesHideTheAdForSevenDaysThenThirty() {
         var s = FeatureLease.State()
         repeat(2) { s = FeatureLease.declined(s, Bundle.PAY, now) }
         assertTrue(FeatureLease.canWatch(s, Bundle.PAY, now, today))
         s = FeatureLease.declined(s, Bundle.PAY, now)
-        assertFalse(FeatureLease.canWatch(s, Bundle.PAY, now.plus(days(29)), today.plusDays(29)))
-        assertTrue(FeatureLease.canWatch(s, Bundle.PAY, now.plus(days(30)), today.plusDays(30)))
+        assertFalse(FeatureLease.canWatch(s, Bundle.PAY, now.plus(days(6)), today.plusDays(6)))
+        assertTrue(FeatureLease.canWatch(s, Bundle.PAY, now.plus(days(7)), today.plusDays(7)))
+        // Three more no's after the first rest: 30 days.
+        val later = now.plus(days(8))
+        repeat(3) { s = FeatureLease.declined(s, Bundle.PAY, later) }
+        assertFalse(FeatureLease.canWatch(s, Bundle.PAY, later.plus(days(29)), today.plusDays(37)))
+        assertTrue(FeatureLease.canWatch(s, Bundle.PAY, later.plus(days(30)), today.plusDays(38)))
         // Watching resets the count.
         s = FeatureLease.declined(FeatureLease.State(), Bundle.PAY, now)
         s = FeatureLease.granted(s, Bundle.PAY, now, today)

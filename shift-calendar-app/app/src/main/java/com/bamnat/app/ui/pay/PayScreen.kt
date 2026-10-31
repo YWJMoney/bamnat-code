@@ -918,6 +918,11 @@ private fun TotalCard(
         }
         if (monthly) Text("통상시급 ${if (unlocked) won(result.ordinaryHourly) else "●●,●●●원"}",
             style = MaterialTheme.typography.bodySmall, color = onFill)
+        // 1.36 PC Y8: no work in the period yet: said, so the figure is not read as the month's pay.
+        if (result.minutes.none { it.total.worked > 0 }) Text(
+            if (monthly) "이 기간에 넣은 근무가 아직 없어요. 기본급만 보여요. 근무를 칠하면 수당이 더해져요."
+            else "이 기간에 넣은 근무가 아직 없어요. 근무를 칠하면 예상 급여가 채워져요.",
+            style = MaterialTheme.typography.bodySmall, color = onFill)
     }
 }
 
