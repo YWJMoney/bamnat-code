@@ -622,7 +622,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
             add((if (m.kind == "users") "🎉 ‘${m.title}’ 쓰는 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
         }
         b.questions.forEach { (code, title, body) -> add("❓ ‘$title’에 질문: $body" to { onOpen(code) }) }
-        b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’을 고친 ‘$title’" to { onOpen(code) }) }
+        b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’${com.bamnat.app.ui.Fmt.obj("‘$parent’")} 고친 ‘$title’" to { onOpen(code) }) }
         b.badges.filter { "b|${it.first}" in unseen }.forEach { add("🏅 새 배지 ‘${it.second}’" to null) }
     }
     var open by remember { mutableStateOf(false) }

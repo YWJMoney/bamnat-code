@@ -219,11 +219,11 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                     val told = keyList(K_TOLD_LIST).toSet() + seenInbox()
                     if (box.newFollowers > 0) lines += "새 팔로워 ${box.newFollowers}명이 생겼어요 (마을 › 내 프로필)"
                     box.milestones.firstOrNull { it.key !in told }?.let { m ->
-                        lines += "‘${m.title}’" + (if (m.kind == "users") "을(를) 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
+                        lines += "‘${m.title}’" + (if (m.kind == "users") "${com.bamnat.app.ui.Fmt.obj("‘${m.title}’")} 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
                         prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()
                     }
                 }
-                n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’을 고친 수정판 ‘${r.title}’이 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
+                n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’${com.bamnat.app.ui.Fmt.obj("‘$mine’")} 고친 수정판 ‘${r.title}’${com.bamnat.app.ui.Fmt.iga("‘${r.title}’")} 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
                     if (n.remixes.size > 1) " (외 ${n.remixes.size - 1}개)" else "" }
             }
         }
