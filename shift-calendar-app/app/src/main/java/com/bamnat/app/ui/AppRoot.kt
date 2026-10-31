@@ -1867,6 +1867,9 @@ private fun RingingBanner() {
     // [ALRM-22] 1.35: an alarm that starts while the app is in use opens its ringing screen over it (Android shows only a
     // notice then); the banner stays for when the screen was left.
     androidx.compose.runtime.LaunchedEffect(current.triggerAtMillis, current.isSnooze) {
+        // [ALRM-25] 1.36 빌드 7 (알람 화면에서 밀어 끄는 중 '응답 없음'): once per ring, never while the screen is up, so coming back
+        // to the app does not open it again over itself and the two windows do not pass the focus back and forth.
+        if (!AlarmService.openScreenOnce(current)) return@LaunchedEffect
         runCatching {
             context.startActivity(android.content.Intent(context, com.bamnat.app.alarm.AlarmActivity::class.java)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP))
