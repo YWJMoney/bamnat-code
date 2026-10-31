@@ -309,6 +309,8 @@ fun ShareDialog(
             // 1.36: 프로 keeps links open by itself; receivers see them free either way.
             if (keeps) Text("프로를 쓰는 동안 링크가 닫히지 않아요. 프로가 끝나면 그날부터 90일까지 열리고, 그 뒤로는 기간을 직접 늘려요. " +
                 "받는 사람은 프로 없이도 무료로 봐요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.36 [PSH-01] 프로 나눔 1인: a buyer may also give 프로 itself to one person.
+            if (gate.boughtPro) TextButton(onClick = { com.bamnat.app.ui.pro.openPro() }) { Text("한 사람에게 프로 나눠 주기") }
             else Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
             if (!keeps) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
                 ShareLinkPayload.TTL_DAYS.forEach { d ->
