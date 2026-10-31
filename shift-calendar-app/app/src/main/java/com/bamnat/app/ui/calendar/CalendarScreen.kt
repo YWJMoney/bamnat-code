@@ -1076,6 +1076,16 @@ fun CalendarScreen(
         val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today) {
             if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
+        // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
+        // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.
+        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && settings.workStyle == null) && settings.workStyle.let { style ->
+            when {
+                style?.usesPattern != false -> snap.isEmpty
+                style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
+                style == com.bamnat.core.work.WorkStyle.INVEST -> investState?.loaded == true && investState.full.isEmpty
+                else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
+            }
+        }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
@@ -1204,7 +1214,7 @@ fun CalendarScreen(
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // [J133-68] 1.33 (중간 빌드 확인: 첫 화면이 시작 단계와 '할 수 있는 것' 카드로 다 덮였어요): while the 시작 단계 card is up it is
             // the one guide on the calendar; '할 수 있는 것' and the day's tip come after it.
-            if (guideHere && startRows == null) add(Notice("guide", "오늘의 팁") {
+            if (guideHere && startRows == null && !startCardUp) add(Notice("guide", "오늘의 팁") {
                 val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
                 val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
                 com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
