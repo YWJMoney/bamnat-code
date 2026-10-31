@@ -1877,6 +1877,11 @@ private fun AlarmNoticeAsk() {
     }
     val prefs = remember { context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE) }
     var later by remember { mutableStateOf(prefs.getLong("alarm_notice_later", 0L)) }
+    // 빌드 10 (허용했다가 설정에서 다시 끄면 창이 안 떠요): '나중에' waits a week only until notifications are allowed; once they are,
+    // turning them off again asks on the next open.
+    androidx.compose.runtime.LaunchedEffect(canPost) {
+        if (canPost && later != 0L) { later = 0L; prefs.edit().remove("alarm_notice_later").apply() }
+    }
     // 빌드 9 (투자 폰에도 '근무 알람이 울려도…' 창): only when an alarm is actually coming in the next weeks, so a kind of work or a
     // phone with no shift alarm planned is never asked.
     val alarmsOn = settings.alarmsEnabled && snap?.shiftTypes?.any { it.alarmEnabled && it.alarms.isNotEmpty() } == true &&
