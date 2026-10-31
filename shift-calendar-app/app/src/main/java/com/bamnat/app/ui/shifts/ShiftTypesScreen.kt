@@ -717,7 +717,7 @@ fun ShiftTypeEditorDialog(
                                 })
                             }
                             if (draft.alarmEnabled && !canPost) {
-                                WarningLine("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications)
+                                WarningLine("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications)
                             }
                             if (draft.alarmEnabled) {
                                 Spacer(Modifier.height(4.dp))

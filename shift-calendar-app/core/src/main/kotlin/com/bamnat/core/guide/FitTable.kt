@@ -70,7 +70,8 @@ object FitTable {
         tool("typeMonth", setOf(SHIFT, HOURLY)),
         tool("share"),
         tool("year"),
-        tool("receive", PAID),
+        // [FIT-05] 1.36 빌드 8: 가족·연인이 보낸 근무표는 어느 일이든 받아요(투자·가게에서 숨겨져 있었음).
+        tool("receive"),
         tool("pattern", setOf(SHIFT, DAY)),
         tool("newCalendar"), tool("customize"), tool("viewSettings"), tool("help"),
         // 근무·급여 화면 꾸미기 (StatsPart): hours and pay are for the kinds paid by the hour or the month.

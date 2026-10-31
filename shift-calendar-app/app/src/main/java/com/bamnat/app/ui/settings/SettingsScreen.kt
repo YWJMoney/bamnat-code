@@ -1186,7 +1186,7 @@ private fun alarmFixes(
     val pkg = Uri.parse("package:${context.packageName}")
     val canPost = Notifications.canPost(context)
     return buildList {
-        if (!canPost) add(AlarmFix("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications))
+        if (!canPost) add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
         else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
             add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
         }

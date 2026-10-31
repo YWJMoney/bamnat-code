@@ -384,7 +384,7 @@ private fun NoticesPage(
     if (!canPost) {
         WarningBanner(
             title = "알림이 꺼져 있어 아무 알림도 오지 않아요",
-            message = "근무 알람은 소리가 나도 잠금 화면에서 끌 수 없어요.",
+            message = "근무 알람이 울려도 알람 화면이 뜨지 않고 소리만 나요. 끄려면 앱을 열어야 해요.",
             action = "허용",
             onAction = askNotifications,
         )

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -326,7 +327,7 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
                 Text(status.detail(), style = MaterialTheme.typography.bodyMedium)
                 if (status.status == "pending" && !status.review) PointsBar(status.points, status.threshold)
                 if (status.rewardMonths > 0 && status.status == "pending") {
-                    RewardPill(rewardText(status.rewardMonths))
+                    RewardPill(rewardText(status.rewardMonths, androidx.compose.ui.platform.LocalContext.current.appContainer.featureGate.state.value.live))
                 }
             }
         }

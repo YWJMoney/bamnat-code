@@ -77,7 +77,7 @@ object RecipeDescribe {
             (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "화면 배치" }
         PieceKind.CARDS -> listOfNotNull(
-            (p.values["stats"] as? String)?.let { "통계 카드 ${parts(it)}" },
+            (p.values["stats"] as? String)?.let { "근무·급여 카드 ${parts(it)}" },
             (p.values["money"] as? String)?.let { "가계부 카드 ${parts(it)}" },
             (p.values["memo"] as? String)?.let { "메모 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "카드 순서" }
@@ -161,13 +161,13 @@ object RecipeDescribe {
 
     /** [FREE-05] The screens a 화면 색·배경 piece can colour. */
     val SCREEN_NAMES = mapOf(
-        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모", "stats" to "통계", "pay" to "급여", "plaza" to "광장",
+        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모", "stats" to "근무·급여", "pay" to "급여", "plaza" to "광장",
         "settings" to "설정", "alarm" to "알람", "guarded" to "결제·약관",
     )
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
 
-    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "plaza" to "마을", "settings" to "설정")
+    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "근무·급여", "plaza" to "마을", "settings" to "설정")
 
     /** "보이는 카드 n개, 숨긴 카드 m개" of a layout line. */
     private fun parts(line: String): String {

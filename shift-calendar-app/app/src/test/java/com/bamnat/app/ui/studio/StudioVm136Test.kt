@@ -54,4 +54,16 @@ class StudioVm136Test {
         assertTrue("내 시급은 나가지 않고 받는 분 값으로", hourly.values["wage"] is Ref.Input)
         assertTrue(r.inputs.isNotEmpty())
     }
+
+    /** [STU-26] Only 가계부 changed: 올리기 can send that tab alone, a 기능별 탭 with no other tab's looks. */
+    @Test fun oneTabChangedGoesUpAlone() {
+        val vm = StudioViewModel(c)
+        idle()
+        vm.change { it.copy(screenLooks = com.bamnat.core.recipe.ScreenLooks().with("money", com.bamnat.core.recipe.ScreenLook(bg = 0xFFFFF8E1)).encode()) }
+        idle()
+        assertEquals(com.bamnat.core.layout.TabOrder.MONEY, vm.changedTab())
+        val (body, _) = vm.upload(com.bamnat.core.layout.TabOrder.MONEY)
+        val r = RecipeCodec.read(body.replace("\"title\":\"\"", "\"title\":\"시험\""))
+        assertEquals(com.bamnat.core.layout.TabOrder.MONEY, com.bamnat.core.recipe.LookParts.onlyTab(r))
+    }
 }

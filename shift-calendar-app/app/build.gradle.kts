@@ -10,9 +10,14 @@ plugins {
 }
 
 // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
-val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
 // [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
 val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty().trim()
+// [SRV-31] 1.36 (빌드 8: 디버그 빌드의 공유 링크가 실제 s.bamnat.app에 올라감): a build whose company server is the PC (plain http)
+// sends links to the PC too, the share Worker run there (server/share-worker `npm run local -- 8790`), never to the real one.
+val companyIsLocal = companyBaseUrl.startsWith("http://")
+val shareBaseUrl = if (companyIsLocal) (project.findProperty("bamnat.localShareUrl") as String?).orEmpty().trim()
+    .ifBlank { runCatching { URI(companyBaseUrl).host }.getOrNull()?.let { "http://$it:8790" }.orEmpty() }
+    else (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
 // [SRV-30] 1.36: the old workers.dev names, tried when the bamnat.app names cannot be reached. Only for a build that talks
 // to bamnat.app: a debug build pointed at the PC (10.0.2.2) never falls back to the real server.
 fun spareFor(base: String, name: String) =

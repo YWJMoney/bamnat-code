@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import com.bamnat.app.appContainer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Alarm
@@ -424,6 +426,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
         }
     }
+
+    // [NAV-08] Back to the app after the month turned: the month on screen follows today when it was today's.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { container.shownMonth.followToday() }
 
     // [IMPORT-02] When the user asked for it, new events in the chosen calendars are offered on opening the app.
     LaunchedEffect(homeRequests) {
@@ -874,6 +879,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
                         }
                         RingingBanner()
+                        AlarmNoticeAsk()
                         AppNavHost(
                             nav = nav,
                             container = container,
@@ -1853,6 +1859,35 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO -> Routes.studio()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
+}
+
+/**
+ * [ALRM-25] 1.36 빌드 8 (F-106: 알림을 끈 폰은 알람이 소리만 나고 화면이 안 떠요, Android가 막아요): with a shift alarm on and
+ * notifications off, the app asks once (and again a week after 나중에), saying why; 알람 설정 keeps its red line.
+ */
+@Composable
+private fun AlarmNoticeAsk() {
+    val context = LocalContext.current
+    val c = context.appContainer
+    val snap by c.scheduleRepository.snapshot.collectAsStateWithLifecycle(null)
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle(c.settingsRepository.current)
+    var canPost by remember { mutableStateOf(com.bamnat.app.alarm.Notifications.canPost(context)) }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        canPost = com.bamnat.app.alarm.Notifications.canPost(context)
+    }
+    val prefs = remember { context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE) }
+    var later by remember { mutableStateOf(prefs.getLong("alarm_notice_later", 0L)) }
+    val alarmsOn = settings.alarmsEnabled && snap?.shiftTypes?.any { it.alarmEnabled && it.alarms.isNotEmpty() } == true
+    if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
+    val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
+    fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }
+    AlertDialog(
+        onDismissRequest = ::putOff,
+        title = { Text("알람 화면을 띄우려면 알림 허용이 필요해요") },
+        text = { Text("알림이 꺼져 있으면 근무 알람이 울려도 화면이 뜨지 않고 소리만 나요. 잠금 화면에서 바로 끄고 다시 울림을 누르려면 알림을 허용해 주세요.") },
+        confirmButton = { TextButton(onClick = { putOff(); ask() }) { Text("허용하기") } },
+        dismissButton = { TextButton(onClick = ::putOff) { Text("나중에") } },
+    )
 }
 
 /**

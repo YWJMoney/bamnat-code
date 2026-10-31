@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -153,16 +154,16 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     val tools: List<Tool> get() = when (this) {
-        CALENDAR -> listOf(Tool.CELL, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS, Tool.BOX)
-        MEMO -> listOf(Tool.MEMO_LOOK, Tool.COLORS, Tool.CARDS, Tool.BOX)
-        MONEY -> listOf(Tool.MONEY_LOOK, Tool.COLORS, Tool.CARDS, Tool.BOX)
-        STATS -> listOf(Tool.COLORS, Tool.CARDS, Tool.BOX)
+        CALENDAR -> listOf(Tool.CELL, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
+        MEMO -> listOf(Tool.MEMO_LOOK, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        MONEY -> listOf(Tool.MONEY_LOOK, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        STATS -> listOf(Tool.COLORS, Tool.BOX, Tool.CARDS)
         PAY -> listOf(Tool.PAY_LOOK, Tool.COLORS, Tool.BOX)
         PLAZA -> listOf(Tool.COLORS, Tool.BOX)
-        SETTINGS -> listOf(Tool.COLORS, Tool.TABS, Tool.CORNERS, Tool.BOX)
+        SETTINGS -> listOf(Tool.COLORS, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.BOX)
         ALARM, GUARDED -> listOf(Tool.COLORS)
-        ALL -> listOf(Tool.COLORS, Tool.CORNERS, Tool.TABS, Tool.BOX)
+        ALL -> listOf(Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
     }
 
@@ -209,6 +210,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    var uploadWhat by remember { mutableStateOf<String?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -317,14 +319,19 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
                                 diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
                                 else -> "바꾼 곳 ${diff}개 · 입히기 전까지 내 앱은 그대로예요"
-                            } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.firstOrNull()?.let { " · ‘$it’ 조각 사용" } ?: ""),
+                            } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             OutlinedButton(onClick = { checked { saving = true } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("저장") }
                             // [STU-21] 1.36 올리기 stays in the studio: 받는 분이 넣을 값 · 이름 · 설명 · 마치기 over it, back here with 스튜디오로.
-                            OutlinedButton(onClick = { checked { val (body, parent) = vm.upload(); publishing = Triple(body, parent, vm.nextOf()) } },
+                            OutlinedButton(onClick = { checked {
+                                // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
+                                val tab = vm.changedTab()
+                                if (tab != null) uploadWhat = tab
+                                else { val (body, parent) = vm.upload(); publishing = Triple(body, parent, vm.nextOf()) }
+                            } },
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text("올리기") }
                             Box(Modifier.weight(1f)) {
                                 WearButton(vm, s.busy) { go -> checked(go) }
@@ -445,7 +452,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             vm.change { it.copy(photoLook = PhotoLook.decode(it.photoLook).copy(corners = k).encode()) }
                         }
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
-                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) })
+                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet())
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                     }
                     Spacer(Modifier.height(24.dp))
@@ -490,6 +497,36 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     }
     if (history) HistorySheet(s, onBack = { i -> vm.backTo(i) }, onDismiss = { history = false })
     if (changes) ChangesSheet(vm, s, before, now, onGo = { a -> pick(Area.valueOf(a)); changes = false }, onDismiss = { changes = false })
+    uploadWhat?.let { tab ->
+        var alone by remember(tab) { mutableStateOf(true) }
+        val name = com.bamnat.app.ui.recipe.tabName(tab)
+        AlertDialog(
+            onDismissRequest = { uploadWhat = null },
+            title = { Text("무엇을 올릴까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(true to "바꾼 탭만 ($name)", false to "테마 전체").forEach { (v, label) ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alone = v }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = alone == v, onClick = { alone = v })
+                            Column {
+                                Text(label, style = MaterialTheme.typography.bodyLarge)
+                                Text(if (v) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                    (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
+                                    else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개" else "") + "가 함께 가요",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                uploadWhat = null
+                val (body, parent) = vm.upload(if (alone) tab else null)
+                publishing = Triple(body, parent, if (alone) null else vm.nextOf())
+            }) { Text("다음") } },
+            dismissButton = { TextButton(onClick = { uploadWhat = null }) { Text("닫기") } },
+        )
+    }
     publishing?.let { (body, parent, own) ->
         // [STU-21] 올리기 over the studio (레시피 만들기 steps 2–5): 스튜디오로 or closing comes back with the draft as it was.
         androidx.compose.ui.window.Dialog(onDismissRequest = { publishing = null },
@@ -608,22 +645,30 @@ private fun WidgetSample(w: WidgetLook) {
  */
 @Composable
 private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
-                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit) {
+                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet()) {
     if (kept.isEmpty()) {
         Text("아직 담아 둔 조각이 없어요. 장터에서 테마를 입어 볼 때 마음에 드는 부분을 ‘담아 두기’하면 여기서 꺼내 내 모양에 얹어요",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     val here = kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
-    val list = here + (kept - here.toSet())
+    val rest = kept - here.toSet()
     Text("누르면 지금 모양에 얹어요. 얹은 뒤에도 되돌리기로 뺄 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    list.forEach { k ->
+    // [STU-27] 1.36 빌드 8 (S32: 메모 조각이 달력 영역에서 안 보이는 줄 앎): every piece shows in every area, this area's first, under a title.
+    val list = buildList {
+        if (here.isNotEmpty()) { add(null to "이 영역(${area.label}) 조각"); here.forEach { add(it to "") } }
+        if (rest.isNotEmpty()) { add(null to "다른 영역 조각 · 얹으면 그 화면이 바뀌어요"); rest.forEach { add(it to "") } }
+    }
+    list.forEach { (k0, head) ->
+        if (k0 == null) { Text(head, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp)); return@forEach }
+        val k = k0
+        val on = k.id in laid
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.clickable(onClickLabel = "얹기") { onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(partsLine(k.parts) + " · " + if (k.own) "내 것" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.bodySmall,
+                    Text((if (on) "✓ 얹음 · " else "") + partsLine(k.parts) + " · " + if (k.own) "내 것" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                 }
                 TextButton(onClick = { onLay(k) }) { Text("얹기") }

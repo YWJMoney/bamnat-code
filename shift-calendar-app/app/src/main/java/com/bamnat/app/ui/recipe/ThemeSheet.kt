@@ -80,6 +80,8 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf<Pair<Recipe, String>?>(null) }
     var takingOff by remember { mutableStateOf(false) }
+    // [THM-07] 1.36 빌드 8 (내 테마를 지울 곳이 없음): one of mine or one worn before, let go after asking.
+    var letGoTheme by remember { mutableStateOf<ThemeLease.Wear?>(null) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // 지금 입은 테마: what the whole app wears now, drawn as itself.
         androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
@@ -131,7 +133,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
         val mineCount = lease.history.count { it.own }
         val limit = c.wardrobe.outfitLimit()
         Text("내 테마 ($mineCount/$limit)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-        if (mine.isNotEmpty()) Shelf(mine) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
+        if (mine.isNotEmpty()) Shelf(mine, onRemove = { letGoTheme = it }) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
         var saveNote by remember { mutableStateOf<String?>(null) }
         OutlinedButton(onClick = {
             scope.launch { saveNote = if (kotlinx.coroutines.withContext(c.appScope.coroutineContext) { c.wardrobe.saveMine("내 테마 ${mineCount + 1}") }) "지금 모양을 ‘내 테마 ${mineCount + 1}’로 저장했어요" else "더 저장할 수 없어요" }
@@ -142,7 +144,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
         val past = lease.history.filter { !it.own && it.key != lease.worn?.key }
         if (past.isNotEmpty()) {
             Text("입었던 테마", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-            Shelf(past.take(10)) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
+            Shelf(past.take(10), onRemove = { letGoTheme = it }) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
         }
         // F-93 [TRY-02] 담아 둔 조각: the box shows here too, each with where it came from, to put on a draft in the studio or let go.
         val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
@@ -195,6 +197,16 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     open?.let { (r, code) -> ThemeSheet(r, code, style) { open = null } }
+    letGoTheme?.let { w ->
+        AlertDialog(
+            onDismissRequest = { letGoTheme = null },
+            title = { Text(if (w.own) "내 테마에서 지울까요?" else "입었던 테마에서 뺄까요?") },
+            text = { Text("‘${w.title}’을(를) 목록에서 빼요. 지금 입은 모양은 그대로예요" +
+                if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") },
+            confirmButton = { TextButton(onClick = { c.wardrobe.removeKept(w.key); letGoTheme = null }) { Text(if (w.own) "지우기" else "빼기") } },
+            dismissButton = { TextButton(onClick = { letGoTheme = null }) { Text("닫기") } },
+        )
+    }
     if (takingOff) AlertDialog(
         onDismissRequest = { takingOff = false },
         title = { Text("테마를 벗을까요?") },
@@ -206,7 +218,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
 
 /** Worn or saved themes in a row, each drawn as itself; a tap opens it. */
 @Composable
-private fun Shelf(items: List<ThemeLease.Wear>, onOpen: (ThemeLease.Wear) -> Unit) {
+private fun Shelf(items: List<ThemeLease.Wear>, onRemove: ((ThemeLease.Wear) -> Unit)? = null, onOpen: (ThemeLease.Wear) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items.forEach { w ->
             val look = remember(w.body) { runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let(::swatchOf) }
@@ -215,6 +227,10 @@ private fun Shelf(items: List<ThemeLease.Wear>, onOpen: (ThemeLease.Wear) -> Uni
                 look?.let { ThemeThumb(it, width = 112.dp) }
                 Text((if (w.own) "🎨 " else "") + w.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(if (w.free) "내 테마 · 장터에 있음" else if (w.own) "내 테마 · 나만" else "다시 입기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                onRemove?.let { rm ->
+                    TextButton(onClick = { rm(w) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text(if (w.own) "지우기" else "빼기", maxLines = 1, softWrap = false) }
+                }
             }
         }
     }

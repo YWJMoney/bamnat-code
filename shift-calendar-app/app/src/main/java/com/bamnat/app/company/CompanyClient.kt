@@ -1264,6 +1264,8 @@ internal fun serverExchange(
     // [SRV-30] 1.36: at api.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
     return try {
         ServerAddress.call(baseUrl) { at -> exchangeOnce(at, method, path, body, device, headers, session) }
+    } catch (e: CompanyException) {
+        throw e // the server's own answer (refused, not found …), never 'offline'
     } catch (e: IOException) {
         throw CompanyException("offline")
     }

@@ -327,6 +327,15 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
 
     fun outfitLimit(): Int = if (c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)) PRO_OUTFITS else FREE_OUTFITS
 
+    /**
+     * [THM-07] 1.36 빌드 8: one of mine or one worn before let go from the lists (the theme worn now stays on; a theme of mine in
+     * 장터 stays there).
+     */
+    fun removeKept(key: String) {
+        val l = _lease.value
+        save(l.copy(history = l.history.filter { it.key != key }))
+    }
+
     /** A theme taken back by 되돌리기 (the recipe's own undo put the look back): no longer worn. */
     fun forget(code: String) {
         if (_lease.value.worn?.code != code) return

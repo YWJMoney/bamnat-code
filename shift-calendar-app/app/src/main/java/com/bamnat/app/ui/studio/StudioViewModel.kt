@@ -369,7 +369,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             val from = leasedFrom() ?: return@launch
             val r = recipe("조합 · $name".take(30))
             val ok = c.wardrobe.keep(r.copy(title = from.second), from.first, LookParts.of(r).map { it.id })
-            _state.value = _state.value.copy(said = if (ok) "직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어 ‘${from.second}’의 조합으로 보관함에 담았어요. 입힐 때는 그 테마처럼 30일이에요"
+            // [STU-27] 1.36 빌드 8 (S32: 두 테마의 조각을 얹었는데 출처가 하나만): every theme a part came from is named.
+            val froms = (_state.value.sources.values.toList() + from.second).distinct().joinToString("·") { "‘$it’" }
+            _state.value = _state.value.copy(said = if (ok) "직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어 $froms 조각의 조합으로 보관함에 담았어요. 입힐 때는 그 테마처럼 30일이에요"
                 else "보관함이 꽉 찼어요 (${c.wardrobe.partsLimit()}개)")
             return@launch
         }
@@ -412,17 +414,33 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun outfitLimit(): Int = c.wardrobe.outfitLimit()
 
     /** 장터에 올리기: the draft as a recipe to finish in 만들기 (이름·설명·확인), with the theme it came from as its parent. */
-    fun upload(): Pair<String, String> {
+    /**
+     * [STU-26] 1.36 빌드 8 (S29: 가계부만 바꿔 올렸는데 테마 전체가 올라감): the one tab every change of the look is on, so 올리기 can send
+     * that tab alone as a 기능별 탭; null when nothing changed or the changes are on more than one tab.
+     */
+    fun changedTab(): String? {
+        val s = _state.value
+        val all = WorkStyle.entries.toSet()
+        val ids = com.bamnat.core.recipe.LookParts.changed(Recipe("b", styles = all, pieces = s.basePieces), Recipe("d", styles = all, pieces = s.pieces))
+        val tabs = com.bamnat.core.recipe.LookParts.ALL.filter { it.id in ids }.map { it.tab }.distinct()
+        return tabs.singleOrNull()?.takeIf { it != com.bamnat.core.layout.TabOrder.SETTINGS }
+    }
+
+    /** [onlyTab] sends that tab's looks alone (a 기능별 탭, no 기능); null sends the whole theme with its 기능. */
+    fun upload(onlyTab: String? = null): Pair<String, String> {
         val s = _state.value
         val parent = (s.parentCode ?: leasedFrom()?.first ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
         // [STU-21] The 기능 go up with the look; every amount in them becomes 받는 분이 넣을 값 first (S7), as 레시피 만들기 did.
-        val pieces = (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
+        val pieces = if (onlyTab != null) {
+            val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
+            com.bamnat.core.recipe.LookParts.pick(draft, com.bamnat.core.recipe.LookParts.of(draft).filter { it.tab == onlyTab }.map { it.id }).pieces
+        } else (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
         val withExtras = s.meta?.copy(pieces = pieces, parent = null)
             ?: recipe("").copy(title = "", styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
         val min = com.bamnat.app.ui.recipe.RecipeMakeViewModel.MIN_WAGE
         val r = com.bamnat.core.recipe.InputExtract.extract(withExtras) { _, f -> if (f == "wage") min else null }
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.
-        com.bamnat.app.recipe.RecipeLinks.ownTheme = if (s.extras.isNotEmpty() || s.meta != null) null else ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = if (onlyTab != null || s.extras.isNotEmpty() || s.meta != null) null else ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key
             ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN.takeIf { ownMake() }
         return RecipeCodec.write(r) to parent
     }
