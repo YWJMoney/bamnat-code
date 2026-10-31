@@ -332,6 +332,14 @@ fun MakerScreen(
     var setEdit by remember { mutableStateOf<MakerSet?>(null) }
     var newSet by remember { mutableStateOf(false) }
     var part by rememberSaveable { mutableStateOf(0) }
+    // 1.36 PC 사용성 P12: open on the first tab that has something (테마 0이면 기능별 탭, 그것도 없으면 모음), once.
+    var partPicked by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(s.page) {
+        val pg = s.page ?: return@LaunchedEffect
+        if (partPicked || pg.blocked) return@LaunchedEffect
+        partPicked = true
+        part = when { pg.themes.isNotEmpty() -> 0; pg.tabRecipes.isNotEmpty() -> 1; pg.sets.isNotEmpty() -> 2; else -> 0 }
+    }
     var tabFilter by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
     val p = s.page
@@ -391,16 +399,30 @@ fun MakerScreen(
                 }
                 Header(p, mine, vm, onPeople = onPeople, onFace = { picking = true }, onFollowMenu = { followMenu = true })
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (p.mine && p.closed && !s.asOthers) Text("⛔ 운영 규칙에 따라 프로필이 닫혔어요. 다른 분은 볼 수도 팔로우할 수도 없고, 작품은 장터에 그대로 있어요. 궁금하면 설정 › 도움말과 문의로 물어봐 주세요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    if (p.mine && p.hidden && !s.asOthers) Text("🔒 프로필을 숨겨 두었어요. 다른 분은 볼 수 없어요 (⋮ › 프로필 다시 보이기)",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    // 1.36 PC 사용성 P10: why (the reports' most common reason) and 지금 고치기.
-                    if (mine && p.bioHidden) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (p.bioHiddenBy == "operator") "운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
-                            else "소개 글이 신고로 가려져 있어요" + (bioWhy(p.bioHiddenWhy)?.let { " (많이 받은 이유: $it)" } ?: "") + ". 고치면 다시 보여요",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { editing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 고치기") }
+                    // 1.36 PC 사용성 P14: 닫힘·숨김·소개 가림·쓰기 제한을 '지금 내 프로필 상태' 한 카드로 (둘 이상일 때 제목).
+                    if (mine) {
+                        val lines = buildList<Pair<String, (() -> Unit)?>> {
+                            if (p.closed) add("⛔ 운영 규칙에 따라 프로필이 닫혔어요. 다른 분은 볼 수도 팔로우할 수도 없고, 작품은 장터에 그대로 있어요. 궁금하면 설정 › 도움말과 문의로 물어봐 주세요." to null)
+                            if (p.hidden) add("🔒 프로필을 숨겨 두었어요. 다른 분은 볼 수 없어요 (⋮ › 프로필 다시 보이기)" to null)
+                            // 1.36 PC 사용성 P10: why (the reports' most common reason) and 지금 고치기.
+                            if (p.bioHidden) add((if (p.bioHiddenBy == "operator") "✋ 운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
+                                else "✋ 소개 글이 신고로 가려져 있어요" + (bioWhy(p.bioHiddenWhy)?.let { " (많이 받은 이유: $it)" } ?: "") + ". 고치면 다시 보여요") to { editing = true })
+                            p.limitPerDay?.let { n ->
+                                // 1.36 PC 6차: the same words (and date) as 광장's 쓰기 제한 line.
+                                val until = p.limitUntil
+                                add(("⏳ " + (if (until != null && n > 0) com.bamnat.app.company.WriteLimit(until, n).line(null)
+                                    else "신고가 쌓여 " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
+                                    ". 기간이 지나면 저절로 풀려요") to null)
+                            }
+                        }
+                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (lines.size > 1) Text("지금 내 프로필 상태", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                            lines.forEach { (line, fix) ->
+                                Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                if (fix != null) TextButton(onClick = fix, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 고치기") }
+                            }
+                        }
                     }
                     // [PRF-05] 1.36 PC 사용성 P7: 프로필만 지운 뒤 — what is left and the next step.
                     if (mine && !s.asOthers && vm.c.recipes.profileCleared() && p.face == null && p.bio.isNullOrBlank() && p.pins.isEmpty() && p.sets.isEmpty() && p.cover == null && p.recipes.isNotEmpty()) {
@@ -595,13 +617,6 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
                     "단계는 쓴 날과 가려진 글로만 정해지고, 다른 정보는 쓰지 않아요.") },
                 confirmButton = { TextButton(onClick = { explaining = false }) { Text("닫기") } },
             )
-        }
-        if (mine) p.limitPerDay?.let { n ->
-            // 1.36 PC 6차: the same words (and date) as 광장's 쓰기 제한 line.
-            val until = p.limitUntil
-            Text((if (until != null && n > 0) com.bamnat.app.company.WriteLimit(until, n).line(null)
-                else "신고가 쌓여 " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
-                ". 기간이 지나면 저절로 풀려요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         p.bio?.takeIf { !p.bioHidden || mine }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
             ?: if (mine) Text("한 줄 소개를 적어 보세요 (프로필 고치기)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else Unit
