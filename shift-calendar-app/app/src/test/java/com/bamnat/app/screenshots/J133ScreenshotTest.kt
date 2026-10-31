@@ -25,14 +25,14 @@ class J133ScreenshotTest : ScreenshotBase() {
     @Test fun foldedShareCoworker() = shoot("j133_01_folded_share_coworker", FOLDED) {
         val c = receivedOn()
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}, detailedFirst = true) }
         tapText("같", prefix = true)
         reveal("보여 줄 것")
     }
     @Test fun foldedShareFamily() = shoot("j133_02_folded_share_family", FOLDED) {
         val c = receivedOn()
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}, detailedFirst = true) }
         tapText("가족", prefix = true)
         reveal("보여 줄 것")
     }

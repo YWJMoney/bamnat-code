@@ -152,7 +152,12 @@ fun CrashAskNotice(modifier: Modifier = Modifier) {
         val (crashAt, stuckAt) = withContext(Dispatchers.IO) {
             val crash = CrashLog.notes(context).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
             val lines = com.bamnat.app.diag.Trail.lines(context)
+            // 1.36 PC C22 (큰 글자로 처음 열면 한참 빈 화면 뒤 '앱이 멈춰 있던 적이 있어요'): a slow first drawing in the seconds after the
+            // app starts is kept in 진단 but not asked about as a freeze.
+            val starts = lines.filter { it.kind == com.bamnat.core.diag.StopTrail.Kind.START }.map { it.atMillis }
+            fun starting(at: Long) = starts.any { at - it in 0..START_GRACE_MS }
             val stuck = (com.bamnat.core.diag.StopTrail.stuckEnds(lines) + lines.filter { it.kind == com.bamnat.core.diag.StopTrail.Kind.NO_DRAW })
+                .filterNot { starting(it.atMillis) }
                 .maxOfOrNull { it.atMillis } ?: 0L
             crash to stuck
         }
@@ -177,3 +182,6 @@ fun CrashAskNotice(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** 1.36 PC C22: how long after the app starts a slow drawing is the start, not a freeze. */
+private const val START_GRACE_MS = 30_000L

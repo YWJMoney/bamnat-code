@@ -43,7 +43,6 @@ fun ProMomentNotice(style: WorkStyle?, payday: Boolean, modifier: Modifier = Mod
     val context = LocalContext.current
     val c = context.appContainer
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
-    val pro by c.proStore.state.collectAsStateWithLifecycle()
     val rows by c.flags.byKey.collectAsStateWithLifecycle()
     val guide = com.bamnat.app.data.GuideStore.get(context)
     val guideState by guide.state.collectAsStateWithLifecycle()
@@ -53,7 +52,7 @@ fun ProMomentNotice(style: WorkStyle?, payday: Boolean, modifier: Modifier = Mod
     val feature = FeatureRegistry.get(MOMENTS_ID)
     if (feature != null && guideState.isOff(feature, GuideState.ALL)) return
     val adsOn = rows[com.bamnat.core.flags.FlagCatalog.ADS]?.on == true
-    if (!AdRules.rewardedOffer(adsOn, false, AdIds.rewarded.isNotBlank(), pro.dayPass, today)) return
+    if (!AdRules.rewardedOffer(adsOn, false, AdIds.rewarded.isNotBlank(), null, today)) return
     val moment = c.proMoments.today(s, today) { ProMoments.due(today, style, payday, s.rosterOn == today, s.offered, s.lastOffer) } ?: return
     if (style != null && style !in moment.styles) return
     val folded = com.bamnat.app.ui.calendar.LocalNoticeFolded.current
@@ -63,7 +62,7 @@ fun ProMomentNotice(style: WorkStyle?, payday: Boolean, modifier: Modifier = Mod
             Text(moment.title, style = MaterialTheme.typography.titleMedium)
             Text(moment.words, style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { ProOffer.show(Feature.entries.firstOrNull { it.name == moment.feature }) }) { Text("오늘 하루 열어 보기") }
+                FilledTonalButton(onClick = { ProOffer.show(Feature.entries.firstOrNull { it.name == moment.feature }) }) { Text(if (Feature.entries.firstOrNull { it.name == moment.feature }?.let { gate.bundle(it) } != null) "7일 열어 보기" else "프로 알아보기") }
                 TextButton(onClick = { c.proMoments.closed(today) }) { Text("괜찮아요") }
                 if (feature != null) TextButton(onClick = { guide.setOn(feature, GuideState.ALL, false) }) { Text("그만 보기") }
             }

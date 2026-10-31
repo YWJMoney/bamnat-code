@@ -1911,6 +1911,11 @@ private fun AlarmNoticeAsk() {
     val busy by com.bamnat.app.ui.components.HandsBusy.busy.collectAsStateWithLifecycle()
     if (busy) return
     if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
+    // 1.36 PC Z9 (앱을 다시 열 때마다 알림 허용 창이 또 떠요): the app left with the window up (홈, 다른 앱) never reached 나중에, so
+    // the next open asked again. Having been shown counts: not again for a day however it was left (read once, so this window stays).
+    val shownAt = remember { prefs.getLong("alarm_notice_shown", 0L) }
+    if (com.bamnat.core.time.Today.millis() - shownAt < 86_400_000L) return
+    androidx.compose.runtime.LaunchedEffect(Unit) { prefs.edit().putLong("alarm_notice_shown", com.bamnat.core.time.Today.millis()).apply() }
     val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
     fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }
     AlertDialog(

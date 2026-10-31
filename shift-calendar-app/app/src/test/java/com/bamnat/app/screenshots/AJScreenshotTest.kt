@@ -155,6 +155,7 @@ class AJScreenshotTest : ScreenshotBase() {
     // ---- 448·449 급여 화면 ----
     private fun needsPay(then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(estimatedFields = it.estimatedFields + RuleOnlyNeeds.HOURS_UNSET, verified = null) }).invoke(this)
+        openPayGuides()
         then()
     }
     @Test fun payNeeds() = shoot("1149_aj_pay_needs_card", PHONE_393, needsPay { reveal("만 넣으면 정확해져요") })
@@ -171,6 +172,7 @@ class AJScreenshotTest : ScreenshotBase() {
     })
     @Test fun rulesOnly() = shoot("1152_aj_rules_only", PHONE_393, {
         payScreen(Tier.PRO, withProfile = true) { vm -> PayScreen(vm, onBack = {}) }.invoke(this)
+        openPayGuides()
         tapText("계산 방식 찾기", scrolls = 40)
         settle()
         // 1.36 W9: pasting is under '다른 방법'.

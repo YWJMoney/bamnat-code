@@ -57,7 +57,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
-import com.bamnat.app.ads.DayPassButton
 import com.bamnat.app.appContainer
 import com.bamnat.app.billing.BillingState
 import com.bamnat.app.billing.Plan
@@ -226,8 +225,6 @@ fun ProScreen(onBack: () -> Unit) {
                 } else {
                     PlansCard(c, gate, pro, plans, billingState, onMessage = { message = it })
                 }
-
-                DayPassButton(gate)
 
                 // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 and 초대 코드 넣기.
                 InviteCard(c, onMessage = { message = it })

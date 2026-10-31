@@ -23,7 +23,7 @@ class AdAndLicenseRulesTest {
         val hits = sources.filter { banned.containsMatchIn(it.readText()) }.map { it.path }
         assertEquals("띠·전면·앱 열기·네이티브 광고는 쓰지 않아요", emptyList<String>(), hits)
         val rewarded = sources.filter { Regex("""\bRewardedAd\b""").containsMatchIn(it.readText()) }.map { it.name }
-        assertEquals("보상형 광고는 ‘광고 보고 오늘 하루 열기’ 버튼에서만", listOf("RewardedAds.kt"), rewarded)
+        assertEquals("보상형 광고는 고를 때 누르는 광고 단추(RewardedAds.kt)에서만", listOf("RewardedAds.kt"), rewarded)
     }
 
     @Test fun thereIsNoBanner() {
