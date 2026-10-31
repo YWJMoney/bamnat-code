@@ -41,6 +41,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -138,6 +140,9 @@ fun PayQuickSetup(
     var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed) }
     // [J133-04] 1.33 (보고서 C2): 5명 미만 회사 has no 연장·야간·휴일 가산 by law; asked of a part-timer, "모르면 아니요".
     var fiveOrMore by remember { mutableStateOf(initial?.fiveOrMoreEmployees) }
+    // 1.36 PC X5 (빠른 설정 다시 뒤 제목이 '직접 설정' → '제조·생산 교대', 고른 적 없음): a form only shown picked is not the user's
+    // choice of job; the job changes only when they tap a form.
+    var formTapped by remember { mutableStateOf(false) }
     var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
     // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
     var hours by remember { mutableStateOf<Int?>(null) }
@@ -182,6 +187,7 @@ fun PayQuickSetup(
         fromSlip?.let { return it }
         val chosen = f ?: return initial
         val p = WorkForms.apply(chosen, a ?: 0, since, initial, h.takeIf { chosen.asksHoliday })
+            .let { p -> if (initial != null && !formTapped) p.copy(occupation = initial.occupation) else p }
             .let { p -> hours?.takeIf { p.wageType == WageType.MONTHLY }?.let { com.bamnat.core.pay.RuleOnlyNeeds.settled(p.copy(monthlyHours = it, hoursSource = com.bamnat.core.pay.HourlySource.TYPED)) } ?: p }
         return cycleStart?.let { PublicPay.prefill(p, it.first, since) } ?: p
     }
@@ -272,7 +278,7 @@ fun PayQuickSetup(
                             cycleForm != null -> " · 회사 근무주기에서 골랐어요"
                             else -> " · 달력을 보면 이것 같아요"
                         }
-                        AnswerCard(f.label + why, f.detail, form == f) { pick { form = f } }
+                        AnswerCard(f.label + why, f.detail, form == f) { pick { form = f; formTapped = true } }
                     }
                 }
                 AMOUNT -> {
@@ -319,7 +325,7 @@ fun PayQuickSetup(
                         onDetailed = { onDetailed(p) }, onTax = { taxPicked = it },
                         // E1: the calendar looks like one form and another was picked; said once with a way to take the calendar's.
                         otherForm = guessed?.takeIf { g -> form != null && g != form && fromSlip == null && g.wageType == form?.wageType },
-                        pickedForm = form, onForm = { f -> form = f },
+                        pickedForm = form, onForm = { f -> form = f; formTapped = true },
                         fixed = FixedOt(fixedOt, fixedOtPay, lump), onFixed = { f -> fixedOt = f.hours; fixedOtPay = f.pay; lump = f.lump })
                 }
             }
@@ -439,20 +445,32 @@ private fun FixedOvertimeCard(p: PayProfile, f: FixedOt, onChange: (FixedOt) -> 
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 1.36 PC X2: the words switch it too, not only the switch.
+            Row(Modifier.toggleable(value = f.hours != null, role = androidx.compose.ui.semantics.Role.Switch,
+                onValueChange = { on -> onChange(if (on) FixedOt(20) else FixedOt()) }), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("연장수당이 월급에 들어 있어요 (포괄임금)", style = MaterialTheme.typography.titleSmall)
                     Text("계약서에 ‘고정 연장 20시간’처럼 적혀 있으면 켜요. 사무·영업직에 흔해요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(checked = f.hours != null, onCheckedChange = { on -> onChange(if (on) FixedOt(20) else FixedOt()) })
+                Switch(checked = f.hours != null, onCheckedChange = null)
             }
             if (f.hours != null) {
-                var text by remember { mutableStateOf(f.hours.toString()) }
-                OutlinedTextField(text, { v -> text = v.filter(Char::isDigit).take(3); onChange(f.copy(hours = text.toIntOrNull()?.takeIf { it in 1..200 } ?: f.hours)) },
-                    label = { Text("고정 연장 시간 (한 달)") }, suffix = { Text("시간") }, singleLine = true,
+                // 1.36 PC X1 ('20' 칸에 20을 치니 '202'): a tap selects the whole number, so typing replaces it; a value out of range
+                // is said in red and not used.
+                var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(f.hours.toString())) }
+                val bad = text.text.toIntOrNull()?.let { it !in 1..200 } ?: true
+                OutlinedTextField(text, { v ->
+                    val digits = v.text.filter(Char::isDigit).take(3)
+                    text = v.copy(text = digits, selection = if (digits == v.text) v.selection else androidx.compose.ui.text.TextRange(digits.length))
+                    digits.toIntOrNull()?.takeIf { it in 1..200 }?.let { onChange(f.copy(hours = it)) }
+                },
+                    label = { Text("고정 연장 시간 (한 달)") }, suffix = { Text("시간") }, singleLine = true, isError = bad,
+                    supportingText = if (bad) ({ Text("1~200시간 사이로 넣어 주세요. 지금은 ${f.hours}시간으로 계산해요") }) else null,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth())
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { s ->
+                        if (s.isFocused) text = text.copy(selection = androidx.compose.ui.text.TextRange(0, text.text.length))
+                    })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = f.lump, onCheckedChange = { onChange(f.copy(lump = it, pay = null)) })
                     Text("계약서에 고정 연장수당 금액이 따로 없어요 (월급 한 덩어리)", style = MaterialTheme.typography.bodyMedium)

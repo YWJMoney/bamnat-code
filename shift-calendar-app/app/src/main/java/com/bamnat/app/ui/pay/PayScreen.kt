@@ -31,6 +31,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -178,12 +180,14 @@ fun PayScreen(
     var focusUsed by rememberSaveable { mutableStateOf(false) }
     // [PAYS-12] 자세히 고치기 from the easy setup; [PAYS-15] the 광장 ask after a payslip set the rules.
     var detailedFrom by remember { mutableStateOf<DetailedStart?>(null) }
+    /** 1.36 PC X4: the ← and back while 자세히 고치기 is open, handed to it so it can ask before leaving. */
+    var wizardLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
     if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
     com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
         when {
-            detailedFrom != null -> detailedFrom = null
+            detailedFrom != null -> wizardLeave++
             editingSetup -> editingSetup = false
             else -> editingRules = false
         }
@@ -223,7 +227,7 @@ fun PayScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         when {
-                            detailedFrom != null -> detailedFrom = null
+                            detailedFrom != null -> wizardLeave++
                             editingSetup -> editingSetup = false
                             editingRules -> editingRules = false
                             else -> onBack()
@@ -292,6 +296,7 @@ fun PayScreen(
                         suggestedWage = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) WageType.HOURLY else null,
                         suggestedOccupation = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) Occupation.PART_TIME else null,
                         companyFind = companyFind,
+                        leaveAsk = wizardLeave,
                     )
                 }
                 editingRules -> {
@@ -438,6 +443,33 @@ private fun PayResult(
             "기본급·수당은 ‘내 급여 값’, 가산율·월급날은 ‘${PayTab.RULES.labelFor(settings.workStyle)}’, 만약에·연말정산은 ‘도구’에 있어요")
         // U 1.32 [UX132-03] 결과: the total, what it still needs, its lines and days.
         val noBase = closedSnap == null && !com.bamnat.core.pay.BaseAsk.showsEstimate(profile, result.month)
+        // 1.36 PC C6 (결과: 큰 금액 아래 안내 카드 세 장이 먼저 나와 항목별 내역이 한참 아래): the figures first (total, 세후,
+        // 항목별 내역), then the ways to make it exact folded into one card. With no 기본급 yet they stay here, as there is no breakdown.
+        val guides: @Composable () -> Unit = {
+            // [PAYS-17] 이것만 넣으면 정확해져요: each value straight from here, without leaving the month.
+            val shownNeeds = if (noBase) needs.filter { it.kind != com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE } else needs
+            if (closedSnap == null) RuleNeedsCard(shownNeeds, withSlip = profile.verified != null) { n ->
+                when (n.kind) {
+                    com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE -> editTarget = ValueTarget.Base
+                    com.bamnat.core.pay.RuleOnlyNeeds.Kind.MONTHLY_HOURS -> hoursAsk = true
+                    com.bamnat.core.pay.RuleOnlyNeeds.Kind.SHIFT_TIMES -> timesFor = snapshot.shiftTypes.firstOrNull { it.id == n.shiftTypeId }
+                    com.bamnat.core.pay.RuleOnlyNeeds.Kind.ITEM_AMOUNT -> n.itemId?.let { editTarget = ValueTarget.Item(it) }
+                    com.bamnat.core.pay.RuleOnlyNeeds.Kind.FIVE_OR_MORE -> fiveAsk = true
+                }
+            }
+            top()
+            // [PAYS-19] 1.27 순번 449 (사용자 "맞춰보기가 있는데 어디에 있는지 안보이고"): right under the total, one card, two
+            // ways named apart: 금액 비교하기 (the payslip's amounts against the app's, 프로) and 계산 방식 찾기 (the company's
+            // way from a payslip or its rules page, free).
+            SlipMatchCard(profile, gate, onCompare = { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
+                onFind = { slipRules = true })
+            com.bamnat.app.ui.pro.TrialNote(Feature.PAYSLIP_MATCH, gate, Modifier.padding(horizontal = 4.dp))
+            // D 1.32 [PAYA-03] Two months or more matched: all of them at once (프로).
+            if (closedSnap == null && unlocked && com.bamnat.core.pay.MultiMonthFit.months(profile).size >= 2)
+                FitMonthsCard(vm, profile, snapshot, allowed = gate.allows(Feature.PAYSLIP_MATCH), onPro = { openPro(Feature.PAYSLIP_MATCH) })
+            // A 1.32 [FIX132-04] Just matched: offer the plaza once, the 명세서 tick on.
+            if (unlocked) ShareAfterMatchCard(profile)
+        }
         if (payTab == PayTab.RESULT) {
 
         // [PAYG-04] 1.30 BA (사용자 "기본급 없이 닫으면 '기본급만 넣으면 끝나요' — … 동작 안 되고 있음"): with no 기본급 the
@@ -459,29 +491,7 @@ private fun PayResult(
             val older = remember(profile, month) { com.bamnat.core.pay.PaySameness.of(profile, month) }
             if (!older.same) OlderValuesCard(older.line, onUnify = { vm.unifyMonths() }, onHistory = { editTarget = ValueTarget.Base })
         }
-        // [PAYS-17] 이것만 넣으면 정확해져요: each value straight from here, without leaving the month.
-        val shownNeeds = if (noBase) needs.filter { it.kind != com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE } else needs
-        if (closedSnap == null) RuleNeedsCard(shownNeeds, withSlip = profile.verified != null) { n ->
-            when (n.kind) {
-                com.bamnat.core.pay.RuleOnlyNeeds.Kind.BASE -> editTarget = ValueTarget.Base
-                com.bamnat.core.pay.RuleOnlyNeeds.Kind.MONTHLY_HOURS -> hoursAsk = true
-                com.bamnat.core.pay.RuleOnlyNeeds.Kind.SHIFT_TIMES -> timesFor = snapshot.shiftTypes.firstOrNull { it.id == n.shiftTypeId }
-                com.bamnat.core.pay.RuleOnlyNeeds.Kind.ITEM_AMOUNT -> n.itemId?.let { editTarget = ValueTarget.Item(it) }
-                com.bamnat.core.pay.RuleOnlyNeeds.Kind.FIVE_OR_MORE -> fiveAsk = true
-            }
-        }
-        top()
-        // [PAYS-19] 1.27 순번 449 (사용자 "맞춰보기가 있는데 어디에 있는지 안보이고"): right under the total, one card, two
-        // ways named apart: 금액 비교하기 (the payslip's amounts against the app's, 프로) and 계산 방식 찾기 (the company's
-        // way from a payslip or its rules page, free).
-        SlipMatchCard(profile, gate, onCompare = { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
-            onFind = { slipRules = true })
-        com.bamnat.app.ui.pro.TrialNote(Feature.PAYSLIP_MATCH, gate, Modifier.padding(horizontal = 4.dp))
-        // D 1.32 [PAYA-03] Two months or more matched: all of them at once (프로).
-        if (closedSnap == null && unlocked && com.bamnat.core.pay.MultiMonthFit.months(profile).size >= 2)
-            FitMonthsCard(vm, profile, snapshot, allowed = gate.allows(Feature.PAYSLIP_MATCH), onPro = { openPro(Feature.PAYSLIP_MATCH) })
-        // A 1.32 [FIX132-04] Just matched: offer the plaza once, the 명세서 tick on.
-        if (unlocked) ShareAfterMatchCard(profile)
+        if (noBase) guides()
         // [J133-98] 1.33 빌드 8 확인 ("첫 급여 방식 카드가 '내 급여 값' 탭 안에만 있어요"): on 결과, where the pay screen opens.
         val first by vm.firstPay.collectAsStateWithLifecycle()
         first?.let { f -> com.bamnat.app.ui.company.FirstPayCard(f, vm.calendarId, onClosed = vm::firstPayShown) }
@@ -501,6 +511,22 @@ private fun PayResult(
             }
             com.bamnat.app.ui.pro.TrialNote(Feature.TAX_FORECAST, gate)
         }
+        // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
+        var explainAll by rememberSaveable { mutableStateOf(payLook.open == true) }
+        SectionCard(title = "항목별 내역", trailing = {
+            if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
+            else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }) {
+            for (line in shown.lines) {
+                LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
+                if (explainAll && unlocked) {
+                    Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
+                }
+            }
+            if (shown.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
+        }
+
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
         if (closedSnap == null) Estimates.breakNote(result, profile.fiveOrMoreEmployees)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -543,21 +569,7 @@ private fun PayResult(
             Walkthrough(shown, onClose = { walkthrough = false; hints.markDone(com.bamnat.app.ui.calendar.HintStore.PAY_WALKTHROUGH) })
         }
 
-        // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
-        var explainAll by rememberSaveable { mutableStateOf(payLook.open == true) }
-        SectionCard(title = "항목별 내역", trailing = {
-            if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
-            else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }) {
-            for (line in shown.lines) {
-                LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
-                if (explainAll && unlocked) {
-                    Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
-                }
-            }
-            if (shown.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
-        }
+        GuideFold(guides)
 
         if (payLook.days != false) DayLedger(result, unlocked)
 
@@ -1551,3 +1563,25 @@ private fun PayItem.paidWhen(): String = listOfNotNull(
 @Composable
 private fun rememberCompanyWayTextIf(read: Boolean): com.bamnat.app.ui.company.CompanyWayText? =
     if (read) com.bamnat.app.ui.company.rememberCompanyWayText() else null
+
+/**
+ * 1.36 PC C6: the ways to make the month exact (values still missing, the company's way, matching a payslip) in one card,
+ * folded under the figures; one tap opens them.
+ */
+@Composable
+private fun GuideFold(guides: @Composable () -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 12.dp).heightIn(min = 24.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("더 정확하게 하기", style = MaterialTheme.typography.titleSmall)
+                Text("빠진 값 넣기 · 우리 회사 급여 방식 · 명세서와 맞춰 보기", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, if (open) "접기" else "펼치기")
+        }
+        if (open) Column(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { guides() }
+    }
+}

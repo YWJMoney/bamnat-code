@@ -430,6 +430,8 @@ fun PayWizard(
      * setup's, typed into at once, the ways of being paid under it for a pay made by hand.
      */
     companyFind: Boolean = false,
+    /** 1.36 PC X4: bumped by the screen's ← and back; with something changed it asks before leaving. */
+    leaveAsk: Int = 0,
 ) {
     val today = remember { Today.date() }
     val s = remember {
@@ -452,6 +454,22 @@ fun PayWizard(
     val index = steps.indexOf(step).takeIf { it >= 0 } ?: steps.lastIndex
     var advancing by remember { mutableStateOf(false) }
     val latestSteps by rememberUpdatedState(steps)
+    // 1.36 PC X4 (값을 바꾸고 ←를 누르면 묻지 않고 버림): the setup as it opened, to tell whether anything changed.
+    val opened = remember { draft }
+    var askingLeave by remember { mutableStateOf(false) }
+    val leave: () -> Unit = { if (draft != opened) askingLeave = true else onCancel?.invoke() }
+    val leaveAskAtOpen = remember { leaveAsk }
+    androidx.compose.runtime.LaunchedEffect(leaveAsk) { if (leaveAsk != leaveAskAtOpen) leave() }
+    if (askingLeave) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { askingLeave = false },
+        title = { Text("바꾼 내용을 저장할까요?") },
+        text = { Text("저장하지 않으면 이번에 고친 값은 사라지고 전 설정 그대로 남아요.") },
+        confirmButton = { TextButton(onClick = { askingLeave = false; onDone(draft) }) { Text("저장") } },
+        dismissButton = { Row {
+            TextButton(onClick = { askingLeave = false; onCancel?.invoke() }) { Text("버리기") }
+            TextButton(onClick = { askingLeave = false }) { Text("계속 고치기") }
+        } },
+    )
 
     fun go(to: String) { step = to }
     // [NAV-02] 1.25 Z (U4): back is the step before, like 이전; only the first step leaves the setup (with its answers kept
@@ -583,7 +601,7 @@ fun PayWizard(
                 when {
                     finding -> OutlinedButton(onClick = { payFind?.step = com.bamnat.app.ui.company.PayFindStep.NAME }) { Text("이전") }
                     index > 0 -> OutlinedButton(onClick = { go(steps[index - 1]) }) { Text("이전") }
-                    onCancel != null -> TextButton(onClick = onCancel) { Text("취소") }
+                    onCancel != null -> TextButton(onClick = leave) { Text("취소") }
                 }
                 Spacer(Modifier.weight(1f))
                 if (finding) return@Row

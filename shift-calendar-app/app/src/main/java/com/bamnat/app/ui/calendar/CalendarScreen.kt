@@ -2332,7 +2332,7 @@ private fun PaintBar(
                     FilterChip(
                         selected = tool == t && mark == null && stamp == null,
                         onClick = { onTool(if (tool == t) PaintTool.Pick else t) },
-                        label = { Text(type.name) },
+                        label = { Text(type.name, maxLines = 1, softWrap = false) },
                         leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
                         modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${type.name} 칠하기" },
                     )
@@ -2348,7 +2348,7 @@ private fun PaintBar(
                 FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
-                    label = { Text("근무 주기대로") },
+                    label = { Text("근무 주기대로", maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
                     modifier = Modifier.semantics { contentDescription = "근무 주기대로 되돌리기" },
                 )
@@ -2362,7 +2362,7 @@ private fun PaintBar(
                                 haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                                 onMark(if (mark == m) null else m)
                             },
-                            label = { Text(m.label) },
+                            label = { Text(m.label, maxLines = 1, softWrap = false) },
                             leadingIcon = {
                                 val leave = m.leave
                                 if (leave != null) com.bamnat.app.ui.components.LeaveMark(leave, size = 18.dp)
@@ -2382,7 +2382,7 @@ private fun PaintBar(
                                 haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                                 onStamp(if (stamp == c) null else c)
                             },
-                            label = { Text(c.label) },
+                            label = { Text(c.label, maxLines = 1, softWrap = false) },
                             leadingIcon = { ExtraKindMark(c.kind, size = 18.dp) },
                             modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${c.name} 넣기" },
                         )

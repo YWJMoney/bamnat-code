@@ -53,6 +53,15 @@ class MainActivity : ComponentActivity() {
         com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,
             "restore=${if (savedInstanceState != null) 1 else 0} ${com.bamnat.app.diag.Trail.size(resources.configuration)}")
         window.decorView.viewTreeObserver.addOnDrawListener { com.bamnat.app.diag.MainStall.drew() }
+        // 1.36 PC C22: how long the first screen took to draw after the app started, with the text size, for 진단.
+        val firstDraw = java.util.concurrent.atomic.AtomicBoolean(false)
+        window.decorView.viewTreeObserver.addOnDrawListener {
+            if (shown.value != null && firstDraw.compareAndSet(false, true)) {
+                val ms = android.os.SystemClock.uptimeMillis() - android.os.Process.getStartUptimeMillis()
+                com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,
+                    "first_draw ms=$ms font=${resources.configuration.fontScale} wait=${StartupTrace.millis(StartupTrace.Step.CONTAINER_WAIT) ?: -1}")
+            }
+        }
         val app = application as BamnatApp
         val ready = app.readyContainer()
         if (ready != null) {

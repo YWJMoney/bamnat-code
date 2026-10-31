@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -411,9 +412,8 @@ private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
 @Composable
 private fun RosterReadingCard(vm: SetupViewModel) {
     val step by vm.rosterStep.collectAsStateWithLifecycle()
-    val seconds by androidx.compose.runtime.produceState(0) {
-        while (true) { kotlinx.coroutines.delay(1_000); value++ }
-    }
+    var seconds by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_000); seconds += 1 } }
     androidx.compose.material3.Card(Modifier.fillMaxWidth().semantics(mergeDescendants = false) {
         liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
     }) {

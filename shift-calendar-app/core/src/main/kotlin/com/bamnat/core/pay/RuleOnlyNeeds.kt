@@ -42,6 +42,9 @@ object RuleOnlyNeeds {
         val base = profile.base.on(month).value
         val baseName = when (profile.wageType) { WageType.MONTHLY -> "월 기본급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" }
         if (base <= 0) add(Need(Kind.BASE, baseName, "이 값이 없으면 급여가 0원으로 나와요"))
+        // 1.36 PC X3: a 포괄 월급 split into 기본급 and 고정 연장수당 says so, and what to put in instead.
+        else if (PayExamples.INCLUSIVE_ID in profile.estimatedFields) add(Need(Kind.BASE, baseName,
+            "포괄 월급을 기본급과 고정 연장수당으로 나눠 짐작한 값이에요. 계약서에 기본급이 따로 적혀 있으면 그 금액을 넣어 주세요"))
         else if (Unknowns.BASE in profile.estimatedFields) add(Need(Kind.BASE, baseName, "대략 넣은 값이라 합계가 달라질 수 있어요"))
         val hoursOpen = Unknowns.MONTHLY_HOURS in profile.estimatedFields || HOURS_UNSET in profile.estimatedFields
         if (profile.wageType == WageType.MONTHLY && profile.publicGrade == null && profile.verified == null && hoursOpen) {

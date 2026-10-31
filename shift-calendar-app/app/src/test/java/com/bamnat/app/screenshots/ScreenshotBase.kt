@@ -738,7 +738,7 @@ abstract class ScreenshotBase {
     // [SHR-11] A shop shares its 매출 and a freelancer their 일정 and 일감 수입, with the figures shown before sending.
     internal fun shareSheet(style: WorkStyle): Screen.() -> Unit = style(style) {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, detailedFirst = true) }
     }
     // [RECV-05] 받을 돈 for each kind of work: written debts, unpaid jobs, the job and receivable sheets.
     internal fun owed(s: WorkStyle, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = style(s) {
@@ -1214,7 +1214,7 @@ abstract class ScreenshotBase {
             "t", Today.instant().plus(java.time.Duration.ofDays(150)), "민지", 180, Today.month()))
         c.shareLinks.feed = true
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, detailedFirst = true) }
         settle()
         then()
     }

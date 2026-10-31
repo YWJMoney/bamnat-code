@@ -209,11 +209,24 @@ class CompanyScreenshotTest : ScreenshotBase() {
         reveal("다니는 회사라면 이 규칙이 맞는지 알려 주세요")
     }
 
+    /** 1.36 PC C19: with no link yet, the two big ways first and the rest behind '자세히 정하기'. */
+    @Test fun phoneShareSheetQuick() = shoot("131q_phone_share_quick", PHONE) {
+        val c = receivedOn()
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
+        settle()
+        assertTrue(appears("가족에게 링크 보내기"))
+        assertTrue(appears("사진으로 보내기", exact = false))
+        assertTrue(gone("누구에게 보내요?"))
+        tapText("자세히 정하기", prefix = true)
+        assertTrue(appears("누구에게 보내요?"))
+    }
+
     @Test fun foldedShareSheet() = shoot("131_folded_share_sheet", FOLDED) {
         val c = receivedOn()
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}, detailedFirst = true) }
         tapText("연장·휴무일 근무", exact = true)
         tapText("메모", exact = true)
     }
@@ -221,9 +234,11 @@ class CompanyScreenshotTest : ScreenshotBase() {
         val c = receivedOn()
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}, detailedFirst = true) }
         tapText("메모", exact = true)
         tapText("급여", exact = true)
+        // 1.36 PC C20: the money asks once before it goes in.
+        tapText("금액도 보내기", exact = true)
         reveal("동료 근무표도 받아 볼까요?")
     }
     @Test fun foldedIdentityBar() = shoot("132_folded_identity_bar", FOLDED) { receivedOn() }
@@ -280,7 +295,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         val snap = runBlocking { c.calendars.activeSnapshot.first() }
         content {
             com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares,
-                calendar = c.calendars.current(), onOpenReceived = {})
+                calendar = c.calendars.current(), onOpenReceived = {}, detailedFirst = true)
         }
     }
 
