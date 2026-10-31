@@ -1454,7 +1454,8 @@ private fun AppNavHost(
             val vm = appViewModel(key = "studio-$start") { com.bamnat.app.ui.studio.StudioViewModel(it, start) }
             com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onUpload = { (body, parent) ->
                 com.bamnat.app.recipe.RecipeLinks.remake = body to parent
-                nav.navigate(Routes.recipeMake(PersonalCalendar.MAIN))
+                // F-101: one of mine already in 장터 goes up as its next 판, not a new code.
+                nav.navigate(Routes.recipeMake(PersonalCalendar.MAIN, code = vm.plazaCode().orEmpty()))
             })
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->

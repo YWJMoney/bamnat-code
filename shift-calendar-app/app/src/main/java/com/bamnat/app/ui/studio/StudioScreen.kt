@@ -455,7 +455,7 @@ private fun WearButton(vm: StudioViewModel, busy: Boolean, check: (() -> Unit) -
 
 @Composable
 private fun SaveDialog(vm: StudioViewModel, s: StudioViewModel.State, onDismiss: () -> Unit, onSave: (String, Boolean) -> Unit) {
-    val own = (s.origin as? StudioViewModel.Origin.Theme)?.wear?.takeIf { it.own }
+    val own = vm.ownStart
     var name by remember { mutableStateOf(own?.title ?: "내 테마 ${vm.mineCount() + 1}") }
     var toPlaza by remember { mutableStateOf(true) }
     val ownMake = remember { vm.ownMake() }

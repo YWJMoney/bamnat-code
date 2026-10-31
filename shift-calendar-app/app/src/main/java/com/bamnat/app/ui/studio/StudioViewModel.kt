@@ -180,6 +180,15 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     private val myTheme: ThemeLease.Wear?
         get() = (_state.value.origin as? Origin.Theme)?.wear?.takeIf { it.own }
 
+    /**
+     * F-101 F-104: the theme of mine this draft is a next 판 of: the one started from, or, from 지금 모양 (내 모양 고치기), the one of mine
+     * worn now. 저장 keeps its name and 장터 link; 올리기 sends its next 판 instead of a new code.
+     */
+    val ownStart: ThemeLease.Wear?
+        get() = myTheme ?: (_state.value.origin as? Origin.Mine)?.let {
+            c.wardrobe.lease.value.worn?.takeIf { it.own }?.let { w -> c.wardrobe.lease.value.history.firstOrNull { h -> h.key == w.key } ?: w }
+        }
+
     /** The theme whose days and ad 입히기 follows: someone else's started from, or the first of others' parts laid on. */
     private fun leasedFrom(): Pair<String, String>? = othersTheme?.let { it.code to it.title } ?: _state.value.sources.entries.firstOrNull()?.toPair()
 
@@ -275,7 +284,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 else "보관함이 꽉 찼어요 (${c.wardrobe.partsLimit()}개)")
             return@launch
         }
-        val shared = myTheme?.takeIf { it.free && it.title == name }
+        val shared = ownStart?.takeIf { it.free && it.title == name }
         val ok = c.wardrobe.saveLook(recipe(name), shared)
         if (!ok) {
             _state.value = _state.value.copy(said = "더 저장할 수 없어요. 무료는 ${c.wardrobe.outfitLimit()}벌까지예요")
@@ -287,7 +296,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** [THM-04] The next 판 of mine in 장터, its pictures left out when it went without them; a check that fails leaves 장터 as it was. */
     private suspend fun sendNext(w: ThemeLease.Wear, name: String) {
-        val r0 = recipe(name).copy(styles = setOf(style ?: WorkStyle.SHIFT))
+        // F-102: the next 판 keeps the title it has in 장터 (the 내 테마 name is the maker's own label).
+        val title = runCatching { c.recipeApi.show(w.shared, c.companyStore.device).item.title }.getOrNull() ?: name
+        val r0 = recipe(title).copy(styles = setOf(style ?: WorkStyle.SHIFT))
         val r = if (w.bare) LookParts.withoutPhotos(r0) else r0
         if (!RecipeLint.ready(RecipeLint.check(r))) {
             _state.value = _state.value.copy(said = "저장했어요. 장터 판은 고칠 곳이 있어 그대로예요. 공방 › 내 레시피에서 확인해 주세요")
@@ -303,7 +314,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     /** The draft is one of my themes already in 장터 (저장 also sends its next 판). */
-    fun inPlaza(): Boolean = myTheme?.free == true
+    fun inPlaza(): Boolean = ownStart?.free == true
+
+    /** F-101: the 장터 code 올리기 sends a next 판 to, when the draft is one of mine already there. */
+    fun plazaCode(): String? = ownStart?.takeIf { it.free }?.shared
 
     fun mineCount(): Int = c.wardrobe.lease.value.history.count { it.own }
     fun outfitLimit(): Int = c.wardrobe.outfitLimit()
@@ -314,7 +328,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val parent = (leasedFrom()?.first ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
         val r = recipe("").copy(title = "", styles = setOf(style ?: WorkStyle.SHIFT))
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.
-        com.bamnat.app.recipe.RecipeLinks.ownTheme = myTheme?.key ?: c.wardrobe.ownWithLook(recipe())?.key
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key
             ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN.takeIf { ownMake() }
         return RecipeCodec.write(r) to parent
     }

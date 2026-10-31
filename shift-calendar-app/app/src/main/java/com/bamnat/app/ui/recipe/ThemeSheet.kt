@@ -139,9 +139,11 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
                         Text(k.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(if (k.own) "내 조각" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // F-103: two short buttons on one line (a wide padding broke 빼기 in two).
                         Row {
-                            onUseKept?.let { use -> TextButton(onClick = { use(k.id) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("꾸미기") } }
-                            TextButton(onClick = { letGo = k }, modifier = Modifier.heightIn(min = 48.dp)) { Text("빼기") }
+                            val pad = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                            onUseKept?.let { use -> TextButton(onClick = { use(k.id) }, contentPadding = pad, modifier = Modifier.heightIn(min = 48.dp)) { Text("꾸미기", maxLines = 1, softWrap = false) } }
+                            TextButton(onClick = { letGo = k }, contentPadding = pad, modifier = Modifier.heightIn(min = 48.dp)) { Text("빼기", maxLines = 1, softWrap = false) }
                         }
                     }
                 }
