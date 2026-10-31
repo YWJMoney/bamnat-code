@@ -97,13 +97,21 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
     val shownSplit = if (diff) 1f else split
     val beforeLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     val afterLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
+    // [TRY-04] 1.36 빌드 8 (카드 자리를 옮기면 테두리가 없음): the two sides share the new places, so a moved card shows no change
+    // between them; the side before as it really stands is drawn too (hidden) and where it differs is ringed as well.
+    val moved = remember(before, after) { LookParts.changed(before, after).any { it in LookParts.FRAME } }
+    val realLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     var marks by remember { mutableStateOf<List<androidx.compose.ui.geometry.Rect>>(emptyList()) }
     // The two sides drawn into layers when 바뀌는 곳만 is on, read back once they settle, and compared block by block.
     if (diff) androidx.compose.runtime.LaunchedEffect(framed, after, tab, scroll.value, scale) {
         kotlinx.coroutines.delay(180)
         val a = runCatching { afterLayer.toImageBitmap() }.getOrNull() ?: return@LaunchedEffect
         val b = runCatching { beforeLayer.toImageBitmap() }.getOrNull() ?: return@LaunchedEffect
-        marks = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { changedBlocks(a, b) }
+        val real = if (moved) runCatching { realLayer.toImageBitmap() }.getOrNull() else null
+        marks = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val looks = changedBlocks(a, b)
+            if (real == null) looks else joinBoxes(looks + changedBlocks(a, real))
+        }
         onChanged(marks.size)
     } else androidx.compose.runtime.LaunchedEffect(Unit) { marks = emptyList() }
     fun Modifier.into(layer: androidx.compose.ui.graphics.layer.GraphicsLayer) = if (!diff) this else drawWithContent {
@@ -111,6 +119,9 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
         drawLayer(layer)
     }
     Box(Modifier.size(w, h)) {
+        if (diff && moved) Box(Modifier.matchParentSize().graphicsLayer { alpha = 0f }) {
+            ScaledPhone(before, style, tab, onTab, scale, onPick, Modifier.into(realLayer), scroll)
+        }
         // 지금, the right side (and under 바뀌는 곳만, drawn but hidden: only read).
         Box(Modifier.matchParentSize().graphicsLayer { alpha = if (diff) 0f else 1f }) {
             ScaledPhone(framed, style, tab, onTab, scale, onPick, Modifier.into(beforeLayer), scroll)
@@ -141,6 +152,23 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
         if (!diff && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
             .background(MaterialTheme.colorScheme.primary))
     }
+}
+
+/** [TRY-04] Boxes that overlap or touch made one, until none do. */
+internal fun joinBoxes(list: List<androidx.compose.ui.geometry.Rect>): List<androidx.compose.ui.geometry.Rect> {
+    val out = list.toMutableList()
+    var joined = true
+    while (joined) {
+        joined = false
+        loop@ for (i in out.indices) for (j in i + 1 until out.size) {
+            val a = out[i]; val b = out[j]
+            if (a.left <= b.right && b.left <= a.right && a.top <= b.bottom && b.top <= a.bottom) {
+                out[i] = androidx.compose.ui.geometry.Rect(minOf(a.left, b.left), minOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
+                out.removeAt(j); joined = true; break@loop
+            }
+        }
+    }
+    return out
 }
 
 /**
@@ -279,7 +307,7 @@ fun TryOnScreen(
                         // 빌드 6 확인: what changes but does not show on the example is said in words.
                         onlyChanges && changedBlocks == 0 -> "이 화면에서 바뀌는 것: ${changedHere.joinToString(" · ")}. 예시에는 잘 드러나지 않아요."
                         onlyChanges -> "밝은 곳이 바뀌어요" + (changedHere.takeIf { it.isNotEmpty() }?.let { ": " + it.joinToString(" · ") } ?: "") +
-                            (if (changedHere.any { it.endsWith("카드 배치") }) " (카드 자리 옮김)" else "") + "."
+                            (if (changedHere.any { it.endsWith("카드 배치") }) " (카드 자리 옮김: 옮긴 카드에 테두리)" else "") + "."
                         split == 1f -> "입으면 이렇게 보여요."
                         split == 0f -> "지금 내 모습이에요."
                         else -> "왼쪽이 입은 모습, 오른쪽이 지금이에요. 두 쪽은 같이 움직여요."

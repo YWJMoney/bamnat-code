@@ -272,7 +272,16 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         layOn(r)
         val only = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         writeOverlays(_overlays.value.filter { it.tab != tab } + Overlay(tab, code, r.title.take(30), RecipeCodec.write(only), before, Today.millis()))
+        wornLookNow()
         return true
+    }
+
+    /**
+     * [MKX-02] 1.36 빌드 8 (탭을 얹고 테마를 벗으면 '내가 고친 …'이 저절로 내 테마에): a tab laid on or taken off is not the
+     * user's own change to the theme worn, so the look 벗기 compares with is the one with the tabs.
+     */
+    private fun wornLookNow() {
+        if (_lease.value.worn != null) prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString()).apply()
     }
 
     /** 빼기: the tab back to how it looked just before it was laid on (that tab's settings only), and forgotten. */
@@ -288,6 +297,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
             c.recipes.pieces.restoreLook(c.recipes.pieces.lookOf(d))
         } else c.recipes.pieces.restoreLook(o.before)
         _overlays.value.forEach { other -> runCatching { RecipeCodec.read(other.body) }.getOrNull()?.let { layOn(it) } }
+        wornLookNow()
         refreshWidgets()
     }
 
@@ -296,6 +306,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if (_overlays.value.isEmpty()) return
         if (!keepOverlays) { writeOverlays(emptyList()); return }
         _overlays.value.forEach { o -> runCatching { RecipeCodec.read(o.body) }.getOrNull()?.let { layOn(it) } }
+        wornLookNow()
     }
 
     /** 1.35 [STU-10] 스튜디오의 내 테마로 저장: [r]'s looks kept as one of mine, as [saveMine] keeps the phone's. */
