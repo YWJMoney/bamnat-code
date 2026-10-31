@@ -380,7 +380,12 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     val mine = rememberMyWeeks(days)
     val today = mine?.today ?: remember { com.bamnat.core.time.Today.date() }
     val first = mine?.first ?: today
-    val real = mine?.days
+    // PC 확인 V19 1.36: the 공방 card is my own month, blank days before any work; elsewhere the example shows the kinds of day.
+    val own = LocalOwnMonth.current
+    val blank = remember(own, mine, first) { if (mine != null || !own) null else (0 until 14).map { i -> val d = first.minusDays((first.dayOfWeek.value % 7).toLong()).plusDays(i.toLong())
+        com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(d)) } }
+    val start0 = if (blank != null) first.minusDays((first.dayOfWeek.value % 7).toLong()) else first
+    val real = mine?.days ?: blank
     val memos = listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
     val sample = real ?: (0 until 14).map { i ->
         val d = days[(i / 2) % days.size]
@@ -393,13 +398,17 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
         if (view.looks.isNotEmpty()) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null,
-            start = if (real != null) first else EXAMPLE_FIRST, todayDate = if (real != null) today else EXAMPLE_FIRST.plusDays(2), days = sample)
+            start = if (real != null) start0 else EXAMPLE_FIRST, todayDate = if (real != null) today else EXAMPLE_FIRST.plusDays(2), days = sample)
         else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
-            rows = 2, numbers = (0 until 14).map { first.plusDays(it.toLong()).dayOfMonth }, todayAt = (today.toEpochDay() - first.toEpochDay()).toInt())
+            rows = 2, numbers = (0 until 14).map { start0.plusDays(it.toLong()).dayOfMonth }, todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt())
         else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2,
             start = EXAMPLE_FIRST.dayOfMonth)
+        if (mine == null) Text("근무를 넣으면 내 달력으로 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/** PC 확인 V19 1.36: true where the picture is my own look as it is (the 공방 card), so it shows my month even with no work in it. */
+internal val LocalOwnMonth = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 /** U15: the example weeks start on a Sunday the 9th (as the plain example always did). */
 private val EXAMPLE_FIRST: java.time.LocalDate = java.time.LocalDate.of(2026, 8, 9)
@@ -812,6 +821,7 @@ internal fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, sty
 /** PC 확인 Z5: this month's work days and scheduled hours on the phone's own calendar (0 and 0 with none), or null while it loads. */
 @Composable
 private fun rememberMonthWork(): Pair<Int, Int>? {
+    val own = LocalOwnMonth.current
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
@@ -819,8 +829,9 @@ private fun rememberMonthWork(): Pair<Int, Int>? {
         val sn = snap ?: return@remember null
         val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
         val days = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth()).filter { it.isWorkDay }
-        // PC 확인 V19 1.36 (공방 카드에 예시 '18일 · 162h'): my own month even with no work in it yet (0일 · 0h), never made-up numbers.
-        days.size to days.sumOf { it.scheduledMinutes } / 60
+        // PC 확인 V19 1.36 (공방 카드에 예시 '18일 · 162h'): the 공방 card is my own month even with no work yet (0일 · 0h); the studio
+        // and 입어 보기 keep the whole example then, so its numbers and days match.
+        if (days.isEmpty() && !own) null else days.size to days.sumOf { it.scheduledMinutes } / 60
     }
 }
 
@@ -828,6 +839,7 @@ private fun rememberMonthWork(): Pair<Int, Int>? {
 /** PC 확인 Z13: how many days of this month are each of [days]' kinds (the same name, else the same role), or null with no work yet. */
 @Composable
 private fun rememberMonthKinds(days: List<Map<String, Any?>>): List<Int>? {
+    val own = LocalOwnMonth.current
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
@@ -835,7 +847,7 @@ private fun rememberMonthKinds(days: List<Map<String, Any?>>): List<Int>? {
         val sn = snap ?: return@remember null
         val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
         val resolved = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
-        if (resolved.none { it.isWorkDay }) return@remember null
+        if (resolved.none { it.isWorkDay }) return@remember if (own) days.map { 0 } else null
         val kinds = resolved.mapNotNull { r -> r.shiftType?.let { t ->
             t.name.trim() to com.bamnat.core.recipe.ShiftRole.guess(t.name, t.isOff, t.start?.hour, if (t.isOff) 0 else t.durationMinutes).key } }
         days.map { d ->

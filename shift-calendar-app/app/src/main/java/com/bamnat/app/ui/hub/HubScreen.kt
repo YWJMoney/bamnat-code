@@ -143,7 +143,9 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             mine?.let { r ->
                 Box(Modifier.clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }) {
-                    com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                    androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalOwnMonth provides true) {
+                        com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                    }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
