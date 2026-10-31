@@ -1234,6 +1234,8 @@ class CompanyReportViewModel(
 
     /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
     fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /** [J133-71] Work with a company: 내 설정 나누기 is offered only then. */
+    val companyFits: Boolean get() = c.companyFits(calendar)
 
     sealed interface Sending {
         data object Idle : Sending
@@ -1444,6 +1446,10 @@ class CompanyReportViewModel(
                 // [ADMIN-02] The server deleted this phone's questions with the rest.
                 c.inquiryStore.update(emptyList())
                 c.inquiryStore.asked = false
+                // [PRF-05] 1.36 마을 프로필·차단도 서버에서 지워졌어요: 이 폰의 차단 사본과 '내 프로필' 표시도 함께.
+                c.recipes.setBlocked(emptySet())
+                c.recipes.hasProfile(false)
+                c.recipes.peopleChanged()
             }
             done(ok, counts?.words())
         }
