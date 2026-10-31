@@ -553,7 +553,8 @@ fun TalkSheet(holder: TalkHolder) {
                             kind == "tip" -> "해 보니 좋았던 방법을 나눠 주세요"
                             kind == "show" -> "꾸민 달력이나 해낸 일을 자랑해 주세요"
                             kind == "proposal" -> "왜 바꿔야 하는지 한두 줄로 적어 주세요"
-                            else -> o.hint ?: "이 규칙에 대해 적어 주세요"
+                            // PC 확인 V16: a room opened from 찾기·내 글 has no hint of its own; it is never about a rule.
+                            else -> o.hint?.takeIf { it.isNotBlank() } ?: if (o.room) "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" else "이 규칙에 대해 적어 주세요"
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,

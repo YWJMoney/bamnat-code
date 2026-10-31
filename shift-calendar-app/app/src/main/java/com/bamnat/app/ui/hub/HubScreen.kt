@@ -167,10 +167,13 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val r = item ?: return
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
-        Text("오늘의 하나", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.padding(start = 8.dp))
-        Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f))
+        // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
+        r.look?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 44.dp); Spacer(Modifier.padding(start = 8.dp)) }
+        Column(Modifier.weight(1f)) {
+            Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        TextButton(onClick = { onRecipe(r.code) }) { Text("입어 보기") }
         TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
     }
 }
@@ -201,6 +204,8 @@ private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, on
 @Composable
 private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit,
                  onCode: () -> Unit, onPosts: () -> Unit, onRecipe: (String) -> Unit) = Page {
+    // 1.36 [VIL-15] PC 확인 V2·V17: my request someone finished shows first, at once (the 소식 comes only once a day), until opened.
+    DoneRequests(c, style, onRecipe)
     Text(HubSection.MAKE.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
@@ -224,8 +229,6 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
             }
         }
     }
-    // 1.36 [VIL-15] PC 확인 V2: my request someone finished shows here at once (the 소식 comes only once a day), until opened.
-    DoneRequests(c, style, onRecipe)
     // 1.36 [VIL-19] 이달의 주제 공모, under 스튜디오 where things are made.
     com.bamnat.app.ui.village.ContestCard(c, style, onRecipe)
     val themes = lease.history.sortedByDescending { it.own }.take(10)

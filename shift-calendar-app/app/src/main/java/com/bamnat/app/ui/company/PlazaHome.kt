@@ -203,10 +203,20 @@ class PlazaHomeViewModel(
     fun openTalk() {
         val p = _plan.value
         val room = p.room ?: return
-        val now = com.bamnat.core.time.Today.instant().toEpochMilli()
-        runCatching { ui.edit().putLong(seenKey(), now).apply() }
-        _seen.value = now
+        markSeen()
         talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note)
+    }
+
+    /**
+     * PC 확인 V15: seen up to the newest post the server sent (its clock, not the phone's: a test clock or a phone set wrong kept
+     * the mark on), called on opening the talk and again when it closes, so answers read in the sheet are not new any more.
+     */
+    fun markSeen() {
+        val newest = listOfNotNull(_state.value.talk, talk.open.value?.talk).flatMap { it.posts }
+            .filter { !it.id.startsWith("local-") }.maxOfOrNull { it.at.toEpochMilli() } ?: 0L
+        val at = maxOf(newest, com.bamnat.core.time.Today.instant().toEpochMilli(), _seen.value)
+        runCatching { ui.edit().putLong(seenKey(), at).apply() }
+        _seen.value = at
     }
 }
 
@@ -229,6 +239,8 @@ fun PlazaHomeScreen(
     // [SPD-14] 1.30 AP1: the room's own posts come back changed after the sheet closes, only when this phone wrote there; the
     // plaza is not read a second time as it opens (1.29: init and this both read it).
     var sheetWasOpen by remember { mutableStateOf(false) }
+    // PC 확인 V15: what the open talk shows counts as read.
+    LaunchedEffect(open?.talk) { if (open?.talk != null) vm.markSeen() }
     LaunchedEffect(open == null) {
         if (open != null) sheetWasOpen = true
         else if (sheetWasOpen) { sheetWasOpen = false; vm.sheetClosed() }
