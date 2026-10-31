@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.ui.layout.layout
 import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -1090,7 +1091,10 @@ fun CalendarScreen(
                 else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
             }
         }
-        NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+        // 1.36 U7·U19 (빠른 입력: 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀리고, 다음 누름이 빈 곳에 가요): while painting, everything
+        // above the month keeps the height it had when painting began, so the days stay under the finger.
+        val holding = paint != null
+        NoticeStack(modifier = Modifier.holdHeight(holding), state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
             // screen too, for a phone whose notices are off.
@@ -1290,8 +1294,10 @@ fun CalendarScreen(
             }
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
-        if (!low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
-            aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+        if (!low) Column(Modifier.holdHeight(holding)) {
+            calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
+                aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+            }
         }
         // [CAL-03] One week and the whole day under it, or the month.
         if (weekOnly && !wide) {
@@ -1363,7 +1369,7 @@ fun CalendarScreen(
                     countsPart(Modifier.weight(0.55f))
                 }
                 computedNote()
-            } else {
+            } else Column(Modifier.holdHeight(paint != null)) {
                 summaryPart(Modifier)
                 computedNote()
                 countsPart(Modifier)
@@ -2735,5 +2741,20 @@ internal fun SwipeMonthBadge(pager: androidx.compose.foundation.pager.PagerState
             Text((if (target.year != com.bamnat.core.time.Today.date().year) "${target.year}년 " else "") + "${target.monthValue}월",
                 style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
         }
+    }
+}
+
+/**
+ * 1.36 U7·U19: while [hold], the content keeps the height it was last laid out at (cut to it, or left with room), so what
+ * changes inside does not move what is below it.
+ */
+@Composable
+internal fun Modifier.holdHeight(hold: Boolean): Modifier {
+    val last = androidx.compose.runtime.remember { IntArray(1) { -1 } }
+    return this.then(if (hold) Modifier.clipToBounds() else Modifier).layout { m, c ->
+        val p = m.measure(c)
+        if (!hold || last[0] < 0) last[0] = p.height
+        val h = if (hold) last[0] else p.height
+        layout(p.width, h) { p.place(0, 0) }
     }
 }

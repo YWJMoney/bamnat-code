@@ -273,6 +273,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val s = _state.value
         // Nothing changed (the same part again): no step to take back.
         val stepped = s.draft != was
+        // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
+        if (!stepped) { _state.value = s.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
             said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요", canUndoLayer = stepped)
     }
