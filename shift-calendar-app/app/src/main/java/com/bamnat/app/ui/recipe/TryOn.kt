@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.semantics.stateDescription
@@ -168,7 +169,13 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                         change.consume(); onSplit((latest + dx / wPx).coerceIn(0.05f, 0.95f))
                     }
                 }
-                .semantics { contentDescription = "비교 선, 좌우로 끌어 옮기기" }, contentAlignment = Alignment.Center) {
+                .semantics {
+                    contentDescription = "비교 선, 좌우로 끌어 옮기기"
+                    customActions = listOf(
+                        androidx.compose.ui.semantics.CustomAccessibilityAction("선을 왼쪽으로") { onSplit((latest - 0.1f).coerceIn(0.05f, 0.95f)); true },
+                        androidx.compose.ui.semantics.CustomAccessibilityAction("선을 오른쪽으로") { onSplit((latest + 0.1f).coerceIn(0.05f, 0.95f)); true },
+                    )
+                }, contentAlignment = Alignment.Center) {
                 Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)))
             }
         }
