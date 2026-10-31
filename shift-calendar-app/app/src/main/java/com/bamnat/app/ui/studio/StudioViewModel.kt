@@ -20,6 +20,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * [STU-10] 1.35 스튜디오 (사용자 2026-10-30 21:39 "스튜디오 기능이 좋은데 왜 화면 꾸미기랑 분리를 해놓은거야? 둘이 합쳐서 엔터프라이즈급
@@ -122,16 +128,65 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             }
             start.startsWith(START_DRAFT) -> {
                 refresh(both = true)
-                viewModelScope.launch {
-                    val id = start.removePrefix(START_DRAFT).toLongOrNull() ?: return@launch
-                    val d = runCatching { c.database.recipeDao().drafts().firstOrNull { it.id == id } }.getOrNull() ?: return@launch
-                    startRecipe(d.body, null, d.code)
-                    _state.value = _state.value.copy(draftId = id)
-                }
+                start.removePrefix(START_DRAFT).toLongOrNull()?.let { resume(it) }
             }
             else -> refresh(both = true)
         }
+        autosave()
     }
+
+    /** [STU-34] 1.36 만들던 것 이어서 하기: a 만들던 레시피 (or the studio's own 자동 저장) back in the studio, its row kept up to date. */
+    fun resume(id: Long) = viewModelScope.launch {
+        val d = runCatching { c.database.recipeDao().drafts().firstOrNull { it.id == id } }.getOrNull() ?: return@launch
+        startRecipe(d.body, null, d.code).join()
+        _state.value = _state.value.copy(draftId = id)
+    }
+
+    /**
+     * [STU-34] The newest draft left in the studio (step 1: 스튜디오에서 꾸미던 중) other than the one open, from the last 14 days, to offer
+     * 이어서 하기 on.
+     */
+    val resumable: StateFlow<com.bamnat.app.data.db.RecipeDraftEntity?> =
+        kotlinx.coroutines.flow.combine(c.recipes.drafts, _state) { list, s ->
+            list.filter { it.step <= 1 && it.id != s.draftId && com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }
+                .maxByOrNull { it.updatedAt }
+        }.kotlinx_stateIn()
+
+    private fun <T> kotlinx.coroutines.flow.Flow<T?>.kotlinx_stateIn(): StateFlow<T?> =
+        stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * [STU-34] 1.36 자동 저장 (스튜디오 극상 조사 S5, Figma처럼 만들던 것이 사라지지 않게): a moment after each change the draft (모양과
+     * 기능) is kept as a 만들던 레시피 at step 1, so leaving, the app closing or the phone restarting loses nothing; 이어서 하기 brings it
+     * back. Once it is on the phone or saved as 내 테마 with nothing else in it, the row goes.
+     */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private fun autosave() = viewModelScope.launch {
+        _state.map { s -> AutoKey(s.pieces, s.extras, s.changed, s.kept || s.wornNow) }
+            .distinctUntilChanged()
+            .debounce(AUTOSAVE_MS)
+            .collect { k ->
+                val s = _state.value
+                when {
+                    k.done && s.draftId != 0L && s.extras.isEmpty() && s.meta == null && s.ownCode == null -> {
+                        runCatching { c.recipes.deleteDraft(s.draftId) }
+                        _state.value = _state.value.copy(draftId = 0)
+                    }
+                    k.changed && !k.done && s.pieces.isNotEmpty() -> {
+                        val r = (s.meta ?: recipe("")).copy(title = draftTitle(s), parent = null,
+                            pieces = (s.pieces + s.extras.map { (kind, v) -> Piece(kind, v) }).sortedBy { it.kind.ordinal })
+                        val id = runCatching { c.recipes.saveDraft(s.draftId, RecipeCodec.write(r), 1, s.ownCode, "public") }.getOrNull() ?: return@collect
+                        if (_state.value.draftId != id) _state.value = _state.value.copy(draftId = id)
+                    }
+                }
+            }
+    }
+
+    private data class AutoKey(val pieces: List<Piece>, val extras: Map<PieceKind, Map<String, Any?>>, val changed: Boolean, val done: Boolean)
+
+    /** The name a kept draft shows in 만들던 레시피 and 이어서 하기. */
+    private fun draftTitle(s: State): String = (s.savedTitle ?: s.meta?.title?.takeIf { it.isNotBlank() }
+        ?: (s.origin as? Origin.Theme)?.wear?.title?.let { "$it 고치는 중" } ?: "꾸미던 모양").take(30)
 
     private fun mineTitle(): String = c.wardrobe.lease.value.worn?.let { "지금 모양 · ${it.title}" } ?: "지금 내 모양"
 
@@ -156,12 +211,40 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** One change to the draft; 되돌리기 goes back over it (up to [HISTORY] steps). */
     fun change(f: (AppSettings) -> AppSettings) {
+        merging = null
         val s = _state.value
         val next = f(s.draft)
         if (next == s.draft) return
         _state.value = s.copy(draft = next, past = (s.past + snap(s)).takeLast(HISTORY), future = emptyList(), said = null, wornNow = false, kept = false)
         refresh()
     }
+
+    /** [STU-30] The label of the run of picks [changeMerged] is adding to, or null after any other step. */
+    private var merging: String? = null
+
+    /**
+     * [STU-30][STU-32] 한 색·섞기·스타일 복사: picks in a row under the same [label] are one step of 되돌리기 (from before the first), so
+     * trying colours does not fill the 기록 and one 되돌리기 goes back to before them all.
+     */
+    fun changeMerged(label: String, f: (AppSettings) -> AppSettings) {
+        val s = _state.value
+        if (merging == label && s.past.lastOrNull()?.label == label) {
+            val next = f(s.draft)
+            if (next == s.draft) return
+            _state.value = s.copy(draft = next, future = emptyList(), said = null, wornNow = false, kept = false)
+            refresh()
+            return
+        }
+        where = label
+        change(f)
+        if (_state.value.past.lastOrNull()?.label == label) merging = label
+    }
+
+    /** [STU-33] 스타일 복사: a screen's key and its colours as drawn, to paste on another screen. */
+    var copiedLook: Pair<String, com.bamnat.core.recipe.ScreenLook>? by androidx.compose.runtime.mutableStateOf(null)
+
+    /** One line said under the studio (no 되돌리기). */
+    fun say(line: String) { _state.value = _state.value.copy(said = line, canUndoWear = false, canUndoLayer = false) }
 
     // ---- [STU-21] 기능 (레시피 만들기에서 합침) ----
 
@@ -193,6 +276,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** [STU-20] 기록 목록: back to just before step [i] of [State.past] (the newest last); the steps after it can be done again. */
     fun backTo(i: Int) {
+        merging = null
         val s = _state.value
         if (i !in s.past.indices) return
         val target = s.past[i]
@@ -217,6 +301,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     fun undo() {
+        merging = null
         val s = _state.value
         val last = s.past.lastOrNull() ?: return
         _state.value = s.copy(draft = last.draft, extras = last.extras, layered = last.layered, sources = last.sources,
@@ -225,6 +310,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     fun redo() {
+        merging = null
         val s = _state.value
         val next = s.future.firstOrNull() ?: return
         _state.value = s.copy(draft = next.draft, extras = next.extras, layered = next.layered, sources = next.sources,
@@ -254,8 +340,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun kept(): List<ThemeLease.Wear> = c.wardrobe.lease.value.history.sortedByDescending { it.own }
 
     private fun restart(d: AppSettings, o: Origin) {
+        merging = null
         _state.value = _state.value.copy(draft = d, base = d, origin = o, past = emptyList(), future = emptyList(), said = null, canUndoWear = false,
-            sources = emptyMap(), layered = emptyList(), extras = emptyMap(), parentCode = null, ownCode = null, meta = null)
+            sources = emptyMap(), layered = emptyList(), extras = emptyMap(), parentCode = null, ownCode = null, meta = null,
+            // [STU-34] A new start is a new 자동 저장, never written over the one left before.
+            draftId = 0, savedTitle = null, kept = false)
         refresh(both = true)
     }
 
@@ -566,6 +655,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val START_THEME = "theme:"
         const val START_KEPT = "kept:"
         const val HISTORY = 50
+        /** [STU-34] How long after the last change the draft is kept. */
+        const val AUTOSAVE_MS = 1_200L
         /** "recipe": open on the recipe left in [com.bamnat.app.recipe.RecipeLinks.remake] (고쳐 만들기, 새 판), "recipe:<code>" as mine. */
         const val START_RECIPE = "recipe"
         /** "draft:<id>": a 만들던 레시피 kept on the phone. */

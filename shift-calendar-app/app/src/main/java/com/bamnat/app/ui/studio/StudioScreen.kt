@@ -165,7 +165,8 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         SETTINGS -> listOf(Tool.COLORS, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.BOX)
         ALARM, GUARDED -> listOf(Tool.COLORS)
-        ALL -> listOf(Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
+        ALL -> listOf(Tool.SEED, Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
     }
 
@@ -183,7 +184,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
 private enum class Tool(val label: String) {
     CELL("칸 디자인"), PATTERN("패턴"), VIEW("칸 높이·줄"), DAYS("오늘·주말 색"), PHOTO("그림"), COLORS("색·배경"), CARDS("카드 배치"),
     MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 탭"), CORNERS("모서리"), WIDGET("위젯 모양"),
-    BOX("보관함"), FEATURE("켜고 고치기"),
+    BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -226,6 +227,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var startAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     val snack = remember { SnackbarHostState() }
+    val resumable by vm.resumable.collectAsStateWithLifecycle()
+    var resumeShut by rememberSaveable { mutableStateOf(false) }
 
     val d = s.draft
     val looks = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks) }
@@ -287,6 +290,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text("지금 내 모양에서") }, onClick = { menu = false; guarded { vm.startMine() } })
                             DropdownMenuItem({ Text("처음 모양에서") }, onClick = { menu = false; guarded { vm.startPlain() } })
+                            // [STU-34] 자동 저장된 만들던 것.
+                            resumable?.let { r ->
+                                DropdownMenuItem({ Text("이어서 하기 · ${draftName(r.body)}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    onClick = { menu = false; guarded { vm.resume(r.id) } })
+                            }
                             val themes = vm.kept()
                             if (themes.isNotEmpty()) HorizontalDivider()
                             themes.take(12).forEach { w ->
@@ -416,6 +424,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     else if (half && !detail) Text("왼쪽이 지금 고친 모양, 오른쪽이 고치기 전이에요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
+                // [STU-34] 만들던 것 이어서 하기: offered once on a fresh start, until anything is changed or it is shut.
+                resumable?.takeIf { !resumeShut && s.past.isEmpty() && s.draftId == 0L }?.let { r ->
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(draftName(r.body).let { n -> "만들던 ‘$n’${com.bamnat.app.ui.Fmt.iga("$n’")} 남아 있어요" } + " · ${ago(r.updatedAt)}",
+                                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            TextButton(onClick = { vm.resume(r.id) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
+                            TextButton(onClick = { resumeShut = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+                        }
+                    }
+                }
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -443,9 +463,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.VIEW -> com.bamnat.app.ui.calendar.CalendarViewEditor(view, ::saveView, sample = {})
                         Tool.DAYS -> com.bamnat.app.ui.settings.CalendarThemeRows(d.calTheme) { v -> vm.change { it.copy(calTheme = v) } }
                         Tool.PHOTO -> com.bamnat.app.ui.settings.PhotoLookRows(d.photoLook) { v -> vm.change { it.copy(photoLook = v) } }
-                        Tool.COLORS -> ScreenLookEditor(area.target ?: FreeTarget.ALL, looks.looks[key] ?: ScreenLook(), looks.of(key)) { l ->
-                            vm.change { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(key, l).encode()) }
+                        Tool.COLORS -> {
+                            ScreenLookEditor(area.target ?: FreeTarget.ALL, looks.looks[key] ?: ScreenLook(), looks.of(key)) { l ->
+                                vm.change { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(key, l).encode()) }
+                            }
+                            // [STU-33] 스타일 복사: this screen's colours to every screen, copy and paste, back to '앱 전체'.
+                            ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
+                        Tool.SEED -> SeedTool(vm, d)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
                         Tool.MONEY_LOOK -> MoneyLookEditor(moneyLook) { l -> vm.change { it.copy(moneyLook = l.encode()) } }
@@ -870,4 +895,14 @@ private fun Modifier.holdToPeek(enabled: Boolean, onPeek: (Boolean) -> Unit): Mo
             }
         } finally { onPeek(false) }
     }
+}
+
+/** [STU-34] A kept draft's name, from its body. */
+internal fun draftName(body: String): String =
+    runCatching { org.json.JSONObject(body).optString("title") }.getOrNull()?.ifBlank { null } ?: "꾸미던 모양"
+
+/** [STU-34] How long ago, in words: 방금, N분 전, N시간 전, N일 전. */
+internal fun ago(millis: Long, now: Long = com.bamnat.core.time.Today.millis()): String {
+    val m = ((now - millis) / 60_000L).coerceAtLeast(0)
+    return when { m < 1 -> "방금"; m < 60 -> "${m}분 전"; m < 60 * 24 -> "${m / 60}시간 전"; else -> "${m / (60 * 24)}일 전" }
 }

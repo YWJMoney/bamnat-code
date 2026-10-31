@@ -1,0 +1,294 @@
+package com.bamnat.app.ui.studio
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.bamnat.app.data.AppSettings
+import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.settings.ColorPick
+import com.bamnat.core.recipe.CalendarTheme
+import com.bamnat.core.recipe.Palette
+import com.bamnat.core.recipe.ScreenLook
+import com.bamnat.core.recipe.ScreenLooks
+import com.bamnat.core.recipe.ThemeSeed
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * [STU-30][STU-33] 1.36 한 색으로 앱 전체·스타일 복사 (스튜디오 극상 조사 S1·S4): what a scheme or a copied look does to the draft.
+ * Kept apart from the screen so the app's unit tests can check it.
+ */
+internal object StudioColors {
+    /**
+     * [scheme] as the whole app's colours: '앱 전체' takes 바탕·카드·글자·강조 (its picture, dimming and emoji stay), 달력 색 takes 오늘·토·일
+     * (공휴일 follows 일요일). With [allScreens] every screen's own 바탕·카드·글자·강조 go, so they follow '앱 전체' (their pictures stay).
+     */
+    fun withScheme(d: AppSettings, scheme: ThemeSeed.Scheme, allScreens: Boolean): AppSettings {
+        val looks = ScreenLooks.decode(d.screenLooks)
+        val all = (looks.looks[ScreenLooks.ALL] ?: ScreenLook()).copy(bg = scheme.bg, card = scheme.card, ink = scheme.ink, accent = scheme.accent)
+        var next = looks.with(ScreenLooks.ALL, all)
+        if (allScreens) next = followAll(next)
+        val cal = CalendarTheme.decode(d.calTheme).copy(today = scheme.today, sat = scheme.sat, sun = scheme.sun, holiday = null)
+        return d.copy(screenLooks = next.encode(), calTheme = cal.encode())
+    }
+
+    /** Every screen but '앱 전체' without its own colours (its picture stays), so it follows '앱 전체'. */
+    fun followAll(looks: ScreenLooks): ScreenLooks = looks.looks.keys.filter { it != ScreenLooks.ALL }.fold(looks) { acc, k ->
+        acc.with(k, (acc.looks[k] ?: ScreenLook()).copy(bg = null, card = null, ink = null, accent = null))
+    }
+
+    /** The screens (not '앱 전체') with colours of their own. */
+    fun ownColours(looks: ScreenLooks): List<String> = looks.looks.filter { (k, l) ->
+        k != ScreenLooks.ALL && (l.bg != null || l.card != null || l.ink != null || l.accent != null)
+    }.keys.toList()
+
+    /** S4 이 화면 색을 모든 화면에: [key]'s colours (as drawn, over '앱 전체') become '앱 전체', and every screen follows them. */
+    fun toAllScreens(d: AppSettings, key: String): AppSettings {
+        val looks = ScreenLooks.decode(d.screenLooks)
+        val shown = looks.of(key)
+        val all = (looks.looks[ScreenLooks.ALL] ?: ScreenLook()).copy(bg = shown.bg, card = shown.card, ink = shown.ink, accent = shown.accent)
+        return d.copy(screenLooks = followAll(looks.with(ScreenLooks.ALL, all)).encode())
+    }
+
+    /** S4 붙이기: [look]'s colours (and its picture, if it has one) on [key]; its emoji only on 마을. */
+    fun paste(d: AppSettings, key: String, look: ScreenLook): AppSettings {
+        val looks = ScreenLooks.decode(d.screenLooks)
+        val now = looks.looks[key] ?: ScreenLook()
+        val next = if (key == ScreenLooks.PLAZA) now.copy(bg = look.bg, photo = look.photo ?: now.photo, dim = look.dim ?: now.dim)
+            else now.copy(bg = look.bg, card = look.card, ink = look.ink, accent = look.accent, photo = look.photo ?: now.photo, dim = look.dim ?: now.dim)
+        return d.copy(screenLooks = looks.with(key, next).encode())
+    }
+
+    /** S4 앱 전체 색 따르기: [key] without colours of its own. */
+    fun clearOwn(d: AppSettings, key: String): AppSettings {
+        val looks = ScreenLooks.decode(d.screenLooks)
+        return d.copy(screenLooks = looks.with(key, (looks.looks[key] ?: ScreenLook()).copy(bg = null, card = null, ink = null, accent = null)).encode())
+    }
+
+    /** Where the seed starts: '앱 전체' 강조, else 오늘 색, else the app's blue. */
+    fun seedOf(d: AppSettings): Long = ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.accent
+        ?: CalendarTheme.decode(d.calTheme).today ?: ThemeSeed.DEFAULT_SEED
+
+    /** Colours to start from in one tap: a wheel of 12 that each make a good scheme. */
+    val SEEDS = listOf(0xFFE5484DL, 0xFFF2994AL, 0xFFF2C94CL, 0xFF27AE60L, 0xFF00857AL, 0xFF00A3C4L, 0xFF2F5BEAL, 0xFF4F6BEDL,
+        0xFF9B51E0L, 0xFFE84393L, 0xFF8D6E63L, 0xFF607D8BL)
+
+    /** [STU-31] A small copy of a picture's pixels (about 64 px across), read off the main thread. */
+    suspend fun pixels(context: Context, uri: Uri): IntArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= 64 && bounds.outHeight / (sample * 2) >= 64) sample *= 2
+            val bm = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            bm?.let { pixels(it) }
+        }.getOrNull()
+    }
+
+    fun pixels(bm: Bitmap): IntArray {
+        val small = if (bm.width > 96 || bm.height > 96) Bitmap.createScaledBitmap(bm, 64, (64f * bm.height / bm.width).toInt().coerceAtLeast(1), true) else bm
+        return IntArray(small.width * small.height).also { small.getPixels(it, 0, small.width, 0, 0, small.width, small.height) }
+    }
+}
+
+/**
+ * [STU-30][STU-31][STU-32] 한 색 도구: pick one colour (a wheel of 12, colours from a picture, or any colour) and the whole app's colours
+ * follow in a [ThemeSeed.Variant], light or dark; 섞기 tries other places for the same colours. Every pick shows at once on the example and
+ * the picks in a row are one step of 되돌리기 ([StudioViewModel.changeMerged]).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var seed by rememberSaveable { mutableLongStateOf(StudioColors.seedOf(d)) }
+    var variant by rememberSaveable { mutableStateOf(ThemeSeed.Variant.SOFT) }
+    var dark by rememberSaveable { mutableStateOf(false) }
+    var mix by rememberSaveable { mutableIntStateOf(0) }
+    var photoColours by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val own = remember(d.screenLooks) { StudioColors.ownColours(ScreenLooks.decode(d.screenLooks)) }
+    var allScreens by rememberSaveable { mutableStateOf(true) }
+    val scheme = ThemeSeed.shuffle(seed, variant, dark, mix)
+
+    fun put(s: Long = seed, v: ThemeSeed.Variant = variant, dk: Boolean = dark, m: Int = mix, all: Boolean = allScreens) {
+        seed = s; variant = v; dark = dk; mix = m; allScreens = all
+        vm.changeMerged(LABEL) { StudioColors.withScheme(it, ThemeSeed.shuffle(s, v, dk, m), all) }
+    }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val px = StudioColors.pixels(context, uri)
+            if (px == null) { problem = "사진을 읽지 못했어요. 다른 사진을 골라 주세요"; return@launch }
+            problem = null
+            photoColours = ThemeSeed.fromPixels(px)
+            put(s = photoColours.first(), m = 0)
+        }
+    }
+    val bgPhoto = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.photo }
+
+    Text("색 하나만 고르면 바탕·카드·글자·강조·오늘·주말 색이 어울리게 맞춰져요. 글자는 늘 잘 읽히게 맞춰요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("색 고르기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        (photoColours + StudioColors.SEEDS.filter { it !in photoColours }).forEachIndexed { i, c ->
+            if (i == photoColours.size && photoColours.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
+            val on = c == seed
+            Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c.toInt()))
+                .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                .clickable { put(s = c, m = 0) }
+                .semantics { contentDescription = (if (i < photoColours.size) "사진 색 ${i + 1}" else "색 ${i - photoColours.size + 1}"); selected = on })
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = { runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } },
+            modifier = Modifier.heightIn(min = 48.dp)) { Text("사진에서 색 뽑기") }
+        if (bgPhoto != null) TextButton(onClick = {
+            scope.launch {
+                val bm = withContext(Dispatchers.IO) { com.bamnat.app.recipe.LookImages.bitmap(context, bgPhoto) }
+                if (bm == null) { problem = "배경 사진을 읽지 못했어요"; return@launch }
+                photoColours = ThemeSeed.fromPixels(StudioColors.pixels(bm))
+                put(s = photoColours.first(), m = 0)
+            }
+        }, modifier = Modifier.heightIn(min = 48.dp)) { Text("배경 사진에서") }
+    }
+    problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    ColorPick("직접 고르기", seed, allowNone = false) { c -> c?.let { put(s = it, m = 0) } }
+
+    Text("느낌", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ThemeSeed.Variant.entries.forEach { v -> FilterChip(selected = v == variant, onClick = { put(v = v) }, label = { Text(v.label) }) }
+        FilterChip(selected = !dark, onClick = { put(dk = false) }, label = { Text("밝은 화면") })
+        FilterChip(selected = dark, onClick = { put(dk = true) }, label = { Text("어두운 화면") })
+    }
+
+    SchemeStrip(scheme)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // [STU-32] 섞기: the same colours in the next place; the whole run of picks goes back with one 되돌리기.
+        Button(onClick = { put(m = mix + 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("섞어 보기") }
+        Text(ThemeSeed.SHUFFLES[Math.floorMod(mix, ThemeSeed.SHUFFLES.size)] + " · ${Math.floorMod(mix, ThemeSeed.SHUFFLES.size) + 1}/${ThemeSeed.SHUFFLES.size}",
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (own.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { put(all = !allScreens) }.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("화면마다 따로 고른 색도 이 색으로", style = MaterialTheme.typography.bodyMedium)
+            Text("${own.size}곳(${own.joinToString("·") { screenName(it) }})의 색이 따로 있어요. 끄면 그 화면들은 그대로예요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(allScreens, { put(all = it) }, modifier = Modifier.semantics { contentDescription = "화면마다 따로 고른 색도 이 색으로" })
+    }
+    Text("마음에 안 들면 위의 되돌리기 한 번으로 고르기 전으로 돌아가요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** The scheme's colours side by side with their names, the text on its ground as it will read. */
+@Composable
+private fun SchemeStrip(s: ThemeSeed.Scheme) {
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(s.bg.toInt())).padding(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(s.card.toInt())).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("카드 글자", color = Color(s.ink.toInt()), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text("토", color = Color(s.sat.toInt()), fontWeight = FontWeight.Bold)
+                Text("일", color = Color(s.sun.toInt()), fontWeight = FontWeight.Bold)
+                Box(Modifier.size(26.dp).clip(CircleShape).background(Color(s.today.toInt())), contentAlignment = Alignment.Center) {
+                    Text("9", color = Color(Palette.inkOn(null, s.today).toInt()), style = MaterialTheme.typography.labelMedium)
+                }
+                Box(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(s.accent.toInt())).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                    Text("단추", color = Color(Palette.inkOn(null, s.accent).toInt()), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            Text("바탕 글자", color = Color(Palette.inkOn(s.ink, s.bg).toInt()), style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+/**
+ * [STU-33] S4 스타일 복사: under a screen's 색·배경, its colours to every screen, copied to paste on another screen, or back to
+ * following '앱 전체'.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ScreenCopyRow(vm: StudioViewModel, d: AppSettings, key: String, onSeed: () -> Unit) {
+    val looks = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks) }
+    val mine = looks.looks[key]
+    val copied = vm.copiedLook
+    Text("한 번에 하기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (key != ScreenLooks.ALL && key != ScreenLooks.PLAZA) TextButton(onClick = {
+            vm.changeMerged("${screenName(key)} 색을 모든 화면에") { StudioColors.toAllScreens(it, key) }
+        }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이 색을 모든 화면에") }
+        if (key == ScreenLooks.ALL) {
+            val own = StudioColors.ownColours(looks)
+            if (own.isNotEmpty()) TextButton(onClick = {
+                vm.changeMerged("화면마다 따로 고른 색 지우기") { it.copy(screenLooks = StudioColors.followAll(ScreenLooks.decode(it.screenLooks)).encode()) }
+            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("모든 화면을 이 색으로 (${own.size}곳 따로 고른 색 지우기)") }
+        }
+        TextButton(onClick = { vm.copiedLook = key to looks.of(key); vm.say("‘${screenName(key)}’ 색을 복사했어요. 다른 화면의 색·배경에서 붙여요") },
+            modifier = Modifier.heightIn(min = 48.dp)) { Text("복사") }
+        if (copied != null && copied.first != key) TextButton(onClick = {
+            vm.changeMerged("‘${screenName(copied.first)}’ 색을 ${screenName(key)}에 붙이기") { StudioColors.paste(it, key, copied.second) }
+        }, modifier = Modifier.heightIn(min = 48.dp)) { Text("붙이기 (‘${screenName(copied.first)}’ 색)") }
+        if (key != ScreenLooks.ALL && mine != null && (mine.bg != null || mine.card != null || mine.ink != null || mine.accent != null)) TextButton(onClick = {
+            vm.changeMerged("${screenName(key)} 앱 전체 색 따르기") { StudioColors.clearOwn(it, key) }
+        }, modifier = Modifier.heightIn(min = 48.dp)) { Text("앱 전체 색 따르기") }
+        TextButton(onClick = onSeed, modifier = Modifier.heightIn(min = 48.dp)) { Text("한 색으로 앱 전체 ›") }
+    }
+}
+
+/** A screen key ([ScreenLooks.KEYS], pay.<style>) as people say it. */
+internal fun screenName(key: String): String = when (key.substringBefore('.')) {
+    ScreenLooks.ALL -> "앱 전체"; "calendar" -> "달력"; "money" -> "가계부"; "memo" -> "메모"; "stats" -> "통계"; "pay" -> "급여"
+    "plaza" -> "마을"; "settings" -> "설정"; "alarm" -> "알람 화면"; "guarded" -> "결제·처리방침"; else -> key
+}
+
+private const val LABEL = "앱 전체 · 한 색"
