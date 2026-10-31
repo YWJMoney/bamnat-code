@@ -35,7 +35,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * [STU-20] 1.36 one step of 되돌리기: the look and the 기능 at that point, and what was changed there (기록 목록, 사용자 2026-10-31
      * "최상의 엔터프라이즈급 스튜디오").
      */
-    data class Snap(val draft: AppSettings, val extras: Map<PieceKind, Map<String, Any?>>, val label: String)
+    /** One step of 되돌리기; 1.36 (사용자 2026-10-31 조각 얹기 되돌리기) the 보관함 parts laid on and their 출처 go back with it. */
+    data class Snap(val draft: AppSettings, val extras: Map<PieceKind, Map<String, Any?>>, val label: String,
+        val layered: List<ThemeWardrobe.Kept> = emptyList(), val sources: Map<String, String> = emptyMap())
 
     val style: WorkStyle? = c.settingsRepository.current.workStyle
 
@@ -79,6 +81,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** One line said after 입히기 or 저장, with 되돌리기 for 입히기. */
         val said: String? = null,
         val canUndoWear: Boolean = false,
+        /** 1.36: the line said after 얹기 offers 되돌리기, which takes that one step back. */
+        val canUndoLayer: Boolean = false,
+        /** 1.36 (사용자 2026-10-31 "누르면 전 모습, 떼면 후 모습"): the look one step back, for holding a finger on the example. */
+        val prevPieces: List<Piece>? = null,
         /** F-94: the draft is what the phone wears now (just put on, nothing changed since). */
         val wornNow: Boolean = false,
     ) {
@@ -130,13 +136,19 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val s = _state.value
         val pieces = c.recipes.pieces.lookPieces(s.draft)
         val base = if (both) c.recipes.pieces.lookPieces(s.base) else s.basePieces
-        _state.value = _state.value.copy(pieces = pieces, basePieces = base)
+        val prev = s.past.lastOrNull()?.draft?.let { c.recipes.pieces.lookPieces(it) }
+        _state.value = _state.value.copy(pieces = pieces, basePieces = base, prevPieces = prev)
     }
 
     /** [STU-20] Where the next change is made (영역 · 도구), for the 기록 목록. */
     var where: String = "고침"
 
-    private fun snap(s: State, label: String = where) = Snap(s.draft, s.extras, label)
+    private fun snap(s: State, label: String = where) = Snap(s.draft, s.extras, label, s.layered, s.sources)
+
+    /** 1.36: the example one step back (누르고 있는 동안), with that step's 기능. */
+    fun previous(s: State = _state.value): Recipe? = s.prevPieces?.let { p ->
+        Recipe("전", styles = WorkStyle.entries.toSet(), pieces = p + (s.past.lastOrNull()?.extras ?: s.extras).map { (k, v) -> Piece(k, v) })
+    }
 
     /** One change to the draft; 되돌리기 goes back over it (up to [HISTORY] steps). */
     fun change(f: (AppSettings) -> AppSettings) {
@@ -180,7 +192,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val s = _state.value
         if (i !in s.past.indices) return
         val target = s.past[i]
-        _state.value = s.copy(draft = target.draft, extras = target.extras, past = s.past.take(i),
+        _state.value = s.copy(draft = target.draft, extras = target.extras, layered = target.layered, sources = target.sources, past = s.past.take(i),
             future = s.past.drop(i + 1) + snap(s) + s.future, said = null)
         refresh()
     }
@@ -203,14 +215,16 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun undo() {
         val s = _state.value
         val last = s.past.lastOrNull() ?: return
-        _state.value = s.copy(draft = last.draft, extras = last.extras, past = s.past.dropLast(1), future = listOf(snap(s, last.label)) + s.future, said = null)
+        _state.value = s.copy(draft = last.draft, extras = last.extras, layered = last.layered, sources = last.sources,
+            past = s.past.dropLast(1), future = listOf(snap(s, last.label)) + s.future, said = null, canUndoLayer = false)
         refresh()
     }
 
     fun redo() {
         val s = _state.value
         val next = s.future.firstOrNull() ?: return
-        _state.value = s.copy(draft = next.draft, extras = next.extras, past = s.past + snap(s, next.label), future = s.future.drop(1), said = null)
+        _state.value = s.copy(draft = next.draft, extras = next.extras, layered = next.layered, sources = next.sources,
+            past = s.past + snap(s, next.label), future = s.future.drop(1), said = null)
         refresh()
     }
 
@@ -249,10 +263,14 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val r = runCatching { RecipeCodec.read(k.body) }.getOrNull() ?: return@launch
         var d = _state.value.draft
         r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        val was = _state.value.draft
+        where = "보관함 · ‘${k.title}’ 얹기"
         change { d }
         val s = _state.value
+        // Nothing changed (the same part again): no step to take back.
+        val stepped = s.draft != was
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
-            said = "‘${k.title}’을(를) 얹었어요")
+            said = "‘${k.title}’을(를) 얹었어요", canUndoLayer = stepped)
     }
 
     // ---- 입히기 · 저장 · 올리기 ----
@@ -484,7 +502,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         return RecipeCodec.write(r) to parent
     }
 
-    fun said() { _state.value = _state.value.copy(said = null) }
+    fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false) }
+
+    /** 1.36: 되돌리기 on the line said after 얹기: the same step as the 되돌리기 button above, layered parts and 출처 included. */
+    fun undoLayer() { if (_state.value.canUndoLayer) undo() }
 
     /** [STU-21] The code 올리기 sends a next 판 of: one of mine being remade, or one of mine already in 장터 ([plazaCode]). */
     fun nextOf(): String? = _state.value.ownCode ?: plazaCode()

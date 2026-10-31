@@ -257,7 +257,9 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
  * card and the corners. [on] says which pieces are switched on (the receiver's choice, or all of them while making).
  */
 @Composable
-internal fun ScreenPreview(r: Recipe, on: (PieceKind) -> Boolean = { true }) {
+internal fun ScreenPreview(r: Recipe,
+    /** 1.36 PC 시험: tab names in the viewer's words (알바 '출근·시급'). */
+    style: com.bamnat.core.work.WorkStyle? = null, on: (PieceKind) -> Boolean = { true }) {
     fun values(k: PieceKind) = r.pieces.firstOrNull { it.kind == k && on(k) }?.values
     val layout = values(PieceKind.LAYOUT)
     val cards = values(PieceKind.CARDS)
@@ -275,13 +277,13 @@ internal fun ScreenPreview(r: Recipe, on: (PieceKind) -> Boolean = { true }) {
                         val t = com.bamnat.app.ui.TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             androidx.compose.material3.Icon(t.icon, null, Modifier.size(22.dp))
-                            Text(t.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            Text(t.labelFor(style), style = MaterialTheme.typography.labelSmall, maxLines = 1)
                         }
                     }
                 }
             }
             (layout?.get("calendar") as? String)?.let { PartsPreview("달력 화면", it, com.bamnat.app.ui.calendar.CalendarPart.entries.associate { p -> p.id to p.label }) }
-            (cards?.get("stats") as? String)?.let { PartsPreview("통계 카드", it, com.bamnat.app.ui.stats.StatsPart.entries.associate { p -> p.id to p.label }) }
+            (cards?.get("stats") as? String)?.let { PartsPreview("${com.bamnat.app.ui.TopLevel.STATS.labelFor(style)} 카드", it, com.bamnat.app.ui.stats.StatsPart.entries.associate { p -> p.id to p.label }) }
             (cards?.get("money") as? String)?.let { PartsPreview("가계부 카드", it, com.bamnat.app.ui.money.MoneyPart.entries.associate { p -> p.id to p.label }) }
             (cards?.get("memo") as? String)?.let { PartsPreview("메모 화면", it, com.bamnat.app.ui.memo.MemoPart.entries.associate { p -> p.id to p.label }) }
             widget?.let { w ->

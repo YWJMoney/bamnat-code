@@ -509,7 +509,7 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
             Checkbox(k in s.chosen, null, enabled = mine != null)
             Column(Modifier.weight(1f)) {
                 Text(k.label, style = MaterialTheme.typography.bodyLarge)
-                Text(mine?.let { RecipeDescribe.line(Piece(k, it.filterValues { v -> v != null }), amounts = false) } ?: "지금 나눌 설정이 없어요",
+                Text(mine?.let { RecipeDescribe.line(Piece(k, it.filterValues { v -> v != null }), amounts = false, style = vm.style) } ?: "지금 나눌 설정이 없어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -686,7 +686,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }
     var all by remember { mutableStateOf(false) }
     TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "올라갈 내용 전부 보기") }
-    if (all) Text(RecipeDescribe.changes(s.recipe) + "\n\n" + RecipeCodec.write(s.recipe), style = MaterialTheme.typography.bodySmall)
+    if (all) Text(RecipeDescribe.changes(s.recipe, vm.style) + "\n\n" + RecipeCodec.write(s.recipe), style = MaterialTheme.typography.bodySmall)
     if (s.scope != "private") Row(verticalAlignment = Alignment.CenterVertically) {
         Switch(s.agreed, vm::agree)
         Spacer(Modifier.width(8.dp))

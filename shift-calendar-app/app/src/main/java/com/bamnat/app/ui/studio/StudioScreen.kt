@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.material.icons.filled.History
@@ -214,6 +216,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
+    // 1.36 (사용자 2026-10-31 "화면 터치하면 전 모습, 떼면 후 모습"): a finger held on the example shows the look one step back.
+    var peeking by remember { mutableStateOf(false) }
     var half by rememberSaveable { mutableStateOf(false) }
     var payStyle by rememberSaveable { mutableStateOf(vm.style ?: WorkStyle.SHIFT) }
     var lookIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -257,8 +261,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
 
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
-        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear) "되돌리기" else null, duration = SnackbarDuration.Long)
-        if (r == SnackbarResult.ActionPerformed) vm.undoWear() else vm.said()
+        // 1.36 (사용자 2026-10-31): 얹기 too can be taken back from here, the same step as 되돌리기 above.
+        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer) "되돌리기" else null, duration = SnackbarDuration.Long)
+        if (r == SnackbarResult.ActionPerformed) { if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
     }
     androidx.activity.compose.BackHandler(enabled = s.changed) { leaving = true }
 
@@ -354,11 +359,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     val zoom = androidx.compose.foundation.gestures.rememberTransformableState { z, _, _ ->
                         scale = (scale * z).coerceIn(SCALE_MIN, SCALE_MAX)
                     }
-                    if (scale > 0f) Box(Modifier.fillMaxWidth().transformable(zoom, canPan = { false }), contentAlignment = Alignment.Center) {
+                    if (scale > 0f) Box(Modifier.fillMaxWidth().holdToPeek(enabled = s.prevPieces != null) { peeking = it }
+                        .transformable(zoom, canPan = { false }), contentAlignment = Alignment.Center) {
                         CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked) {
                         if (!detail && !area.detailOnly) {
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
-                            val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) } else now
+                            val prev = remember(s.prevPieces, s.past) { vm.previous(s) }
+                            val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) }
+                                else if (peeking && prev != null) remember(prev, now) { LookParts.frame(prev, now) } else now
                             if (half && !comparing) CompareCanvas(before, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, 0.5f) { picked("colors") }
                             else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, scale, onPick = { picked("colors") })
                         } else {
@@ -400,6 +408,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.align(Alignment.CenterHorizontally).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                     }
+                    if (peeking && !comparing) Text("바로 전 모양이에요. 손을 떼면 지금 모양이에요", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.CenterHorizontally))
                     if (comparing) Text("고치기 전 모양이에요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.align(Alignment.CenterHorizontally))
                     else if (half && !detail) Text("왼쪽이 지금 고친 모양, 오른쪽이 고치기 전이에요", style = MaterialTheme.typography.labelSmall,
@@ -826,5 +836,33 @@ private fun resetTab(tab: String, d: com.bamnat.app.data.AppSettings, b: com.bam
         TabOrder.PLAZA -> d.copy(screenLooks = screens { it == ScreenLooks.PLAZA })
         LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook)
         else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) })
+    }
+}
+
+/**
+ * 1.36 (사용자 2026-10-31): a finger held still on the example for a moment reports true until it lifts, and that touch then
+ * opens nothing (a quick tap still picks the part, a pinch still zooms).
+ */
+private fun Modifier.holdToPeek(enabled: Boolean, onPeek: (Boolean) -> Unit): Modifier = if (!enabled) this else pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+        var moved = false
+        val lifted = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (e.changes.size > 1 || e.changes.any { (it.position - down.position).getDistance() > viewConfiguration.touchSlop }) { moved = true; return@withTimeoutOrNull true }
+                if (e.changes.all { !it.pressed }) return@withTimeoutOrNull true
+            }
+            @Suppress("UNREACHABLE_CODE") true
+        } != null
+        if (lifted || moved) return@awaitEachGesture
+        onPeek(true)
+        try {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                e.changes.forEach { it.consume() }
+                if (e.changes.all { !it.pressed }) break
+            }
+        } finally { onPeek(false) }
     }
 }

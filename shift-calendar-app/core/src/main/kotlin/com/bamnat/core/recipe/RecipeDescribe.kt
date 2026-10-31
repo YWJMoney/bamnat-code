@@ -79,7 +79,7 @@ object RecipeDescribe {
             (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "화면 배치" }
         PieceKind.CARDS -> listOfNotNull(
-            (p.values["stats"] as? String)?.let { "근무·급여 카드 ${parts(it)}" },
+            (p.values["stats"] as? String)?.let { "${tabName("stats", style)} 카드 ${parts(it)}" },
             (p.values["money"] as? String)?.let { "가계부 카드 ${parts(it)}" },
             (p.values["memo"] as? String)?.let { "메모 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "카드 순서" }
@@ -195,5 +195,5 @@ object RecipeDescribe {
     }
 
     /** "적용하면 바뀌는 것", written by the app for the 설명 틀 (만들기 4단계). */
-    fun changes(r: Recipe): String = r.pieces.joinToString("\n") { "• ${it.kind.label}: ${line(it, amounts = false)}" }
+    fun changes(r: Recipe, style: com.bamnat.core.work.WorkStyle? = null): String = r.pieces.joinToString("\n") { "• ${it.kind.label}: ${line(it, amounts = false, style = style)}" }
 }
