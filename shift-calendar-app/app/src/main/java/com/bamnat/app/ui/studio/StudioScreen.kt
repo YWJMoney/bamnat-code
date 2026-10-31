@@ -398,6 +398,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                     if (s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) Text("미리 보기: ${s.previewMode.label} 모양이에요",
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    // PC 확인 L2 (잠근 뒤 미리 보기만으로는 달력이 그대로인지 모름): the locked screens, named over the example; a tap on one shows it.
+                    if (vm.locked.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("잠근 화면", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        vm.locked.forEach { tab ->
+                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)) }, label = { Text("🔒 " + lockName(tab, vm.style)) })
+                        }
+                    }
                     // [STU-24] Two fingers on the example make it bigger or smaller too.
                     val zoom = androidx.compose.foundation.gestures.rememberTransformableState { z, _, _ ->
                         scale = (scale * z).coerceIn(SCALE_MIN, SCALE_MAX)

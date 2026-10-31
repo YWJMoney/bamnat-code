@@ -201,8 +201,10 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     val scope = rememberCoroutineScope()
     var seed by rememberSaveable { mutableLongStateOf(StudioColors.seedOf(d)) }
     // PC 확인 S7 ('밤처럼'으로 시작했는데 '부드럽게·밝은 화면'이 골라져 있음): the start's 느낌, else what the colours are now.
-    var variant by rememberSaveable { mutableStateOf(vm.seedFeel?.first ?: ThemeSeed.Variant.SOFT) }
-    var dark by rememberSaveable { mutableStateOf(vm.seedFeel?.second ?: (ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.bg
+    // PC 확인 L3 (빨강을 고르니 '차분하게'가 골라져 있음): the start's 느낌 is taken once, then forgotten.
+    val feel = remember { vm.seedFeel.also { vm.seedFeel = null } }
+    var variant by rememberSaveable { mutableStateOf(feel?.first ?: ThemeSeed.Variant.SOFT) }
+    var dark by rememberSaveable { mutableStateOf(feel?.second ?: (ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.bg
         ?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.3 } ?: false)) }
     var mix by rememberSaveable { mutableIntStateOf(0) }
     var photoColours by remember { mutableStateOf<List<Long>>(emptyList()) }
@@ -227,6 +229,8 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     }
     val bgPhoto = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.photo }
 
+    // PC 확인 L1 (잠그기가 한 색 칸 맨 아래라 한참 내려야 보임): 잠그기 at the top, before the colours it holds back.
+    LockChips(vm)
     Text("색 하나만 고르면 바탕·카드·글자·강조·오늘·주말 색이 어울리게 맞춰져요. 글자는 늘 잘 읽히게 맞춰요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("색 고르기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -285,8 +289,6 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     }
     Text("마음에 안 들면 위의 되돌리기 한 번으로 고르기 전으로 돌아가요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    // [STU-39] Screens kept as they are while the rest takes the colour.
-    LockChips(vm)
 }
 
 /** The scheme's colours side by side with their names, the text on its ground as it will read. */
