@@ -40,12 +40,17 @@ import com.bamnat.core.time.Today
  */
 @Composable
 fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {}) {
-    val bundle = feature?.let { gate.bundle(it) } ?: return
-    if (gate.tier >= Tier.PRO) return
-    val label = "광고 보고 ${bundle.label} 7일 열기"
-    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요."
+    if (feature == null || gate.tier >= Tier.PRO) return
     val small = MaterialTheme.typography.labelSmall
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    val bundle = gate.bundle(feature) ?: run {
+        // 1.36 PC B1: say why there is no ad, rather than leave a way out of the sheet missing.
+        Text("‘${feature.label}’은 광고로 열 수 없어요. 프로에서 늘 써요.", style = small, color = dim, textAlign = TextAlign.Center,
+            modifier = modifier.fillMaxWidth())
+        return
+    }
+    val label = "광고 보고 ${bundle.label} 7일 열기"
+    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요."
     if (gate.preview) {
         Column(modifier) {
             OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(label) }
@@ -63,7 +68,9 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
             modifier = modifier.fillMaxWidth())
         FeatureLease.capped(leases, today) -> Text("오늘 광고 두 편을 다 봤어요. 내일 다시 열 수 있어요.", style = small, color = dim,
             textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
-        !FeatureLease.canWatch(leases, bundle, now, today) -> Unit
+        !FeatureLease.canWatch(leases, bundle, now, today) -> Text(
+            "세 번 닫으셔서 ${bundle.label} 광고는 쉬고 있어요" + (leases.quietUntil[bundle]?.let { " · ${com.bamnat.app.ui.pro.untilWords(it)}부터 다시 보여요" } ?: ""),
+            style = small, color = dim, textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
         else -> ThemeAdButton(label, note,
             onReward = { c.featureGate.grant(bundle, FeatureLease.Why.AD); onOpened() },
             onQuit = {},

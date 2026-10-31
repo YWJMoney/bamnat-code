@@ -106,9 +106,8 @@ fun LedgerReportsPane(
             if (r.byTag.isNotEmpty()) TagsCard(r)
             if (r.spent > 0) WeekdayCard(r)
             if (r.biggest.isNotEmpty()) BiggestCard(r, onOpen)
-        } else {
-            com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) { YearCard(analysis.year, r.month) }
         }
+        // 1.36 PC B5: locked, the one lock above stands for these too (two lock cards stacked before).
         // F 1.32 [TAXP-09] The year as a PDF (프로) or CSV (무료).
         YearReportCard(book, month.year, snapshot, gate, onMessage)
         if (!gate.live) ProNote()

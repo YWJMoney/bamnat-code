@@ -71,7 +71,7 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
         }
     }
     fun make(what: String, block: suspend () -> Unit) {
-        if (!open) { openPro(); return }
+        if (!open) { openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return }
         val feature = if (what == "counsel_zip") "pay.counsel" else "pay.report"
         scope.launch {
             val guessed = runCatching { com.bamnat.core.profile.ExportCheck.estimated(profiles.facts(vm.calendarId), feature) }.getOrDefault(emptyList())

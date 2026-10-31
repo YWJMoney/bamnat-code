@@ -101,7 +101,7 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
             Text(feature?.let { "‘${it.label}’ · 프로 기능이에요" } ?: "프로 기능이에요", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.semantics { heading() })
         }
-        Text("세 가지 중에 골라 쓸 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("이렇게 쓸 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
         LeaseAdOption(feature, gate, onOpened = ProOffer::close)
         if (c.inviteApi.enabled) {

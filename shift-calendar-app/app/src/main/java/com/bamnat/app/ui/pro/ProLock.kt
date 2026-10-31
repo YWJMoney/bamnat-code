@@ -115,10 +115,27 @@ fun tryFeature(feature: Feature): Boolean = ProOffer.gate?.tryOrAsk(feature) ?: 
 fun TrialNote(feature: Feature, gate: com.bamnat.app.tier.Gate, modifier: Modifier = Modifier) {
     val until = gate.trialUntil(feature)
     val text = when {
-        until != null && gate.tier < feature.minTier -> java.time.Instant.ofEpochMilli(until).atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
-            .let { "${it.monthValue}월 ${it.dayOfMonth}일까지 무료로 써요. 그 뒤에는 광고 한 편으로 7일 더 열거나 프로로 계속 써요" }
+        until != null && gate.tier < feature.minTier -> {
+            // 1.36 PC B2·B6: how it was opened, and the end with its hour (a week from 3 p.m. ends at 3 p.m., not at the day's end).
+            val how = gate.bundle(feature)?.let { b -> gate.leases.grants.lastOrNull { it.bundle == b }?.why }
+            val opened = when (how) {
+                com.bamnat.core.tier.FeatureLease.Why.AD -> "광고로 열었어요"
+                com.bamnat.core.tier.FeatureLease.Why.NO_AD -> "광고가 안 와서 그냥 열었어요"
+                com.bamnat.core.tier.FeatureLease.Why.BACK -> "다시 오셔서 7일 열었어요"
+                else -> "처음 7일은 무료예요"
+            }
+            "$opened · ${untilWords(java.time.Instant.ofEpochMilli(until))}까지. 그 뒤에는 광고 한 편으로 7일 더 열거나 프로로 계속 써요"
+        }
         gate.canTry(feature) -> "처음 쓰는 날부터 일주일은 무료예요"
         else -> return
     }
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
+}
+
+/** 1.36 PC B6: "12월 16일 오후 3시" (and the minutes when not on the hour), in the phone's zone. */
+fun untilWords(at: java.time.Instant): String {
+    val t = at.atZone(com.bamnat.core.time.Today.zone())
+    val h = t.hour % 12
+    val half = if (t.hour < 12) "오전" else "오후"
+    return "${t.monthValue}월 ${t.dayOfMonth}일 $half ${if (h == 0) 12 else h}시" + (if (t.minute > 0) " ${t.minute}분" else "")
 }

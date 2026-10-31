@@ -887,15 +887,14 @@ class AppContainer(context: Context) {
             }.distinctUntilChanged().drop(1).debounce(500)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
-        // [MON-06] The trial's notice follows the subscription and the user's answer.
+        // [MON-06] The trial's notice follows the subscription and the user's answer; 840·841: so does the 7-days-before notice of a
+        // yearly renewal or a 1년 이용권's end (one job, inside the start's budget [PERF-10]).
         keep("trialnotice") {
-            proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
-                .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
-        }
-        // 840·841: the 7-days-before notice of a yearly renewal or a 1년 이용권's end.
-        keep("endnotice") {
-            proStore.state.map { Triple(it.sub, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
-                .collect { com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current) }
+            proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
+                .collect {
+                    com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current)
+                    com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current)
+                }
         }
         appScope.launch {
             mainIdle()

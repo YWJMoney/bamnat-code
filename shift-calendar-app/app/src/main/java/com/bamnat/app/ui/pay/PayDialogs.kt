@@ -221,7 +221,7 @@ fun EditValueDialog(
                 Text("어디에 적용할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                 ScopeKind.entries.forEach { k ->
                     val locked = k == ScopeKind.RANGE && !rangeOpen
-                    val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro() } else scope = k }
+                    val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) } else scope = k }
                     Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = scope == k, onClick = pick)
                         Text(

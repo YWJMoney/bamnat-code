@@ -245,7 +245,7 @@ fun ShareDialog(
             // [PROV-05] 근무표 PDF (프로): the month on screen or its year, on A4 to print or keep.
             val pdfOpen = container.featureGate.state.collectAsState().value.allows(com.bamnat.app.tier.Feature.ROSTER_PDF)
             fun rosterPdf(year: Boolean) {
-                if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(); return }
+                if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return }
                 val name = when {
                     title.isNotBlank() -> "${title.trim()}의 ${com.bamnat.core.work.scheduleWord(style)}"
                     added && calendar != null -> "${calendar.name} ${com.bamnat.core.work.scheduleWord(style)}"
@@ -293,7 +293,7 @@ fun ShareDialog(
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
                     if (moreLinks) links.indexOfFirst { it == null }.takeIf { it >= 0 }?.let { slot = it + 1 }
-                    else com.bamnat.app.ui.pro.openPro()
+                    else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS)
                 })
             }
             // A link already made comes first: sending it again is what most people open this for.
@@ -367,7 +367,7 @@ fun ShareDialog(
                 ShareLinkPayload.TTL_DAYS.forEach { d ->
                     // [PROV-04] 180일 and 1년 are 프로's.
                     val locked = d in ShareLinkPayload.PRO_TTL_DAYS && !moreLinks
-                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro() else ttl = d },
+                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS) else ttl = d },
                         label = { Text(ShareLinkPayload.ttlLabel(d)) })
                 }
                 com.bamnat.app.ui.money.ProPill(Modifier.align(Alignment.CenterVertically), locked = !moreLinks) // [TIER-06]
@@ -381,7 +381,7 @@ fun ShareDialog(
             FeedRow(
                 on = feed && feedOpen, open = feedOpen, busy = busy, url = link?.takeIf { feed && feedOpen }?.feedUrl(),
                 onChange = { on ->
-                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(); return@FeedRow }
+                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ICS_FEED); return@FeedRow }
                     feed = on; store.feed = on
                     // A link already made takes it at once; a new one goes out with it.
                     if (link != null && preview == null) run {
@@ -416,7 +416,7 @@ fun ShareDialog(
             }
             if (current == null) {
                 Button(enabled = !busy && !empty && !createPaused, onClick = {
-                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@Button }
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
                         val sent = payload()
                         val made = client.create(sent)
@@ -447,7 +447,7 @@ fun ShareDialog(
                 }
                 // 1.36: with 프로 and 고치면 바로 바꾸기 on the link is kept open by itself.
                 if (!keeps || !auto) OutlinedButton(enabled = !busy && !empty, onClick = {
-                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@OutlinedButton }
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
                         keep(client.update(current, sent), sent)
