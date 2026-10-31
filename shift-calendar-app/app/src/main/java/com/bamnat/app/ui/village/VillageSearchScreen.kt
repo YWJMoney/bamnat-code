@@ -66,6 +66,18 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
     }
     var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(q)) }
     var selectAll by remember { mutableStateOf(false) }
+    // PC 확인 V13·V23: tapping the box (focused or not: a tap elsewhere does not take the focus away) selects what is in it, so
+    // the next letters replace it; the cursor the same tap sends right after is let go once, within a moment.
+    val presses = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    LaunchedEffect(presses) {
+        presses.interactions.collect { i ->
+            if (i is androidx.compose.foundation.interaction.PressInteraction.Release && field.text.isNotEmpty()) {
+                field = field.copy(selection = androidx.compose.ui.text.TextRange(0, field.text.length))
+                selectAll = true
+            }
+        }
+    }
+    LaunchedEffect(selectAll) { if (selectAll) { delay(400); selectAll = false } }
     var recipes by remember { mutableStateOf<List<RecipeItem>?>(null) }
     var found by remember { mutableStateOf<VillageFound?>(null) }
     var failed by remember { mutableStateOf(false) }
@@ -94,7 +106,7 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
             OutlinedTextField(
                 value = field, onValueChange = { v ->
                     // PC 확인 V13: the tap that focuses the box sends a cursor right after; it must not undo 전체 선택.
-                    if (selectAll && v.text == field.text && v.selection.collapsed) { selectAll = false; return@OutlinedTextField }
+                    if (selectAll && v.text == field.text && v.selection.collapsed) return@OutlinedTextField
                     selectAll = false
                     field = if (v.text.length > 30) v.copy(text = v.text.take(30)) else v; q = field.text
                 },
@@ -106,6 +118,7 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
                 modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focus)
                     .onFocusChanged { f -> if (f.isFocused && field.text.isNotEmpty()) {
                         field = field.copy(selection = androidx.compose.ui.text.TextRange(0, field.text.length)); selectAll = true } },
+                interactionSource = presses,
             )
             LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val words = q.trim()
