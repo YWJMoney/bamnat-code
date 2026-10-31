@@ -226,6 +226,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // 1.36 (사용자 2026-10-31 "화면 터치하면 전 모습, 떼면 후 모습"): a finger held on the example shows the look one step back.
     var peeking by remember { mutableStateOf(false) }
     var peekMarks by remember { mutableStateOf(0) }
+    var halfAt by remember { mutableStateOf(0.5f) }
     var half by rememberSaveable { mutableStateOf(false) }
     var payStyle by rememberSaveable { mutableStateOf(vm.style ?: WorkStyle.SHIFT) }
     var lookIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -270,7 +271,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             else -> area to Tool.COLORS
         }
         area = a; tool = if (t in a.tools) t else a.tools.first()
-        if (scale > SCALE_SMALL) scale = SCALE_SMALL + 0.06f
+        if (scale > SCALE_SMALL) scale = SCALE_SMALL
         openedLine = "‘${a.labelFor(vm.style)} · ${tool.label}’을 열었어요. 바꾸면 위에 바로 보여요"
     }
     // U18 1.36 (빌드 확인: 도구를 고르면 고칠 곳이 미리 보기 아래로 밀려 안 보임): any other tool picked makes the example smaller once, as a
@@ -278,7 +279,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val firstTool = remember { tool }
     var toolSeen by remember { mutableStateOf(firstTool) }
     LaunchedEffect(tool) {
-        if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL + 0.06f) scale = SCALE_SMALL + 0.06f }
+        if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL) scale = SCALE_SMALL }
     }
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }
@@ -412,7 +413,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
                             val prev = remember(s.prevPieces, s.past) { vm.previous(s) }
                             val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) } else now
-                            if (half && !comparing) CompareCanvas(before, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, 0.5f, onPick = { picked("colors") })
+                            if (half && !comparing) CompareCanvas(before, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, halfAt, onPick = { picked("colors") },
+                                onSplit = { halfAt = it })
                             // U15: the step before in the same places and days, what changed ringed (nothing dimmed: it is a quick look).
                             else if (peeking && !comparing && prev != null) CompareCanvas(prev, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, 0f,
                                 onPick = { picked("colors") }, onChanged = { peekMarks = it }, peek = true)
@@ -584,7 +586,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     LaunchedEffect(tool, area) { if ((tool != Tool.SHIFT || area != Area.ALL) && s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) vm.previewAs(com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) }
     if (feelOpen) FeelStartDialog(onDismiss = { feelOpen = false }) { scheme, cell, feel ->
         feelOpen = false
-        guarded { vm.seedFeel = feel.variant to feel.dark; vm.startFeel { feelDraft(it, scheme, cell) }; pick(Area.ALL) }
+        guarded { vm.seedFeel = feel.variant to feel.dark; vm.startFeel("‘${feel.label}’ 느낌") { feelDraft(it, scheme, cell) }; pick(Area.ALL) }
     }
     if (history) HistorySheet(s, onBack = { i -> vm.backTo(i) }, onDismiss = { history = false })
     if (changes) ChangesSheet(vm, s, before, now, onGo = { a -> pick(Area.valueOf(a)); changes = false }, onDismiss = { changes = false })

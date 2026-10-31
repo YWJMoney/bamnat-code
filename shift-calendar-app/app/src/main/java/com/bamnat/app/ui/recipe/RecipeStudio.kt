@@ -411,6 +411,11 @@ private fun MockSummary(style: WorkStyle?) {
         WorkStyle.BUSINESS -> listOf("영업" to "24일", "매출" to "합계", "순이익" to "예상")
         WorkStyle.INVEST -> listOf("기록" to "9일", "수익률" to "이번 달", "원금" to "합계")
         else -> listOf("근무" to "18일", "시간" to "162h", "급여" to "예상")
+    }.let { ex ->
+        // PC 확인 Z5 (예시 숫자 '근무 18일 · 162h'): this month of the phone's own calendar, when it has work in it.
+        val mine = rememberMonthWork() ?: return@let ex
+        if (style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) ex
+        else listOf((if (style == WorkStyle.HOURLY || style == WorkStyle.FIELD) "일한 날" else "근무") to "${mine.first}일", "시간" to "${mine.second}h", ex.last())
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { (k, v) ->
@@ -800,3 +805,18 @@ internal object StudioStarters {
 /** Whether a card belongs on this kind of work's screen, as on the phone ([com.bamnat.core.guide.FitTable]). */
 internal fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, style: WorkStyle?): Boolean =
     style == null || com.bamnat.core.guide.FitTable.visible(surface, id, style, emptySet())
+
+
+/** PC 확인 Z5: this month's work days and scheduled hours on the phone's own calendar, or null when it has no work yet. */
+@Composable
+private fun rememberMonthWork(): Pair<Int, Int>? {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    return remember(snap) {
+        val sn = snap ?: return@remember null
+        val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
+        val days = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth()).filter { it.isWorkDay }
+        if (days.isEmpty()) null else days.size to days.sumOf { it.scheduledMinutes } / 60
+    }
+}

@@ -233,8 +233,15 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                         .then(if (date == today && inMonth) Modifier.border(2.dp, look.today ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                             else if (ringed) Modifier.border(1.5.dp, androidx.compose.ui.graphics.Color(0xFFFFB300), RoundedCornerShape(4.dp)) else Modifier),
                         contentAlignment = Alignment.Center) {
-                        if (inMonth) Text(type?.label?.takeIf { it.isNotEmpty() && works } ?: date.dayOfMonth.toString(),
-                            style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
+                        // PC 확인 Z3 (넣은 뒤 근무 칸의 날짜가 사라지고 첫 줄 29·30일이 비어 있음): every cell keeps its date — the kind of
+                        // day is the colour (and its letter, small, under the date) — and the days of the months around are shown faint.
+                        if (inMonth) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
+                            type?.label?.takeIf { it.isNotEmpty() && works }?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall, fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp), color = digit, maxLines = 1)
+                            }
+                        } else Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f), maxLines = 1)
                         if (inMonth && type != null && works && look.cell == "dot") Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp)
                             .size(5.dp).background(type.colorArgb.asColor(), androidx.compose.foundation.shape.CircleShape))
                     }

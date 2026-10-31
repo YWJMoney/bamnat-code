@@ -202,7 +202,13 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** The name a kept draft shows in 만들던 레시피 and 이어서 하기. */
     private fun draftTitle(s: State): String = (s.savedTitle ?: s.meta?.title?.takeIf { it.isNotBlank() }
-        ?: (s.origin as? Origin.Theme)?.wear?.title?.let { "$it 고치는 중" } ?: "꾸미던 모양").take(30)
+        ?: (s.origin as? Origin.Theme)?.wear?.title?.let { "$it 고치는 중" }
+        // PC 확인 Z6 (만들던 것 이름이 늘 '꾸미던 모양'): named by how it started, with the day.
+        ?: when (val o = s.origin) {
+            is Origin.Fresh -> o.title
+            is Origin.Plain -> "처음 모양에서 새로"
+            else -> "지금 모양 고치기"
+        } + " · " + com.bamnat.core.time.Today.date().let { "${it.monthValue}/${it.dayOfMonth}" }).take(30)
 
     private fun mineTitle(): String = c.wardrobe.lease.value.worn?.let { "지금 모양 · ${it.title}" } ?: "지금 내 모양"
 
@@ -318,8 +324,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     var seedFeel: Pair<com.bamnat.core.recipe.ThemeSeed.Variant, Boolean>? = null
 
     /** [STU-35] 느낌으로 새로: the app's own look, then [d] as its first step (so 되돌리기 shows the plain look and leaving asks). */
-    fun startFeel(d: (AppSettings) -> AppSettings) {
-        restart(c.recipes.pieces.plainLook(c.settingsRepository.current), Origin.Fresh("느낌으로 새로 만든 모양"))
+    fun startFeel(title: String = "느낌으로 새로 만든 모양", d: (AppSettings) -> AppSettings) {
+        restart(c.recipes.pieces.plainLook(c.settingsRepository.current), Origin.Fresh(title))
         where = "느낌으로 시작"
         change(d)
     }

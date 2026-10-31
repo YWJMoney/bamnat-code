@@ -877,8 +877,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
                             com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
                         }
-                        ShiftLookBand()
-                        if (topLevel == TopLevel.CALENDAR) LookUndoBand()
+                        // PC 확인 Z1 (띠가 스튜디오 같은 안쪽 화면에서 시계·배터리 줄과 겹침): only on the tabs, below the status bar.
+                        if (showNav && topLevel != null) ShiftLookBand()
+                        if (showNav && topLevel == TopLevel.CALENDAR) LookUndoBand()
                         RingingBanner()
                         AlarmNoticeAsk()
                         AppNavHost(

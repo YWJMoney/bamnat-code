@@ -57,6 +57,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -91,7 +93,9 @@ internal fun ScaledPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (Stri
 internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, scale: Float, split: Float,
                            onPick: () -> Unit = {}, diff: Boolean = false, onChanged: (Int) -> Unit = {},
                            /** U15 1.36 누르고 있으면 전 모양: [before] whole (in [after]'s places), [after] read but hidden, what changed ringed, nothing dimmed. */
-                           peek: Boolean = false) {
+                           peek: Boolean = false,
+                           /** PC 확인 Z7: the line can be moved with a finger; called with the new place (0..1). */
+                           onSplit: ((Float) -> Unit)? = null) {
     val reading = diff || peek
     val framed = remember(before, after) { LookParts.frame(before, after) }
     val scroll = rememberScrollState()
@@ -154,6 +158,20 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
         }
         if (!reading && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
             .background(MaterialTheme.colorScheme.primary))
+        if (!reading && onSplit != null) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val wPx = with(density) { w.toPx() }
+            val latest by androidx.compose.runtime.rememberUpdatedState(shownSplit)
+            Box(Modifier.fillMaxHeight().width(32.dp).offset(x = w * shownSplit - 16.dp)
+                .pointerInput(wPx) {
+                    detectHorizontalDragGestures { change, dx ->
+                        change.consume(); onSplit((latest + dx / wPx).coerceIn(0.05f, 0.95f))
+                    }
+                }
+                .semantics { contentDescription = "비교 선, 좌우로 끌어 옮기기" }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)))
+            }
+        }
     }
 }
 

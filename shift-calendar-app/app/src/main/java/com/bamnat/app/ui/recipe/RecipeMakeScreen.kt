@@ -408,7 +408,9 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     Scaffold(topBar = {
         TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") +
             " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}") },
-            navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
+            navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+            // PC 확인 Z8 (올리기 위 ←는 한 단계 뒤로라 나가는 길이 1/4의 '스튜디오로'뿐): a way out on every step.
+            actions = { if (finishOnly) androidx.compose.material3.TextButton(onClick = onBack) { Text("스튜디오로") } })
     }, bottomBar = {
         // 1.35 [J135-22] (실사용 F-87 '다음'까지 큰 스크롤 10번): 이전·다음 stay at the bottom of every step, with why 다음 waits.
         if (s.sent == null) Surface(tonalElevation = 3.dp) {

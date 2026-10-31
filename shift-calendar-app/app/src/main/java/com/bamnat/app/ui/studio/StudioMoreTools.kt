@@ -230,9 +230,11 @@ internal fun ShiftLooksTool(vm: StudioViewModel, d: AppSettings, previewing: Shi
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     modes.forEach { mode ->
         val look = looks.of(mode)
-        var seed by rememberSaveable(mode) { mutableLongStateOf(StudioColors.seedOf(d)) }
+        // PC 확인 Z2 ('어둡게'를 골라도 바탕이 밝음: 이미 골라진 칩을 눌러 꺼졌어요): the look kept says which colour and which screen it is.
+        val kept = look?.let { ScreenLooks.decode(it.screens).looks[ScreenLooks.ALL] }
+        var seed by rememberSaveable(mode) { mutableLongStateOf(kept?.accent ?: StudioColors.seedOf(d)) }
         var variant by rememberSaveable(mode) { mutableStateOf(ThemeSeed.Variant.SOFT) }
-        var dark by rememberSaveable(mode) { mutableStateOf(mode == ShiftLooks.Mode.NIGHT) }
+        var dark by rememberSaveable(mode) { mutableStateOf(kept?.bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.3 } ?: (mode == ShiftLooks.Mode.NIGHT)) }
         fun put(s: Long = seed, v: ThemeSeed.Variant = variant, dk: Boolean = dark) {
             seed = s; variant = v; dark = dk
             val l = shiftLookOf(ThemeSeed.scheme(s, v, dk))
@@ -264,7 +266,8 @@ internal fun ShiftLooksTool(vm: StudioViewModel, d: AppSettings, previewing: Shi
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ThemeSeed.Variant.entries.forEach { v -> FilterChip(selected = v == variant, onClick = { put(v = v) }, label = { Text(v.label) }) }
-                        FilterChip(selected = dark, onClick = { put(dk = !dark) }, label = { Text("어둡게") })
+                        FilterChip(selected = !dark, onClick = { put(dk = false) }, label = { Text("밝은 화면") })
+                        FilterChip(selected = dark, onClick = { put(dk = true) }, label = { Text("어두운 화면") })
                     }
                     SchemeStrip(ThemeSeed.scheme(seed, variant, dark))
                     OutlinedButton(onClick = { vm.previewAs(if (previewing == mode) ShiftLooks.Mode.NORMAL else mode) }, modifier = Modifier.heightIn(min = 48.dp)) {
