@@ -356,7 +356,7 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
                 val end = day.end
                 val leave = day.leave?.takeIf { !it.isFullDay }
                 if (day.isWorkDay && start != null && end != null) {
-                    Text(Fmt.timeRange(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                    Text(Fmt.timeRangeShort(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
                 }
             }
         }

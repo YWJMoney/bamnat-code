@@ -237,8 +237,10 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                         // day is the colour (and its letter, small, under the date) — and the days of the months around are shown faint.
                         if (inMonth) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
-                            type?.label?.takeIf { it.isNotEmpty() && works }?.let {
-                                Text(it, style = MaterialTheme.typography.labelSmall, fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp), color = digit, maxLines = 1)
+                            // PC 확인 Z12: a day off says so too (its letter, faint), so 넣은 뒤 shows every kind of day.
+                            type?.label?.takeIf { it.isNotEmpty() }?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall, fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                    color = if (works) digit else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
                         } else Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f), maxLines = 1)

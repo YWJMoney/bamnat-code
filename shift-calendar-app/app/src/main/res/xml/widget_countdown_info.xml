@@ -2,6 +2,7 @@
 <!-- [WIDG-05] 다음 근무까지: home screen, and the lock screen where the phone shows widgets there (keyguard). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_countdown_desc"
+    android:previewLayout="@layout/widget_preview_countdown"
     android:initialLayout="@layout/glance_default_loading_layout"
     android:minWidth="110dp"
     android:minHeight="40dp"

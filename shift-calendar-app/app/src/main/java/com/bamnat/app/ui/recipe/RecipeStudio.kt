@@ -316,8 +316,10 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
     if (placed.any { it.part == CalendarPart.SUMMARY }) Box(Modifier.mockPick("cards")) { MockSummary(style) }
     val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
+    // PC 확인 Z13: this month's own counts of each kind of day, when the calendar has work (else the example's).
+    val counts = rememberMonthKinds(days)
     if (placed.any { it.part == CalendarPart.COUNTS }) Row(Modifier.mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        days.forEach { d -> Text("${d["label"]} ${if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
+        days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
     Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW])) }
@@ -818,5 +820,27 @@ private fun rememberMonthWork(): Pair<Int, Int>? {
         val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
         val days = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth()).filter { it.isWorkDay }
         if (days.isEmpty()) null else days.size to days.sumOf { it.scheduledMinutes } / 60
+    }
+}
+
+
+/** PC 확인 Z13: how many days of this month are each of [days]' kinds (the same name, else the same role), or null with no work yet. */
+@Composable
+private fun rememberMonthKinds(days: List<Map<String, Any?>>): List<Int>? {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    return remember(snap, days) {
+        val sn = snap ?: return@remember null
+        val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
+        val resolved = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
+        if (resolved.none { it.isWorkDay }) return@remember null
+        val kinds = resolved.mapNotNull { r -> r.shiftType?.let { t ->
+            t.name.trim() to com.bamnat.core.recipe.ShiftRole.guess(t.name, t.isOff, t.start?.hour, if (t.isOff) 0 else t.durationMinutes).key } }
+        days.map { d ->
+            val name = (d["name"] as? String)?.trim()
+            val byName = kinds.count { it.first == name }
+            if (byName > 0) byName else kinds.count { it.second == d["role"] && days.none { o -> (o["name"] as? String)?.trim() == it.first } }
+        }
     }
 }
