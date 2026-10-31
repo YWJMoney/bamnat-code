@@ -27,7 +27,8 @@ class ShiftLooksTest {
         assertEquals(0xFF101010L, all.bg); assertEquals(0xFFEEEEEEL, all.ink)
         assertEquals("그림은 남아요", "0123456789abcdef", all.photo)
         assertEquals("고르지 않은 색은 평소 것", 0xFF2F5BEAL, all.accent)
-        assertEquals(0xFFFFF8E1L, ScreenLooks.decode(s).looks["money"]?.card)
+        assertEquals("가계부 자기 카드색도 야간 모양으로", 0xFF101010L, ScreenLooks.decode(s).of("money").bg)
+        assertEquals(0xFFEEEEEEL, ScreenLooks.decode(s).of("money").ink)
         val ct = CalendarTheme.decode(c)
         assertEquals(0xFF90CAF9L, ct.sat); assertEquals(0xFFE91E63L, ct.today); assertEquals("fill", ct.cell)
     }

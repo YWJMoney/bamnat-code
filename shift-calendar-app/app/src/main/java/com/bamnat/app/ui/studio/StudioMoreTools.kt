@@ -97,7 +97,7 @@ internal fun feelDraft(d: AppSettings, scheme: ThemeSeed.Scheme, cell: Int): App
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun FeelStartDialog(onDismiss: () -> Unit, onPick: (ThemeSeed.Scheme, Int) -> Unit) {
+internal fun FeelStartDialog(onDismiss: () -> Unit, onPick: (ThemeSeed.Scheme, Int, Feel) -> Unit) {
     var feel by rememberSaveable { mutableStateOf(Feel.COZY) }
     var seed by rememberSaveable { mutableLongStateOf(StudioColors.SEEDS[7]) }
     var cell by rememberSaveable { mutableIntStateOf(0) }
@@ -125,7 +125,7 @@ internal fun FeelStartDialog(onDismiss: () -> Unit, onPick: (ThemeSeed.Scheme, I
                 }
                 Text("마음에 드는 시작안을 누르세요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 feelStarts(seed, feel).forEach { (i, s) ->
-                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClickLabel = "이 시작안으로 만들기") { onPick(s, cell) }) {
+                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClickLabel = "이 시작안으로 만들기") { onPick(s, cell, feel) }) {
                         SchemeStrip(s)
                         Text("시작안 · ${ThemeSeed.SHUFFLES[i]}", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 2.dp))

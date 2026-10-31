@@ -107,6 +107,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     private val phone = c.settingsRepository.current
+    /** PC 재검토 C10: open on 느낌으로 새로 만들기 (once). */
+    var askFeel: Boolean by androidx.compose.runtime.mutableStateOf(false)
+
     private val _state = MutableStateFlow(State(draft = phone, base = phone, origin = Origin.Mine(mineTitle())))
     val state: StateFlow<State> = _state.asStateFlow()
     private var beforeWear: Map<String, String>? = null
@@ -131,6 +134,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 refresh(both = true)
                 PieceKind.of(start.removePrefix(START_FEATURE))?.takeIf { it in FEATURES && (style == null || style in it.styles) }?.let { starter(it) }
             }
+            // PC 재검토 C10: 공방's '느낌으로 새로' opens the studio on the 느낌 picker.
+            start == START_FEEL -> { refresh(both = true); askFeel = true }
             start.startsWith(START_DRAFT) -> {
                 refresh(both = true)
                 start.removePrefix(START_DRAFT).toLongOrNull()?.let { resume(it) }
@@ -308,6 +313,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
         return locked.fold(next) { acc, tab -> StudioColors.hold(tab, acc, prev, dark) }
     }
+
+    /** PC 확인 S7: the 느낌 (변형, 어두운 화면) the last start was made with, so 한 색 opens on it. */
+    var seedFeel: Pair<com.bamnat.core.recipe.ThemeSeed.Variant, Boolean>? = null
 
     /** [STU-35] 느낌으로 새로: the app's own look, then [d] as its first step (so 되돌리기 shows the plain look and leaving asks). */
     fun startFeel(d: (AppSettings) -> AppSettings) {
@@ -547,6 +555,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 mine != null && !s.changed -> c.wardrobe.wear(recipe(mine.title), "", own = true, ver = mine.ver)
                 else -> {
                     beforeWear = c.recipes.pieces.lookSnapshot()
+                    beforeWear?.let { com.bamnat.app.data.LookUndo.keep(c.appContext, it) }
                     c.recipes.pieces.restoreLook(c.recipes.pieces.lookOf(s.draft))
                     runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(c.appContext) }
                     true
@@ -566,6 +575,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val before = beforeWear ?: return
         c.recipes.pieces.restoreLook(before)
         beforeWear = null
+        com.bamnat.app.data.LookUndo.clear(c.appContext)
         val now = c.settingsRepository.current
         _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false, wornNow = false)
         refresh(both = true)
@@ -734,6 +744,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val START_RECIPE = "recipe"
         /** "draft:<id>": a 만들던 레시피 kept on the phone. */
         const val START_DRAFT = "draft:"
+        const val START_FEEL = "feel"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
         const val START_FEATURE = "feature:"
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */

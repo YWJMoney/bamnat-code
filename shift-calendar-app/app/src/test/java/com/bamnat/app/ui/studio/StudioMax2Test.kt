@@ -115,4 +115,13 @@ class StudioMax2Test {
         again.undo()
         assertEquals("되돌리면 지금 휴대폰 모양", c.settingsRepository.current.calTheme, again.state.value.draft.calTheme)
     }
+
+    @Test fun theLookBeforeIsKeptForADay() {
+        val ctx = ApplicationProvider.getApplicationContext<BamnatApp>()
+        com.bamnat.app.data.LookUndo.keep(ctx, mapOf("calTheme" to "sat=FF1565C0"), at = 1_000L)
+        assertEquals(mapOf("calTheme" to "sat=FF1565C0"), com.bamnat.app.data.LookUndo.read(ctx, now = 1_000L + 3_600_000L)?.first)
+        assertEquals("하루 지나면 없어요", null, com.bamnat.app.data.LookUndo.read(ctx, now = 1_000L + com.bamnat.app.data.LookUndo.KEEP_MS))
+        com.bamnat.app.data.LookUndo.clear(ctx)
+        assertEquals(null, com.bamnat.app.data.LookUndo.read(ctx, now = 2_000L))
+    }
 }

@@ -35,9 +35,14 @@ data class ShiftLooks(val night: Look? = null, val off: Look? = null) {
         val usual = ScreenLooks.decode(screens)
         val over = ScreenLooks.decode(look.screens)
         val keys = (usual.looks.keys + over.looks.keys)
+        // PC 확인 S6 (야간 모양을 입혀도 낮과 거의 같음): the look's 앱 전체 colours also reach screens that have their own, so the whole
+        // app turns, not only the screens that follow 앱 전체.
+        val overAll = over.looks[ScreenLooks.ALL]
         val merged = ScreenLooks(keys.associateWith { k ->
             val u = usual.looks[k] ?: ScreenLook()
-            val o = over.looks[k] ?: return@associateWith u
+            val o = over.looks[k] ?: overAll?.takeIf { k != ScreenLooks.ALL }?.let { a ->
+                if (k == ScreenLooks.PLAZA) ScreenLook(bg = a.bg) else ScreenLook(bg = a.bg, card = a.card, ink = a.ink, accent = a.accent)
+            } ?: return@associateWith u
             u.copy(bg = o.bg ?: u.bg, card = o.card ?: u.card, ink = o.ink ?: u.ink, accent = o.accent ?: u.accent,
                 photo = o.photo ?: u.photo, dim = o.dim ?: u.dim)
         })

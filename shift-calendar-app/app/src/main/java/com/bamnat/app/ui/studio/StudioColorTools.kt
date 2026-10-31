@@ -200,8 +200,10 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var seed by rememberSaveable { mutableLongStateOf(StudioColors.seedOf(d)) }
-    var variant by rememberSaveable { mutableStateOf(ThemeSeed.Variant.SOFT) }
-    var dark by rememberSaveable { mutableStateOf(false) }
+    // PC 확인 S7 ('밤처럼'으로 시작했는데 '부드럽게·밝은 화면'이 골라져 있음): the start's 느낌, else what the colours are now.
+    var variant by rememberSaveable { mutableStateOf(vm.seedFeel?.first ?: ThemeSeed.Variant.SOFT) }
+    var dark by rememberSaveable { mutableStateOf(vm.seedFeel?.second ?: (ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.bg
+        ?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.3 } ?: false)) }
     var mix by rememberSaveable { mutableIntStateOf(0) }
     var photoColours by remember { mutableStateOf<List<Long>>(emptyList()) }
     var problem by remember { mutableStateOf<String?>(null) }
