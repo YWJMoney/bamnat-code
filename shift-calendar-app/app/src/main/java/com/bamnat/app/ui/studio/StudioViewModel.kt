@@ -307,7 +307,13 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     /** [STU-39] 1.36 영역 잠그기: the tabs ([com.bamnat.core.layout.TabOrder]) that 한 색·섞기·모든 화면에·조각 얹기 leave as they are. */
-    var locked: Set<String> by androidx.compose.runtime.mutableStateOf(emptySet())
+    // PC 확인 L5 (덮어 설치 뒤 잠금이 풀려 있음): kept on the phone as soon as it is set, so it holds next time too.
+    private val lockPrefs = c.appContext.getSharedPreferences(LOCK_PREFS, android.content.Context.MODE_PRIVATE)
+    private var lockedNow: Set<String> by androidx.compose.runtime.mutableStateOf(
+        lockPrefs.getString("locked", null).orEmpty().split(',').filter { it in StudioColors.LOCKABLE }.toSet())
+    var locked: Set<String>
+        get() = lockedNow
+        set(v) { lockedNow = v; lockPrefs.edit().putString("locked", v.joinToString(",")).apply() }
 
     private fun keepLocked(prev: AppSettings, next: AppSettings): AppSettings {
         if (locked.isEmpty()) return next
@@ -751,6 +757,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** "draft:<id>": a 만들던 레시피 kept on the phone. */
         const val START_DRAFT = "draft:"
         const val START_FEEL = "feel"
+        /** PC 확인 L5: the studio's 잠근 화면, this phone's. */
+        const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
         const val START_FEATURE = "feature:"
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */

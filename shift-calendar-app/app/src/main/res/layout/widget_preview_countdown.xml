@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- PC 확인 Z10 1.36: what the widget looks like, for the phone's widget list (Android 12+). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="12dp" android:background="@drawable/widget_preview_bg">
-<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="다음 근무까지" android:textSize="11sp" android:textColor="#616161" />
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="예시 · 다음 근무까지" android:textSize="11sp" android:textColor="#616161" />
 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="3시간 20분" android:textSize="16sp" android:textColor="#212121" android:textStyle="bold" />
 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="야간 19:00 시작" android:textSize="11sp" android:textColor="#757575" />
 </LinearLayout>

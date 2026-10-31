@@ -204,6 +204,7 @@ class SettingsFilesBackup(
          */
         val DEVICE_ONLY = mapOf(
             // PC 재검토 N3 1.36: the look from before a studio wear, for a day's '입히기 전 모양으로'; a restored phone has no such moment.
+            "studio_locks" to "스튜디오에서 잠근 화면(한 색·섞기가 건드리지 않을 탭), 이 휴대폰의 것",
             "look_undo" to "스튜디오에서 입히기 전 모양(하루 동안만 되돌리기)",
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
             // [PLAZA-04] 1.25 X (결정 X-D5): the plaza invitation's waits are this phone's, like share_way.

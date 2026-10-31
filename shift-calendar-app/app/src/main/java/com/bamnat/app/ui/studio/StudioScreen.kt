@@ -403,7 +403,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("잠근 화면", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         vm.locked.forEach { tab ->
-                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)) }, label = { Text("🔒 " + lockName(tab, vm.style)) })
+                            // PC 확인 L4: the example shows that screen up close, so it can be seen to stay.
+                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true }, label = { Text("🔒 " + lockName(tab, vm.style)) })
                         }
                     }
                     // [STU-24] Two fingers on the example make it bigger or smaller too.
@@ -751,6 +752,20 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
     }
     Text("위젯 사진은 ‘달력 › 그림’에서 골라요. 위젯에 메모를 보일지는 설정 › 화면과 글자에 있어요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // PC 확인 Z11 1.36 (홈 화면에 위젯을 놓기 어려움): 홈 화면에 놓기 asks the launcher to place one, where it can.
+    val context = LocalContext.current
+    val wm = remember { android.appwidget.AppWidgetManager.getInstance(context) }
+    if (runCatching { wm.isRequestPinAppWidgetSupported }.getOrDefault(false)) {
+        Text("홈 화면에 놓기", style = MaterialTheme.typography.labelLarge)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주",
+                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지").forEach { (cls, label) ->
+                androidx.compose.material3.AssistChip(onClick = {
+                    runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }
+                }, label = { Text(label) })
+            }
+        }
+    }
 }
 
 /** The widget's example: today's day on its plate, light or dark and as see-through as chosen. */

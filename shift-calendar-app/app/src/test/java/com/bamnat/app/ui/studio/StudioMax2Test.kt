@@ -69,6 +69,8 @@ class StudioMax2Test {
         vm.changeMerged("앱 전체 · 한 색") { StudioColors.withScheme(it, ThemeSeed.scheme(0xFF2F5BEAL), true) }
         idle()
         assertEquals("잠근 달력은 한 색에도 그대로", before, vm.state.value.draft.calTheme)
+        assertEquals("다음에 열어도 잠겨 있어요", setOf(TabOrder.CALENDAR), StudioViewModel(c).locked)
+        vm.locked = emptySet()
     }
 
     @Test fun shiftLooksFollowTheWork() {
