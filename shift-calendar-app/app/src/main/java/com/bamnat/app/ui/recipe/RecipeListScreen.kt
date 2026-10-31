@@ -316,7 +316,7 @@ fun RecipeListScreen(
                     row.forEach { item -> ThemeTile(item, Modifier.weight(1f)) { onOpen(item.code) } }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
-            } else items(state.items, key = { it.code }) { item -> RecipeRow(item, Modifier.widthIn(max = 640.dp)) { onOpen(item.code) } }
+            } else items(state.items, key = { it.code }) { item -> RecipeRow(item, Modifier.widthIn(max = 640.dp), vm.style) { onOpen(item.code) } }
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
             else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
         }
@@ -325,7 +325,10 @@ fun RecipeListScreen(
 }
 
 @Composable
-fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
+    /** 1.36 PC 시험: a one-tab recipe names that tab in the viewer's words (알바 '출근·시급', not '근무·급여'). */
+    style: com.bamnat.core.work.WorkStyle? = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle,
+    onClick: () -> Unit) {
     Card(modifier.fillMaxWidth().clickable(onClickLabel = "레시피 보기", onClick = onClick)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             RecipeCover(item.cover)
@@ -341,7 +344,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Un
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [MKX-01] One tab's: which tab it changes, said once.
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                    Text("🧩 " + marketTabLabel(t, null) + (if (t == "alarm" || t == "widget") "만 바꿔요" else " 탭만 바꿔요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "만 바꿔요" else " 탭만 바꿔요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 Text(buildString {
                     append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users}")

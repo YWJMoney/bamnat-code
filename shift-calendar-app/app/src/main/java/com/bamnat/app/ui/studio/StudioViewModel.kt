@@ -469,9 +469,14 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         } else (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
         val withExtras = s.meta?.copy(pieces = pieces, parent = null)
             // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
-            ?: recipe("").copy(title = (myTheme ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
+            ?: recipe("").copy(title = (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
+        // [THM-08] 302576c8 PC 확인 (섞은 테마가 수정판 표시 없이 올라감): a mixed theme names every theme it took from in its 설명,
+        // also when they are built-in looks with no 장터 code to be a 수정판 of.
+        val mixed = mixedSources()
+        val named = if (!ownMake() && mixed.size >= 2 && withExtras.desc.isBlank())
+            withExtras.copy(desc = "출처: " + mixed.joinToString("·") { "‘$it’" } + "를 섞었어요") else withExtras
         val min = com.bamnat.app.ui.recipe.RecipeMakeViewModel.MIN_WAGE
-        val r = com.bamnat.core.recipe.InputExtract.extract(withExtras) { _, f -> if (f == "wage") min else null }
+        val r = com.bamnat.core.recipe.InputExtract.extract(named) { _, f -> if (f == "wage") min else null }
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.
         // [THM-08] A mixed theme (fewer than 3 changes by hand) goes up only as a 수정판: never marked as mine in 장터 (no ad-free).
         com.bamnat.app.recipe.RecipeLinks.ownTheme = if (onlyTab != null || s.extras.isNotEmpty() || s.meta != null || !ownMake()) null
