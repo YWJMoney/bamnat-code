@@ -110,7 +110,9 @@ import kotlinx.coroutines.launch
 /** 프로필에서의 실패 말: 레시피 말("지워졌거나 가려진 레시피예요", "더 올릴 수 없어요") 대신 프로필·팔로우에 맞게. */
 internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
     "not_found" -> "볼 수 없는 프로필이에요"
-    "rate_limited" -> "오늘은 여기까지 할 수 있어요. 내일 다시 해 주세요"
+    "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as com.bamnat.app.company.CompanyException).retryAfter ?: 86_400).let { w ->
+        "오늘은 여기까지 할 수 있어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 해 주세요"
+    }
     else -> RecipeClient.problem(e)
 }
 

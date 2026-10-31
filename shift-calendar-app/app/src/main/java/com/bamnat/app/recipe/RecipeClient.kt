@@ -584,7 +584,9 @@ class RecipeClient(
                 "not_yet" -> "정식 출시일(11월 10일 예정)부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
                 "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
-                "rate_limited" -> "오늘은 더 올릴 수 없어요. 내일 다시 해 주세요"
+                "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as CompanyException).retryAfter ?: 86_400).let { w ->
+                    "하루에 올릴 수 있는 만큼 올렸어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 할 수 있어요"
+                }
                 "reason" -> "안좋아요 이유를 골라 주세요"
                 "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
                 "own" -> "내 레시피에는 누를 수 없어요"

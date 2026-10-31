@@ -25,12 +25,22 @@ object RateLimits {
         return head + reason + tail
     }
 
-    /** [seconds] as the user reads a wait: about a minute, some minutes, some hours, or tomorrow. */
-    fun wait(seconds: Int): String = when {
+    /**
+     * [seconds] as the user reads a wait: about a minute, some minutes, some hours, or past that the hour it opens
+     * ("내일 오후 11시쯤"). 1.36 시험: a day's limit counts 24 hours from the first use, not the calendar day, so a bare
+     * "내일" sent someone who posted late at night back too early the next morning.
+     */
+    fun wait(seconds: Int, now: java.time.ZonedDateTime = java.time.Instant.ofEpochMilli(com.bamnat.core.time.Today.millis())
+        .atZone(java.time.ZoneId.systemDefault())): String = when {
         seconds < 90 -> "1분쯤 뒤"
         seconds < 3_600 -> "${(seconds + 59) / 60}분쯤 뒤"
         seconds < 6 * 3_600 -> "${(seconds + 3_599) / 3_600}시간쯤 뒤"
-        else -> "내일"
+        else -> {
+            val at = now.plusSeconds(seconds.toLong() + 3_599).withMinute(0)
+            val day = when (java.time.temporal.ChronoUnit.DAYS.between(now.toLocalDate(), at.toLocalDate())) { 0L -> "오늘"; 1L -> "내일"; else -> "모레" }
+            val h = at.hour
+            "$day ${if (h < 12) "오전" else "오후"} ${if (h % 12 == 0) 12 else h % 12}시쯤"
+        }
     }
 
     /** [text] for a refusal from the company server. */
