@@ -283,7 +283,7 @@ data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val 
  */
 data class WriteLimit(val until: Instant, val perDay: Int) {
     fun line(left: Int?): String {
-        val day = until.atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        val day = until.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
         val head = "신고가 쌓여 ${day.monthValue}월 ${day.dayOfMonth}일까지 하루 ${perDay}번만 쓸 수 있어요"
         return when {
             left == null -> head
