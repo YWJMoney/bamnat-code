@@ -168,6 +168,7 @@ const ADMIN_HTML = `<!doctype html>
 <div id="app"><div class="center"><div class="spinner" role="progressbar" aria-label="불러오는 중"></div></div></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <dialog id="dialog" aria-modal="true"></dialog>
+<dialog id="relogin" aria-modal="true"></dialog>
 <noscript>이 화면은 자바스크립트가 켜져 있어야 열려요.</noscript>
 </body>
 </html>
@@ -182,6 +183,10 @@ function adminApp(L, BUILD, M) {
   const app = document.getElementById("app");
   const toastBox = document.getElementById("toast");
   const dialog = document.getElementById("dialog");
+  // 1.36 P17: signing in again has its own box, so a step that closes the box it came from never closes this one.
+  const reloginBox = document.getElementById("relogin");
+  /** Steps that met "signed out": sent again once signed in, dropped when the user goes to the sign-in screen. */
+  let reloginWaiters = [];
 
   const P = {
     home: '<path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z"/>',
@@ -482,6 +487,15 @@ function adminApp(L, BUILD, M) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && data.error === "login" && S.phase === "app") {
         // [ADMUX-01] Signed out under way: sign in again over the screen, so nothing typed is lost.
+        // 1.36 P17 (서버를 새로 띄운 뒤 첫 쓰기에서 로그인 화면으로): a change waits for the sign-in and then goes on by itself.
+        if (method !== "GET" && path !== "/login") {
+          const again = new Promise((resolve, reject) => reloginWaiters.push({
+            go: () => api(path, method, body).then(resolve, reject),
+            stop: () => reject(Object.assign(new Error("login"), { quiet: true, data })),
+          }));
+          openRelogin();
+          return again;
+        }
         openRelogin();
         throw Object.assign(new Error("login"), { quiet: true, data });
       }
@@ -2750,12 +2764,20 @@ function adminApp(L, BUILD, M) {
     if (S.relogin) return;
     S.relogin = true;
     const owner = S.me?.owner;
-    openDialog(`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
+    reloginBox.innerHTML = (`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
       ${owner ? "" : `<div class="fieldset"><label for="re-email">메일</label><input id="re-email" name="email" type="email" autocomplete="username" value="${esc(S.me?.email ?? "")}" required></div>`}
       <div class="fieldset"><label for="re-pw">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>${pwInput("re-pw", "password", "current-password")}</div>
       <div class="fieldset"><label for="re-code">인증 앱 코드(두 번째 확인을 켰을 때만)</label><input id="re-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
       <p class="error" role="alert" id="re-error"></p>
       <div class="actions"><button class="btn" type="button" data-act="relogin-out">로그인 화면으로</button><button class="btn primary" type="submit">로그인</button></div></form>`);
+    if (!reloginBox.open) reloginBox.showModal();
+    reloginBox.querySelector("input:not([type=hidden])")?.focus();
+  }
+
+  function reloginDone(ok) {
+    const waiting = reloginWaiters;
+    reloginWaiters = [];
+    for (const w of waiting) (ok ? w.go : w.stop)();
   }
 
   /** [ADMUX-04] 찾기·이동: screens, saved views, the questions in the list, and a few steps, by typing a few letters. */
@@ -3777,6 +3799,9 @@ function adminApp(L, BUILD, M) {
       el.setAttribute("aria-label", show ? "비밀번호 숨기기" : "비밀번호 보기");
     },
     "relogin-out": () => {
+      S.relogin = false;
+      reloginBox.close();
+      reloginDone(false);
       dialog.close();
       signedOut();
     },
@@ -4519,6 +4544,8 @@ function adminApp(L, BUILD, M) {
     S.error = "";
     S.queue = null;
     S.relogin = false;
+    if (reloginBox.open) reloginBox.close();
+    reloginDone(false);
     etags.clear();
     clearInterval(pollTimer);
     if (forget) {
@@ -4587,8 +4614,10 @@ function adminApp(L, BUILD, M) {
       try {
         await api("/login", "POST", body);
         S.relogin = false;
-        dialog.close();
-        toast("다시 로그인했어요");
+        reloginBox.close();
+        const waiting = reloginWaiters.length;
+        reloginDone(true);
+        toast(waiting ? "다시 로그인했어요. 누르신 것을 이어서 했어요" : "다시 로그인했어요");
         load();
       } catch (e) {
         const box = document.getElementById("re-error");
@@ -5437,9 +5466,12 @@ function adminApp(L, BUILD, M) {
     if (history.state?.dialog) history.replaceState(null, "", location.href);
     S.palette = null;
     S.linkMode = "";
+  });
+  reloginBox.addEventListener("close", () => {
     if (S.relogin) {
-      // Closed without signing in: the sign-in screen, since nothing else would work.
+      // Closed without signing in (Esc): the sign-in screen, since nothing else would work.
       S.relogin = false;
+      reloginDone(false);
       signedOut();
     }
   });
