@@ -291,7 +291,8 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
             Text("받은 보상 이용권 ${it}개월은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
         pro.passes?.waitingDays?.takeIf { it > 0 }?.let {
-            Text("받은 프로 ${it}일은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            val why = pro.passes?.earned?.map { e -> e.why }?.distinct()?.joinToString(", ")?.takeIf { w -> w.isNotBlank() }
+            Text("받은 프로 ${it}일${why?.let { w -> "($w)" } ?: ""}은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
         if (gate.access.reason == ProReason.DAY_PASS) DayPassOpened(style)
     }

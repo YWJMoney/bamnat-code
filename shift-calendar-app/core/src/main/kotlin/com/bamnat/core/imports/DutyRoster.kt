@@ -352,6 +352,7 @@ object DutyRoster {
         var rows = (merge(read) + columns + listOfNotNull(list)).filter { it.cells.size >= MIN_CELLS }
             .sortedWith(compareByDescending<RosterRow> { it.cells.size - it.unknown }.thenBy { it.unknown })
             .distinctBy { it.label to it.cells }
+        rows = tidy(rows)
         hint?.myRow?.let(nearest)?.let { mine ->
             // [READ-04] The user's own line: that one only, read even when short, in order from the 1st when no row of days is known.
             rows = rows.filter { it.line == mine }.ifEmpty {
@@ -695,6 +696,44 @@ object DutyRoster {
     }
 
     /** Lines of the same person under the 1–15 and 16–31 rows of days become one. */
+    /**
+     * 1.36 PC Y9 (듀티표 9줄: 같은 사람 줄이 이름 줄과 이름 없는 줄로 겹치고 '3일' 쓰레기 줄): a row with no name right next to a named
+     * one that agrees with it is that person's, taken whole (the one with more days first, the other filling gaps); and once some
+     * row holds most of a month, nameless rows of fewer than [SHORT_ROW] days are dropped as bits of the page.
+     */
+    internal fun tidy(rows: List<RosterRow>): List<RosterRow> {
+        val out = rows.toMutableList()
+        for (u in rows.filter { it.label.isBlank() && it.cells.size >= FULL_ROW }) {
+            val n = out.filter { it.label.isNotBlank() && abs(it.line - u.line) <= 1 && it !== u }.maxByOrNull { agreement(it, u) } ?: continue
+            if (agreement(n, u) < 0.6) continue
+            val (first, second) = if (u.cells.size >= n.cells.size) u to n else n to u
+            val cells = (second.cells + first.cells).toSortedMap()
+            val merged = RosterRow(n.label, cells,
+                guessed = first.guessed + second.guessed.filter { it !in first.cells },
+                notes = second.notes + first.notes,
+                unsure = first.unsure + second.unsure.filter { it !in first.cells },
+                line = n.line, raw = second.raw + first.raw)
+            out[out.indexOf(n)] = merged
+            out.remove(u)
+        }
+        val most = out.maxOfOrNull { it.cells.size } ?: 0
+        // A short row with a name stays (handwriting reads few cells); one with no name is a bit of the page.
+        return if (most >= FULL_ROW) out.filter { it.cells.size >= SHORT_ROW || it.label.isNotBlank() } else out
+    }
+
+    /**
+     * The share of the days both rows read where they read the same code, the best of the two lined up as they are or one day
+     * apart (a row pushed by a stuck cell, "NOFF"); 0 with fewer than 3 such days.
+     */
+    private fun agreement(a: RosterRow, b: RosterRow): Double = (-1..1).maxOf { shift ->
+        val both = a.cells.keys.filter { (it + shift) in b.cells }
+        if (both.size < 3) 0.0 else both.count { a.cells[it] == b.cells[it + shift] }.toDouble() / both.size
+    }
+
+    /** Fewer days than this, nameless, beside a full row: a bit of the page ('3일 · ‖z'), never a handwritten line (7+). */
+    private const val SHORT_ROW = 6
+    private const val FULL_ROW = 20
+
     private fun merge(rows: List<RosterRow>): List<RosterRow> {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
             RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },

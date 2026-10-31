@@ -33,6 +33,25 @@ class ShiftP3Test {
     private val off = DutyCell.Shift(Fixtures.off.id)
 
     @Test
+    fun `a nameless row beside a named one is that person's, and bits of the page go`() {
+        val cycle = listOf(day, day, evening, night, off)
+        val month = (1..31).associateWith { cycle[(it - 1) % 5] }
+        // The named line read pushed by a day from the 10th (a stuck "NOFF"), 26 days; the right one with no name, 31 days.
+        val pushed = (1..26).associateWith { if (it < 10) month.getValue(it) else month.getValue(it - 1) }
+        val rows = listOf(
+            com.bamnat.core.imports.RosterRow("김간호", pushed, line = 4),
+            com.bamnat.core.imports.RosterRow("", month, line = 5),
+            com.bamnat.core.imports.RosterRow("박간호", (1..30).associateWith { off }, line = 7),
+            com.bamnat.core.imports.RosterRow("", mapOf(1 to day, 2 to night, 3 to off), line = 9),
+        )
+        val tidy = DutyRoster.tidy(rows)
+        assertEquals(listOf("김간호", "박간호"), tidy.map { it.label })
+        assertEquals(month, tidy.first().cells)
+        // Without a full row nothing is dropped (a week's roster).
+        assertEquals(1, DutyRoster.tidy(listOf(com.bamnat.core.imports.RosterRow("", mapOf(1 to day, 2 to night, 3 to off)))).size)
+    }
+
+    @Test
     fun `hospital codes match the calendar's kinds`() {
         assertEquals(day, codes.match("D"))
         assertEquals(evening, codes.match("e"))
