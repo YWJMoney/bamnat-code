@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /** [MKX-02] A tab's name as the 기능별 탭 chips say it. */
@@ -49,7 +50,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    init { load() }
+    init {
+        load()
+        // [PRF-05] 차단·풀기 on a profile shows here at once, not after the app starts again (빌드 221dd083 확인).
+        viewModelScope.launch { c.recipes.blocked.drop(1).collect { load() } }
+    }
 
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
     fun query(q: String) { _state.value = _state.value.copy(query = q) }

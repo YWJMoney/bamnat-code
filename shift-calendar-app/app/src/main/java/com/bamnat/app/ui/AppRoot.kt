@@ -1553,7 +1553,8 @@ private fun AppNavHost(
             val vm = appViewModel(key = "recipe-maker-$id") { com.bamnat.app.ui.recipe.MakerViewModel(it, id) }
             com.bamnat.app.ui.recipe.MakerScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKER) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
                 onSet = { set -> nav.navigate(Routes.recipeSet(set)) }, onPeople = { part -> nav.navigate(Routes.recipePeople(part)) { launchSingleTop = true } },
-                onStats = { nav.navigate(Routes.RECIPE_STATS) { launchSingleTop = true } }, onPro = { nav.navigate(Routes.PRO) { launchSingleTop = true } })
+                onStats = { nav.navigate(Routes.RECIPE_STATS) { launchSingleTop = true } }, onPro = { nav.navigate(Routes.PRO) { launchSingleTop = true } },
+                onSent = if (container.companyApi.enabled) ({ nav.navigate(Routes.companySent()) { launchSingleTop = true } }) else null)
         }
         composable(Routes.RECIPE_PEOPLE, arguments = listOf(navArgument("part") { type = NavType.StringType; defaultValue = "new" })) { entry ->
             val vm = appViewModel(key = "recipe-people") { com.bamnat.app.ui.recipe.PeopleViewModel(it) }

@@ -110,11 +110,29 @@ import kotlinx.coroutines.launch
 /** 프로필에서의 실패 말: 레시피 말("지워졌거나 가려진 레시피예요", "더 올릴 수 없어요") 대신 프로필·팔로우에 맞게. */
 internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
     "not_found" -> "볼 수 없는 프로필이에요"
+    "nick_length" -> "이름은 2~12자로 정해 주세요"
+    "taken" -> "다른 분이 쓰는 이름이에요"
+    "nick" -> "쓸 수 없는 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as com.bamnat.app.company.CompanyException).retryAfter ?: 86_400).let { w ->
         "오늘은 여기까지 할 수 있어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 해 주세요"
     }
     else -> RecipeClient.problem(e)
 }
+
+/** The kind of work of the one looking (탭 이름 and examples in their words: 알바면 출근·시급). */
+internal fun viewerStyle(c: AppContainer): WorkStyle? = c.calendars.styleOf(com.bamnat.app.data.PersonalCalendar.MAIN, c.settingsRepository.current.workStyle)
+
+internal fun setExample(style: WorkStyle?): String = when (style) {
+    WorkStyle.DAY -> "평일 출근 세트"
+    WorkStyle.HOURLY -> "알바 출근 세트"
+    WorkStyle.FIELD -> "현장 일정 세트"
+    WorkStyle.BUSINESS -> "가게 장부 세트"
+    WorkStyle.INVEST -> "매매 기록 세트"
+    else -> "야간 3교대 세트"
+}
+
+/** [viewerStyle] for the tiles deep in a profile or 모음. */
+internal val LocalViewerStyle = androidx.compose.runtime.staticCompositionLocalOf<WorkStyle?> { null }
 
 internal fun pinLimit(c: AppContainer): Int = if (c.featureGate.allows(Feature.CREATOR_PRO)) 6 else 3
 
@@ -134,6 +152,10 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
         /** 보는 사람 눈으로 보기. */
         val asOthers: Boolean = false,
         val busy: Boolean = false,
+        /** The profile is not there (hidden, closed or blocked me): nothing to try again. */
+        val gone: Boolean = false,
+        /** 신고를 보낸 뒤 받았다는 창. */
+        val flagged: Boolean = false,
     )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -142,11 +164,17 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
 
     fun load() {
         viewModelScope.launch {
-            _state.value = runCatching { c.recipeApi.maker(device, id) }
+            // 1.36 확인: a link opened right after install could find the network not up yet; one quiet try again.
+            val got = runCatching { c.recipeApi.maker(device, id) }.let { r ->
+                if ((r.exceptionOrNull() as? com.bamnat.app.company.CompanyException)?.code == "offline") {
+                    kotlinx.coroutines.delay(1_500); runCatching { c.recipeApi.maker(device, id) }
+                } else r
+            }
+            _state.value = got
                 .fold({ p ->
                     if (p.mine) c.recipes.hasProfile(p.recipes.isNotEmpty())
                     _state.value.copy(page = p, error = null)
-                }, { _state.value.copy(error = profileProblem(it)) })
+                }, { _state.value.copy(error = profileProblem(it), gone = (it as? com.bamnat.app.company.CompanyException)?.code == "not_found") })
             if (_state.value.page?.mine == true) loadInbox()
         }
     }
@@ -179,6 +207,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
 
     fun follow(on: Boolean) = act(if (on) "팔로우했어요. 새 작품이 오면 마을 맨 위 얼굴에 테두리가 생기고 밤낮 소식으로도 알려요" else "팔로우를 그만뒀어요") {
         c.recipeApi.follow(device, id, on)
+        c.recipes.peopleChanged()
     }
 
     fun quiet(q: Boolean) = act(if (q) "이분 새 작품 알림을 껐어요. 팔로우는 그대로예요" else "이분 새 작품 알림을 켰어요") { c.recipeApi.followQuiet(device, id, q) }
@@ -186,9 +215,21 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
     fun block(on: Boolean) = act(if (on) "차단했어요. 이분의 작품과 이야기가 내 장터에서 보이지 않아요. 마을 › 팔로잉 › 차단에서 풀 수 있어요" else "차단을 풀었어요") {
         c.recipeApi.block(device, id, on)
         c.recipes.block(id, on)
+        c.recipes.peopleChanged()
     }
 
-    fun flag(reason: String) = act("신고했어요. 운영자가 살펴봐요") { c.recipeApi.flagMaker(device, id, reason) }
+    fun flag(reason: String) = act(null) { c.recipeApi.flagMaker(device, id, reason); _state.value = _state.value.copy(flagged = true) }
+    fun flagSeen() { _state.value = _state.value.copy(flagged = false) }
+
+    /** [PRF-01] 이름: the same 별명 as 광장 (2~12자), saved with the rest of 프로필 고치기. */
+    fun save(e: ProfileEdit, nick: String?) = act("프로필을 고쳤어요") {
+        if (nick != null) {
+            val t = nick.trim()
+            if (t.isNotEmpty() && t.length !in 2..12) throw com.bamnat.app.company.CompanyException("nick_length")
+            c.companyApi.nick(device, t)
+        }
+        c.recipeApi.profile(device, e)
+    }
 
     fun face(emoji: String?, color: Long?) = act(null) { c.recipeApi.makerMe(device, emoji, color, set = true) }
 
@@ -252,6 +293,8 @@ fun MakerRing(face: String?, color: Long?, nick: String?, fresh: Boolean, size: 
 fun MakerScreen(
     vm: MakerViewModel, onBack: () -> Unit, onOpen: (String) -> Unit,
     onSet: (String) -> Unit = {}, onPeople: (String) -> Unit = {}, onStats: () -> Unit = {}, onPro: () -> Unit = {},
+    /** 내가 보낸 정보 (이 휴대폰이 보낸 정보 모두 지우기가 맨 아래). */
+    onSent: (() -> Unit)? = null,
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     val snack = remember { SnackbarHostState() }
@@ -270,6 +313,7 @@ fun MakerScreen(
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
     val p = s.page
     val mine = p?.mine == true && !s.asOthers
+    androidx.compose.runtime.CompositionLocalProvider(LocalViewerStyle provides viewerStyle(vm.c)) {
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
         topBar = {
@@ -292,6 +336,7 @@ fun MakerScreen(
                                     menu = false
                                     vm.edit(ProfileEdit(hidden = !p.hidden), if (p.hidden) "프로필이 다시 보여요" else "프로필을 숨겼어요. 작품은 장터에 그대로 있고, 프로필과 팔로우만 막혀요")
                                 })
+                                onSent?.let { go -> DropdownMenuItem(text = { Text("내가 보낸 정보·모두 지우기") }, onClick = { menu = false; go() }) }
                             } else {
                                 DropdownMenuItem(text = { Text(if (p.blocked) "차단 풀기" else "차단하기") }, onClick = { menu = false; if (p.blocked) vm.block(false) else blocking = true })
                                 if (!p.blocked) DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
@@ -305,7 +350,9 @@ fun MakerScreen(
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (p == null) {
                     Text(s.error ?: "불러오는 중이에요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
-                    if (s.error != null) TextButton(onClick = vm::load, modifier = Modifier.padding(horizontal = 8.dp)) { Text("다시 해 보기") }
+                    if (s.error != null && !s.gone) TextButton(onClick = vm::load, modifier = Modifier.padding(horizontal = 8.dp)) { Text("다시 해 보기") }
+                    if (s.gone) Text("숨겼거나 닫힌 프로필이에요. 작품은 장터에서 볼 수 있어요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
                     return@Column
                 }
                 if (p.blocked) {
@@ -324,7 +371,8 @@ fun MakerScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (p.mine && p.hidden && !s.asOthers) Text("🔒 프로필을 숨겨 두었어요. 다른 분은 볼 수 없어요 (⋮ › 프로필 다시 보이기)",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    if (mine && p.bioHidden) Text("소개 글이 신고로 가려져 있어요. 고치면 다시 보여요", style = MaterialTheme.typography.bodySmall,
+                    if (mine && p.bioHidden) Text(if (p.bioHiddenBy == "operator") "운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
+                        else "소개 글이 신고로 가려져 있어요. 고치면 다시 보여요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
                     if (mine) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -347,7 +395,7 @@ fun MakerScreen(
                             val tabs = p.tabRecipes.mapNotNull { it.tabs.firstOrNull() }.distinct()
                             if (tabs.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 FilterChip(tabFilter == null, { tabFilter = null }, label = { Text("전체") })
-                                tabs.forEach { t -> FilterChip(tabFilter == t, { tabFilter = t }, label = { Text(marketTabLabel(t, p.styleTag)) }) }
+                                tabs.forEach { t -> FilterChip(tabFilter == t, { tabFilter = t }, label = { Text(marketTabLabel(t, viewerStyle(vm.c))) }) }
                             }
                             Grid(p.tabRecipes.filter { tabFilter == null || it.tabs.firstOrNull() == tabFilter }.sortedByDescending { it.code in p.pins }, p.pins,
                                 empty = if (mine) "탭 하나만 바꾼 작품은 여기 모여요" else "아직 올린 기능별 탭이 없어요", onOpen)
@@ -373,6 +421,7 @@ fun MakerScreen(
             }
         }
     }
+    }
     val page = s.page
     if (picking) EmojiPickerDialog(onPick = { e -> picking = false; vm.face(e, page?.color) }, onDismiss = { picking = false })
     if (coloring) ColorPickerDialog(initial = page?.color ?: 0xFF5C6BC0L, onPick = { col -> coloring = false; vm.face(page?.face, col) }, onDismiss = { coloring = false })
@@ -397,7 +446,7 @@ fun MakerScreen(
     )
     if (blocking) AlertDialog(
         onDismissRequest = { blocking = false },
-        title = { Text("${page?.nick ?: "이분"}을(를) 차단할까요?") },
+        title = { Text(page?.nick?.let { "$it${com.bamnat.app.ui.Fmt.obj(it)} 차단할까요?" } ?: "이분을 차단할까요?") },
         text = { Text("서로 팔로우가 끊기고, 이분의 작품과 이야기가 내 장터에서 보이지 않아요. 이분은 내 프로필을 볼 수 없어요. 차단한 것은 알리지 않아요. 마을 › 팔로잉 › 차단에서 언제든 풀 수 있어요.") },
         confirmButton = { TextButton(onClick = { blocking = false; vm.block(true) }) { Text("차단") } },
         dismissButton = { TextButton(onClick = { blocking = false }) { Text("닫기") } },
@@ -421,7 +470,13 @@ fun MakerScreen(
             dismissButton = { TextButton(onClick = { flagging = false }) { Text("닫기") } },
         )
     }
-    if ((newSet || setEdit != null) && page != null) SetEditDialog(setEdit, page.recipes,
+    if (s.flagged) AlertDialog(
+        onDismissRequest = vm::flagSeen,
+        title = { Text("신고를 받았어요") },
+        text = { Text("운영자가 살펴보고 운영 규칙에 어긋나면 소개를 가리거나 프로필을 닫아요. 누가 신고했는지는 이분에게도 운영자에게도 보이지 않아요. 더 보고 싶지 않으면 ⋮ › 차단하기를 써 주세요.") },
+        confirmButton = { TextButton(onClick = vm::flagSeen) { Text("닫기") } },
+    )
+    if ((newSet || setEdit != null) && page != null) SetEditDialog(setEdit, page.recipes, viewerStyle(vm.c),
         onSave = { title, summary, codes -> vm.saveSet(setEdit, title, summary, codes) { newSet = false; setEdit = null } },
         onDismiss = { newSet = false; setEdit = null })
 }
@@ -509,8 +564,9 @@ internal fun WorkTile(item: RecipeItem, pinned: Boolean, modifier: Modifier = Mo
                 if (pinned) Text("📌", modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).semantics { contentDescription = "대표 작품" })
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val viewer = LocalViewerStyle.current
             Text(buildString {
-                if (item.scope == "tab") item.tabs.firstOrNull()?.let { append("🧩 ").append(marketTabLabel(it, null)).append(" · ") }
+                if (item.scope == "tab") item.tabs.firstOrNull()?.let { append("🧩 ").append(marketTabLabel(it, viewer)).append(" · ") }
                 append("♥ ${item.likes} · 쓰는 분 ${item.users}")
             }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -539,7 +595,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
                     Text(if (fresh) "다 봤어요" else if (open) "접기" else "펼치기")
                 }
             }
-            if (lines.isEmpty()) Text("지난 7일 동안 새 소식이 없어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (lines.isEmpty()) Text("새 소식은 다 봤어요. 새 팔로워·질문·고친 판이 오면 여기 떠요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else if (fresh || open) lines.take(8).forEach { (text, go) ->
                 Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).then(if (go != null) Modifier.clickable(onClick = go) else Modifier)
@@ -554,6 +610,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
 @Composable
 private fun SetCard(set: MakerSet, works: List<RecipeItem>, mine: Boolean, onOpen: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     val items = set.codes.mapNotNull { code -> works.firstOrNull { it.code == code } }
+    val viewer = LocalViewerStyle.current
     Card(Modifier.fillMaxWidth().clickable(onClickLabel = "모음 보기", onClick = onOpen)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -561,7 +618,7 @@ private fun SetCard(set: MakerSet, works: List<RecipeItem>, mine: Boolean, onOpe
             }
             Text(set.title, style = MaterialTheme.typography.titleMedium)
             if (set.summary.isNotEmpty()) Text(set.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("작품 ${items.size}개 · " + items.joinToString(" + ") { if (it.scope == "tab") marketTabLabel(it.tabs.firstOrNull() ?: "", null) else "테마" },
+            Text("작품 ${items.size}개 · " + items.joinToString(" + ") { if (it.scope == "tab") marketTabLabel(it.tabs.firstOrNull() ?: "", viewer) else "테마" },
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             if (mine) {
                 if (set.missing > 0) Text("내린 작품 ${set.missing}개는 빠져 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
@@ -581,7 +638,7 @@ private fun SetCard(set: MakerSet, works: List<RecipeItem>, mine: Boolean, onOpe
 
 /** [PRF-07] 모음 만들기·고치기: a name, a line, and 2~6 of my works with at most one 테마. */
 @Composable
-private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, onSave: (String, String, List<String>) -> Unit, onDismiss: () -> Unit) {
+private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkStyle?, onSave: (String, String, List<String>) -> Unit, onDismiss: () -> Unit) {
     var title by remember { mutableStateOf(set?.title ?: "") }
     var summary by remember { mutableStateOf(set?.summary ?: "") }
     var picked by remember { mutableStateOf(set?.codes?.filter { c -> works.any { it.code == c } }.orEmpty()) }
@@ -598,7 +655,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, onSave: (Stri
         title = { Text(if (set == null) "모음 만들기" else "모음 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(title, { title = it.take(40) }, label = { Text("이름 (예: 야간 3교대 세트)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(title, { title = it.take(40) }, label = { Text("이름 (예: ${setExample(style)})") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(summary, { summary = it.take(100) }, label = { Text("한 줄 설명 (안 써도 돼요)") }, modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("${RecipeText.graphemes(summary.trim())}/80") }, isError = RecipeText.graphemes(summary.trim()) > 80)
                 Text("테마 하나 + 기능별 탭 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
@@ -609,7 +666,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, onSave: (Stri
                         Checkbox(on, { picked = if (on) picked - r.code else picked + r.code })
                         Column(Modifier.weight(1f)) {
                             Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(if (r.scope == "tab") "기능별 탭 · " + marketTabLabel(r.tabs.firstOrNull() ?: "", null) else "테마",
+                            Text(if (r.scope == "tab") "기능별 탭 · " + marketTabLabel(r.tabs.firstOrNull() ?: "", style) else "테마",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -626,9 +683,15 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, onSave: (Stri
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onFace: () -> Unit, onColor: () -> Unit, onPro: () -> Unit, onDismiss: () -> Unit) {
+    var nick by remember { mutableStateOf(p.nick ?: "") }
     var bio by remember { mutableStateOf(p.bio ?: "") }
     var style by remember { mutableStateOf(p.styleTag) }
     var pins by remember { mutableStateOf(p.pins) }
+    // 빌드 221dd083 확인: a tap outside closed it and took what was typed. Asked first when something changed.
+    val dirty = nick.trim() != (p.nick ?: "") || bio.trim() != (p.bio ?: "") || style != p.styleTag || pins != p.pins
+    var leaving by remember { mutableStateOf(false) }
+    val close = { if (dirty) leaving = true else onDismiss() }
+    val nickProblem = nick.trim().let { t -> if (t.isNotEmpty() && t.length !in 2..12) "이름은 2~12자로 정해 주세요" else null }
     val count = RecipeText.graphemes(bio.trim())
     val problem = when {
         count > 40 -> "40자까지 쓸 수 있어요"
@@ -640,15 +703,25 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
     val photo = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.coverPhoto(runCatching { context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull())
     }
+    if (leaving) AlertDialog(
+        onDismissRequest = { leaving = false },
+        title = { Text("고친 내용을 버릴까요?") },
+        text = { Text("저장하지 않고 닫으면 적은 이름·소개와 고른 것이 사라져요.") },
+        confirmButton = { TextButton(onClick = { leaving = false; onDismiss() }) { Text("버리기", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = { leaving = false }) { Text("계속 고치기") } },
+    )
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = close,
         title = { Text("프로필 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onFace) { Text("얼굴 이모지") }
-                    OutlinedButton(onClick = onColor) { Text("바탕색") }
+                    OutlinedButton(onClick = { if (dirty) leaving = true else onFace() }) { Text("얼굴 이모지") }
+                    OutlinedButton(onClick = { if (dirty) leaving = true else onColor() }) { Text("바탕색") }
                 }
+                OutlinedTextField(nick, { nick = it.replace("\n", "").take(12) }, label = { Text("이름 (광장 별명과 같아요)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), isError = nickProblem != null,
+                    supportingText = { Text(nickProblem ?: "2~12자 · 비우면 ‘이름 없는 분’으로 보여요") })
                 OutlinedTextField(bio, { bio = it.replace("\n", " ").take(60) }, label = { Text("한 줄 소개") }, modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text(problem ?: "$count/40 · 전화번호·주소·링크는 쓸 수 없어요") }, isError = problem != null)
                 Text("보여 줄 근무 유형", style = MaterialTheme.typography.titleSmall)
@@ -681,12 +754,12 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
             }
         },
         confirmButton = {
-            TextButton(enabled = problem == null && vm.canWrite, onClick = {
+            TextButton(enabled = problem == null && nickProblem == null && vm.canWrite, onClick = {
                 onDismiss()
-                vm.edit(ProfileEdit(bio = bio.trim(), pins = pins, setStyle = true, styleTag = style))
+                vm.save(ProfileEdit(bio = bio.trim(), pins = pins, setStyle = true, styleTag = style), nick.takeIf { it.trim() != (p.nick ?: "") })
             }) { Text("저장") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = close) { Text("닫기") } },
     )
 }
 
@@ -721,8 +794,8 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun quiet(id: String, q: Boolean) = act { c.recipeApi.followQuiet(device, id, q) }
-    fun unfollow(id: String) = act { c.recipeApi.follow(device, id, false) }
-    fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false) }
+    fun unfollow(id: String) = act { c.recipeApi.follow(device, id, false); c.recipes.peopleChanged() }
+    fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false); c.recipes.peopleChanged() }
 
     private fun act(f: suspend () -> Unit) {
         viewModelScope.launch { runCatching { f() }.onSuccess { load() }.onFailure { _state.value = _state.value.copy(message = profileProblem(it)) } }
@@ -741,7 +814,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text("팔로잉") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        topBar = { TopAppBar(title = { Text(parts[part].second) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = part) {
@@ -817,11 +890,16 @@ class FollowingStripViewModel(private val c: AppContainer, private val style: Wo
 
     private var loadedAt = 0L
 
+    init {
+        // A 팔로우·차단 on a profile shows on the row as soon as 마을 is back (빌드 221dd083 확인: it waited for another tab).
+        viewModelScope.launch { c.recipes.people.collect { if (it > 0) load(force = true) } }
+    }
+
     /** Again when 마을 opens or after a minute, not on every switch between 광장 and 장터. */
-    fun load() {
+    fun load(force: Boolean = false) {
         if (!c.recipeApi.enabled) return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (_state.value.loaded && now - loadedAt < 60_000) return
+        if (!force && _state.value.loaded && now - loadedAt < 60_000) return
         loadedAt = now
         viewModelScope.launch {
             val device = c.companyStore.device
@@ -841,7 +919,7 @@ class FollowingStripViewModel(private val c: AppContainer, private val style: Wo
                     })
                 }
             }
-            _state.value = State(me, f?.items.orEmpty(), month, loaded = true)
+            _state.value = State(me, f?.items.orEmpty(), month.filterNot { it.maker == me?.maker }, loaded = true)
         }
     }
 }

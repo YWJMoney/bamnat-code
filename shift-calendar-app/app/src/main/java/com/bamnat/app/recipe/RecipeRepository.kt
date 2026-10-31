@@ -56,6 +56,10 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     fun setBlocked(ids: Set<String>) { prefs.edit().putString(K_BLOCKED, ids.joinToString(",")).apply(); _blocked.value = ids }
     fun block(id: String, on: Boolean) = setBlocked(if (on) _blocked.value + id else _blocked.value - id)
     /** Whether [item] is from a maker this phone blocked. */
+    /** [PRF-02] Goes up on every 팔로우·그만두기·차단·풀기, so 마을's 팔로잉 줄 asks again at once (빌드 221dd083 확인: it waited a minute). */
+    private val _people = MutableStateFlow(0)
+    val people: StateFlow<Int> = _people.asStateFlow()
+    fun peopleChanged() { _people.value++ }
     fun hides(item: RecipeItem): Boolean = item.maker != null && item.maker in _blocked.value
 
     /**

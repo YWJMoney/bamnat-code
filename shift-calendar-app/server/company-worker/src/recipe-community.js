@@ -282,7 +282,7 @@ async function rcMakerPage(d, env, request, id) {
     sets, ...(cover ? { cover: cover.id } : {}), ...(mine && m?.cover && !cover ? { coverPending: m.cover } : {}),
     maker: id, nick, face: m?.face ?? null, color: m?.color ?? null, mine,
     ...(m?.bio && !m.bio_hidden ? { bio: m.bio } : {}),
-    ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true } : {}),
+    ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true, bioHiddenBy: m.bio_hidden === 2 ? "operator" : "flags" } : {}),
     ...(m?.style_tag ? { styleTag: m.style_tag } : {}),
     ...(mine ? { hidden: Boolean(m?.hidden), closed: Boolean(m?.closed) } : {}),
     pins: rcPinsOf(m).filter((c) => codes.has(c)),

@@ -164,6 +164,8 @@ data class MakerPage(
     val coverPending: String? = null,
     /** The maker's own: the operator closed the profile (others cannot see or follow it). */
     val closed: Boolean = false,
+    /** The maker's own: who hid the 소개, "flags" (세 번 신고) or "operator". */
+    val bioHiddenBy: String? = null,
 ) {
     val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
     val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
@@ -425,7 +427,8 @@ class RecipeClient(
             blocked = o.optBoolean("blocked"), hidden = o.optBoolean("hidden"),
             sets = o.optJSONArray("sets").objects().map { s -> MakerSet(s.getString("id"), s.optString("title"), s.optString("summary"),
                 s.optJSONArray("codes").strings(), s.optInt("missing"), s.optBoolean("hidden")) },
-            cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"), closed = o.optBoolean("closed"))
+            cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"), closed = o.optBoolean("closed"),
+            bioHiddenBy = o.optStringOrNull("bioHiddenBy"))
     }
 
     override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {
