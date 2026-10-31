@@ -73,6 +73,9 @@ fun HubScreen(
     onCode: () -> Unit,
     /** 스튜디오, started from "mine", "plain" or "theme:<key>" ([com.bamnat.app.ui.studio.StudioViewModel]). */
     onStudio: (String) -> Unit,
+    /** [PRF-02] 1.36 a profile from the 팔로잉 줄 (내 프로필 first), and 팔로잉 모두 보기. */
+    onMaker: (String) -> Unit = {},
+    onPeople: () -> Unit = {},
 ) {
     var section by rememberSaveable { mutableStateOf(HubSection.TALK) }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,6 +94,12 @@ fun HubScreen(
                     }
                 }
             }
+        }
+        // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
+        val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
+        if (recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
+            val strip = com.bamnat.app.ui.appViewModel(key = "following-strip") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
+            com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople)
         }
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
             when (section) {

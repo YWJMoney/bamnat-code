@@ -303,6 +303,10 @@ async function rcMakerMe(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   let m = await rcMakerOf(d, env, dev, now);
+  // 소개·대표 작품·유형·표지 are written for others like a recipe: from 처리방침 3.8 (recipe.publish). 숨기기 is always allowed.
+  if (["bio", "pins", "styleTag", "cover"].some((k) => body[k] !== undefined) && !(await d.legalOpen(env, "recipe.publish", now))) {
+    return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  }
   const sets = [];
   const args = [];
   if (body.face !== undefined) {
@@ -694,6 +698,51 @@ async function rcMonthMakers(d, env, url) {
       users: counted.find((c) => c.maker === id)?.n ?? 0 });
   }
   return d.json({ month, style, items: out }, 200, { "cache-control": "public, max-age=600" });
+}
+
+// ---- [PRF-11] 프로필 링크의 공개 페이지 ----
+
+const rcEsc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+const rcHex = (n) => (Number.isInteger(n) ? "#" + (n & 0xffffff).toString(16).padStart(6, "0") : null);
+
+/**
+ * GET /m/:id — a maker's 프로필 as a small web page for a link sent in a messenger: face, name, 소개, counts and 대표 작품, with
+ * "밤낮 앱에서 보기" (bamnat://m/<id>). Nothing about who looks; a hidden or closed profile is not there. Not indexed.
+ */
+export async function makerWebPage(d, env, id) {
+  const html = (body, status = 200) => new Response(`<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>밤낮 마을 프로필</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;padding:24px 16px;background:#f6f7fb;color:#1b1d24}main{max-width:460px;margin:auto}
+.face{width:88px;height:88px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:44px;background:#dfe3f5}
+.n{display:flex;justify-content:space-between;margin:16px 0}.n div{text-align:center}.n b{display:block;font-size:1.2em}
+.w{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.w div{border-radius:12px;padding:12px;color:#fff;min-height:64px;font-weight:600}
+a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
+@media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head><body><main>${body}</main></body></html>`,
+  { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": status === 200 ? "public, max-age=300" : "no-store",
+    "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'" } });
+  if (!/^([0-9a-f]{12}|operator)$/.test(id)) return html("<h1>찾을 수 없어요</h1>", 404);
+  const m = await d.one(env, "SELECT * FROM recipe_makers WHERE maker = ?", id);
+  const owner = id === "operator" ? "operator" : m?.device;
+  if (!owner || m?.hidden || m?.closed) return html("<h1>볼 수 없는 프로필이에요</h1><p>숨겼거나 없는 프로필이에요.</p>", 404);
+  const nick = owner === "operator" ? "밤낮 운영" : (await d.one(env, "SELECT nick FROM nicks WHERE device = ?", owner))?.nick ?? "이름 없는 분";
+  const rows = await d.all(env, "SELECT code, title, cover, likes, applied, body FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public' ORDER BY likes DESC, updated_at DESC LIMIT 60", owner);
+  const pins = rcPinsOf(m);
+  rows.sort((a, b) => (pins.includes(b.code) ? 1 : 0) - (pins.includes(a.code) ? 1 : 0));
+  const followers = (await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE maker = ?", id)).n;
+  const users = rows.reduce((s, r) => s + r.applied, 0);
+  const works = rows.slice(0, 6).map((r) => {
+    let cover = {};
+    try { cover = JSON.parse(r.cover); } catch { /* the gradient's default */ }
+    const a = rcHex(cover.a) ?? "#5c6bc0";
+    const b = rcHex(cover.b) ?? "#26a69a";
+    return `<div style="background:linear-gradient(135deg,${a},${b})">${rcEsc(cover.emoji ?? "")} ${rcEsc(r.title)}<br><small>♥ ${r.likes} · 쓰는 분 ${r.applied}</small></div>`;
+  }).join("");
+  const app = `bamnat://m/${id}`;
+  return html(`<div class="face" style="background:${rcHex(m?.color) ?? "#dfe3f5"}">${rcEsc(m?.face ?? "🙂")}</div>
+<h1>${rcEsc(nick)}</h1>${m?.bio && !m.bio_hidden ? `<p>${rcEsc(m.bio)}</p>` : ""}
+<div class="n"><div><b>${rows.length}</b>작품</div><div><b>${followers}</b>팔로워</div><div><b>${users}</b>쓰는 분</div></div>
+<div class="w">${works}</div><p><a class="b" href="${app}">밤낮 앱에서 보기</a></p>
+<p><small>밤낮 근무 달력의 마을에서 테마와 기능을 나누는 분이에요. 앱이 없으면 Play 스토어에서 ‘밤낮’을 찾아 주세요. 이 페이지는 아무것도 저장하지 않아요.</small></p>`);
 }
 
 // ---- [RCX-08] 이번 주 고른 것 ----

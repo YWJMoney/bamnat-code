@@ -139,10 +139,75 @@ data class RecipeRequest(
     val mine: Boolean, val taking: Boolean, val liked: Boolean,
 )
 
-/** [RCX-05][RCX-06] A maker's page. */
+/** [RCX-05][RCX-06] A maker's page; [PRF-01] 1.36 the 창작자 프로필 on it. */
 data class MakerPage(
     val maker: String, val nick: String?, val face: String?, val color: Long?, val mine: Boolean, val recipes: List<RecipeItem>,
     val likes: Int, val users: Int, val followers: Int, val following: Boolean, val badges: List<Pair<String, String>>,
+    /** 한 줄 소개 (null when none or hidden from others). */
+    val bio: String? = null,
+    /** The maker's own: the operator hid the 소개 for 신고. */
+    val bioHidden: Boolean = false,
+    /** The kind of work the maker chose to show ([WorkStyle] name). */
+    val styleTag: WorkStyle? = null,
+    /** 대표 작품, codes among [recipes]. */
+    val pins: List<String> = emptyList(),
+    val followingCount: Int = 0,
+    /** This phone turned off the maker's 새 작품 알림 (still following). */
+    val quiet: Boolean = false,
+    /** This phone blocked the maker: nothing else is sent. */
+    val blocked: Boolean = false,
+    /** The maker's own: 프로필 숨기기 is on. */
+    val hidden: Boolean = false,
+    val sets: List<MakerSet> = emptyList(),
+    /** [PRF-12] 표지 그림 (shown once the operator looked), or the maker's own still waiting. */
+    val cover: String? = null,
+    val coverPending: String? = null,
+) {
+    val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
+    val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
+}
+
+/** [PRF-02] A maker as a face in a row or list. [fresh]: a new public recipe in the last 7 days. */
+data class MakerFaceItem(val maker: String, val nick: String?, val face: String?, val color: Long?, val fresh: Boolean = false,
+    val quiet: Boolean = false, val bio: String? = null, val picked: Boolean = false)
+
+/** [PRF-02] 팔로잉 and the makers this phone blocked. */
+data class Following(val items: List<MakerFaceItem>, val blocked: List<MakerFaceItem>)
+
+/** [PRF-02] 내 팔로워 (the maker's own): those with a 프로필, and how many without. */
+data class Followers(val total: Int, val items: List<MakerFaceItem>, val unnamed: Int)
+
+/** [PRF-03] 내 프로필 최근 알림, as the server works it out; [RecipeRepository] keeps which milestones and badges were shown. */
+data class ProfileInbox(
+    val maker: String, val newFollowers: Int, val followerFaces: List<MakerFaceItem>,
+    val questions: List<Triple<String, String, String>>, val remixes: List<Triple<String, String, String>>,
+    /** code, title, "users" or "likes", the number passed. */
+    val milestones: List<Milestone>, val badges: List<Pair<String, String>>,
+) {
+    data class Milestone(val code: String, val title: String, val kind: String, val n: Int) {
+        val key: String get() = "$code|$kind|$n"
+    }
+}
+
+/** [PRF-07] 모음: 2~6 of a maker's own recipes (테마 하나 + 기능별 탭들) put on together. */
+data class MakerSet(val id: String, val title: String, val summary: String, val codes: List<String>, val missing: Int = 0, val hidden: Boolean = false)
+
+/** [PRF-07] A 모음 opened: its recipes, 테마 first. */
+data class SetDoc(val id: String, val title: String, val summary: String, val maker: String, val mine: Boolean, val items: List<RecipeItem>, val missing: Int)
+
+/** [PRF-09] 작품 통계 (the maker's own). [days] is 28 days of 넣은 수, oldest first. */
+data class MakerStats(val week: Int, val users: Int, val likes: Int, val items: List<Item>) {
+    data class Item(val code: String, val title: String, val users: Int, val likes: Int, val dislikes: Int, val kept: Int?, val week: Int, val days: List<Int>)
+}
+
+/** [PRF-01] What 프로필 고치기 sends; null fields stay as they are. */
+data class ProfileEdit(
+    val bio: String? = null, val pins: List<String>? = null,
+    /** Set [styleTag] (null to clear) only when [setStyle]. */
+    val setStyle: Boolean = false, val styleTag: WorkStyle? = null,
+    val hidden: Boolean? = null,
+    /** Set [cover] (null to clear) only when [setCover]. */
+    val setCover: Boolean = false, val cover: String? = null,
 )
 
 /** [RCX-07][RCX-10] For 소식: new recipes of followed makers, and makers' answers to my questions (code, title, the answer). */
@@ -179,6 +244,22 @@ interface RecipeApi {
     /** The phone's own maker id, and its face when [face]/[color] are given. */
     suspend fun makerMe(device: String, face: String? = null, color: Long? = null, set: Boolean = false): String = throw CompanyException("offline")
     suspend fun follow(device: String, id: String, on: Boolean) {}
+    /** [PRF-04] 팔로우는 그대로, 이분 새 작품 알림만 끄기·켜기. */
+    suspend fun followQuiet(device: String, id: String, quiet: Boolean) {}
+    /** [PRF-01] 프로필 고치기. */
+    suspend fun profile(device: String, edit: ProfileEdit) {}
+    suspend fun following(device: String): Following = Following(emptyList(), emptyList())
+    suspend fun followers(device: String): Followers = Followers(0, emptyList(), 0)
+    suspend fun inbox(device: String, since: Instant?): ProfileInbox? = null
+    suspend fun block(device: String, id: String, on: Boolean) {}
+    suspend fun flagMaker(device: String, id: String, reason: String) {}
+    suspend fun setOpen(device: String?, id: String): SetDoc = throw CompanyException("not_found")
+    /** A new 모음 ([id] null) or a change to one; its id back. */
+    suspend fun setSave(device: String, id: String?, title: String, summary: String, codes: List<String>): String = throw CompanyException("offline")
+    suspend fun setDelete(device: String, id: String) {}
+    suspend fun feed(device: String, cursor: Int = 0): RecipePage = throw CompanyException("offline")
+    suspend fun stats(device: String): MakerStats = throw CompanyException("offline")
+    suspend fun monthMakers(style: WorkStyle?): List<MakerFaceItem> = emptyList()
     suspend fun picks(style: WorkStyle?): List<RecipeItem> = emptyList()
     suspend fun news(device: String, since: Instant?): RecipeNews = RecipeNews(emptyList(), emptyList())
     /** [RCX-15] A cover picture already shrunk to WebP; its id back (it shows once the operator looked). */
@@ -332,7 +413,93 @@ class RecipeClient(
         val o = call("GET", "/api/recipes/makers/$id", device = device)
         MakerPage(o.getString("maker"), o.optStringOrNull("nick"), o.optStringOrNull("face"), if (o.isNull("color") || !o.has("color")) null else o.optLong("color"),
             o.optBoolean("mine"), o.optJSONArray("recipes").objects().map(::item), o.optInt("likes"), o.optInt("users"), o.optInt("followers"),
-            o.optBoolean("following"), o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") })
+            o.optBoolean("following"), o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") },
+            bio = o.optStringOrNull("bio"), bioHidden = o.optBoolean("bioHidden"), styleTag = style(o.optStringOrNull("styleTag")),
+            pins = o.optJSONArray("pins").strings(), followingCount = o.optInt("followingCount"), quiet = o.optBoolean("quiet"),
+            blocked = o.optBoolean("blocked"), hidden = o.optBoolean("hidden"),
+            sets = o.optJSONArray("sets").objects().map { s -> MakerSet(s.getString("id"), s.optString("title"), s.optString("summary"),
+                s.optJSONArray("codes").strings(), s.optInt("missing"), s.optBoolean("hidden")) },
+            cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"))
+    }
+
+    override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {
+        call("POST", "/api/recipes/makers/$id/follow", JSONObject().put("device", device).put("quiet", quiet))
+        Unit
+    }
+
+    override suspend fun profile(device: String, edit: ProfileEdit) = serverCall {
+        val body = JSONObject().put("device", device)
+        edit.bio?.let { body.put("bio", it) }
+        edit.pins?.let { body.put("pins", org.json.JSONArray(it)) }
+        if (edit.setStyle) body.put("styleTag", edit.styleTag?.name ?: JSONObject.NULL)
+        edit.hidden?.let { body.put("hidden", it) }
+        if (edit.setCover) body.put("cover", edit.cover ?: JSONObject.NULL)
+        call("POST", "/api/recipes/makers/me", body)
+        Unit
+    }
+
+    override suspend fun following(device: String): Following = readCall {
+        val o = call("GET", "/api/recipes/makers/me/following", device = device)
+        Following(o.optJSONArray("items").objects().map(::face), o.optJSONArray("blocked").objects().map(::face))
+    }
+
+    override suspend fun followers(device: String): Followers = readCall {
+        val o = call("GET", "/api/recipes/makers/me/followers", device = device)
+        Followers(o.optInt("total"), o.optJSONArray("items").objects().map(::face), o.optInt("unnamed"))
+    }
+
+    override suspend fun inbox(device: String, since: Instant?): ProfileInbox = readCall {
+        val o = call("GET", "/api/recipes/makers/me/inbox" + (since?.let { "?since=" + URLEncoder.encode(it.toString(), "UTF-8") } ?: ""), device = device)
+        val f = o.optJSONObject("followers")
+        ProfileInbox(o.optString("maker"), f?.optInt("count") ?: 0, f?.optJSONArray("items").objects().map(::face),
+            o.optJSONArray("questions").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) },
+            o.optJSONArray("remixes").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("parentTitle")) },
+            o.optJSONArray("milestones").objects().map { ProfileInbox.Milestone(it.optString("code"), it.optString("title"), it.optString("kind"), it.optInt("n")) },
+            o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") })
+    }
+
+    override suspend fun block(device: String, id: String, on: Boolean) = serverCall {
+        call("POST", "/api/recipes/makers/$id/block", JSONObject().put("device", device).put("on", on))
+        Unit
+    }
+
+    override suspend fun flagMaker(device: String, id: String, reason: String) = serverCall {
+        call("POST", "/api/recipes/makers/$id/flag", JSONObject().put("device", device).put("reason", reason))
+        Unit
+    }
+
+    override suspend fun setOpen(device: String?, id: String): SetDoc = readCall {
+        val o = call("GET", "/api/recipes/sets/$id", device = device)
+        SetDoc(o.getString("id"), o.optString("title"), o.optString("summary"), o.optString("maker"), o.optBoolean("mine"),
+            o.optJSONArray("items").objects().map(::item), o.optInt("missing"))
+    }
+
+    override suspend fun setSave(device: String, id: String?, title: String, summary: String, codes: List<String>): String = serverCall {
+        val body = JSONObject().put("device", device).put("title", title).put("summary", summary).put("codes", org.json.JSONArray(codes))
+        call("POST", if (id == null) "/api/recipes/sets" else "/api/recipes/sets/$id", body).getString("id")
+    }
+
+    override suspend fun setDelete(device: String, id: String) = serverCall {
+        call("DELETE", "/api/recipes/sets/$id", device = device)
+        Unit
+    }
+
+    override suspend fun feed(device: String, cursor: Int): RecipePage = readCall {
+        val o = call("GET", "/api/recipes/feed?cursor=$cursor", device = device)
+        RecipePage(o.optJSONArray("items").objects().map(::item), if (o.isNull("next") || !o.has("next")) null else o.optInt("next"))
+    }
+
+    override suspend fun stats(device: String): MakerStats = readCall {
+        val o = call("GET", "/api/recipes/makers/me/stats", device = device)
+        MakerStats(o.optInt("week"), o.optInt("users"), o.optInt("likes"), o.optJSONArray("items").objects().map { i ->
+            MakerStats.Item(i.optString("code"), i.optString("title"), i.optInt("users"), i.optInt("likes"), i.optInt("dislikes"),
+                i.optInt("kept").takeIf { i.has("kept") && !i.isNull("kept") }, i.optInt("week"),
+                i.optJSONArray("days")?.let { a -> (0 until a.length()).map { a.optInt(it) } }.orEmpty())
+        })
+    }
+
+    override suspend fun monthMakers(style: WorkStyle?): List<MakerFaceItem> = readCall {
+        call("GET", "/api/recipes/makers/month" + (style?.let { "?style=${it.name}" } ?: "")).optJSONArray("items").objects().map(::face)
     }
 
     override suspend fun makerMe(device: String, face: String?, color: Long?, set: Boolean): String = serverCall {
@@ -365,6 +532,14 @@ class RecipeClient(
     override fun imageUrl(id: String): String? = if (enabled && com.bamnat.core.recipe.Cover.IMAGE.matches(id)) "$baseUrl/api/recipes/images/$id" else null
 
     companion object {
+        private fun style(name: String?): WorkStyle? = WorkStyle.entries.firstOrNull { it.name == name }
+        private fun org.json.JSONArray?.strings(): List<String> = this?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+
+        /** [PRF-02] A maker as a face. */
+        fun face(o: JSONObject) = MakerFaceItem(o.getString("maker"), o.optStringOrNull("nick"), o.optStringOrNull("face"),
+            if (o.isNull("color") || !o.has("color")) null else o.optLong("color"), o.optBoolean("fresh"), o.optBoolean("quiet"),
+            o.optStringOrNull("bio"), o.optBoolean("picked"))
+
         fun item(o: JSONObject): RecipeItem {
             val c = o.optJSONObject("cover")
             return RecipeItem(
@@ -413,6 +588,12 @@ class RecipeClient(
                 "own" -> "내 레시피에는 누를 수 없어요"
                 "muted" -> "신고가 쌓여 30일 동안 쓸 수 없어요"
                 "not_found" -> "지워졌거나 가려진 레시피예요"
+                "too_long" -> "40자까지 쓸 수 있어요"
+                "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 기능별 탭으로 골라 주세요"
+                "codes" -> "작품을 2~6개 골라 주세요"
+                "title" -> "이름을 2~30자로 적어 주세요"
+                "too_many" -> "더 늘릴 수 없어요. 안 쓰는 것을 지우고 다시 해 주세요"
+                "not_yours" -> "내 작품만 넣을 수 있어요"
                 "same" -> "바뀐 것이 없어요"
                 "paused" -> "잠시 쉬고 있어요"
                 "too_big", "too_large" -> "레시피가 너무 커요. 조각을 줄여 주세요"

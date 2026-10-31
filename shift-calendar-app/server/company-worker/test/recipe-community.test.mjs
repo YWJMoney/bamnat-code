@@ -226,6 +226,11 @@ test("[PRF-05][PRF-06] 차단과 프로필 신고: 서로 팔로우가 끊기고
   const f2 = (await call("GET", "/api/recipes/makers/me/following", undefined, dev(2))).data;
   assert.deepEqual([f2.items.length, f2.blocked.map((x) => x.maker)], [0, [m1]]);
   assert.equal((await call("GET", "/api/recipes/makers/me/followers", undefined, dev(2))).data.total, 0);
+  // 차단한 분의 이야기는 빠져요 (다른 분에게는 그대로).
+  const x = (await up(call, 3, { title: "이야기 받을 레시피" }, "public")).data.code;
+  await call("POST", `/api/recipes/${x}/talk`, { device: device(1), body: "이 색 조합 좋네요", kind: "opinion" }, from(1));
+  assert.equal((await call("GET", `/api/recipes/${x}/talk`, undefined, dev(2))).data.posts.length, 0);
+  assert.equal((await call("GET", `/api/recipes/${x}/talk`, undefined, dev(3))).data.posts.length, 1);
   // 차단 풀기.
   await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2), on: false }, from(2));
   assert.equal((await call("GET", `/api/recipes/makers/${m2}`, undefined, dev(1))).status, 200);
@@ -299,4 +304,20 @@ test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작
   // The operator's pick comes first.
   await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m2] }, admin);
   assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked]), [[m2, true], [m1, false]]);
+});
+
+test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작품, 앱으로 열기; 숨긴 프로필은 없어요; 글은 그대로 찍지 않아요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  await up(call, 1, { title: "야간 <b>굵게</b>" }, "public");
+  const m = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "3교대 & 야간 전문", face: "🦉" }, from(1))).data.maker;
+  const page = await call("GET", `/m/${m}`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get("content-type"), /text\/html/);
+  assert.match(page.text, /3교대 &amp; 야간 전문/);
+  assert.match(page.text, /야간 &lt;b&gt;굵게&lt;\/b&gt;/);
+  assert.match(page.text, new RegExp(`bamnat://m/${m}`));
+  assert.equal(page.text.includes(device(1)), false);
+  await call("POST", "/api/recipes/makers/me", { device: device(1), hidden: true }, from(1));
+  assert.equal((await call("GET", `/m/ffffffffffff`)).status, 404);
 });

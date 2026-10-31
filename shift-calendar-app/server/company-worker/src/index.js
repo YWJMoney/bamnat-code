@@ -81,7 +81,7 @@ import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { RECIPE_COLUMNS, RECIPE_SCHEMA, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
-import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity } from "./recipe-community.js";
+import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -403,6 +403,8 @@ async function routeOnce(request, env, url, ctx) {
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
   if (path === "/api/hello" && (method === "GET" || method === "HEAD")) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
+  // [PRF-11] 1.36 a maker's 프로필 link: a small public page that opens the app.
+  if (path.startsWith("/m/") && method === "GET") return edgeCached(request, ctx, 300, () => makerWebPage(recipeDeps, env, path.slice(3)));
   // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
   // [J133-88] 공개 자료 (국민연금 가입 사업장): what the public record says of a workplace, beside the 광장's own.

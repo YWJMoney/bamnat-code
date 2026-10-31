@@ -28,6 +28,7 @@ object ProFeatures {
         "LEAVE_PAYOUT" to "미사용 연차수당 계산",
         "TAX_FORECAST" to "세금 예측·실수령",
         "THEME_WARDROBE" to "테마 옷장(여러 벌, 광고·기간 없이)",
+        "CREATOR_PRO" to "창작자 꾸미기(표지 그림, 대표 작품 6개, 날별 통계)",
     )
 
     /** The feature's 한국어 이름, or [code] itself for a code this table does not know. */

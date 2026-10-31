@@ -1619,3 +1619,4 @@ PRF-08,"1.36 장터 '팔로잉' 피드(폰마다라 캐시 안 함)",1.36,진행
 PRF-09,"1.36 작품 통계(본인만): 쓰는 분, 좋아요, 7일 유지, 이번 주, 28일 날별(프로)",1.36,진행 중,에뮬레이터 확인,"rcStats"
 PRF-10,"1.36 유형별 이달의 제작자: 운영자 고른 분 먼저, 이달 넣은 수 순",1.36,진행 중,에뮬레이터 확인,"rcMonthMakers, recipe_month_makers"
 PRF-12,"1.36 프로 꾸미기: 프로필 표지 그림(검토 거친 것만), 대표 작품 6개",1.36,진행 중,에뮬레이터 확인,"recipe_makers.cover, rcMakerMe cover"
+PRF-11,"1.36 프로필 링크: 회사 서버의 작은 공개 페이지 /m/<프로필 id>(검색 막음, 방문 기록 없음)와 bamnat://m/<id>로 앱의 프로필 열기",1.36,진행 중,에뮬레이터 확인,"makerWebPage, RecipeLinks.profile·findMaker, MainActivity openLink, AndroidManifest bamnat://m"

@@ -261,6 +261,12 @@ private object Routes {
     /** [RCX-05] 1.35 a maker's page; [RCX-04] the 요청 판 of a calendar's kind of work. */
     const val RECIPE_MAKER = "recipe_maker/{id}"
     fun recipeMaker(id: String) = "recipe_maker/$id"
+    /** [PRF-02][PRF-07][PRF-09] 1.36 팔로잉·팔로워·차단·새 작품, a 모음, and 작품 통계. */
+    const val RECIPE_PEOPLE = "recipe_people?part={part}"
+    fun recipePeople(part: String = "new") = "recipe_people?part=$part"
+    const val RECIPE_SET = "recipe_set/{id}"
+    fun recipeSet(id: String) = "recipe_set/$id"
+    const val RECIPE_STATS = "recipe_stats"
     const val RECIPE_REQUESTS = "recipe_requests?calendar={calendar}"
     fun recipeRequests(calendar: String = PersonalCalendar.MAIN) = "recipe_requests?calendar=$calendar"
     /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
@@ -701,6 +707,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val code = openingRecipe ?: return@LaunchedEffect
         com.bamnat.app.recipe.RecipeLinks.opened()
         nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+    }
+
+    // [PRF-11] 1.36: a profile link (bamnat://m/<id>) tapped outside the app: the profile opens on top.
+    val openingMaker by com.bamnat.app.recipe.RecipeLinks.openingMaker.collectAsStateWithLifecycle()
+    LaunchedEffect(openingMaker) {
+        val id = openingMaker ?: return@LaunchedEffect
+        com.bamnat.app.recipe.RecipeLinks.openedMaker()
+        nav.navigate(Routes.recipeMaker(id)) { launchSingleTop = true }
     }
 
     val sharing by com.bamnat.app.recipe.RecipeLinks.make.collectAsStateWithLifecycle()
@@ -1456,6 +1470,9 @@ private fun AppNavHost(
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
                 onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
                 onStudio = { start -> nav.navigate(Routes.studio(start)) { launchSingleTop = true } },
+                // [PRF-02] 1.36 팔로잉 줄: 내 프로필, the makers followed, 모두 보기.
+                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) { launchSingleTop = true } },
+                onPeople = { nav.navigate(Routes.recipePeople()) { launchSingleTop = true } },
             )
         }
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
@@ -1534,7 +1551,26 @@ private fun AppNavHost(
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             val vm = appViewModel(key = "recipe-maker-$id") { com.bamnat.app.ui.recipe.MakerViewModel(it, id) }
-            com.bamnat.app.ui.recipe.MakerScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKER) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) })
+            com.bamnat.app.ui.recipe.MakerScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKER) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onSet = { set -> nav.navigate(Routes.recipeSet(set)) }, onPeople = { part -> nav.navigate(Routes.recipePeople(part)) { launchSingleTop = true } },
+                onStats = { nav.navigate(Routes.RECIPE_STATS) { launchSingleTop = true } }, onPro = { nav.navigate(Routes.PRO) { launchSingleTop = true } })
+        }
+        composable(Routes.RECIPE_PEOPLE, arguments = listOf(navArgument("part") { type = NavType.StringType; defaultValue = "new" })) { entry ->
+            val vm = appViewModel(key = "recipe-people") { com.bamnat.app.ui.recipe.PeopleViewModel(it) }
+            com.bamnat.app.ui.recipe.PeopleScreen(vm, entry.arguments?.getString("part") ?: "new", onBack = { nav.popFrom(Routes.RECIPE_PEOPLE) },
+                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) })
+        }
+        composable(Routes.RECIPE_SET, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            val style = remember { container.settingsRepository.current.workStyle }
+            val vm = appViewModel(key = "recipe-set-$id") { com.bamnat.app.ui.recipe.SetViewModel(it, id, style) }
+            com.bamnat.app.ui.recipe.SetScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_SET) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onMaker = { m -> nav.navigate(Routes.recipeMaker(m)) })
+        }
+        composable(Routes.RECIPE_STATS) {
+            val vm = appViewModel(key = "recipe-stats") { com.bamnat.app.ui.recipe.StatsViewModel(it) }
+            com.bamnat.app.ui.recipe.StatsScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_STATS) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onPro = { nav.navigate(Routes.PRO) { launchSingleTop = true } })
         }
         composable(Routes.RECIPE_REQUESTS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
