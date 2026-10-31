@@ -53,7 +53,7 @@ enum class HubSection(val label: String, val line: String) {
     // 1.35 (사용자 2026-10-30 21:37 "장터를 2번째로 옮기고 테마를 3번째로"): 고르고 받기는 장터, 입고 간직하기는 테마, 만들기는 공방.
     SHARE("장터", "테마·알람·메모 틀·급여 규칙·화면 배치를 받아 쓰고 좋아요·댓글을 남겨요"),
     THEMES("테마", "내가 입은 테마와 간직한 테마예요. 기록은 그대로예요"),
-    MAKE("공방", "내 테마와 설정을 레시피로 만들어 올려요"),
+    MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
 }
 
 /** [HUB-01] The tab's name, kept in one place so the bottom bar, the guide and the search say the same. */
@@ -126,6 +126,7 @@ private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, on
  * [HUB-03] 공방 (사용자 2026-10-30 21:39 "마을 탭 자체를 아주 좋게"): the studio first, large, with my look as it is now; my themes to go on
  * from in a row; then a recipe with 알람·메모 틀·규칙 too, my recipes, the wishes and a code.
  */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit,
                  onCode: () -> Unit) = Page {
@@ -144,7 +145,8 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("스튜디오", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                Text("달력 칸, 패턴, 색·배경, 카드 배치, 위젯까지 한곳에서 꾸며요. 입히기 전까지 내 앱은 그대로예요",
+                // [STU-21] 1.36 레시피 만들기 합침: one way in for every make.
+                Text("달력 칸·색·배경·카드 배치·위젯에 알람 묶음·메모 틀·규칙까지 한곳에서 만들고, 입히기·저장·올리기도 여기서 해요",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양에서 꾸미기") }
                 TextButton(onClick = { onStudio("plain") }) { Text("처음 모양에서 새로") }
@@ -163,8 +165,8 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
         if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 마을 › 테마나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Card("레시피 만들기", "테마에 알람·메모 틀·급여 규칙까지 묶어 장터에 올려요", "레시피 만들기", onMake)
-    Card("내 레시피·받은 레시피", "올린 것의 좋아요·댓글과 검토 상태를 보고, 받은 것은 7일 안에 되돌려요", "열기", onMine)
+    // [R136-13] 1.36 (리뷰 R-23·M6): 내 것 in one place — 올린 것·받은 것·만들던 것 — and 코드로 받기 only here.
+    Card("내 것", "올린 레시피의 좋아요·댓글, 받은 레시피(7일 안 되돌리기), 만들던 판을 한곳에서 봐요", "열기", onMine)
     Card("이런 거 있었으면", "필요한 레시피를 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
     OutlinedButton(onClick = onCode, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드·링크로 받기") }
 }

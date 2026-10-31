@@ -21,6 +21,13 @@ object RecipeLint {
      * Every check on [r]. [others] are recipes already on the plaza (title and written form) for 비슷한 레시피; [mine] the
      * maker's own codes, which do not count as someone else's.
      */
+    /** Words the studio puts in before the maker writes anything. */
+    val STARTER_SUMMARIES = setOf("내가 꾸민 모양")
+    private val TEMPLATE_LABELS = listOf("누구에게 좋아요:", "적용하면 바뀌는 것:", "주의할 점:")
+
+    /** [desc] without the 틀 채우기 headings: what the maker wrote. */
+    fun ownWords(desc: String): String = TEMPLATE_LABELS.fold(desc) { d, l -> d.replace(l, "") }.trim()
+
     fun check(r: Recipe, others: List<Pair<String, Recipe>> = emptyList()): List<Line> {
         val out = ArrayList<Line>()
         // The whole recipe as the server will read it: out of range, too long, a link or amount in the words.
@@ -30,9 +37,11 @@ object RecipeLint {
             val path = (e as? RecipeException)?.path ?: ""
             out += Line("read", Level.ERROR, readProblem(code, path), stepOf(path))
         }
+        // [STU-25] 1.36 빌드 7: the studio's starting words and an empty 틀 채우기 are not the maker's own words yet.
         out += if (r.summary.isBlank()) Line("summary", Level.WARN, "한 줄 설명을 적으면 목록에서 더 잘 보여요", 4)
+            else if (r.summary.trim() in STARTER_SUMMARIES) Line("summary", Level.WARN, "한 줄 설명을 내 말로 바꿔 주세요 (‘${r.summary.trim()}’는 처음 넣어 둔 말이에요)", 4)
             else Line("summary", Level.OK, "한 줄 설명이 있어요", 4)
-        out += if (RecipeText.graphemes(r.desc) < 10) Line("desc", Level.WARN, "설명에 누구에게 좋은지 적어 주세요", 4)
+        out += if (RecipeText.graphemes(ownWords(r.desc)) < 10) Line("desc", Level.WARN, "설명에 누구에게 좋은지 적어 주세요", 4)
             else Line("desc", Level.OK, "설명이 있어요", 4)
         // Contrast (S3): the theme's day colours drawn as text on the light and the dark calendar.
         // On the dark calendar the app lifts a colour itself (Contrast.onBlack); on the light one it is drawn as chosen.

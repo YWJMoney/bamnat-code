@@ -170,18 +170,20 @@ object TaxPlus {
 
     // ---- [TAXP-06] 597 매출 나누기 ----
 
-    data class SalesSplit(val card: Long, val cash: Long, val transfer: Long, val delivery: Long, val unsplit: Long, val days: Int) {
-        val total: Long get() = card + cash + transfer + delivery + unsplit
+    data class SalesSplit(val card: Long, val cash: Long, val transfer: Long, val delivery: Long, val unsplit: Long, val days: Int, val credit: Long = 0) {
+        val total: Long get() = card + cash + transfer + delivery + credit + unsplit
         fun share(v: Long): Int = if (total <= 0) 0 else (v * 100 / total).toInt()
         /** (이름, 금액) with nothing at 0. */
-        val rows: List<Pair<String, Long>> get() = listOf("카드" to card, "현금" to cash, "이체" to transfer, "배달앱" to delivery, "나누지 않음" to unsplit).filter { it.second > 0 }
+        val rows: List<Pair<String, Long>> get() = listOf("카드" to card, "현금" to cash, "이체" to transfer, "배달앱" to delivery, "외상" to credit, "나누지 않음" to unsplit).filter { it.second > 0 }
     }
 
-    fun salesSplit(sales: List<DailySales>, from: LocalDate, to: LocalDate): SalesSplit {
+    /** [creditOn]: 1.36 실사용 S20, what of a day's sales was written as 외상, shown as its own row. */
+    fun salesSplit(sales: List<DailySales>, from: LocalDate, to: LocalDate, creditOn: (LocalDate) -> Long = { 0 }): SalesSplit {
         val s = sales.filter { !it.date.isBefore(from) && !it.date.isAfter(to) && it.sales > 0 }
-        val parts = s.sumOf { it.card + it.cash + it.transfer + it.delivery }
+        fun rest(d: DailySales) = (d.sales - d.byMethod).coerceAtLeast(0)
+        fun credit(d: DailySales) = creditOn(d.date).coerceIn(0, rest(d))
         return SalesSplit(s.sumOf { it.card }, s.sumOf { it.cash }, s.sumOf { it.transfer }, s.sumOf { it.delivery },
-            (s.sumOf { it.sales } - parts).coerceAtLeast(0), s.size)
+            s.sumOf { rest(it) - credit(it) }, s.size, s.sumOf(::credit))
     }
 
     // ---- [TAXP-08] 599 카드 매출 입금 대조 ----

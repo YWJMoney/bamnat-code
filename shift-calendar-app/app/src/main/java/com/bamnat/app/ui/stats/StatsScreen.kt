@@ -268,7 +268,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         if (money != null && style == WorkStyle.FIELD) FieldStatsCards(money, month, calendarId = vm.calendarId)
         // [FLD-11][FLD-13] 일용직 세금과 견적서.
         if (money != null && style == WorkStyle.FIELD) com.bamnat.app.ui.work.FieldToolCards(vm.calendarId, money, month)
-        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns) { snap.resolver.resolve(it).isWorkDay }
+        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns, snap.firstDay) { snap.resolver.resolve(it).isWorkDay }
         if (money != null && style == WorkStyle.BUSINESS) ShopStatsCards(vm.calendarId, money, month, { snap.resolver.resolve(it).isWorkDay })
         // [SHOP-09][SHOP-10][SHOP-11] 직원 인건비, 날씨별 매출, 간이과세 기준.
         if (money != null && style == WorkStyle.BUSINESS) com.bamnat.app.ui.work.ShopToolCards(vm.calendarId, money, month)
@@ -303,6 +303,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 month = month,
                 total = total,
                 hasProfile = payProfile != null,
+                style = style,
                 onClick = onOpenPay,
                 onFocus = if (payProfile != null) onOpenPayFocus else null,
             )
@@ -598,7 +599,7 @@ private fun MonthTrend(values: List<Pair<YearMonth, Long>>, floor: Long, label: 
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, style: WorkStyle? = null, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -619,7 +620,10 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요" else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
+                    if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요"
+                    // 빌드 10 S13 (알바에게 '직군·기본급'): 시급 for work paid by the hour.
+                    else if (style == WorkStyle.HOURLY) "시급만 넣으면 주휴수당까지 계산해요"
+                    else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -710,10 +714,11 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
  * open and closed days, each weekday's average and six months of sales.
  */
 @Composable
-private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen: (java.time.LocalDate) -> Boolean) {
+private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, firstDay: java.time.LocalDate?, isOpen: (java.time.LocalDate) -> Boolean) {
     val m = remember(book, month) { book.month(month) }
     val today = com.bamnat.core.time.Today.date()
-    val shop = remember(book, month, isOpen, today) { WorkStats.shop(month, book.sales, today, isOpen) }
+    val since = remember(book, firstDay) { listOfNotNull(firstDay, book.sales.minOfOrNull { it.date }).minOrNull() }
+    val shop = remember(book, month, isOpen, today, since) { WorkStats.shop(month, book.sales, today, since, isOpen) }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).sales } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },

@@ -66,6 +66,8 @@ class ShareSync(
             c.moneyRepository.entries, c.payStore.profile, c.payStore.closed, c.settingsRepository.settings, added,
             // [FEAT-15] A feed goes off with 프로, and on again with it.
             c.featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.ICS_FEED) }.distinctUntilChanged(),
+            // 1.36: links kept open while 프로 lasts, and back to 90 days at most when it ends.
+            c.featureGate.state.map { it.keepsLinks }.distinctUntilChanged(),
         ) + ShareLinkKey.all(PersonalCalendar.MAIN).map { c.shareLinksOf(it).link }
         combine(reads) { Unit }.debounce(DEBOUNCE_MILLIS).collect {
             // [PROV-04] Each of a calendar's links, the first first.
@@ -88,7 +90,21 @@ class ShareSync(
         store.expire()
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
-        send(store, link, null)
+        // 1.36: 프로 keeps every link open while it lasts; after it ends a kept link closes within 90 days.
+        send(store, link, ShareLinkPayload.keepOpen(link, clock(), c.featureGate.state.value.keepsLinks))
+    }
+
+    /**
+     * 1.36: the end-date alarm for a 프로 sharer keeps the link open by itself instead of asking; true when it did. With
+     * 고치면 바로 바꾸기 off it asks as before, since keeping it open sends the calendar as it is now.
+     */
+    suspend fun keepOpenForPro(key: String): Boolean = lock.withLock {
+        val store = c.shareLinksOf(key)
+        store.expire()
+        val link = store.link.value ?: return@withLock false
+        if (!store.auto || !c.featureGate.state.value.keepsLinks) return@withLock false
+        val days = ShareLinkPayload.keepOpen(link, clock(), true) ?: return@withLock true
+        send(store, link, days) == Result.Sent
     }
 
     /** [SHR-13] Every link this phone made, on every calendar. */

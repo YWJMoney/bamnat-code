@@ -79,14 +79,18 @@ internal fun ThemeTokens(r: Recipe, edit: ((Recipe) -> Recipe) -> Unit) {
  */
 @Composable
 internal fun ExampleCalendars(r: Recipe) {
-    Text("예시 달력에 넣어 보면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+    // 빌드 9 (가계부 탭만 올리는데 마치기에 '예시 달력: 교대 달력'): a recipe that changes nothing on the calendar is shown per kind
+    // of work without calling it a calendar.
+    val onCalendar = r.pieces.any { it.kind == PieceKind.SHIFT_LOOK || it.kind == PieceKind.CAL_THEME }
+    Text(if (onCalendar) "예시 달력에 넣어 보면" else "일 유형마다 넣어 보면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
     WorkStyle.entries.filter { it in r.styles }.forEach { style ->
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${RecipeDescribe.short(style)} 달력", style = MaterialTheme.typography.labelLarge)
+                Text(RecipeDescribe.short(style) + if (onCalendar) " 달력" else "", style = MaterialTheme.typography.labelLarge)
                 ExampleWeek(r, style)
                 r.piecesFor(style).forEach { p ->
-                    Text("• ${p.kind.label}: ${RecipeDescribe.line(p, amounts = false)}", style = MaterialTheme.typography.bodySmall)
+                    // 빌드 8: '화면 색·배경: 화면 색·배경: 가계부' — a line that already starts with the piece's name says it once.
+                    Text("• ${p.kind.label}: ${RecipeDescribe.line(p, amounts = false, style = style).removePrefix("${p.kind.label}: ")}", style = MaterialTheme.typography.bodySmall)
                 }
                 val not = r.piecesNotFor(style)
                 if (not.isNotEmpty()) Text("이 유형에는 없어요: ${not.joinToString(", ") { it.kind.label }}", style = MaterialTheme.typography.bodySmall,
@@ -104,22 +108,31 @@ private fun ExampleWeek(r: Recipe, style: WorkStyle) {
     val theme = pieces.firstOrNull { it.kind == PieceKind.CAL_THEME }?.let { RecipeResolve.piece(r, it, emptyMap()) }
     val items = (look?.get("items") as? List<Map<String, Any?>>).orEmpty()
     if (items.isEmpty() && theme == null) return
-    val days = listOf("월", "화", "수", "목", "금", "토", "일")
-    val said = days.indices.joinToString(", ") { i -> "${days[i]} ${items.getOrNull(i % items.size.coerceAtLeast(1))?.get("name") ?: "쉬는 날"}" }
+    // [STU-27] 1.36 빌드 8 (마치기 예시 한 주가 모두 쉬는 날): this week of the phone's own calendar, each day in the recipe's look for its
+    // kind; the made-up week only when the phone has no days yet.
+    val mine = rememberMyWeeks(items, weeks = 1)?.takeIf { style == r.styles.firstOrNull() || r.styles.size == 1 }
+    val days0 = listOf("월", "화", "수", "목", "금", "토", "일")
+    val days = mine?.let { m -> (0 until 7).map { days0[m.first.plusDays(it.toLong()).dayOfWeek.value - 1] } } ?: days0
+    val said = days.indices.joinToString(", ") { i -> "${days[i]} " + (mine?.days?.getOrNull(i)?.let { d -> if (d.off) "쉬는 날" else d.label }
+        ?: items.getOrNull(i % items.size.coerceAtLeast(1))?.get("name") ?: "쉬는 날") }
     Row(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "예시 한 주: $said" }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         days.forEachIndexed { i, d ->
-            val item = items.getOrNull(i % items.size.coerceAtLeast(1))
-            val bg = (item?.get("color") as? Long)?.asColor() ?: MaterialTheme.colorScheme.surfaceVariant
+            val real = mine?.days?.getOrNull(i)
+            val item = if (mine != null) null else items.getOrNull(i % items.size.coerceAtLeast(1))
+            val bg = real?.let { androidx.compose.ui.graphics.Color(it.color.toInt()).copy(alpha = if (it.off) 0.25f else 1f) }
+                ?: (item?.get("color") as? Long)?.asColor() ?: MaterialTheme.colorScheme.surfaceVariant
+            val date = mine?.first?.plusDays(i.toLong())
             val dayColor = when {
-                i == 5 -> (theme?.get("sat") as? Long)?.asColor()
-                i == 6 -> (theme?.get("sun") as? Long)?.asColor()
-                i == 2 -> (theme?.get("today") as? Long)?.asColor()
+                date != null && date == mine.today -> (theme?.get("today") as? Long)?.asColor()
+                d == "토" -> (theme?.get("sat") as? Long)?.asColor()
+                d == "일" -> (theme?.get("sun") as? Long)?.asColor()
+                date == null && i == 2 -> (theme?.get("today") as? Long)?.asColor()
                 else -> null
             } ?: MaterialTheme.colorScheme.onSurfaceVariant
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(d, style = MaterialTheme.typography.labelSmall, color = dayColor)
                 Box(Modifier.fillMaxWidth().aspectRatio(1f).background(bg, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                    Text((item?.get("emoji") as? String)?.takeIf { it.isNotEmpty() } ?: (item?.get("label") as? String).orEmpty(),
+                    Text(real?.label ?: (item?.get("emoji") as? String)?.takeIf { it.isNotEmpty() } ?: (item?.get("label") as? String).orEmpty(),
                         color = contentColorOn(bg), style = MaterialTheme.typography.labelLarge)
                 }
             }

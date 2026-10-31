@@ -51,6 +51,9 @@ object ProOffer {
     val open: StateFlow<Boolean> = _open.asStateFlow()
     val asking: StateFlow<Feature?> = _asking.asStateFlow()
 
+    /** [MON-13] The app's gate, set by [com.bamnat.app.AppContainer], for [tryFeature]. */
+    @Volatile var gate: com.bamnat.app.tier.FeatureGate? = null
+
     fun show(feature: Feature? = null) {
         _asking.value = feature
         _open.value = true

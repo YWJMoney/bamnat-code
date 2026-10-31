@@ -137,24 +137,30 @@ private val SAMPLE_CELLS = listOf(
  * the pattern; a tap on a cell opens its look ([onCell] gets the look's index).
  */
 @Composable
-internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?) {
+internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
+                       /**
+                        * [TRY-04] 1.36 (빌드 6 확인: 칸 디자인을 넣으면 예시가 가짜 달력으로 바뀌어 전·후가 다른 달력): the phone's own days from
+                        * [start] with [todayDate], drawn in the looks, instead of the made-up weeks.
+                        */
+                       start: LocalDate? = null, todayDate: LocalDate? = null, days: List<com.bamnat.app.ui.calendar.SampleDay>? = null) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
-    val first = LocalDate.of(2026, 11, 2)
-    val today = first.plusDays(2)
+    val first = start ?: LocalDate.of(2026, 11, 2)
+    val today = todayDate ?: first.plusDays(2)
     val shown = if (view.isDefault) view.copy(size = "normal") else view
     val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp }
     Column(Modifier.fillMaxWidth().padding(4.dp)) {
         Row(Modifier.fillMaxWidth()) {
-            listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, d ->
-                Text(d, Modifier.weight(1f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = when (i) { 5 -> cal.saturday; 6 -> cal.sunday; else -> scheme.onSurfaceVariant })
+            (0 until 7).map { first.plusDays(it.toLong()).dayOfWeek }.forEach { w ->
+                Text(listOf("월", "화", "수", "목", "금", "토", "일")[w.value - 1], Modifier.weight(1f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = when (w) { java.time.DayOfWeek.SATURDAY -> cal.saturday; java.time.DayOfWeek.SUNDAY -> cal.sunday; else -> scheme.onSurfaceVariant })
             }
         }
         for (r in 0 until rows) Row(Modifier.fillMaxWidth().height(height)) {
             for (c in 0 until 7) {
                 val date = first.plusDays((r * 7 + c).toLong())
-                val s = SAMPLE_CELLS[(r * 3 + c) % SAMPLE_CELLS.size]
+                val s = days?.getOrNull(r * 7 + c)?.let { d -> SampleCell(d.label, d.color, d.role ?: if (d.off) "off" else "day", d.memos.firstOrNull(), d.hours, d.off) }
+                    ?: SAMPLE_CELLS[(r * 3 + c) % SAMPLE_CELLS.size]
                 val isToday = date == today
                 val look = shown.lookFor(date.toEpochDay(), date.dayOfWeek.value, s.role, isToday)
                 val index = if (shown.looks.isEmpty()) 0 else shown.todayLook?.takeIf { isToday && it in shown.looks.indices }

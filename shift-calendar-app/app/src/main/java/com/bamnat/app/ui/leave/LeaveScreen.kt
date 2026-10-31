@@ -120,6 +120,20 @@ class LeaveViewModel(private val container: AppContainer, val calendarId: String
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
+    /** [LEAVE-14] A hire date typed here when the pay setup has none. */
+    val hire: StateFlow<LocalDate?> = com.bamnat.app.leave.LeaveHire.all.map { it[calendarId] }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.bamnat.app.leave.LeaveHire.of(calendarId))
+
+    /** [LEAVE-14] Into the pay setup when there is one (where 회사 규칙 keeps it too), on its own otherwise. */
+    fun setHire(date: LocalDate?) = viewModelScope.launch {
+        if (profile.value != null) {
+            scope.pay.update { it.copy(hireDate = date) }
+            com.bamnat.app.leave.LeaveHire.set(calendarId, null)
+        } else {
+            com.bamnat.app.leave.LeaveHire.set(calendarId, date)
+        }
+    }
+
     fun setNotice(on: Boolean) = viewModelScope.launch { container.settingsRepository.update { it.copy(leaveNotice = on) } }
 
     fun setLowYear(year: Int, low: Boolean) = viewModelScope.launch {
@@ -167,6 +181,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
     val gate by vm.gate.collectAsStateWithLifecycle()
     val promotion by vm.promotion.collectAsStateWithLifecycle()
     val hourlyNote by vm.hourlyNote.collectAsStateWithLifecycle()
+    val hire by vm.hire.collectAsStateWithLifecycle()
+    val counted = LeaveSources.withHire(profile, hire)
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val ui = rememberCoroutineScope()
@@ -190,8 +206,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { NowCard(s, profile) }
-            item { RulesCard(profile, onEditRules, vm) }
+            item { NowCard(s, counted) }
+            item { RulesCard(counted, hasPay = profile != null, onEditRules, vm) }
             item {
                 // [LEAVE-03] On by default (S10); turned off here or in 설정 › 알림과 잠.
                 SectionCard(title = "쓰라고 알려 주기") {
@@ -199,7 +215,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                         "연차가 없어지기 6개월 전과 2개월 전(첫해 월 연차는 3개월 전·1개월 전) 아침 9시에, 쓸 예정을 빼고도 남는 날을 알려 드려요.")
                     s?.nextLapse?.let { (date, days) ->
                         val next = LeavePromotion.next(s.lots.map { it.lot }, Today.dateTime())
-                        Hint("${Fmt.fullDate(date)}에 ${LeaveAccrual.days(days)}가 없어질 수 있어요." +
+                        Hint("${Fmt.fullDate(date)}에 ${LeaveAccrual.days(days)}${Fmt.iga(LeaveAccrual.days(days))} 없어질 수 있어요." +
                             (next?.let { " 다음 알림은 ${Fmt.shortDate(it.at.toLocalDate())}이에요." } ?: ""))
                     }
                     Hint("회사도 같은 때 서면으로 알려야 해요(근로기준법 제61조). 알림은 연차를 쓰도록 돕는 것뿐이라 켜 두어도 손해가 없어요. 필요 없으면 여기서 끄면 돼요.")
@@ -209,7 +225,11 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             if (s != null) item { LotsCard(s) }
             item {
                 SectionCard(title = "직접 넣기") {
-                    Hint("연차·반차는 달력에서 날을 길게 눌러 넣어요. 여기에는 달력에 없는 것만 넣어요.")
+                    Hint("연차·반차는 달력에 넣어요: 달력 탭에서 그날을 길게 누르고 ‘휴가’를 골라요. 여기에는 달력에 없는 것만 넣어요.")
+                    // [LEAVE-14] 1.36 S11 ('길게 눌러'를 찾기 어려워요): straight to the calendar from here.
+                    OutlinedButton(onClick = {
+                        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.CALENDAR))
+                    }) { Text("달력에서 연차 넣기") }
                     // [NXT-02] 1.29 AU: 시간 단위 연차, only from the month before 2027-06-10 (flag leave.hourly).
                     hourlyNote?.let { Hint(it) }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -261,10 +281,19 @@ private fun NowCard(s: LeaveSummary?, profile: PayProfile?) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RulesCard(profile: PayProfile?, onEditRules: () -> Unit, vm: LeaveViewModel) {
-    val policy = profile?.rules?.leave ?: return
+private fun RulesCard(profile: PayProfile?, hasPay: Boolean, onEditRules: () -> Unit, vm: LeaveViewModel) {
+    // [LEAVE-14] 1.36 S11: the hire date right here, so it counts without the pay setup first.
+    if (profile == null) {
+        SectionCard(title = "세는 방법") {
+            DateField("입사일", null, { d -> if (d != null && !d.isAfter(Today.date())) vm.setHire(d) }, clearable = false)
+            Hint("입사일만 넣어도 근로기준법대로 세어요(5인 이상 사업장 기준). 급여 설정을 하면 회사 규칙에 맞춰 더 자세히 세요.")
+        }
+        return
+    }
+    val policy = profile.rules.leave
     val hire = profile.hireDate
-    SectionCard(title = "세는 방법", trailing = { TextButton(onClick = onEditRules) { Text("바꾸기") } }) {
+    SectionCard(title = "세는 방법", trailing = { if (hasPay) TextButton(onClick = onEditRules) { Text("바꾸기") } }) {
+        if (policy.auto) DateField("입사일", hire, { d -> if (d == null || !d.isAfter(Today.date())) vm.setHire(d) })
         Text(
             when {
                 !policy.auto -> "직접 넣은 날만 세요"

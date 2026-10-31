@@ -21,10 +21,14 @@ object TakeHomeLine {
     }
 
     suspend fun forecast(container: AppContainer, calendarId: String, profile: PayProfile?, gross: Long?, month: YearMonth): TaxLearner.Forecast? {
-        if (profile == null || gross == null || gross <= 0 || !container.featureGate.allows(Feature.TAX_FORECAST)) return null
+        if (profile == null || gross == null || gross <= 0) return null
+        val gate = container.featureGate.state.value
+        if (!gate.allows(Feature.TAX_FORECAST) && !gate.canTry(Feature.TAX_FORECAST)) return null
         val records = container.tax(calendarId).allObservations()
         // A pay setup that takes nothing off (세금 없음) with no records to learn from says nothing: "떼는 돈 0원" would mislead.
-        return withContext(Dispatchers.Default) { of(profile, records, gross, month) }.takeIf { it.basis != TaxLearner.Basis.NONE }
+        val f = withContext(Dispatchers.Default) { of(profile, records, gross, month) }.takeIf { it.basis != TaxLearner.Basis.NONE } ?: return null
+        // [MON-13] 1.36: the first 세후 예상 shown is its first use, so its free week starts here.
+        return f.takeIf { container.featureGate.tryOrAsk(Feature.TAX_FORECAST) }
     }
 
     /** "세후 예상 2,612,000원 · 떼는 돈 388,000원 (기록 3달로 맞춤)". */

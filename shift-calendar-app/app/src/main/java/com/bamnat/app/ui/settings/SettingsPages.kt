@@ -384,7 +384,7 @@ private fun NoticesPage(
     if (!canPost) {
         WarningBanner(
             title = "알림이 꺼져 있어 아무 알림도 오지 않아요",
-            message = "근무 알람은 소리가 나도 잠금 화면에서 끌 수 없어요.",
+            message = "근무 알람이 울려도 알람 화면이 뜨지 않고 소리만 나요. 끄려면 앱을 열어야 해요.",
             action = "허용",
             onAction = askNotifications,
         )
@@ -494,6 +494,9 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
             hourly -> "시급만 넣으면 이번 달 예상 급여가 보여요"
             else -> "기본급만 넣으면 이번 달 예상 급여가 보여요"
         }, onOpenPay)
+        HorizontalDivider()
+        // [LEAVE-14] 1.36 실사용 S11 (설정 › 급여와 연차에 연차가 없어요): the 연차 screen from here too, not only 3 levels down in 근무·급여.
+        NavRow("연차", "남은 연차·없어지는 날·입사일 · 연차·반차는 달력에서 넣어요") { SettingsLinks.go(SettingsGo.LEAVE) }
         // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
         SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
             else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }

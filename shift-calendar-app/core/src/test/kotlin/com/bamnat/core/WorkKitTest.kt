@@ -101,6 +101,10 @@ class WorkKitTest {
         val m = WorkStats.shop(oct, emptyList(), LocalDate.of(2026, 10, 10)) { it.dayOfWeek != DayOfWeek.SUNDAY }
         assertEquals(1, m.closedDays) // Sunday 10/4 only; 10/11 and on are still to come
         assertEquals(31, WorkStats.shop(oct, emptyList(), LocalDate.of(2026, 10, 31)) { false }.closedDays)
+        // 1.36 실사용 S19: a shop started on 10/7 doesn't count 10/1~6 as 휴무.
+        val opened: (LocalDate) -> Boolean = { it.dayOfMonth >= 7 && it.dayOfWeek != DayOfWeek.SUNDAY }
+        assertEquals(6, WorkStats.shop(oct, emptyList(), LocalDate.of(2026, 10, 10), isOpen = opened).closedDays)
+        assertEquals(0, WorkStats.shop(oct, emptyList(), LocalDate.of(2026, 10, 10), since = LocalDate.of(2026, 10, 7), isOpen = opened).closedDays)
         assertEquals("영업일 공유", com.bamnat.core.work.shareTitle(com.bamnat.core.work.WorkStyle.BUSINESS))
         assertEquals("근무표 공유", com.bamnat.core.work.shareTitle(null))
     }

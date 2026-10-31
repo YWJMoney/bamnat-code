@@ -29,6 +29,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** [MKX-02] A tab's name as the 기능별 탭 chips say it. */
+internal fun tabName(tab: String?): String = com.bamnat.core.recipe.LookParts.tabLabel(tab ?: "")
+
 /** [RCP-21] 나눔 판 목록: the recipes for one kind of work, by tab, with search and 코드로 받기. */
 class RecipeListViewModel(private val c: AppContainer, val calendar: String = PersonalCalendar.MAIN) : ViewModel() {
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
@@ -38,8 +41,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
         val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false,
-        /** [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. */
-        val kind: String? = null)
+        /**
+         * [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. [MKX-01] 1.36: the 장터 구간 — [RecipeClient.SCOPE_THEME] (테마) or
+         * [RecipeClient.SCOPE_TAB] + a tab (기능별 탭).
+         */
+        val kind: String? = RecipeClient.SCOPE_THEME)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -48,7 +54,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
     fun query(q: String) { _state.value = _state.value.copy(query = q) }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
-    fun kind(k: String?) { _state.value = _state.value.copy(kind = k); load() }
+    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
+    fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }
 
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
@@ -58,7 +65,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         viewModelScope.launch {
             _state.value = try {
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
-                _state.value.copy(items = if (more) _state.value.items + page.items else page.items, next = page.next, loading = false)
+                val got = page.items.filter { RecipeClient.fits(it, s.kind) }
+                _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }
@@ -218,17 +226,23 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
-            if (looks.isNotEmpty()) c.wardrobe.beforeWear()
-            val id = runCatching {
-                c.recipes.apply(r, code, doc.item.version, calendar,
-                    s.pieces.filter { it.on && it.fits }.map { RecipeRepository.Pick(it.kind, it.mode) }, s.answers)
-            }.getOrNull()
-            if (id != null && looks.isNotEmpty()) runCatching {
-                c.wardrobe.afterWear(r.copy(pieces = r.pieces.filter { it.kind in looks }), code, own = doc.mine, ver = doc.item.version)
+            // [MKX-02] 1.36 기능별 탭: looks of one tab are laid on the theme worn (it keeps its name), not worn as a theme of their own.
+            val lookRecipe = r.copy(pieces = r.pieces.filter { it.kind in looks })
+            val tab = if (looks.isEmpty()) null else com.bamnat.core.recipe.LookParts.onlyTab(lookRecipe)
+            if (looks.isNotEmpty() && tab == null) c.wardrobe.beforeWear()
+            val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
+            val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
+            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
+            if (id != null && looks.isNotEmpty() && tab == null) runCatching {
+                c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
-                message = if (id == null) "바뀐 것이 없어요" else "적용했어요. 7일 안에 되돌릴 수 있어요")
-            onDone(id)
+                message = when {
+                    laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
+                    id == null -> "바뀐 것이 없어요"
+                    else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
+                })
+            onDone(id ?: if (laid) 0L else null)
         }
     }
 
@@ -372,6 +386,14 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
 
     fun setOn(v: Boolean) = c.recipes.setOn(v)
     fun canUndo(e: AppliedRecipeEntity) = c.recipes.canUndo(e)
+
+    private var shown = false
+
+    /**
+     * [STU-25] 1.36 빌드 7: coming back to 내 것 (from the studio's 올리기, say) reads 내가 올린 레시피 again, so the one just sent
+     * is there; the first showing has init's read.
+     */
+    fun shownAgain() { if (shown) loadMine() else shown = true }
 
     fun loadMine() {
         if (!c.recipeApi.enabled) return

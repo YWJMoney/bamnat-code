@@ -188,4 +188,14 @@ class ShopMoneyTest {
         val csv = WorkCsv.sales(listOf(DailySales(d(2), 100_000, costs = 10_000, card = 60_000, cash = 40_000, cashCounted = 40_000, cardSettled = true)))
         assertEquals("2026-11-02,100000,60000,40000,0,0,10000,90000,40000,예,", csv.lines()[1].trimEnd('\r'))
     }
+
+    /** 1.36 실사용 S20: 외상 written in 하루 마감 shows as 외상, not 나누지 않음. */
+    @Test
+    fun creditShowsAsItsOwnPart() {
+        val sales = listOf(DailySales(d(2), 130_000, card = 100_000), DailySales(d(3), 20_000))
+        val credit = SalesSplit.creditByDay(listOf(com.bamnat.core.money.Receivable(who = "단골", amount = 30_000, date = d(2))))
+        val s = SalesSplit.of(nov, sales) { credit[it] ?: 0 }
+        assertEquals(listOf("카드" to 100_000L, "외상" to 30_000L, "나누지 않음" to 20_000L), s.parts)
+        assertEquals(150_000, s.total)
+    }
 }

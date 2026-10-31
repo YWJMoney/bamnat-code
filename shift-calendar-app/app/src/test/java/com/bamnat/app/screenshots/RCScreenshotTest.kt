@@ -138,7 +138,8 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
-        assertTrue(appears("7일 안에는 마을 › 공방 › 내 레시피·받은 레시피에서 되돌릴 수 있어요", exact = true))
+        // [MKX-02] Where it is undone: 내 것 › 받은 레시피, or 마을 › 테마 for a tab laid on the theme.
+        assertTrue(appears("마을 › 공방 › 내 것 › 받은 레시피에서 되돌", exact = false) || appears("마을 › 테마에서", exact = false))
     }
 
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {

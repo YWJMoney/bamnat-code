@@ -100,3 +100,25 @@ fun openPro(feature: Feature) = ProOffer.show(feature)
 fun goPro() = SettingsLinks.go(SettingsGo.PRO)
 
 private val MIN_HEIGHT = 200.dp
+
+/**
+ * [MON-13] 1.36: a tap on a trial feature (명세서 금액 비교하기, 세후 예상). Open when 프로 or its free week is on; a first use while it
+ * is locked starts the week and opens it; false when it asks for 프로 (the caller opens [openPro]).
+ */
+fun tryFeature(feature: Feature): Boolean = ProOffer.gate?.tryOrAsk(feature) ?: true
+
+/**
+ * [MON-13] Under a trial feature: while its week runs, until when it is free and that 프로 keeps it; before its first use, that the
+ * first use opens a week. Nothing for 프로 or before the launch.
+ */
+@Composable
+fun TrialNote(feature: Feature, gate: com.bamnat.app.tier.Gate, modifier: Modifier = Modifier) {
+    val until = gate.trialUntil(feature)
+    val text = when {
+        until != null && gate.tier < feature.minTier -> java.time.Instant.ofEpochMilli(until).atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
+            .let { "${it.monthValue}월 ${it.dayOfMonth}일까지 무료로 써 봐요. 그 뒤에도 쓰려면 프로예요" }
+        gate.canTry(feature) -> "처음 쓰는 날부터 일주일은 무료예요"
+        else -> return
+    }
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
+}

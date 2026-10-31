@@ -233,6 +233,8 @@ fun ProScreen(onBack: () -> Unit) {
                 InviteCard(c, onMessage = { message = it })
 
                 if (c.tierApi.enabled) {
+                    // 1.36 [PSH-01] 프로 나눔 1인.
+                    ProShareCard(c, gate, zone, onMessage = { message = it })
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
                     AdminCard(c, pro, onMessage = { message = it })
                 }
@@ -467,7 +469,7 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
     }
 }
 
-private suspend fun runServer(onMessage: (String) -> Unit, block: suspend () -> Unit) {
+internal suspend fun runServer(onMessage: (String) -> Unit, block: suspend () -> Unit) {
     try {
         block()
     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -490,6 +492,10 @@ fun passWhy(why: String): String = when (why) {
 /** What to tell the user about a refusal from the company server here. */
 fun serverProblem(code: String): String = when (code) {
     "code" -> "코드가 맞지 않거나 시간이 지났어요. 새 코드로 다시 해 주세요."
+    // 1.36 [PSH-01] 프로 나눔 1인.
+    "not_bought" -> "직접 구독한 프로가 있어야 나눌 수 있어요. 체험·이용권으로 쓰는 프로는 나눌 수 없어요."
+    "giver_ended" -> "코드를 준 분의 프로가 끝나서 쓸 수 없어요."
+    "self" -> "내가 만든 코드는 다른 사람 휴대폰에 넣어 주세요."
     "too_many" -> "이 관리자에게는 휴대폰을 2대까지 연결할 수 있어요. 관리자 앱에서 하나를 끊어 주세요."
     "rate_limited" -> com.bamnat.app.company.RateLimits.text()
     "offline" -> "인터넷에 연결되지 않았어요."

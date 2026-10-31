@@ -104,4 +104,14 @@ class RecipeCoreTest {
         assertEquals(ShiftRole.LONG, ShiftRole.guess("당직", false, 9, 24 * 60))
         assertEquals(ShiftRole.EVENING, ShiftRole.guess("B조", false, 14, 480))
     }
+
+    /** [STU-25] An empty 틀 채우기 and the studio's starting one-liner are not the maker's words: both stay a warning. */
+    @Test fun emptyTemplateAndStarterWordsAreNotADescription() {
+        val base = InputExtract.extract(hourly(12_000L))
+        val lines = RecipeLint.check(base.copy(summary = "내가 꾸민 모양", desc = "누구에게 좋아요: \n적용하면 바뀌는 것: \n주의할 점: "))
+        assertEquals(RecipeLint.Level.WARN, lines.first { it.code == "summary" }.level)
+        assertEquals(RecipeLint.Level.WARN, lines.first { it.code == "desc" }.level)
+        val filled = RecipeLint.check(base.copy(summary = "주휴 계산 맞게", desc = "누구에게 좋아요: 편의점 알바를 처음 하는 분\n주의할 점: "))
+        assertEquals(RecipeLint.Level.OK, filled.first { it.code == "desc" }.level)
+    }
 }

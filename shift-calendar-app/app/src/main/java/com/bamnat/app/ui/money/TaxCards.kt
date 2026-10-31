@@ -83,7 +83,7 @@ internal fun TaxCard(
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (gate.locked(Feature.TAX_FORECAST)) ProPill()
-                TextButton(onClick = { if (gate.allows(Feature.TAX_FORECAST)) onOpen() else com.bamnat.app.ui.pro.openPro() }) {
+                TextButton(onClick = { if (com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) onOpen() else com.bamnat.app.ui.pro.openPro() }) {
                     Text(if (side == TaxSide.PAY) "기록·자세히" else "자세히·설정")
                 }
             }

@@ -13,6 +13,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
@@ -33,10 +36,31 @@ fun FormSheet(
     dismissButton: (@Composable () -> Unit)? = null,
     title: (@Composable () -> Unit)? = null,
     text: (@Composable () -> Unit)? = null,
+    /**
+     * 1.36 실사용 S16 (일감 시트가 뒤로 한 번에 닫혀 적은 내용이 사라져요): something typed and not saved; back or a swipe then
+     * asks before it goes. The 취소 button still closes at once.
+     */
+    unsaved: Boolean = false,
 ) {
+    var asking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val keep by androidx.compose.runtime.rememberUpdatedState(unsaved)
+    if (asking) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { androidx.compose.material3.Text("적은 내용을 버릴까요?") },
+        text = { androidx.compose.material3.Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { asking = false; onDismissRequest() }) { androidx.compose.material3.Text("버리기") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { androidx.compose.material3.Text("계속 적기") } },
+    )
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
+    })
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     com.bamnat.app.ui.components.AppSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // 빌드 e382585e (키보드가 닫힌 채 뒤로를 누르면 묻지 않고 닫혀요): back hides the sheet without the swipe's check, so it comes back
+        // up and asks, as the 근무표 typing sheet does [J133-90]; the X asks too.
+        onDismissRequest = { if (!keep) onDismissRequest() else { asking = true; scope.launch { state.show() } } },
+        onClose = { if (!keep) onDismissRequest() else asking = true },
+        sheetState = state,
         modifier = modifier,
     ) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {

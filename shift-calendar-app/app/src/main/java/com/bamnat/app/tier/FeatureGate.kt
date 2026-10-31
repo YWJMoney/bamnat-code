@@ -94,8 +94,29 @@ data class Gate(
     val free: Set<Feature> = emptySet(),
     /** A tester's preview, not the real state. */
     val preview: Boolean = false,
+    /** [MON-13] 1.36: the week each trial feature opened on first use (feature name to its start), and the time it was read at. */
+    val trials: Map<String, Long> = emptyMap(),
+    val now: Long = 0L,
 ) {
-    fun allows(feature: Feature): Boolean = !live || feature in free || tier >= feature.minTier
+    fun allows(feature: Feature): Boolean = !live || feature in free || tier >= feature.minTier || onTrial(feature)
+
+    /** [MON-13] When [feature]'s free week ends, while it lasts. */
+    fun trialUntil(feature: Feature): Long? = trials[feature.name]?.plus(FeatureTrials.MS)?.takeIf { now < it }
+
+    /** [MON-13] Still never tried here, so its first use opens a week. */
+    fun canTry(feature: Feature): Boolean = feature in FeatureTrials.TRIAL && !trials.containsKey(feature.name) && live && tier < feature.minTier
+
+    private fun onTrial(feature: Feature) = trialUntil(feature) != null
+
+    /**
+     * 1.36 사용자 결정(공유 링크 기간): links stay open while this phone really has 프로 after launch (a one-day pass
+     * is not 프로 kept); before launch every feature is open but no link is kept open by itself.
+     */
+    val keepsLinks: Boolean get() = live && !preview && access.pro && tier >= Tier.PRO && access.reason != com.bamnat.core.tier.ProReason.DAY_PASS
+
+    /** 1.36 사용자 결정(프로 나눔 1인): only 프로 bought on Play counts, not a trial, pass, thank-you or admin phone. */
+    val boughtPro: Boolean get() = live && !preview && access.pro &&
+        (access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION || access.reason == com.bamnat.core.tier.ProReason.GRACE)
 
     /** 프로 badges and 'pro' notes show only where the feature is actually locked. */
     fun locked(feature: Feature): Boolean = !allows(feature)
@@ -122,13 +143,37 @@ class FeatureGate(
     private val debug: Boolean = com.bamnat.app.BuildConfig.DEBUG,
     private val clock: () -> Instant = Today::instant,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
+    /** [MON-13] Free weeks from first use. */
+    private val trials: FeatureTrials = FeatureTrials(null),
 ) {
     private val tick = MutableStateFlow(0L)
     private val preview = settings.settings.map { it.previewTier }.distinctUntilChanged()
 
     val state: StateFlow<Gate> = combine(preview, remote.config, pro.state, tick, flags.byKey) { p, config, sources, _, rows -> gate(p, config, sources, rows) }
+        .combine(trials.all) { g, t -> withTrials(g, t) }
         .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.Eagerly, gate(settings.current.previewTier, remote.current, pro.current, flags.byKey.value))
+        .stateIn(scope, SharingStarted.Eagerly, withTrials(gate(settings.current.previewTier, remote.current, pro.current, flags.byKey.value), trials.all.value))
+
+    // The 프로 둘러보기 preview (무료) shows the free weeks too, so a tester sees them as a user would.
+    private fun withTrials(g: Gate, t: Map<String, Long>): Gate = g.copy(trials = t, now = clock().toEpochMilli())
+
+    /**
+     * [MON-13] The first use of a trial feature while it is locked: its week starts now. True when it is open (프로, a week
+     * going on, or one just started); false when it asks for 프로.
+     */
+    /** [MON-13] A trial's week as if begun at [at] (tests: one used up long ago). */
+    internal fun startTrial(feature: Feature, at: Long) = trials.start(feature, at)
+
+    /** [MON-13] Debug builds' 미리 보기: the free weeks start again. */
+    fun resetTrials() = trials.clear()
+
+    fun tryOrAsk(feature: Feature): Boolean {
+        val g = state.value
+        if (g.allows(feature)) return true
+        if (!g.canTry(feature)) return false
+        trials.start(feature, clock().toEpochMilli())
+        return true
+    }
 
     fun allows(feature: Feature): Boolean = state.value.allows(feature)
 

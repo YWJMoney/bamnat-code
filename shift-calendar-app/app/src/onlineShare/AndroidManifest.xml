@@ -19,6 +19,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${shareHost}" android:pathPrefix="/s/" />
+                <data android:host="${shareHostOld}" />
             </intent-filter>
         </activity>
     </application>

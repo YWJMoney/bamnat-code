@@ -125,8 +125,84 @@ export async function passes(env, dev, now) {
     admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id,
       previews: link.status === "approved" ? previewKeys(link.previews) : [] } : null,
     code: Boolean(code),
+    // 1.36 [PSH-01] 프로 나눔 1인: the 프로 a buyer gave this phone, until their subscription ends.
+    shared: await sharedUntil(env, dev, now),
     checkedAt: iso(now),
   };
+}
+
+// ---- 1.36 [PSH-01] 프로 나눔 1인 (사용자 결정 2026-10-31) ----
+// Someone who bought 프로 on Play (not a trial, pass, thank-you or admin phone) gives it to one person of their choosing
+// for as long as they keep it: a one-time code they send to that person, who puts it in their app. A new person
+// takes the place of the one before; the buyer or the person can end it. Only the two installs' hashes are kept.
+
+export const PRO_SHARE = { codeMs: 7 * DAY, codesPerDay: 10, claimsPerHour: 10 };
+
+/** When the install's own bought 프로 ends (a cancelled one still runs to its end), or null. */
+export async function boughtUntil(env, dev, now) {
+  const row = await one(env, `SELECT MAX(expiry) AS until FROM subs WHERE device = ? AND trial = 0
+    AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ?`, dev, now);
+  return row?.until ?? null;
+}
+
+/** The 프로 given to this install, as { until }, or null. */
+export async function sharedUntil(env, dev, now) {
+  const row = await one(env, "SELECT owner FROM pro_shares WHERE guest = ?", dev);
+  if (!row) return null;
+  const until = await boughtUntil(env, row.owner, now);
+  return until ? { until: iso(until) } : null;
+}
+
+async function shareView(env, dev, now) {
+  const [until, row] = await Promise.all([boughtUntil(env, dev, now), one(env, "SELECT code, code_at, guest, guest_at FROM pro_shares WHERE owner = ?", dev)]);
+  const codeOpen = row?.code && now - row.code_at < PRO_SHARE.codeMs;
+  return {
+    can: Boolean(until), until: until ? iso(until) : null,
+    code: codeOpen ? row.code : null, codeUntil: codeOpen ? iso(row.code_at + PRO_SHARE.codeMs) : null,
+    given: Boolean(row?.guest), givenAt: row?.guest ? iso(row.guest_at) : null,
+    shared: await sharedUntil(env, dev, now),
+  };
+}
+
+export async function proShare(request, env, dev, now, path) {
+  const method = request.method;
+  if (path === "/api/passes/share" && method === "GET") return json(await shareView(env, dev, now));
+  if (path === "/api/passes/share" && method === "POST") {
+    if (!(await boughtUntil(env, dev, now))) refuse("not_bought", "subscription");
+    { const limitHit = await overLimit(env, now, [["device", `proshare|${dev}`, PRO_SHARE.codesPerDay, DAY]]); if (limitHit) return limitHit; }
+    let code = inviteCode();
+    for (let i = 0; i < 3 && (await one(env, "SELECT 1 AS x FROM pro_shares WHERE code = ?", code)); i++) code = inviteCode();
+    await run(env, `INSERT INTO pro_shares (owner, code, code_at) VALUES (?, ?, ?)
+      ON CONFLICT (owner) DO UPDATE SET code = excluded.code, code_at = excluded.code_at`, dev, code, now);
+    await audit(env, now, "pro_share_code", "", dev.slice(0, 8));
+    return json(await shareView(env, dev, now), 201);
+  }
+  if (path === "/api/passes/share/claim" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const code = inviteCodeOf(body.code);
+    if (!code) refuse("code", "code");
+    { const limitHit = await overLimit(env, now, [["device", `proshareclaim|${dev}`, PRO_SHARE.claimsPerHour, HOUR]]); if (limitHit) return limitHit; }
+    const row = await one(env, "SELECT owner, code_at FROM pro_shares WHERE code = ?", code);
+    if (!row || now - row.code_at >= PRO_SHARE.codeMs) refuse("code", "code");
+    if (row.owner === dev) refuse("self", "code");
+    if (!(await boughtUntil(env, row.owner, now))) refuse("giver_ended", "code");
+    // One person per buyer, one buyer per person: the one before (theirs or this phone's old giver) is let go.
+    await batch(env, [
+      stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
+      stmt(env, "UPDATE pro_shares SET guest = ?, guest_at = ?, code = NULL, code_at = NULL WHERE owner = ?", dev, now, row.owner),
+    ]);
+    await audit(env, now, "pro_share_claim", "", row.owner.slice(0, 8));
+    return json(await shareView(env, dev, now));
+  }
+  if (path === "/api/passes/share" && method === "DELETE") {
+    // The buyer takes it back (and any code not used), or the person gives it back.
+    await batch(env, [
+      stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL, code = NULL, code_at = NULL WHERE owner = ?", dev),
+      stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
+    ]);
+    return json(await shareView(env, dev, now));
+  }
+  refuse("method", "method");
 }
 
 export const passCode = () => randomId(16).toUpperCase().replace(/(.{4})(?=.)/g, "$1-");
@@ -138,6 +214,7 @@ export async function money(request, env, path) {
   const now = Date.now();
   const dev = await installOf(request);
   if (path === "/api/passes" && method === "GET") return json(await passes(env, dev, now));
+  if (path === "/api/passes/share" || path === "/api/passes/share/claim") return proShare(request, env, dev, now, path);
   if (path === "/api/passes/code" && method === "POST") {
     { const limitHit = await overLimit(env, now, [["device", `passcode|${dev}`, MONEY.codesPerDay, DAY]]); if (limitHit) return limitHit; }
     // A new code replaces the old one; it is shown once and kept only as a hash.

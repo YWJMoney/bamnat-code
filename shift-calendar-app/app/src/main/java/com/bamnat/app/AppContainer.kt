@@ -468,7 +468,7 @@ class AppContainer(context: Context) {
     var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
-    init { com.bamnat.app.flags.clearOldPreviews(appContext) }
+    init { com.bamnat.app.flags.clearOldPreviews(appContext); com.bamnat.app.leave.LeaveHire.init(appContext) }
     /** [FLAG-07] Company facts wait for the first month on screen (a store read the start does not need). */
     @Volatile private var flagsWarm = false
     /**
@@ -530,7 +530,8 @@ class AppContainer(context: Context) {
     }
     private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }
 
-    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, flags, installedAt = { installedAt })
+    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, flags, installedAt = { installedAt },
+        trials = com.bamnat.app.tier.FeatureTrials(appContext)).also { com.bamnat.app.ui.pro.ProOffer.gate = it }
     /**
      * [MON-03] Play billing; screenshots and tests put a fake in its place. [PERF-01] Play's billing client is
      * built the first time it is used (after the 정식 출시 switch, or for a known subscription), not while

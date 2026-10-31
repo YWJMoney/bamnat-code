@@ -29,6 +29,7 @@
 // GET    /api/passes              header X-Device: this install's 프로 passes and admin phone link [MON-08][MON-09]
 // POST   /api/passes/code         a recovery code for the backup; /claim moves passes to a new phone with it
 // POST   /api/admin-link          a six-digit code from the developer app ties this phone to that admin
+// GET|POST|DELETE /api/passes/share, POST /api/passes/share/claim  1.36 [PSH-01] 프로 나눔 1인
 // POST   /api/purchases           a Play purchase token, checked with Play when PLAY_SERVICE_ACCOUNT is set [MON-03]
 // POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
 // POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
@@ -677,6 +678,8 @@ const SCHEMA = [
   // 1.34 [RCP-28] 나눔 판 (recipes.js).
   ...RECIPE_SCHEMA,
   ...COMMUNITY_SCHEMA,
+  // 1.36 [PSH-01] 프로 나눔 1인: a buyer's install, its one-time code and the one install it gave 프로 to.
+  `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -3163,6 +3166,9 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM invite_uses WHERE invitee = ? AND status NOT IN ('credited', 'capped', 'qualified')", dev),
     stmt(env, "UPDATE invite_uses SET invitee = ? WHERE invitee = ?", `${gone}i`, dev),
     stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", gone, dev),
+    // 1.36 [PSH-01] 프로 나눔: what it gave and what it was given.
+    stmt(env, "DELETE FROM pro_shares WHERE owner = ?", dev),
+    stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
   ]);
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);

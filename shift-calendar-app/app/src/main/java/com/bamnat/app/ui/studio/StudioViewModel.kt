@@ -31,6 +31,12 @@ import kotlinx.coroutines.launch
  * someone else's theme, or parts of others' from 보관함 ([State.sources]), keep their days and ad, as wearing them from 장터 would.
  */
 class StudioViewModel(private val c: AppContainer, start: String = START_MINE) : ViewModel() {
+    /**
+     * [STU-20] 1.36 one step of 되돌리기: the look and the 기능 at that point, and what was changed there (기록 목록, 사용자 2026-10-31
+     * "최상의 엔터프라이즈급 스튜디오").
+     */
+    data class Snap(val draft: AppSettings, val extras: Map<PieceKind, Map<String, Any?>>, val label: String)
+
     val style: WorkStyle? = c.settingsRepository.current.workStyle
 
     sealed interface Origin {
@@ -50,8 +56,20 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val origin: Origin,
         val pieces: List<Piece> = emptyList(),
         val basePieces: List<Piece> = emptyList(),
-        val past: List<AppSettings> = emptyList(),
-        val future: List<AppSettings> = emptyList(),
+        val past: List<Snap> = emptyList(),
+        val future: List<Snap> = emptyList(),
+        /**
+         * [STU-21] 1.36 레시피 만들기 합침: the 기능 pieces going with the look (근무 색·이모지, 알람 묶음, 메모 틀, 급여·현장·가게 규칙, 투자
+         * 원칙, 앱 느낌, 회사 설정). They show on the example and go up with 올리기; 입히기 puts on the look only.
+         */
+        val extras: Map<PieceKind, Map<String, Any?>> = emptyMap(),
+        /** [STU-21] The recipe this draft is a 수정판 of (고쳐 만들기 from 장터), or the code of mine it is the next 판 of. */
+        val parentCode: String? = null,
+        val ownCode: String? = null,
+        /** [STU-21] The remade recipe's name, words, cover and 받는 분이 넣을 값 (its 기능 point at them), kept for 올리기. */
+        val meta: Recipe? = null,
+        /** [STU-25] 1.36 빌드 7: the 만들던 레시피 this was opened from; 올리기 takes it off the list once sent. */
+        val draftId: Long = 0,
         val recent: List<Long> = emptyList(),
         /** [TRY-03] Others' parts laid on from 보관함: their theme's code to its name (출처 표시, and their days and ad on 입히기). */
         val sources: Map<String, String> = emptyMap(),
@@ -64,7 +82,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** F-94: the draft is what the phone wears now (just put on, nothing changed since). */
         val wornNow: Boolean = false,
     ) {
-        val changed: Boolean get() = past.isNotEmpty() && draft != base
+        val changed: Boolean get() = past.isNotEmpty() && (draft != base || extras.isNotEmpty())
     }
 
     private val phone = c.settingsRepository.current
@@ -82,6 +100,25 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 refresh(both = true)
                 c.wardrobe.kept.value.firstOrNull { it.id.toString() == start.removePrefix(START_KEPT) }?.let { layer(it) }
             }
+            start.startsWith(START_RECIPE) -> {
+                refresh(both = true)
+                val remake = com.bamnat.app.recipe.RecipeLinks.remake.also { com.bamnat.app.recipe.RecipeLinks.remake = null }
+                val own = start.removePrefix(START_RECIPE).substringBefore('@').removePrefix(":").ifEmpty { null }
+                if (remake != null) startRecipe(remake.first, remake.second, own)
+            }
+            start.startsWith(START_FEATURE) -> {
+                refresh(both = true)
+                PieceKind.of(start.removePrefix(START_FEATURE))?.takeIf { it in FEATURES && (style == null || style in it.styles) }?.let { starter(it) }
+            }
+            start.startsWith(START_DRAFT) -> {
+                refresh(both = true)
+                viewModelScope.launch {
+                    val id = start.removePrefix(START_DRAFT).toLongOrNull() ?: return@launch
+                    val d = runCatching { c.database.recipeDao().drafts().firstOrNull { it.id == id } }.getOrNull() ?: return@launch
+                    startRecipe(d.body, null, d.code)
+                    _state.value = _state.value.copy(draftId = id)
+                }
+            }
             else -> refresh(both = true)
         }
     }
@@ -96,12 +133,64 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         _state.value = _state.value.copy(pieces = pieces, basePieces = base)
     }
 
+    /** [STU-20] Where the next change is made (영역 · 도구), for the 기록 목록. */
+    var where: String = "고침"
+
+    private fun snap(s: State, label: String = where) = Snap(s.draft, s.extras, label)
+
     /** One change to the draft; 되돌리기 goes back over it (up to [HISTORY] steps). */
     fun change(f: (AppSettings) -> AppSettings) {
         val s = _state.value
         val next = f(s.draft)
         if (next == s.draft) return
-        _state.value = s.copy(draft = next, past = (s.past + s.draft).takeLast(HISTORY), future = emptyList(), said = null, wornNow = false)
+        _state.value = s.copy(draft = next, past = (s.past + snap(s)).takeLast(HISTORY), future = emptyList(), said = null, wornNow = false)
+        refresh()
+    }
+
+    // ---- [STU-21] 기능 (레시피 만들기에서 합침) ----
+
+    /** The 기능 pieces this kind of work can carry, in the order the 기능 영역 shows them. */
+    val features: List<PieceKind> = FEATURES.filter { style == null || style in it.styles }
+
+    /** A 기능 on (what this phone has, or example values) or off (null). */
+    fun setExtra(kind: PieceKind, values: Map<String, Any?>?, label: String = kind.label) {
+        val s = _state.value
+        val next = if (values == null) s.extras - kind else s.extras + (kind to values.filterValues { it != null })
+        if (next == s.extras) return
+        _state.value = s.copy(extras = next, past = (s.past + snap(s, label)).takeLast(HISTORY), future = emptyList(), said = null)
+    }
+
+    fun setExtraValue(kind: PieceKind, key: String, value: Any?) {
+        val now = _state.value.extras[kind] ?: return
+        setExtra(kind, if (value == null) now - key else now + (key to value), "${kind.label} · 고침")
+    }
+
+    /** What a 기능 starts with when turned on: this phone's own (its amounts become 받는 분이 넣을 값 on 올리기), or example values. */
+    fun starter(kind: PieceKind) = viewModelScope.launch {
+        val mine = runCatching { c.recipes.pieces.export(kind, com.bamnat.app.data.PersonalCalendar.MAIN) }.getOrNull()?.filterValues { it != null }
+        setExtra(kind, mine?.takeIf { it.isNotEmpty() } ?: com.bamnat.app.ui.recipe.StudioStarters.of(kind, style), "${kind.label} 켬")
+    }
+
+    /** The example's recipe: the look and the 기능 that draw (근무 색, 메모 틀, 투자 일지). */
+    fun shown(s: State = _state.value): Recipe = Recipe("초안", styles = WorkStyle.entries.toSet(),
+        pieces = s.pieces + s.extras.map { (k, v) -> Piece(k, v) })
+
+    /** [STU-20] 기록 목록: back to just before step [i] of [State.past] (the newest last); the steps after it can be done again. */
+    fun backTo(i: Int) {
+        val s = _state.value
+        if (i !in s.past.indices) return
+        val target = s.past[i]
+        _state.value = s.copy(draft = target.draft, extras = target.extras, past = s.past.take(i),
+            future = s.past.drop(i + 1) + snap(s) + s.future, said = null)
+        refresh()
+    }
+
+    /** [STU-22] 이 영역만 처음대로: [fields] of the draft back to where it started (one step of 되돌리기). */
+    fun resetFields(label: String, f: (draft: AppSettings, base: AppSettings) -> AppSettings) {
+        val s = _state.value
+        val next = f(s.draft, s.base)
+        if (next == s.draft) return
+        _state.value = s.copy(draft = next, past = (s.past + snap(s, label)).takeLast(HISTORY), future = emptyList(), said = null, wornNow = false)
         refresh()
     }
 
@@ -114,14 +203,14 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun undo() {
         val s = _state.value
         val last = s.past.lastOrNull() ?: return
-        _state.value = s.copy(draft = last, past = s.past.dropLast(1), future = listOf(s.draft) + s.future, said = null)
+        _state.value = s.copy(draft = last.draft, extras = last.extras, past = s.past.dropLast(1), future = listOf(snap(s, last.label)) + s.future, said = null)
         refresh()
     }
 
     fun redo() {
         val s = _state.value
         val next = s.future.firstOrNull() ?: return
-        _state.value = s.copy(draft = next, past = s.past + s.draft, future = s.future.drop(1), said = null)
+        _state.value = s.copy(draft = next.draft, extras = next.extras, past = s.past + snap(s, next.label), future = s.future.drop(1), said = null)
         refresh()
     }
 
@@ -148,7 +237,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     private fun restart(d: AppSettings, o: Origin) {
         _state.value = _state.value.copy(draft = d, base = d, origin = o, past = emptyList(), future = emptyList(), said = null, canUndoWear = false,
-            sources = emptyMap(), layered = emptyList())
+            sources = emptyMap(), layered = emptyList(), extras = emptyMap(), parentCode = null, ownCode = null, meta = null)
         refresh(both = true)
     }
 
@@ -190,6 +279,26 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
 
     /** The theme whose days and ad 입히기 follows: someone else's started from, or the first of others' parts laid on. */
+    /**
+     * [THM-08] A mixed theme of mine the draft starts from: opened from 내 테마, or worn now as the phone's look. It stays others'
+     * work (30일, 수정판) until [LookParts.OWN_PARTS] parts are changed by hand from it.
+     */
+    private fun mixedStart(): ThemeLease.Wear? = when (val o = _state.value.origin) {
+        is Origin.Theme -> o.wear.takeIf { it.own && it.mixedFrom.isNotBlank() }
+        is Origin.Mine -> c.wardrobe.lease.value.worn?.takeIf { it.own && it.mixedFrom.isNotBlank() }
+        else -> null
+    }
+
+    /** [THM-08] Every other maker's theme the draft took parts from, by name. */
+    fun mixedSources(): List<String> =
+        (listOfNotNull(othersTheme?.title) + _state.value.sources.values + mixedStart()?.mixedFrom?.split("·").orEmpty())
+            .filter { it.isNotBlank() }.distinct()
+
+    /** [THM-08] Their 장터 codes, in the same order (built-in looks have none). */
+    private fun mixedCodes(): List<String> =
+        (listOfNotNull(othersTheme?.code) + _state.value.sources.keys + mixedStart()?.mixedCodes?.split(",").orEmpty())
+            .filter { it.isNotBlank() && !it.startsWith("builtin:") }.distinct()
+
     private fun leasedFrom(): Pair<String, String>? = othersTheme?.let { it.code to it.title } ?: _state.value.sources.entries.firstOrNull()?.toPair()
 
     fun needsAd(): Boolean = when {
@@ -205,7 +314,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun ownMake(): Boolean {
         val s = _state.value
         val others = othersTheme ?: (s.origin as? Origin.Theme)?.wear?.takeIf { !it.own }
-        if (others == null && s.sources.isEmpty()) return true
+        if (others == null && s.sources.isEmpty() && mixedStart() == null) return true
         val now = recipe()
         val start = Recipe("", styles = WorkStyle.entries.toSet(), pieces = s.basePieces)
         val taken = s.layered.filter { !it.own }.mapNotNull { k -> runCatching { RecipeCodec.read(k.body) }.getOrNull() }
@@ -276,11 +385,23 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      */
     fun save(title: String, toPlaza: Boolean = true) = viewModelScope.launch {
         val name = title.ifBlank { "내 테마" }.take(30)
+        // [THM-08] 1.36 (사용자 승인 섞은 테마): parts of two or more themes mixed are mine to keep in 내 테마 under my name, every
+        // theme named; mostly others' parts, so it wears by the 30-day rule and 장터 takes it only as a 수정판.
+        val mixed = mixedSources()
+        if (!ownMake() && mixed.size >= 2) {
+            val ok = c.wardrobe.saveLook(recipe(name), mixedStart()?.takeIf { it.title == name }, mixedFrom = mixed.joinToString("·"),
+                mixedCodes = mixedCodes().joinToString(","))
+            _state.value = _state.value.copy(said = if (!ok) "더 저장할 수 없어요. 무료는 ${c.wardrobe.outfitLimit()}벌까지예요"
+                else "‘$name’로 내 테마에 담았어요. 출처: ${mixed.joinToString("·") { "‘$it’" }}. 대부분 다른 분 조각이라 입을 때는 30일 규칙이에요(프로는 광고 없이)")
+            return@launch
+        }
         if (!ownMake()) {
             val from = leasedFrom() ?: return@launch
             val r = recipe("조합 · $name".take(30))
             val ok = c.wardrobe.keep(r.copy(title = from.second), from.first, LookParts.of(r).map { it.id })
-            _state.value = _state.value.copy(said = if (ok) "직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어 ‘${from.second}’의 조합으로 보관함에 담았어요. 입힐 때는 그 테마처럼 30일이에요"
+            // [STU-27] 1.36 빌드 8 (S32: 두 테마의 조각을 얹었는데 출처가 하나만): every theme a part came from is named.
+            val froms = (_state.value.sources.values.toList() + from.second).distinct().joinToString("·") { "‘$it’" }
+            _state.value = _state.value.copy(said = if (ok) "직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어 $froms 조각의 조합으로 보관함에 담았어요. 입힐 때는 그 테마처럼 30일이에요"
                 else "보관함이 꽉 찼어요 (${c.wardrobe.partsLimit()}개)")
             return@launch
         }
@@ -323,17 +444,61 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun outfitLimit(): Int = c.wardrobe.outfitLimit()
 
     /** 장터에 올리기: the draft as a recipe to finish in 만들기 (이름·설명·확인), with the theme it came from as its parent. */
-    fun upload(): Pair<String, String> {
+    /**
+     * [STU-26] 1.36 빌드 8 (S29: 가계부만 바꿔 올렸는데 테마 전체가 올라감): the one tab every change of the look is on, so 올리기 can send
+     * that tab alone as a 기능별 탭; null when nothing changed or the changes are on more than one tab.
+     */
+    fun changedTab(): String? {
         val s = _state.value
-        val parent = (leasedFrom()?.first ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
-        val r = recipe("").copy(title = "", styles = setOf(style ?: WorkStyle.SHIFT))
+        val all = WorkStyle.entries.toSet()
+        val ids = com.bamnat.core.recipe.LookParts.changed(Recipe("b", styles = all, pieces = s.basePieces), Recipe("d", styles = all, pieces = s.pieces))
+        val tabs = com.bamnat.core.recipe.LookParts.ALL.filter { it.id in ids }.map { it.tab }.distinct()
+        return tabs.singleOrNull()?.takeIf { it != com.bamnat.core.layout.TabOrder.SETTINGS }
+    }
+
+    /** [onlyTab] sends that tab's looks alone (a 기능별 탭, no 기능); null sends the whole theme with its 기능. */
+    fun upload(onlyTab: String? = null): Pair<String, String> {
+        val s = _state.value
+        // [THM-08] A mixed theme goes up as a 수정판 of the first theme it took parts from.
+        val parent = (s.parentCode ?: leasedFrom()?.first ?: mixedCodes().firstOrNull().takeIf { !ownMake() }
+            ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
+        // [STU-21] The 기능 go up with the look; every amount in them becomes 받는 분이 넣을 값 first (S7), as 레시피 만들기 did.
+        val pieces = if (onlyTab != null) {
+            val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
+            com.bamnat.core.recipe.LookParts.pick(draft, com.bamnat.core.recipe.LookParts.of(draft).filter { it.tab == onlyTab }.map { it.id }).pieces
+        } else (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
+        val withExtras = s.meta?.copy(pieces = pieces, parent = null)
+            // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
+            ?: recipe("").copy(title = (myTheme ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
+        val min = com.bamnat.app.ui.recipe.RecipeMakeViewModel.MIN_WAGE
+        val r = com.bamnat.core.recipe.InputExtract.extract(withExtras) { _, f -> if (f == "wage") min else null }
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.
-        com.bamnat.app.recipe.RecipeLinks.ownTheme = ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key
-            ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN.takeIf { ownMake() }
+        // [THM-08] A mixed theme (fewer than 3 changes by hand) goes up only as a 수정판: never marked as mine in 장터 (no ad-free).
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = if (onlyTab != null || s.extras.isNotEmpty() || s.meta != null || !ownMake()) null
+            else ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN
         return RecipeCodec.write(r) to parent
     }
 
     fun said() { _state.value = _state.value.copy(said = null) }
+
+    /** [STU-21] The code 올리기 sends a next 판 of: one of mine being remade, or one of mine already in 장터 ([plazaCode]). */
+    fun nextOf(): String? = _state.value.ownCode ?: plazaCode()
+
+    /**
+     * [STU-21] 1.36 고쳐 만들기·새 판·만들던 레시피 open here too (레시피 만들기 합침): [body]'s looks on the plain look as the draft, its
+     * 기능 as [State.extras], [parent] as what it is a 수정판 of, or [own] as mine whose next 판 it is.
+     */
+    fun startRecipe(body: String, parent: String?, own: String?) = viewModelScope.launch {
+        val r = runCatching { RecipeCodec.read(body) }.getOrNull() ?: return@launch
+        var d = c.recipes.pieces.plainLook(c.settingsRepository.current)
+        r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        restart(d, Origin.Mine(r.title.ifBlank { "만들던 판" }))
+        val ex = r.pieces.filter { it.kind !in BuiltInThemes.LOOK_KINDS && it.kind != PieceKind.BUNDLE }.associate { it.kind to it.values }
+        val from = parent?.takeIf { it.isNotBlank() && own == null && !it.startsWith("builtin:") }
+        // Someone else's recipe remade keeps their days and ad on 입히기, as their theme would ([needsAd], [ownMake]).
+        _state.value = _state.value.copy(extras = ex, parentCode = from, ownCode = own, meta = r,
+            sources = if (from != null && r.pieces.any { it.kind in BuiltInThemes.LOOK_KINDS }) mapOf(from to r.title.ifBlank { "가져온 판" }) else emptyMap())
+    }
 
     companion object {
         const val START_MINE = "mine"
@@ -342,5 +507,16 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val START_THEME = "theme:"
         const val START_KEPT = "kept:"
         const val HISTORY = 50
+        /** "recipe": open on the recipe left in [com.bamnat.app.recipe.RecipeLinks.remake] (고쳐 만들기, 새 판), "recipe:<code>" as mine. */
+        const val START_RECIPE = "recipe"
+        /** "draft:<id>": a 만들던 레시피 kept on the phone. */
+        const val START_DRAFT = "draft:"
+        /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
+        const val START_FEATURE = "feature:"
+        /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */
+        fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
+        /** [STU-21] The 기능 the studio can carry, in the order shown. */
+        val FEATURES = listOf(PieceKind.SHIFT_LOOK, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.HOURLY_RULES, PieceKind.FIELD_SHEET,
+            PieceKind.SHOP, PieceKind.INVEST, PieceKind.APP_FEEL, PieceKind.COMPANY)
     }
 }

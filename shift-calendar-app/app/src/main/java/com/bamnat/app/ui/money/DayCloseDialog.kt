@@ -113,6 +113,10 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                     AmountField("매출 합계", total, { total = it })
                     Text("결제 수단을 나눠 적으면 합계가 저절로 나와요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    // 1.36 실사용 S20 (나눠 적으면 '매출 합계' 칸이 사라져 저장 전 합계가 안 보여요): the sum stays in the same place.
+                    Text("매출 합계 ${Fmt.won(parts + earlierCredit)}" + if (earlierCredit > 0) " (외상 ${Fmt.won(earlierCredit)} 포함)" else "",
+                        style = MaterialTheme.typography.titleSmall)
                 }
                 AmountField("경비 (재료비·인건비 등)", costs, { costs = it })
                 // [J133-29] 1.33 (실사용 테스트 "경비 칸에서 증빙 여부를 고를 수 없어 부가세가 크게 나와요").

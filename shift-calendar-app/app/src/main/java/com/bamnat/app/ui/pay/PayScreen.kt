@@ -83,6 +83,7 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.money.ProPill
 import com.bamnat.app.ui.pro.openPro
+import com.bamnat.app.ui.pro.tryFeature
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.holiday.KoreanHolidays
@@ -371,7 +372,7 @@ private fun PayResult(
     var importing by remember { mutableStateOf(false) }
     var matching by remember { mutableStateOf(false) }
     // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 from the plaza form opens the match once, as its button here would.
-    androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() } }
+    androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro() } }
     var slipRules by remember { mutableStateOf(false) }
     var plazaAsk by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
@@ -470,8 +471,9 @@ private fun PayResult(
         // [PAYS-19] 1.27 순번 449 (사용자 "맞춰보기가 있는데 어디에 있는지 안보이고"): right under the total, one card, two
         // ways named apart: 금액 비교하기 (the payslip's amounts against the app's, 프로) and 계산 방식 찾기 (the company's
         // way from a payslip or its rules page, free).
-        SlipMatchCard(profile, gate, onCompare = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
+        SlipMatchCard(profile, gate, onCompare = { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
             onFind = { slipRules = true })
+        com.bamnat.app.ui.pro.TrialNote(Feature.PAYSLIP_MATCH, gate, Modifier.padding(horizontal = 4.dp))
         // D 1.32 [PAYA-03] Two months or more matched: all of them at once (프로).
         if (closedSnap == null && unlocked && com.bamnat.core.pay.MultiMonthFit.months(profile).size >= 2)
             FitMonthsCard(vm, profile, snapshot, allowed = gate.allows(Feature.PAYSLIP_MATCH), onPro = { openPro(Feature.PAYSLIP_MATCH) })
@@ -494,6 +496,7 @@ private fun PayResult(
                 Text(com.bamnat.app.tax.TakeHomeLine.text(f, ::won), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 com.bamnat.app.ui.money.ProPill()
             }
+            com.bamnat.app.ui.pro.TrialNote(Feature.TAX_FORECAST, gate)
         }
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
         if (closedSnap == null) Estimates.breakNote(result, profile.fiveOrMoreEmployees)?.let {

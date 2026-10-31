@@ -34,21 +34,23 @@ class LeaveRepository(
     private val pay: PayStore,
     private val clock: () -> Long = Today::millis,
     private val today: () -> LocalDate = Today::date,
+    /** [LEAVE-14] The calendar this ledger is for, to find a hire date typed on the 연차 screen. */
+    private val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
 ) {
     private val dao = db.leaveLedgerDao()
 
     val entries: Flow<List<LedgerEntry>> = dao.observeAll().map { rows -> rows.mapNotNull { it.toModel() } }
 
     /** The ledger on today, following the calendar, the pay setup and the stored rows. */
-    val summary: Flow<LeaveSummary> = combine(entries, schedule.snapshot, pay.profile) { stored, snap, profile ->
-        LeaveSources.summary(today(), profile, snap.entries, snap.resolver::resolve, stored)
+    val summary: Flow<LeaveSummary> = combine(entries, schedule.snapshot, pay.profile, LeaveHire.all) { stored, snap, profile, hires ->
+        LeaveSources.summary(today(), LeaveSources.withHire(profile, hires[calendarId]), snap.entries, snap.resolver::resolve, stored)
     }.onStart { moveOldSettings() }.flowOn(Dispatchers.Default)
 
     /** [summary] read once, e.g. by a notice. */
     suspend fun now(): LeaveSummary = withContext(Dispatchers.Default) {
         moveOldSettings()
         val snap = schedule.snapshot.first()
-        LeaveSources.summary(today(), pay.profile.value, snap.entries, snap.resolver::resolve, all())
+        LeaveSources.summary(today(), LeaveSources.withHire(pay.profile.value, LeaveHire.of(calendarId)), snap.entries, snap.resolver::resolve, all())
     }
 
     suspend fun all(): List<LedgerEntry> = dao.all().mapNotNull { it.toModel() }

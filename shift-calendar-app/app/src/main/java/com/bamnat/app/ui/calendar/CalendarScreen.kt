@@ -462,10 +462,14 @@ fun CalendarScreen(
     // [R136-03] 1.36 (리뷰 R-04: 오늘 깐 앱이 '지난달보다 +1일'): the day this phone started, so a month wholly before it,
     // with nothing written by hand, is not compared as if worked.
     // The later of the install and this calendar's setup ('이 달력으로 할 수 있는 것' starts on it), so a phone set up again counts too.
+    // [R136-03] 1.36 빌드 7 (시계를 옮기면 '11/11 전은'으로 바뀜): the day is kept once found, so it never moves after.
     val startDay = remember(activeCalendar.id) {
-        val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
-        val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
-        listOfNotNull(installed, setUp).maxOrNull()
+        val prefs = context.getSharedPreferences("calendar_start", android.content.Context.MODE_PRIVATE)
+        prefs.getLong(activeCalendar.id, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let { java.time.LocalDate.ofEpochDay(it) } ?: run {
+            val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
+            val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
+            listOfNotNull(installed, setUp).maxOrNull()?.also { prefs.edit().putLong(activeCalendar.id, it.toEpochDay()).apply() }
+        }
     }
     val versus = remember(snap, visibleMonth, focus, overview) {
         val before = visibleMonth.minusMonths(1)
@@ -1087,6 +1091,15 @@ fun CalendarScreen(
             }
         }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
+            // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
+            // screen too, for a phone whose notices are off.
+            val lateOwed = remember(moneyBook, today) { moneyBook.owed(today).filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE } }
+            if (paint == null && viewingReceived == null && lateOwed.isNotEmpty()) add(Notice("owedLate", "약속일 지난 받을 돈") {
+                AlarmWarningLine("약속일 지난 받을 돈 ${lateOwed.size}건 · ${Fmt.won(lateOwed.sumOf { it.left })}", "보기", {
+                    com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.OWED))
+                }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            })
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
                 add(Notice("policy31", "처리방침 3.1") { com.bamnat.app.ui.pro.PolicyConsentNotice() })
@@ -1112,7 +1125,10 @@ fun CalendarScreen(
                     })
             })
             alarmLine?.let { (label, line) -> add(Notice("alarm", label) { line() }) }
-            if (swapCovers.isNotEmpty()) add(Notice("review", "대근 ${swapCovers.size}일 고치기") {
+            // 빌드 e382585e (빠른 입력에서 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀려 다음 누름이 다른 칸에): nothing new comes up above the
+            // month while painting; the review waits until quick input closes.
+            if (paint != null) Unit
+            else if (swapCovers.isNotEmpty()) add(Notice("review", "대근 ${swapCovers.size}일 고치기") {
                 ExtraReviewCard(
                     title = "쉬는 날 대근 ${swapCovers.size}일을 고쳐 주세요",
                     message = "근무를 바꿔서 적은 대근은 쉬는 날 근무로 계산되지 않아요. 한 번에 대근으로 고칠 수 있어요.",
@@ -1303,7 +1319,7 @@ fun CalendarScreen(
                         // [R136-03] In the month the phone started, the days before it are the 근무표's, and it says so.
                         rangeLabel = payRange?.label() ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
                             snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
-                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표대로" },
+                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표" },
                     )
                 }
             }

@@ -120,7 +120,9 @@ private fun Pick(label: String, field: String, values: List<String>, value: Stri
 }
 
 /** One example day: its mark's letter and colour, a memo or two, hours and a holiday. */
-data class SampleDay(val label: String, val color: Long, val memos: List<String> = emptyList(), val hours: String? = null, val holiday: String? = null, val off: Boolean = false)
+data class SampleDay(val label: String, val color: Long, val memos: List<String> = emptyList(), val hours: String? = null, val holiday: String? = null, val off: Boolean = false,
+    /** [TRY-04] The kind of day (day·night·eve·off…), for a cell pattern by kind; null when not known. */
+    val role: String? = null)
 
 private val SAMPLE = listOf(
     SampleDay("주", 0xFFEF6C00, listOf("병원 예약", "택배"), "8h"),

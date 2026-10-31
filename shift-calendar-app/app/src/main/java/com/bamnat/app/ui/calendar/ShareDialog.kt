@@ -123,6 +123,9 @@ fun ShareDialog(
     // A second link starts with the name the first one went out with.
     var title by remember(store) { mutableStateOf((link ?: links.firstNotNullOfOrNull { it })?.title.orEmpty()) }
     var ttl by remember(store) { mutableIntStateOf(link?.ttlDays?.let { ShareLinkPayload.allowedTtl(it, moreLinks) } ?: 30) }
+    // 1.36 사용자 결정(공유 링크 기간): with 프로 a link stays open while 프로 lasts, so there is no period to pick.
+    val keeps = gate.keepsLinks
+    if (keeps) ttl = ShareLinkPayload.PRO_KEEP_DAYS
     var auto by remember(store) { mutableStateOf(store.auto) }
     var saved by remember(store) { mutableStateOf(store.options()) }
     var options by remember(store) { mutableStateOf(saved) }
@@ -238,8 +241,9 @@ fun ShareDialog(
                 Spacer(Modifier.width(8.dp))
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
+            // 빌드 10 (시계를 옮긴 뒤 '12월부터'인데 받은 건 11/2~1/29): a link already made says the months it carries.
             Text(
-                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${((stored?.from) ?: linkMonth).monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
@@ -259,7 +263,8 @@ fun ShareDialog(
                 val soon = ShareExpiryReminder.closingSoon(made)
                 Surface(shape = RoundedCornerShape(12.dp),
                     color = if (soon) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest) {
-                    Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else "",
+                    Text("만든 링크: ${made.url}\n" + (if (keeps && auto) "프로를 쓰는 동안 계속 열려요."
+                        else "${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else ""),
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
                 Button(enabled = !busy, onClick = { send(context, made, style) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
@@ -301,8 +306,13 @@ fun ShareDialog(
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide() }))
             // [SHR-12] With a link made, the period is what 기간 늘리기 adds from today.
-            Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
+            // 1.36: 프로 keeps links open by itself; receivers see them free either way.
+            if (keeps) Text("프로를 쓰는 동안 링크가 닫히지 않아요. 프로가 끝나면 그날부터 90일까지 열리고, 그 뒤로는 기간을 직접 늘려요. " +
+                "받는 사람은 프로 없이도 무료로 봐요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.36 [PSH-01] 프로 나눔 1인: a buyer may also give 프로 itself to one person.
+            if (gate.boughtPro) TextButton(onClick = { com.bamnat.app.ui.pro.openPro() }) { Text("한 사람에게 프로 나눠 주기") }
+            else Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
+            if (!keeps) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
                 ShareLinkPayload.TTL_DAYS.forEach { d ->
                     // [PROV-04] 180일 and 1년 are 프로's.
                     val locked = d in ShareLinkPayload.PRO_TTL_DAYS && !moreLinks
@@ -384,7 +394,8 @@ fun ShareDialog(
                         if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기")
                     }
                 }
-                OutlinedButton(enabled = !busy && !empty, onClick = {
+                // 1.36: with 프로 and 고치면 바로 바꾸기 on the link is kept open by itself.
+                if (!keeps || !auto) OutlinedButton(enabled = !busy && !empty, onClick = {
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
@@ -620,7 +631,8 @@ internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when
 internal fun emptyHint(kind: MoneyShare, field: Boolean): String = when {
     field -> "이 기간에는 근무가 없어요. ‘일정’이나 ‘${kind.label}’을 고르면 링크를 만들 수 있어요."
     kind == MoneyShare.SALES -> "이 기간에는 근무가 없어요. ‘${kind.label}’이나 ‘메모’를 고르면 링크를 만들 수 있어요."
-    else -> "이 기간에는 보낼 근무가 없어요. 근무를 적거나 보여 줄 것을 골라 주세요."
+    // 빌드 10 (알바: 일한 날을 아직 안 칠했는데 무엇을 할지 몰라요): what to do first, in the calendar's words.
+    else -> "이 기간에는 보낼 근무가 없어요. 달력에서 일한 날을 먼저 칠하거나, 보여 줄 것을 골라 주세요."
 }
 
 /** What leaves the phone with a link, where it is kept, and who can open it. Matches privacy policy 1.6, sections 1 and 5. */

@@ -164,6 +164,8 @@ class ShareExpiryReceiver : BroadcastReceiver() {
                     ShareExpiryReminder.reschedule(context, id, null, null)
                     return@launch
                 }
+                // 1.36: a 프로 sharer's link is kept open by itself, with nothing to ask.
+                c.shareSync.keepOpenForPro(id)
                 val store = c.shareLinksOf(id)
                 store.expire()
                 val link = store.link.value
