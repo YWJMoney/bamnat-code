@@ -295,11 +295,14 @@ internal fun Talk.toJson(): JSONObject = JSONObject()
                 JSONObject().put("setup", r.setup).put("status", if (r.adopted) "adopted" else "pending").put("persons", r.persons)
                     .put("threshold", r.threshold).put("text", r.text ?: JSONObject.NULL)
             } ?: JSONObject.NULL)
-            .put("author", p.author ?: JSONObject.NULL).put("review", p.review)
+            .put("author", p.author ?: JSONObject.NULL).put("review", p.review).put("answer", p.answer ?: JSONObject.NULL)
+            .put("attach", p.attach?.let { (code, title) -> JSONObject().put("code", code).put("title", title) } ?: JSONObject.NULL)
+            .put("poll", p.poll?.let { v -> JSONObject().put("options", JSONArray(v.options)).put("counts", JSONArray(v.counts)).put("mine", v.mine ?: JSONObject.NULL) } ?: JSONObject.NULL)
     }))
     .put("mutedUntil", mutedUntil?.toString() ?: JSONObject.NULL).put("past", past).put("hiddenByYou", hiddenByYou)
     .apply { leftPosts?.let { put("left", JSONObject().put("posts", it)) } }
     .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay)) } }
+    .apply { topic?.let { put("topic", it) } }
 
 internal fun Board.toJson(): JSONObject = JSONObject().put("next", next ?: JSONObject.NULL)
     .put("items", JSONArray(items.map { i ->

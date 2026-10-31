@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -345,6 +346,11 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, onO
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(plan.roomTitle.ifEmpty { "자유 토의" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             val talk = state.talk
+            // 1.36 [VIL-11] 이번 주 이야기 주제: a door to the talk when there is nothing to say.
+            talk?.topic?.let { t ->
+                Text("이번 주 주제 · $t", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClickLabel = "주제로 글 쓰기", onClick = onOpen).padding(vertical = 4.dp))
+            }
             when {
                 talk == null && state.error != null -> Text(state.error, style = MaterialTheme.typography.bodyMedium)
                 talk == null -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)

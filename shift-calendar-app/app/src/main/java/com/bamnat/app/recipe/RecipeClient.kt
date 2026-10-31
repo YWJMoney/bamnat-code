@@ -43,6 +43,8 @@ data class RecipeItem(
     val tabs: List<String> = emptyList(),
     /** [MKX-01] "theme" (앱 전체를 한 벌로) or "tab" (탭 하나만); null when the server did not say. */
     val scope: String? = null,
+    /** 1.36 [VIL-18] The first work of a new maker, given a place in 요즘 뜨는·좋은 순. */
+    val newMaker: Boolean = false,
 )
 
 /**
@@ -233,7 +235,9 @@ data class ProfileEdit(
 /** [RCX-07][RCX-10] For 소식: new recipes of followed makers, and makers' answers to my questions (code, title, the answer). */
 data class RecipeNews(val recipes: List<RecipeItem>, val replies: List<Triple<String, String, String>>,
     /** [LIN-04] 1.35 수정판 of my recipes by others: the new one and the title of mine it came from. */
-    val remixes: List<Pair<RecipeItem, String>> = emptyList())
+    val remixes: List<Pair<RecipeItem, String>> = emptyList(),
+    /** 1.36 [VIL-15] My requests someone finished: the recipe's code and title, and what I asked. */
+    val requests: List<Triple<String, String, String>> = emptyList())
 
 /** [RCP-21]..[RCP-35] What the app asks of the 나눔 판 server; screenshots and tests answer with a fake. */
 interface RecipeApi {
@@ -549,7 +553,8 @@ class RecipeClient(
         val o = call("GET", "/api/recipes/news" + (since?.let { "?since=" + URLEncoder.encode(it.toString(), "UTF-8") } ?: ""), device = device)
         RecipeNews(o.optJSONArray("recipes").objects().map(::item),
             o.optJSONArray("replies").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) },
-            o.optJSONArray("remixes")?.objects()?.map { item(it) to it.optString("parentTitle") }.orEmpty())
+            o.optJSONArray("remixes")?.objects()?.map { item(it) to it.optString("parentTitle") }.orEmpty(),
+            o.optJSONArray("requests")?.objects()?.map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) }.orEmpty())
     }
 
     override suspend fun image(device: String, webp: ByteArray): String = serverCall {
@@ -580,6 +585,7 @@ class RecipeClient(
                 o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"), o.optStringOrNull("maker"),
                 o.optBoolean("showcase"), ThemeSwatch.of(o.optJSONObject("look")),
                 o.optJSONArray("tabs")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(), o.optStringOrNull("scope"),
+                o.optBoolean("newMaker"),
             )
         }
 

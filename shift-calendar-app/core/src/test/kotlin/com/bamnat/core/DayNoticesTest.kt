@@ -158,4 +158,18 @@ class DayNoticesTest {
         // A day off with no plan and no log: nothing waits.
         assertNull(QuietHours.holdUntil(bill, bill, null, emptyList(), 420))
     }
+
+    @Test
+    fun `VIL-05 village news waits until 30 minutes after work, at most 16 hours`() {
+        val d = LocalDate.of(2026, 11, 3)
+        val night = LocalDateTime.of(d, LocalTime.of(19, 0)) to LocalDateTime.of(d.plusDays(1), LocalTime.of(7, 0))
+        val at = LocalDateTime.of(d, LocalTime.of(23, 0))
+        assertEquals(LocalDateTime.of(d.plusDays(1), LocalTime.of(7, 30)), QuietHours.workHoldUntil(at, at, listOf(night)))
+        // Not at work, or the time already past: nothing waits.
+        assertNull(QuietHours.workHoldUntil(LocalDateTime.of(d, LocalTime.of(12, 0)), at, listOf(night)))
+        assertNull(QuietHours.workHoldUntil(at, LocalDateTime.of(d.plusDays(1), LocalTime.of(8, 0)), listOf(night)))
+        // A very long stretch is capped.
+        val long = at.minusHours(1) to at.plusHours(30)
+        assertEquals(at.plusHours(QuietHours.MAX_HOLD_HOURS), QuietHours.workHoldUntil(at, at, listOf(long)))
+    }
 }

@@ -105,6 +105,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 // ---- [PRF-01]..[PRF-12] 1.36 창작자 프로필 (사용자 2026-10-31 "인스타처럼 내가 만든 테마를 멋지게, 팔로워·최근 알림, 팔로우한 분 프로필에서 공개된 것") ----
@@ -908,6 +910,34 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun shown() { _state.value = _state.value.copy(message = null) }
+
+    /** [VIL-02] 광장에서 가린 분 (this phone's own list, [com.bamnat.core.plaza.HideList]). */
+    val hidden: StateFlow<com.bamnat.core.plaza.HideList> = c.settingsRepository.settings
+        .map { com.bamnat.core.plaza.HideList.decode(it.plazaHidden) }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, com.bamnat.core.plaza.HideList.decode(c.settingsRepository.current.plazaHidden))
+
+    fun unhide(w: com.bamnat.core.plaza.HiddenWriter) =
+        c.settingsRepository.update { s -> s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).show(w.mark).encode()) }
+
+    fun rehide(w: com.bamnat.core.plaza.HiddenWriter) =
+        c.settingsRepository.update { s -> s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(w.mark, w.label, w.atMillis).encode()) }
+}
+
+/** [VIL-02] 1.36 마을 V2: the 광장 writers this phone hid, under 차단, each with 다시 보기. */
+@Composable
+private fun HiddenWriters(vm: PeopleViewModel, onShown: (com.bamnat.core.plaza.HiddenWriter) -> Unit) {
+    val list by vm.hidden.collectAsStateWithLifecycle()
+    Spacer(Modifier.height(8.dp))
+    Text("광장에서 가린 분 ${list.writers.size}", style = MaterialTheme.typography.titleSmall)
+    Text("토론 글의 ⋮ › 이 사람 글 안 보기로 가린 분이에요. 이 휴대폰에만 남고 상대에게 알리지 않아요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (list.writers.isEmpty()) Text("가린 분이 없어요", style = MaterialTheme.typography.bodyMedium)
+    list.writers.forEach { w ->
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(w.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextButton(onClick = { vm.unhide(w); onShown(w) }) { Text("다시 보기") }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -917,6 +947,8 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     val parts = listOf("new" to "새 작품", "following" to "팔로잉", "followers" to "팔로워", "blocked" to "차단")
     var part by rememberSaveable { mutableStateOf(parts.indexOfFirst { it.first == start }.coerceAtLeast(0)) }
     val snack = remember { SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val hiddenCount = vm.hidden.collectAsStateWithLifecycle().value.writers.size
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
     LaunchedEffect(s.unblocked) {
         val id = s.unblocked ?: return@LaunchedEffect
@@ -930,7 +962,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
         Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = part) {
                 parts.forEachIndexed { i, (_, label) ->
-                    val n = when (i) { 1 -> s.following?.items?.size; 2 -> s.followers?.total; 3 -> s.following?.blocked?.size; else -> null }
+                    val n = when (i) { 1 -> s.following?.items?.size; 2 -> s.followers?.total; 3 -> s.following?.blocked?.size?.plus(hiddenCount); else -> null }
                     Tab(part == i, { part = i }, text = { Text(label + (n?.let { " $it" } ?: ""), maxLines = 1) })
                 }
             }
@@ -966,6 +998,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
                     }
                     else -> {
                         val list = s.following?.blocked.orEmpty()
+                        Text("장터·프로필에서 차단한 분 ${list.size}", style = MaterialTheme.typography.titleSmall)
                         Text("차단한 분은 서로 팔로우할 수 없고, 그분의 작품과 이야기가 내 장터에서 보이지 않아요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (s.following != null && list.isEmpty()) Text("차단한 분이 없어요", style = MaterialTheme.typography.bodyMedium)
@@ -975,6 +1008,11 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
                                 TextButton(onClick = { vm.unblock(m.maker, undo = !m.gone) }) { Text(if (m.gone) "목록에서 빼기" else "차단 풀기") }
                             }
                         }
+                        // [VIL-02] 1.36 마을 V2 차단 하나로: 광장에서 가린 분 on the same list, with 다시 보기 · 되돌리기.
+                        HiddenWriters(vm, onShown = { w -> scope.launch {
+                            if (snack.showSnackbar("${w.label}님 글을 다시 보여요", actionLabel = "되돌리기", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed)
+                                vm.rehide(w)
+                        } })
                     }
                 }
             }

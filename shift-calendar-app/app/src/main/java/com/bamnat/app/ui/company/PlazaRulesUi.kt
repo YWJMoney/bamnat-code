@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -112,12 +113,24 @@ fun HideWriterDialog(post: TalkPost?, onDismiss: () -> Unit, onHide: (TalkPost) 
         title = { Text("이 사람 글을 안 볼까요?") },
         text = {
             Text("${p.nick ?: "참여자 ${p.who}"}님의 글과 답글이 모든 토론에서 이 휴대폰에만 보이지 않아요. 상대에게는 알리지 않고, " +
-                "서버에도 목록을 남기지 않아요. 내 활동 > 가린 사람에서 언제든 다시 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
+                "서버에도 목록을 남기지 않아요. 마을 › 팔로잉 › 차단에서 언제든 다시 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
         },
         confirmButton = { TextButton(onClick = { onDismiss(); onHide(p) }) { Text("안 보기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
+
+/**
+ * [VIL-02] 1.36 마을 V2 차단 하나로: opens 마을 › 팔로잉 › 차단, where 광장에서 가린 분 and 장터·프로필에서 차단한 분 are one list.
+ * Null where no screen can be opened (previews).
+ */
+val LocalOpenBlocked = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** 1.36 [VIL-16] Opens one recipe's page (a 자랑's card); null where there is no way there. */
+val LocalOpenRecipe = androidx.compose.runtime.staticCompositionLocalOf<((String) -> Unit)?> { null }
+
+/** 1.36 [VIL-15] Opens 요청 판 with a request started from these words (a plaza question); null where there is no way there. */
+val LocalOpenRequest = androidx.compose.runtime.staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 /**
  * [COMM-09][COMM-10] 내 활동's part about this phone: 광장 소식 알림 (on unless turned off) and the writers
@@ -143,12 +156,14 @@ fun PlazaPhoneSettings() {
             Spacer(Modifier.width(12.dp))
             Switch(checked = settings.plazaNews, onCheckedChange = null)
         }
+        val openBlocked = LocalOpenBlocked.current
         Text("가린 사람 ${hidden.writers.size}", style = MaterialTheme.typography.titleSmall)
-        if (hidden.writers.isEmpty()) {
-            Text("토론 글의 ⋮ > 이 사람 글 안 보기로 가린 분이 여기 모여요. 이 휴대폰에만 남아요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        hidden.writers.forEach { w ->
+        Text(if (hidden.writers.isEmpty()) "토론 글의 ⋮ > 이 사람 글 안 보기로 가린 분은 장터·프로필에서 차단한 분과 한 목록에 모여요. 가린 분은 이 휴대폰에만 남아요."
+            else hidden.writers.take(3).joinToString(" · ") { it.label } + if (hidden.writers.size > 3) " 외 ${hidden.writers.size - 3}명" else "",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (openBlocked != null) {
+            OutlinedButton(onClick = openBlocked, modifier = Modifier.heightIn(min = 48.dp)) { Text("가린 분·차단한 분 보기") }
+        } else hidden.writers.forEach { w ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(w.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { c.settingsRepository.update { s -> s.copy(plazaHidden = HideList.decode(s.plazaHidden).show(w.mark).encode()) } }) {
