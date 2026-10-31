@@ -39,6 +39,10 @@ data class RecipeItem(
     val showcase: Boolean = false,
     /** [FREE-08] 1.35 What the card's small calendar is drawn from; null when the recipe carries no look. */
     val look: ThemeSwatch? = null,
+    /** [MKX-01] 1.36 The tabs it changes (calendar, pay, money, memo, alarm, widget, app); empty from a server before 1.36. */
+    val tabs: List<String> = emptyList(),
+    /** [MKX-01] "theme" (앱 전체를 한 벌로) or "tab" (탭 하나만); null when the server did not say. */
+    val scope: String? = null,
 )
 
 /**
@@ -201,7 +205,16 @@ class RecipeClient(
             add("sort=$sort")
             if (q.isNotBlank()) add("q=" + URLEncoder.encode(q.trim().take(30), "UTF-8"))
             if (cursor > 0) add("cursor=$cursor")
-            kind?.takeIf { it in KINDS }?.let { add("kind=$it") }
+            // [MKX-01] 1.36 두 구간: "theme" or "tab:<tab>" goes as scope (and tab), with the nearest 1.35 kind for a server before 1.36.
+            when {
+                kind == SCOPE_THEME -> { add("scope=theme"); add("kind=skin") }
+                kind != null && kind.startsWith(SCOPE_TAB) -> {
+                    add("scope=tab")
+                    val t = kind.removePrefix(SCOPE_TAB)
+                    if (t in MARKET_TABS) { add("tab=$t"); legacyKind(t)?.let { add("kind=$it") } }
+                }
+                else -> kind?.takeIf { it in KINDS }?.let { add("kind=$it") }
+            }
         }.joinToString("&")
         val o = call("GET", "/api/recipes?$query")
         RecipePage(o.optJSONArray("items").objects().map(::item), if (o.isNull("next")) null else o.optInt("next"))
@@ -363,11 +376,28 @@ class RecipeClient(
                 o.optInt("kept").takeIf { o.has("kept") && !o.isNull("kept") }, o.optBoolean("official"), o.optBoolean("publicData"),
                 o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"), o.optStringOrNull("maker"),
                 o.optBoolean("showcase"), ThemeSwatch.of(o.optJSONObject("look")),
+                o.optJSONArray("tabs")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(), o.optStringOrNull("scope"),
             )
         }
 
         /** [FREE-08] 종류로 보기 (server RECIPE_KINDS), in the order the chips show them. */
         val KINDS = listOf("skin", "layout", "memo", "money", "rules")
+
+        /** [MKX-01] 1.36 장터 구간: [SCOPE_THEME], or [SCOPE_TAB] + one of [MARKET_TABS] ("tab:" alone: every tab's). */
+        const val SCOPE_THEME = "theme"
+        const val SCOPE_TAB = "tab:"
+        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
+        private fun legacyKind(tab: String): String? = when (tab) {
+            "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
+        }
+
+        /** [MKX-01] Whether [item] belongs where [kind] points (a server before 1.36 sends no tabs: then all it sent). */
+        fun fits(item: RecipeItem, kind: String?): Boolean = when {
+            item.tabs.isEmpty() || kind == null -> true
+            kind == SCOPE_THEME -> item.scope == "theme"
+            kind.startsWith(SCOPE_TAB) -> item.scope == "tab" && kind.removePrefix(SCOPE_TAB).let { it.isEmpty() || item.tabs.firstOrNull() == it }
+            else -> true
+        }
 
         /** What to tell the user about a refusal from the 나눔 판. */
         fun problem(e: Throwable): String {

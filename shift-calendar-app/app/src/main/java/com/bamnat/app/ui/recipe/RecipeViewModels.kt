@@ -38,8 +38,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
         val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false,
-        /** [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. */
-        val kind: String? = null)
+        /**
+         * [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. [MKX-01] 1.36: the 장터 구간 — [RecipeClient.SCOPE_THEME] (테마) or
+         * [RecipeClient.SCOPE_TAB] + a tab (기능별 탭).
+         */
+        val kind: String? = RecipeClient.SCOPE_THEME)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -48,7 +51,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
     fun query(q: String) { _state.value = _state.value.copy(query = q) }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
-    fun kind(k: String?) { _state.value = _state.value.copy(kind = k); load() }
+    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
+    fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }
 
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
@@ -58,7 +62,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         viewModelScope.launch {
             _state.value = try {
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
-                _state.value.copy(items = if (more) _state.value.items + page.items else page.items, next = page.next, loading = false)
+                val got = page.items.filter { RecipeClient.fits(it, s.kind) }
+                _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }

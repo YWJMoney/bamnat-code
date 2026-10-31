@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn } from "./helpers.mjs";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf } from "../src/recipes.js";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -280,6 +280,31 @@ test("[FREE-07][FREE-08] 꾸미기 pieces read as core does, a list card carries
   assert.deepEqual(skins.data.items.map((i) => i.title), ["벚꽃 교대 테마"]);
   const rules = await call("GET", "/api/recipes?style=SHIFT&sort=new&kind=rules");
   assert.deepEqual(rules.data.items.map((i) => i.title), ["알람만 세트"]);
+});
+
+test("[MKX-01] 장터 두 구간: a recipe's tabs, 테마 (two tabs or the whole app) or one tab's, and the list by scope and tab", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "calView", size: "tall" }, { kind: "calTheme", sun: 1 }] }), ["calendar"]);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "screenLook", screens: "money~bg:FF000000" }, { kind: "moneyLook", rows: "roomy" }] }), ["money"]);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "screenLook", screens: "all~bg:FF000000/calendar~bg:FF111111" }] }), ["app", "calendar"]);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "cards", stats: "a" }, { kind: "screenLook", screens: "pay.SHIFT~tt:xl" }] }), ["pay"]);
+  assert.equal(scopeOf(["calendar"]), "tab");
+  assert.equal(scopeOf(["app"]), "theme");
+  assert.equal(scopeOf(["calendar", "memo"]), "theme");
+  assert.equal(scopeOf([]), null);
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const theme = { kind: "screenLook", screens: "all~bg:FFFFF8EE|cd:FFFFFFFF/calendar~bg:FFFFF0F0" };
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "온 앱 테마", pieces: [theme, { kind: "calView", size: "tall" }] }) }, admin);
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "가계부 전문", pieces: [{ kind: "moneyLook", rows: "roomy" }] }) }, admin);
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "알람만", pieces: [{ kind: "alarms", byRole: [{ role: "day", before: [60] }] }] }) }, admin);
+  const themes = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=theme&kind=skin");
+  assert.deepEqual(themes.data.items.map((i) => i.title), ["온 앱 테마"]);
+  assert.equal(themes.data.items[0].scope, "theme");
+  const tabs = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab");
+  assert.deepEqual(tabs.data.items.map((i) => i.title).sort(), ["가계부 전문", "알람만"].sort());
+  const money = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab&tab=money&kind=money");
+  assert.deepEqual(money.data.items.map((i) => [i.title, i.tabs]), [["가계부 전문", ["money"]]]);
 });
 
 test("[FREE-09] every 추천 테마 core wrote reads the same on the server, eight for each kind of work, each with its look for the list", async () => {

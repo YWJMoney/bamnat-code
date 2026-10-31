@@ -795,11 +795,74 @@ export const RECIPE_KINDS = {
 
 const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`));
 
+/**
+ * [MKX-01] 1.36 장터 두 구간 (사용자 2026-10-31 "테마는 모든 것을 종합으로 만든 것이고 기능별은 한 개의 탭을 전문적으로"): the tabs a
+ * recipe changes — calendar, pay (근무·급여·통계), money (가계부·장부), memo, alarm, widget, app (앱 전체 색·아래 탭·모서리·느낌).
+ */
+export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget"];
+const SCREEN_TAB = { calendar: "calendar", memo: "memo", money: "money", stats: "pay", alarm: "alarm", all: "app", settings: "app", guarded: "app", plaza: "app" };
+
+export function tabsOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return [];
+  }
+  const out = new Set();
+  for (const p of rec?.pieces ?? []) {
+    switch (p.kind) {
+      case "shiftLook": case "calTheme": case "calView": out.add("calendar"); break;
+      case "memoLook": case "memoTpl": case "invest": out.add("memo"); break;
+      case "moneyLook": case "shop": case "field": out.add("money"); break;
+      case "hourly": case "company": out.add("pay"); break;
+      case "alarms": out.add("alarm"); break;
+      case "widget": out.add("widget"); break;
+      case "appFeel": out.add("app"); break;
+      case "layout":
+        if (p.calendar) out.add("calendar");
+        if (Array.isArray(p.tabs) && p.tabs.length) out.add("app");
+        break;
+      case "cards":
+        if (p.memo) out.add("memo");
+        if (p.money) out.add("money");
+        if (p.stats) out.add("pay");
+        break;
+      case "photoLook":
+        if (p.bg || p.head || p.icons) out.add("calendar");
+        if (p.corners) out.add("app");
+        if (p.widget) out.add("widget");
+        break;
+      case "screenLook":
+        for (const e of String(p.screens ?? "").split("/")) {
+          const key = e.split("~")[0];
+          if (!key) continue;
+          out.add(key.startsWith("pay.") ? "pay" : SCREEN_TAB[key] ?? "app");
+        }
+        if (p.pay) out.add("pay");
+        break;
+      default: break;
+    }
+  }
+  return [...out].sort();
+}
+
+/** [MKX-01] 테마 (앱 전체를 한 벌로, 탭 둘 이상이나 앱 전체 색) or 기능별 탭 (탭 하나만); null for one that changes no tab (묶음). */
+export function scopeOf(tabs) {
+  if (!tabs.length) return null;
+  return tabs.includes("app") || tabs.length >= 2 ? "theme" : "tab";
+}
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
+  const tabs = r.body ? tabsOf(r.body) : [];
+  const scope = scopeOf(tabs);
   return {
     ...(look ? { look } : {}),
+    // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
+    ...(tabs.length ? { tabs } : {}),
+    ...(scope ? { scope } : {}),
     code: r.code, title: r.title, summary: r.summary, styles: r.styles.split(","), cover: JSON.parse(r.cover), nick: r.nick ?? null,
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
     official: r.official === 1, publicData: r.public_data === 1, parent: r.parent ?? null, at: new Date(r.updated_at).toISOString(),
@@ -856,8 +919,14 @@ async function recipeList(d, env, url) {
   const rows0 = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}
     ORDER BY r.updated_at DESC LIMIT 600`, ...args);
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
-  const kind = RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
-  const rows = kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
+  // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
+  const scope = ["theme", "tab"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  const tab = scope === "tab" && MARKET_TABS.includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
+  const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
+  const rows = scope ? rows0.filter((r) => {
+    const tabs = tabsOf(r.body);
+    return scopeOf(tabs) === scope && (!tab || tabs[0] === tab);
+  }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {
     scored = rows.map((r) => ({ r, s: rankGood(r.wlikes, r.wdislikes, r.applied, r.kept7) })).filter((x) => x.s !== null)
@@ -866,7 +935,7 @@ async function recipeList(d, env, url) {
     scored = rows.map((r) => ({ r, s: rankHot(r.wlikes, r.applied, (now - r.created_at) / HOUR) })).sort((a, b) => b.s - a.s).map((x) => x.r);
   }
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
-  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), items: page.map((r) => listItem(r, now)),
+  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}), items: page.map((r) => listItem(r, now)),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
