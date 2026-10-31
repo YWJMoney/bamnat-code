@@ -314,7 +314,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val parent = (leasedFrom()?.first ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
         val r = recipe("").copy(title = "", styles = setOf(style ?: WorkStyle.SHIFT))
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.
-        com.bamnat.app.recipe.RecipeLinks.ownTheme = myTheme?.key ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN.takeIf { ownMake() }
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = myTheme?.key ?: c.wardrobe.ownWithLook(recipe())?.key
+            ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN.takeIf { ownMake() }
         return RecipeCodec.write(r) to parent
     }
 

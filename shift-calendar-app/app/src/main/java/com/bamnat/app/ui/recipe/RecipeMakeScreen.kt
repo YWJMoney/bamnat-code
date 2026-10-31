@@ -117,6 +117,8 @@ class RecipeMakeViewModel(
         val agreed: Boolean = false,
         val sending: Boolean = false,
         val sent: Sent? = null,
+        /** F-100: why a public theme of mine could not be marked as in 장터 (내 테마 칸이 꽉 참). */
+        val ownNote: String? = null,
         val error: String? = null,
         val draftId: Long = 0,
         /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
@@ -330,14 +332,17 @@ class RecipeMakeViewModel(
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
                 // [THM-01] My own theme in 장터 for everyone: worn without days or ads from now (a new one is kept in 내 테마 first).
+                var note: String? = null
                 if (ownTheme != null && sent.scope == "public" && com.bamnat.core.recipe.BuiltInThemes.isTheme(s.recipe)) {
                     val key = if (ownTheme == com.bamnat.app.recipe.RecipeLinks.NEW_OWN) {
+                        // F-100: the same look already kept as mine is that theme; only a new one is saved (and may not fit).
                         val mine = s.recipe.copy(title = s.recipe.title.take(30))
-                        if (c.wardrobe.saveLook(mine)) "own:${mine.title}" else null
+                        c.wardrobe.ownWithLook(shown)?.key ?: if (c.wardrobe.saveLook(mine)) "own:${mine.title}" else null
                     } else ownTheme
+                    if (key == null) note = "내 테마 칸이 꽉 차서 이 테마를 내 테마로 두지 못했어요. 마을 › 테마에서 한 벌을 빼고 다시 올리면 광고 없이 입어요"
                     key?.let { c.wardrobe.markShared(it, sent.code, sent.version, s.bare) }
                 }
-                _state.value = _state.value.copy(sending = false, sent = sent)
+                _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code))
             } catch (e: Exception) {
@@ -425,7 +430,11 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LinearProgressIndicator(progress = { s.step / 5f }, modifier = Modifier.fillMaxWidth())
-                s.sent?.let { sent -> SentCard(s.recipe.title, sent, onOpen); return@Column }
+                s.sent?.let { sent ->
+                    SentCard(s.recipe.title, sent, onOpen)
+                    s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                    return@Column
+                }
                 when (s.step) {
                     1 -> {
                         RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },

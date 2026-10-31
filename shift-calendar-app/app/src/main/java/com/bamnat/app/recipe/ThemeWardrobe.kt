@@ -52,6 +52,14 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     /** [THM-01] Mine sent to 장터 ([key] in the history) as [code] at [ver]: no days or ads from now; [bare] sent without pictures. */
     fun markShared(key: String, code: String, ver: Int, bare: Boolean) = save(_lease.value.shared(key, code, ver, bare))
 
+    /**
+     * F-100: one of my saved themes that looks just like [r] (part by part), so sending the look from 지금 모양 counts for the theme it
+     * already is, instead of saving it again (무료는 한 벌이라 그 저장이 막혀 공개가 이어지지 않았어요).
+     */
+    fun ownWithLook(r: Recipe): ThemeLease.Wear? = _lease.value.history.firstOrNull { w ->
+        w.own && runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { com.bamnat.core.recipe.LookParts.changed(it, r).isEmpty() } == true
+    }
+
     /** [THM-01] Mine taken out of 장터 (deleted, or hidden): [ThemeLease.DAYS] before its first ad. */
     fun unshared(code: String) = save(_lease.value.unshared(code, Today.date().toEpochDay()))
 
