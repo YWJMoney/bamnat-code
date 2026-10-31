@@ -89,12 +89,15 @@ internal fun ScaledPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (Stri
  */
 @Composable
 internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, scale: Float, split: Float,
-                           onPick: () -> Unit = {}, diff: Boolean = false, onChanged: (Int) -> Unit = {}) {
+                           onPick: () -> Unit = {}, diff: Boolean = false, onChanged: (Int) -> Unit = {},
+                           /** U15 1.36 누르고 있으면 전 모양: [before] whole (in [after]'s places), [after] read but hidden, what changed ringed, nothing dimmed. */
+                           peek: Boolean = false) {
+    val reading = diff || peek
     val framed = remember(before, after) { LookParts.frame(before, after) }
     val scroll = rememberScrollState()
     val w = (340 * scale).dp
     val h = (560 * scale).dp
-    val shownSplit = if (diff) 1f else split
+    val shownSplit = if (reading) 1f else split
     val beforeLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     val afterLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     // [TRY-04] 1.36 빌드 8 (카드 자리를 옮기면 테두리가 없음): the two sides share the new places, so a moved card shows no change
@@ -103,7 +106,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
     val realLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     var marks by remember { mutableStateOf<List<androidx.compose.ui.geometry.Rect>>(emptyList()) }
     // The two sides drawn into layers when 바뀌는 곳만 is on, read back once they settle, and compared block by block.
-    if (diff) androidx.compose.runtime.LaunchedEffect(framed, after, tab, scroll.value, scale) {
+    if (reading) androidx.compose.runtime.LaunchedEffect(framed, after, tab, scroll.value, scale, peek) {
         kotlinx.coroutines.delay(180)
         val a = runCatching { afterLayer.toImageBitmap() }.getOrNull() ?: return@LaunchedEffect
         val b = runCatching { beforeLayer.toImageBitmap() }.getOrNull() ?: return@LaunchedEffect
@@ -114,12 +117,12 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
         }
         onChanged(marks.size)
     } else androidx.compose.runtime.LaunchedEffect(Unit) { marks = emptyList() }
-    fun Modifier.into(layer: androidx.compose.ui.graphics.layer.GraphicsLayer) = if (!diff) this else drawWithContent {
+    fun Modifier.into(layer: androidx.compose.ui.graphics.layer.GraphicsLayer) = if (!reading) this else drawWithContent {
         layer.record { this@drawWithContent.drawContent() }
         drawLayer(layer)
     }
     Box(Modifier.size(w, h)) {
-        if (diff && moved) Box(Modifier.matchParentSize().graphicsLayer { alpha = 0f }) {
+        if (reading && moved) Box(Modifier.matchParentSize().graphicsLayer { alpha = 0f }) {
             ScaledPhone(before, style, tab, onTab, scale, onPick, Modifier.into(realLayer), scroll)
         }
         // 지금, the right side (and under 바뀌는 곳만, drawn but hidden: only read).
@@ -127,12 +130,12 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
             ScaledPhone(framed, style, tab, onTab, scale, onPick, Modifier.into(beforeLayer), scroll)
         }
         // 입으면, the left side, cut at the line by its own box.
-        if (shownSplit > 0.001f) Box(Modifier.width(w * shownSplit).height(h).clipToBounds()) {
+        if (shownSplit > 0.001f) Box(Modifier.width(w * shownSplit).height(h).clipToBounds().graphicsLayer { alpha = if (peek) 0f else 1f }) {
             Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)) {
                 ScaledPhone(after, style, tab, onTab, scale, onPick, Modifier.into(afterLayer), scroll)
             }
         }
-        if (diff && marks.isNotEmpty()) androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+        if (reading && marks.isNotEmpty()) androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
             val sx = size.width
             val sy = size.height
             val dim = androidx.compose.ui.graphics.Path().apply {
@@ -140,7 +143,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                 addRect(androidx.compose.ui.geometry.Rect(0f, 0f, sx, sy))
                 marks.forEach { r -> addRect(androidx.compose.ui.geometry.Rect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy)) }
             }
-            drawPath(dim, androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
+            if (!peek) drawPath(dim, androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
             // The ring inside the place, so it never covers the dates next to it.
             val sw = 2.dp.toPx()
             marks.forEach { r ->
@@ -149,7 +152,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                     style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
             }
         }
-        if (!diff && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
+        if (!reading && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
             .background(MaterialTheme.colorScheme.primary))
     }
 }

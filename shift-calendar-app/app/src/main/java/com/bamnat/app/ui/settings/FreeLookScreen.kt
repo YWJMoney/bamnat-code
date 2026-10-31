@@ -597,7 +597,13 @@ private val SWATCHES: List<Long> = listOf(
  * 1.35 [STU-12] Colours used lately in this 스튜디오 (사용자 실사용 "색 동그라미가 줄줄이"): offered first in every colour line, so a
  * look stays in a few colours without hunting. The studio provides it; elsewhere nothing is kept.
  */
-class ColorMemory(val recent: List<Long> = emptyList(), val used: (Long) -> Unit = {})
+class ColorMemory(
+    val recent: List<Long> = emptyList(),
+    val used: (Long) -> Unit = {},
+    /** [STU-40] 1.36 내 색 모음: colours pinned for good (settings), first in every line; [pin] adds or takes one away. */
+    val pinned: List<Long> = emptyList(),
+    val pin: ((Long) -> Unit)? = null,
+)
 val LocalColorMemory = androidx.compose.runtime.staticCompositionLocalOf { ColorMemory() }
 
 /**
@@ -613,6 +619,10 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [STU-40] ★ keeps this colour in 내 색 (or lets it go).
+            if (value != null && memory.pin != null) TextButton(onClick = { memory.pin.invoke(value) }) {
+                Text(if (value in memory.pinned) "★ 내 색" else "☆ 내 색에")
+            }
             if (allowNone && value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -622,14 +632,14 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-            val recent = memory.recent.filter { it !in SWATCHES }.take(6)
+            val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
             (recent + SWATCHES).forEachIndexed { i, c ->
                 if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
                 val on = value == c
                 Box(
                     Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
                         .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .clickable { pick(c) }.semantics { contentDescription = "$label ${colorName(c)}" + if (i < recent.size) " (최근)" else ""; selected = on },
+                        .clickable { pick(c) }.semantics { contentDescription = "$label ${colorName(c)}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
                 )
             }
         }

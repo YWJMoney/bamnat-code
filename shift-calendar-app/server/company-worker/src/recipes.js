@@ -152,7 +152,9 @@ export const RECIPE_PIECES = {
   layout: { styles: STYLES, fields: [TS("tabs", 6, 10), T("calendar", 400, { optional: true, guard: false, check: layoutLine })] },
   cards: { styles: STYLES, fields: [T("stats", 400, { optional: true, guard: false, check: layoutLine }),
     T("money", 400, { optional: true, guard: false, check: layoutLine }), T("memo", 400, { optional: true, guard: false, check: layoutLine })] },
-  widget: { styles: STYLES, fields: [N("alpha", 30, 100, { optional: true }), P("theme", ["system", "light", "dark"], { optional: true }), F("memo")] },
+  // [STU-38] 1.36 위젯 꾸미기 넓히기: background and text colour, corners, text size.
+  widget: { styles: STYLES, fields: [N("alpha", 30, 100, { optional: true }), P("theme", ["system", "light", "dark"], { optional: true }), F("memo"),
+    C("bg", { optional: true }), C("ink", { optional: true }), N("corner", 0, 28, { optional: true }), P("text", ["s", "m", "l"], { optional: true })] },
   // 1.35 [RCX-30] 그림 꾸미기: pictures by their recipe_images id (each looked at before others see it).
   photoLook: { styles: STYLES, fields: [T("bg", 16, { optional: true, guard: false, check: imageId }), N("dim", 0, 80, { optional: true }),
     T("head", 16, { optional: true, guard: false, check: imageId }), T("widget", 16, { optional: true, guard: false, check: imageId }),

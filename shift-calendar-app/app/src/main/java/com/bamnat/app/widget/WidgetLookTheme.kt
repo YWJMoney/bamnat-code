@@ -12,12 +12,22 @@ import androidx.glance.background
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.glance.unit.ColorProvider
 import com.bamnat.app.BamnatApp
 import com.bamnat.core.recipe.WidgetLook
 
 /** [RCX-14] How opaque the widget's background is, from 위젯 모양. */
 private val LocalWidgetAlpha = compositionLocalOf { 1f }
+
+/** [STU-38] 1.36 위젯 꾸미기: the background's own colour, the corners and the text size. */
+private val LocalWidgetBgColor = compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
+private val LocalWidgetCorner = compositionLocalOf { 20 }
+private val LocalWidgetText = compositionLocalOf { 1f }
+
+/** [STU-38] A text size in the widget, times the chosen 글자 크기. */
+@Composable
+fun wsp(size: Number): androidx.compose.ui.unit.TextUnit = (size.toFloat() * LocalWidgetText.current).sp
 
 /** [RCX-30] 1.35 그림 꾸미기의 위젯 배경, read from files/looks/ (small: 800 px). */
 private val LocalWidgetPicture = compositionLocalOf<android.graphics.Bitmap?> { null }
@@ -35,23 +45,31 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     val picture = pictureId?.let { id ->
         runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
     }
-    val colors = when (look.theme) {
-        "light" -> androidx.glance.material3.ColorProviders(lightColorScheme())
-        "dark" -> androidx.glance.material3.ColorProviders(darkColorScheme())
+    // [STU-38] A background colour of its own decides light or dark, and the text is the chosen colour only where it reads (4.5:1).
+    val ownBg = look.bg?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val darkGround = look.bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
+    val ink = look.ink?.let { i -> look.bg?.let { b -> com.bamnat.core.recipe.Palette.inkOn(i, b) } ?: i }?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    fun inked(c: androidx.compose.material3.ColorScheme) = if (ink == null) c else c.copy(onSurface = ink, onBackground = ink, onSurfaceVariant = ink.copy(alpha = 0.8f))
+    val colors = when {
+        darkGround == true || (darkGround == null && look.theme == "dark") -> androidx.glance.material3.ColorProviders(inked(darkColorScheme()))
+        darkGround == false || look.theme == "light" -> androidx.glance.material3.ColorProviders(inked(lightColorScheme()))
+        ink != null -> androidx.glance.material3.ColorProviders(light = inked(lightColorScheme()), dark = inked(darkColorScheme()))
         else -> GlanceTheme.colors
     }
     GlanceTheme(colors = colors) {
         // A picture behind the widget is veiled at least 45 % so its words read.
         CompositionLocalProvider(LocalWidgetAlpha provides if (picture != null) minOf(look.alpha / 100f, 0.55f).coerceAtLeast(0.45f) else look.alpha / 100f,
-            LocalWidgetPicture provides picture) { content() }
+            LocalWidgetPicture provides picture, LocalWidgetBgColor provides ownBg, LocalWidgetCorner provides (look.corner ?: 20),
+            LocalWidgetText provides look.textScale) { content() }
     }
 }
 
 /** The widget's background in the chosen opacity. */
 @Composable
 fun widgetBg(): ColorProvider {
-    val base = GlanceTheme.colors.widgetBackground
     val a = LocalWidgetAlpha.current
+    LocalWidgetBgColor.current?.let { return ColorProvider(it.copy(alpha = a)) }
+    val base = GlanceTheme.colors.widgetBackground
     if (a >= 1f) return base
     return ColorProvider(base.getColor(LocalContext.current).copy(alpha = a))
 }
@@ -63,9 +81,14 @@ fun widgetBg(): ColorProvider {
 @Composable
 fun WidgetSurface(modifier: androidx.glance.GlanceModifier, content: @Composable () -> Unit) {
     val picture = LocalWidgetPicture.current
-    androidx.glance.layout.Box(modifier.fillMaxSize().cornerRadius(20.dp)) {
+    val r = widgetCorner()
+    androidx.glance.layout.Box(modifier.fillMaxSize().cornerRadius(r)) {
         if (picture != null) androidx.glance.Image(androidx.glance.ImageProvider(picture), contentDescription = null,
-            contentScale = androidx.glance.layout.ContentScale.Crop, modifier = androidx.glance.GlanceModifier.fillMaxSize().cornerRadius(20.dp))
-        androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(20.dp).padding(12.dp)) { content() }
+            contentScale = androidx.glance.layout.ContentScale.Crop, modifier = androidx.glance.GlanceModifier.fillMaxSize().cornerRadius(r))
+        androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(12.dp)) { content() }
     }
 }
+
+/** [STU-38] The widget's corners as chosen (20 dp is the app's own). */
+@Composable
+fun widgetCorner(): androidx.compose.ui.unit.Dp = LocalWidgetCorner.current.dp

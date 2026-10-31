@@ -197,10 +197,10 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         (0L..4L).map { mon.plusDays(it) }.filter { java.time.YearMonth.from(it) == month }.toSet()
     }
     val cellChanged = theme != null && (theme["cell"] as? String ?: "tint") != mineLook.cell
-    val changed = if (exampleDays.isNotEmpty()) (if (cellChanged || swap.isNotEmpty()) exampleDays.size else 0) else days.values.count { d ->
+    fun changes(d: com.bamnat.core.schedule.ResolvedDay): Boolean =
         if (moves && !d.date.isBefore(today)) theirs(d.date)?.name != d.shiftType?.takeIf { d.isWorkDay }?.name
         else d.isWorkDay && (cellChanged || d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true)
-    }
+    val changed = if (exampleDays.isNotEmpty()) (if (cellChanged || swap.isNotEmpty()) exampleDays.size else 0) else days.values.count(::changes)
     Column(Modifier.fillMaxWidth().clearAndSetSemantics {
         contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", 모양이 바뀌는 날 ${changed}일"
     }) {
@@ -227,8 +227,11 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                         date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> look.saturday(cal)
                         else -> MaterialTheme.colorScheme.onSurface
                     }
+                    // U10 1.36 (빌드 확인: 지금 ↔ 넣은 뒤를 오가도 어디가 바뀌는지 찾기 어려움): the days that change are ringed, on both sides.
+                    val ringed = inMonth && (if (example) cellChanged || swap.isNotEmpty() else day?.let(::changes) == true)
                     Box(Modifier.weight(1f).aspectRatio(1f).padding(1.dp).background(fill, RoundedCornerShape(4.dp))
-                        .then(if (date == today && inMonth) Modifier.border(2.dp, look.today ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier),
+                        .then(if (date == today && inMonth) Modifier.border(2.dp, look.today ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            else if (ringed) Modifier.border(1.5.dp, androidx.compose.ui.graphics.Color(0xFFFFB300), RoundedCornerShape(4.dp)) else Modifier),
                         contentAlignment = Alignment.Center) {
                         if (inMonth) Text(type?.label?.takeIf { it.isNotEmpty() && works } ?: date.dayOfMonth.toString(),
                             style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
@@ -247,7 +250,7 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
         looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
         else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
-    },
+    } + if (changed > 0) " (노란 테두리가 바뀌는 날)" else "",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

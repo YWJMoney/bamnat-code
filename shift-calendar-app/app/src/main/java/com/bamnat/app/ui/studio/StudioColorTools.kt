@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -110,6 +111,56 @@ internal object StudioColors {
     fun clearOwn(d: AppSettings, key: String): AppSettings {
         val looks = ScreenLooks.decode(d.screenLooks)
         return d.copy(screenLooks = looks.with(key, (looks.looks[key] ?: ScreenLook()).copy(bg = null, card = null, ink = null, accent = null)).encode())
+    }
+
+    /** [STU-39] The screen keys ([ScreenLooks.KEYS]) a tab's look lives in. */
+    fun screensOf(tab: String): List<String> = when (tab) {
+        com.bamnat.core.layout.TabOrder.CALENDAR -> listOf("calendar")
+        com.bamnat.core.layout.TabOrder.MONEY -> listOf("money")
+        com.bamnat.core.layout.TabOrder.MEMOS -> listOf("memo")
+        com.bamnat.core.layout.TabOrder.STATS -> listOf("stats", "pay") + ScreenLooks.PAY_STYLES
+        com.bamnat.core.layout.TabOrder.PLAZA -> listOf(ScreenLooks.PLAZA)
+        com.bamnat.core.layout.TabOrder.SETTINGS -> listOf("settings", ScreenLooks.ALARM, ScreenLooks.GUARDED)
+        else -> emptyList()
+    }
+
+    /** [STU-39] The tabs that can be locked, in the order shown. */
+    val LOCKABLE = listOf(com.bamnat.core.layout.TabOrder.CALENDAR, com.bamnat.core.layout.TabOrder.MONEY, com.bamnat.core.layout.TabOrder.MEMOS,
+        com.bamnat.core.layout.TabOrder.STATS, com.bamnat.core.layout.TabOrder.PLAZA, com.bamnat.core.layout.TabOrder.SETTINGS)
+
+    /**
+     * [STU-39] 잠근 탭: [next] with [tab] looking as it did in [prev]. Its screens keep the colours they were drawn with (also those that
+     * came from '앱 전체', so a new '앱 전체' colour does not reach them) and their own pictures; 달력 keeps its 달력 색·칸·그림, 메모·가계부·급여
+     * their own looks.
+     */
+    fun hold(tab: String, next: AppSettings, prev: AppSettings, dark: Boolean = false): AppSettings {
+        val was = ScreenLooks.decode(prev.screenLooks)
+        var now = ScreenLooks.decode(next.screenLooks)
+        // A colour the screen took from the app's own theme (none set) is written out as that theme's, or the new '앱 전체' colour
+        // would come through (none means 'follow 앱 전체').
+        val app = if (dark) com.bamnat.app.ui.theme.DarkColors else com.bamnat.app.ui.theme.LightColors
+        fun argb(c: androidx.compose.ui.graphics.Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        screensOf(tab).forEach { k ->
+            val seen = was.of(k)
+            val before = seen.copy(bg = seen.bg ?: argb(app.background), card = seen.card ?: argb(app.surfaceContainerLow),
+                ink = seen.ink ?: argb(app.onSurface), accent = seen.accent ?: argb(app.primary))
+            val after = now.of(k)
+            if (seen.bg != after.bg || seen.card != after.card || seen.ink != after.ink || seen.accent != after.accent ||
+                seen.photo != after.photo || seen.dim != after.dim) {
+                val own = was.looks[k] ?: ScreenLook()
+                now = now.with(k, own.copy(bg = before.bg, card = before.card, ink = before.ink, accent = before.accent,
+                    photo = own.photo, dim = own.dim))
+            }
+        }
+        val d = next.copy(screenLooks = now.encode())
+        return when (tab) {
+            com.bamnat.core.layout.TabOrder.CALENDAR -> d.copy(calTheme = prev.calTheme, calView = prev.calView, photoLook = prev.photoLook,
+                calendarLayout = prev.calendarLayout)
+            com.bamnat.core.layout.TabOrder.MONEY -> d.copy(moneyLook = prev.moneyLook, moneyLayout = prev.moneyLayout)
+            com.bamnat.core.layout.TabOrder.MEMOS -> d.copy(memoLook = prev.memoLook, memoLayout = prev.memoLayout)
+            com.bamnat.core.layout.TabOrder.STATS -> d.copy(payLooks = prev.payLooks, statsLayout = prev.statsLayout)
+            else -> d
+        }
     }
 
     /** Where the seed starts: '앱 전체' 강조, else 오늘 색, else the app's blue. */
@@ -188,6 +239,24 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
                 .semantics { contentDescription = (if (i < photoColours.size) "사진 색 ${i + 1}" else "색 ${i - photoColours.size + 1}"); selected = on })
         }
     }
+    // PC 확인 S5 (느낌까지 두 번 밀어야 보임): 느낌 and 섞기 right under the colours, the photo and own pick after.
+    Text("느낌", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ThemeSeed.Variant.entries.forEach { v -> FilterChip(selected = v == variant, onClick = { put(v = v) }, label = { Text(v.label) }) }
+        FilterChip(selected = !dark, onClick = { put(dk = false) }, label = { Text("밝은 화면") })
+        FilterChip(selected = dark, onClick = { put(dk = true) }, label = { Text("어두운 화면") })
+    }
+
+    SchemeStrip(scheme)
+    // PC 확인 S3 (노랑·연한 색은 바뀐 게 잘 안 보임): where the colour goes, said once under the strip.
+    Text("들어가는 곳: 바탕 · 카드 · 글자 · 강조(단추·고른 탭·선택 칩) · 오늘 동그라미 · 토·일 글자", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // [STU-32] 섞기: the same colours in the next place; the whole run of picks goes back with one 되돌리기.
+        Button(onClick = { put(m = mix + 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("섞어 보기") }
+        Text(ThemeSeed.SHUFFLES[Math.floorMod(mix, ThemeSeed.SHUFFLES.size)] + " · ${Math.floorMod(mix, ThemeSeed.SHUFFLES.size) + 1}/${ThemeSeed.SHUFFLES.size}",
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedButton(onClick = { runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } },
             modifier = Modifier.heightIn(min = 48.dp)) { Text("사진에서 색 뽑기") }
@@ -203,20 +272,6 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     ColorPick("직접 고르기", seed, allowNone = false) { c -> c?.let { put(s = it, m = 0) } }
 
-    Text("느낌", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ThemeSeed.Variant.entries.forEach { v -> FilterChip(selected = v == variant, onClick = { put(v = v) }, label = { Text(v.label) }) }
-        FilterChip(selected = !dark, onClick = { put(dk = false) }, label = { Text("밝은 화면") })
-        FilterChip(selected = dark, onClick = { put(dk = true) }, label = { Text("어두운 화면") })
-    }
-
-    SchemeStrip(scheme)
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        // [STU-32] 섞기: the same colours in the next place; the whole run of picks goes back with one 되돌리기.
-        Button(onClick = { put(m = mix + 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("섞어 보기") }
-        Text(ThemeSeed.SHUFFLES[Math.floorMod(mix, ThemeSeed.SHUFFLES.size)] + " · ${Math.floorMod(mix, ThemeSeed.SHUFFLES.size) + 1}/${ThemeSeed.SHUFFLES.size}",
-            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
     if (own.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { put(all = !allScreens) }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -228,11 +283,13 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     }
     Text("마음에 안 들면 위의 되돌리기 한 번으로 고르기 전으로 돌아가요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // [STU-39] Screens kept as they are while the rest takes the colour.
+    LockChips(vm)
 }
 
 /** The scheme's colours side by side with their names, the text on its ground as it will read. */
 @Composable
-private fun SchemeStrip(s: ThemeSeed.Scheme) {
+internal fun SchemeStrip(s: ThemeSeed.Scheme) {
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(s.bg.toInt())).padding(10.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(s.card.toInt())).padding(10.dp),

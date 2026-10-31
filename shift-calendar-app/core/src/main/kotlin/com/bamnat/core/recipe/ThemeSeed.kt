@@ -35,7 +35,7 @@ object ThemeSeed {
     /** [seed]'s scheme in place [i] of [SHUFFLES] (any [i]; it wraps around). */
     fun shuffle(seed: Long, variant: Variant, dark: Boolean, i: Int): Scheme {
         val (h0, s0, _) = hsl(seed)
-        val way = Math.floorMod(i, SHUFFLES.size)
+        val way = ((i % SHUFFLES.size) + SHUFFLES.size) % SHUFFLES.size
         val accentHue = when (way) { 2 -> h0 + 30; 3 -> h0 + 180; 4 -> h0 + 120; 6 -> h0 - 30; else -> h0 }.let { ((it % 360) + 360) % 360 }
         // How much colour the ground and the accent take, by variant.
         val (groundS, accentS) = when (variant) {

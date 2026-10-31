@@ -239,6 +239,11 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Num("alpha", 30.0, 100.0, optional = true),
             Field.Pick("theme", listOf("system", "light", "dark"), optional = true),
             Field.Flag("memo"),
+            // [STU-38] 1.36 위젯 꾸미기 넓히기.
+            Field.Color("bg", optional = true),
+            Field.Color("ink", optional = true),
+            Field.Num("corner", 0.0, 28.0, optional = true),
+            Field.Pick("text", WidgetLook.TEXTS, optional = true),
         ),
     ),
 
@@ -546,18 +551,35 @@ object CompanyPiece {
  * [RCX-14] 1.35 위젯 모양, as the settings keep it ("alpha=80;theme=dark"): how opaque the widgets' background is (30..100 %) and
  * whether it follows the phone's light or dark screen. Empty is the app's own (100 %, following the phone).
  */
-data class WidgetLook(val alpha: Int = 100, val theme: String = "system") {
+data class WidgetLook(
+    val alpha: Int = 100,
+    val theme: String = "system",
+    /** [STU-38] 1.36 위젯 꾸미기 넓히기: the background's own colour (null: the theme's), the text's, the corners (0..28 dp) and the text size. */
+    val bg: Long? = null,
+    val ink: Long? = null,
+    val corner: Int? = null,
+    val text: String? = null,
+) {
     val isDefault: Boolean get() = this == WidgetLook()
 
-    fun encode(): String = if (isDefault) "" else "alpha=$alpha;theme=$theme"
+    fun encode(): String = if (isDefault) "" else (listOf("alpha=$alpha", "theme=$theme") + listOfNotNull(
+        bg?.let { "bg=" + hex(it) }, ink?.let { "ink=" + hex(it) }, corner?.let { "corner=$it" }, text?.let { "text=$it" },
+    )).joinToString(";")
+
+    /** [STU-38] How much bigger or smaller the widget's text is drawn. */
+    val textScale: Float get() = when (text) { "s" -> 0.88f; "l" -> 1.15f; else -> 1f }
 
     companion object {
         val THEMES = listOf("system", "light", "dark")
+        val TEXTS = listOf("s", "m", "l")
+        private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0')
+        private fun color(v: String?): Long? = v?.takeIf { Regex("^[0-9A-Fa-f]{8}$").matches(it) }?.toLongOrNull(16)?.let { it or 0xFF000000L }
 
         fun decode(s: String): WidgetLook {
             if (s.isBlank()) return WidgetLook()
             val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
-            return WidgetLook(m["alpha"]?.toIntOrNull()?.coerceIn(30, 100) ?: 100, m["theme"]?.takeIf { it in THEMES } ?: "system")
+            return WidgetLook(m["alpha"]?.toIntOrNull()?.coerceIn(30, 100) ?: 100, m["theme"]?.takeIf { it in THEMES } ?: "system",
+                color(m["bg"]), color(m["ink"]), m["corner"]?.toIntOrNull()?.takeIf { it in 0..28 }, m["text"]?.takeIf { it in TEXTS })
         }
     }
 }

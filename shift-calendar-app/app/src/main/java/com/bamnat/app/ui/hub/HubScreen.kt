@@ -153,6 +153,23 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
             }
         }
     }
+    // PC 확인 S4 (이어서 하기는 스튜디오를 열어야만 보임): what was left in the studio, on 공방's front too.
+    val drafts by c.recipes.drafts.collectAsStateWithLifecycle(emptyList())
+    val left = drafts.filter { it.step <= 1 && com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }.maxByOrNull { it.updatedAt }
+    left?.let { d ->
+        SoftCard {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("만들던 ‘${com.bamnat.app.ui.studio.draftName(d.body)}’", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                    Text("스튜디오에서 꾸미던 중 · ${com.bamnat.app.ui.studio.ago(d.updatedAt)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id) },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
+            }
+        }
+    }
     val themes = lease.history.sortedByDescending { it.own }.take(10)
     if (themes.isNotEmpty() || kept.isNotEmpty()) {
         Text("이어서 꾸미기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
