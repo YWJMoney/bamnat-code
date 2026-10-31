@@ -329,7 +329,7 @@ fun PayQuickSetup(
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val finding = step == COMPANY && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
                 // 빌드 e382585e ('이대로 계산' 화면에서 뒤로 가면 묻지 않고 설정이 버려져요): the system back goes one step back, as 이전.
-                androidx.activity.compose.BackHandler(enabled = finding || index > 0) {
+                com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = finding || index > 0) {
                     if (finding) payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME else go(steps[index - 1])
                 }
                 when {

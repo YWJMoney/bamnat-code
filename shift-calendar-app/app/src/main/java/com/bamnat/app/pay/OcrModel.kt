@@ -24,9 +24,14 @@ object OcrModel {
     class NotReady : Exception("글자 인식 준비물을 휴대폰에 받는 중이에요. 잠시 뒤(와이파이에서 1~2분) 다시 해 주세요.")
 
     /** The words of [image], read on the phone. */
-    suspend fun read(context: Context, image: InputImage): Text {
+    /**
+     * 1.36 PC 사진 인식 원인(logcat: "MlKitContext has not been initialized" at InputImage.fromBitmap): the picture is made into
+     * ML Kit's image here, after ML Kit has started, never by the caller before it (1.29 NXT-01 took the start provider out).
+     */
+    suspend fun read(context: Context, bitmap: android.graphics.Bitmap): Text {
         // [NXT-01] 1.29 AU: ML Kit starts here, on the first photo, not at every app start.
         com.bamnat.app.MlKitStart.ensure(context)
+        val image = InputImage.fromBitmap(bitmap, 0)
         val recognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         try {
             if (!available(context, recognizer)) throw NotReady()

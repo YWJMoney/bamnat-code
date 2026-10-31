@@ -1083,7 +1083,8 @@ fun CalendarScreen(
         val c31 = LocalContext.current.appContainer
         var startHidden by remember { mutableStateOf(false) }
         val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today) {
-            if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
+            // 1.36 PC C3: from the day after the first setup, so its first day asks one thing only (the pay sheet).
+            if (startHidden || viewingReceived != null || c31.firstSetup.quietToday()) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
         // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
         // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.

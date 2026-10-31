@@ -95,7 +95,9 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
     var sheet by remember { mutableStateOf<Pair<AppliedSetup, Boolean>?>(null) }
     // [J135-01] The thanks after 맞았어요 goes on its own after a moment (X still closes it at once).
     LaunchedEffect(thanked) { if (thanked != null) { kotlinx.coroutines.delay(5_000); thanked = null } }
-    val draft = invite
+    // 1.36 PC C3: the invitation card waits for the day after the first setup.
+    val quiet = androidx.compose.ui.platform.LocalContext.current.appContainer.firstSetup.quietToday()
+    val draft = invite.takeIf { !quiet }
     val asked = askVote
     when {
         draft != null -> InviteCard(draft, rewardShort(terms), onShare = onShare, onLater = { vm.closeInvite() }, onNever = { vm.closeInvite(never = true) },

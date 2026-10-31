@@ -1286,11 +1286,13 @@ private fun AppNavHost(
                     wasEmpty = false
                     if (nudges.invite.value != null) {
                         container.payInviteLater = true
+                        // 1.36 PC C3: on the day of the first setup the invitation waits for a visit on a later day.
+                        if (container.firstSetup.quietToday()) return@LaunchedEffect
                         kotlinx.coroutines.delay(15_000)
                         if (nudges.invite.value != null) inviting = true
                         container.payInviteLater = false
                     }
-                } else if (container.payInviteLater) {
+                } else if (container.payInviteLater && !container.firstSetup.quietToday()) {
                     kotlinx.coroutines.delay(2_000)
                     container.payInviteLater = false
                     if (nudges.invite.value != null) inviting = true
@@ -1899,6 +1901,8 @@ private fun AlarmNoticeAsk() {
     val setupSheet by c.firstSetup.saved.collectAsStateWithLifecycle()
     val leadAsking by c.leadShare.step.collectAsStateWithLifecycle()
     if (setupSheet != null || leadAsking != null) return
+    // 1.36 PC C3: not on the day of the first setup; the calendar's own line about it is there meanwhile.
+    if (c.firstSetup.quietToday()) return
     // 1.36 U21: not while the user is painting days or making a look; once they are done.
     val busy by com.bamnat.app.ui.components.HandsBusy.busy.collectAsStateWithLifecycle()
     if (busy) return

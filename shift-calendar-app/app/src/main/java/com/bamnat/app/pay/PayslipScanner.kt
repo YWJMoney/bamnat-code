@@ -15,7 +15,6 @@ import com.bamnat.core.pay.PhotoTurn
 import com.bamnat.core.pay.RuleText
 import com.bamnat.core.pay.SlipReading
 import com.bamnat.core.pay.SlipVote
-import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -97,7 +96,7 @@ object PayslipScanner {
         var photo = ImagePrep.load(context, uri)
         if (turn != 0) photo = ImagePrep.turned(photo, turn.toFloat()).also { if (it !== photo) photo.recycle() }
         progress(1, 0)
-        var first = OcrModel.read(context, InputImage.fromBitmap(photo, 0))
+        var first = OcrModel.read(context, photo)
         var firstLines = lines(first)
         var kept = turn
         // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads
@@ -107,7 +106,7 @@ object PayslipScanner {
             val tried = mutableMapOf<Int, Pair<Text, List<OcrLine>>>()
             for (deg in PhotoTurn.candidates(firstLines, memory.last)) {
                 val turned = runCatching { ImagePrep.turned(photo, deg.toFloat()) }.getOrNull() ?: continue
-                val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(turned, 0)) }.getOrNull()
+                val t = runCatching { OcrModel.read(context, turned) }.getOrNull()
                 turned.recycle()
                 if (t == null) continue
                 tried[deg] = t to lines(t)
@@ -136,7 +135,7 @@ object PayslipScanner {
             progress(i + 2, more.size + 1)
             if (ImagePrep.low(context)) return@forEachIndexed
             val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: return@forEachIndexed
-            val t = runCatching { OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0)) }.getOrNull()
+            val t = runCatching { OcrModel.read(context, v.bitmap) }.getOrNull()
             if (v.bitmap !== photo) v.bitmap.recycle()
             // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
             if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }

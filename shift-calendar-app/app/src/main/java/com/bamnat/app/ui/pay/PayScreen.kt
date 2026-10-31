@@ -181,7 +181,7 @@ fun PayScreen(
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
     if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
-    androidx.activity.compose.BackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
+    com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
         when {
             detailedFrom != null -> detailedFrom = null
             editingSetup -> editingSetup = false
