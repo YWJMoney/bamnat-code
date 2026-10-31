@@ -152,11 +152,11 @@ fun JobDialog(
                 JobStatusRow(status, paid = balancePaid && (!hasDeposit || depositPaid) && amount.toAmount() > 0) { status = it }
                 AmountField("받을 금액 (전체)", amount, { amount = it })
                 SwitchRow("3.3% 떼고 받아요 (사업소득)", withholding) { withholding = it }
-                if (withholding && amount.toAmount() > 0) {
-                    val w = com.bamnat.core.money.Withholding.of(amount.toAmount())
-                    Text("세금 ${Fmt.won(w)}을 떼고 ${Fmt.won(amount.toAmount() - w)}이 들어와요. 5월 종합소득세 신고 때 정산돼요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                // 1.36 U8 (켜면 설명 줄이 생겨 다음 칸이 밀려요): the line is always there, two lines high.
+                val w = com.bamnat.core.money.Withholding.of(amount.toAmount())
+                Text(if (withholding && amount.toAmount() > 0) "세금 ${Fmt.won(w)}을 떼고 ${Fmt.won(amount.toAmount() - w)}이 들어와요. 5월 종합소득세 신고 때 정산돼요."
+                    else if (withholding) "받을 금액을 넣으면 세금을 뗀 금액을 보여 줘요." else "회사가 3.3%를 떼고 주면 켜 주세요. 5월에 돌려받을 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, minLines = 2)
                 AmountField("선금 (계약금)", deposit, { deposit = it })
                 if (hasDeposit) SwitchRow("선금 받음", depositPaid) { depositPaid = it }
                 SwitchRow(if (hasDeposit) "잔금 받음" else "돈 받음", balancePaid) { balancePaid = it }

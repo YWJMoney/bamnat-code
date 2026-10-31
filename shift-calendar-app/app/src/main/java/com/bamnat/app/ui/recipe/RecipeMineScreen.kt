@@ -139,7 +139,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 RemixCount(item.code)
                                 Row {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
-                                    TextButton(onClick = { asking = "‘${item.title}’을(를) 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
+                                    TextButton(onClick = { asking = "‘${item.title}’${com.bamnat.app.ui.Fmt.obj(item.title)} 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
                                         Text("지우기", color = MaterialTheme.colorScheme.error)
                                     }
                                 }

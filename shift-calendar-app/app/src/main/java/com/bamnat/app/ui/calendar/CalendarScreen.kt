@@ -1124,7 +1124,8 @@ fun CalendarScreen(
                         com.bamnat.core.guide.GuideMoments.of(com.bamnat.app.ui.guide.factsOf(settings.workStyle, Today.dateTime(), snap, moneyBook, payProfile, settings.weekStart))
                     })
             })
-            alarmLine?.let { (label, line) -> add(Notice("alarm", label) { line() }) }
+            // 1.36 U7: the first day painted brings the next alarm into being; its line waits until quick input closes.
+            if (paint == null) alarmLine?.let { (label, line) -> add(Notice("alarm", label) { line() }) }
             // 빌드 e382585e (빠른 입력에서 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀려 다음 누름이 다른 칸에): nothing new comes up above the
             // month while painting; the review waits until quick input closes.
             if (paint != null) Unit

@@ -265,14 +265,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer) "되돌리기" else null, duration = SnackbarDuration.Long)
         if (r == SnackbarResult.ActionPerformed) { if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
     }
-    androidx.activity.compose.BackHandler(enabled = s.changed) { leaving = true }
+    // 1.36 U3: saved or sent since the last change, it leaves without asking.
+    androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
 
     CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor)) {
         Scaffold(
             snackbarHost = { SnackbarHost(snack) },
             topBar = {
                 TopAppBar(
-                    navigationIcon = { IconButton(onClick = { if (s.changed) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                    navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
                         Column(Modifier.clickable(onClickLabel = "시작할 모양 바꾸기") { menu = true }) {
@@ -462,7 +463,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             vm.change { it.copy(photoLook = PhotoLook.decode(it.photoLook).copy(corners = k).encode()) }
                         }
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
-                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet())
+                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                     }
                     Spacer(Modifier.height(24.dp))
@@ -482,7 +483,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     Text("내 앱에 입히고 나가기")
                 }
                 TextButton(onClick = { leaving = false; saving = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 테마로 저장하고 나가기") }
-                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("버리고 나가기") }
+                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
                 TextButton(onClick = { leaving = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("계속 꾸미기") }
             }
         },
@@ -545,7 +546,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
                     com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }
-                com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; onOpen(code) }, finishOnly = true)
+                com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; vm.markKept(); onOpen(code) }, finishOnly = true)
             }
         }
     }
@@ -659,8 +660,11 @@ private fun WidgetSample(w: WidgetLook) {
  * says whose it is; a look with it keeps that theme's days and ad.
  */
 @Composable
-private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
-                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet()) {
+private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
+                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet(),
+                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}) {
+    // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
+    val kept = remember(kept0) { kept0.sortedByDescending { it.id } }
     if (kept.isEmpty()) {
         Text("아직 담아 둔 조각이 없어요. 장터에서 테마를 입어 볼 때 마음에 드는 부분을 ‘담아 두기’하면 여기서 꺼내 내 모양에 얹어요",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -668,7 +672,7 @@ private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: 
     }
     val here = kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
     val rest = kept - here.toSet()
-    Text("누르면 지금 모양에 얹어요. 얹은 뒤에도 되돌리기로 뺄 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("누르면 지금 모양에 얹어요. 얹은 조각은 ‘빼기’로 다시 빼요. 미리 보기를 누르고 있으면 바로 전 모양이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // [STU-27] 1.36 빌드 8 (S32: 메모 조각이 달력 영역에서 안 보이는 줄 앎): every piece shows in every area, this area's first, under a title.
     val list = buildList {
         if (here.isNotEmpty()) { add(null to "이 영역(${area.label}) 조각"); here.forEach { add(it to "") } }
@@ -679,14 +683,15 @@ private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: 
         val k = k0
         val on = k.id in laid
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.clickable(onClickLabel = "얹기") { onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            Row(Modifier.clickable(onClickLabel = if (on) "빼기" else "얹기") { if (on) onTakeOff(k) else onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text((if (on) "✓ 얹음 · " else "") + partsLine(k.parts) + " · " + if (k.own) "내 것" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, minLines = 2)
                 }
-                TextButton(onClick = { onLay(k) }) { Text("얹기") }
+                // 1.36 U1·U2: a part laid on says so and takes off with 빼기, in the same place as 얹기.
+                if (on) TextButton(onClick = { onTakeOff(k) }) { Text("빼기") } else TextButton(onClick = { onLay(k) }) { Text("얹기") }
                 TextButton(onClick = { onForget(k) }) { Text("버리기") }
             }
         }

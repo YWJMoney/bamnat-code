@@ -243,7 +243,7 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
         moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
         company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
-        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’을 넣은 예시로 보여 드려요"
+        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’${com.bamnat.app.ui.Fmt.obj(exampleType?.name.orEmpty())} 넣은 예시로 보여 드려요"
         looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
         looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
         else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"

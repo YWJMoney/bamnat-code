@@ -319,6 +319,11 @@ internal fun TradeSheet(
             DecimalField(if (market.foreign) "단가 (달러)" else "단가", price, { price = it }, Modifier.weight(1.3f), suffix = if (market.foreign) "$" else "원")
         }
         if (side == Side.SELL && held > EPS) {
+            // 1.36 U12 (매도 단가가 빈칸): what it was bought at, as the line to sell from.
+            holding?.takeIf { it.held && it.averagePrice > 0 }?.let { h ->
+                Text("평균 ${InvestFmt.price(h.averagePrice, market)}에 샀어요" + (book.quote(h.key)?.let { " · 현재가 ${InvestFmt.price(it.price, market)}" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("이 계좌에 ${InvestFmt.quantity(held)}${if (market == Market.CRYPTO) "개" else "주"} 있어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
