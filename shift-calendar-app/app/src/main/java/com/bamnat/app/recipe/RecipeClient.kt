@@ -123,7 +123,9 @@ data class RecipePost(
     val reasons: List<Pair<String, String>> = emptyList(),
 )
 
-data class RecipeTalk(val posts: List<RecipePost>, val left: Int?, val mutedUntil: Instant? = null)
+/** 1.36 [LIM-10] [left] and [limit] only while reports restrict this install; otherwise there is no cap. */
+data class RecipeTalk(val posts: List<RecipePost>, val left: Int?, val mutedUntil: Instant? = null,
+    val limit: com.bamnat.app.company.WriteLimit? = null)
 
 data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: Boolean = false)
 
@@ -377,7 +379,8 @@ class RecipeClient(
                 p.optInt("myVote").takeIf { p.has("myVote") }, p.optStringOrNull("author"), p.optBoolean("hidden"),
                 p.optJSONArray("reasons").objects().map { it.optString("reason") to it.optString("text") },
             )
-        }, o.optInt("left").takeIf { o.has("left") }, o.optStringOrNull("mutedUntil")?.let(Instant::parse))
+        }, o.optInt("left").takeIf { o.has("left") }, o.optStringOrNull("mutedUntil")?.let(Instant::parse),
+            com.bamnat.app.company.WriteLimit.of(o))
     }
 
     override suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?): String = serverCall {

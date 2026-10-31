@@ -44,9 +44,9 @@ test("[PLAZA-32] 회사 정보 광장: only the company's members read and write
   const id = sent.company.id;
   const path = `/api/companies/${id}/setups/room/posts`;
   const write = (n, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: id, setup: "room", body, ...extra }, from(n));
-  // The sender joined by sending: an empty room, ten posts a day.
+  // The sender joined by sending: an empty room, and (1.36 [LIM-10]) no daily cap to show.
   let room = (await call("GET", path, undefined, as(1))).data;
-  assert.deepEqual([room.posts.length, room.room, room.member, room.left.posts], [0, "company", true, 10]);
+  assert.deepEqual([room.posts.length, room.room, room.member, room.left], [0, "company", true, undefined]);
   const first = await write(1, "야간 끝나고 주차장 통근버스 몇 시에 와요?", { kind: "question" });
   assert.equal(first.status, 201);
   // A phone that did not join, and an app with no install id, cannot read it or write in it.
@@ -65,10 +65,10 @@ test("[PLAZA-32] 회사 정보 광장: only the company's members read and write
   assert.equal((await call("GET", path, undefined, as(1))).data.posts[1].parent, first.data.id);
   // The words rules of every post: no amount, phone or mail.
   assert.equal((await write(2, "기본급 2,800,000원 받아요")).data.error, "amount");
-  // Ten a day for one phone.
+  // 1.36 [LIM-10] No daily cap for one phone without strikes.
   for (let i = 0; i < 9; i++) assert.equal((await write(2, `교대 이야기 ${i}번째예요`)).status, 201);
-  assert.equal((await write(2, "열한 번째 글이에요")).status, 429);
-  assert.equal((await call("GET", path, undefined, as(2))).data.left.posts, 0);
+  assert.equal((await write(2, "열한 번째 글이에요")).status, 201);
+  assert.equal((await call("GET", path, undefined, as(2))).data.left, undefined);
   // Three people's 신고 hide a post until the developer looks; the developer sees it as 회사 정보 광장 and can hide any.
   for (const n of [3, 4]) await call("POST", "/api/uses", { device: device(n), company: id, setup: sent.setup, cal: "main" }, from(n));
   const bad = (await write(3, "저 사람 진짜 이상해요")).data.id;
@@ -79,12 +79,12 @@ test("[PLAZA-32] 회사 정보 광장: only the company's members read and write
   assert.ok(list.posts.every((p) => p.setup === "room" && p.room === "company" && p.company.name === "토의상사"));
   const whole = (await call("GET", `/api/admin/posts?company=${id}&setup=room`, undefined, h)).data;
   assert.equal(whole.status, "talk");
-  assert.equal(whole.posts.length, 12);
+  assert.equal(whole.posts.length, 13);
   assert.equal((await call("POST", `/api/admin/posts/${first.data.id}`, { action: "hide", reason: "offtopic" }, h)).data.status, "hidden");
   assert.equal((await call("GET", path, undefined, as(2))).data.posts.some((p) => p.id === first.data.id), false);
   // 내가 보낸 것 모두 지우기 takes the room posts with the rest.
   const gone = (await call("DELETE", "/api/mine", undefined, as(2))).data;
-  assert.equal(gone.posts, 10);
+  assert.equal(gone.posts, 11);
 });
 
 test("[PLAZA-33] the plaza of each kind of work: any phone with the app, the 투자 이야기 takes no 종목 추천", async () => {

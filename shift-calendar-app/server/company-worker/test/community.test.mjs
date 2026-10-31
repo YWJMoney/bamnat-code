@@ -117,7 +117,8 @@ test("a post carries no email, phone number or amount, and spam is limited", asy
   assert.equal((await say(2, "야간 가산 50%예요")).status, 201);
   assert.equal((await call("POST", "/api/posts", { device: device(2), company: c, setup: "0123456789abcdef", body: "있나요" }, from(2))).status, 404);
   for (let i = 1; i < 20; i++) assert.equal((await say(2, `글 ${i}번`)).status, 201);
-  assert.equal((await say(2, "스물한 번째")).status, 429);
+  // 1.36 [LIM-10] No daily cap without strikes (write-limits.test.mjs).
+  assert.equal((await say(2, "스물한 번째")).status, 201);
 });
 
 test("a writer takes their post back; others cannot", async () => {

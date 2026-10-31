@@ -373,3 +373,24 @@ test("[PRF-05][PRF-06] 리뷰: 모두 지우기로 남의 차단·운영자 닫�
   await call("POST", `/api/recipes/makers/${m3}/block`, { device: device(4) }, from(4));
   assert.equal((await call("GET", `/api/recipes/makers/me/inbox?since=${since}`, undefined, dev(4))).data.questions.length, 0);
 });
+
+test("[PRF-07][LIM-10] 모음은 하루 제한이 없고, 운영자가 소개를 가리고 프로필을 닫으면(두 번) 그분 모음 쓰기만 하루 5번으로 줄어요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const a = (await up(call, 1, { title: "야간 달력 칸" }, "public")).data.code;
+  const b = (await up(call, 1, { title: "야간 달력 색" }, "public")).data.code;
+  const mk = (n) => call("POST", "/api/recipes/sets", { device: device(1), title: `야간 세트 ${n}번`, summary: "같이 입으면 좋아요", codes: [a, b] }, from(1));
+  for (let i = 0; i < 12; i++) assert.equal((await mk(i)).status, 201, `no daily cap (${i})`);
+  const me = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "야간 근무 꾸미기" }, from(1))).data.maker;
+  await call("POST", `/api/admin/recipes/makers/${me}/bio-hide`, {}, admin);
+  await call("POST", `/api/admin/recipes/makers/${me}/bio-hide`, {}, admin); // 이미 가린 것은 다시 세지 않아요
+  await call("POST", `/api/admin/recipes/makers/${me}/close`, {}, admin);
+  t.mock.timers.tick(25 * 3600 * 1000);
+  const ids = (await call("GET", `/api/recipes/makers/${me}`, undefined, dev(1))).data.sets.map((s) => s.id);
+  for (const id of ids.slice(0, 8)) await call("DELETE", `/api/recipes/sets/${id}`, undefined, dev(1));
+  for (let i = 0; i < 5; i++) assert.equal((await mk(20 + i)).status, 201);
+  const refused = await mk(30);
+  assert.equal(refused.status, 429);
+  assert.equal(refused.data.why, "device");
+});

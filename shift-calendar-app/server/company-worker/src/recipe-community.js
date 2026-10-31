@@ -6,12 +6,14 @@
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
 import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
+import { addStrike, writeLimitHit } from "./write-limits.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
-export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerDay: 3, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50,
-  // [PRF-01..06] 1.36 창작자 프로필: 한 줄 소개, 대표 작품, 하루 팔로우, 차단, 신고 3번이면 소개 먼저 가림.
-  bio: 40, pins: 6, followsPerDay: 60, setTitle: [2, 30], setSummary: 80, setCodes: [2, 6], sets: 20, setsPerDay: 10, setEditsPerDay: 30, follows: 200, blocks: 500, flagsToHideBio: 3, flagsPerDay: 10, flagsPerNetworkDay: 40 };
+export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerNetworkDay: 200, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50,
+  // [PRF-01..06] 1.36 창작자 프로필: 한 줄 소개, 대표 작품, 하루 팔로우, 차단, 신고 3번이면 소개 먼저 가림. 모음 쓰기는 [LIM-10] 신고 누적 제한만.
+  bio: 40, pins: 6, followsPerDay: 60, setTitle: [2, 30], setSummary: 80, setCodes: [2, 6], sets: 20, setsPerNetworkDay: 400, follows: 200, blocks: 500,
+  flagsToHideBio: 3, flagsPerDay: 10, flagsPerNetworkDay: 40 };
 /** [PRF-03] 쓰는 분·좋아요가 이만큼 넘으면 내 프로필 최근 알림에 한 번 (폰이 본 것을 기억해요). */
 export const PROFILE_MILESTONES = [10, 50, 100, 500, 1000, 5000];
 export const PROFILE_FLAG_REASONS = ["impersonate", "bio", "spam", "other"];
@@ -174,7 +176,10 @@ async function rcRequestPost(d, env, request) {
   if (why) return d.json({ error: why, field: "body" }, 400);
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
-  const hit = await d.overLimit(env, now, [["device", `rreq|${dev}`, COMMUNITY_LIMITS.requestsPerDay, DAY]]);
+  // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; one network's day still has one.
+  const net = await d.network(request, env, now);
+  const hit = (await writeLimitHit(d, env, dev, "rreq", now))
+    ?? (await d.overLimit(env, now, [["network", `rreq|${net.day}`, COMMUNITY_LIMITS.requestsPerNetworkDay, DAY]]));
   if (hit) return hit;
   const id = `q${d.randomId(12)}`;
   await d.run(env, "INSERT INTO recipe_requests (id, device, style, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", id, dev, body.style, t, now, now);
@@ -437,7 +442,9 @@ async function rcMakerFlag(d, env, request, id) {
   await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, body.reason, now);
   const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ?", id);
   if (n.n >= COMMUNITY_LIMITS.flagsToHideBio) {
-    await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL AND bio_hidden = 0", id);
+    const r = await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL AND bio_hidden = 0", id);
+    // 1.36 [LIM-10] A 소개 the reports hid is one strike for its maker.
+    if (r?.meta?.changes) await addStrike(d, env, m.device, "bio", id, now);
   }
   return d.json({ maker: id, flagged: true });
 }
@@ -618,7 +625,10 @@ async function rcSetPost(d, env, request) {
   if (set.error) return d.json({ error: set.error, field: set.field ?? set.error }, 400);
   const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_sets WHERE owner = ?", dev);
   if (n.n >= COMMUNITY_LIMITS.sets) return d.json({ error: "too_many" }, 400);
-  const hit = await d.overLimit(env, now, [["device", `rset|${dev}`, COMMUNITY_LIMITS.setsPerDay, DAY]]);
+  // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; one network's day still has one.
+  const net = await d.network(request, env, now);
+  const hit = (await writeLimitHit(d, env, dev, "rset", now))
+    ?? (await d.overLimit(env, now, [["network", `rset|${net.day}`, COMMUNITY_LIMITS.setsPerNetworkDay, DAY]]));
   if (hit) return hit;
   const m = await rcMakerOf(d, env, dev, now);
   const id = "s" + (await sha256hex(`${dev}|${now}|${d.randomId(8)}`)).slice(0, 12);
@@ -660,7 +670,7 @@ async function rcSetEdit(d, env, request, id, del) {
   if (await d.paused(env, "PLAZA_WRITE")) return d.json({ error: "paused" }, 503);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
-  const hit = await d.overLimit(env, now, [["device", `rsetedit|${dev}`, COMMUNITY_LIMITS.setEditsPerDay, DAY]]);
+  const hit = await writeLimitHit(d, env, dev, "rset", now);
   if (hit) return hit;
   // Only a new name: keep the recipes still up, so a 모음 that lost one can be renamed without picking again.
   const was = s.codes.split(",");
@@ -958,15 +968,23 @@ export async function communityAdmin(d, request, env, path, url, now) {
   }
   m = path.match(/^\/recipes\/sets\/(s[0-9a-f]{12})\/(hide|show)$/);
   if (m && method === "POST") {
+    const set = await d.one(env, "SELECT owner, hidden FROM recipe_sets WHERE id = ?", m[1]);
     await d.run(env, "UPDATE recipe_sets SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]);
+    // 1.36 [LIM-10] The operator hiding a 모음 is one strike.
+    if (set && m[2] === "hide" && !set.hidden) await addStrike(d, env, set.owner, "set", m[1], Date.now());
     return d.json({ id: m[1], hidden: m[2] === "hide" });
   }
   m = path.match(/^\/recipes\/makers\/([0-9a-f]{12})\/(bio-hide|bio-show|close|open|clear)$/);
   if (m && method === "POST") {
     const [, id, what] = m;
     if (what === "clear") await d.run(env, "DELETE FROM recipe_maker_flags WHERE maker = ?", id);
+    else {
+      // 1.36 [LIM-10] The operator hiding a 소개 (not one the reports already hid) or closing a profile is one strike.
+      const was = await d.one(env, "SELECT device, bio_hidden, closed FROM recipe_makers WHERE maker = ?", id);
+      if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await addStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now());
+    }
     // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림.
-    else await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,
+    if (what !== "clear") await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,
       what === "bio-hide" ? 2 : what === "close" ? 1 : 0, id);
     return d.json({ maker: id, done: what });
   }

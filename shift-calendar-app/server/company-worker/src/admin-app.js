@@ -632,7 +632,8 @@ function adminApp(L, BUILD, M) {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
         const q = S.postQuery ? `&q=${encodeURIComponent(S.postQuery)}` : "";
-        if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
+        if (!id && S.postFilter === "limits") jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })));
+        else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
       }
       if (name === "rewards" && can("rewards")) {
@@ -1066,12 +1067,13 @@ function adminApp(L, BUILD, M) {
 
   function communityView() {
     if (S.postFilter === "rates" && !S.route.id) return ratesView();
+    if (S.postFilter === "limits" && !S.route.id) return limitsView();
     const d = S.data.posts;
     const edit = can("community", "edit");
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
       : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>
         <div class="toolbar"><input id="search" type="search" placeholder="회사 이름으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="토론 찾기"></div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
@@ -1090,6 +1092,29 @@ function adminApp(L, BUILD, M) {
   }
 
   /**
+   * 1.36 [LIM-10] 신고 누적 쓰기 제한: no one has a daily cap; posts or recipes hidden by reports (or here) restrict the writer for a
+   * while, each time more strictly. Who is restricted now or was in 30 days, the rules in words, and 풀기.
+   */
+  function limitsView() {
+    const d = S.data.limits;
+    const edit = can("community", "edit");
+    const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>`;
+    if (!d) return head + skeleton();
+    const r = d.rules;
+    const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
+    const rules = `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
+      제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
+      가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
+    if (!d.items.length) return head + rules + empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
+    return head + rules + `<div class="grid">${d.items.map((x) => `<article class="card">
+      <div class="head"><h3>사용자 ${esc(x.who.slice(0, 8))} <span class="dept">${x.step}단계</span></h3>${x.now ? `<span class="pill ${x.perDay ? "warn" : "bad"}">${x.perDay ? `하루 ${x.perDay}번` : "쓰기 막힘"}</span>` : '<span class="pill ok">끝남</span>'}</div>
+      <p class="meta">${esc(day(x.since))}부터 ${esc(day(x.until))}까지 · 제한 ${x.times}번째 · 가려진 글 ${x.strikes}건</p>
+      ${edit && x.now ? `<div class="actions"><button class="btn" data-act="limit-lift" data-id="${esc(x.who)}">지금 풀기</button></div>` : ""}
+    </article>`).join("")}</div>`;
+  }
+
+  /**
    * [PLZ-14] 임금표: market rates people sent. 확인 필요 is one far from the adopted ones that enough people
    * agreed to; an admin adopts it or hides it. Taking an adopted one down needs 광장 규칙 내리기.
    */
@@ -1098,7 +1123,7 @@ function adminApp(L, BUILD, M) {
     const edit = can("community", "edit");
     const n = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>
       <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
         .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="직종으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="임금표 찾기"></div>
@@ -3994,8 +4019,14 @@ function adminApp(L, BUILD, M) {
       S.postPick = null;
       S.ratePick = null;
       S.data.rates = null;
+      S.data.limits = null;
       refilter("posts");
     },
+    "limit-lift": ({ id }) => confirmBox("이 사람의 쓰기 제한을 지금 풀까요?", "단계는 그대로 남아서, 다시 제한되면 이번보다 한 단계 더 줄어요.", "풀기", async () => {
+      await act(() => api(`/write-limits/${id}/lift`, "POST", {}), "풀었어요");
+      S.data.limits = null;
+      load();
+    }, "primary"),
     "rate-filter": ({ key }) => {
       S.rateFilter = key;
       refilter("rates");
