@@ -809,7 +809,7 @@ internal fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, sty
     style == null || com.bamnat.core.guide.FitTable.visible(surface, id, style, emptySet())
 
 
-/** PC 확인 Z5: this month's work days and scheduled hours on the phone's own calendar, or null when it has no work yet. */
+/** PC 확인 Z5: this month's work days and scheduled hours on the phone's own calendar (0 and 0 with none), or null while it loads. */
 @Composable
 private fun rememberMonthWork(): Pair<Int, Int>? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
@@ -819,7 +819,8 @@ private fun rememberMonthWork(): Pair<Int, Int>? {
         val sn = snap ?: return@remember null
         val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
         val days = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth()).filter { it.isWorkDay }
-        if (days.isEmpty()) null else days.size to days.sumOf { it.scheduledMinutes } / 60
+        // PC 확인 V19 1.36 (공방 카드에 예시 '18일 · 162h'): my own month even with no work in it yet (0일 · 0h), never made-up numbers.
+        days.size to days.sumOf { it.scheduledMinutes } / 60
     }
 }
 
