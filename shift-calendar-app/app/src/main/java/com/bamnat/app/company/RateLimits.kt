@@ -31,7 +31,7 @@ object RateLimits {
      * "내일" sent someone who posted late at night back too early the next morning.
      */
     fun wait(seconds: Int, now: java.time.ZonedDateTime = java.time.Instant.ofEpochMilli(com.bamnat.core.time.Today.millis())
-        .atZone(java.time.ZoneId.systemDefault())): String = when {
+        .atZone(com.bamnat.core.time.Today.zone())): String = when {
         seconds < 90 -> "1분쯤 뒤"
         seconds < 3_600 -> "${(seconds + 59) / 60}분쯤 뒤"
         seconds < 6 * 3_600 -> "${(seconds + 3_599) / 3_600}시간쯤 뒤"
