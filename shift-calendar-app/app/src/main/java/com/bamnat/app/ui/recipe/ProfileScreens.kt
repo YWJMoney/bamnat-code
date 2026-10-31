@@ -156,14 +156,14 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
             // Since the last 다 봤어요 (7 days at first), so what was seen does not come back as new.
             val box = runCatching { c.recipeApi.inbox(device, c.recipes.inboxSince()) }.getOrNull() ?: return@launch
             val seen = c.recipes.seenInbox()
-            _state.value = _state.value.copy(inbox = box, unseen = inboxKeys(box, c.recipes.inboxSince()).filterNot { it in seen }.toSet())
+            _state.value = _state.value.copy(inbox = box, unseen = inboxKeys(box).filterNot { it in seen }.toSet())
         }
     }
 
     /** 다 봤어요: what 최근 알림 shows now is no longer new (it folds to one line). */
     fun seen() {
         val box = _state.value.inbox ?: return
-        c.recipes.markInboxSeen(inboxKeys(box, null))
+        c.recipes.markInboxSeen(inboxKeys(box), box.at)
         _state.value = _state.value.copy(unseen = emptySet())
     }
 
@@ -226,8 +226,9 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
 
     companion object {
         /** Each thing 최근 알림 can say, as a key the phone remembers once seen. */
-        fun inboxKeys(b: ProfileInbox, since: java.time.Instant?): List<String> = buildList {
-            if (b.newFollowers > 0) add("f|${b.newFollowers}|${since ?: ""}")
+        fun inboxKeys(b: ProfileInbox): List<String> = buildList {
+            // 1.36 시험: the key once had the since in it, which 다 봤어요 itself moves, so it never matched and came back as new.
+            if (b.newFollowers > 0) add("f|${b.followersLatest ?: b.newFollowers}")
             b.questions.forEach { add("q|${it.first}|${it.third.take(20)}") }
             b.remixes.forEach { add("r|${it.first}") }
             b.milestones.forEach { add(it.key) }
@@ -836,7 +837,7 @@ class FollowingStripViewModel(private val c: AppContainer, private val style: Wo
                 }?.let { p ->
                     c.recipes.hasProfile(p.recipes.isNotEmpty())
                     MakerFaceItem(p.maker, p.nick, p.face, p.color, fresh = c.recipes.seenInbox().let { seen ->
-                        runCatching { c.recipeApi.inbox(device, c.recipes.inboxSince()) }.getOrNull()?.let { b -> MakerViewModel.inboxKeys(b, c.recipes.inboxSince()).any { it !in seen } } ?: false
+                        runCatching { c.recipeApi.inbox(device, c.recipes.inboxSince()) }.getOrNull()?.let { b -> MakerViewModel.inboxKeys(b).any { it !in seen } } ?: false
                     })
                 }
             }

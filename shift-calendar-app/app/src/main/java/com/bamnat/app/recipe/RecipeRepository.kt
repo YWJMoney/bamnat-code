@@ -63,9 +63,10 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
      * remembers what it told), and since when new followers, questions and 수정판 count.
      */
     fun seenInbox(): Set<String> = keyList(K_SEEN_INBOX_LIST).toSet()
-    fun markInboxSeen(keys: Collection<String>) {
+    /** [at]: the server's time of what was seen, so the next ask starts there whatever this phone's clock says. */
+    fun markInboxSeen(keys: Collection<String>, at: java.time.Instant? = null) {
         prefs.edit().putString(K_SEEN_INBOX_LIST, keyListJson(keyList(K_SEEN_INBOX_LIST), keys))
-            .putString(K_INBOX_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
+            .putString(K_INBOX_SINCE, (at ?: java.time.Instant.ofEpochMilli(Today.millis())).toString()).apply()
     }
     /**
      * Keys kept in the order they were seen, newest last, so the oldest go first past [KEYS_KEPT]

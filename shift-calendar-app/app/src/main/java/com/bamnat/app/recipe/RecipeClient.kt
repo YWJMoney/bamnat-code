@@ -185,6 +185,10 @@ data class ProfileInbox(
     val questions: List<Triple<String, String, String>>, val remixes: List<Triple<String, String, String>>,
     /** code, title, "users" or "likes", the number passed. */
     val milestones: List<Milestone>, val badges: List<Pair<String, String>>,
+    /** When the newest of [newFollowers] followed: names the 새 팔로워 line for 다 봤어요. */
+    val followersLatest: String? = null,
+    /** The server's time of this answer, kept as the next since (the phone's clock may be off). */
+    val at: Instant? = null,
 ) {
     data class Milestone(val code: String, val title: String, val kind: String, val n: Int) {
         val key: String get() = "$code|$kind|$n"
@@ -457,7 +461,8 @@ class RecipeClient(
             o.optJSONArray("questions").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) },
             o.optJSONArray("remixes").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("parentTitle")) },
             o.optJSONArray("milestones").objects().map { ProfileInbox.Milestone(it.optString("code"), it.optString("title"), it.optString("kind"), it.optInt("n")) },
-            o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") })
+            o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") },
+            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() })
     }
 
     override suspend fun block(device: String, id: String, on: Boolean) = serverCall {

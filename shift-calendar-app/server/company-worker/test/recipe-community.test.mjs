@@ -204,6 +204,11 @@ test("[PRF-03] 내 프로필 최근 알림: 새 팔로워, 질문, 고친 판, �
   const since = new Date(AFTER - 1000).toISOString();
   const inbox = (await call("GET", `/api/recipes/makers/me/inbox?since=${since}`, undefined, dev(1))).data;
   assert.equal(inbox.followers.count, 2);
+  assert.equal(inbox.at, new Date(AFTER).toISOString(), "the server's time, the phone's next since");
+  assert.ok(Date.parse(inbox.followers.latest) <= AFTER);
+  // 다 봤어요 then asking from the server's [at]: nothing new comes back.
+  const again = (await call("GET", `/api/recipes/makers/me/inbox?since=${inbox.at}`, undefined, dev(1))).data;
+  assert.deepEqual([again.followers.count, again.questions.length, again.remixes.length], [0, 0, 0]);
   assert.deepEqual(inbox.followers.items.map((x) => x.face), ["🐻"], "a face only for one with a profile");
   assert.deepEqual(inbox.questions.map((x) => x.code), [a]);
   assert.deepEqual(inbox.remixes.map((x) => x.parentTitle), ["내 교대 세트"]);

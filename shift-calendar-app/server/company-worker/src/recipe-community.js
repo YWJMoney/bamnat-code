@@ -510,7 +510,7 @@ async function rcInbox(d, env, request, url) {
     for (const r of rows) if (!blocked.has(r.maker ?? (await makerId(owner(r))))) out.push(r);
     return out;
   };
-  const fresh = await d.all(env, `SELECT m.maker, m.face, m.color, m.hidden, m.closed, n.nick, ${SHARED} FROM recipe_follows f
+  const fresh = await d.all(env, `SELECT m.maker, m.face, m.color, m.hidden, m.closed, n.nick, f.at, ${SHARED} FROM recipe_follows f
     LEFT JOIN recipe_makers m ON m.device = f.device LEFT JOIN nicks n ON n.device = f.device
     WHERE f.maker = ? AND f.at > ? ORDER BY f.at DESC LIMIT 50`, me.maker, since);
   const questions = await kept(await d.all(env, `SELECT q.grp AS code, q.body, q.created_at, q.device, NULL AS maker, r.title FROM posts q JOIN recipes r ON r.code = q.grp
@@ -526,9 +526,11 @@ async function rcInbox(d, env, request, url) {
     .map(([kind, n]) => ({ code: r.code, title: r.title, kind, n: reached(n) })));
   const sums = { recipes: own.length, likes: own.reduce((s, r) => s + r.likes, 0), users: own.reduce((s, r) => s + r.applied, 0) };
   const named = fresh.filter((r) => rcNamed(r) && !blocked.has(r.maker));
+  // [at] is this server's time: the phone keeps it as the next [since] (its own clock may be off), and the newest follow
+  // names the 새 팔로워 line, so 다 봤어요 stays seen until someone new follows.
   return d.json({
-    maker: me.maker,
-    followers: { count: fresh.length, items: named.slice(0, 5).map(rcFace) },
+    maker: me.maker, at: new Date(now).toISOString(),
+    followers: { count: fresh.length, ...(fresh.length ? { latest: new Date(fresh[0].at).toISOString() } : {}), items: named.slice(0, 5).map(rcFace) },
     questions: questions.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 80), at: new Date(x.created_at).toISOString() })),
     remixes: remixes.map((x) => ({ code: x.code, title: x.title, parentTitle: x.parent_title, at: new Date(x.created_at).toISOString() })),
     milestones,
