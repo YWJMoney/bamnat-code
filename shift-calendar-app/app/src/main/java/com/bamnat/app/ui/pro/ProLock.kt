@@ -85,7 +85,7 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
 @Composable
 internal fun proButtonText(): String {
     val plans = com.bamnat.app.billing.rememberPlans()
-    return if (plans.any { it.trial }) "1개월 무료로 써 보기" else "프로 알아보기"
+    return if (plans.any { it.trial && it.yearly }) "1개월 무료로 써 보기" else "프로 알아보기"
 }
 
 /**

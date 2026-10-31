@@ -40,6 +40,27 @@ class ProMomentStoreTest {
         assertEquals(day, ProMomentStore(context).state.value.rosterOn)
     }
 
+    /** 840: the days used and the last one before, the week's snooze, 찾아 준 돈 and the welcome are kept. */
+    @Test fun theOfferTimesFactsAreKept() {
+        context.getSharedPreferences("pro_moments", Context.MODE_PRIVATE).edit().clear().commit()
+        val store = ProMomentStore(context)
+        val day = LocalDate.of(2027, 3, 1)
+        store.opened(day.minusDays(40))
+        store.opened(day)
+        store.snooze(day)
+        store.found(java.time.YearMonth.of(2027, 2), 68_400)
+        store.found(java.time.YearMonth.of(2026, 12), 10_000)
+        store.welcome(true)
+        val again = ProMomentStore(context).state.value
+        assertEquals(day.minusDays(40), again.lastBefore)
+        assertEquals(setOf(day), again.used)
+        assertEquals(day.plusDays(7), again.snoozedUntil)
+        assertEquals(68_400L, again.foundIn(2027))
+        assertTrue(again.welcome)
+        store.found(java.time.YearMonth.of(2027, 2), 0)
+        assertEquals(0L, ProMomentStore(context).state.value.foundIn(2027))
+    }
+
     @Test fun theBillingLineSaysTheNextPaymentAndTheTrialEnd() {
         val d = LocalDate.of(2026, 11, 28)
         assertEquals("프로 구독 중 · 다음 결제 11월 28일 · 월 3,900원", billingWords(ProReason.SUBSCRIPTION, d, true, "월 3,900원"))

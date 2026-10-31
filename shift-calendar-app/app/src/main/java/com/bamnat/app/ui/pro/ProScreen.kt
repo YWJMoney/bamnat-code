@@ -137,7 +137,7 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     val trialEnd = today.plusMonths(1)
     return listOfNotNull(
         "결제는 Google Play 계정으로 해요. " + (if (prices.isNotEmpty()) "$prices, " else "") + "월 요금제는 매달, 연 요금제는 매년 같은 날 자동으로 결제돼요.",
-        if (plans.any { it.trial }) "1개월 무료 체험은 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
+        if (plans.any { it.trial }) "1개월 무료 체험은 연 요금제를 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
             "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤봐요." else null,
         "해지는 언제든 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 이미 낸 기간이 끝날 때까지 프로를 써요.",
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
@@ -182,6 +182,8 @@ fun ProScreen(onBack: () -> Unit) {
             ) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 StatusCard(gate, pro, zone, settings.workStyle)
+                // 1.36 840 보상 장부: what this phone was given this month, for someone without 프로.
+                if (gate.live && !gate.preview && gate.tier < com.bamnat.app.tier.Tier.PRO) RewardLedgerCard(c, gate, plans)
                 ConsentWaiting(c, pro, onMessage = { message = it })
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
                 // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
@@ -330,20 +332,8 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
                 else "Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            else -> plans.forEach { plan ->
-                // [MON-05] Each plan its own button; none is picked for the user.
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(plan.priceWords + if (plan.yearly) " (1년마다)" else " (매달)", style = MaterialTheme.typography.titleSmall)
-                    if (plan.trial) Text("첫 1개월 무료, 그 뒤 ${plan.priceWords}", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = {
-                        val activity = context.findActivity()
-                        if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (plan.trial) "1개월 무료로 시작 (${if (plan.yearly) "연" else "월"} 요금제)" else "${plan.priceWords}로 구독")
-                    }
-                }
-            }
+            // [MON-05] Each plan its own button; none is picked for the user. 840: the yearly one first, 추천, its discount.
+            else -> PlanRows(c, plans, onMessage)
         }
         proDisclosures(plans, Today.date()).forEach {
             Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -554,5 +544,20 @@ fun BillingTopLine(modifier: Modifier = Modifier) {
                 Text(if (gate.access.reason == ProReason.GRACE) "결제 수단 바꾸기" else "해지·관리")
             }
         }
+    }
+}
+
+/** 1.36 840 보상 장부 (수익 2판 2-2): the month's free days, what they are worth at the yearly price, and 밤낮이 찾아 준 돈. */
+@Composable
+private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
+    val moments by c.proMoments.state.collectAsStateWithLifecycle()
+    val yearly = plans.firstOrNull { it.yearly }?.priceMicros
+    val m = remember(gate.leases, moments.found, yearly) { ledgerOf(c, gate, yearly) }
+    if (m.empty) return
+    SectionCard(title = "보상 장부") {
+        if (m.days > 0) Text("받은 날  ${m.partsLine} (이번 달 ${m.days}일치)", style = MaterialTheme.typography.bodyMedium)
+        m.wonValue?.let { Text("돈으로 치면  약 ${won(it)}어치 (프로 연 요금 하루 ${com.bamnat.core.tier.RewardLedger.perDay(yearly)}원 기준)", style = MaterialTheme.typography.bodyMedium) }
+        if (m.found > 0) Text("밤낮이 찾아 준 돈  올해 ${won(m.found)} (명세서보다 계산이 많았던 차이)", style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary)
     }
 }

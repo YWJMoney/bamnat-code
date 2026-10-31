@@ -313,4 +313,19 @@ class AGScreenshotTest : ScreenshotBase() {
         reveal("친구 초대로 프로 이용권 받기", exact = true)
         noCuts("sheet_200")
     }
+
+    // ---- 840 세 장 페이월: 내 숫자 → 프로가 더해 주는 것 → 요금제, 닫기와 7일간 보지 않기는 장마다 ----
+    @Test fun thePaywallHasThreePages() = shoot("1093_ag_paywall_pages", PHONE_393) {
+        app.container.proMoments.found(java.time.YearMonth.from(Today.date()), 68_400)
+        content { com.bamnat.app.ui.pro.ProPaywallContent(app.container, onClose = {}) }
+        reveal("밤낮이 이번 달 드린 것")
+        assertTrue(appears("올해 밤낮이 찾아 준 돈 68,400원"))
+        assertTrue(appears("7일간 보지 않기", exact = true))
+        tapText("다음", exact = true)
+        reveal("프로가 더해 주는 것")
+        tapText("다음", exact = true)
+        reveal("요금제", exact = true)
+        assertTrue(appears("7일간 보지 않기", exact = true))
+        noCuts("paywall")
+    }
 }

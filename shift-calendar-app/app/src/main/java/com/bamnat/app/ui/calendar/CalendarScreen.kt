@@ -1243,6 +1243,7 @@ fun CalendarScreen(
                     p.payWeekday == today.dayOfWeek || listOf(YearMonth.from(today), YearMonth.from(today).minusMonths(1)).mapNotNull(p::payDate)
                         .any { !it.isAfter(today) && !it.isBefore(today.minusDays(2)) }
                 } == true
+                com.bamnat.app.ui.pro.ProWelcomeCard()
                 com.bamnat.app.ui.pro.ProMomentNotice(settings.workStyle, payday)
             })
             // 1.32 [STAB-08] 백업한 지 30일, without 매일 자동 백업.

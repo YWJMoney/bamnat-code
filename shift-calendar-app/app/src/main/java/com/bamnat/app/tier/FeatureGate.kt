@@ -205,6 +205,9 @@ class FeatureGate(
         trials.grant(bundle, clock(), clock().atZone(zone()).toLocalDate(), why, reason)
     }
 
+    /** 840: back after a month away, [bundle] for 7 days ([com.bamnat.core.tier.ProOfferTimes.Time.BACK]). */
+    fun back(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.back(bundle, clock())
+
     /** [MON-13] 839: the offer closed without an ad. */
     fun decline(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.decline(bundle, clock())
 

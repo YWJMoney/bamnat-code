@@ -34,6 +34,9 @@ class FeatureTrials(context: Context?) {
     fun grant(bundle: FeatureLease.Bundle, now: Instant, today: LocalDate, why: FeatureLease.Why, reason: String? = null) =
         save(FeatureLease.granted(state.value, bundle, now, today, why, reason))
 
+    /** 840: back after a month away: [bundle] for 7 days, no ad. */
+    fun back(bundle: FeatureLease.Bundle, now: Instant) = save(FeatureLease.back(state.value, bundle, now))
+
     /** The offer closed without an ad. */
     fun decline(bundle: FeatureLease.Bundle, now: Instant) = save(FeatureLease.declined(state.value, bundle, now))
 

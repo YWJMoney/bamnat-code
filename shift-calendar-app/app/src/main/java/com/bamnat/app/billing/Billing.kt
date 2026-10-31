@@ -245,7 +245,8 @@ class PlayBilling(
             return offers.groupBy { it.basePlanId }.mapNotNull { (base, list) ->
                 val baseOffer = list.firstOrNull { it.offerId == null } ?: return@mapNotNull null
                 val recurring = baseOffer.pricingPhases.pricingPhaseList.lastOrNull() ?: return@mapNotNull null
-                val trialOffer = list.firstOrNull { o -> o.offerId != null && o.pricingPhases.pricingPhaseList.any { it.priceAmountMicros == 0L } }
+                // 1.36 840 (수익 3판: 체험은 연간에만): a free month on the monthly plan is not offered even if Play has one.
+                val trialOffer = list.firstOrNull { o -> base == ProductIds.YEARLY && o.offerId != null && o.pricingPhases.pricingPhaseList.any { it.priceAmountMicros == 0L } }
                 Plan(
                     basePlan = base, price = recurring.formattedPrice, priceMicros = recurring.priceAmountMicros,
                     currency = recurring.priceCurrencyCode, period = recurring.billingPeriod,
