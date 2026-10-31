@@ -1116,6 +1116,14 @@ fun CalendarScreen(
                     })
             })
             alarmLine?.let { (label, line) -> add(Notice("alarm", label) { line() }) }
+            // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
+            // screen too, for a phone whose notices are off.
+            val lateOwed = remember(moneyBook, today) { moneyBook.owed(today).filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE } }
+            if (paint == null && viewingReceived == null && lateOwed.isNotEmpty()) add(Notice("owedLate", "약속일 지난 받을 돈") {
+                AlarmWarningLine("약속일 지난 받을 돈 ${lateOwed.size}건 · ${Fmt.won(lateOwed.sumOf { it.left })}", "보기", {
+                    com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.OWED))
+                }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            })
             if (swapCovers.isNotEmpty()) add(Notice("review", "대근 ${swapCovers.size}일 고치기") {
                 ExtraReviewCard(
                     title = "쉬는 날 대근 ${swapCovers.size}일을 고쳐 주세요",

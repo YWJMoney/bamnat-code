@@ -94,7 +94,7 @@ fun JobStatusRow(status: JobStatus, paid: Boolean, onChange: (JobStatus) -> Unit
 /** [FLD-09] 입금 약속일: when the client said they would pay; the 받을 돈 알림 follows it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DueRow(due: LocalDate?, onChange: (LocalDate?) -> Unit) {
+fun DueRow(due: LocalDate?, opensOn: LocalDate? = null, onChange: (LocalDate?) -> Unit) {
     var picking by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picking = true }, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -105,7 +105,7 @@ fun DueRow(due: LocalDate?, onChange: (LocalDate?) -> Unit) {
         if (due != null) TextButton(onClick = { onChange(null) }) { Text("지우기") }
     }
     if (picking) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = (due ?: Today.date()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        val state = rememberDatePickerState(initialSelectedDateMillis = (due ?: opensOn ?: Today.date()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
         DatePickerDialog(
             onDismissRequest = { picking = false },
             confirmButton = {
