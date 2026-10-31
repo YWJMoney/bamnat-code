@@ -340,7 +340,10 @@ test("[PRF-05][PRF-06] 리뷰: 모두 지우기로 남의 차단·운영자 닫�
   const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "처음 소개" }, from(1))).data.maker;
   const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data.maker;
   await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2) }, from(2));
-  await call("DELETE", "/api/mine", undefined, dev(1));
+  await call("POST", `/api/recipes/makers/${m2}/follow`, { device: device(1) }, from(1));
+  // 지운 것을 숫자로 (PC 확인: '지울 것이 없었어요'라고 했음).
+  const gone = (await call("DELETE", "/api/mine", undefined, dev(1))).data;
+  assert.equal(gone.profile, 1);
   await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦊" }, from(1));
   assert.equal((await call("GET", `/api/recipes/makers/${m2}`, undefined, dev(1))).status, 404, "the block stays after 지우기");
   // 운영자가 닫은 프로필은 지워도 닫힌 채로, 본인에게는 닫혔다고.

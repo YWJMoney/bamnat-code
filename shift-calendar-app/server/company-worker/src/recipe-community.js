@@ -466,14 +466,15 @@ async function rcFollowing(d, env, request) {
         AND r.state = 'visible' AND r.scope = 'public') AS latest
     FROM recipe_follows f LEFT JOIN recipe_makers m ON m.maker = f.maker LEFT JOIN nicks n ON n.device = m.device
     WHERE f.device = ? ORDER BY latest DESC, f.at DESC LIMIT 200`, dev);
-  const blocked = await d.all(env, `SELECT b.maker, m.face, m.color, n.nick FROM recipe_blocks b LEFT JOIN recipe_makers m ON m.maker = b.maker
+  const blocked = await d.all(env, `SELECT b.maker, m.maker AS has, m.face, m.color, n.nick FROM recipe_blocks b LEFT JOIN recipe_makers m ON m.maker = b.maker
     LEFT JOIN nicks n ON n.device = m.device WHERE b.device = ? ORDER BY b.at DESC`, dev);
   return d.json({
     items: rows.filter((r) => !r.hidden && !r.closed).map((r) => ({
       ...rcFace(r.maker === "operator" ? { ...r, nick: "밤낮 운영" } : r), quiet: r.quiet === 1,
       ...(r.latest ? { latest: new Date(r.latest).toISOString() } : {}), fresh: Boolean(r.latest && r.latest > now - 7 * DAY),
     })),
-    blocked: blocked.map(rcFace),
+    // [PRF-05] 1.36 PC 사용성 P3: a blocked maker whose profile went (모두 지우기) says so.
+    blocked: blocked.map((r) => ({ ...rcFace(r), ...(r.has ? {} : { gone: true }) })),
   });
 }
 

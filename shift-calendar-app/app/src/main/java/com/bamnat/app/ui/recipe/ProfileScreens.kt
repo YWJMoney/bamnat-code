@@ -50,6 +50,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -222,6 +224,20 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
     fun flag(reason: String) = act(null) { c.recipeApi.flagMaker(device, id, reason); _state.value = _state.value.copy(flagged = true) }
     fun flagSeen() { _state.value = _state.value.copy(flagged = false) }
 
+    /**
+     * [PRF-01] 1.36 PC 사용성 P2: 프로필만 지우기. 얼굴·소개·대표 작품·표지·모음이 지워지고, [works]면 올린 작품도
+     * 장터에서 내려요. 팔로워는 남지만 작품이 없으면 프로필 줄에 내가 보이지 않아요.
+     */
+    fun clearProfile(works: Boolean) = act(if (works) "프로필과 작품을 지웠어요" else "프로필을 지웠어요. 작품은 장터에 그대로 있어요") {
+        val p = _state.value.page ?: return@act
+        p.sets.forEach { runCatching { c.recipeApi.setDelete(device, it.id) } }
+        c.recipeApi.profile(device, ProfileEdit(bio = "", pins = emptyList(), setStyle = true, styleTag = null, setCover = true, cover = null))
+        c.recipeApi.makerMe(device, null, null, set = true)
+        if (works) p.recipes.forEach { runCatching { c.recipeApi.delete(device, it.code) } }
+        c.recipes.hasProfile(!works && p.recipes.isNotEmpty())
+        c.recipes.peopleChanged()
+    }
+
     /** [PRF-01] 이름: the same 별명 as 광장 (2~12자), saved with the rest of 프로필 고치기. */
     fun save(e: ProfileEdit, nick: String?) = act("프로필을 고쳤어요") {
         if (nick != null) {
@@ -306,6 +322,7 @@ fun MakerScreen(
     var menu by remember { mutableStateOf(false) }
     var flagging by remember { mutableStateOf(false) }
     var blocking by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf(false) }
     var followMenu by remember { mutableStateOf(false) }
     var setEdit by remember { mutableStateOf<MakerSet?>(null) }
     var newSet by remember { mutableStateOf(false) }
@@ -337,6 +354,7 @@ fun MakerScreen(
                                     menu = false
                                     vm.edit(ProfileEdit(hidden = !p.hidden), if (p.hidden) "프로필이 다시 보여요" else "프로필을 숨겼어요. 작품은 장터에 그대로 있고, 프로필과 팔로우만 막혀요")
                                 })
+                                DropdownMenuItem(text = { Text("프로필만 지우기") }, onClick = { menu = false; clearing = true })
                                 onSent?.let { go -> DropdownMenuItem(text = { Text("내가 보낸 정보·모두 지우기") }, onClick = { menu = false; go() }) }
                             } else {
                                 DropdownMenuItem(text = { Text(if (p.blocked) "차단 풀기" else "차단하기") }, onClick = { menu = false; if (p.blocked) vm.block(false) else blocking = true })
@@ -469,6 +487,27 @@ fun MakerScreen(
             },
             confirmButton = { TextButton(onClick = { why?.let { flagging = false; vm.flag(it) } }, enabled = why != null) { Text("신고") } },
             dismissButton = { TextButton(onClick = { flagging = false }) { Text("닫기") } },
+        )
+    }
+    if (clearing && page != null) {
+        var works by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { clearing = false },
+            title = { Text("프로필을 지울까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("소개·얼굴·대표 작품·표지 그림과 모음 ${page.sets.size}개가 지워져요. 팔로워는 그대로예요.")
+                    if (page.recipes.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { works = !works }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(works, { works = it })
+                        Text("올린 작품 ${page.recipes.size}개도 장터에서 내리기")
+                    }
+                    Text(if (works) "작품을 내리면 넣어 쓰던 분들의 화면은 그대로지만, 장터에서는 더 볼 수 없어요."
+                        else "작품은 장터에 남고, 작품의 ‘만든 분’을 누르면 빈 프로필이 보여요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { TextButton(onClick = { clearing = false; vm.clearProfile(works) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { clearing = false }) { Text("닫기") } },
         )
     }
     if (s.flagged) AlertDialog(
@@ -720,6 +759,26 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                     OutlinedButton(onClick = { if (dirty) leaving = true else onFace() }) { Text("얼굴 이모지") }
                     OutlinedButton(onClick = { if (dirty) leaving = true else onColor() }) { Text("바탕색") }
                 }
+                // [PRF-01] 1.36 PC 사용성 P4: 다른 분에게 이렇게 보여요, as it is typed.
+                Text("다른 분에게 이렇게 보여요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.company.SoftCard {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        MakerFace(p.face, p.color, nick.trim().ifEmpty { null }, 44.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(nick.trim().ifEmpty { "이름 없는 분" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                style?.let { Spacer(Modifier.width(6.dp)); Text(RecipeDescribe.short(it), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary) }
+                            }
+                            Text(bio.trim().ifEmpty { "소개 없음" }, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                color = if (bio.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                            if (pins.isNotEmpty()) Text("📌 " + pins.mapNotNull { c -> p.recipes.firstOrNull { it.code == c }?.title }.joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
                 OutlinedTextField(nick, { nick = it.replace("\n", "").take(12) }, label = { Text("이름 (광장 별명과 같아요)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth(), isError = nickProblem != null,
                     supportingText = { Text(nickProblem ?: "2~12자 · 비우면 ‘이름 없는 분’으로 보여요") })
@@ -769,7 +828,9 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
 class PeopleViewModel(private val c: AppContainer) : ViewModel() {
     private val device get() = c.companyStore.device
     data class State(val following: Following? = null, val followers: Followers? = null, val feed: List<RecipeItem>? = null,
-        val next: Int? = null, val error: String? = null, val message: String? = null, val me: String? = null)
+        val next: Int? = null, val error: String? = null, val message: String? = null, val me: String? = null,
+        /** The maker just unblocked, for 풀었어요 · 되돌리기. */
+        val unblocked: String? = null)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -796,7 +857,11 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
 
     fun quiet(id: String, q: Boolean) = act { c.recipeApi.followQuiet(device, id, q) }
     fun unfollow(id: String) = act { c.recipeApi.follow(device, id, false); c.recipes.peopleChanged() }
-    fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false); c.recipes.peopleChanged() }
+    fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false); c.recipes.peopleChanged(); undo(id) }
+    /** [PRF-05] 1.36 PC 사용성 P5: 풀었어요 · 되돌리기. */
+    fun reblock(id: String) = act { c.recipeApi.block(device, id, true); c.recipes.block(id, true); c.recipes.peopleChanged() }
+    private fun undo(id: String) { _state.value = _state.value.copy(unblocked = id) }
+    fun undoShown() { _state.value = _state.value.copy(unblocked = null) }
 
     private fun act(f: suspend () -> Unit) {
         viewModelScope.launch { runCatching { f() }.onSuccess { load() }.onFailure { _state.value = _state.value.copy(message = profileProblem(it)) } }
@@ -813,6 +878,11 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     var part by rememberSaveable { mutableStateOf(parts.indexOfFirst { it.first == start }.coerceAtLeast(0)) }
     val snack = remember { SnackbarHostState() }
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
+    LaunchedEffect(s.unblocked) {
+        val id = s.unblocked ?: return@LaunchedEffect
+        vm.undoShown()
+        if (snack.showSnackbar("차단을 풀었어요", actionLabel = "되돌리기", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.reblock(id)
+    }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
         topBar = { TopAppBar(title = { Text(parts[part].second) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
@@ -877,6 +947,7 @@ private fun PersonRow(m: MakerFaceItem, onClick: () -> Unit, actions: @Composabl
             Text(m.nick ?: "이름 없는 분", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (m.fresh) Text("새 작품", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             else if (m.quiet) Text("알림 꺼짐", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (m.gone) Text("프로필이 없어졌어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         actions()
     }

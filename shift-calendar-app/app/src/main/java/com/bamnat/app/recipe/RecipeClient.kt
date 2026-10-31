@@ -173,7 +173,9 @@ data class MakerPage(
 
 /** [PRF-02] A maker as a face in a row or list. [fresh]: a new public recipe in the last 7 days. */
 data class MakerFaceItem(val maker: String, val nick: String?, val face: String?, val color: Long?, val fresh: Boolean = false,
-    val quiet: Boolean = false, val bio: String? = null, val picked: Boolean = false)
+    val quiet: Boolean = false, val bio: String? = null, val picked: Boolean = false,
+    /** A blocked maker whose profile is gone (모두 지우기). */
+    val gone: Boolean = false)
 
 /** [PRF-02] 팔로잉 and the makers this phone blocked. */
 data class Following(val items: List<MakerFaceItem>, val blocked: List<MakerFaceItem>)
@@ -548,7 +550,7 @@ class RecipeClient(
         /** [PRF-02] A maker as a face. */
         fun face(o: JSONObject) = MakerFaceItem(o.getString("maker"), o.optStringOrNull("nick"), o.optStringOrNull("face"),
             if (o.isNull("color") || !o.has("color")) null else o.optLong("color"), o.optBoolean("fresh"), o.optBoolean("quiet"),
-            o.optStringOrNull("bio"), o.optBoolean("picked"))
+            o.optStringOrNull("bio"), o.optBoolean("picked"), o.optBoolean("gone"))
 
         fun item(o: JSONObject): RecipeItem {
             val c = o.optJSONObject("cover")

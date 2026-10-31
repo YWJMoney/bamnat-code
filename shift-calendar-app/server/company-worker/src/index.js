@@ -3169,8 +3169,13 @@ async function forgetMine(request, env) {
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
+  // [PRF-01] 1.36 what of 마을 goes, so the phone can say it (PC 확인: it said "지울 것이 없었어요" over a profile and 3 works).
+  const profile = (await one(env, "SELECT COUNT(*) AS n FROM recipe_makers WHERE device = ? AND closed = 0", dev)).n;
+  const follows = (await one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", dev)).n;
+  const sets = (await one(env, "SELECT COUNT(*) AS n FROM recipe_sets WHERE owner = ?", dev)).n;
   await batch(env, forgetCommunity(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes, ...(recipes ? { recipes } : {}) });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes,
+    ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
 }
 
 async function vote(request, env) {

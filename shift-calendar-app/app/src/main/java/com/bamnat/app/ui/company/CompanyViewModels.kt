@@ -1234,6 +1234,25 @@ class CompanyReportViewModel(
 
     /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
     fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /**
+     * [PRF-01] 1.36 PC 사용성 P1: what of 마을 this phone has up (작품·모음·프로필·팔로잉), said in the 모두 지우기 question
+     * with its numbers. Null while asking or with nothing up.
+     */
+    private val _village = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val village: kotlinx.coroutines.flow.StateFlow<String?> = _village
+    fun loadVillage() {
+        if (!c.recipeApi.enabled) return
+        viewModelScope.launch {
+            val dev = c.companyStore.device
+            val id = runCatching { c.recipeApi.makerMe(dev) }.getOrNull() ?: return@launch
+            val p = runCatching { c.recipeApi.maker(dev, id) }.getOrNull() ?: return@launch
+            _village.value = listOfNotNull(
+                "올린 작품 ${p.recipes.size}개".takeIf { p.recipes.isNotEmpty() }, "모음 ${p.sets.size}개".takeIf { p.sets.isNotEmpty() },
+                "프로필".takeIf { p.recipes.isNotEmpty() || p.face != null || p.bio != null }, "팔로잉 ${p.followingCount}명".takeIf { p.followingCount > 0 },
+            ).joinToString(", ").ifEmpty { null }
+        }
+    }
+
     /** [J133-71] Work with a company: 내 설정 나누기 is offered only then. */
     val companyFits: Boolean get() = c.companyFits(calendar)
 
