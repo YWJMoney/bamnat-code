@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.AppContainer
+import com.bamnat.app.recipe.RecipeClient
 import com.bamnat.app.recipe.RecipeItem
 import com.bamnat.app.ui.recipe.ThemeThumb
 import com.bamnat.core.work.WorkStyle
@@ -54,9 +55,9 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
     val scope = rememberCoroutineScope()
     LaunchedEffect(style) {
         val got = runCatching {
-            val first = c.recipeApi.list(style, "hot", kind = "skin")
-            val more = first.next?.let { runCatching { c.recipeApi.list(style, "hot", cursor = it, kind = "skin").items }.getOrNull() }.orEmpty()
-            (first.items + more).distinctBy { it.code }.filter { it.look != null && !c.recipes.hides(it) }
+            val first = c.recipeApi.list(style, "hot", kind = RecipeClient.SCOPE_THEME)
+            val more = first.next?.let { runCatching { c.recipeApi.list(style, "hot", cursor = it, kind = RecipeClient.SCOPE_THEME).items }.getOrNull() }.orEmpty()
+            (first.items + more).distinctBy { it.code }.filter { it.look != null && it.scope != "tab" && !c.recipes.hides(it) }
         }
         deck = got.getOrNull()
         failed = got.isFailure
@@ -77,9 +78,13 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                     VerticalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { list[it].code }) { i ->
                         val t = list[i]
                         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)) {
+                            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)) {
                             BoxWithConstraints(Modifier.widthIn(max = 360.dp).fillMaxWidth()) { ThemeThumb(t.look!!, width = maxWidth) }
                             Text(t.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            // 1.36 [VIL-17] PC 확인 V9: say what wearing it changes, not just a picture.
+                            if (t.tabs.isNotEmpty()) Text("바뀌는 곳: " + t.tabs.joinToString(" · ") { com.bamnat.app.ui.recipe.marketTabLabel(it, style) },
+                                style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            else if (t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 입은 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

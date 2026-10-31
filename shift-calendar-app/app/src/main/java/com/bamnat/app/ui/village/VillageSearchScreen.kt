@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,17 +54,32 @@ import kotlinx.coroutines.delay
 @Composable
 fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) -> Unit, onPlaza: () -> Unit, onRequests: () -> Unit) {
     var q by rememberSaveable { mutableStateOf("") }
+    // PC 확인 V13: what was looked for lately (device-only `village_ui`), and the box selects what is in it when tapped again.
+    val prefs = remember { c.appContext.getSharedPreferences("village_ui", android.content.Context.MODE_PRIVATE) }
+    var recent by remember { mutableStateOf(runCatching { prefs.getString("recent_q", "")!!.split('\n').filter { it.isNotBlank() } }.getOrDefault(emptyList())) }
+    val keep = { w: String ->
+        val t = w.trim()
+        if (t.length >= 2) {
+            recent = (listOf(t) + recent.filter { it != t }).take(8)
+            runCatching { prefs.edit().putString("recent_q", recent.joinToString("\n")).apply() }
+        }
+    }
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(q)) }
     var recipes by remember { mutableStateOf<List<RecipeItem>?>(null) }
     var found by remember { mutableStateOf<VillageFound?>(null) }
     var failed by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
+    // PC 확인: a found post opens on itself, in its own plaza's talk, not on the plaza's first screen.
+    val talkScope = androidx.compose.runtime.rememberCoroutineScope()
+    val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, talkScope) }
+    com.bamnat.app.ui.company.TalkSheet(talk)
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     LaunchedEffect(q) {
         val words = q.trim()
         if (words.length < 2) { recipes = null; found = null; failed = false; return@LaunchedEffect }
         delay(350)
         coroutineScope {
-            val r = async { if (c.recipeApi.enabled && c.recipes.on.value) runCatching { c.recipeApi.list(null, "good", words).items }.getOrNull() else emptyList() }
+            val r = async { if (c.recipeApi.enabled && c.recipes.on.value) runCatching { c.recipeApi.list(null, "hot", words).items }.getOrNull() else emptyList() }
             val v = async { runCatching { c.companyApi.villageSearch(words) }.getOrNull() }
             recipes = r.await()
             found = v.await()
@@ -75,15 +91,38 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
             OutlinedTextField(
-                value = q, onValueChange = { q = it.take(30) }, singleLine = true,
+                value = field, onValueChange = { v -> field = if (v.text.length > 30) v.copy(text = v.text.take(30)) else v; q = field.text },
+                singleLine = true,
                 placeholder = { Text("작품·글·요청을 한 번에 (예: 야간, 다크, 알람)") },
-                trailingIcon = { if (q.isNotEmpty()) IconButton(onClick = { q = "" }) { Icon(Icons.Filled.Close, "지우기") } },
-                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focus),
+                trailingIcon = { if (q.isNotEmpty()) IconButton(onClick = { q = ""; field = androidx.compose.ui.text.input.TextFieldValue("") }) { Icon(Icons.Filled.Close, "지우기") } },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keep(q) }),
+                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focus)
+                    .onFocusChanged { f -> if (f.isFocused && field.text.isNotEmpty())
+                        field = field.copy(selection = androidx.compose.ui.text.TextRange(0, field.text.length)) },
             )
             LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val words = q.trim()
                 when {
-                    words.length < 2 -> item { Hint("두 글자 이상 적으면 장터 작품, 광장 글, 요청을 함께 찾아요") }
+                    words.length < 2 -> {
+                        item { Hint("두 글자 이상 적으면 장터 작품, 광장 글, 요청을 함께 찾아요") }
+                        if (recent.isNotEmpty()) item {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Group("최근 찾은 말")
+                                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                                    androidx.compose.material3.TextButton(onClick = { recent = emptyList(); runCatching { prefs.edit().remove("recent_q").apply() } }) { Text("모두 지우기") }
+                                }
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    recent.forEach { w ->
+                                        androidx.compose.material3.AssistChip(onClick = {
+                                            q = w; field = androidx.compose.ui.text.input.TextFieldValue(w, androidx.compose.ui.text.TextRange(w.length))
+                                        }, label = { Text(w) })
+                                    }
+                                }
+                            }
+                        }
+                    }
                     failed -> item { Hint("인터넷이 없거나 서버가 바빠요. 잠시 뒤 다시 찾아 주세요") }
                     recipes == null && found == null -> item { Hint("찾는 중이에요") }
                     else -> {
@@ -94,20 +133,22 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
                         if (rs.isNotEmpty()) {
                             item { Group("장터 작품 ${rs.size}") }
                             items(rs.take(10), key = { "r" + it.code }) { r ->
-                                Row(r.title, r.summary.ifBlank { "좋아요 ${r.likes} · 쓰는 분 ${r.users}" }) { onRecipe(r.code) }
+                                Row(r.title, r.summary.ifBlank { "좋아요 ${r.likes} · 쓰는 분 ${r.users}" }) { keep(words); onRecipe(r.code) }
                             }
                         }
                         if (ps.isNotEmpty()) {
                             item { Group("광장 글 ${ps.size}") }
                             items(ps, key = { "p" + it.id }) { p ->
-                                Row(p.body, "${p.roomName} · ${ago(p.at)}" + if (p.replies > 0) " · 답글 ${p.replies}" else "", onPlaza)
+                                Row(p.body, "${p.roomName} · ${ago(p.at)}" + if (p.replies > 0) " · 답글 ${p.replies}" else "") {
+                                    keep(words); talk.show(p.room, com.bamnat.core.plaza.StylePlaza.ROOM, p.roomName, focus = p.id)
+                                }
                             }
                         }
                         if (qs.isNotEmpty()) {
                             item { Group("요청 ${qs.size}") }
                             items(qs, key = { "q" + it.id }) { r ->
                                 Row(r.body, (when (r.state) { "done" -> "완성"; "making" -> "만드는 중"; else -> "기다림" }) + " · 좋아요 ${r.likes}") {
-                                    r.code?.let(onRecipe) ?: onRequests()
+                                    keep(words); r.code?.let(onRecipe) ?: onRequests()
                                 }
                             }
                         }

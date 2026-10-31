@@ -3,6 +3,7 @@ package com.bamnat.app.ui.company
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -72,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -456,7 +458,13 @@ fun TalkSheet(holder: TalkHolder) {
                         }
                         val tops = allTops.filter { only == null || it.kind == only || (only == NIGHT && nightPost(it)) }
                         if (tops.isEmpty()) Text("이 꼬리표의 글이 아직 없어요", style = MaterialTheme.typography.bodyMedium)
-                        tops.forEach { p ->
+                        tops.forEach { p -> androidx.compose.runtime.key(p.id) {
+                            // 1.36 [VIL-06] PC 확인: opened for one post (찾기·내 글), it is scrolled to and marked.
+                            val focused = p.id == o.focus || talk.posts.any { it.parent == p.id && it.id == o.focus }
+                            val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                            if (focused) LaunchedEffect(talk.posts.size) { kotlinx.coroutines.delay(200); runCatching { bring.bringIntoView() } }
+                            Column(if (focused) Modifier.bringIntoViewRequester(bring)
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
                                 company = o.company, setup = o.setup, roomName = if (o.room) o.title else null,
@@ -475,6 +483,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     }
                                 }
                             }
+                            } }
                         }
                     }
                 }
@@ -658,6 +667,9 @@ private fun PostRow(
     val saved = remember(roomName) { roomName?.let { com.bamnat.app.company.SavedPosts.of(context) } }
     val keptFlow = remember(saved) { saved?.items ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }
     val keptList by keptFlow.collectAsStateWithLifecycle()
+    // PC 확인 V14: one line says where a kept post went, for a few seconds.
+    var keptSaid by remember { mutableStateOf<String?>(null) }
+    keptSaid?.let { LaunchedEffect(it) { kotlinx.coroutines.delay(4000); keptSaid = null } }
     // [J133-55] A post goes for good: asked once before it does.
     var deleting by remember { mutableStateOf(false) }
     if (deleting) AlertDialog(
@@ -671,6 +683,8 @@ private fun PostRow(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
             .padding(start = 0.dp),
     ) {
+        keptSaid?.let { Text("📌 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             val name = p.nick ?: "참여자 ${p.who}"
             // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
@@ -710,6 +724,7 @@ private fun PostRow(
                         DropdownMenuItem(text = { Text(if (kept) "간직 빼기" else "간직하기") }, onClick = {
                             menu = false
                             if (kept) saved.remove(p.id) else saved.save(p, company, roomName!!)
+                            keptSaid = if (kept) "간직한 글에서 뺐어요" else "간직했어요 · 마을 › 공방 › 간직한 글 · 내 글에서 다시 봐요"
                         })
                     }
                     // 1.36 [VIL-15] 마을 V15: my question on a kind of work's plaza can go to 장터 as a request for a recipe.
@@ -869,11 +884,17 @@ private fun PollEditor(options: List<String>, onChange: (List<String>) -> Unit) 
         TextButton(onClick = { onChange(listOf("", "")) }, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("+ 투표 붙이기 (보기 2~4개)") }
         return
     }
+    // PC 확인 V3: 다음 key walks to the next choice instead of the keyboard covering it; the last one closes the keyboard.
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
     Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         options.forEachIndexed { i, o ->
+            val last = i == options.lastIndex
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = o, onValueChange = { t -> onChange(options.toMutableList().also { it[i] = t.replace("\n", " ").take(30) }) },
-                    placeholder = { Text("보기 ${i + 1}") }, singleLine = true, modifier = Modifier.weight(1f))
+                    placeholder = { Text("보기 ${i + 1}") }, singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = if (last) ImeAction.Done else ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) },
+                        onDone = { focus.clearFocus() }))
                 if (options.size > 2) IconButton(onClick = { onChange(options.filterIndexed { j, _ -> j != i }) }) { Icon(Icons.Filled.Close, "보기 ${i + 1} 빼기") }
             }
         }

@@ -157,6 +157,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     val taking = s.items.orEmpty().any { it.taking }
     LaunchedEffect(taking) { if (taking) vm.loadMine() }
     var deleting by remember { mutableStateOf<String?>(null) }
+    var takingAsk by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
@@ -187,17 +188,17 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {
                                         q.state == "done" && q.code != null -> TextButton(onClick = { onOpen(q.code) }) { Text("완성된 레시피 보기") }
-                                        q.taking -> {
+                                        q.taking && q.state == "making" -> {
                                             TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
                                             TextButton(onClick = { vm.loadMine(); finishing = q.id }) { Text("완성") }
                                             TextButton(onClick = { vm.act(q.id, "take", false) }) { Text("내려놓기") }
                                         }
-                                        q.state == "waiting" && !q.mine && vm.canWrite -> TextButton(onClick = { vm.act(q.id, "take") }) { Text("만들게요") }
+                                        q.state == "waiting" && !q.mine && vm.canWrite -> TextButton(onClick = { takingAsk = q.id }) { Text("만들게요") }
                                     }
                                     if (q.mine) TextButton(onClick = { deleting = q.id }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
                                 }
                                 // 1.36 [VIL-15] 올리고 돌아오면 바로 잇기: my newest public recipe, one tap.
-                                if (q.taking) s.mine.firstOrNull()?.let { r ->
+                                if (q.taking && q.state == "making") s.mine.firstOrNull()?.let { r ->
                                     OutlinedButton(onClick = { vm.act(q.id, "done", code = r.code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                                         Text("‘${r.title}’${com.bamnat.app.ui.Fmt.ro("‘${r.title}’")} 완성하기", maxLines = 1)
                                     }
@@ -209,6 +210,13 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+    // 1.36 [VIL-15] 만들게요 says what it means before taking: no deadline, 내려놓기 any time.
+    takingAsk?.let { id ->
+        AlertDialog(onDismissRequest = { takingAsk = null }, title = { Text("이 요청을 맡을까요?") },
+            text = { Text("요청한 분에게 \"만드는 중\"으로 보여요. 마감은 없고, 못 하게 되면 언제든 내려놓기를 누르면 다른 분이 맡을 수 있어요. 스튜디오에서 만들어 올린 뒤 이 화면에서 완성을 눌러 이어 주세요.") },
+            confirmButton = { TextButton(onClick = { vm.act(id, "take"); takingAsk = null }) { Text("만들게요") } },
+            dismissButton = { TextButton(onClick = { takingAsk = null }) { Text("취소") } })
     }
     // [RCX-26] 요청 지우기 asks first.
     deleting?.let { id ->

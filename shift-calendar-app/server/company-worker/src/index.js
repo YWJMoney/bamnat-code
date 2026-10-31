@@ -6716,7 +6716,7 @@ async function digest(request, env, url) {
 }
 
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms, roomPosts] = (await batch(env, [
+  const [changed, adopted, rates, results, rooms, roomPosts, replies] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -6733,6 +6733,11 @@ async function newsItems(env, dev, since, now) {
       WHERE x.device = ? AND x.at > ? AND x.at <= ? ORDER BY x.at DESC LIMIT 20`, dev, since, now),
     roomNews(env, dev, since),
     roomPostNews(env, dev, since),
+    // 1.36 [VIL-09] PC 확인 V1: answers to what this phone wrote in a room, by room, so a question's writer hears of them.
+    stmt(env, `SELECT q.company_id, c.name, COUNT(*) AS n, MAX(a.created_at) AS at FROM posts q
+        JOIN posts a ON a.parent = q.id AND a.status = 'shown' AND a.device != q.device AND a.created_at > ?2
+        LEFT JOIN companies c ON c.id = q.company_id
+      WHERE q.device = ?1 AND q.grp = 'room' AND q.parent IS NULL GROUP BY q.company_id ORDER BY at DESC LIMIT 10`, dev, since),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -6745,6 +6750,7 @@ async function newsItems(env, dev, since, now) {
     ...rooms.map((r) => ({ kind: "room", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
     // AI 1.27 [PLAZA-35] New posts in 회사 정보 광장, n of them in one line.
     ...roomPosts.map((r) => ({ kind: "room_posts", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
+    ...replies.map((r) => ({ kind: "replies", company: { id: r.company_id, name: STYLE_ROOMS[r.company_id] ?? r.name ?? "" }, count: r.n, at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

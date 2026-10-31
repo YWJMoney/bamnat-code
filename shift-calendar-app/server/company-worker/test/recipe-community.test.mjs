@@ -473,6 +473,11 @@ test("[VIL-08][VIL-09] 광장 글 꼬리표(이야기·질문·팁·자랑)와 �
   assert.equal(shown.answer, a);
   assert.equal((await pick(1, null)).data.answer, null);
   assert.equal((await call("GET", path, undefined, as(3))).data.posts.find((p) => p.id === q).answer, undefined);
+  // PC 확인 V1: the question's writer hears of the answer in 광장 소식 (their own 고마워요 does not count).
+  const since = new Date(Date.now() - 60000).toISOString();
+  const news = (n) => call("GET", `/api/plaza/news?since=${since}`, undefined, as(n)).then((r) => r.data.items.filter((i) => i.kind === "replies"));
+  assert.deepEqual((await news(1)).map((i) => [i.company, i.count]), [[{ id: "style-shift", name: "교대 광장" }, 1]]);
+  assert.deepEqual(await news(2), [], "answering is not news to the one who answered");
 });
 
 test("[VIL-10] 투표 글: 질문에 보기 2~4개, 한 사람 한 표, 바꾸고 거둘 수 있어요", async (t) => {

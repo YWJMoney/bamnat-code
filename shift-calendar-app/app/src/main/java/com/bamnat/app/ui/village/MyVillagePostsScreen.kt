@@ -61,6 +61,10 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     var problem by remember { mutableStateOf<String?>(null) }
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    // PC 확인: 글 보기 opens the post itself in its plaza's talk.
+    val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
+    com.bamnat.app.ui.company.TalkSheet(talk)
+    val open = { room: String, name: String, id: String -> talk.show(room, com.bamnat.core.plaza.StylePlaza.ROOM, name, focus = id) }
     LaunchedEffect(Unit) {
         mine = try {
             c.companyApi.myPosts(c.companyStore.device)
@@ -89,6 +93,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                         }
                         items(keptList, key = { it.id }) { s ->
                             PostCard(s.roomName, label(s.kind), s.body, ago(s.at), extra = null) {
+                                TextButton(onClick = { open(s.room, s.roomName, s.id) }) { Text("글 보기") }
                                 TextButton(onClick = {
                                     saved.remove(s.id)
                                     scope.launch {
@@ -110,7 +115,9 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                                     extra = listOfNotNull(
                                         if (p.parent == null && p.replies > 0) "답글 ${p.replies}" else null,
                                         if (p.hidden) "다른 분께는 가려졌어요" else null,
-                                    ).joinToString(" · ").ifEmpty { null }) {}
+                                    ).joinToString(" · ").ifEmpty { null }) {
+                                    if (p.room.isNotBlank()) TextButton(onClick = { open(p.room, p.roomName, p.id) }) { Text("글 보기") }
+                                }
                             }
                         }
                     }

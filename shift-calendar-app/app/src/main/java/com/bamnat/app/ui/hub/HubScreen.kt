@@ -159,6 +159,8 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val item by androidx.compose.runtime.produceState<com.bamnat.app.recipe.RecipeItem?>(null, style, today) {
         val pool = runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList())
             .ifEmpty { runCatching { c.recipeApi.list(style, "hot").items.take(5) }.getOrDefault(emptyList()) }
+            // PC 확인: a kind of work with nothing of its own yet still gets one, from every kind of work.
+            .ifEmpty { if (style == null) emptyList() else runCatching { c.recipeApi.list(null, "hot").items.take(5) }.getOrDefault(emptyList()) }
             .filter { !c.recipes.hides(it) }
         value = pool.takeIf { it.isNotEmpty() }?.let { it[(com.bamnat.core.time.Today.date().dayOfYear) % it.size] }
     }
@@ -222,6 +224,8 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
             }
         }
     }
+    // 1.36 [VIL-15] PC 확인 V2: my request someone finished shows here at once (the 소식 comes only once a day), until opened.
+    DoneRequests(c, style, onRecipe)
     // 1.36 [VIL-19] 이달의 주제 공모, under 스튜디오 where things are made.
     com.bamnat.app.ui.village.ContestCard(c, style, onRecipe)
     val themes = lease.history.sortedByDescending { it.own }.take(10)
@@ -251,6 +255,38 @@ private fun Card(title: String, text: String, action: String, onClick: () -> Uni
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FilledTonalButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
+        }
+    }
+}
+
+/** 1.36 [VIL-15] My requests that came back 완성, not yet opened from here (device-only `village_ui`). */
+@Composable
+private fun DoneRequests(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) {
+    val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
+    var seen by remember { mutableStateOf(runCatching { prefs.getStringSet("req_seen", emptySet())!!.toSet() }.getOrDefault(emptySet())) }
+    val done by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.RecipeRequest>(), style) {
+        if (!c.recipeApi.enabled) return@produceState
+        value = runCatching { c.recipeApi.requests(c.companyStore.device, style) }.getOrDefault(emptyList())
+            .filter { it.mine && it.state == "done" && it.code != null }
+    }
+    val fresh = done.filter { it.code !in seen }
+    val q = fresh.firstOrNull() ?: return
+    SoftCard(highlighted = true) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("🎁 부탁한 레시피가 완성됐어요", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("‘${q.body.take(40)}’" + if (fresh.size > 1) " 외 ${fresh.size - 1}개" else "", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.Button(onClick = {
+                    seen = seen + q.code!!
+                    runCatching { prefs.edit().putStringSet("req_seen", seen).apply() }
+                    onRecipe(q.code)
+                }, modifier = Modifier.heightIn(min = 48.dp)) { Text("보러 가기") }
+                TextButton(onClick = {
+                    seen = seen + fresh.mapNotNull { it.code }
+                    runCatching { prefs.edit().putStringSet("req_seen", seen).apply() }
+                }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+            }
         }
     }
 }

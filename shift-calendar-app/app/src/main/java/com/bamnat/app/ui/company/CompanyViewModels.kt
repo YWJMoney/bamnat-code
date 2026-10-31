@@ -602,6 +602,8 @@ class TalkHolder(
         val refreshing: Boolean = false,
         /** [J133-55] The kind of post the writing starts on: "proposal" after 달라요. */
         val startKind: String? = null,
+        /** 1.36 [VIL-06] PC 확인: the post to scroll to and mark, opened from 마을에서 찾기 or 간직한 글 · 내 글. */
+        val focus: String? = null,
     ) {
         val room: Boolean get() = setup == com.bamnat.core.plaza.StylePlaza.ROOM
     }
@@ -623,12 +625,12 @@ class TalkHolder(
      * [SPD-13] 1.30 AP1: the talk kept on the phone ([com.bamnat.app.company.PageCache]; a room's also from its company's page)
      * shows at once, without a spinner, while it is read again.
      */
-    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null) {
+    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null, focus: String? = null) {
         val kept = c.companySearch.cache.talk(company, setup)?.value
         changed = false
         last = kept
         com.bamnat.app.company.NetTimings.cached(kept != null)
-        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind)
+        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind, focus = focus)
         reload()
     }
 

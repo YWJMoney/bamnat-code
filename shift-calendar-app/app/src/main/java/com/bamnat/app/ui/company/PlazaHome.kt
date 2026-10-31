@@ -102,9 +102,21 @@ class PlazaHomeViewModel(
 
     val talk = TalkHolder(c, viewModelScope, calendar)
 
+    /**
+     * 1.36 [VIL-09] PC 확인 V1: when this room's talk was last opened here, so the card can say "내 글에 새 답 N" until it is
+     * opened again (device-only, `village_ui`).
+     */
+    private val ui = c.appContext.getSharedPreferences("village_ui", android.content.Context.MODE_PRIVATE)
+    private val _seen = MutableStateFlow(0L)
+    val seen: StateFlow<Long> = _seen.asStateFlow()
+    private fun seenKey() = "seen_${_plan.value.room}"
+    private fun readSeen() { _seen.value = runCatching { ui.getLong(seenKey(), 0L) }.getOrDefault(0L) }
+
+
     init {
         // [SPD-12] The whole list of companies, for 다른 회사 규칙 광장 and its search, if the start of the app did not yet.
         c.warmCompanies()
+        readSeen()
         load()
     }
 
@@ -113,6 +125,7 @@ class PlazaHomeViewModel(
         val p = _plan.value
         _plan.value = if (p.top == StylePlaza.Top.COMPANY_ROOM) StylePlaza.own(style) else StylePlaza.plan(style, company)
         _state.value = State()
+        readSeen()
         load()
     }
 
@@ -190,6 +203,9 @@ class PlazaHomeViewModel(
     fun openTalk() {
         val p = _plan.value
         val room = p.room ?: return
+        val now = com.bamnat.core.time.Today.instant().toEpochMilli()
+        runCatching { ui.edit().putLong(seenKey(), now).apply() }
+        _seen.value = now
         talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note)
     }
 }
@@ -260,7 +276,7 @@ fun PlazaHomeScreen(
                         }
                     }
                 }
-                TalkCard(plan, state, onOpen = vm::openTalk)
+                TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = vm::openTalk)
                 (plan.alsoRoom ?: vm.backRoom.takeIf { plan.top != StylePlaza.Top.COMPANY_ROOM })?.let {
                     OutlinedButton(onClick = vm::across, modifier = Modifier.fillMaxWidth()) {
                         Text(if (plan.top == StylePlaza.Top.COMPANY_ROOM) "${styleName(it)}도 보기" else "회사 정보 광장으로")
@@ -341,7 +357,7 @@ private fun FixesCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit, on
 
 /** 자유 토의: the newest few posts, and the sheet to read and write them all. */
 @Composable
-private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, onOpen: () -> Unit) {
+private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, seen: Long = 0L, onOpen: () -> Unit) {
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(plan.roomTitle.ifEmpty { "자유 토의" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -351,6 +367,13 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, onO
                 Text("이번 주 주제 · $t", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable(onClickLabel = "주제로 글 쓰기", onClick = onOpen).padding(vertical = 4.dp))
             }
+            // 1.36 [VIL-09] PC 확인 V1: a question's writer sees that answers came, without opening every room.
+            talk?.let { t ->
+                val mine = t.posts.filter { it.mine && it.parent == null }.map { it.id }.toSet()
+                val fresh = if (seen == 0L || mine.isEmpty()) 0 else t.posts.count { it.parent in mine && !it.mine && it.at.toEpochMilli() > seen }
+                if (fresh > 0) Text("💬 내 글에 새 답 ${fresh}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClickLabel = "새 답 보기", onClick = onOpen).padding(vertical = 4.dp))
+            }
             when {
                 talk == null && state.error != null -> Text(state.error, style = MaterialTheme.typography.bodyMedium)
                 talk == null -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -358,7 +381,9 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, onO
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> talk.posts.filter { it.parent == null && it.hidden == null }.takeLast(3).reversed().forEach { p ->
                     Column {
-                        Text(if (p.mine) "나 (${p.nick ?: "참여자 ${p.who}"})" else p.nick ?: "참여자 ${p.who}", style = MaterialTheme.typography.labelLarge)
+                        // 1.36 [VIL-10] PC 확인 V7: a question with a poll says so on the card.
+                        val tag = when { p.poll != null -> "📊 투표 · "; p.kind == "question" -> "질문 · "; else -> "" }
+                        Text(tag + if (p.mine) "나 (${p.nick ?: "참여자 ${p.who}"})" else p.nick ?: "참여자 ${p.who}", style = MaterialTheme.typography.labelLarge)
                         Text(p.body, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         val replies = talk.posts.count { it.parent == p.id }
                         if (replies > 0) Text("댓글 ${replies}개", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

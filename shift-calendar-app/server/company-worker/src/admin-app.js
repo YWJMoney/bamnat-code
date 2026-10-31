@@ -1148,7 +1148,7 @@ function adminApp(L, BUILD, M) {
         ${x.picks.includes(e.code) ? "checked" : ""}${edit && !current ? "" : " disabled"}> ${esc(e.title)} <span class="meta">좋아요 ${e.likes} · 쓰는 분 ${e.users} · ${esc(e.code)}</span></label></li>`).join("")}</ul>` : '<p class="meta">아직 넣은 작품이 없어요</p>'}
       ${edit && !current && x.entries.length ? `<div class="actions"><button class="btn primary" data-act="contest-pick" data-id="${esc(x.month)}|${esc(x.style)}">고른 작품을 이달의 테마로 (3개까지)</button></div>` : ""}
     </article>`;
-    return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 장터 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
+    return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 마을 › 공방 맨 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
       앱에 ‘지난 달 이달의 테마’로 보여요. 고른 분께 드릴 프로 보상(조사 V19·832)은 아직 앱에 약속하지 않았고, 보상 길이 생기면 함께 열어요.</p>
       <div class="grid">${now.map((x) => card(x, true)).join("")}</div>
       ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
@@ -4099,7 +4099,7 @@ function adminApp(L, BUILD, M) {
     },
     "contest-save": async ({ id }) => {
       const theme = document.getElementById(`contest-${id}`)?.value?.trim() ?? "";
-      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? "저장했어요. 앱 장터 위에 보여요" : "내렸어요");
+      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? "저장했어요. 앱 마을 › 공방 맨 위에 보여요" : "내렸어요");
       S.data.contests = null;
       load();
     },
