@@ -182,7 +182,8 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
     private fun loadInbox() {
         viewModelScope.launch {
             // Since the last 다 봤어요 (7 days at first), so what was seen does not come back as new.
-            val box = runCatching { c.recipeApi.inbox(device, c.recipes.inboxSince()) }.getOrNull() ?: return@launch
+            // U11 (1.36 PC 사용성): the last 7 days, so what was seen stays as a grey line; what is new comes from the seen keys.
+            val box = runCatching { c.recipeApi.inbox(device, null) }.getOrNull() ?: return@launch
             val seen = c.recipes.seenInbox()
             _state.value = _state.value.copy(inbox = box, unseen = inboxKeys(box).filterNot { it in seen }.toSet())
         }
@@ -595,12 +596,12 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
                     Text(if (fresh) "다 봤어요" else if (open) "접기" else "펼치기")
                 }
             }
-            if (lines.isEmpty()) Text("새 소식은 다 봤어요. 새 팔로워·질문·고친 판이 오면 여기 떠요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (lines.isEmpty()) Text("지난 7일 동안 소식이 없어요. 새 팔로워·질문·고친 판이 오면 여기 떠요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else if (fresh || open) lines.take(8).forEach { (text, go) ->
                 Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).then(if (go != null) Modifier.clickable(onClick = go) else Modifier)
                         .heightIn(min = 40.dp).padding(vertical = 6.dp))
-            } else Text(lines.first().first, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            } else Text("지난 소식 · " + lines.first().first, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
