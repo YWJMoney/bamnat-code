@@ -282,8 +282,14 @@ fun RecipeListScreen(
             }
             state.error?.let { e -> item { Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) } }
             if (!state.loading && state.error == null && state.items.isEmpty()) item {
-                Text("아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                // [R136-05] 1.36 (리뷰 R-11, 관리자 개발사항 d8quAdDH7r3QKNMp): an empty list could only be read again by closing the
+                // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
+                        "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
+                }
             }
             // [HUB-04] Themes are picked by eye: two big pictures a row; the rest as rows.
             if (state.kind == "skin") items(state.items.chunked(2), key = { row -> row.first().code }) { row ->

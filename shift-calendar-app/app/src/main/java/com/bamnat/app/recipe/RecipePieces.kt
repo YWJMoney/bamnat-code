@@ -175,8 +175,7 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun preview(kind: PieceKind, values: Map<String, Any?>, cal: String): List<Change> = when (kind) {
         PieceKind.SHIFT_LOOK -> {
             val mine = types(cal)
-            items(values, "items").map { i ->
-                val t = match(mine, i)
+            pairs(mine, items(values, "items")).map { (i, t) ->
                 if (t == null) Change("‘${i["name"]}’: 맞는 근무가 없어 건너뛰어요", skipped = true)
                 else Change("${t.name}: 글자 ${t.label}→${i["label"] ?: t.label}" + (if (i["color"] != null) ", 색 바뀜" else "") +
                     (i["emoji"]?.let { ", 이모지 $it" } ?: ""))
@@ -276,10 +275,8 @@ class RecipePieces(private val c: AppContainer) {
                 val repo = c.scopeOf(cal).schedule
                 val mine = types(cal)
                 val list = JSONArray()
-                val used = HashSet<Long>()
-                for (i in items(values, "items")) {
-                    val t = match(mine.filter { it.id !in used }, i) ?: continue
-                    used += t.id
+                for ((i, matched) in pairs(mine, items(values, "items"))) {
+                    val t = matched ?: continue
                     val after = t.copy(label = (i["label"] as? String) ?: t.label, colorArgb = (i["color"] as? Long) ?: t.colorArgb,
                         icon = (i["emoji"] as? String)?.let(ShiftIcon::emojiKey) ?: t.icon)
                     if (after == t) continue
@@ -466,10 +463,8 @@ class RecipePieces(private val c: AppContainer) {
     /** [RCP-24] Each of my kinds of day a 근무 꾸미기 piece meets, as it is and as it would be. */
     suspend fun lookPairs(values: Map<String, Any?>, cal: String): List<Pair<ShiftType, ShiftType>> {
         val mine = types(cal)
-        val used = HashSet<Long>()
-        return items(values, "items").mapNotNull { i ->
-            val t = match(mine.filter { it.id !in used }, i) ?: return@mapNotNull null
-            used += t.id
+        return pairs(mine, items(values, "items")).mapNotNull { (i, matched) ->
+            val t = matched ?: return@mapNotNull null
             t to t.copy(label = (i["label"] as? String) ?: t.label, colorArgb = (i["color"] as? Long) ?: t.colorArgb,
                 icon = (i["emoji"] as? String)?.let(ShiftIcon::emojiKey) ?: t.icon)
         }
@@ -483,10 +478,8 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun current(kind: PieceKind, base: Map<String, Any?>, cal: String): Map<String, Any?> = when (kind) {
         PieceKind.SHIFT_LOOK -> {
             val mine = types(cal)
-            val used = HashSet<Long>()
-            base + ("items" to items(base, "items").map { i ->
-                val t = match(mine.filter { it.id !in used }, i) ?: return@map i
-                used += t.id
+            base + ("items" to pairs(mine, items(base, "items")).map { (i, matched) ->
+                val t = matched ?: return@map i
                 i + mapOf("label" to t.label, "color" to (t.colorArgb or 0xFF000000L)) +
                     (ShiftIcon.emoji(t.icon)?.let { mapOf("emoji" to it) } ?: emptyMap())
             })
@@ -888,6 +881,19 @@ class RecipePieces(private val c: AppContainer) {
     private fun match(mine: List<ShiftType>, item: Map<String, Any?>): ShiftType? {
         val name = (item["name"] as? String)?.trim()
         return mine.firstOrNull { it.name.trim() == name } ?: mine.firstOrNull { role(it) == ShiftRole.of(item["role"] as? String) }
+    }
+
+    /**
+     * [R136-04] 1.36 (리뷰 R-13: 레시피의 비번이 내 휴무를 먼저 가져가 휴무가 모두 '비'가 됐어요): each of my kinds of day meets one
+     * item at most, the same name first across all items, then the same role in order; an item left over is skipped.
+     */
+    private fun pairs(mine: List<ShiftType>, items: List<Map<String, Any?>>): List<Pair<Map<String, Any?>, ShiftType?>> {
+        val used = HashSet<Long>()
+        val byName = items.map { i ->
+            val name = (i["name"] as? String)?.trim()
+            mine.firstOrNull { it.id !in used && it.name.trim() == name }?.also { used += it.id }
+        }
+        return items.mapIndexed { n, i -> i to (byName[n] ?: match(mine.filter { it.id !in used }, i)?.also { used += it.id }) }
     }
 
     /** [RCX-30] Every picture id a 그림 꾸미기 piece names. */

@@ -459,8 +459,19 @@ fun CalendarScreen(
         com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales, payRange)
     }
     // [CAL-35] Last month's figures, for the few words of change under the hours.
+    // [R136-03] 1.36 (리뷰 R-04: 오늘 깐 앱이 '지난달보다 +1일'): the day this phone started, so a month wholly before it,
+    // with nothing written by hand, is not compared as if worked.
+    // The later of the install and this calendar's setup ('이 달력으로 할 수 있는 것' starts on it), so a phone set up again counts too.
+    val startDay = remember(activeCalendar.id) {
+        val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
+        val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
+        listOfNotNull(installed, setUp).maxOrNull()
+    }
     val versus = remember(snap, visibleMonth, focus, overview) {
-        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS) null
+        val before = visibleMonth.minusMonths(1)
+        val unwritten = startDay != null && before.atEndOfMonth().isBefore(startDay) &&
+            snap.entries.none { YearMonth.from(it.date) == before && it.override != ShiftOverride.None }
+        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || unwritten) null
         else overview.versus(com.bamnat.core.work.MonthOverview.of(visibleMonth.minusMonths(1), focus, snap.resolver,
             range = payRange?.let { payProfile?.period?.let { p -> com.bamnat.core.hours.StatsRange.of(com.bamnat.core.hours.StatsRange.Mode.PAY, visibleMonth.minusMonths(1), today, p) } }))
     }
@@ -1065,6 +1076,16 @@ fun CalendarScreen(
         val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today) {
             if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
+        // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
+        // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.
+        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && settings.workStyle == null) && settings.workStyle.let { style ->
+            when {
+                style?.usesPattern != false -> snap.isEmpty
+                style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
+                style == com.bamnat.core.work.WorkStyle.INVEST -> investState?.loaded == true && investState.full.isEmpty
+                else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
+            }
+        }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
@@ -1193,7 +1214,7 @@ fun CalendarScreen(
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // [J133-68] 1.33 (중간 빌드 확인: 첫 화면이 시작 단계와 '할 수 있는 것' 카드로 다 덮였어요): while the 시작 단계 card is up it is
             // the one guide on the calendar; '할 수 있는 것' and the day's tip come after it.
-            if (guideHere && startRows == null) add(Notice("guide", "오늘의 팁") {
+            if (guideHere && startRows == null && !startCardUp) add(Notice("guide", "오늘의 팁") {
                 val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
                 val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
                 com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
@@ -1279,7 +1300,10 @@ fun CalendarScreen(
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),
                         restSigns = restSigns,
                         compact = low,
-                        rangeLabel = payRange?.label(),
+                        // [R136-03] In the month the phone started, the days before it are the 근무표's, and it says so.
+                        rangeLabel = payRange?.label() ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
+                            snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
+                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표대로" },
                     )
                 }
             }

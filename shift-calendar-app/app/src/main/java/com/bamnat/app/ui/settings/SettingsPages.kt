@@ -551,7 +551,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         SwitchRow("촘촘하게", if (settings.compact) "카드 사이를 줄여 한 화면에 더 많이 보여요" else "카드 사이를 넉넉히 띄워요",
             settings.compact) { on -> vm.update { it.copy(compact = on) } }
         HorizontalDivider()
-        SwitchRow("오전/오후로 보기", if (settings.clock12) "시각을 '오후 3:05'처럼 보여요" else "시각을 '15:05'처럼 24시간으로 보여요",
+        SwitchRow("오전/오후로 보기", // [R136-17] 1.36 (리뷰 R-46: 꺼진 스위치 밑 '24시간으로 보여요'가 이름과 반대로 읽혔어요).
+            if (settings.clock12) "시각을 '오후 3:05'처럼 보여요" else "켜면 '오후 3:05'처럼 보여요. 지금은 '15:05'",
             settings.clock12) { on -> vm.update { it.copy(clock12 = on) } }
     }
     SectionCard(title = "모양") {

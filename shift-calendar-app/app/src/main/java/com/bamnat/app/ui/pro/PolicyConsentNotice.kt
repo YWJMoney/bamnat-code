@@ -33,6 +33,7 @@ fun PolicyConsentNotice(modifier: Modifier = Modifier) {
     val c = context.appContainer
     var asks by remember { mutableStateOf(c.policyAsks()) }
     var thanked by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(false) }
     if (!asks && !thanked) return
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp), highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -42,12 +43,17 @@ fun PolicyConsentNotice(modifier: Modifier = Modifier) {
                 return@Column
             }
             Text("처리방침·이용약관이 바뀌어요", style = MaterialTheme.typography.titleMedium)
-            PolicyConsent.lines.forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
-            Text("동의하지 않으셔도 지금처럼 써요. 그때는 원래 알린 날짜(11월 24~29일)부터 시행돼요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [R136-02] 1.36 (리뷰 R-03: 첫 화면이 이 카드로 덮여 달력이 안 보였어요): the first line only; the rest on 바뀌는 것 보기.
+            PolicyConsent.lines.firstOrNull()?.let { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
+            if (open) {
+                PolicyConsent.lines.drop(1).forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
+                Text("동의하지 않으셔도 지금처럼 써요. 그때는 원래 알린 날짜(11월 24~29일)부터 시행돼요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { c.remoteConfig.agreePolicy(); asks = false; thanked = true }) { Text("동의해요") }
-                TextButton(onClick = {
+                if (!open && PolicyConsent.lines.size > 1) TextButton(onClick = { open = true }) { Text("바뀌는 것 보기") }
+                else TextButton(onClick = {
                     runCatching {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }

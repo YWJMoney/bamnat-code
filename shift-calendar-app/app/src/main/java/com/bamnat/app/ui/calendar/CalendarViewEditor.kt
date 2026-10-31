@@ -137,7 +137,9 @@ private val SAMPLE = listOf(
  * the month's cells (date place, mark or bar, lines in order, memo lines), so what is picked here is what the calendar does.
  */
 @Composable
-fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell: String? = null, today: Color? = null, rows: Int = 1, start: Int = 6) {
+fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell: String? = null, today: Color? = null, rows: Int = 1, start: Int = 6,
+    /** [R136-07] Real dates' numbers, one a cell from Sunday, and which cell is today (else the example's 3rd). */
+    numbers: List<Int>? = null, todayAt: Int = 2) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val height = when (view.size) { "short" -> 46.dp; "tall" -> 86.dp; "huge" -> 120.dp; else -> 60.dp }
@@ -146,7 +148,7 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
     Column(Modifier.fillMaxWidth().semantics { contentDescription = "달력 모양 보기" }) {
         for (r in 0 until rows) Row(Modifier.fillMaxWidth().height(height)) {
             for (c in 0 until 7) {
-                val n = start + r * 7 + c
+                val n = numbers?.getOrNull(r * 7 + c) ?: (start + r * 7 + c)
                 val d = days[(r * 7 + c) % days.size]
                 val color = d.color.asColor()
                 val wash = when (cell) { "fill" -> color.copy(alpha = 0.85f); "dot" -> Color.Transparent; else -> if (d.off) Color.Transparent else color.copy(alpha = 0.16f) }
@@ -159,7 +161,7 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                     Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp),
                         horizontalAlignment = if (left) Alignment.Start else Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        val isToday = r == 0 && c == 2
+                        val isToday = r * 7 + c == todayAt
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = if (left) Arrangement.Start else Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.defaultMinSize((16 + bump * 2).dp, (16 + bump * 2).dp).background(if (isToday) today ?: scheme.primary else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
                                 Text("$n", fontSize = (10 + bump).sp, lineHeight = (12 + bump).sp, fontWeight = FontWeight.SemiBold, maxLines = 1,

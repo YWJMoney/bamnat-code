@@ -52,6 +52,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -310,16 +312,42 @@ internal fun valuesOf(v: com.bamnat.core.recipe.CalendarView, keep: Map<String, 
 /** An example month in the recipe's 달력 모양 and theme: the kinds of day in turn (2 days each), example memos, today ringed. */
 @Composable
 private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, view: com.bamnat.core.recipe.CalendarView) {
+    // [R136-07] 1.36 (리뷰 R-16·R-21, 후보 1 '내 달력으로 입어 보기'): this week and the next of the phone's own calendar, each day in
+    // the recipe's look for its kind of day (the same name, then the same role) or its own; the real holidays and today. Memos stay
+    // off the picture. A calendar with no kinds of day yet keeps the example.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    val today = remember { com.bamnat.core.time.Today.date() }
+    val first = remember(today) { today.minusDays((today.dayOfWeek.value % 7).toLong()) }
+    val real = remember(snap, days, first) {
+        val s = snap ?: return@remember null
+        val resolved = s.resolver.resolveRange(first, first.plusDays(13))
+        if (resolved.none { it.shiftType != null }) return@remember null
+        resolved.map { r ->
+            val t = r.shiftType
+            val role = t?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }
+            val item = t?.let { k -> days.firstOrNull { (it["name"] as? String)?.trim() == k.name.trim() } ?: days.firstOrNull { it["role"] == role } }
+            com.bamnat.app.ui.calendar.SampleDay(
+                ((item?.get("emoji") as? String) ?: item?.get("label")?.toString() ?: t?.label).orEmpty(),
+                (item?.get("color") as? Long) ?: t?.colorArgb?.or(0xFF000000L) ?: 0xFF757575L,
+                hours = r.scheduledMinutes.takeIf { it > 0 }?.let { m -> "${m / 60}h" },
+                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = r.isOff,
+            )
+        }
+    }
     val memos = listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
-    val sample = (0 until 14).map { i ->
+    val sample = real ?: (0 until 14).map { i ->
         val d = days[(i / 2) % days.size]
         com.bamnat.app.ui.calendar.SampleDay(((d["emoji"] as? String) ?: d["label"]?.toString()).orEmpty(), (d["color"] as? Long) ?: 0xFF757575L,
-            memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", holiday = if (i == 9) "개천절" else null, off = d["role"] == "off")
+            memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", off = d["role"] == "off")
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("11월", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(if (real != null) "${first.monthValue}월 · 내 달력" else "예시 달력", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
         if (view.looks.isNotEmpty()) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null)
+        else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
+            rows = 2, numbers = (0 until 14).map { first.plusDays(it.toLong()).dayOfMonth }, todayAt = (today.toEpochDay() - first.toEpochDay()).toInt())
         else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2, start = 9)
     }
 }
