@@ -15,6 +15,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -145,6 +151,13 @@ fun PayQuickSetup(
     val tax = taxPicked ?: if (form?.wageType == WageType.HOURLY) com.bamnat.core.pay.TaxMode.NONE else com.bamnat.core.pay.TaxMode.INSURANCE_4
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
     var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
+    // 1.36 PC 급여 검토 E2·W2 (포괄임금을 넣는 길을 못 찾음): on the last page, "연장수당이 월급에 들어 있어요". [fixedOt] the hours the
+    // contract says (null: not 포괄), [fixedOtPay] its 고정 연장수당 when written (null: 통상시급 × 1.5 × 시간), [lump] when the contract
+    // names no amount (월급 한 덩어리, split as PayExamples.inclusiveSplit). One made before is read back.
+    val madeOt = remember(initial) { initial?.items?.firstOrNull { it.id == FIXED_OT_ID } }
+    var fixedOt by remember { mutableStateOf(madeOt?.fixedOvertimeMinutes?.takeIf { it > 0 }?.div(60)) }
+    var fixedOtPay by remember { mutableStateOf(madeOt?.amount?.on(thisMonth)?.value) }
+    var lump by remember { mutableStateOf(false) }
     // [PAYF-07] Opened from a public cycle just put in, the company was already looked up (CompanyPayOffer asked "급여 계산
     // 방식도 같이 넣을까요?" when it had one): not asked again. 설정 고치기 of a pay there is asks it first all the same.
     // [J133-71] 1.33: 알바·현장 and the rest look for no company; only 교대·일근 do.
@@ -176,6 +189,7 @@ fun PayQuickSetup(
     // the account on the pay day; one set up before keeps its pick (가계부 수입 내역의 '그달 일한 세전·지급일 실수령').
     val draft = draftOf(form, amount, holiday)?.copy(taxMode = tax, taxChosen = true, ledgerTakeHome = initial?.ledgerTakeHome ?: true)
         ?.let { p -> if (form?.wageType == WageType.HOURLY) p.copy(fiveOrMoreEmployees = fiveOrMore ?: false) else p }
+        ?.let { p -> withFixedOvertime(p, since, fixedOt, fixedOtPay, lump) }
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
 
@@ -302,7 +316,11 @@ fun PayQuickSetup(
                             fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, h) }
                         })
                     } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
-                        onDetailed = { onDetailed(p) }, onTax = { taxPicked = it })
+                        onDetailed = { onDetailed(p) }, onTax = { taxPicked = it },
+                        // E1: the calendar looks like one form and another was picked; said once with a way to take the calendar's.
+                        otherForm = guessed?.takeIf { g -> form != null && g != form && fromSlip == null && g.wageType == form?.wageType },
+                        pickedForm = form, onForm = { f -> form = f },
+                        fixed = FixedOt(fixedOt, fixedOtPay, lump), onFixed = { f -> fixedOt = f.hours; fixedOtPay = f.pay; lump = f.lump })
                 }
             }
         }
@@ -393,6 +411,61 @@ private fun SlipEntry(onByHand: (() -> Unit)? = null, employer: String = "회사
     onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 ${employer} 규칙을 칸으로 적기") } }
 }
 
+/** 1.36 E2·W2: 포괄임금 on the first setup's last page. [hours] null when the salary has no 고정 연장. */
+internal data class FixedOt(val hours: Int? = null, val pay: Long? = null, val lump: Boolean = false)
+
+/** The id of the 고정 연장수당 the first setup makes ([com.bamnat.core.pay.PayExamples.apply]'s). */
+internal const val FIXED_OT_ID = "example-fixed-ot"
+
+/** [p] with the 포괄 the last page says: none, a 고정 연장수당 of [hours] (its [pay] or 통상시급 × 1.5), or the salary split ([lump]). */
+internal fun withFixedOvertime(p: PayProfile, from: java.time.LocalDate, hours: Int?, pay: Long?, lump: Boolean): PayProfile {
+    val clean = p.copy(items = p.items.filterNot { it.id == FIXED_OT_ID })
+    if (hours == null || hours <= 0 || p.wageType != WageType.MONTHLY) return clean
+    return if (lump) com.bamnat.core.pay.PayExamples.inclusiveSplit(clean, from, hours)
+    else com.bamnat.core.pay.PayExamples.apply(com.bamnat.core.pay.PayExamples.Kind.FIXED_OVERTIME, clean, from, hours, pay?.takeIf { it > 0 })
+}
+
+/**
+ * 1.36 PC 급여 검토 W1·W2: "계약서에 고정 연장 시간이 있나요?" once, on the last page, for a monthly salary. Off by default; on, the
+ * hours (20 to start, as most contracts say) and, when the contract names it, the 고정 연장수당; or that the salary is one sum.
+ */
+@Composable
+private fun FixedOvertimeCard(p: PayProfile, f: FixedOt, onChange: (FixedOt) -> Unit) {
+    val other = p.items.firstOrNull { it.fixedOvertimeMinutes > 0 && it.id != FIXED_OT_ID && it.id != com.bamnat.core.pay.PayExamples.INCLUSIVE_ID }
+    if (other != null) {
+        Text("포괄임금: ‘${other.name}’${com.bamnat.app.ui.Fmt.iga(other.name)} 연장 ${other.fixedOvertimeMinutes / 60}시간을 덮어요. 바꾸려면 자세히 고치기 › 수당에서 고쳐요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("연장수당이 월급에 들어 있어요 (포괄임금)", style = MaterialTheme.typography.titleSmall)
+                    Text("계약서에 ‘고정 연장 20시간’처럼 적혀 있으면 켜요. 사무·영업직에 흔해요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = f.hours != null, onCheckedChange = { on -> onChange(if (on) FixedOt(20) else FixedOt()) })
+            }
+            if (f.hours != null) {
+                var text by remember { mutableStateOf(f.hours.toString()) }
+                OutlinedTextField(text, { v -> text = v.filter(Char::isDigit).take(3); onChange(f.copy(hours = text.toIntOrNull()?.takeIf { it in 1..200 } ?: f.hours)) },
+                    label = { Text("고정 연장 시간 (한 달)") }, suffix = { Text("시간") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = f.lump, onCheckedChange = { onChange(f.copy(lump = it, pay = null)) })
+                    Text("계약서에 고정 연장수당 금액이 따로 없어요 (월급 한 덩어리)", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (f.lump) Text("월급을 기본급과 고정 연장수당으로 나눠 ‘추정’으로 계산해요(월급 × 209 ÷ (209 + 1.5 × 시간)). 나눈 시급이 최저임금보다 낮으면 그 약정은 효력이 없어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else WonField("고정 연장수당 (계약서·명세서 금액)", f.pay, { onChange(f.copy(pay = it)) },
+                    hint = "비워 두면 통상시급 × 1.5 × 시간으로 넣어요. 실제 연장이 더 많으면 모자란 만큼을 따로 보여 줘요")
+            }
+        }
+    }
+}
+
 /** [PAYS-12] 이렇게 계산해요: the setup in sentences and this month's estimate, with the ways to change it. */
 @Composable
 private fun ConfirmPage(
@@ -404,6 +477,11 @@ private fun ConfirmPage(
     onSlip: () -> Unit,
     onDetailed: () -> Unit,
     onTax: (com.bamnat.core.pay.TaxMode) -> Unit = {},
+    otherForm: WorkForm? = null,
+    pickedForm: WorkForm? = null,
+    onForm: (WorkForm) -> Unit = {},
+    fixed: FixedOt = FixedOt(),
+    onFixed: (FixedOt) -> Unit = {},
 ) {
     var range by remember { mutableStateOf<PayRange?>(null) }
     LaunchedEffect(p) {
@@ -423,6 +501,17 @@ private fun ConfirmPage(
             Row { Text("•  ", color = MaterialTheme.colorScheme.primary); Text(line, style = MaterialTheme.typography.bodyMedium) }
         }
     }
+    if (otherForm != null && pickedForm != null) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("근무표는 ‘${otherForm.label}’처럼 보여요", style = MaterialTheme.typography.titleSmall)
+                Text("급여는 ‘${pickedForm.label}’${com.bamnat.app.ui.Fmt.ro(pickedForm.label)} 골랐어요. 회사가 그렇게 계산하면 그대로 두세요. " +
+                    "고른 근무에 따라 미리 넣는 수당이 달라져요.", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { onForm(otherForm) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("근무표대로 ‘${otherForm.label}’${com.bamnat.app.ui.Fmt.ro(otherForm.label)} 바꾸기") }
+            }
+        }
+    }
+    if (p.wageType == WageType.MONTHLY) FixedOvertimeCard(p, fixed, onFixed)
     HorizontalDivider()
     Text("${month.monthValue}월 예상", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val r = range

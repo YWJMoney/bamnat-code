@@ -135,6 +135,8 @@ class UScreenshotTest : ScreenshotBase() {
                 rules = com.bamnat.app.ui.pay.RuleTarget(emptyList(), emptyList(), true) { _, _ -> }, onRead = {})
         }
         settle()
+        // 1.36 W9: the second photo is under '다른 방법'.
+        tapText("다른 방법:")
         assertTrue(appears("2. 회사 계산 방법", exact = false))
     }
 

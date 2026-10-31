@@ -145,6 +145,24 @@ fun LineDetailDialog(
                     Text("입력하지 않은 값을 앱이 짐작해 넣은 부분이 있어요. ‘내 급여 값’에서 실제 값으로 바꾸면 정확해져요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
                 }
+                // 1.36 PC 급여 검토 W5: the days this line came from, so "연장 60시간" can be checked day by day.
+                val from = remember(line, result) {
+                    result.days.mapNotNull { d ->
+                        val parts = d.parts.filter { it.kind == line.kind && (it.label == line.label || line.kind != com.bamnat.core.pay.LineKind.ALLOWANCE) }
+                        parts.sumOf { it.amount }.takeIf { parts.isNotEmpty() }?.let { d to it }
+                    }
+                }
+                if (from.isNotEmpty()) {
+                    HorizontalDivider(Modifier.padding(top = 8.dp))
+                    Text("이 항목이 붙은 날 ${from.size}일", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                    from.forEach { (d, amount) ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text("${d.date.monthValue}/${d.date.dayOfMonth} ${(com.bamnat.app.ui.Fmt.dayOfWeekShort(d.date.dayOfWeek))} · ${d.label}" + (d.holidayName?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Text(won(amount), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },

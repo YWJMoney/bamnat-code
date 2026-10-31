@@ -257,6 +257,8 @@ class AppContainer(context: Context) {
     var pendingPlazaNote: String? = null
     /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
     var pendingMatch: Boolean = false
+    /** 1.36 PC 급여 검토 W3: the 길잡이 invitation after a first pay setup, shown once the result was seen (or on the next visit). */
+    var payInviteLater: Boolean = false
     /** [PLAZA-30] 1.27 AI: what a 명세서 tick on the plaza rests on now; null for none. */
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
         com.bamnat.core.pay.SlipProof.best(payStore.profile.value, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))

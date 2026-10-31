@@ -88,6 +88,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
@@ -459,6 +460,9 @@ fun CalendarScreen(
     val overview = remember(snap, visibleMonth, focus, moneyBook, payRange) {
         com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales, payRange)
     }
+    // 1.36 U20: what the cards above the month said, on the quick-input sheet's head while they are hidden.
+    val paintSummary = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS)
+        "${visibleMonth.monthValue}월 근무 ${overview.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(overview.workMinutes)}" else null
     // [CAL-35] Last month's figures, for the few words of change under the hours.
     // [R136-03] 1.36 (리뷰 R-04: 오늘 깐 앱이 '지난달보다 +1일'): the day this phone started, so a month wholly before it,
     // with nothing written by hand, is not compared as if worked.
@@ -1091,10 +1095,20 @@ fun CalendarScreen(
                 else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
             }
         }
-        // 1.36 U7·U19 (빠른 입력: 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀리고, 다음 누름이 빈 곳에 가요): while painting, everything
-        // above the month keeps the height it had when painting began, so the days stay under the finger.
+        // 1.36 U7·U19 (빠른 입력: 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀리고, 다음 누름이 빈 곳에 가요). 745fd183 PC 확인
+        // (높이를 붙잡으니 위가 휑하고 아래 카드가 잘림) and U20: while painting, nothing is above the month; the calendar moves up
+        // once as painting starts and stays put, and the month's count is on the painting sheet's head instead.
         val holding = paint != null
-        NoticeStack(modifier = Modifier.holdHeight(holding), state = notices, open = if (sideways) 0 else 1, notices = buildList {
+        com.bamnat.app.ui.components.HoldHands(holding)
+        // What goes away above the month as painting starts is scrolled off too, so the day under the finger stays put.
+        val aboveHeights = remember { IntArray(2) }
+        LaunchedEffect(holding) {
+            if (holding) {
+                val gone = aboveHeights.sum()
+                if (gone > 0 && pageScroll.value > 0) pageScroll.scrollTo((pageScroll.value - gone).coerceAtLeast(0))
+            }
+        }
+        if (!holding) NoticeStack(modifier = Modifier.onSizeChanged { aboveHeights[0] = it.height }, state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
             // screen too, for a phone whose notices are off.
@@ -1294,7 +1308,7 @@ fun CalendarScreen(
             }
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
-        if (!low) Column(Modifier.holdHeight(holding)) {
+        if (low || holding) { if (!holding) aboveHeights[1] = 0 } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
             calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
                 aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
             }
@@ -1369,7 +1383,7 @@ fun CalendarScreen(
                     countsPart(Modifier.weight(0.55f))
                 }
                 computedNote()
-            } else Column(Modifier.holdHeight(paint != null)) {
+            } else if (paint == null) Column {
                 summaryPart(Modifier)
                 computedNote()
                 countsPart(Modifier)
@@ -1570,7 +1584,7 @@ fun CalendarScreen(
                     if (paint != null) {
                         PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
                             mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { fillMonth(visibleMonth) },
-                            stamp = stamp, stamps = stamps, onStamp = vm::setStamp, large = true,
+                            stamp = stamp, stamps = stamps, onStamp = vm::setStamp, large = true, summary = paintSummary,
                             modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp))
                     } else detailPart(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), 16.dp)
                 }
@@ -1631,7 +1645,7 @@ fun CalendarScreen(
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
                     mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { fillMonth(visibleMonth) },
-                    stamp = stamp, stamps = stamps, onStamp = vm::setStamp)
+                    stamp = stamp, stamps = stamps, onStamp = vm::setStamp, summary = paintSummary)
             }
         }
     }
@@ -2261,6 +2275,8 @@ private fun PaintBar(
     onStamp: (ExtraChoice?) -> Unit = {},
     /** [CAL-45] Below the hinge of a half-open fold: the chips wrap into a pad of big keys, not one scrolling row. */
     large: Boolean = false,
+    /** 1.36 U20: the month's count, here while nothing is shown above the month. */
+    summary: String? = null,
     modifier: Modifier = Modifier.fillMaxWidth().padding(12.dp),
 ) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -2272,6 +2288,8 @@ private fun PaintBar(
         tonalElevation = 3.dp,
     ) {
         Column(Modifier.padding(vertical = 10.dp)) {
+            summary?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)) }
             Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("빠른 입력", style = MaterialTheme.typography.titleSmall)
