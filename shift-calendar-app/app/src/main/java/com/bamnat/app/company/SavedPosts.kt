@@ -21,7 +21,7 @@ class SavedPosts private constructor(context: Context) {
 
     fun has(id: String): Boolean = _items.value.any { it.id == id }
 
-    fun save(p: TalkPost, room: String, roomName: String, now: Instant = Instant.now()) {
+    fun save(p: TalkPost, room: String, roomName: String, now: Instant = com.bamnat.core.time.Today.instant()) {
         write((listOf(Saved(p.id, room, roomName, p.body, p.kind, p.at, now)) + _items.value.filter { it.id != p.id }).take(MAX))
     }
 
