@@ -756,15 +756,20 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
     val context = LocalContext.current
     val wm = remember { android.appwidget.AppWidgetManager.getInstance(context) }
     if (runCatching { wm.isRequestPinAppWidgetSupported }.getOrDefault(false)) {
+        var placed by remember { mutableStateOf(false) }
         Text("홈 화면에 놓기", style = MaterialTheme.typography.labelLarge)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주",
-                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지").forEach { (cls, label) ->
+            // PC 확인 W3 1.36: each chip says how big the widget is.
+            listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
+                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1").forEach { (cls, label) ->
                 androidx.compose.material3.AssistChip(onClick = {
-                    runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }
+                    if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
                 }, label = { Text(label) })
             }
         }
+        // PC 확인 W2 1.36 (놓은 위젯이 홈 둘째 쪽에 들어가 안 보여요): say where it may have gone.
+        if (placed) Text("휴대폰이 묻는 창에서 ‘추가’를 누르면 홈 화면에 놓여요. 첫 화면에 자리가 없으면 다음 쪽에 들어가요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -781,9 +786,31 @@ private fun WidgetSample(w: WidgetLook) {
     Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
         contentAlignment = Alignment.Center) {
         Column(Modifier.clip(RoundedCornerShape((w.corner ?: 20).dp)).background(plate).padding(horizontal = 20.dp, vertical = 14.dp)) {
-            Text("오늘 · 주간 07:00", color = ink, style = MaterialTheme.typography.titleMedium, fontSize = (16 * scale).sp)
-            Text("내일 · 야간 22:00", color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium, fontSize = (14 * scale).sp)
+            // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
+            val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
+            Text(today, color = ink, style = MaterialTheme.typography.titleMedium, fontSize = (16 * scale).sp)
+            Text(tomorrow, color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium, fontSize = (14 * scale).sp)
         }
+    }
+}
+
+/** "오늘 · 야간 19:00" and "내일 · 휴무" from my own calendar, or null while nothing is set for either day. */
+@Composable
+private fun rememberTwoDays(): Pair<String, String>? {
+    val c = LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    return remember(snap) {
+        val sn = snap ?: return@remember null
+        val day = com.bamnat.core.time.Today.date()
+        val two = sn.resolver.resolveRange(day, day.plusDays(1))
+        if (two.none { it.shiftType != null }) return@remember null
+        fun line(label: String, i: Int): String {
+            val t = two.getOrNull(i)?.shiftType ?: return "$label · 근무 없음"
+            val at = t.start?.takeUnless { t.isOff }?.let { " %02d:%02d".format(it.hour, it.minute) }.orEmpty()
+            return "$label · ${t.name.trim()}$at"
+        }
+        line("오늘", 0) to line("내일", 1)
     }
 }
 
