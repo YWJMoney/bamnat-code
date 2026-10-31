@@ -363,7 +363,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
                     val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" },
+                    // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
+                    // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
+                    val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { sizeSeen(); firstStyleKey = "" },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }

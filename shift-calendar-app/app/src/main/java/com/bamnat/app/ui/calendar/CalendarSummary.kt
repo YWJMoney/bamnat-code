@@ -153,6 +153,8 @@ internal fun MonthSummaryBar(
     val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + f.notes.joinToString("") { " $it" } } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
         CalendarFocus.SHIFTS -> "근무·급여 열기"
+        // [R136-17] 1.36 (리뷰 R-34): a shop's and field work's tab is 장부.
+        CalendarFocus.JOBS, CalendarFocus.SALES -> "장부 탭 열기"
         else -> "가계부 탭 열기"
     }
     Surface(

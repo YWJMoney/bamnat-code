@@ -138,7 +138,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
-        assertTrue(appears("7일 안에는 설정 › 장터·내 레시피에서 되돌릴 수 있어요", exact = true))
+        assertTrue(appears("7일 안에는 마을 › 공방 › 내 레시피·받은 레시피에서 되돌릴 수 있어요", exact = true))
     }
 
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {

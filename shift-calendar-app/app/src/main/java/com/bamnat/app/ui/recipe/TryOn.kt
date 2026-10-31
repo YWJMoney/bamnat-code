@@ -147,7 +147,12 @@ fun TryOnScreen(
                         CompareCanvas(mine, after, style, tab, { tab = it }, scale = 0.6f, split = split, onPick = { tapped = true })
                     }
                     Slider(split, { split = it }, modifier = Modifier.fillMaxWidth(0.7f).semantics { contentDescription = "지금과 입으면 나눠 보기"; stateDescription = "입으면 ${(split * 100).toInt()}%" })
-                    Text("왼쪽이 입은 모습, 오른쪽이 지금이에요. 화면을 누르면 그 화면의 조각을 담을 수 있어요", style = MaterialTheme.typography.bodySmall,
+                    // [R136-06] 1.36 (리뷰 R-18): what the picture shows follows the slider.
+                    Text(when (split) {
+                        1f -> "입으면 이렇게 보여요."
+                        0f -> "지금 내 모습이에요."
+                        else -> "왼쪽이 입은 모습, 오른쪽이 지금이에요."
+                    } + " 화면을 누르면 그 화면의 조각을 담을 수 있어요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 HorizontalDivider(Modifier.padding(top = 6.dp))
@@ -155,7 +160,7 @@ fun TryOnScreen(
                     verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (parts.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("고를 것 · ${picked.size}/${parts.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
+                            Text("고를 모양 · ${picked.size}/${parts.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
                             TextButton(onClick = { picked = if (picked.size == parts.size) emptySet() else parts.map { it.id }.toSet() }) {
                                 Text(if (picked.size == parts.size) "모두 빼기" else "전체 고르기")
                             }
@@ -186,7 +191,7 @@ fun TryOnScreen(
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         actions(picked)
                         if (onKeep != null && picked.isNotEmpty()) TextButton(onClick = { keep(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
-                            Text("고른 ${picked.size}개 보관함에 담아 두기 (무료)")
+                            Text("고른 모양 ${picked.size}개 보관함에 담아 두기 (무료)")
                         }
                         keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }

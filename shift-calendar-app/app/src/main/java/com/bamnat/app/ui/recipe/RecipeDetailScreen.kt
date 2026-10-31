@@ -220,10 +220,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         } },
                     ) { picked ->
                         val n = picked.size + others.count { it.on }
+                        // [R136-06] 1.36 (리뷰 R-17: '고를 것 5/5'인데 '고른 8개 넣기'): the look and the functions said apart.
+                        val fn = others.count { it.on }
                         if (!ready && missing.isNotEmpty()) Text("‘${missing.first().label}’을(를) 위에서 채우면 넣을 수 있어요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
                         Button(onClick = { vm.lookParts(picked); tryOn = false; confirming = true }, enabled = n > 0 && ready,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (n == 0) "넣을 것을 골라 주세요" else "고른 ${n}개 넣기") }
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                            Text(when {
+                                n == 0 -> "넣을 것을 골라 주세요"
+                                fn == 0 -> "고른 모양 ${picked.size}개 넣기"
+                                picked.isEmpty() -> "기능 ${fn}개 넣기"
+                                else -> "모양 ${picked.size}개·기능 ${fn}개 넣기"
+                            })
+                        }
                     }
                 }
 
@@ -261,7 +270,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             color = if (l.skipped) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                Text("7일 안에는 설정 › 장터·내 레시피에서 되돌릴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("7일 안에는 마을 › 공방 › 내 레시피·받은 레시피에서 되돌릴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },

@@ -459,8 +459,19 @@ fun CalendarScreen(
         com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales, payRange)
     }
     // [CAL-35] Last month's figures, for the few words of change under the hours.
+    // [R136-03] 1.36 (리뷰 R-04: 오늘 깐 앱이 '지난달보다 +1일'): the day this phone started, so a month wholly before it,
+    // with nothing written by hand, is not compared as if worked.
+    // The later of the install and this calendar's setup ('이 달력으로 할 수 있는 것' starts on it), so a phone set up again counts too.
+    val startDay = remember(activeCalendar.id) {
+        val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
+        val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
+        listOfNotNull(installed, setUp).maxOrNull()
+    }
     val versus = remember(snap, visibleMonth, focus, overview) {
-        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS) null
+        val before = visibleMonth.minusMonths(1)
+        val unwritten = startDay != null && before.atEndOfMonth().isBefore(startDay) &&
+            snap.entries.none { YearMonth.from(it.date) == before && it.override != ShiftOverride.None }
+        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || unwritten) null
         else overview.versus(com.bamnat.core.work.MonthOverview.of(visibleMonth.minusMonths(1), focus, snap.resolver,
             range = payRange?.let { payProfile?.period?.let { p -> com.bamnat.core.hours.StatsRange.of(com.bamnat.core.hours.StatsRange.Mode.PAY, visibleMonth.minusMonths(1), today, p) } }))
     }
@@ -1279,7 +1290,10 @@ fun CalendarScreen(
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),
                         restSigns = restSigns,
                         compact = low,
-                        rangeLabel = payRange?.label(),
+                        // [R136-03] In the month the phone started, the days before it are the 근무표's, and it says so.
+                        rangeLabel = payRange?.label() ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
+                            snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
+                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표대로" },
                     )
                 }
             }

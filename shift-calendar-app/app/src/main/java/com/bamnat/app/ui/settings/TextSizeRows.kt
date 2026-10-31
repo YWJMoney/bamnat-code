@@ -59,8 +59,9 @@ private fun TextSizePreview(step: Int) {
             Column(Modifier.padding(12.dp)) {
                 Text("미리 보기 · ${TextSize.LABELS[step.coerceIn(0, TextSize.LABELS.lastIndex)]}", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("10월 28일 (수) · 주간", style = MaterialTheme.typography.titleSmall)
-                Text("09:00 – 18:00 · 이번 달 예상 급여 2,840,000원", style = MaterialTheme.typography.bodySmall)
+                // [R136-17] 1.36: the same for every kind of work (no 주간 or 예상 급여 for a shop or an investor).
+                Text("10월 28일 (수) · 달력", style = MaterialTheme.typography.titleSmall)
+                Text("09:00 – 18:00 · 메모 2개 · 이번 달 2,840,000원", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
