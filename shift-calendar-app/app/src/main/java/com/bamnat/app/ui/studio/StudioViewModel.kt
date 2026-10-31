@@ -222,8 +222,12 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             val (screens, cal) = com.bamnat.core.recipe.ShiftLooks.decode(s.draft.shiftLooks).apply(m, s.draft.screenLooks, s.draft.calTheme)
             c.recipes.pieces.lookPieces(s.draft.copy(screenLooks = screens, calTheme = cal))
         }
+        plainPieces = c.recipes.pieces.lookPieces(c.recipes.pieces.plainLook(s.draft))
         _state.value = _state.value.copy(pieces = pieces, basePieces = base, prevPieces = prev, modePieces = mode)
     }
+
+    /** PC 확인 V22 1.36: the app's own look as pieces, so 올리기 leaves out what is just the app's (위젯 처음대로 and the like). */
+    private var plainPieces: List<Piece> = emptyList()
 
     /** [STU-20] Where the next change is made (영역 · 도구), for the 기록 목록. */
     var where: String = "고침"
@@ -688,7 +692,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val pieces = if (onlyTab != null) {
             val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
             com.bamnat.core.recipe.LookParts.pick(draft, com.bamnat.core.recipe.LookParts.of(draft).filter { it.tab == onlyTab }.map { it.id }).pieces
-        } else (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
+        // PC 확인 V22 1.36 (안 바꾼 위젯 조각까지 작품에 실림): a look piece just as the app has it is not part of the theme.
+        } else (s.pieces.filter { p -> plainPieces.none { it.kind == p.kind && it.values == p.values } } + s.extras.map { (k, v) -> Piece(k, v) })
+            .sortedBy { it.kind.ordinal }
         val withExtras = s.meta?.copy(pieces = pieces, parent = null)
             // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
             ?: recipe("").copy(title = s.savedTitle ?: (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces,

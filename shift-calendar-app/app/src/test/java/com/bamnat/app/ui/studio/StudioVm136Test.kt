@@ -66,4 +66,19 @@ class StudioVm136Test {
         val r = RecipeCodec.read(body.replace("\"title\":\"\"", "\"title\":\"시험\""))
         assertEquals(com.bamnat.core.layout.TabOrder.MONEY, com.bamnat.core.recipe.LookParts.onlyTab(r))
     }
+
+    /** PC 확인 V22: a whole theme sent from 지금 모양 carries what was changed, not the app's own widget (or any piece left as the app has it). */
+    @Test fun untouchedWidgetStaysOut() {
+        val vm = StudioViewModel(c)
+        idle()
+        vm.change { it.copy(calTheme = "sat=FF1565C0") }
+        idle()
+        val r = RecipeCodec.read(vm.upload().first.replace("\"title\":\"\"", "\"title\":\"시험\""))
+        assertTrue(r.pieces.any { it.kind == PieceKind.CAL_THEME })
+        assertFalse("안 바꾼 위젯은 싣지 않아요", r.pieces.any { it.kind == PieceKind.WIDGET })
+        vm.change { it.copy(widgetLook = com.bamnat.core.recipe.WidgetLook(alpha = 65).encode()) }
+        idle()
+        val r2 = RecipeCodec.read(vm.upload().first.replace("\"title\":\"\"", "\"title\":\"시험\""))
+        assertTrue("바꾼 위젯은 실려요", r2.pieces.any { it.kind == PieceKind.WIDGET })
+    }
 }
