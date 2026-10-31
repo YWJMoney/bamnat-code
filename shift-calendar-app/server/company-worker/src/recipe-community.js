@@ -421,13 +421,14 @@ async function rcBlock(d, env, request, id) {
   const dev = await rcReadDev(d, request, body);
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   if (id === "operator") return d.json({ error: "operator" }, 400);
-  const m = await d.one(env, "SELECT device FROM recipe_makers WHERE maker = ?", id);
-  if (!m) return d.json({ error: "not_found" }, 404);
-  if (m.device === dev) return d.json({ error: "own" }, 400);
+  // [PRF-05] 1.36 PC 5차: a block is undone (목록에서 빼기) even when the maker's profile is gone.
   if (body.on === false) {
     await d.run(env, "DELETE FROM recipe_blocks WHERE device = ? AND maker = ?", dev, id);
     return d.json({ maker: id, blocked: false });
   }
+  const m = await d.one(env, "SELECT device FROM recipe_makers WHERE maker = ?", id);
+  if (!m) return d.json({ error: "not_found" }, 404);
+  if (m.device === dev) return d.json({ error: "own" }, 400);
   const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_blocks WHERE device = ?", dev);
   if (n.n >= COMMUNITY_LIMITS.blocks) return d.json({ error: "too_many" }, 400);
   await d.batch(env, [
@@ -486,7 +487,12 @@ async function rcFollowing(d, env, request) {
         AND r.state = 'visible' AND r.scope = 'public') AS latest
     FROM recipe_follows f LEFT JOIN recipe_makers m ON m.maker = f.maker LEFT JOIN nicks n ON n.device = m.device
     WHERE f.device = ? ORDER BY latest DESC, f.at DESC LIMIT 200`, dev);
-  const blocked = await d.all(env, `SELECT b.maker, m.maker AS has, m.face, m.color, n.nick FROM recipe_blocks b LEFT JOIN recipe_makers m ON m.maker = b.maker
+  // [PRF-05] 1.36 PC 5차: after 모두 지우기 the maker's row can come back empty (the same id from the same phone), so "there" means
+  // a 프로필 to see: a face, a 소개 or a public recipe, not hidden or closed.
+  const blocked = await d.all(env, `SELECT b.maker, m.face, m.color, n.nick,
+      (m.maker IS NOT NULL AND m.hidden = 0 AND m.closed = 0 AND (m.face IS NOT NULL OR m.bio IS NOT NULL OR EXISTS (SELECT 1 FROM recipes r
+        WHERE r.maker = b.maker AND r.state = 'visible' AND r.scope = 'public'))) AS has
+    FROM recipe_blocks b LEFT JOIN recipe_makers m ON m.maker = b.maker
     LEFT JOIN nicks n ON n.device = m.device WHERE b.device = ? ORDER BY b.at DESC`, dev);
   return d.json({
     items: rows.filter((r) => !r.hidden && !r.closed).map((r) => ({

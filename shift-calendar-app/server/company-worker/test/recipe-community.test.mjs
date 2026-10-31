@@ -344,7 +344,15 @@ test("[PRF-05][PRF-06] 리뷰: 모두 지우기로 남의 차단·운영자 닫�
   // 지운 것을 숫자로 (PC 확인: '지울 것이 없었어요'라고 했음).
   const gone = (await call("DELETE", "/api/mine", undefined, dev(1))).data;
   assert.equal(gone.profile, 1);
+  // PC 5차: the same phone opening 마을 again makes an empty row with the same id; still '프로필이 없어졌어요', and 목록에서 빼기 works.
+  await call("POST", "/api/recipes/makers/me", { device: device(1) }, from(1));
+  await call("GET", "/api/recipes/makers/me/following", undefined, dev(1));
+  assert.deepEqual((await call("GET", "/api/recipes/makers/me/following", undefined, dev(2))).data.blocked.map((x) => [x.maker, x.gone]), [[m1, true]]);
+  await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2), on: false }, from(2));
+  assert.equal((await call("GET", "/api/recipes/makers/me/following", undefined, dev(2))).data.blocked.length, 0);
   await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦊" }, from(1));
+  await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2) }, from(2));
+  assert.deepEqual((await call("GET", "/api/recipes/makers/me/following", undefined, dev(2))).data.blocked.map((x) => x.gone), [undefined], "a face again: there");
   assert.equal((await call("GET", `/api/recipes/makers/${m2}`, undefined, dev(1))).status, 404, "the block stays after 지우기");
   // 운영자가 닫은 프로필은 지워도 닫힌 채로, 본인에게는 닫혔다고.
   await call("POST", `/api/admin/recipes/makers/${m2}/close`, {}, admin);
