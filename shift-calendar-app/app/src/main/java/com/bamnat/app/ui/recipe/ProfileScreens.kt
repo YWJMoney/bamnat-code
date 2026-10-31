@@ -104,6 +104,7 @@ import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 // ---- [PRF-01]..[PRF-12] 1.36 창작자 프로필 (사용자 2026-10-31 "인스타처럼 내가 만든 테마를 멋지게, 팔로워·최근 알림, 팔로우한 분 프로필에서 공개된 것") ----
@@ -323,6 +324,8 @@ fun MakerScreen(
     var flagging by remember { mutableStateOf(false) }
     var blocking by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
+    /** [PRF-05] 1.36 PC 사용성 P7: 빈 프로필의 '작품도 내리기' opens the same dialog with the works ticked. */
+    var clearWorks by remember { mutableStateOf(false) }
     var followMenu by remember { mutableStateOf(false) }
     var setEdit by remember { mutableStateOf<MakerSet?>(null) }
     var newSet by remember { mutableStateOf(false) }
@@ -393,6 +396,14 @@ fun MakerScreen(
                     if (mine && p.bioHidden) Text(if (p.bioHiddenBy == "operator") "운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
                         else "소개 글이 신고로 가려져 있어요. 고치면 다시 보여요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
+                    // [PRF-05] 1.36 PC 사용성 P7: 프로필만 지운 뒤 — what is left and the next step.
+                    if (mine && !s.asOthers && p.face == null && p.bio.isNullOrBlank() && p.pins.isEmpty() && p.sets.isEmpty() && p.cover == null && p.recipes.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("작품 ${p.recipes.size}개만 남은 빈 프로필이에요. 다른 분은 작품의 ‘만든 분’으로 들어와요",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { clearWorks = true; clearing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("작품도 내리기") }
+                        }
+                    }
                     if (mine) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = { editing = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("프로필 고치기") }
@@ -490,13 +501,14 @@ fun MakerScreen(
         )
     }
     if (clearing && page != null) {
-        var works by remember { mutableStateOf(false) }
+        var works by remember { mutableStateOf(clearWorks) }
         AlertDialog(
-            onDismissRequest = { clearing = false },
+            onDismissRequest = { clearing = false; clearWorks = false },
             title = { Text("프로필을 지울까요?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("소개·얼굴·대표 작품·표지 그림과 모음 ${page.sets.size}개가 지워져요. 팔로워는 그대로예요.")
+                    Text("소개·얼굴·대표 작품·표지 그림과 모음 ${page.sets.size}개가 지워져요. 팔로워는 그대로예요." +
+                        (page.nick?.let { " 이름 ‘$it’${com.bamnat.app.ui.Fmt.eun("‘$it’")} 광장·이야기에도 쓰여서 남아요." } ?: ""))
                     if (page.recipes.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { works = !works }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(works, { works = it })
                         Text("올린 작품 ${page.recipes.size}개도 장터에서 내리기")
@@ -506,8 +518,8 @@ fun MakerScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            confirmButton = { TextButton(onClick = { clearing = false; vm.clearProfile(works) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { clearing = false }) { Text("닫기") } },
+            confirmButton = { TextButton(onClick = { clearing = false; clearWorks = false; vm.clearProfile(works) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { clearing = false; clearWorks = false }) { Text("닫기") } },
         )
     }
     if (s.flagged) AlertDialog(
@@ -834,7 +846,11 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    init { load() }
+    init {
+        load()
+        // [PRF-05] 1.36 PC 4차: 사람들 › 프로필 › 차단 › 뒤로 — the list here was from before; it follows every follow and block.
+        viewModelScope.launch { c.recipes.people.drop(1).collect { load() } }
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -855,7 +871,7 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun quiet(id: String, q: Boolean) = act { c.recipeApi.followQuiet(device, id, q) }
+    fun quiet(id: String, q: Boolean) = act { c.recipeApi.followQuiet(device, id, q); c.recipes.peopleChanged() }
     fun unfollow(id: String) = act { c.recipeApi.follow(device, id, false); c.recipes.peopleChanged() }
     fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false); c.recipes.peopleChanged(); undo(id) }
     /** [PRF-05] 1.36 PC 사용성 P5: 풀었어요 · 되돌리기. */
@@ -864,7 +880,7 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
     fun undoShown() { _state.value = _state.value.copy(unblocked = null) }
 
     private fun act(f: suspend () -> Unit) {
-        viewModelScope.launch { runCatching { f() }.onSuccess { load() }.onFailure { _state.value = _state.value.copy(message = profileProblem(it)) } }
+        viewModelScope.launch { runCatching { f() }.onFailure { _state.value = _state.value.copy(message = profileProblem(it)) } }
     }
 
     fun shown() { _state.value = _state.value.copy(message = null) }

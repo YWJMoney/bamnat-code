@@ -875,6 +875,11 @@ private fun PrivacyPage(
         HorizontalDivider()
         // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
         NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
+        // [PRF-05] 1.36 PC 사용성 P8: 탈퇴·삭제를 찾는 분이 개인정보에서 바로 찾아요. 회원 가입이 없으니 이것이 '탈퇴'예요.
+        if (context.appContainer.companyApi.enabled) {
+            HorizontalDivider()
+            NavRow(SENT_ROW, "광장·마을·문의로 보낸 것을 보고, 서버에서 한 번에 지워요") { SettingsLinks.go(SettingsGo.SENT) }
+        }
         if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
         HorizontalDivider()
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
