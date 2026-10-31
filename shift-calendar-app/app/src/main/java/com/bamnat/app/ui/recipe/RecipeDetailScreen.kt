@@ -556,7 +556,8 @@ private fun ThemeSample(r: com.bamnat.core.recipe.Recipe, piece: com.bamnat.core
         Text("공휴일", color = look.holiday(cal), style = MaterialTheme.typography.titleSmall)
         val today = look.today ?: MaterialTheme.colorScheme.primary
         androidx.compose.foundation.layout.Box(Modifier.width(28.dp).height(28.dp).androidx_clip(today), contentAlignment = Alignment.Center) {
-            Text("9", color = com.bamnat.app.ui.components.contentColorOn(today), style = MaterialTheme.typography.labelLarge)
+            // PC 확인 W5 1.36 (견본 동그라미가 늘 9): today's own date.
+            Text("${com.bamnat.core.time.Today.date().dayOfMonth}", color = com.bamnat.app.ui.components.contentColorOn(today), style = MaterialTheme.typography.labelLarge)
         }
     }
 }

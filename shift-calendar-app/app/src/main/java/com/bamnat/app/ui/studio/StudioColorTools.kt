@@ -214,6 +214,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     val scheme = ThemeSeed.shuffle(seed, variant, dark, mix)
 
     fun put(s: Long = seed, v: ThemeSeed.Variant = variant, dk: Boolean = dark, m: Int = mix, all: Boolean = allScreens) {
+        if (v != variant) vm.feelNow = vm.state.value.origin.title to v.label
         seed = s; variant = v; dark = dk; mix = m; allScreens = all
         vm.changeMerged(LABEL) { StudioColors.withScheme(it, ThemeSeed.shuffle(s, v, dk, m), all) }
     }

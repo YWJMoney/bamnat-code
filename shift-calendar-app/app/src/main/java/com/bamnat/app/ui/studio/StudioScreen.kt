@@ -312,6 +312,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
+                            vm.feelNow?.takeIf { it.first == s.origin.title && "‘${it.second}’" !in s.origin.title }?.let {
+                                Text("지금: ${it.second}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text("지금 내 모양에서") }, onClick = { menu = false; guarded { vm.startMine() } })

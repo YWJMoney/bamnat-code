@@ -329,6 +329,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     /** PC 확인 S7: the 느낌 (변형, 어두운 화면) the last start was made with, so 한 색 opens on it. */
     var seedFeel: Pair<com.bamnat.core.recipe.ThemeSeed.Variant, Boolean>? = null
 
+    /** PC 확인 W6 1.36 (느낌을 바꿔도 제목은 처음 느낌): the 느낌 picked since, with the start's title it belongs to. */
+    var feelNow: Pair<String, String>? by androidx.compose.runtime.mutableStateOf(null)
+
     /** [STU-35] 느낌으로 새로: the app's own look, then [d] as its first step (so 되돌리기 shows the plain look and leaving asks). */
     fun startFeel(title: String = "느낌으로 새로 만든 모양", d: (AppSettings) -> AppSettings) {
         restart(c.recipes.pieces.plainLook(c.settingsRepository.current), Origin.Fresh(title))
