@@ -142,7 +142,12 @@ export const PRO_SHARE = { codeMs: 7 * DAY, codesPerDay: 10, claimsPerHour: 10 }
 export async function boughtUntil(env, dev, now) {
   const row = await one(env, `SELECT MAX(expiry) AS until FROM subs WHERE device = ? AND trial = 0
     AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ?`, dev, now);
-  return row?.until ?? null;
+  // 1.36 841: a 1년 이용권 is bought 프로 too (프로 나눔 1인). Passes stack: each adds a year from its purchase or the end before.
+  const passes = await all(env, "SELECT purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
+  let passEnd = null;
+  for (const p of passes) passEnd = Math.max(passEnd ?? p.purchased_at, p.purchased_at) + 365 * DAY;
+  const best = Math.max(row?.until ?? 0, passEnd && passEnd > now ? passEnd : 0);
+  return best || null;
 }
 
 /** The 프로 given to this install, as { until }, or null. */
@@ -786,6 +791,7 @@ export async function purchase(request, env, dev, now) {
   if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
   if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
   if (!playReady(env)) return json({ verified: false });
+  if (body.product === PASS_PRODUCT) return yearPass(env, dev, body.token, now);
   const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
   const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
   // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
@@ -809,6 +815,44 @@ export async function purchase(request, env, dev, now) {
     verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
     acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
   });
+}
+
+/** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
+export const PASS_PRODUCT = "bamnat_pro_pass_1y";
+const PASS_DAYS = 365;
+
+/** products.get read the way the app needs it: purchaseState 0 bought, 1 cancelled (refunded), 2 pending. */
+export function readPass(p) {
+  const at = Number(p.purchaseTimeMillis);
+  return {
+    state: p.purchaseState === 0 ? "ACTIVE" : p.purchaseState === 2 ? "PENDING" : "EXPIRED",
+    purchasedAt: Number.isFinite(at) ? at : null,
+    orderId: typeof p.orderId === "string" ? p.orderId.slice(0, 80) : "",
+    acknowledged: p.acknowledgementState === 1,
+  };
+}
+
+/**
+ * 1.36 841: the 1년 이용권 as Play says, kept by its token's hash with the phone that showed it (the same rule as a subscription:
+ * a token tied to another phone that still checks in stays there). The app stacks the year itself; a refund says EXPIRED.
+ */
+async function yearPass(env, dev, token, now) {
+  const p = readPass(await playCall(env, "GET", `/purchases/products/${PASS_PRODUCT}/tokens/${encodeURIComponent(token)}`));
+  const hash = (await sha256(`pass|${token}`)).slice(0, 40);
+  const bound = await one(env, "SELECT device, checked_at FROM year_passes WHERE hash = ?", hash);
+  if (bound && bound.device !== dev) {
+    if (now - bound.checked_at < REBIND_AFTER) {
+      await audit(env, now, "purchase_rebind_refused", PASS_PRODUCT, hash.slice(0, 8));
+      return json({ verified: false });
+    }
+    await audit(env, now, "purchase_rebind", PASS_PRODUCT, hash.slice(0, 8));
+  }
+  if (!p.purchasedAt) return json({ verified: false });
+  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at`,
+  hash, dev, p.orderId, p.state, p.purchasedAt, now, now);
+  return json({ verified: true, state: p.state, purchasedAt: iso(p.purchasedAt), expiry: iso(p.purchasedAt + PASS_DAYS * DAY),
+    trial: false, autoRenew: false, acknowledged: p.acknowledged });
 }
 
 /**

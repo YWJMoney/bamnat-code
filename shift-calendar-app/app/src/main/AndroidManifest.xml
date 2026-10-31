@@ -227,6 +227,11 @@
             android:name=".tier.TrialNoticeReceiver"
             android:exported="false" />
 
+        <!-- 1.36 840·841: a yearly renewal or a 1년 이용권 ending, 7 days before. -->
+        <receiver
+            android:name=".tier.EndNoticeReceiver"
+            android:exported="false" />
+
         <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->
         <receiver
             android:name=".share.ShareExpiryReceiver"

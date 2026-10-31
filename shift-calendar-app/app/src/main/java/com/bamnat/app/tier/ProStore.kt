@@ -83,7 +83,13 @@ data class ProState(
     val trialNoticeFor: Instant? = null,
     /** [SRV-07] The trial answer still to send. */
     val pendingConsent: PendingConsent? = null,
+    /** 1.36 841: each 1년 이용권 bought (Play's order id) and when; they stack ([com.bamnat.core.tier.YearPass.until]). */
+    val yearPasses: Map<String, Instant> = emptyMap(),
+    /** 840·841: the end whose 7-days-before notice went out (a yearly renewal or a 1년 이용권). */
+    val endNoticeFor: Instant? = null,
 ) {
+    val yearPassUntil: Instant? get() = com.bamnat.core.tier.YearPass.until(yearPasses.values)
+
     /** [FLAG-08] [live] is the `billing` row on this phone (the retired 정식 출시 switch). */
     fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId, live: Boolean): ProSources = ProSources(
         billingLive = live,
@@ -95,6 +101,7 @@ data class ProState(
         thanksMonths = config.thanksMonths,
         dayPassUntil = dayPass?.let { AdRules.dayPassUntil(it, zone) },
         sharedUntil = passes?.sharedUntil,
+        yearPassUntil = yearPassUntil,
     )
 
     /** [MON-06] Consent to the paid month after the trial: the server's record, or the answer given here. */
@@ -119,6 +126,10 @@ class ProStore(context: Context) {
     fun claimLater(code: String?) = edit { it.copy(pendingClaim = code) }
     fun thanksSeen() = edit { it.copy(thanksSeen = true) }
     fun trialNoticed(start: Instant) = edit { it.copy(trialNoticeFor = start) }
+    /** 841: a 1년 이용권 Play reports, by its order; the same order twice counts once. */
+    fun addYearPass(order: String, at: Instant) { if (current.yearPasses[order] != at) edit { it.copy(yearPasses = it.yearPasses + (order to at)) } }
+    fun endNoticed(end: Instant) = edit { it.copy(endNoticeFor = end) }
+    fun removeYearPass(order: String) { if (order in current.yearPasses) edit { it.copy(yearPasses = it.yearPasses - order) } }
 
     /** [MON-08] For the backup: the recovery code and what was already shown, never the purchase. */
     fun toBackup(): JSONObject = JSONObject().put("code", current.code ?: JSONObject.NULL).put("thanksSeen", current.thanksSeen)
@@ -167,6 +178,8 @@ class ProStore(context: Context) {
             .put("trialAnswer", s.trialAnswer ?: JSONObject.NULL).put("trialAnswerAt", s.trialAnswerAt.json())
             .put("code", s.code ?: JSONObject.NULL).put("pendingClaim", s.pendingClaim ?: JSONObject.NULL)
             .put("thanksSeen", s.thanksSeen).put("trialNoticeFor", s.trialNoticeFor.json())
+            .put("yearPasses", JSONObject().apply { s.yearPasses.forEach { (k, v) -> put(k, v.toString()) } })
+            .put("endNoticeFor", s.endNoticeFor.json())
             .put("pendingConsent", s.pendingConsent?.let { q ->
                 JSONObject().put("answer", q.answer).put("answeredAt", q.answeredAt.toString()).put("product", q.product)
                     .put("price", q.price).put("trialEnd", q.trialEnd.toString()).put("shown", q.shown)
@@ -187,6 +200,8 @@ class ProStore(context: Context) {
             trialAnswer = o.text("trialAnswer"), trialAnswerAt = o.instant("trialAnswerAt"),
             code = o.text("code"), pendingClaim = o.text("pendingClaim"),
             thanksSeen = o.optBoolean("thanksSeen"), trialNoticeFor = o.instant("trialNoticeFor"),
+            yearPasses = o.optJSONObject("yearPasses")?.let { m -> m.keys().asSequence().mapNotNull { k -> runCatching { k to Instant.parse(m.getString(k)) }.getOrNull() }.toMap() }.orEmpty(),
+            endNoticeFor = o.instant("endNoticeFor"),
             pendingConsent = o.optJSONObject("pendingConsent")?.let { q ->
                 runCatching {
                     PendingConsent(q.getString("answer"), Instant.parse(q.getString("answeredAt")), q.getString("product"),

@@ -54,8 +54,9 @@ export function insightViews(A) {
     const f = d.funnel;
     const funnel = `<section class="card"><h2>프로 전환</h2>
       <dl class="kv"><dt>프로 화면을 본 휴대폰(날 합)</dt><dd>${f.paywall}</dd><dt>무료 체험 시작</dt><dd>${f.trial}</dd><dt>구독 시작</dt><dd>${f.subscribe}</dd>
-        <dt>지금 체험 중(서버 확인)</dt><dd>${f.trials}</dd><dt>지금 유료 구독(서버 확인)</dt><dd>${f.paid}</dd><dt>자동 갱신 끈 구독</dt><dd>${f.ending}</dd></dl>
-      <p class="hint">위 셋은 사용 통계, 아래 셋은 Play 구매 확인으로 센 숫자라 서로 다를 수 있어요.</p></section>`;
+        <dt>지금 체험 중(서버 확인)</dt><dd>${f.trials}</dd><dt>지금 유료 구독(서버 확인)</dt><dd>${f.paid}${f.paid ? ` <span class="meta">연간 ${f.yearly ?? 0} · 월간 ${f.paid - (f.yearly ?? 0)}</span>` : ""}</dd><dt>자동 갱신 끈 구독</dt><dd>${f.ending}</dd>
+        <dt>1년 이용권(쓰는 중)</dt><dd>${f.passes ?? 0}${f.passesBought ? ` <span class="meta">이 기간 ${f.passesBought}개 삼</span>` : ""}</dd></dl>
+      <p class="hint">위 셋은 사용 통계, 아래는 Play 구매 확인으로 센 숫자라 서로 다를 수 있어요. 상품 비중 목표는 연간 60% · 이용권 25% · 월간 15% 안팎이에요. 이용권이 연간을 잠식하면 이용권 가격을 올려요.</p></section>`;
     const sh = d.shares;
     // [STAT-04] The share server counts views roughly (approximate), so the numbers say 대략.
     const about = (v) => (sh?.approximate !== false ? `대략 ${v}` : v);

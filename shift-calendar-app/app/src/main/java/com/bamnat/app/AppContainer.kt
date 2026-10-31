@@ -892,6 +892,11 @@ class AppContainer(context: Context) {
             proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
                 .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
         }
+        // 840·841: the 7-days-before notice of a yearly renewal or a 1년 이용권's end.
+        keep("endnotice") {
+            proStore.state.map { Triple(it.sub, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
+                .collect { com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current) }
+        }
         appScope.launch {
             mainIdle()
             delay(LATER_SECOND_MILLIS)

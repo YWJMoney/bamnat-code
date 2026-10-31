@@ -119,6 +119,8 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
 @Composable
 internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) -> Unit) {
     val context = LocalContext.current
+    val passOffer by c.billing.pass.collectAsStateWithLifecycle()
+    val proState by c.proStore.state.collectAsStateWithLifecycle()
     val monthly = plans.firstOrNull { !it.yearly }
     plans.sortedByDescending { it.yearly }.forEach { plan ->
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -140,6 +142,26 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
             }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독")
+            }
+        }
+    }
+    // 841 1년 이용권: after the plans, never for someone subscribed (no double payment); buyable again from 30 days before its end.
+    val subscribed = proState.sub?.play()?.entitled(Today.instant()) == true
+    val p = passOffer
+    if (p != null && !subscribed) {
+        val until = proState.yearPassUntil
+        val canBuy = com.bamnat.core.tier.YearPass.rebuy(until, Today.instant())
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("1년 이용권 ${p.price} · 자동 결제 없음", style = MaterialTheme.typography.titleSmall)
+            Text("한 번 사면 1년 써요. 1년 뒤 그냥 끝나고, 끝나기 7일 전에 한 번 알려 드려요. 다시 사면 이어져요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (until != null && Today.instant() < until) Text(until.atZone(Today.zone()).toLocalDate().let { "지금 이용권은 ${it.year}년 ${it.monthValue}월 ${it.dayOfMonth}일까지예요." },
+                style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = {
+                val activity = context.findActivity()
+                if (activity == null || !c.billing.buyPass(activity)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
+            }, enabled = canBuy, modifier = Modifier.fillMaxWidth()) {
+                Text(if (canBuy) "1년 이용권 사기" else "끝나기 30일 전부터 이어서 살 수 있어요")
             }
         }
     }

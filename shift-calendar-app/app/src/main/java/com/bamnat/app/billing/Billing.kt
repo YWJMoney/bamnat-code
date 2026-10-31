@@ -41,6 +41,8 @@ object ProductIds {
     const val MONTHLY = "monthly"
     const val YEARLY = "yearly"
     const val TRIAL = "trial-1m"
+    /** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
+    const val PASS_1Y = com.bamnat.core.tier.YearPass.PRODUCT
     /** Play's own page for the user's subscriptions, where they cancel [MON-05]. */
     fun manageUrl(packageName: String) = "https://play.google.com/store/account/subscriptions?sku=$PRO&package=$packageName"
 }
@@ -65,6 +67,11 @@ data class Plan(
 
 enum class BillingState { UNKNOWN, READY, UNAVAILABLE }
 
+/** 1.36 841 1년 이용권 as Play offers it now: a one-time product, no automatic payment. */
+data class PassOffer(val price: String, val priceMicros: Long, val currency: String)
+
+private val NO_PASS: StateFlow<PassOffer?> = MutableStateFlow(null)
+
 /** [MON-03] Play billing as the screens see it; screenshots and tests put a fake in its place. */
 interface Billing {
     val plans: StateFlow<List<Plan>>
@@ -73,6 +80,10 @@ interface Billing {
     suspend fun refresh()
     /** Opens Play's own purchase sheet; false when it could not. */
     fun buy(activity: Activity, plan: Plan): Boolean
+    /** 841: the 1년 이용권 when Play offers it. */
+    val pass: StateFlow<PassOffer?> get() = NO_PASS
+    /** 841: Play's purchase sheet for the 1년 이용권; false when it could not. */
+    fun buyPass(activity: Activity): Boolean = false
 }
 
 /** No Play here (a test, a phone without the Play Store): no plans, nothing to buy. */
@@ -109,6 +120,9 @@ class PlayBilling(
     private val _state = MutableStateFlow(BillingState.UNKNOWN)
     override val state: StateFlow<BillingState> = _state.asStateFlow()
     private var details: ProductDetails? = null
+    private var passDetails: ProductDetails? = null
+    private val _pass = MutableStateFlow<PassOffer?>(null)
+    override val pass: StateFlow<PassOffer?> = _pass.asStateFlow()
     private val lock = Mutex()
     /** The plan being bought: Play's purchase says neither the base plan nor whether it began with the trial. */
     @Volatile private var buying: Plan? = null
@@ -120,8 +134,69 @@ class PlayBilling(
         }
         _state.value = BillingState.READY
         loadPlans()
+        loadPass()
         val (ok, purchases) = queryPurchases()
         if (ok) take(purchases, fromQuery = true)
+        val (passOk, passPurchases) = queryPurchases(BillingClient.ProductType.INAPP)
+        if (passOk) takePasses(passPurchases, bought = false)
+    }
+
+    override fun buyPass(activity: Activity): Boolean {
+        val d = passDetails ?: return false
+        val params = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d).build()))
+            .build()
+        val result = client.launchBillingFlow(activity, params)
+        log("billing_pass_open ${result.responseCode}")
+        return result.responseCode == BillingClient.BillingResponseCode.OK
+    }
+
+    private suspend fun loadPass() {
+        val params = QueryProductDetailsParams.newBuilder().setProductList(listOf(
+            QueryProductDetailsParams.Product.newBuilder().setProductId(ProductIds.PASS_1Y).setProductType(BillingClient.ProductType.INAPP).build(),
+        )).build()
+        val found = suspendCancellableCoroutine<ProductDetails?> { cont ->
+            client.queryProductDetailsAsync(params) { result, list ->
+                val d = list.productDetailsList.firstOrNull { it.productId == ProductIds.PASS_1Y }
+                if (cont.isActive) cont.resume(d.takeIf { result.responseCode == BillingClient.BillingResponseCode.OK })
+            }
+        } ?: return
+        passDetails = found
+        _pass.value = found.oneTimePurchaseOfferDetails?.let { PassOffer(it.formattedPrice, it.priceAmountMicros, it.priceCurrencyCode) }
+    }
+
+    /**
+     * 841: the 1년 이용권 Play reports. Each bought one is kept by its order (they stack); acknowledged at once (Play refunds after three
+     * days otherwise), checked with the server when it can, and used up (consumed) only from 30 days before the end, so a new phone
+     * with the same account finds it until then and it can be bought again after.
+     */
+    private suspend fun takePasses(purchases: List<Purchase>, bought: Boolean) {
+        for (p in purchases.filter { ProductIds.PASS_1Y in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED }) {
+            if (!p.isAcknowledged) acknowledge(p)
+            val order = p.orderId ?: p.purchaseToken.takeLast(24)
+            store.addYearPass(order, Instant.ofEpochMilli(p.purchaseTime))
+            try {
+                val checked = api().let { a -> if (a.enabled) a.purchase(device(), ProductIds.PASS_1Y, p.purchaseToken) else null }
+                // Refunded on Play: the year goes.
+                if (checked?.verified == true && checked.state == PlaySub.State.EXPIRED) { store.removeYearPass(order); continue }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("billing_pass_check_failed")
+            }
+            if (com.bamnat.core.tier.YearPass.rebuy(store.current.yearPassUntil, clock())) consume(p)
+        }
+        if (bought) runCatching { onBought(false) }
+    }
+
+    private suspend fun consume(p: Purchase) {
+        val params = com.android.billingclient.api.ConsumeParams.newBuilder().setPurchaseToken(p.purchaseToken).build()
+        suspendCancellableCoroutine { cont ->
+            client.consumeAsync(params) { result, _ ->
+                log("billing_pass_consume ${result.responseCode}")
+                if (cont.isActive) cont.resume(Unit)
+            }
+        }
     }
 
     override fun buy(activity: Activity, plan: Plan): Boolean {
@@ -140,7 +215,12 @@ class PlayBilling(
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
         log("billing_result ${result.responseCode}")
         when (result.responseCode) {
-            BillingClient.BillingResponseCode.OK -> scope.launch { lock.withLock { take(purchases.orEmpty(), fromQuery = false) } }
+            BillingClient.BillingResponseCode.OK -> scope.launch {
+                lock.withLock {
+                    val all = purchases.orEmpty()
+                    if (all.any { ProductIds.PASS_1Y in it.products }) takePasses(all, bought = true) else take(all, fromQuery = false)
+                }
+            }
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> scope.launch { refresh() }
             else -> Unit
         }
@@ -175,8 +255,8 @@ class PlayBilling(
         _plans.value = plansOf(found)
     }
 
-    private suspend fun queryPurchases(): Pair<Boolean, List<Purchase>> = suspendCancellableCoroutine { cont ->
-        client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build()) { result, list ->
+    private suspend fun queryPurchases(type: String = BillingClient.ProductType.SUBS): Pair<Boolean, List<Purchase>> = suspendCancellableCoroutine { cont ->
+        client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(type).build()) { result, list ->
             if (cont.isActive) cont.resume((result.responseCode == BillingClient.BillingResponseCode.OK) to list)
         }
     }

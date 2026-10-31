@@ -282,6 +282,7 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
                 ProReason.SUBSCRIPTION -> if (pro.sub?.autoRenew == true) "다음 결제일 ${dateWords(day)}" else "${dateWords(day)}까지 써요(해지했어요)"
                 ProReason.GRACE -> "${dateWords(day)}까지 결제 수단을 바꾸면 그대로 써요"
                 ProReason.DAY_PASS -> "오늘 밤 12시까지예요"
+                ProReason.PASS_1Y -> "${dateWords(day)}까지 써요. 자동 결제 없이 그날 끝나요"
                 else -> "${dateWords(day)}까지예요"
             }
             Text(words, style = MaterialTheme.typography.bodyMedium)

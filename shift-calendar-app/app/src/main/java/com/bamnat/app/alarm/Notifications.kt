@@ -62,6 +62,8 @@ object Notifications {
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
+    /** 840·841: a yearly renewal or a 1년 이용권 ending in 7 days. */
+    const val PRO_END_ID = 7209
     const val BACKUP_ID = 7204
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */

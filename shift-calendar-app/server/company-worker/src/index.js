@@ -263,6 +263,7 @@ export async function prune(env, now) {
     // [MON-03][MON-09] Spent link codes, and purchases 30 days after they ended.
     stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
+    stmt(env, "DELETE FROM year_passes WHERE purchased_at < ?", now - 400 * 86400000),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
     // [INVITE-04][INVITE-08] An invite never counted goes 30 days after its period of use could end; a counted one after
@@ -586,6 +587,10 @@ const SCHEMA = [
     auto_renew INTEGER NOT NULL DEFAULT 0, consent_at INTEGER, stopped_at INTEGER, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS subs_device ON subs (device)",
   "CREATE INDEX IF NOT EXISTS subs_trial ON subs (trial, auto_renew, expiry)",
+  // 1.36 841 1년 이용권 Play confirmed (a one-time product, no automatic payment): kept a year and a month for refunds and counts.
+  `CREATE TABLE IF NOT EXISTS year_passes (hash TEXT PRIMARY KEY, device TEXT NOT NULL, order_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
+    purchased_at INTEGER NOT NULL, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS year_passes_device ON year_passes (device)",
   // [MON-06] Answers before a trial turns paid, kept as the law's evidence.
   `CREATE TABLE IF NOT EXISTS consents (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, kind TEXT NOT NULL,
     detail TEXT NOT NULL, at INTEGER NOT NULL)`,

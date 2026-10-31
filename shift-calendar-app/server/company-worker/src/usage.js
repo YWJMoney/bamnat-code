@@ -568,11 +568,12 @@ export async function metrics(env, url, now) {
   const end = Date.parse(`${to}T00:00:00+09:00`) + DAY;
   const lastWeek = kstDay(Date.parse(`${to}T00:00:00+09:00`) - 6 * DAY);
   const byDay = (col) => `strftime('%Y-%m-%d', (${col} + 32400000) / 1000, 'unixepoch')`;
-  const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows] = (await batch(env, [
+  const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows, passRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
     stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
+      SUM(CASE WHEN trial = 0 AND base_plan = 'yearly' THEN 1 ELSE 0 END) AS yearly,
       SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
     // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", r.beforeFrom, r.beforeTo),
@@ -594,6 +595,9 @@ export async function metrics(env, url, now) {
     stmt(env, `SELECT COALESCE(json_extract(info, '$.app'), '') AS app, COUNT(*) AS n FROM inquiries
       WHERE kind = 'bug' AND created_at >= ? AND created_at < ? AND json_valid(info) GROUP BY app ORDER BY n DESC LIMIT 10`, start, end),
     env.DB.prepare(SLA_SQL),
+    // 1.36 841 1년 이용권: those still running and those bought in the period.
+    stmt(env, `SELECT SUM(CASE WHEN purchased_at > ? THEN 1 ELSE 0 END) AS running, SUM(CASE WHEN purchased_at >= ? AND purchased_at < ? THEN 1 ELSE 0 END) AS bought
+      FROM year_passes WHERE state = 'ACTIVE'`, now - 365 * DAY, start, end),
   ])).map((x) => x.results);
   const was = new Map(beforeRows.map((x) => [x.day, x.phones]));
   const phoneDays = dayRows.reduce((n, x) => n + x.phones, 0);
@@ -641,7 +645,8 @@ export async function metrics(env, url, now) {
     ],
     funnel: {
       paywall: ev.get("paywall_view")?.phones ?? 0, trial: ev.get("trial_start")?.total ?? 0, subscribe: ev.get("subscribe")?.total ?? 0,
-      trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0,
+      trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0, yearly: s.yearly ?? 0,
+      passes: passRows?.[0]?.running ?? 0, passesBought: passRows?.[0]?.bought ?? 0,
     },
     shares: await shareStats(env, days),
     // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.
