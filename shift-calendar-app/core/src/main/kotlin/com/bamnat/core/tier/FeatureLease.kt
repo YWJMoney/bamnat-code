@@ -42,6 +42,8 @@ object FeatureLease {
         FIRST("first", "처음 7일 무료"),
         AD("ad", "광고 보고"),
         NO_AD("no_ad", "광고가 안 와서 그냥"),
+        /** 840: back after a month away, the bundle used most opens again (no discount, no ad). */
+        BACK("back", "다시 와서 7일 무료"),
         ;
 
         companion object { fun byKey(key: String?): Why? = entries.firstOrNull { it.key == key } }
@@ -108,11 +110,18 @@ object FeatureLease {
         else s.copy(declines = s.declines + (bundle to n))
     }
 
+    /** 840: back after [ProOfferTimes.AWAY_DAYS] away: [bundle] for 7 days, not counted as an ad. */
+    fun back(s: State, bundle: Bundle, now: Instant): State {
+        val from = s.until[bundle]?.takeIf { now < it } ?: now
+        val end = from.plus(Duration.ofDays(AD_DAYS))
+        return s.copy(until = s.until + (bundle to end), grants = s.grants + Grant(bundle, now, end, Why.BACK))
+    }
+
     /** The grants of [month]'s days (보상 장부: "이번 달 받은 날"). */
     fun daysGiven(s: State, from: Instant, to: Instant): Long = s.grants.filter { it.at >= from && it.at < to }
         .sumOf { Duration.between(it.at, it.until).toDays() }
 
     /** How many times this bundle was opened by an ad in the 30 days before [now] (제안 '때' 1: the second in a month). */
     fun adsIn30Days(s: State, bundle: Bundle, now: Instant): Int =
-        s.grants.count { it.bundle == bundle && it.why != Why.FIRST && Duration.between(it.at, now) < Duration.ofDays(30) }
+        s.grants.count { it.bundle == bundle && (it.why == Why.AD || it.why == Why.NO_AD) && Duration.between(it.at, now) < Duration.ofDays(30) }
 }

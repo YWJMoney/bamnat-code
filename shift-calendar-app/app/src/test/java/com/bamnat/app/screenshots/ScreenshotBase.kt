@@ -448,6 +448,12 @@ abstract class ScreenshotBase {
         }
 
         /** Scrolls until [text] shows near the top of the screen, without tapping it. */
+        /** 1.36 PC C6: the pay result's guide cards (빠진 값, 회사 급여 방식, 명세서와 맞춰 보기) are folded under '더 정확하게 하기'. */
+        fun openPayGuides() {
+            tapText("더 정확하게 하기", exact = true, scrolls = 40)
+            settle()
+        }
+
         fun reveal(text: String, exact: Boolean = false, across: Float = 0.5f) {
             val node = reach(text, exact, prefix = false, scrolls = 10, across = across)
             // Bring it up from the bottom edge so what follows it shows too, below a sheet's fixed day header.

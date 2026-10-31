@@ -31,7 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.platform.LocalContext
-import com.bamnat.app.ads.DayPassOption
+import com.bamnat.app.ads.LeaseAdOption
 import com.bamnat.app.appContainer
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
@@ -40,7 +40,7 @@ import com.bamnat.app.ui.settings.SettingsLinks
 
 /**
  * [MON-04] A pro feature for someone without 프로: drawn with the user's own numbers, then blurred
- * (Android 12+; a cover below it), with a lock, the way to try 프로 and, once a day, a rewarded ad.
+ * (Android 12+; a cover below it), with a lock, the way to try 프로 and, for a bundled feature, a rewarded ad for 7 days (839).
  * Nothing under it can be tapped or read out. With 프로, or before the launch, it is just [content].
  */
 @Composable
@@ -72,7 +72,7 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
             Text("프로에서 쓸 수 있어요. 흐리게 보이는 건 내 기록으로 만든 화면이에요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             Button(onClick = { goPro() }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-            DayPassOption(gate)
+            LeaseAdOption(feature, gate)
             // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet.
             if (LocalContext.current.appContainer.inviteApi.enabled) {
                 OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text("친구 초대로 프로 이용권 받기") }
@@ -116,7 +116,7 @@ fun TrialNote(feature: Feature, gate: com.bamnat.app.tier.Gate, modifier: Modifi
     val until = gate.trialUntil(feature)
     val text = when {
         until != null && gate.tier < feature.minTier -> java.time.Instant.ofEpochMilli(until).atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
-            .let { "${it.monthValue}월 ${it.dayOfMonth}일까지 무료로 써 봐요. 그 뒤에도 쓰려면 프로예요" }
+            .let { "${it.monthValue}월 ${it.dayOfMonth}일까지 무료로 써요. 그 뒤에는 광고 한 편으로 7일 더 열거나 프로로 계속 써요" }
         gate.canTry(feature) -> "처음 쓰는 날부터 일주일은 무료예요"
         else -> return
     }

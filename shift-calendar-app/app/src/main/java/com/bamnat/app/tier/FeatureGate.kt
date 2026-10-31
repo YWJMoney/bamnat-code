@@ -5,6 +5,8 @@ import com.bamnat.core.tier.Access
 import com.bamnat.core.tier.ProAccess
 import com.bamnat.core.tier.ProReason
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -94,17 +96,26 @@ data class Gate(
     val free: Set<Feature> = emptySet(),
     /** A tester's preview, not the real state. */
     val preview: Boolean = false,
-    /** [MON-13] 1.36: the week each trial feature opened on first use (feature name to its start), and the time it was read at. */
-    val trials: Map<String, Long> = emptyMap(),
+    /**
+     * [MON-13] 1.36 839 묶음 7일권: the four bundles' days on this phone (first week from first use, an ad's or a missing ad's
+     * 7 days), and the time they were read at.
+     */
+    val leases: com.bamnat.core.tier.FeatureLease.State = com.bamnat.core.tier.FeatureLease.State(),
     val now: Long = 0L,
 ) {
     fun allows(feature: Feature): Boolean = !live || feature in free || tier >= feature.minTier || onTrial(feature)
 
-    /** [MON-13] When [feature]'s free week ends, while it lasts. */
-    fun trialUntil(feature: Feature): Long? = trials[feature.name]?.plus(FeatureTrials.MS)?.takeIf { now < it }
+    /** [MON-13] 839: the bundle [feature] is in, or null for an always-on 프로 feature (no ad opens it). */
+    fun bundle(feature: Feature): com.bamnat.core.tier.FeatureLease.Bundle? = com.bamnat.core.tier.FeatureLease.Bundle.of(feature.name)
 
-    /** [MON-13] Still never tried here, so its first use opens a week. */
-    fun canTry(feature: Feature): Boolean = feature in FeatureTrials.TRIAL && !trials.containsKey(feature.name) && live && tier < feature.minTier
+    /** [MON-13] When [feature]'s bundle closes, while it is open. */
+    fun trialUntil(feature: Feature): Long? = bundle(feature)?.let { leases.until[it] }?.toEpochMilli()?.takeIf { now < it }
+
+    /** [MON-13] Its bundle was never opened here, so the first use opens a week. */
+    fun canTry(feature: Feature): Boolean {
+        val b = bundle(feature) ?: return false
+        return b !in leases.firstGiven && trialUntil(feature) == null && live && tier < feature.minTier
+    }
 
     private fun onTrial(feature: Feature) = trialUntil(feature) != null
 
@@ -143,7 +154,7 @@ class FeatureGate(
     private val debug: Boolean = com.bamnat.app.BuildConfig.DEBUG,
     private val clock: () -> Instant = Today::instant,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
-    /** [MON-13] Free weeks from first use. */
+    /** [MON-13] The bundles' days: first weeks from first use, an ad's 7 days. */
     private val trials: FeatureTrials = FeatureTrials(null),
 ) {
     private val tick = MutableStateFlow(0L)
@@ -155,7 +166,21 @@ class FeatureGate(
         .stateIn(scope, SharingStarted.Eagerly, withTrials(gate(settings.current.previewTier, remote.current, pro.current, flags.byKey.value), trials.all.value))
 
     // The 프로 둘러보기 preview (무료) shows the free weeks too, so a tester sees them as a user would.
-    private fun withTrials(g: Gate, t: Map<String, Long>): Gate = g.copy(trials = t, now = clock().toEpochMilli())
+    private fun withTrials(g: Gate, t: com.bamnat.core.tier.FeatureLease.State): Gate = g.copy(leases = t, now = clock().toEpochMilli())
+
+    init {
+        // [MON-13] 839: a bundle's days ending while the app is open (or the alarm about to ring) closes it at that moment.
+        scope.launch {
+            trials.all.collectLatest { s ->
+                while (true) {
+                    val now = clock()
+                    val next = s.until.values.filter { it > now }.minOrNull() ?: break
+                    kotlinx.coroutines.delay(java.time.Duration.between(now, next).toMillis() + 1_000)
+                    tick.value++
+                }
+            }
+        }
+    }
 
     /**
      * [MON-13] The first use of a trial feature while it is locked: its week starts now. True when it is open (프로, a week
@@ -168,14 +193,25 @@ class FeatureGate(
     fun resetTrials() = trials.clear()
 
     fun tryOrAsk(feature: Feature): Boolean {
-        val g = state.value
+        val g = fresh()
         if (g.allows(feature)) return true
         if (!g.canTry(feature)) return false
         trials.start(feature, clock().toEpochMilli())
         return true
     }
 
-    fun allows(feature: Feature): Boolean = state.value.allows(feature)
+    /** [MON-13] 839: an ad watched to the end ([com.bamnat.core.tier.FeatureLease.Why.AD]) or one that did not come: [bundle] for 7 days. */
+    fun grant(bundle: com.bamnat.core.tier.FeatureLease.Bundle, why: com.bamnat.core.tier.FeatureLease.Why, reason: String? = null) {
+        trials.grant(bundle, clock(), clock().atZone(zone()).toLocalDate(), why, reason)
+    }
+
+    /** [MON-13] 839: the offer closed without an ad. */
+    fun decline(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.decline(bundle, clock())
+
+    /** Read with the time now, so a bundle that just ended is closed (the alarm asks at the moment it rings). */
+    fun allows(feature: Feature): Boolean = fresh().allows(feature)
+
+    private fun fresh(): Gate = state.value.copy(now = clock().toEpochMilli())
 
     /** Works the answer out again: on coming back to the app, and when a pass or a day ends. */
     fun refresh() {

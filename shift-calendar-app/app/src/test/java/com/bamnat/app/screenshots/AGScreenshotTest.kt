@@ -217,6 +217,7 @@ class AGScreenshotTest : ScreenshotBase() {
     /** [MON-13] 1.36 (사용자 결정): the first tap on 금액 비교하기 opens it for a week instead of asking for 프로. */
     @Test fun theFirstUseOpensAWeek() = shoot("1086b_ag_trial_first_use", PHONE_393) {
         payScreen(Tier.FREE, withProfile = true) { vm -> PayScreen(vm, onBack = {}); com.bamnat.app.ui.pro.ProOfferHost(app.container) }.invoke(this)
+        openPayGuides()
         reveal("처음 쓰는 날부터 일주일은 무료예요")
         tapText("금액 비교하기", scrolls = 30)
         reveal("어느 달 명세서인가요?")
@@ -224,9 +225,10 @@ class AGScreenshotTest : ScreenshotBase() {
 
     @Test fun aLockedFeatureOffersThreeWays() = shoot("1086_ag_pro_sheet", PHONE_393) {
         lockedPay().invoke(this)
+        openPayGuides()
         tapText("금액 비교하기", scrolls = 30)
         reveal("‘명세서 대조’ · 프로 기능이에요")
-        assertTrue(appears("광고 보고 오늘 하루 열기", exact = true))
+        assertTrue(appears("광고 보고 급여 7일 열기", exact = true))
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
         reveal("친구 초대로 프로 이용권 받기", exact = true)
         assertTrue(appears("친구 5명이 각자 7일 이상 쓰면"))
@@ -237,6 +239,7 @@ class AGScreenshotTest : ScreenshotBase() {
     @Test fun theSheetMakesTheLinkAfterTheLine() = shoot("1087_ag_pro_sheet_invite", PHONE_393) {
         api.viewAnswer = view()
         lockedPay().invoke(this)
+        openPayGuides()
         tapText("금액 비교하기", scrolls = 30)
         tapText("친구 초대 링크 만들기", exact = true)
         reveal("설치 번호와 휴대폰 표시")
@@ -305,6 +308,7 @@ class AGScreenshotTest : ScreenshotBase() {
 
     @Test fun theSheetAtLargeText() = shoot("1091_ag_pro_sheet_200", PHONE_393, fontScale = 2f) {
         lockedPay().invoke(this)
+        openPayGuides()
         tapText("금액 비교하기", scrolls = 30)
         reveal("친구 초대로 프로 이용권 받기", exact = true)
         noCuts("sheet_200")

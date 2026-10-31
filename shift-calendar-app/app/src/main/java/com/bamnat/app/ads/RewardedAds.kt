@@ -20,6 +20,7 @@ import com.bamnat.app.review.InAppReview.findActivity
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.tier.AdRules
+import com.bamnat.core.tier.FeatureLease
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.rewarded.RewardedAd
@@ -31,75 +32,44 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.bamnat.core.time.Today
 
 /**
- * AG 1.27 [MON-12] The rewarded ad as one of the ways in the 프로 sheet and lock: [DayPassButton] under its own rules, or,
- * in the alarm check's 등급 미리 보기 (no ad is ever loaded there), the same button that cannot be pressed and says why.
+ * [MON-13] 1.36 839 묶음 7일권 (사용자 2026-10-31 수익 2판 B안): the rewarded ad as one of the ways in the 프로 sheet and lock.
+ * [feature]'s bundle ([FeatureLease.Bundle]) opens for 7 days after one ad watched to the end, and also when the ad does not come
+ * (no fill, too slow, offline, the switch off): nobody is kept from a feature by an ad. Two ads a day in all; a bundle with days
+ * left shows its days instead; three 'no's hide its ad for 30 days. An always-on 프로 feature (no bundle) shows nothing here.
+ * In the alarm check's 등급 미리 보기 no ad is ever loaded: the button shows, cannot be pressed and says why.
  */
 @Composable
-fun DayPassOption(gate: Gate, modifier: Modifier = Modifier) {
-    if (gate.preview && gate.tier < Tier.PRO) {
+fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {}) {
+    val bundle = feature?.let { gate.bundle(it) } ?: return
+    if (gate.tier >= Tier.PRO) return
+    val label = "광고 보고 ${bundle.label} 7일 열기"
+    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요."
+    val small = MaterialTheme.typography.labelSmall
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    if (gate.preview) {
         Column(modifier) {
-            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("광고 보고 오늘 하루 열기") }
-            Text(
-                "광고 한 편을 끝까지 보면 오늘 밤 12시까지 프로 기능이 열려요. 하루 한 번이에요. 미리 보기에서는 광고가 나오지 않아요.",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(label) }
+            Text("$note 미리 보기에서는 광고가 나오지 않아요.", style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         return
     }
-    DayPassButton(gate, modifier)
-}
-
-/**
- * [MON-07] The one rewarded ad (결정 1: D), and only when the user taps for it: what it gives is said
- * before it plays (AdMob 보상형 정책). Watched to the end, the pro features open until midnight, once
- * a day. This is the only file that may use a rewarded ad (AdAndLicenseRulesTest).
- */
-@Composable
-fun DayPassButton(gate: Gate, modifier: Modifier = Modifier) {
     val c = LocalContext.current.appContainer
-    val config by c.remoteConfig.config.collectAsStateWithLifecycle()
-    val pro by c.proStore.state.collectAsStateWithLifecycle()
-    val ready by c.ads.ready.collectAsStateWithLifecycle()
-    // [FLAG-09] The `ads` row in place of the 정식 출시 switch.
-    val rows by c.flags.byKey.collectAsStateWithLifecycle()
+    val now = Today.instant()
     val today = Today.date()
-    val offer = ready && AdIds.rewarded.isNotBlank() && !gate.preview &&
-        AdRules.rewardedOffer(rows[com.bamnat.core.flags.FlagCatalog.ADS]?.on == true, gate.tier >= Tier.PRO, true, pro.dayPass, today)
-    if (!offer) return
-    val context = LocalContext.current
-    var loading by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
-    Column(modifier) {
-        OutlinedButton(
-            onClick = {
-                val activity = context.findActivity() ?: return@OutlinedButton
-                loading = true
-                failed = false
-                RewardedAd.load(activity, AdIds.rewarded, AdRequest.Builder().build(), object : RewardedAdLoadCallback() {
-                    override fun onAdLoaded(ad: RewardedAd) {
-                        loading = false
-                        ad.show(activity) {
-                            c.proStore.dayPass(Today.date())
-                            c.featureGate.refresh()
-                        }
-                    }
-
-                    override fun onAdFailedToLoad(error: LoadAdError) {
-                        loading = false
-                        failed = true
-                    }
-                })
-            },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (loading) "광고를 불러오는 중…" else "광고 보고 오늘 하루 열기") }
-        Text(
-            if (failed) "광고를 불러오지 못했어요. 잠시 뒤 다시 해 주세요."
-            else "광고 한 편을 끝까지 보면 오늘 밤 12시까지 프로 기능이 열려요. 하루 한 번이에요.",
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    val leases = gate.leases
+    val left = leases.daysLeft(bundle, now)
+    when {
+        left != null -> Text("${bundle.label} 묶음이 열려 있어요 · ${left}일 남았어요", style = small, color = dim, textAlign = TextAlign.Center,
+            modifier = modifier.fillMaxWidth())
+        FeatureLease.capped(leases, today) -> Text("오늘 광고 두 편을 다 봤어요. 내일 다시 열 수 있어요.", style = small, color = dim,
+            textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
+        !FeatureLease.canWatch(leases, bundle, now, today) -> Unit
+        else -> ThemeAdButton(label, note,
+            onReward = { c.featureGate.grant(bundle, FeatureLease.Why.AD); onOpened() },
+            onQuit = {},
+            onOffline = { c.featureGate.grant(bundle, FeatureLease.Why.NO_AD, "offline"); onOpened() },
+            onNoAd = { why -> c.featureGate.grant(bundle, FeatureLease.Why.NO_AD, why); onOpened() },
+            modifier = modifier)
     }
 }
 

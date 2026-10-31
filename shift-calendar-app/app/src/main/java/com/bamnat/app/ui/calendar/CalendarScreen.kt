@@ -1082,9 +1082,11 @@ fun CalendarScreen(
         // [GUIDE-20] 1.31 P2: the first week's 시작 단계, read again when the settings or the days change.
         val c31 = LocalContext.current.appContainer
         var startHidden by remember { mutableStateOf(false) }
-        val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today) {
+        val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today, pendingSetup) {
             // 1.36 PC C3: from the day after the first setup, so its first day asks one thing only (the pay sheet).
-            if (startHidden || viewingReceived != null || c31.firstSetup.quietToday()) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
+            // 03df48fb Y7: while '근무 설정을 마저 해 주세요' is up, it is the one card (its 이어서 하기 is the next step).
+            val resuming = pendingSetup?.let { it.later && settings.workStyle == null } == true
+            if (startHidden || resuming || viewingReceived != null || c31.firstSetup.quietToday()) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
         // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
         // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.
@@ -1133,7 +1135,8 @@ fun CalendarScreen(
             if (paint == null && viewingReceived == null) add(Notice("crashAsk", "불편한 점 알려 주기") { com.bamnat.app.ui.grow.CrashAskNotice() })
             // [GUIDE-20] 1.31 P2: in the first week, the 시작 단계 card in place of the question card.
             if (paint == null && startRows != null) add(Notice("start", "시작 단계") {
-                com.bamnat.app.ui.guide.StartStepsCard(startRows, onDismiss = { com.bamnat.app.ui.guide.StartStepsState.dismiss(c31); startHidden = true })
+                com.bamnat.app.ui.guide.StartStepsCard(startRows, onDismiss = { com.bamnat.app.ui.guide.StartStepsState.dismiss(c31); startHidden = true },
+                    onShifts = { vm.setPaint(PaintTool.Pick) })
             })
             // [GUIDE-02][GUIDE-03][EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
             if (guideHere && askOn && startRows == null) add(Notice("ask", "질문 1개") {

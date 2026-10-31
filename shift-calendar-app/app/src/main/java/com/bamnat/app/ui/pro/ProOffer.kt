@@ -31,7 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
-import com.bamnat.app.ads.DayPassOption
+import com.bamnat.app.ads.LeaseAdOption
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * AG 1.27 [MON-12][INVITE-11] What a tap on a locked 프로 feature opens (사용자 리뷰 2026-10-25: "프로가 아닌사람들이 프로기능을
  * 클릭항때 광보보기와 친구초대로 프로 사용권 얻기 보기를 보여줘서 초대를 권유해야해"): one sheet with the three ways, 프로 itself
- * (체험), '광고 보고 오늘 하루 열기' (the rewarded ad's own rules, RewardedAds.kt) and '친구 초대로 프로 이용권 받기'. Before
+ * (체험), '광고 보고 <묶음> 7일 열기' (839, the rewarded ad's own rules, RewardedAds.kt) and '친구 초대로 프로 이용권 받기'. Before
  * the 정식 출시 switch nothing is locked, so it never opens; the alarm check's 등급 미리 보기 shows it.
  */
 object ProOffer {
@@ -73,7 +73,16 @@ fun ProOfferHost(c: AppContainer) {
     if (!open) return
     val feature by ProOffer.asking.collectAsStateWithLifecycle()
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = ProOffer::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // [MON-13] 839: closed without an ad or 프로 counts as a 'no' for the bundle's ad (three hide it for 30 days).
+    val grantsAtOpen = remember(feature) { gate.leases.grants.size }
+    val dismiss = {
+        val b = feature?.let { gate.bundle(it) }
+        val offered = b != null && gate.live && !gate.preview && gate.tier < com.bamnat.app.tier.Tier.PRO &&
+            com.bamnat.core.tier.FeatureLease.canWatch(gate.leases, b, com.bamnat.core.time.Today.instant(), com.bamnat.core.time.Today.date())
+        if (offered && gate.leases.grants.size == grantsAtOpen) c.featureGate.decline(b!!)
+        ProOffer.close()
+    }
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         ProOfferContent(c, feature, gate, onPro = { ProOffer.close(); goPro() })
     }
 }
@@ -94,7 +103,7 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
         }
         Text("세 가지 중에 골라 쓸 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-        DayPassOption(gate)
+        LeaseAdOption(feature, gate, onOpened = ProOffer::close)
         if (c.inviteApi.enabled) {
             HorizontalDivider()
             Text("친구 초대로 프로 이용권 받기", style = MaterialTheme.typography.titleMedium)

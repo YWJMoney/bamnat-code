@@ -124,7 +124,10 @@ fun PayQuickSetup(
     val guessed = remember(snapshot, initial, style) {
         WorkForms.guess(snapshot.shiftTypes, pattern, initial).let { g ->
             when {
-                initial != null -> g
+                // 03df48fb X5 (처음부터 설정 다시: 아무것도 안 골라져 '다음'이 꺼짐): a pay made before always points to a form, its job's
+                // first (제조·생산 → 3교대) or, for a job no form names, by how it is paid.
+                initial != null -> g ?: WorkForm.entries.firstOrNull { it.occupation == initial.occupation && it.occupation != com.bamnat.core.pay.Occupation.CUSTOM }
+                    ?: when (initial.wageType) { WageType.HOURLY -> WorkForm.PART_TIME; WageType.DAILY -> WorkForm.DAILY; else -> WorkForm.OFFICE }
                 style == com.bamnat.core.work.WorkStyle.HOURLY -> WorkForm.PART_TIME
                 style == com.bamnat.core.work.WorkStyle.DAY && g != WorkForm.ON_CALL -> WorkForm.OFFICE
                 else -> g
@@ -459,9 +462,18 @@ private fun FixedOvertimeCard(p: PayProfile, f: FixedOt, onChange: (FixedOt) -> 
                 // 1.36 PC X1 ('20' 칸에 20을 치니 '202'): a tap selects the whole number, so typing replaces it; a value out of range
                 // is said in red and not used.
                 var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(f.hours.toString())) }
+                // 03df48fb (전체 선택이 안 돼 '202'): the tap that focuses the field puts the cursor after focusing, so the select-all
+                // is applied to that tap's own cursor move, once.
+                var selectNext by remember { mutableStateOf(false) }
                 val bad = text.text.toIntOrNull()?.let { it !in 1..200 } ?: true
                 OutlinedTextField(text, { v ->
                     val digits = v.text.filter(Char::isDigit).take(3)
+                    if (selectNext && digits == text.text) {
+                        selectNext = false
+                        text = text.copy(selection = androidx.compose.ui.text.TextRange(0, digits.length))
+                        return@OutlinedTextField
+                    }
+                    selectNext = false
                     text = v.copy(text = digits, selection = if (digits == v.text) v.selection else androidx.compose.ui.text.TextRange(digits.length))
                     digits.toIntOrNull()?.takeIf { it in 1..200 }?.let { onChange(f.copy(hours = it)) }
                 },
@@ -469,7 +481,8 @@ private fun FixedOvertimeCard(p: PayProfile, f: FixedOt, onChange: (FixedOt) -> 
                     supportingText = if (bad) ({ Text("1~200시간 사이로 넣어 주세요. 지금은 ${f.hours}시간으로 계산해요") }) else null,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().onFocusChanged { s ->
-                        if (s.isFocused) text = text.copy(selection = androidx.compose.ui.text.TextRange(0, text.text.length))
+                        if (s.isFocused) { selectNext = true; text = text.copy(selection = androidx.compose.ui.text.TextRange(0, text.text.length)) }
+                        else selectNext = false
                     })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = f.lump, onCheckedChange = { onChange(f.copy(lump = it, pay = null)) })
