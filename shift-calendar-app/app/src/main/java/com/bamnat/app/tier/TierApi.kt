@@ -14,6 +14,9 @@ import com.bamnat.core.time.Today
 /** [MON-08] One reward pass the developer gave this install: [why] is "rule" (회사 방식) or "idea" (제안). */
 data class PassItem(val months: Int, val at: Instant, val why: String)
 
+/** 1.36 841 쓰면 쌓이는 날: days earned without an ad (a problem report fixed), [why] in words from the server. */
+data class EarnedDays(val days: Int, val at: Instant, val why: String)
+
 /**
  * [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved".
  * [FLAG-13] 1.28: [owner] when the link code was made by the owner (최고 관리자); such a phone sees hidden kinds of work.
@@ -37,6 +40,9 @@ data class Passes(
     val checkedAt: Instant,
     /** 1.36 [PSH-01] 프로 나눔 1인: the 프로 a buyer gave this phone runs until their subscription ends; null when none. */
     val sharedUntil: Instant? = null,
+    /** 1.36 841 쓰면 쌓이는 날 (at most 14 a month), and how many start at the launch. */
+    val earned: List<EarnedDays> = emptyList(),
+    val waitingDays: Int = 0,
 )
 
 /**
@@ -170,6 +176,8 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             hasCode = o.optBoolean("code"),
             checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Today.instant(),
             sharedUntil = o.optJSONObject("shared")?.optStringOrNull("until")?.let(Instant::parse),
+            earned = o.optJSONArray("earned").objects().map { EarnedDays(it.getInt("days"), Instant.parse(it.getString("at")), it.optString("why")) },
+            waitingDays = o.optInt("waitingDays"),
         )
 
         fun readShare(o: JSONObject): ProShare = ProShare(

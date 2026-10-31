@@ -171,6 +171,8 @@ class ProStore(context: Context) {
                     .put("items", JSONArray(p.items.map { JSONObject().put("months", it.months).put("at", it.at.toString()).put("why", it.why) }))
                     .put("deferred", p.deferred).put("code", p.hasCode).put("checkedAt", p.checkedAt.toString())
                     .put("shared", p.sharedUntil?.let { JSONObject().put("until", it.toString()) } ?: JSONObject.NULL)
+                    .put("waitingDays", p.waitingDays)
+                    .put("earned", JSONArray(p.earned.map { JSONObject().put("days", it.days).put("at", it.at.toString()).put("why", it.why) }))
                     .put("admin", p.admin?.let { JSONObject().put("status", it.status).put("name", it.name).put("owner", it.owner)
                         .put("previews", org.json.JSONArray(it.previews)) } ?: JSONObject.NULL)
             } ?: JSONObject.NULL)

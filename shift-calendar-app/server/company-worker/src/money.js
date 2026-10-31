@@ -98,6 +98,50 @@ export function stack(rows, launchedAt) {
   return { until: given.length ? until : null, waiting: 0, items: given };
 }
 
+// ---- 1.36 841 쓰면 쌓이는 날 (수익설계 2판 B안: 광고 없는 보상, 월 14일까지, 나눔 대상 아님) ----
+
+export const EARNED = {
+  /** A bug report whose 개발사항 is marked 완료 in the admin app. */
+  bugDays: 3,
+  /** At most this many earned days a month (KST) per phone. */
+  monthCap: 14,
+  words: { bug: "문제 신고가 고쳐져서" },
+};
+
+/** The first moment of [now]'s month in Korea. */
+export function kstMonthStart(now) {
+  const [y, m] = kstDay(now).split("-").map(Number);
+  return Date.UTC(y, m - 1, 1) - 9 * HOUR;
+}
+
+/** Earned days stacked after [until] (the months' end), each from when it was given or the launch, whichever is last. */
+export function stackDays(until, rows, launchedAt) {
+  const days = rows.reduce((n, r) => n + r.days, 0);
+  if (!launchedAt) return { until, waiting: days };
+  let end = until ?? 0;
+  for (const r of rows) end = Math.max(end, r.given_at, launchedAt) + r.days * DAY;
+  return { until: rows.length ? end : until, waiting: 0 };
+}
+
+/** Gives [days] once for [source], within the month's cap; the days actually given (0 when none). */
+export async function giveDays(env, kind, source, dev, days, now) {
+  const got = await one(env, "SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ? AND given_at >= ?", dev, kstMonthStart(now));
+  const give = Math.min(days, EARNED.monthCap - (got?.n ?? 0));
+  if (give <= 0) return 0;
+  const r = await run(env, "INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at) VALUES (?, ?, ?, ?, ?)", source, dev, kind, give, now);
+  return r.meta.changes ? give : 0;
+}
+
+/** A 개발사항 just marked 완료: every phone that reported it as a problem gets [EARNED.bugDays], once per item. */
+export async function bugFixed(env, itemId, now) {
+  const rows = await all(env, `SELECT DISTINCT i.device AS device FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE l.item_id = ? AND i.kind IN ('bug', 'problem')`, itemId);
+  let phones = 0;
+  for (const r of rows) if (await giveDays(env, "bug", `bug:${itemId}:${r.device}`, r.device, EARNED.bugDays, now)) phones++;
+  if (phones) await audit(env, now, "earned_days", `${phones}대`, `bug ${itemId}`);
+  return phones;
+}
+
 export async function installOf(request) {
   const id = deviceId(request.headers.get("x-device"));
   if (!id) throw new Refuse("device", "device");
@@ -114,9 +158,14 @@ export async function passes(env, dev, now) {
   ]);
   if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
   const p = stack(rows, s.launchedAt);
+  // 1.36 841 쓰면 쌓이는 날: days earned (a bug report fixed, …) go after the months, from the launch.
+  const earned = await all(env, "SELECT kind, days, given_at FROM day_rewards WHERE device = ? ORDER BY given_at", dev);
+  const d = stackDays(p.until, earned, s.launchedAt);
   return {
-    until: p.until ? iso(p.until) : null,
+    until: d.until ? iso(d.until) : null,
     waitingMonths: p.waiting,
+    waitingDays: d.waiting,
+    earned: earned.map((r) => ({ days: r.days, at: iso(r.given_at), why: EARNED.words[r.kind] ?? "쓰면 쌓이는 날" })),
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
@@ -242,6 +291,7 @@ export async function money(request, env, path) {
       // The passes move; the old phone keeps nothing and the code is spent.
       await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
+        stmt(env, "UPDATE day_rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
         // [INVITE-02] The invite code moves with them, so links already sent count here.
         stmt(env, "UPDATE OR IGNORE invite_codes SET device = ? WHERE device = ?", dev, row.device),

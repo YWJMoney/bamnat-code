@@ -264,6 +264,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
     stmt(env, "DELETE FROM year_passes WHERE purchased_at < ?", now - 400 * 86400000),
+    stmt(env, "DELETE FROM day_rewards WHERE given_at < ?", now - 400 * 86400000),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
     // [INVITE-04][INVITE-08] An invite never counted goes 30 days after its period of use could end; a counted one after
@@ -591,6 +592,10 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS year_passes (hash TEXT PRIMARY KEY, device TEXT NOT NULL, order_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
     purchased_at INTEGER NOT NULL, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS year_passes_device ON year_passes (device)",
+  // 1.36 841 쓰면 쌓이는 날: days earned without an ad (a bug report fixed), once per source, at most 14 a month.
+  `CREATE TABLE IF NOT EXISTS day_rewards (source TEXT PRIMARY KEY, device TEXT NOT NULL, kind TEXT NOT NULL, days INTEGER NOT NULL,
+    given_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS day_rewards_device ON day_rewards (device, given_at)",
   // [MON-06] Answers before a trial turns paid, kept as the law's evidence.
   `CREATE TABLE IF NOT EXISTS consents (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, kind TEXT NOT NULL,
     detail TEXT NOT NULL, at INTEGER NOT NULL)`,
@@ -3147,6 +3152,7 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM rate_votes WHERE device = ?", dev),
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
+    stmt(env, "DELETE FROM day_rewards WHERE device = ?", dev),
   ]);
   const [, reports, votes, , posts, , , , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),

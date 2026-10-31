@@ -290,6 +290,9 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
         pro.passes?.waitingMonths?.takeIf { it > 0 }?.let {
             Text("받은 보상 이용권 ${it}개월은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
+        pro.passes?.waitingDays?.takeIf { it > 0 }?.let {
+            Text("받은 프로 ${it}일은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
         if (gate.access.reason == ProReason.DAY_PASS) DayPassOpened(style)
     }
 }
@@ -364,11 +367,15 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     var code by rememberSaveable { mutableStateOf("") }
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 받을수록 기간이 이어져요.",
+        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
             Text("• 프로 ${item.months}개월 (${passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
                 style = MaterialTheme.typography.bodyMedium)
+        }
+        // 1.36 841 쓰면 쌓이는 날.
+        passes?.earned?.forEach { e ->
+            Text("• 프로 ${e.days}일 (${e.why}, ${dateWords(e.at.atZone(zone).toLocalDate())})", style = MaterialTheme.typography.bodyMedium)
         }
         passes?.until?.let { Text("이용권은 ${dateWords(it.atZone(zone).toLocalDate())}까지예요.", style = MaterialTheme.typography.bodyMedium) }
         if (passes?.deferred?.let { it > 0 } == true) Text("구독 중이라 ${passes.deferred}번은 Play 다음 결제일을 미뤄 드렸어요.", style = MaterialTheme.typography.bodySmall)
@@ -380,7 +387,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
         }
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (passes?.items?.isNotEmpty() == true) {
+            if (passes?.items?.isNotEmpty() == true || passes?.earned?.isNotEmpty() == true) {
                 OutlinedButton(onClick = {
                     scope.launch {
                         runServer(onMessage) {

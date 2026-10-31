@@ -2,6 +2,7 @@ import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
 import { kstDay } from "./usage.js";
+import { bugFixed } from "./money.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -1074,6 +1075,8 @@ export async function devUpdate(env, row, body, now) {
   await batch(env, stmts);
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
+  // 1.36 841 쓰면 쌓이는 날: 완료 gives the phones that reported it 3 days.
+  if (set.status === "done") await bugFixed(env, row.id, now);
   return true;
 }
 
@@ -1101,6 +1104,7 @@ export async function devBulk(request, env, now) {
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
     await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
+    if (next.status === "done") for (const r of change) await bugFixed(env, r.id, now);
   }
   return json({ changed: change.length, ids: change.map((r) => r.id) });
 }
