@@ -119,7 +119,7 @@ fun SetupHost(
         if (d.style == null && vm.calendarId == null) vm.pickStyle(style, roster)
         onFirstStyleUsed()
     }
-    BackHandler(enabled = fixing || d.previous() != null) { vm.back() }
+    com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = fixing || d.previous() != null) { vm.back() }
     // [MCAL-02] A calendar being added: back on the first question gives it up, after asking.
     var leaving by remember { mutableStateOf(false) }
     BackHandler(enabled = vm.calendarId != null && !fixing && d.previous() == null) { leaving = true }

@@ -164,7 +164,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   await call("POST", "/api/admin/checks/play.production", { done: true }, owner);
   assert.deepEqual(await titles(), [], "one confirmation left: nothing turns on tomorrow");
   await call("POST", "/api/admin/checks/play.subscription", { done: true }, owner);
-  assert.deepEqual((await titles()).sort(), ["내일 결제(프로 구독)이(가) 저절로 켜져요", "내일 광고(띠·보상형)이(가) 저절로 켜져요"]);
+  assert.deepEqual((await titles()).sort(), ["내일 결제(프로 구독)이(가) 저절로 켜져요", "내일 광고(보상형)이(가) 저절로 켜져요"]);
   let list = (await call("GET", "/api/admin/flags", undefined, owner)).data;
   const billing = list.flags.find((f) => f.key === "billing");
   assert.deepEqual([billing.state, billing.next, billing.daysLeft], ["waiting", "2026-11-10", 1]);
@@ -175,7 +175,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   // 0시 KST: on by itself; the launch is that moment, and for 24 hours the home screen offers to force it off.
   t.mock.timers.tick(60 * 60 * 1000);
   await cron(env, Date.now());
-  assert.deepEqual((await titles()).sort(), ["결제(프로 구독)이(가) 켜졌어요", "광고(띠·보상형)이(가) 켜졌어요"]);
+  assert.deepEqual((await titles()).sort(), ["결제(프로 구독)이(가) 켜졌어요", "광고(보상형)이(가) 켜졌어요"]);
   const cfg = (await call("GET", "/api/config")).data;
   assert.equal(cfg.billingLive, true);
   assert.equal(cfg.launchedAt, "2026-11-09T15:00:00.000Z");

@@ -12,7 +12,6 @@ import com.bamnat.core.imports.PhotoVariants
 import com.bamnat.core.imports.RosterVote
 import com.bamnat.core.imports.RosterPhotoRead
 import com.bamnat.core.imports.RosterWord
-import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -73,7 +72,7 @@ object RosterScanner {
         }
         val photo = ImagePrep.load(context, uri)
         progress(1, 0)
-        val first = words(OcrModel.read(context, InputImage.fromBitmap(photo, 0)))
+        val first = words(OcrModel.read(context, photo))
         val firstRead = DutyRoster.analyse(first, codes)
         var base = photo
         var leveled = false
@@ -81,7 +80,7 @@ object RosterScanner {
         val reads = mutableListOf(firstRead)
         if (firstRead.problem != null || abs(firstRead.tilt) >= SECOND_LOOK_TILT) {
             val level = ImagePrep.leveled(photo, firstRead.tilt)
-            val again = runCatching { words(OcrModel.read(context, InputImage.fromBitmap(level.bitmap, 0))) }.getOrNull()
+            val again = runCatching { words(OcrModel.read(context, level.bitmap)) }.getOrNull()
             if (again != null) {
                 val againRead = DutyRoster.analyse(again, codes)
                 // The level picture's words sit elsewhere than the photo's: one of the two is read on, not both.
@@ -100,7 +99,7 @@ object RosterScanner {
         more.forEachIndexed { i, kind ->
             progress(i + 2, more.size + 1)
             val v = ImagePrep.variant(base, kind, box) ?: return@forEachIndexed
-            val got = runCatching { words(OcrModel.read(context, InputImage.fromBitmap(v.bitmap, 0))) }.getOrNull()
+            val got = runCatching { words(OcrModel.read(context, v.bitmap)) }.getOrNull()
             if (v.bitmap !== base) v.bitmap.recycle()
             if (got.isNullOrEmpty()) return@forEachIndexed
             val back = got.map { w -> w.copy(left = v.x(w.left), top = v.y(w.top), right = v.x(w.right), bottom = v.y(w.bottom)) }

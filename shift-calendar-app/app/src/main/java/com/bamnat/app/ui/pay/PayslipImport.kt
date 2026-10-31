@@ -166,6 +166,8 @@ fun PayslipFillDialog(
     // [RULE-ED-01] The rules written as 칸 with no photo: the result opens on them.
     var byHandRules by remember { mutableStateOf(false) }
     var reviewAsk by remember { mutableIntStateOf(0) }
+    // 1.36 PC 사진 인식 W7: words read but no amount line found: said, with the words shown to fix, instead of an empty result.
+    var notice by remember { mutableStateOf<String?>(null) }
     val sheet = rememberRuleSheetState()
     fun analyse() {
         val texts = listOf(text, second)
@@ -175,6 +177,12 @@ fun PayslipFillDialog(
         val voted = slot?.let { listOf(scan, scanSecond)[it]?.takeIf { s -> s.text == texts[it] }?.slip }
         val raw = voted?.read ?: photos.slip ?: PayslipReader.read(text)
         val taught = SlipNames.apply(raw, fixes.slipNames())
+        if (taught.lines.isEmpty() && photos.rules.isEmpty() && texts.any { it.isNotBlank() }) {
+            notice = "글자는 읽었는데 금액 줄을 찾지 못했어요. 아래 읽힌 글에서 ‘기본급 2,508,000’처럼 이름과 금액이 한 줄에 있게 고친 뒤 ‘읽기’를 눌러 주세요."
+            typing = true
+            return
+        }
+        notice = null
         read = taught
         asRead = taught
         unsure = voted?.unsure.orEmpty()
@@ -213,8 +221,8 @@ fun PayslipFillDialog(
     val r = read
     if (r == null) {
         PickDialog(
-            title, rules, rulesOnly, text, second, typing,
-            onText = { text = it }, onTyping = { typing = it },
+            title, rules, rulesOnly, text, second, typing, notice,
+            onText = { text = it; notice = null }, onTyping = { typing = it },
             onScan = { s -> scan = s; text = s.text; if (rules == null) analyse() },
             onScanSecond = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text },
             onPaste = { t -> text = t; scan = null; if (rules == null) analyse() },
@@ -288,14 +296,28 @@ fun PayslipFillDialog(
  */
 @Composable
 private fun PickDialog(
-    title: String, rules: RuleTarget?, rulesOnly: Boolean, text: String, second: String, typing: Boolean,
+    title: String, rules: RuleTarget?, rulesOnly: Boolean, text: String, second: String, typing: Boolean, notice: String?,
     onText: (String) -> Unit, onTyping: (Boolean) -> Unit,
     onScan: (PayslipScanner.Scan) -> Unit, onScanSecond: (PayslipScanner.Scan) -> Unit, onPaste: (String) -> Unit,
     onEmpty: () -> Unit, onByHand: () -> Unit, onAnalyse: () -> Unit, onDismiss: () -> Unit,
 ) {
     val canRead = text.isNotBlank() || rulesOnly && second.isNotBlank()
+    // 1.36 PC 사진 인식 W8: back (or 취소) with words typed or read asks before they go.
+    var askDrop by remember { mutableStateOf(false) }
+    val leave = { if (text.isNotBlank() || second.isNotBlank()) askDrop = true else onDismiss() }
+    // W9: one big way first (the payslip's photo); the rules' photo, 칸 and pasting under '다른 방법'.
+    var others by remember { mutableStateOf(false) }
+    val othersOpen = others || typing || second.isNotBlank()
+    if (askDrop) AlertDialog(
+        onDismissRequest = { askDrop = false },
+        title = { Text("적은 내용을 버릴까요?") },
+        text = { Text("읽은 명세서와 붙여 넣은 글이 사라져요.") },
+        confirmButton = { TextButton(onClick = { askDrop = false; onDismiss() }) { Text("버리기") } },
+        dismissButton = { TextButton(onClick = { askDrop = false }) { Text("계속 쓰기") } },
+    )
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = leave,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         title = { Text(title) },
         text = {
             // [MEMO-SEL-02] 1.30 AY: a long payslip pasted: its selection handles scroll the dialog.
@@ -314,7 +336,13 @@ private fun PickDialog(
                         else -> "1. 명세서"
                     }, style = MaterialTheme.typography.titleSmall)
                     ScanButtons(onScan = onScan, onEmpty = onEmpty)
-                    if (rules != null) {
+                    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    // [INPUT-04] A payslip copied from the company's app or a message: one tap.
+                    com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() }, onPaste = onPaste)
+                    TextButton(onClick = { others = !othersOpen }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (othersOpen) "다른 방법 접기" else if (rules != null) "다른 방법: 회사 계산 방법 사진 · 칸으로 적기 · 글로 붙여 넣기" else "다른 방법: 글로 붙여 넣기")
+                    }
+                    if (othersOpen && rules != null) {
                         Text(when {
                             second.isNotBlank() -> "2. 회사 계산 방법 ✓ 읽었어요"
                             rulesOnly -> "2. 회사 계산 방법 (명세서가 없으면 이것만으로도 계산해요)"
@@ -324,9 +352,7 @@ private fun PickDialog(
                         // [RULE-ED-01] 1.30 AW (사용자 "사진 촬영 금지 회사"): the rules as 칸, with common allowances to pick.
                         OutlinedButton(onClick = onByHand, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("사진 없이 칸으로 적기") }
                     }
-                    // [INPUT-04] A payslip copied from the company's app or a message: one tap. Typing it is folded away.
-                    com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() }, onPaste = onPaste)
-                    TextButton(onClick = { onTyping(!typing) }) { Text(if (typing) "글로 붙여 넣기 접기" else "글로 붙여 넣기") }
+                    if (othersOpen) TextButton(onClick = { onTyping(!typing) }) { Text(if (typing) "글로 붙여 넣기 접기" else "글로 붙여 넣기") }
                     if (typing) com.bamnat.app.ui.components.LongTextField(
                         value = text, onValueChange = onText,
                         label = { Text("명세서 글") },
@@ -337,7 +363,7 @@ private fun PickDialog(
             }
         },
         confirmButton = { if (typing || (rules != null && canRead)) Button(onClick = onAnalyse, enabled = canRead) { Text("읽기") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = { TextButton(onClick = leave) { Text("취소") } },
     )
 }
 

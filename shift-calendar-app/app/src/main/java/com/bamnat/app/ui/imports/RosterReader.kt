@@ -32,7 +32,10 @@ object RosterReader {
     suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
         val scan = runCatching { RosterScanner.scan(context, uri, codes, progress) }
         val error = scan.exceptionOrNull()?.let { e ->
-            (e as? com.bamnat.app.pay.OcrModel.NotReady)?.message ?: "사진을 열지 못했어요. 다른 사진으로 해 보세요."
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // 1.36 PC W10: the reason in words and the cause chain, as the payslip photo says it.
+            (e as? com.bamnat.app.pay.OcrModel.NotReady)?.message
+                ?: (com.bamnat.app.pay.OcrModel.why(e).text + " (오류: ${com.bamnat.app.pay.OcrModel.detail(e)})")
         }
         val s = scan.getOrNull()
         val list = s?.words.orEmpty()

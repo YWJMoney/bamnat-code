@@ -89,7 +89,6 @@ import com.bamnat.app.ui.calendar.CalendarsScreen
 import com.bamnat.app.ui.calendar.CalendarsViewModel
 import com.bamnat.app.ui.calendar.rememberAddCalendar
 import com.bamnat.app.data.PersonalCalendar
-import com.bamnat.app.ui.components.AdSlot
 import com.bamnat.app.ui.diag.DiagnosticsScreen
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import com.bamnat.core.diag.DiagEvents
@@ -182,15 +181,6 @@ internal enum class TopLevel(val route: String, val label: String, val icon: Ima
     }
 }
 
-/** [MON-07] Where the banner may go: under 근무·급여 and 돈 only ([com.bamnat.core.tier.AdRules.banner]). */
-private fun TopLevel?.adPlace(): com.bamnat.core.tier.AdRules.Place = when (this) {
-    TopLevel.MONEY -> com.bamnat.core.tier.AdRules.Place.MONEY
-    TopLevel.STATS -> com.bamnat.core.tier.AdRules.Place.STATS
-    TopLevel.CALENDAR -> com.bamnat.core.tier.AdRules.Place.CALENDAR
-    TopLevel.MEMOS -> com.bamnat.core.tier.AdRules.Place.MEMOS
-    TopLevel.SETTINGS -> com.bamnat.core.tier.AdRules.Place.SETTINGS
-    TopLevel.PLAZA, null -> com.bamnat.core.tier.AdRules.Place.OTHER
-}
 
 private object Routes {
     // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
@@ -373,14 +363,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }
-                val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
-                androidx.activity.compose.BackHandler { firstStyleKey = null }
-                ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
-                    // With the work known, 우선 둘러볼게요 opens its example at once; skipped, the setup asks which.
-                    if (first == null) browseFirst = true
-                    else { firstStyleKey = ""; rootScope.launch { container.example.browse(first.style) } }
-                })
-                return
+                // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone
+                // that answered on an older build and was updated mid-way still sees it here.
+                if (!container.consentStore.afterSetup) {
+                    val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
+                    androidx.activity.compose.BackHandler { firstStyleKey = null }
+                    ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
+                        // With the work known, 우선 둘러볼게요 opens its example at once; skipped, the setup asks which.
+                        if (first == null) browseFirst = true
+                        else { firstStyleKey = ""; rootScope.launch { container.example.browse(first.style) } }
+                    })
+                    return
+                }
             }
             SetupHost(appViewModel { SetupViewModel(it) },
                 onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst,
@@ -388,7 +382,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 onFirstStyleUsed = { firstStyleKey = "" })
             return
         }
-        false -> Unit
+        false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {
+            // 1.36 W4: the recommended features and the phone's questions, once the calendar is set up.
+            ConsentPages(container, onDone = { container.consentStore.afterSetup = false }, style = settingsNow.workStyle)
+            return
+        }
     }
 
     // Which screens get used decides what is worth building next [MEAS-03].
@@ -852,8 +850,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 bottomBar = {
                     if (!wide && showNav) {
                         Column {
-                            // [NAV-06] While the tabs are moved, the line about it takes the ad's place.
-                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs) else AdSlot(topLevel.adPlace())
+                            // [NAV-06] While the tabs are moved, the line about it shows over the tabs.
+                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs)
                             NavigationBar {
                                 tabs.forEachIndexed { index, dest ->
                                     androidx.compose.runtime.key(dest.route) {
@@ -892,7 +890,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             start = startTab,
                             modifier = Modifier.weight(1f),
                         )
-                        if (wide && showNav) AdSlot(topLevel.adPlace())
                     }
                     // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else. Beside the
                     // rail the line about it lies over the bottom of the screen, which keeps its size.
@@ -906,8 +903,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
-    // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since.
-    NewConsentPrompt(container)
+    // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since. 1.36 W4: not a new phone whose
+    // page comes after its setup.
+    if (!container.consentStore.afterSetup) NewConsentPrompt(container)
 
     // [EASY-02] A write on the example calendar asks here, over whichever screen began it.
     com.bamnat.app.ui.guide.WriteGateCard(container, start = startMine)
@@ -1283,10 +1281,23 @@ private fun AppNavHost(
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
+            // 1.36 PC 급여 검토 W3 ('계산 시작' 직후 시트가 결과를 가림): the result first; the invitation some seconds later, or on the
+            // next visit to the pay screen when the user left before.
             LaunchedEffect(profile == null) {
                 if (profile == null) wasEmpty = true
                 else if (wasEmpty) {
                     wasEmpty = false
+                    if (nudges.invite.value != null) {
+                        container.payInviteLater = true
+                        // 1.36 PC C3: on the day of the first setup the invitation waits for a visit on a later day.
+                        if (container.firstSetup.quietToday()) return@LaunchedEffect
+                        kotlinx.coroutines.delay(15_000)
+                        if (nudges.invite.value != null) inviting = true
+                        container.payInviteLater = false
+                    }
+                } else if (container.payInviteLater && !container.firstSetup.quietToday()) {
+                    kotlinx.coroutines.delay(2_000)
+                    container.payInviteLater = false
                     if (nudges.invite.value != null) inviting = true
                 }
             }
@@ -1294,6 +1305,7 @@ private fun AppNavHost(
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
                 top = {
                     // [EASY-05] A pay fact still guessed, asked here where it is used: only those one tap answers.
                     if (profile != null) com.bamnat.app.ui.guide.AskArea(container, calendar,
@@ -1892,6 +1904,11 @@ private fun AlarmNoticeAsk() {
     val setupSheet by c.firstSetup.saved.collectAsStateWithLifecycle()
     val leadAsking by c.leadShare.step.collectAsStateWithLifecycle()
     if (setupSheet != null || leadAsking != null) return
+    // 1.36 PC C3: not on the day of the first setup; the calendar's own line about it is there meanwhile.
+    if (c.firstSetup.quietToday()) return
+    // 1.36 U21: not while the user is painting days or making a look; once they are done.
+    val busy by com.bamnat.app.ui.components.HandsBusy.busy.collectAsStateWithLifecycle()
+    if (busy) return
     if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
     val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
     fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }

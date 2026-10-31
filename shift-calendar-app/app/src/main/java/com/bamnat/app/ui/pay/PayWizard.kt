@@ -456,7 +456,8 @@ fun PayWizard(
     fun go(to: String) { step = to }
     // [NAV-02] 1.25 Z (U4): back is the step before, like 이전; only the first step leaves the setup (with its answers kept
     // until then). Before, back closed the whole setup and its answers from any step.
-    androidx.activity.compose.BackHandler(enabled = index > 0) { go(steps[index - 1]) }
+    // 1.36 PC E3: with the keyboard up, back puts it away first.
+    com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = index > 0) { go(steps[index - 1]) }
     fun next() { latestSteps.let { list -> list.getOrNull(list.indexOf(step) + 1)?.let(::go) } }
     // A single tap answers and moves on, after a beat so the choice is seen.
     fun answerAndGo(change: () -> Unit) {

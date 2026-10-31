@@ -141,6 +141,8 @@ fun PayScreen(
     onOpenExtraKinds: () -> Unit = {},
     /** [LEAVE-06] The 연차 screen of this calendar. */
     onOpenLeave: () -> Unit = {},
+    /** 1.36 PC 급여 검토 W6: 근무 유형 (휴게 시작 시각), from the note that says it was guessed; null leaves the button out. */
+    onOpenShiftTypes: (() -> Unit)? = null,
     /** [COMM-02][COMM-03] Cards above the result: sharing a hand-made setup, 맞았어요·달라요. */
     top: @Composable () -> Unit = {},
     /** [DAILY-16] A card right under the month's total (광장 시세와 견주기). */
@@ -179,7 +181,7 @@ fun PayScreen(
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
     if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
-    androidx.activity.compose.BackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
+    com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
         when {
             detailedFrom != null -> detailedFrom = null
             editingSetup -> editingSetup = false
@@ -301,7 +303,7 @@ fun PayScreen(
                     (com.bamnat.app.ui.theme.LocalPayLooks.current[workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT] ?: com.bamnat.core.recipe.PayLook())) {
                     PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
-                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, startMatching = startMatching,
+                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
                     focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
                 }
             }
@@ -325,6 +327,7 @@ private fun PayResult(
     onReport: ((String) -> Unit)? = null,
     onShareWay: (() -> Unit)? = null,
     onOpenLeave: () -> Unit = {},
+    onOpenShiftTypes: (() -> Unit)? = null,
     startMatching: Boolean = false,
     focus: PayFocus? = null,
     focusUsed: Boolean = false,
@@ -501,6 +504,8 @@ private fun PayResult(
         // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
         if (closedSnap == null) Estimates.breakNote(result, profile.fiveOrMoreEmployees)?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // W6: where the break's start time goes, one tap away.
+            onOpenShiftTypes?.let { open -> TextButton(onClick = open, modifier = Modifier.heightIn(min = 48.dp)) { Text("휴게 시각 넣기") } }
         }
 
         underTotal()

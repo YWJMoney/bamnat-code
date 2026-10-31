@@ -30,7 +30,7 @@ val remoteBaseUrl = (project.findProperty("bamnat.remoteBaseUrl") as String?).or
 // uses Google's test units). The app id falls back to Google's sample id so the SDK starts without one.
 fun adProp(name: String) = (project.findProperty(name) as String?).orEmpty().trim()
 val admobAppId = adProp("bamnat.admobAppId").ifBlank { "ca-app-pub-3940256099942544~3347511713" }
-val adUnitsGiven = adProp("bamnat.admobBanner").isNotBlank() || adProp("bamnat.admobRewarded").isNotBlank()
+val adUnitsGiven = adProp("bamnat.admobRewarded").isNotBlank()
 
 // [PERF-03] 324-3 (검토 B5): `-Pbamnat.composeReports` writes which screens Compose can skip and why not, to
 // build/compose-reports (classes.txt, composables.txt). Strong skipping is on (Kotlin 2.1), so no stability file:
@@ -59,7 +59,6 @@ android {
         buildConfigField("String", "SHARE_FALLBACK_URL", "\"$shareFallbackUrl\"")
         buildConfigField("String", "COMPANY_FALLBACK_URL", "\"$companyFallbackUrl\"")
         buildConfigField("String", "REMOTE_BASE_URL", "\"${remoteBaseUrl.takeIf { shareBaseUrl.isNotBlank() || companyBaseUrl.isNotBlank() }.orEmpty()}\"")
-        buildConfigField("String", "ADMOB_BANNER", "\"${adProp("bamnat.admobBanner")}\"")
         buildConfigField("String", "ADMOB_REWARDED", "\"${adProp("bamnat.admobRewarded")}\"")
         manifestPlaceholders["admobAppId"] = admobAppId
         // [SHR-02] The share server's host, for its /s/ links to open in the app (src/onlineShare).

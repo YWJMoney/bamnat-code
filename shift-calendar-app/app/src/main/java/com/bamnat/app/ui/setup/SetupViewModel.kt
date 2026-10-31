@@ -509,6 +509,10 @@ class SetupViewModel(
     val roster: StateFlow<com.bamnat.app.ui.imports.RosterResult?> = _roster.asStateFlow()
     private val _rosterReading = MutableStateFlow(false)
     val rosterReading: StateFlow<Boolean> = _rosterReading.asStateFlow()
+    /** 1.36 PC W10: which reading of the photo is under way (n of m; m 0 while the first one runs), for the reading card. */
+    private val _rosterStep = MutableStateFlow(0 to 0)
+    val rosterStep: StateFlow<Pair<Int, Int>> = _rosterStep.asStateFlow()
+    private var rosterJob: kotlinx.coroutines.Job? = null
     /** Codes of the picked line the setup's kinds do not cover ("M", "교육"), with their days, one asked at a time. */
     private val _rosterAsks = MutableStateFlow<List<Pair<com.bamnat.core.imports.DutyCell.Unknown, List<LocalDate>>>>(emptyList())
     val rosterAsks: StateFlow<List<Pair<com.bamnat.core.imports.DutyCell.Unknown, List<LocalDate>>>> = _rosterAsks.asStateFlow()
@@ -539,12 +543,23 @@ class SetupViewModel(
     }
 
     fun readRoster(how: suspend (com.bamnat.core.imports.DutyCodes) -> com.bamnat.app.ui.imports.RosterResult) {
+        rosterJob?.cancel()
         _rosterReading.value = true
+        _rosterStep.value = 0 to 0
         _rosterSame.value = null
         rosterRank = 0
-        viewModelScope.launch {
-            val r = how(rosterCodes())
+        rosterJob = viewModelScope.launch {
+            val started = System.nanoTime()
+            // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): a reading that takes too long ends with why and what to do.
+            val r = kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) { how(rosterCodes()) }
+                ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
             _rosterReading.value = false
+            // The steps of the reading, for 진단 (no words of the photo): how long, how many ways, words and lines found.
+            runCatching {
+                val ms = (System.nanoTime() - started) / 1_000_000
+                c.telemetry.event("roster_read", "${r.from.name.lowercase()} ms=$ms ways=${r.scan?.ways ?: 0} words=${r.scan?.words?.size ?: 0} " +
+                    "rows=${r.rows.size} problem=${r.scan?.read?.problem?.name?.lowercase() ?: "-"}${if (r.error != null && r.rows.isEmpty()) " fail" else ""}")
+            }
             val rows = r.rows.sortedBy { it.line }
             // A photo that read nothing keeps its picture, for 사진 위에서 누르기.
             _roster.value = r.copy(rows = rows, scan = r.scan ?: _roster.value?.scan.takeIf { r.from == com.bamnat.core.journal.RosterFrom.PHOTO })
@@ -553,7 +568,17 @@ class SetupViewModel(
         }
     }
 
-    fun readRosterPhoto(context: Context, uri: Uri) = readRoster { com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) }
+    fun readRosterPhoto(context: Context, uri: Uri) = readRoster {
+        com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) { n, m -> _rosterStep.value = n to m }
+    }
+
+    /** 1.36 PC W10: 취소 on the reading card; nothing is changed. */
+    fun cancelRosterRead() {
+        rosterJob?.cancel()
+        rosterJob = null
+        _rosterReading.value = false
+        _message.value = "읽기를 멈췄어요. 다른 사진으로 하거나 ‘직접 칠하기’로 넣어 주세요."
+    }
 
     fun readRosterFile(context: Context, uri: Uri) = readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today) }
 
@@ -722,3 +747,7 @@ class SetupViewModel(
         private val NEW_COLORS = listOf(0xFF00A88F, 0xFFE0A100, 0xFFD6457A, 0xFF27AE60, 0xFF8E44AD, 0xFF2D9CDB)
     }
 }
+
+/** 1.36 PC W10: how long a roster may take to read before it stops and says so. */
+internal const val ROSTER_READ_LIMIT_MS = 45_000L
+internal const val ROSTER_TOO_LONG = "읽는 데 너무 오래 걸려서 멈췄어요. 표만 크게 나오게 다시 찍거나 ‘직접 칠하기’로 넣어 주세요."
