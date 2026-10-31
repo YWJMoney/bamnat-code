@@ -108,6 +108,16 @@ data class Gate(
 
     private fun onTrial(feature: Feature) = trialUntil(feature) != null
 
+    /**
+     * 1.36 사용자 결정(공유 링크 기간): links stay open while this phone really has 프로 after launch (a one-day pass
+     * is not 프로 kept); before launch every feature is open but no link is kept open by itself.
+     */
+    val keepsLinks: Boolean get() = live && !preview && access.pro && tier >= Tier.PRO && access.reason != com.bamnat.core.tier.ProReason.DAY_PASS
+
+    /** 1.36 사용자 결정(프로 나눔 1인): only 프로 bought on Play counts, not a trial, pass, thank-you or admin phone. */
+    val boughtPro: Boolean get() = live && !preview && access.pro &&
+        (access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION || access.reason == com.bamnat.core.tier.ProReason.GRACE)
+
     /** 프로 badges and 'pro' notes show only where the feature is actually locked. */
     fun locked(feature: Feature): Boolean = !allows(feature)
 
