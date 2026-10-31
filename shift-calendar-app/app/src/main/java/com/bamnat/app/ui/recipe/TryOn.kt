@@ -130,9 +130,12 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                 marks.forEach { r -> addRect(androidx.compose.ui.geometry.Rect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy)) }
             }
             drawPath(dim, androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
+            // The ring inside the place, so it never covers the dates next to it.
+            val sw = 2.dp.toPx()
             marks.forEach { r ->
-                drawRect(androidx.compose.ui.graphics.Color(0xFFFFB300), topLeft = androidx.compose.ui.geometry.Offset(r.left * sx, r.top * sy),
-                    size = androidx.compose.ui.geometry.Size(r.width * sx, r.height * sy), style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+                drawRect(androidx.compose.ui.graphics.Color(0xFFFFB300), topLeft = androidx.compose.ui.geometry.Offset(r.left * sx + sw / 2, r.top * sy + sw / 2),
+                    size = androidx.compose.ui.geometry.Size((r.width * sx - sw).coerceAtLeast(1f), (r.height * sy - sw).coerceAtLeast(1f)),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
             }
         }
         if (!diff && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
@@ -170,21 +173,39 @@ internal fun changedBlocks(a: androidx.compose.ui.graphics.ImageBitmap, b: andro
         while (y < y1 && hits < 2) { var x = x0; while (x < x1) { if (far(x, y)) { hits++; if (hits >= 2) break }; x += 2 }; y += 2 }
         on[r][cI] = hits >= 2
     }
-    // Runs along each row, then runs stacked when they line up.
-    val boxes = ArrayList<IntArray>() // c0, c1, r0, r1
-    for (r in 0 until rows) {
-        var cI = 0
-        while (cI < nc) {
-            if (!on[r][cI]) { cI++; continue }
-            val s = cI
-            while (cI < nc && on[r][cI]) cI++
-            val above = boxes.firstOrNull { it[3] == r - 1 && it[0] == s && it[1] == cI - 1 }
-            if (above != null) above[3] = r else boxes += intArrayOf(s, cI - 1, r, r)
+    // 빌드 6 확인 (배치가 바뀌면 상자가 수십 조각으로 흩어짐): changed blocks a block apart are one place; each place is a box, a box
+    // across most of the width is a card and takes the whole width, and boxes that touch become one.
+    val seen = Array(rows) { BooleanArray(nc) }
+    val boxes = ArrayList<FloatArray>() // left, top, right, bottom in blocks
+    for (r0 in 0 until rows) for (c0 in 0 until nc) {
+        if (!on[r0][c0] || seen[r0][c0]) continue
+        var l = c0; var t = r0; var rr = c0; var b = r0
+        val stack = ArrayDeque<Int>().apply { add(r0 * nc + c0) }
+        seen[r0][c0] = true
+        while (stack.isNotEmpty()) {
+            val k = stack.removeLast(); val y = k / nc; val x = k % nc
+            l = minOf(l, x); rr = maxOf(rr, x); t = minOf(t, y); b = maxOf(b, y)
+            for (dy in -2..2) for (dx in -2..2) {
+                val ny = y + dy; val nx = x + dx
+                if (ny in 0 until rows && nx in 0 until nc && on[ny][nx] && !seen[ny][nx]) { seen[ny][nx] = true; stack.add(ny * nc + nx) }
+            }
+        }
+        val wide = (rr - l + 1) > nc * 0.4f
+        boxes += floatArrayOf(if (wide) 0f else l.toFloat(), t.toFloat(), if (wide) nc.toFloat() else (rr + 1).toFloat(), (b + 1).toFloat())
+    }
+    var merged = true
+    while (merged) {
+        merged = false
+        loop@ for (i in boxes.indices) for (j in i + 1 until boxes.size) {
+            val a = boxes[i]; val o = boxes[j]
+            if (a[0] <= o[2] && o[0] <= a[2] && a[1] <= o[3] + 1 && o[1] <= a[3] + 1) {
+                boxes[i] = floatArrayOf(minOf(a[0], o[0]), minOf(a[1], o[1]), maxOf(a[2], o[2]), maxOf(a[3], o[3]))
+                boxes.removeAt(j); merged = true; break@loop
+            }
         }
     }
     return boxes.map { bx ->
-        androidx.compose.ui.geometry.Rect(bx[0] * bw / wid.toFloat(), bx[2] * bw / hei.toFloat(),
-            minOf(1f, (bx[1] + 1) * bw / wid.toFloat()), minOf(1f, (bx[3] + 1) * bw / hei.toFloat()))
+        androidx.compose.ui.geometry.Rect(bx[0] * bw / wid, bx[1] * bw / hei, minOf(1f, bx[2] * bw / wid), minOf(1f, bx[3] * bw / hei))
     }
 }
 
@@ -255,7 +276,10 @@ fun TryOnScreen(
                     // [R136-06] 1.36 (리뷰 R-18): what the picture shows follows the slider.
                     Text(when {
                         onlyChanges && changedBlocks == 0 && changedHere.isEmpty() -> "이 화면은 입어도 똑같아요. 아래 탭을 눌러 다른 화면을 봐요."
-                        onlyChanges -> "밝은 곳이 바뀌어요" + (changedHere.takeIf { it.isNotEmpty() }?.let { ": " + it.joinToString(" · ") } ?: "") + "."
+                        // 빌드 6 확인: what changes but does not show on the example is said in words.
+                        onlyChanges && changedBlocks == 0 -> "이 화면에서 바뀌는 것: ${changedHere.joinToString(" · ")}. 예시에는 잘 드러나지 않아요."
+                        onlyChanges -> "밝은 곳이 바뀌어요" + (changedHere.takeIf { it.isNotEmpty() }?.let { ": " + it.joinToString(" · ") } ?: "") +
+                            (if (changedHere.any { it.endsWith("카드 배치") }) " (카드 자리 옮김)" else "") + "."
                         split == 1f -> "입으면 이렇게 보여요."
                         split == 0f -> "지금 내 모습이에요."
                         else -> "왼쪽이 입은 모습, 오른쪽이 지금이에요. 두 쪽은 같이 움직여요."

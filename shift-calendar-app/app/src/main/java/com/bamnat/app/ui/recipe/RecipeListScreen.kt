@@ -341,7 +341,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Un
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [MKX-01] One tab's: which tab it changes, said once.
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                    Text("🧩 ${marketTabLabel(t, null)} 탭만 바꿔요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("🧩 " + marketTabLabel(t, null) + (if (t == "alarm" || t == "widget") "만 바꿔요" else " 탭만 바꿔요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 Text(buildString {
                     append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users}")
@@ -401,7 +401,8 @@ internal fun marketTabLabel(tab: String, style: com.bamnat.core.work.WorkStyle?)
     "pay" -> com.bamnat.app.ui.TopLevel.STATS.labelFor(style)
     "money" -> com.bamnat.app.ui.TopLevel.MONEY.labelFor(style)
     "memo" -> "메모"
-    "alarm" -> "알람"
+    // 빌드 6 확인: the app has no 알람 tab; it is the alarm's screen and rules.
+    "alarm" -> "알람 화면·규칙"
     "widget" -> "위젯"
     else -> "앱 전체"
 }

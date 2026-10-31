@@ -58,6 +58,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val drafts by vm.drafts.collectAsStateWithLifecycle()
     val mine by vm.mine.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.shownAgain() }
     val newer by vm.newer.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
@@ -78,7 +79,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     Column(Modifier.weight(1f)) {
                         Text("장터 쓰기", style = MaterialTheme.typography.bodyLarge)
                         Text(if (on) "마을에 장터 칸과 설정 화면의 ‘이 설정 나누기’가 보여요"
-                            else "꺼져 있어요. 다시 켜려면 여기(설정 › 장터·내 레시피)로 오세요. 넣어 둔 레시피는 그대로예요",
+                            else "꺼져 있어요. 다시 켜려면 여기(마을 › 공방 › 내 것)로 오세요. 넣어 둔 레시피는 그대로예요",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(on, vm::setOn)
@@ -154,7 +155,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                         Column(Modifier.weight(1f).clickable { onDraft(d.id) }.padding(vertical = 8.dp)) {
                             Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 레시피",
                                 style = MaterialTheme.typography.bodyLarge)
-                            Muted("${d.step}/5단계에서 멈춤")
+                            Muted(if (d.step <= 1) "스튜디오에서 꾸미던 중" else "올리기 ${d.step - 1}/4단계에서 멈춤")
                         }
                         TextButton(onClick = { asking = "만들던 레시피를 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
                     }

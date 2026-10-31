@@ -68,6 +68,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val ownCode: String? = null,
         /** [STU-21] The remade recipe's name, words, cover and 받는 분이 넣을 값 (its 기능 point at them), kept for 올리기. */
         val meta: Recipe? = null,
+        /** [STU-25] 1.36 빌드 7: the 만들던 레시피 this was opened from; 올리기 takes it off the list once sent. */
+        val draftId: Long = 0,
         val recent: List<Long> = emptyList(),
         /** [TRY-03] Others' parts laid on from 보관함: their theme's code to its name (출처 표시, and their days and ad on 입히기). */
         val sources: Map<String, String> = emptyMap(),
@@ -114,6 +116,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                     val id = start.removePrefix(START_DRAFT).toLongOrNull() ?: return@launch
                     val d = runCatching { c.database.recipeDao().drafts().firstOrNull { it.id == id } }.getOrNull() ?: return@launch
                     startRecipe(d.body, null, d.code)
+                    _state.value = _state.value.copy(draftId = id)
                 }
             }
             else -> refresh(both = true)
@@ -459,7 +462,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
         const val START_FEATURE = "feature:"
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */
-        fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + System.currentTimeMillis()
+        fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
         /** [STU-21] The 기능 the studio can carry, in the order shown. */
         val FEATURES = listOf(PieceKind.SHIFT_LOOK, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.HOURLY_RULES, PieceKind.FIELD_SHEET,
             PieceKind.SHOP, PieceKind.INVEST, PieceKind.APP_FEEL, PieceKind.COMPANY)

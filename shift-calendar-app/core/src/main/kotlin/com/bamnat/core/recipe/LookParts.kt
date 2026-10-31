@@ -114,6 +114,12 @@ object LookParts {
     }
 
     /** The parts whose values differ between [a] and [b] (what was made one's own, 직접 바꾼 곳). */
+    /**
+     * [MKX-02] 1.36 기능별 탭: the one tab [r]'s looks change, or null when they change more than one (or the whole app: 앱 전체 색,
+     * 아래 탭, 모서리) — a 테마 — or none.
+     */
+    fun onlyTab(r: Recipe): String? = of(r).map { it.tab }.distinct().singleOrNull()?.takeIf { it != TabOrder.SETTINGS }
+
     /** [TRY-04] The parts that place things (카드 순서·보이기, 칸 높이, 아래 탭): one frame for both sides of 비교. */
     val FRAME: List<String> = listOf("cal.cards", "cal.view", "memo.cards", "money.cards", "stats.cards", "app.tabs")
 

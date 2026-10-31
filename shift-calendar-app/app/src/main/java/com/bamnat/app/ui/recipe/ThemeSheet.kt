@@ -108,6 +108,24 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
                 }
             }
         }
+        // [MKX-02] 1.36 얹은 탭: one tab's looks from 장터's 기능별 탭, over the theme worn, each to take off.
+        val overlays by c.wardrobe.overlays.collectAsStateWithLifecycle()
+        if (overlays.isNotEmpty()) androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("테마 위에 얹은 탭", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                overlays.forEach { o ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🧩 ${com.bamnat.core.recipe.LookParts.tabLabel(o.tab)} · ${o.title}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { c.appScope.launch { c.wardrobe.removeOverlay(o.tab) } }) { Text("빼기") }
+                    }
+                }
+                var keep by remember { mutableStateOf(c.wardrobe.keepOverlays) }
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("다른 테마를 입어도 얹은 탭은 그대로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(keep, { keep = it; c.wardrobe.keepOverlays = it })
+                }
+            }
+        }
         // 내 테마: saved looks, free one, 프로 ten (꾸미기 혜택). [THM-01] Mine in 장터 never runs out; mine kept to myself runs as others' do.
         val mine = lease.history.filter { it.own && it.key != lease.worn?.key }
         val mineCount = lease.history.count { it.own }

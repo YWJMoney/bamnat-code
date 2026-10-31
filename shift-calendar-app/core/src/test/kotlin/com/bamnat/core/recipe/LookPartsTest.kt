@@ -95,4 +95,12 @@ class LookPartsTest {
         assertEquals(0xFFFF0000, framed.pieces.first { it.kind == PieceKind.CAL_THEME }.values["sun"])
         assertTrue(LookParts.changed(LookParts.frame(before, after), after).none { it in LookParts.FRAME })
     }
+
+    /** [MKX-02] A recipe of one tab's looks is that tab's; a theme of many tabs is none. */
+    @Test fun onlyTabSaysWhichTab() {
+        val money = Recipe("m", styles = WorkStyle.entries.toSet(), pieces = listOf(Piece(PieceKind.MONEY_LOOK, mapOf("rows" to "roomy")),
+            Piece(PieceKind.SCREEN_LOOK, mapOf("screens" to ScreenLooks().with("money", ScreenLook(bg = 0xFF102030)).encode()))))
+        assertEquals(TabOrder.MONEY, LookParts.onlyTab(money))
+        assertEquals(null, LookParts.onlyTab(theme))
+    }
 }

@@ -462,10 +462,14 @@ fun CalendarScreen(
     // [R136-03] 1.36 (리뷰 R-04: 오늘 깐 앱이 '지난달보다 +1일'): the day this phone started, so a month wholly before it,
     // with nothing written by hand, is not compared as if worked.
     // The later of the install and this calendar's setup ('이 달력으로 할 수 있는 것' starts on it), so a phone set up again counts too.
+    // [R136-03] 1.36 빌드 7 (시계를 옮기면 '11/11 전은'으로 바뀜): the day is kept once found, so it never moves after.
     val startDay = remember(activeCalendar.id) {
-        val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
-        val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
-        listOfNotNull(installed, setUp).maxOrNull()
+        val prefs = context.getSharedPreferences("calendar_start", android.content.Context.MODE_PRIVATE)
+        prefs.getLong(activeCalendar.id, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let { java.time.LocalDate.ofEpochDay(it) } ?: run {
+            val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
+            val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
+            listOfNotNull(installed, setUp).maxOrNull()?.also { prefs.edit().putLong(activeCalendar.id, it.toEpochDay()).apply() }
+        }
     }
     val versus = remember(snap, visibleMonth, focus, overview) {
         val before = visibleMonth.minusMonths(1)
@@ -1303,7 +1307,7 @@ fun CalendarScreen(
                         // [R136-03] In the month the phone started, the days before it are the 근무표's, and it says so.
                         rangeLabel = payRange?.label() ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
                             snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
-                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표대로" },
+                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표" },
                     )
                 }
             }

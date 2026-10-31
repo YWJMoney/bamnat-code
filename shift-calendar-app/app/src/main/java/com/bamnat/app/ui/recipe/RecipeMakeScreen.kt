@@ -472,7 +472,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     else -> StepCheck(s, vm)
                 }
                 s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Text("만들던 내용은 이 휴대폰에 저장돼요. 설정 › 장터·내 레시피에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
+                Text("만들던 내용은 이 휴대폰에 저장돼요. 마을 › 공방 › 내 것에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // Room for the small example (or its pill) at the bottom corner, so nothing stays under it.
                 Spacer(Modifier.height(if (s.step == 1) 300.dp else 24.dp))
@@ -710,13 +710,13 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
     // 자유도 점검 F-47: what happened shows above the buttons, where the eye is, not under them off the screen.
     var kept by rememberSaveable { mutableStateOf(false) }
-    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 설정 › 장터·내 레시피 › 받은 레시피에서 되돌릴 수 있어요" }
+    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요" }
         ?: if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
-        ?: if (kept) "저장했어요. 설정 › 장터·내 레시피 › 만들던 레시피에서 이어서 만들어요" else null
+        ?: if (kept) "저장했어요. 마을 › 공방 › 내 것 › 만들던 레시피에서 이어서 만들어요" else null
     if (done != null) Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
-    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 설정 › 장터·내 레시피 › 받은 레시피에서 되돌릴 수 있어요",
+    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { vm.keepDraft(); kept = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }

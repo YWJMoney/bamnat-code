@@ -1261,10 +1261,24 @@ internal fun serverExchange(
 ): Answer {
     // [QA130-01] 1.30 AY: a Play pre-launch robot (Firebase Test Lab) reads but never writes; to it, as if offline.
     if (!com.bamnat.app.diag.TestLab.allows(method)) throw CompanyException("offline")
+    // [SRV-30] 1.36: at api.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
+    return try {
+        ServerAddress.call(baseUrl) { at -> exchangeOnce(at, method, path, body, device, headers, session) }
+    } catch (e: IOException) {
+        throw CompanyException("offline")
+    }
+}
+
+/** One try of [serverExchange] at one address; a failure before reaching the server comes out as it is, for [ServerAddress]. */
+private fun exchangeOnce(
+    baseUrl: String, method: String, path: String, body: JSONObject?, device: String?, headers: Map<String, String>,
+    session: ServerSession?,
+): Answer {
     val conn = try {
         // [SPD-26] 1.31 I2: through Cronet (HTTP/3·HTTP/2) when Google Play services has it, otherwise as before.
         NetEngine.open(URL(baseUrl.trimEnd('/') + path))
     } catch (e: IOException) {
+        if (ServerAddress.neverArrived(e)) throw e
         throw CompanyException("offline")
     }
     val started = System.nanoTime()
@@ -1306,6 +1320,7 @@ internal fun serverExchange(
     } catch (e: IOException) {
         // [SPD-27] Only a connection that broke is closed; one read to its end stays open for the next request.
         conn.disconnect()
+        if (ServerAddress.neverArrived(e)) throw e
         throw CompanyException("offline")
     } catch (e: RuntimeException) {
         conn.disconnect()

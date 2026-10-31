@@ -26,7 +26,8 @@ class ShareServerTest {
     private val context: Application = ApplicationProvider.getApplicationContext()
 
     @Test fun linksGoToTheLiveServerOverHttps() {
-        assertTrue(BuildConfig.SHARE_BASE_URL, BuildConfig.SHARE_BASE_URL.matches(Regex("https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev")))
+        assertTrue(BuildConfig.SHARE_BASE_URL, BuildConfig.SHARE_BASE_URL == "https://s.bamnat.app")
+        assertTrue(BuildConfig.SHARE_FALLBACK_URL, BuildConfig.SHARE_FALLBACK_URL.matches(Regex("https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev")))
         assertTrue(ShareLinkClient().enabled)
         val requested = context.packageManager
             .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toList()
@@ -35,7 +36,8 @@ class ShareServerTest {
 
     /** [COMM-04][ADMIN-02] 회사 찾기 and 문의하기 reach the live company server. */
     @Test fun companyAndInquiriesGoToTheLiveServerOverHttps() {
-        assertTrue(BuildConfig.COMPANY_BASE_URL, BuildConfig.COMPANY_BASE_URL.matches(Regex("https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev")))
+        assertTrue(BuildConfig.COMPANY_BASE_URL, BuildConfig.COMPANY_BASE_URL == "https://api.bamnat.app")
+        assertTrue(BuildConfig.COMPANY_FALLBACK_URL, BuildConfig.COMPANY_FALLBACK_URL.matches(Regex("https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev")))
         assertTrue(com.bamnat.app.company.CompanyClient().enabled)
         assertTrue(com.bamnat.app.company.InquiryClient().enabled)
     }

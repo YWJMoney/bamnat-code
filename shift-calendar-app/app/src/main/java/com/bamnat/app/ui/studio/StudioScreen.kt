@@ -128,6 +128,11 @@ import kotlinx.coroutines.launch
 /** [STU-11] The parts of the app the studio changes, each with the example tab it shows and the tools it has. */
 private enum class Area(val label: String, val target: FreeTarget?, val tab: String) {
     CALENDAR("달력", FreeTarget.CALENDAR, TabOrder.CALENDAR),
+    /**
+     * [STU-21] 1.36 레시피 만들기 합침: 근무 색·알람 묶음·메모 틀·규칙 — what goes with the look when it is sent. [STU-25] 빌드 7: second
+     * in the row (it was eleventh, three swipes away).
+     */
+    FEATURES("기능", null, TabOrder.CALENDAR),
     MONEY("가계부", FreeTarget.MONEY, TabOrder.MONEY),
     MEMO("메모", FreeTarget.MEMO, TabOrder.MEMOS),
     STATS("통계", FreeTarget.STATS, TabOrder.STATS),
@@ -138,8 +143,6 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
     GUARDED("결제·처리방침", FreeTarget.GUARDED, TabOrder.SETTINGS),
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
-    /** [STU-21] 1.36 레시피 만들기 합침: 근무 색·알람 묶음·메모 틀·규칙 — what goes with the look when it is sent. */
-    FEATURES("기능", null, TabOrder.CALENDAR),
     ;
 
     /** F-97: the area chips say what the bottom tabs say for this kind of work (근무·급여, 장부 …), not a name of their own. */
@@ -365,7 +368,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {
                                         when (area) {
-                                            Area.CALENDAR -> CellWeeks(view, rows = if (scale >= 0.5f) 3 else 1) { i -> lookIndex = i; tool = Tool.CELL }
+                                            Area.CALENDAR -> {
+                                                // [STU-25] 1.36 빌드 7: the phone's own weeks, as the example phone above shows them.
+                                                val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3)
+                                                CellWeeks(view, rows = if (scale >= 0.5f) 3 else 1, onCell = { i -> lookIndex = i; tool = Tool.CELL },
+                                                    start = my?.first, todayDate = my?.today, days = my?.days)
+                                            }
                                             Area.MEMO -> com.bamnat.app.ui.memo.MemoLookSample(memoLook) { tool = Tool.MEMO_LOOK }
                                             Area.MONEY -> MoneySample(moneyLook) { tool = Tool.MONEY_LOOK }
                                             Area.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { tool = Tool.PAY_LOOK }
@@ -488,7 +496,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize()) {
                 val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
-                    com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, 0, body, parent.takeIf { own == null }, null, own)
+                    com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }
                 com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; onOpen(code) }, finishOnly = true)
             }

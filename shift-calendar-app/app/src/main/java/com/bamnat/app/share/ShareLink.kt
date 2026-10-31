@@ -616,6 +616,11 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
         // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
         if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
+        // [SRV-30] 1.36: at s.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
+        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag) }
+    }
+
+    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?): Reply {
         // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true
