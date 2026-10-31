@@ -165,7 +165,11 @@ test("[PRF-01][PRF-02][PRF-04] 창작자 프로필: 소개, 대표 작품, 테�
   // Only what is sent changes: the face leaves the 소개 as it was.
   assert.equal((await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦉" }, from(1))).data.bio, me.bio);
   await call("POST", `/api/recipes/makers/${me.maker}/follow`, { device: device(2) }, from(2));
-  const two = (await call("POST", "/api/recipes/makers/me", { device: device(2) }, from(2))).data.maker;
+  // Asking with nothing makes no profile; one put in (here a face) does.
+  const none = (await call("POST", "/api/recipes/makers/me", { device: device(2) }, from(2))).data.maker;
+  assert.equal((await call("GET", `/api/recipes/makers/${none}`, undefined, dev(1))).status, 404);
+  const two = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐻" }, from(2))).data.maker;
+  assert.equal(two, none);
   await call("POST", `/api/recipes/makers/${two}/follow`, { device: device(1) }, from(1));
   const page = (await call("GET", `/api/recipes/makers/${me.maker}`, undefined, dev(2))).data;
   assert.deepEqual([page.bio, page.styleTag, page.pins, page.followers, page.followingCount, page.following, page.quiet],
@@ -215,7 +219,7 @@ test("[PRF-05][PRF-06] 차단과 프로필 신고: 서로 팔로우가 끊기고
   const { call } = server({ plaza: true });
   const admin = await signIn(call);
   const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "공식 밤낮 팀이에요" }, from(1))).data.maker;
-  const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2) }, from(2))).data.maker;
+  const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data.maker;
   await call("POST", `/api/recipes/makers/${m1}/follow`, { device: device(2) }, from(2));
   await call("POST", `/api/recipes/makers/${m2}/follow`, { device: device(1) }, from(1));
   assert.equal((await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2) }, from(2))).data.blocked, true);
@@ -223,6 +227,8 @@ test("[PRF-05][PRF-06] 차단과 프로필 신고: 서로 팔로우가 끊기고
   assert.equal((await call("GET", `/api/recipes/makers/${m1}`, undefined, dev(2))).data.blocked, true);
   assert.equal((await call("GET", `/api/recipes/makers/${m2}`, undefined, dev(1))).status, 404);
   assert.equal((await call("POST", `/api/recipes/makers/${m2}/follow`, { device: device(1) }, from(1))).status, 404);
+  // 차단한 쪽은 먼저 풀어야 팔로우해요.
+  assert.equal((await call("POST", `/api/recipes/makers/${m1}/follow`, { device: device(2) }, from(2))).data.error, "blocked");
   const f2 = (await call("GET", "/api/recipes/makers/me/following", undefined, dev(2))).data;
   assert.deepEqual([f2.items.length, f2.blocked.map((x) => x.maker)], [0, [m1]]);
   assert.equal((await call("GET", "/api/recipes/makers/me/followers", undefined, dev(2))).data.total, 0);
@@ -320,4 +326,42 @@ test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작�
   assert.equal(page.text.includes(device(1)), false);
   await call("POST", "/api/recipes/makers/me", { device: device(1), hidden: true }, from(1));
   assert.equal((await call("GET", `/m/ffffffffffff`)).status, 404);
+});
+
+test("[PRF-05][PRF-06] 리뷰: 모두 지우기로 남의 차단·운영자 닫기를 벗어나지 못하고, 새 소개는 신고를 지우고, 차단한 분의 질문은 알림에 없어요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "처음 소개" }, from(1))).data.maker;
+  const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data.maker;
+  await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2) }, from(2));
+  await call("DELETE", "/api/mine", undefined, dev(1));
+  await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦊" }, from(1));
+  assert.equal((await call("GET", `/api/recipes/makers/${m2}`, undefined, dev(1))).status, 404, "the block stays after 지우기");
+  // 운영자가 닫은 프로필은 지워도 닫힌 채로, 본인에게는 닫혔다고.
+  await call("POST", `/api/admin/recipes/makers/${m2}/close`, {}, admin);
+  await call("DELETE", "/api/mine", undefined, dev(2));
+  assert.equal((await call("GET", `/api/recipes/makers/${m2}`, undefined, dev(3))).status, 404);
+  const back = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data;
+  assert.equal(back.closed, true);
+  // 새 소개는 소개 신고를 지우고 다시 보여요; 운영자가 가리면 '운영자'로 보여요.
+  const b = (await up(call, 5, { title: "다섯" }, "public")).data.code;
+  assert.ok(b);
+  const m5 = (await call("POST", "/api/recipes/makers/me", { device: device(5), bio: "나쁜 소개" }, from(5))).data.maker;
+  for (const n of [6, 7, 8]) await call("POST", `/api/recipes/makers/${m5}/flag`, { device: device(n), reason: "bio" }, from(n));
+  assert.equal((await call("GET", `/api/recipes/makers/${m5}`, undefined, dev(3))).data.bio, undefined);
+  assert.equal((await call("POST", "/api/recipes/makers/me", { device: device(5), bio: "고친 소개" }, from(5))).data.bioHidden, false);
+  assert.equal((await call("GET", `/api/recipes/makers/${m5}`, undefined, dev(3))).data.bio, "고친 소개");
+  await call("POST", `/api/admin/recipes/makers/${m5}/bio-hide`, {}, admin);
+  await call("POST", `/api/recipes/makers/${m5}/flag`, { device: device(9), reason: "spam" }, from(9));
+  const row = (await call("GET", "/api/admin/recipes/makers/flagged", undefined, admin)).data.items.find((x) => x.maker === m5);
+  assert.deepEqual([row.flags, row.bioHidden, row.bioHiddenBy], [1, true, "operator"]);
+  // 차단한 분의 질문은 내 최근 알림에 없어요.
+  const a = (await up(call, 4, { title: "질문 받을 작품" }, "public")).data.code;
+  await call("POST", `/api/recipes/${a}/talk`, { device: device(3), body: "칸 크기는 어떻게 바꾸나요?", kind: "question" }, from(3));
+  const m3 = (await call("POST", "/api/recipes/makers/me", { device: device(3), face: "🐯" }, from(3))).data.maker;
+  const since = new Date(AFTER - 1000).toISOString();
+  assert.equal((await call("GET", `/api/recipes/makers/me/inbox?since=${since}`, undefined, dev(4))).data.questions.length, 1);
+  await call("POST", `/api/recipes/makers/${m3}/block`, { device: device(4) }, from(4));
+  assert.equal((await call("GET", `/api/recipes/makers/me/inbox?since=${since}`, undefined, dev(4))).data.questions.length, 0);
 });

@@ -404,7 +404,7 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/hello" && (method === "GET" || method === "HEAD")) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
   // [PRF-11] 1.36 a maker's 프로필 link: a small public page that opens the app.
-  if (path.startsWith("/m/") && method === "GET") return edgeCached(request, ctx, 300, () => makerWebPage(recipeDeps, env, path.slice(3)));
+  if (path.startsWith("/m/") && method === "GET") return edgeCached(request, ctx, 60, () => makerWebPage(recipeDeps, env, path.slice(3)));
   // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
   // [J133-88] 공개 자료 (국민연금 가입 사업장): what the public record says of a workplace, beside the 광장's own.

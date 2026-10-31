@@ -11,7 +11,7 @@ const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
 export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerDay: 3, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50,
   // [PRF-01..06] 1.36 창작자 프로필: 한 줄 소개, 대표 작품, 하루 팔로우, 차단, 신고 3번이면 소개 먼저 가림.
-  bio: 40, pins: 6, followsPerDay: 60, setTitle: [2, 30], setSummary: 80, setCodes: [2, 6], sets: 20, setsPerDay: 10, follows: 200, blocks: 500, flagsToHideBio: 3 };
+  bio: 40, pins: 6, followsPerDay: 60, setTitle: [2, 30], setSummary: 80, setCodes: [2, 6], sets: 20, setsPerDay: 10, setEditsPerDay: 30, follows: 200, blocks: 500, flagsToHideBio: 3, flagsPerDay: 10, flagsPerNetworkDay: 40 };
 /** [PRF-03] 쓰는 분·좋아요가 이만큼 넘으면 내 프로필 최근 알림에 한 번 (폰이 본 것을 기억해요). */
 export const PROFILE_MILESTONES = [10, 50, 100, 500, 1000, 5000];
 export const PROFILE_FLAG_REASONS = ["impersonate", "bio", "spam", "other"];
@@ -284,7 +284,7 @@ async function rcMakerPage(d, env, request, id) {
     ...(m?.bio && !m.bio_hidden ? { bio: m.bio } : {}),
     ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true } : {}),
     ...(m?.style_tag ? { styleTag: m.style_tag } : {}),
-    ...(mine ? { hidden: Boolean(m?.hidden) } : {}),
+    ...(mine ? { hidden: Boolean(m?.hidden), closed: Boolean(m?.closed) } : {}),
     pins: rcPinsOf(m).filter((c) => codes.has(c)),
     recipes: items, themes: items.filter((r) => r.scope === "theme").length, tabs: items.filter((r) => r.scope === "tab").length,
     likes: sums.likes, users: sums.users, followers: followers.n, followingCount: followingCount.n, following: Boolean(follow),
@@ -302,7 +302,8 @@ async function rcMakerMe(d, env, request) {
   const dev = await rcReadDev(d, request, body);
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
-  let m = await rcMakerOf(d, env, dev, now);
+  // [PRF-01] Asking with nothing to change makes no row: a profile exists only once its maker puts something in it.
+  let m = await d.one(env, "SELECT * FROM recipe_makers WHERE device = ?", dev);
   // 소개·대표 작품·유형·표지 are written for others like a recipe: from 처리방침 3.8 (recipe.publish). 숨기기 is always allowed.
   if (["bio", "pins", "styleTag", "cover"].some((k) => body[k] !== undefined) && !(await d.legalOpen(env, "recipe.publish", now))) {
     return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
@@ -324,9 +325,11 @@ async function rcMakerMe(d, env, request) {
     if (graphemes(bio) > COMMUNITY_LIMITS.bio) return d.json({ error: "too_long", field: "bio" }, 400);
     const why = bio ? textProblem(bio) ?? (investAdvice(bio) ? "invest_advice" : null) : null;
     if (why) return d.json({ error: why, field: "bio" }, 400);
-    // A new 소개 is shown again; one the operator hid stays hidden only while it is the same text.
-    sets.push("bio = ?", "bio_hidden = CASE WHEN bio = ? THEN bio_hidden ELSE 0 END");
-    args.push(bio || null, bio || null);
+    // [PRF-06] A new 소개 is shown again (bio_hidden 1 = 신고 셋, 2 = 운영자) and the old 소개's reports go with it.
+    if ((m?.bio ?? null) !== (bio || null)) {
+      sets.push("bio = ?", "bio_hidden = 0");
+      args.push(bio || null);
+    }
   }
   if (body.pins !== undefined) {
     const want = Array.isArray(body.pins) ? [...new Set(body.pins.filter((c) => typeof c === "string" && CODE.test(c)))].slice(0, COMMUNITY_LIMITS.pins) : [];
@@ -353,10 +356,13 @@ async function rcMakerMe(d, env, request) {
     args.push(body.hidden === true ? 1 : 0);
   }
   if (sets.length) {
+    if (!m) await rcMakerOf(d, env, dev, now);
+    if (sets.includes("bio_hidden = 0")) await d.run(env, "DELETE FROM recipe_maker_flags WHERE maker = ? AND reason = 'bio'", await makerId(dev));
     await d.run(env, `UPDATE recipe_makers SET ${sets.join(", ")} WHERE device = ?`, ...args, dev);
     m = await d.one(env, "SELECT * FROM recipe_makers WHERE device = ?", dev);
   }
-  return d.json({ maker: m.maker, face: m.face ?? null, color: m.color ?? null, bio: m.bio ?? null, bioHidden: Boolean(m.bio_hidden),
+  if (!m) m = { maker: await makerId(dev) };
+  return d.json({ maker: m.maker, closed: Boolean(m.closed), face: m.face ?? null, color: m.color ?? null, bio: m.bio ?? null, bioHidden: Boolean(m.bio_hidden),
     pins: rcPinsOf(m), styleTag: m.style_tag ?? null, hidden: Boolean(m.hidden), cover: m.cover ?? null });
 }
 
@@ -378,7 +384,10 @@ async function rcFollow(d, env, request, id) {
   const quiet = body.quiet === undefined ? was?.quiet ?? 0 : body.quiet === true ? 1 : 0;
   if (!was) {
     // [PRF-05] Not to a hidden profile or one who blocked this phone; it looks the same as not there.
-    if (m.hidden || m.closed || (await rcBlocked(d, env, dev, id, m.device)).theirs) return d.json({ error: "not_found" }, 404);
+    const block = await rcBlocked(d, env, dev, id, m.device);
+    if (m.hidden || m.closed || block.theirs) return d.json({ error: "not_found" }, 404);
+    // 차단한 분은 먼저 차단을 풀어야 팔로우해요.
+    if (block.mine) return d.json({ error: "blocked" }, 409);
     const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", dev);
     if (n.n >= COMMUNITY_LIMITS.follows) return d.json({ error: "too_many" }, 400);
     const hit = await d.overLimit(env, now, [["device", `follow|${dev}`, COMMUNITY_LIMITS.followsPerDay, DAY]]);
@@ -420,11 +429,26 @@ async function rcMakerFlag(d, env, request, id) {
   const m = await d.one(env, "SELECT device FROM recipe_makers WHERE maker = ?", id);
   if (!m) return d.json({ error: "not_found" }, 404);
   if (m.device === dev) return d.json({ error: "own" }, 400);
-  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, body.reason, Date.now());
+  const now = Date.now();
+  const net = await d.network(request, env, now);
+  const hit = await d.overLimit(env, now, [["device", `mflag|${dev}`, COMMUNITY_LIMITS.flagsPerDay, DAY],
+    ["network", `mflag|${net.day}`, COMMUNITY_LIMITS.flagsPerNetworkDay, DAY]]);
+  if (hit) return hit;
+  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, body.reason, now);
   const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ?", id);
-  if (n.n >= COMMUNITY_LIMITS.flagsToHideBio) await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL", id);
+  if (n.n >= COMMUNITY_LIMITS.flagsToHideBio) {
+    await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL AND bio_hidden = 0", id);
+  }
   return d.json({ maker: id, flagged: true });
 }
+
+/**
+ * [PRF-02] A follower is shown by name only when they have a 프로필 of their own (얼굴, 소개 or a public recipe) that is not hidden;
+ * a 광장 nickname alone stays private, counted as 이름 없는 분.
+ */
+const SHARED = `(m.face IS NOT NULL OR m.bio IS NOT NULL OR EXISTS (SELECT 1 FROM recipes x WHERE x.owner = f.device AND x.state = 'visible'
+  AND x.scope = 'public')) AS shared`;
+const rcNamed = (r) => Boolean(r.maker && !r.hidden && !r.closed && r.shared);
 
 /** A maker row as a face in a list: id, nickname, emoji and colour. */
 const rcFace = (r) => ({ maker: r.maker, nick: r.nick ?? null, face: r.face ?? null, color: r.color ?? null });
@@ -438,7 +462,8 @@ async function rcFollowing(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   const rows = await d.all(env, `SELECT f.maker, f.quiet, f.at, m.face, m.color, m.hidden, m.closed, n.nick,
-      (SELECT MAX(r.created_at) FROM recipes r WHERE r.maker = f.maker AND r.state = 'visible' AND r.scope = 'public') AS latest
+      (SELECT MAX(r.created_at) FROM recipes r WHERE (r.maker = f.maker OR (f.maker = 'operator' AND r.owner = 'operator'))
+        AND r.state = 'visible' AND r.scope = 'public') AS latest
     FROM recipe_follows f LEFT JOIN recipe_makers m ON m.maker = f.maker LEFT JOIN nicks n ON n.device = m.device
     WHERE f.device = ? ORDER BY latest DESC, f.at DESC LIMIT 200`, dev);
   const blocked = await d.all(env, `SELECT b.maker, m.face, m.color, n.nick FROM recipe_blocks b LEFT JOIN recipe_makers m ON m.maker = b.maker
@@ -459,11 +484,11 @@ async function rcFollowing(d, env, request) {
 async function rcFollowers(d, env, request) {
   const dev = await rcReadDev(d, request, null);
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
-  const me = await rcMakerOf(d, env, dev, Date.now());
-  const rows = await d.all(env, `SELECT m.maker, m.face, m.color, m.hidden, n.nick, f.at FROM recipe_follows f
+  const me = await makerId(dev);
+  const rows = await d.all(env, `SELECT m.maker, m.face, m.color, m.hidden, m.closed, n.nick, f.at, ${SHARED} FROM recipe_follows f
     LEFT JOIN recipe_makers m ON m.device = f.device LEFT JOIN nicks n ON n.device = f.device
-    WHERE f.maker = ? ORDER BY f.at DESC LIMIT 500`, me.maker);
-  const named = rows.filter((r) => r.maker && !r.hidden && (r.nick || r.face));
+    WHERE f.maker = ? ORDER BY f.at DESC LIMIT 500`, me);
+  const named = rows.filter(rcNamed);
   return d.json({ total: rows.length, items: named.map((r) => ({ ...rcFace(r), at: new Date(r.at).toISOString() })), unnamed: rows.length - named.length });
 }
 
@@ -477,21 +502,30 @@ async function rcInbox(d, env, request, url) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   const since = Math.max(now - 30 * DAY, Date.parse(url.searchParams.get("since") ?? "") || now - 7 * DAY);
-  const me = await rcMakerOf(d, env, dev, now);
-  const fresh = await d.all(env, `SELECT m.maker, m.face, m.color, m.hidden, n.nick FROM recipe_follows f
+  const me = (await d.one(env, "SELECT * FROM recipe_makers WHERE device = ?", dev)) ?? { maker: await makerId(dev) };
+  // [PRF-05] Nothing from a maker this phone blocked.
+  const blocked = new Set((await d.all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", dev)).map((b) => b.maker));
+  const kept = async (rows, owner) => {
+    const out = [];
+    for (const r of rows) if (!blocked.has(r.maker ?? (await makerId(owner(r))))) out.push(r);
+    return out;
+  };
+  const fresh = await d.all(env, `SELECT m.maker, m.face, m.color, m.hidden, m.closed, n.nick, ${SHARED} FROM recipe_follows f
     LEFT JOIN recipe_makers m ON m.device = f.device LEFT JOIN nicks n ON n.device = f.device
     WHERE f.maker = ? AND f.at > ? ORDER BY f.at DESC LIMIT 50`, me.maker, since);
-  const questions = await d.all(env, `SELECT q.grp AS code, q.body, q.created_at, r.title FROM posts q JOIN recipes r ON r.code = q.grp
+  const questions = await kept(await d.all(env, `SELECT q.grp AS code, q.body, q.created_at, q.device, NULL AS maker, r.title FROM posts q JOIN recipes r ON r.code = q.grp
     WHERE q.company_id = 'recipe' AND q.kind = 'question' AND q.parent IS NULL AND q.status = 'shown' AND r.owner = ? AND q.device != ?
-      AND q.created_at > ? ORDER BY q.created_at DESC LIMIT 20`, dev, dev, since);
-  const remixes = await d.all(env, `SELECT r.code, r.title, r.created_at, p.title AS parent_title FROM recipes r JOIN recipes p ON p.code = r.parent
-    WHERE p.owner = ? AND r.owner != ? AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ? ORDER BY r.created_at DESC LIMIT 20`, dev, dev, since);
+      AND q.created_at > ? ORDER BY q.created_at DESC LIMIT 20`, dev, dev, since), (x) => x.device);
+  const remixes = await kept(await d.all(env, `SELECT r.code, r.title, r.created_at, r.owner, r.maker, p.title AS parent_title FROM recipes r
+    JOIN recipes p ON p.code = r.parent
+    WHERE p.owner = ? AND r.owner != ? AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ? ORDER BY r.created_at DESC LIMIT 20`, dev, dev, since),
+    (x) => x.owner);
   const own = await d.all(env, "SELECT code, title, likes, applied FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public'", dev);
   const reached = (n) => PROFILE_MILESTONES.filter((x) => n >= x).pop() ?? null;
   const milestones = own.flatMap((r) => [["users", r.applied], ["likes", r.likes]].filter(([, n]) => reached(n))
     .map(([kind, n]) => ({ code: r.code, title: r.title, kind, n: reached(n) })));
   const sums = { recipes: own.length, likes: own.reduce((s, r) => s + r.likes, 0), users: own.reduce((s, r) => s + r.applied, 0) };
-  const named = fresh.filter((r) => r.maker && !r.hidden && (r.nick || r.face));
+  const named = fresh.filter((r) => rcNamed(r) && !blocked.has(r.maker));
   return d.json({
     maker: me.maker,
     followers: { count: fresh.length, items: named.slice(0, 5).map(rcFace) },
@@ -509,10 +543,11 @@ async function rcNews(d, env, request, url) {
   const now = Date.now();
   const since = Math.max(now - 30 * DAY, Date.parse(url.searchParams.get("since") ?? "") || now - 7 * DAY);
   // [PRF-04] 알림 끈 분은 빼요 (팔로우는 그대로).
-  const followed = await d.all(env, "SELECT maker FROM recipe_follows WHERE device = ? AND quiet = 0", dev);
+  const followed = await d.all(env, `SELECT f.maker FROM recipe_follows f LEFT JOIN recipe_makers m ON m.maker = f.maker
+    WHERE f.device = ? AND f.quiet = 0 AND COALESCE(m.hidden, 0) = 0 AND COALESCE(m.closed, 0) = 0`, dev);
   const makers = followed.map((f) => f.maker);
   const fresh = makers.length ? await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner
-    WHERE r.maker IN (${makers.map(() => "?").join(",")}) AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ?
+    WHERE COALESCE(r.maker, CASE WHEN r.owner = 'operator' THEN 'operator' END) IN (${makers.map(() => "?").join(",")}) AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ?
     ORDER BY r.created_at DESC LIMIT 20`, ...makers, since) : [];
   // [RCX-10] A maker's reply under a question this phone asked on the maker's recipe.
   const replies = await d.all(env, `SELECT a.grp AS code, a.body, a.created_at, r.title FROM posts q
@@ -619,9 +654,19 @@ async function rcSetEdit(d, env, request, id, del) {
     await d.run(env, "DELETE FROM recipe_sets WHERE id = ?", id);
     return d.json({ id, deleted: true });
   }
-  const set = await rcReadSet(d, env, dev, { title: body.title ?? s.title, summary: body.summary ?? s.summary, codes: body.codes ?? s.codes.split(",") });
+  if (await d.paused(env, "PLAZA_WRITE")) return d.json({ error: "paused" }, 503);
+  const now = Date.now();
+  if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  const hit = await d.overLimit(env, now, [["device", `rsetedit|${dev}`, COMMUNITY_LIMITS.setEditsPerDay, DAY]]);
+  if (hit) return hit;
+  // Only a new name: keep the recipes still up, so a 모음 that lost one can be renamed without picking again.
+  const was = s.codes.split(",");
+  const up = body.codes === undefined ? (await d.all(env, `SELECT code FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public'
+    AND code IN (${was.map(() => "?").join(",")})`, dev, ...was)).map((r) => r.code) : null;
+  const set = await rcReadSet(d, env, dev, { title: body.title ?? s.title, summary: body.summary ?? s.summary,
+    codes: body.codes ?? was.filter((c) => up.includes(c)) });
   if (set.error) return d.json({ error: set.error, field: set.field ?? set.error }, 400);
-  await d.run(env, "UPDATE recipe_sets SET title = ?, summary = ?, codes = ?, updated_at = ? WHERE id = ?", set.title, set.summary, set.codes.join(","), Date.now(), id);
+  await d.run(env, "UPDATE recipe_sets SET title = ?, summary = ?, codes = ?, updated_at = ? WHERE id = ?", set.title, set.summary, set.codes.join(","), now, id);
   return d.json({ id, title: set.title, summary: set.summary, codes: set.codes });
 }
 
@@ -633,9 +678,11 @@ async function rcFeed(d, env, request, url) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const cursor = Math.max(0, Math.min(300, Number(url.searchParams.get("cursor")) || 0));
   const size = 30;
-  const rows = await d.all(env, `SELECT r.*, n.nick FROM recipes r JOIN recipe_follows f ON f.maker = r.maker AND f.device = ?
-    LEFT JOIN recipe_makers m ON m.maker = r.maker LEFT JOIN nicks n ON n.device = r.owner
+  const rows = await d.all(env, `SELECT r.*, n.nick FROM recipes r
+    JOIN recipe_follows f ON f.maker = COALESCE(r.maker, CASE WHEN r.owner = 'operator' THEN 'operator' END) AND f.device = ?
+    LEFT JOIN recipe_makers m ON m.maker = f.maker LEFT JOIN nicks n ON n.device = r.owner
     WHERE r.state = 'visible' AND r.scope = 'public' AND COALESCE(m.hidden, 0) = 0 AND COALESCE(m.closed, 0) = 0
+      AND NOT EXISTS (SELECT 1 FROM recipe_blocks b WHERE b.device = f.device AND b.maker = f.maker)
     ORDER BY r.created_at DESC LIMIT ? OFFSET ?`, dev, size + 1, cursor);
   return d.json({ items: await rcWithMaker(d, env, rows.slice(0, size), Date.now()), next: rows.length > size ? cursor + size : null },
     200, { "cache-control": "private, no-store" });
@@ -718,7 +765,7 @@ export async function makerWebPage(d, env, id) {
 .w{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.w div{border-radius:12px;padding:12px;color:#fff;min-height:64px;font-weight:600}
 a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:600}
 @media (prefers-color-scheme:dark){body{background:#14161c;color:#e8e9ee}}</style></head><body><main>${body}</main></body></html>`,
-  { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": status === 200 ? "public, max-age=300" : "no-store",
+  { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": status === 200 ? "public, max-age=60" : "no-store",
     "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'" } });
   if (!/^([0-9a-f]{12}|operator)$/.test(id)) return html("<h1>찾을 수 없어요</h1>", 404);
   const m = await d.one(env, "SELECT * FROM recipe_makers WHERE maker = ?", id);
@@ -886,7 +933,8 @@ export async function communityAdmin(d, request, env, path, url, now) {
     return d.json({ items: rows.map((r) => {
       const tally = {};
       for (const x of (r.reasons ?? "").split(",").filter(Boolean)) tally[x] = (tally[x] ?? 0) + 1;
-      return { maker: r.maker, nick: r.nick ?? null, face: r.face ?? null, bio: r.bio ?? null, bioHidden: r.bio_hidden === 1, closed: r.closed === 1,
+      return { maker: r.maker, nick: r.nick ?? null, face: r.face ?? null, bio: r.bio ?? null, bioHidden: r.bio_hidden > 0,
+        ...(r.bio_hidden > 0 ? { bioHiddenBy: r.bio_hidden === 2 ? "operator" : "flags" } : {}), closed: r.closed === 1,
         flags: r.flags, reasons: tally, at: new Date(r.last).toISOString() };
     }) });
   }
@@ -914,8 +962,9 @@ export async function communityAdmin(d, request, env, path, url, now) {
   if (m && method === "POST") {
     const [, id, what] = m;
     if (what === "clear") await d.run(env, "DELETE FROM recipe_maker_flags WHERE maker = ?", id);
+    // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림.
     else await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,
-      what === "bio-hide" || what === "close" ? 1 : 0, id);
+      what === "bio-hide" ? 2 : what === "close" ? 1 : 0, id);
     return d.json({ maker: id, done: what });
   }
   m = path.match(/^\/recipes\/makers\/([0-9a-f]{12})\/helper$/);
@@ -937,14 +986,15 @@ export function forgetCommunity(d, env, dev) {
     d.stmt(env, "UPDATE recipe_requests SET state = 'waiting', maker = NULL WHERE maker = ? AND state = 'making'", dev),
     d.stmt(env, "DELETE FROM recipe_follows WHERE device = ?", dev),
     d.stmt(env, "DELETE FROM recipe_follows WHERE maker IN (SELECT maker FROM recipe_makers WHERE device = ?)", dev),
-    // [PRF-05][PRF-06] 1.36 차단과 프로필 신고도, 이 폰이 한 것과 이 폰의 프로필에 대한 것 모두.
+    // [PRF-05][PRF-06] 1.36 이 폰이 한 차단·신고와 모음. Others' blocks of this phone and reports on its profile are theirs and stay
+    // (지우기로 차단을 벗어날 수 없게); a profile the operator closed stays closed with nothing of it left but that.
     d.stmt(env, "DELETE FROM recipe_sets WHERE owner = ?", dev),
     d.stmt(env, "DELETE FROM recipe_month_makers WHERE maker IN (SELECT maker FROM recipe_makers WHERE device = ?)", dev),
     d.stmt(env, "DELETE FROM recipe_blocks WHERE device = ?", dev),
-    d.stmt(env, "DELETE FROM recipe_blocks WHERE maker IN (SELECT maker FROM recipe_makers WHERE device = ?)", dev),
     d.stmt(env, "DELETE FROM recipe_maker_flags WHERE device = ?", dev),
-    d.stmt(env, "DELETE FROM recipe_maker_flags WHERE maker IN (SELECT maker FROM recipe_makers WHERE device = ?)", dev),
-    d.stmt(env, "DELETE FROM recipe_makers WHERE device = ?", dev),
+    d.stmt(env, `UPDATE recipe_makers SET face = NULL, color = NULL, bio = NULL, pins = NULL, style_tag = NULL, cover = NULL, hidden = 0, bio_hidden = 0,
+      helper = 0 WHERE device = ? AND closed = 1`, dev),
+    d.stmt(env, "DELETE FROM recipe_makers WHERE device = ? AND closed = 0", dev),
     d.stmt(env, "DELETE FROM recipe_images WHERE owner = ?", dev),
   ];
 }
