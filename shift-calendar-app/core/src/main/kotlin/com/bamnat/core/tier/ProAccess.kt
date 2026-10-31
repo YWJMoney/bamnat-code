@@ -39,6 +39,8 @@ enum class ProReason(val words: String) {
     PASS("보상 이용권으로 프로를 써요"),
     THANKS("테스트에 참여해 주셔서 드린 프로 기간이에요"),
     DAY_PASS("광고를 보고 오늘 하루 프로 기능을 열었어요"),
+    /** 1.36 [PSH-01] 프로 나눔 1인. */
+    SHARED("프로를 산 분이 나눠 준 프로예요. 그분이 프로를 쓰는 동안 이어져요"),
     NONE("무료로 쓰고 있어요"),
     /** A tester's preview from the alarm check screen; [ProAccess.resolve] never answers it. */
     PREVIEW("알람 점검 화면에서 고른 등급으로 미리 보고 있어요"),
@@ -58,6 +60,8 @@ data class ProSources(
     val thanksMonths: Int = 0,
     /** [MON-07] A rewarded ad watched today opens the pro features until midnight. */
     val dayPassUntil: Instant? = null,
+    /** 1.36 [PSH-01] The 프로 a buyer gave this phone, until their subscription ends. */
+    val sharedUntil: Instant? = null,
 )
 
 data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null)
@@ -84,6 +88,7 @@ object ProAccess {
         s.admin?.takeIf { it.approved && Duration.between(it.checkedAt, now) < ADMIN_CHECK }?.let { return Access(true, ProReason.ADMIN) }
         s.passUntil?.takeIf { now < it }?.let { return Access(true, ProReason.PASS, it) }
         thanksUntil(s.installedAt, s.launchedAt, s.thanksMonths, zone)?.takeIf { now < it }?.let { return Access(true, ProReason.THANKS, it) }
+        s.sharedUntil?.takeIf { now < it }?.let { return Access(true, ProReason.SHARED, it) }
         s.dayPassUntil?.takeIf { now < it }?.let { return Access(true, ProReason.DAY_PASS, it) }
         return Access(false, ProReason.NONE)
     }

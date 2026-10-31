@@ -142,6 +142,24 @@ object ShareLinkPayload {
     fun allowedTtl(days: Int, pro: Boolean): Int = if (pro || days !in PRO_TTL_DAYS) days else FREE_TTL_MAX
 
     /**
+     * 1.36 사용자 결정(2026-10-31, 공유 링크 기간): a 프로 sharer's links stay open for as long as 프로 lasts, so they are kept
+     * a year ahead whenever less than [PRO_RENEW_BELOW_DAYS] is left. Without 프로 a link kept that way closes
+     * [FREE_TTL_MAX] days from now at most, and is kept longer by hand (기간 늘리기) from then. Receivers never need 프로.
+     * The period to send now, or null to leave the end date as it is.
+     */
+    fun keepOpen(link: ShareLinkState, now: java.time.Instant, pro: Boolean): Int? {
+        val left = java.time.Duration.between(now, link.expiresAt).toDays()
+        return when {
+            left < 0 -> null
+            pro -> PRO_KEEP_DAYS.takeIf { left < PRO_RENEW_BELOW_DAYS }
+            link.ttlDays in PRO_TTL_DAYS && left > FREE_TTL_MAX -> FREE_TTL_MAX
+            else -> null
+        }
+    }
+    const val PRO_KEEP_DAYS = 365
+    const val PRO_RENEW_BELOW_DAYS = 180L
+
+    /**
      * [PROV-04] The time zone a calendar feed's times are in, as the server takes it ("Asia/Seoul"); null
      * for one it would refuse ("UTC", "GMT+09:00"), which then reads as Seoul time.
      */

@@ -139,7 +139,8 @@ class WidgetData(
                 }
             } else null
             val shopDays = if (settings.workStyle == WorkStyle.BUSINESS && book != null) {
-                com.bamnat.core.work.WorkStats.shop(YearMonth.from(today), book.sales) { snapshot.resolver.resolve(it).isWorkDay }
+                com.bamnat.core.work.WorkStats.shop(YearMonth.from(today), book.sales, null,
+                    listOfNotNull(snapshot.firstDay, book.sales.minOfOrNull { it.date }).minOrNull()) { snapshot.resolver.resolve(it).isWorkDay }
                     .let { WidgetFigures.ShopDays(it.openDays, it.closedDays) }
             } else null
             // [WIDG-01][WIDG-05] Yesterday's night to a week ahead: what is going on now and what comes next.

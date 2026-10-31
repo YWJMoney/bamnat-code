@@ -90,7 +90,7 @@ internal fun ExampleCalendars(r: Recipe) {
                 ExampleWeek(r, style)
                 r.piecesFor(style).forEach { p ->
                     // 빌드 8: '화면 색·배경: 화면 색·배경: 가계부' — a line that already starts with the piece's name says it once.
-                    Text("• ${p.kind.label}: ${RecipeDescribe.line(p, amounts = false).removePrefix("${p.kind.label}: ")}", style = MaterialTheme.typography.bodySmall)
+                    Text("• ${p.kind.label}: ${RecipeDescribe.line(p, amounts = false, style = style).removePrefix("${p.kind.label}: ")}", style = MaterialTheme.typography.bodySmall)
                 }
                 val not = r.piecesNotFor(style)
                 if (not.isNotEmpty()) Text("이 유형에는 없어요: ${not.joinToString(", ") { it.kind.label }}", style = MaterialTheme.typography.bodySmall,
@@ -188,9 +188,18 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         return snap?.shiftTypes?.firstOrNull { it.name == name } ?: s.types.firstOrNull { it.name == name }
     }
     val moves = shared != null && (shared.order.isNotEmpty() || shared.weekly.size == 7)
-    val changed = days.values.count { d ->
+    // 1.36 PC 프로필 시험 (알바 달력에 근무가 없어 '넣은 뒤'에 칸 모양이 안 보이고 '바뀌는 날 0일'): a month with no work days
+    // shows this week's weekdays as an example, with the first kind of work the piece dresses (or the calendar's first).
+    val noWork = !moves && days.isNotEmpty() && days.values.none { it.isWorkDay }
+    val exampleType = if (!noWork) null else looks.firstOrNull()?.first ?: snap?.shiftTypes?.firstOrNull { !it.isOff }
+    val exampleDays = if (exampleType == null) emptySet() else {
+        val mon = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        (0L..4L).map { mon.plusDays(it) }.filter { java.time.YearMonth.from(it) == month }.toSet()
+    }
+    val cellChanged = theme != null && (theme["cell"] as? String ?: "tint") != mineLook.cell
+    val changed = if (exampleDays.isNotEmpty()) (if (cellChanged || swap.isNotEmpty()) exampleDays.size else 0) else days.values.count { d ->
         if (moves && !d.date.isBefore(today)) theirs(d.date)?.name != d.shiftType?.takeIf { d.isWorkDay }?.name
-        else d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true
+        else d.isWorkDay && (cellChanged || d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true)
     }
     Column(Modifier.fillMaxWidth().clearAndSetSemantics {
         contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", 모양이 바뀌는 날 ${changed}일"
@@ -202,12 +211,17 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                     val inMonth = java.time.YearMonth.from(date) == month
                     val day = days[date].takeIf { inMonth }
                     val company = after && moves && inMonth && !date.isBefore(today)
-                    val type = if (company) theirs(date)?.let { t -> swap[t.id] ?: t } else day?.shiftType?.let { t -> if (after) swap[t.id] ?: t else t }
-                    val works = if (company) type != null && !type.isOff else day?.isWorkDay == true
-                    val fill = if (type != null && works) type.colorArgb.asColor() else androidx.compose.ui.graphics.Color.Transparent
+                    val example = inMonth && date in exampleDays
+                    val type = if (example) exampleType?.let { t -> if (after) swap[t.id] ?: t else t }
+                        else if (company) theirs(date)?.let { t -> swap[t.id] ?: t } else day?.shiftType?.let { t -> if (after) swap[t.id] ?: t else t }
+                    val works = example || if (company) type != null && !type.isOff else day?.isWorkDay == true
+                    // 1.36: the cell style (가득·옅게·점) the look gives, as the month grid draws it.
+                    val wash = look.washAlpha(dark)
+                    val fill = if (type != null && works) (if (look.cell == "fill") type.colorArgb.asColor()
+                        else type.colorArgb.asColor().copy(alpha = (wash * 2.5f).coerceAtMost(1f))) else androidx.compose.ui.graphics.Color.Transparent
                     val holiday = com.bamnat.core.holiday.KoreanHolidays.isHoliday(date)
                     val digit = when {
-                        type != null && works -> contentColorOn(fill)
+                        type != null && works && look.cell == "fill" -> contentColorOn(fill)
                         holiday -> look.holiday(cal)
                         date.dayOfWeek == java.time.DayOfWeek.SUNDAY -> look.sunday(cal)
                         date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> look.saturday(cal)
@@ -218,6 +232,8 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                         contentAlignment = Alignment.Center) {
                         if (inMonth) Text(type?.label?.takeIf { it.isNotEmpty() && works } ?: date.dayOfMonth.toString(),
                             style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
+                        if (inMonth && type != null && works && look.cell == "dot") Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp)
+                            .size(5.dp).background(type.colorArgb.asColor(), androidx.compose.foundation.shape.CircleShape))
                     }
                 }
             }
@@ -227,6 +243,8 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
         moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
         company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
+        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’${com.bamnat.app.ui.Fmt.obj(exampleType?.name.orEmpty())} 넣은 예시로 보여 드려요"
+        looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
         looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
         else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
     },
@@ -239,7 +257,9 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
  * card and the corners. [on] says which pieces are switched on (the receiver's choice, or all of them while making).
  */
 @Composable
-internal fun ScreenPreview(r: Recipe, on: (PieceKind) -> Boolean = { true }) {
+internal fun ScreenPreview(r: Recipe,
+    /** 1.36 PC 시험: tab names in the viewer's words (알바 '출근·시급'). */
+    style: com.bamnat.core.work.WorkStyle? = null, on: (PieceKind) -> Boolean = { true }) {
     fun values(k: PieceKind) = r.pieces.firstOrNull { it.kind == k && on(k) }?.values
     val layout = values(PieceKind.LAYOUT)
     val cards = values(PieceKind.CARDS)
@@ -257,13 +277,13 @@ internal fun ScreenPreview(r: Recipe, on: (PieceKind) -> Boolean = { true }) {
                         val t = com.bamnat.app.ui.TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             androidx.compose.material3.Icon(t.icon, null, Modifier.size(22.dp))
-                            Text(t.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            Text(t.labelFor(style), style = MaterialTheme.typography.labelSmall, maxLines = 1)
                         }
                     }
                 }
             }
             (layout?.get("calendar") as? String)?.let { PartsPreview("달력 화면", it, com.bamnat.app.ui.calendar.CalendarPart.entries.associate { p -> p.id to p.label }) }
-            (cards?.get("stats") as? String)?.let { PartsPreview("통계 카드", it, com.bamnat.app.ui.stats.StatsPart.entries.associate { p -> p.id to p.label }) }
+            (cards?.get("stats") as? String)?.let { PartsPreview("${com.bamnat.app.ui.TopLevel.STATS.labelFor(style)} 카드", it, com.bamnat.app.ui.stats.StatsPart.entries.associate { p -> p.id to p.label }) }
             (cards?.get("money") as? String)?.let { PartsPreview("가계부 카드", it, com.bamnat.app.ui.money.MoneyPart.entries.associate { p -> p.id to p.label }) }
             (cards?.get("memo") as? String)?.let { PartsPreview("메모 화면", it, com.bamnat.app.ui.memo.MemoPart.entries.associate { p -> p.id to p.label }) }
             widget?.let { w ->

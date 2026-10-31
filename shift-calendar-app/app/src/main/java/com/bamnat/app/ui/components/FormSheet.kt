@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,11 +51,16 @@ fun FormSheet(
         confirmButton = { androidx.compose.material3.TextButton(onClick = { asking = false; onDismissRequest() }) { androidx.compose.material3.Text("버리기") } },
         dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { androidx.compose.material3.Text("계속 적기") } },
     )
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
+    })
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     com.bamnat.app.ui.components.AppSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
-            if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
-        }),
+        // 빌드 e382585e (키보드가 닫힌 채 뒤로를 누르면 묻지 않고 닫혀요): back hides the sheet without the swipe's check, so it comes back
+        // up and asks, as the 근무표 typing sheet does [J133-90]; the X asks too.
+        onDismissRequest = { if (!keep) onDismissRequest() else { asking = true; scope.launch { state.show() } } },
+        onClose = { if (!keep) onDismissRequest() else asking = true },
+        sheetState = state,
         modifier = modifier,
     ) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {

@@ -146,4 +146,13 @@ class TierTest {
         assertFalse(AdRules.rewardedOffer(live = false, pro = false, configured = true, lastDayPass = null, today = today))
         assertEquals(at("2026-12-10T15:00:00Z"), AdRules.dayPassUntil(today, zone))
     }
+
+    /** 1.36 [PSH-01] 프로 나눔 1인: given 프로 runs while the buyer's does, after this phone's own sources. */
+    @Test
+    fun sharedProLastsUntilTheBuyersEnds() {
+        val until = now.plusSeconds(86_400)
+        assertEquals(ProReason.SHARED, ProAccess.resolve(live { copy(sharedUntil = until) }, now, zone).reason)
+        assertEquals(ProReason.NONE, ProAccess.resolve(live { copy(sharedUntil = now.minusSeconds(1)) }, now, zone).reason)
+        assertEquals(ProReason.SUBSCRIPTION, ProAccess.resolve(live { copy(sharedUntil = until, subscription = sub()) }, now, zone).reason)
+    }
 }

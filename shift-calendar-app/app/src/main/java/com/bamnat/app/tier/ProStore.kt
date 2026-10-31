@@ -94,6 +94,7 @@ data class ProState(
         launchedAt = config.launchedAt,
         thanksMonths = config.thanksMonths,
         dayPassUntil = dayPass?.let { AdRules.dayPassUntil(it, zone) },
+        sharedUntil = passes?.sharedUntil,
     )
 
     /** [MON-06] Consent to the paid month after the trial: the server's record, or the answer given here. */
@@ -158,6 +159,7 @@ class ProStore(context: Context) {
                 JSONObject().put("until", p.until.json()).put("waitingMonths", p.waitingMonths)
                     .put("items", JSONArray(p.items.map { JSONObject().put("months", it.months).put("at", it.at.toString()).put("why", it.why) }))
                     .put("deferred", p.deferred).put("code", p.hasCode).put("checkedAt", p.checkedAt.toString())
+                    .put("shared", p.sharedUntil?.let { JSONObject().put("until", it.toString()) } ?: JSONObject.NULL)
                     .put("admin", p.admin?.let { JSONObject().put("status", it.status).put("name", it.name).put("owner", it.owner)
                         .put("previews", org.json.JSONArray(it.previews)) } ?: JSONObject.NULL)
             } ?: JSONObject.NULL)

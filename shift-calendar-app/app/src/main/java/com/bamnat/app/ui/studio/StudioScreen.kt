@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.material.icons.filled.History
@@ -214,6 +216,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
+    // 1.36 (사용자 2026-10-31 "화면 터치하면 전 모습, 떼면 후 모습"): a finger held on the example shows the look one step back.
+    var peeking by remember { mutableStateOf(false) }
     var half by rememberSaveable { mutableStateOf(false) }
     var payStyle by rememberSaveable { mutableStateOf(vm.style ?: WorkStyle.SHIFT) }
     var lookIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -257,17 +261,19 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
 
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
-        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear) "되돌리기" else null, duration = SnackbarDuration.Long)
-        if (r == SnackbarResult.ActionPerformed) vm.undoWear() else vm.said()
+        // 1.36 (사용자 2026-10-31): 얹기 too can be taken back from here, the same step as 되돌리기 above.
+        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer) "되돌리기" else null, duration = SnackbarDuration.Long)
+        if (r == SnackbarResult.ActionPerformed) { if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
     }
-    androidx.activity.compose.BackHandler(enabled = s.changed) { leaving = true }
+    // 1.36 U3: saved or sent since the last change, it leaves without asking.
+    androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
 
     CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor)) {
         Scaffold(
             snackbarHost = { SnackbarHost(snack) },
             topBar = {
                 TopAppBar(
-                    navigationIcon = { IconButton(onClick = { if (s.changed) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                    navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
                         Column(Modifier.clickable(onClickLabel = "시작할 모양 바꾸기") { menu = true }) {
@@ -354,11 +360,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     val zoom = androidx.compose.foundation.gestures.rememberTransformableState { z, _, _ ->
                         scale = (scale * z).coerceIn(SCALE_MIN, SCALE_MAX)
                     }
-                    if (scale > 0f) Box(Modifier.fillMaxWidth().transformable(zoom, canPan = { false }), contentAlignment = Alignment.Center) {
+                    if (scale > 0f) Box(Modifier.fillMaxWidth().holdToPeek(enabled = s.prevPieces != null) { peeking = it }
+                        .transformable(zoom, canPan = { false }), contentAlignment = Alignment.Center) {
                         CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked) {
                         if (!detail && !area.detailOnly) {
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
-                            val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) } else now
+                            val prev = remember(s.prevPieces, s.past) { vm.previous(s) }
+                            val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) }
+                                else if (peeking && prev != null) remember(prev, now) { LookParts.frame(prev, now) } else now
                             if (half && !comparing) CompareCanvas(before, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, 0.5f) { picked("colors") }
                             else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, scale, onPick = { picked("colors") })
                         } else {
@@ -400,6 +409,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.align(Alignment.CenterHorizontally).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                     }
+                    if (peeking && !comparing) Text("바로 전 모양이에요. 손을 떼면 지금 모양이에요", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.CenterHorizontally))
                     if (comparing) Text("고치기 전 모양이에요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.align(Alignment.CenterHorizontally))
                     else if (half && !detail) Text("왼쪽이 지금 고친 모양, 오른쪽이 고치기 전이에요", style = MaterialTheme.typography.labelSmall,
@@ -452,7 +463,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             vm.change { it.copy(photoLook = PhotoLook.decode(it.photoLook).copy(corners = k).encode()) }
                         }
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
-                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet())
+                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                     }
                     Spacer(Modifier.height(24.dp))
@@ -472,7 +483,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     Text("내 앱에 입히고 나가기")
                 }
                 TextButton(onClick = { leaving = false; saving = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 테마로 저장하고 나가기") }
-                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("버리고 나가기") }
+                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
                 TextButton(onClick = { leaving = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("계속 꾸미기") }
             }
         },
@@ -535,7 +546,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
                     com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }
-                com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; onOpen(code) }, finishOnly = true)
+                com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; vm.markKept(); onOpen(code) }, finishOnly = true)
             }
         }
     }
@@ -649,8 +660,11 @@ private fun WidgetSample(w: WidgetLook) {
  * says whose it is; a look with it keeps that theme's days and ad.
  */
 @Composable
-private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
-                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet()) {
+private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
+                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet(),
+                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}) {
+    // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
+    val kept = remember(kept0) { kept0.sortedByDescending { it.id } }
     if (kept.isEmpty()) {
         Text("아직 담아 둔 조각이 없어요. 장터에서 테마를 입어 볼 때 마음에 드는 부분을 ‘담아 두기’하면 여기서 꺼내 내 모양에 얹어요",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -658,7 +672,7 @@ private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: 
     }
     val here = kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
     val rest = kept - here.toSet()
-    Text("누르면 지금 모양에 얹어요. 얹은 뒤에도 되돌리기로 뺄 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("누르면 지금 모양에 얹어요. 얹은 조각은 ‘빼기’로 다시 빼요. 미리 보기를 누르고 있으면 바로 전 모양이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // [STU-27] 1.36 빌드 8 (S32: 메모 조각이 달력 영역에서 안 보이는 줄 앎): every piece shows in every area, this area's first, under a title.
     val list = buildList {
         if (here.isNotEmpty()) { add(null to "이 영역(${area.label}) 조각"); here.forEach { add(it to "") } }
@@ -669,14 +683,15 @@ private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: 
         val k = k0
         val on = k.id in laid
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.clickable(onClickLabel = "얹기") { onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            Row(Modifier.clickable(onClickLabel = if (on) "빼기" else "얹기") { if (on) onTakeOff(k) else onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text((if (on) "✓ 얹음 · " else "") + partsLine(k.parts) + " · " + if (k.own) "내 것" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, minLines = 2)
                 }
-                TextButton(onClick = { onLay(k) }) { Text("얹기") }
+                // 1.36 U1·U2: a part laid on says so and takes off with 빼기, in the same place as 얹기.
+                if (on) TextButton(onClick = { onTakeOff(k) }) { Text("빼기") } else TextButton(onClick = { onLay(k) }) { Text("얹기") }
                 TextButton(onClick = { onForget(k) }) { Text("버리기") }
             }
         }
@@ -826,5 +841,33 @@ private fun resetTab(tab: String, d: com.bamnat.app.data.AppSettings, b: com.bam
         TabOrder.PLAZA -> d.copy(screenLooks = screens { it == ScreenLooks.PLAZA })
         LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook)
         else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) })
+    }
+}
+
+/**
+ * 1.36 (사용자 2026-10-31): a finger held still on the example for a moment reports true until it lifts, and that touch then
+ * opens nothing (a quick tap still picks the part, a pinch still zooms).
+ */
+private fun Modifier.holdToPeek(enabled: Boolean, onPeek: (Boolean) -> Unit): Modifier = if (!enabled) this else pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+        var moved = false
+        val lifted = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (e.changes.size > 1 || e.changes.any { (it.position - down.position).getDistance() > viewConfiguration.touchSlop }) { moved = true; return@withTimeoutOrNull true }
+                if (e.changes.all { !it.pressed }) return@withTimeoutOrNull true
+            }
+            @Suppress("UNREACHABLE_CODE") true
+        } != null
+        if (lifted || moved) return@awaitEachGesture
+        onPeek(true)
+        try {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                e.changes.forEach { it.consume() }
+                if (e.changes.all { !it.pressed }) break
+            }
+        } finally { onPeek(false) }
     }
 }

@@ -175,7 +175,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     AnimatedVisibility(!folded) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             other.forEach { p ->
-                                Text("• ${p.kind.label}: " + RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false),
+                                Text("• ${p.kind.label}: " + RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false, style = vm.style),
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -188,12 +188,12 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 MyMonthPreview(vm.calendar, if (lookOn) s.looks else emptyList(),
                     themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) },
                     company = r.pieces.firstOrNull { it.kind == PieceKind.COMPANY }?.takeIf { companyOn }?.values?.get("setup") as? String)
-                ScreenPreview(r) { k -> s.pieces.any { it.kind == k && it.on && it.fits } }
+                ScreenPreview(r, vm.style) { k -> s.pieces.any { it.kind == k && it.on && it.fits } }
                 val chosen = s.pieces.count { it.on && it.fits }
                 val used = s.pieces.filter { it.on && it.fits }.flatMap { p -> RecipeResolve.inputsOf(r, r.pieces.first { it.kind == p.kind }) }.map { it.id }.toSet()
                 val missing = r.inputs.filter { it.id in used && it.required && s.answers[it.id] == null && it.default == null }
                 val outside = r.inputs.filter { it.id in used && RecipeResolve.rangeProblem(it, if (s.answers.containsKey(it.id)) s.answers[it.id] else it.default) != null }
-                if (missing.isNotEmpty()) Text("‘${missing.first().label}’을(를) 채워 주세요", color = MaterialTheme.colorScheme.error,
+                if (missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} 채워 주세요", color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
                 // 1.35 실사용 점검: the field already says the range in red; here only why the button waits, not a second red line.
                 else if (outside.isNotEmpty()) Text("위 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -217,7 +217,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                                     androidx.compose.material3.Checkbox(p.on, { vm.toggle(p.kind, it) })
                                     Column(Modifier.weight(1f)) {
                                         Text(p.kind.label, style = MaterialTheme.typography.bodyMedium)
-                                        Text(RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false), style = MaterialTheme.typography.bodySmall,
+                                        Text(RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false, style = vm.style), style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                                     }
                                 }
@@ -227,7 +227,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         val n = picked.size + others.count { it.on }
                         // [R136-06] 1.36 (리뷰 R-17: '고를 것 5/5'인데 '고른 8개 넣기'): the look and the functions said apart.
                         val fn = others.count { it.on }
-                        if (!ready && missing.isNotEmpty()) Text("‘${missing.first().label}’을(를) 위에서 채우면 넣을 수 있어요", style = MaterialTheme.typography.bodySmall,
+                        if (!ready && missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} 위에서 채우면 넣을 수 있어요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
                         Button(onClick = { vm.lookParts(picked); tryOn = false; confirming = true }, enabled = n > 0 && ready,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
@@ -371,7 +371,7 @@ private fun PieceCard(r: com.bamnat.core.recipe.Recipe, p: RecipeDetailViewModel
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(p.kind.label, style = MaterialTheme.typography.titleSmall)
-                    Text(RecipeDescribe.line(piece, amounts = false), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(RecipeDescribe.line(piece, amounts = false, style = vm.style), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(p.on, { vm.toggle(p.kind, it) })
             }

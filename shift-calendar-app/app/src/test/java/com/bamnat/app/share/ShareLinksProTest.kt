@@ -163,6 +163,18 @@ class ShareLinksProTest {
         assertEquals(365, ShareLinkPayload.allowedTtl(365, pro = true))
     }
 
+    /** 1.36 사용자 결정: 프로 links stay open while 프로 lasts; after it ends a kept link closes within 90 days. */
+    @Test fun proKeepsLinksOpenAndFreeComesBackTo90Days() {
+        val now = java.time.Instant.parse("2026-11-01T00:00:00Z")
+        fun l(daysLeft: Long, ttl: Int) = ShareLinkState("a", "u", "t", now.plus(java.time.Duration.ofDays(daysLeft)), "", ttl)
+        assertEquals(365, ShareLinkPayload.keepOpen(l(20, 30), now, pro = true))
+        assertEquals(null, ShareLinkPayload.keepOpen(l(300, 365), now, pro = true))
+        assertEquals(90, ShareLinkPayload.keepOpen(l(300, 365), now, pro = false))
+        assertEquals(null, ShareLinkPayload.keepOpen(l(60, 365), now, pro = false))
+        assertEquals(null, ShareLinkPayload.keepOpen(l(20, 30), now, pro = false))
+        assertEquals(null, ShareLinkPayload.keepOpen(l(-1, 30), now, pro = true))
+    }
+
     @Test fun theFeedGoesOutOnlyWhenTurnedOnAndWithPro() = runBlocking {
         val store = c.shareLinks
         store.save(link("First00000000000"))

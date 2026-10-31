@@ -132,7 +132,8 @@ class BusinessTaxTest {
         val jobs = listOf(Job(date = LocalDate.of(2026, 11, 30), title = "도배", amount = 900_000, withholding = true))
         val y = BusinessTax.year(2026, LocalDate.of(2026, 12, 6), Profile(), jobs, emptyList(), emptyList())
         assertEquals(0, y.vat)
-        assertTrue(y.dues.none { it.name.contains("부가세") })
+        assertTrue(y.dues.none { it.name.contains("부가세") || it.name.contains("사업장현황") })
+        assertTrue(y.dues.any { it.name == "종합소득세 확정신고" })
         // A shop day beside it still carries its 부가세, the job's pay left out.
         val mixed = BusinessTax.year(2026, LocalDate.of(2026, 12, 31), Profile(), jobs, listOf(DailySales(LocalDate.of(2026, 5, 1), 11_000_000, 0)), emptyList())
         assertEquals(1_000_000, mixed.vat)

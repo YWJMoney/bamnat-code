@@ -190,7 +190,7 @@ object BusinessTax {
             else -> null
         }
         return Year(year, until, sales, costs, proved, withheld, ps, pc, pp, options, best, due, vat.first, vat.second,
-            dues(year, profile, due, vat.first, ps - pf, pp), card, line)
+            dues(year, profile, due, vat.first, ps - pf, pp, freelance = profile0.vat != VatType.EXEMPT && profile.vat == VatType.EXEMPT), card, line)
     }
 
     private fun options(p: Profile, revenue: Long, costs: Long, proved: Long): List<Option> {
@@ -248,7 +248,7 @@ object BusinessTax {
     }
 
     /** [TAX-06] The payments from now to the next 5월: 부가세 by type, 중간예납 and the 확정신고. */
-    fun dues(year: Int, p: Profile, incomeTax: Long, vat: Long, sales: Long, proved: Long): List<Due> {
+    fun dues(year: Int, p: Profile, incomeTax: Long, vat: Long, sales: Long, proved: Long, freelance: Boolean = false): List<Due> {
         val w = TaxDeadlines::workday
         val list = mutableListOf<Due>()
         when (p.vat) {
@@ -261,7 +261,8 @@ object BusinessTax {
             }
             VatType.SIMPLE -> list += Due(w(LocalDate.of(year + 1, 1, 25)), "간이과세 부가세 신고", vat.coerceAtLeast(0),
                 if (sales < SIMPLE_EXEMPT) "1년 매출이 4,800만 원보다 적으면 신고만 하고 내지 않아요" else "1~12월 몫을 한 번에 내요 (부가가치세법 제67조)")
-            VatType.EXEMPT -> list += Due(LocalDate.of(year + 1, 2, 10), "면세사업자 사업장현황신고", 0L, "매출·경비를 신고해요. 낼 세금은 없어요 (소득세법 제78조)")
+            // 빌드 e382585e: a 3.3% freelancer with no 사업자등록 files no 사업장현황신고; their next is the 5월 종합소득세.
+            VatType.EXEMPT -> if (!freelance) list += Due(LocalDate.of(year + 1, 2, 10), "면세사업자 사업장현황신고", 0L, "매출·경비를 신고해요. 낼 세금은 없어요 (소득세법 제78조)")
         }
         if (!p.newBusiness) list += Due(w(LocalDate.of(year, 11, 30)), "종합소득세 중간예납", p.lastYearTax?.let { it / 2 / 1000 * 1000 },
             "지난해 종합소득세의 절반을 11월에 고지해요 (소득세법 제65조)" + if (p.lastYearTax == null) ". 지난해 세금을 적으면 금액이 나와요" else "")

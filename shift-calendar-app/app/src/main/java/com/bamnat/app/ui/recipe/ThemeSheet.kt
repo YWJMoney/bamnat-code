@@ -172,7 +172,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
                 AlertDialog(
                     onDismissRequest = { letGo = null },
                     title = { Text("보관함에서 뺄까요?") },
-                    text = { Text("‘${k.title}’을(를) 보관함에서 빼요. 지금 입은 모양은 그대로예요") },
+                    text = { Text("‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 보관함에서 빼요. 지금 입은 모양은 그대로예요") },
                     confirmButton = { TextButton(onClick = { c.wardrobe.forgetKept(k.id); letGo = null }) { Text("빼기") } },
                     dismissButton = { TextButton(onClick = { letGo = null }) { Text("닫기") } },
                 )
@@ -201,7 +201,7 @@ fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() ->
         AlertDialog(
             onDismissRequest = { letGoTheme = null },
             title = { Text(if (w.own) "내 테마에서 지울까요?" else "입었던 테마에서 뺄까요?") },
-            text = { Text("‘${w.title}’을(를) 목록에서 빼요. 지금 입은 모양은 그대로예요" +
+            text = { Text("‘${w.title}’${com.bamnat.app.ui.Fmt.obj(w.title)} 목록에서 빼요. 지금 입은 모양은 그대로예요" +
                 if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") },
             confirmButton = { TextButton(onClick = { c.wardrobe.removeKept(w.key); letGoTheme = null }) { Text(if (w.own) "지우기" else "빼기") } },
             dismissButton = { TextButton(onClick = { letGoTheme = null }) { Text("닫기") } },
@@ -261,7 +261,7 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
         if (c.wardrobe.wear(worn, code, own)) {
             after()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                said(if (whole) "‘${r.title}’을(를) 입었어요. 기록은 그대로예요" else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요. 기록은 그대로예요")
+                said(if (whole) "‘${r.title}’${com.bamnat.app.ui.Fmt.obj(r.title)} 입었어요. 기록은 그대로예요" else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요. 기록은 그대로예요")
                 onDismiss()
             }
         }
@@ -358,7 +358,7 @@ fun ThemeUpdateAsk() {
     fun update() = c.appScope.launch {
         val ok = c.wardrobe.updateWorn(r, v)
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            Toast.makeText(context, if (ok) "‘${worn.title}’을(를) 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
+            Toast.makeText(context, if (ok) "‘${worn.title}’${com.bamnat.app.ui.Fmt.obj(worn.title)} 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
                 Toast.LENGTH_LONG).show()
         }
     }

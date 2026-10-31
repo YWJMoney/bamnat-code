@@ -181,9 +181,10 @@ data class ClientTotal(val client: String, val jobs: Int, val earned: Long, val 
 object WorkStats {
     /**
      * [today]: [J133-77] 1.33 (유형별 점검: 가게 매출 탭이 아직 오지 않은 날까지 '휴무 31일'로 세요) closed days are counted up to it;
-     * null counts the whole month.
+     * null counts the whole month. [since]: 1.36 실사용 S19 (12/7에 시작한 가게가 '휴무 6일'): days before the calendar's
+     * first day (its first pattern, entry or sale) are not 휴무; null counts from the 1st.
      */
-    fun shop(month: YearMonth, sales: List<DailySales>, today: LocalDate? = null, isOpen: (LocalDate) -> Boolean): ShopMonth {
+    fun shop(month: YearMonth, sales: List<DailySales>, today: LocalDate? = null, since: LocalDate? = null, isOpen: (LocalDate) -> Boolean): ShopMonth {
         val inMonth = sales.filter { YearMonth.from(it.date) == month }
         val sold = inMonth.filter { it.sales > 0 }
         val dates = (1..month.lengthOfMonth()).map { month.atDay(it) }
@@ -192,7 +193,7 @@ object WorkStats {
         val byWeekday = sold.groupBy { it.date.dayOfWeek }.mapValues { (_, l) -> l.sumOf { it.sales } / l.size }
         return ShopMonth(
             openDays = open,
-            closedDays = dates.count { (today == null || !it.isAfter(today)) && !opened(it) },
+            closedDays = dates.count { (today == null || !it.isAfter(today)) && (since == null || !it.isBefore(since)) && !opened(it) },
             salesDays = sold.size,
             sales = inMonth.sumOf { it.sales },
             net = inMonth.sumOf { it.net },

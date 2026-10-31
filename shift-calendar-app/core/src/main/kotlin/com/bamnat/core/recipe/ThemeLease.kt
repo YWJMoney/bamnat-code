@@ -39,6 +39,8 @@ data class ThemeLease(
          * and goes to 장터 only as a 수정판, never as my own work.
          */
         val mixedFrom: String = "",
+        /** [THM-08] The 장터 codes of those themes ("a,b"), the first one the parent of a 수정판 made from it. */
+        val mixedCodes: String = "",
     ) {
         val key: String get() = code.ifEmpty { "own:$title" }
         /** [THM-01] Mine and in 장터 now: no days, no ad. */
@@ -183,11 +185,11 @@ data class ThemeLease(
 
         private fun clean(t: String) = t.replace('\t', ' ').replace('\n', ' ')
         private fun wear(w: Wear) = listOf(clean(w.title), clean(w.code), escape(w.body),
-            w.from.toString(), w.until.toString(), if (w.own) "1" else "0", clean(w.shared), w.ver.toString(), if (w.bare) "1" else "0", clean(w.mixedFrom)).joinToString("\t")
+            w.from.toString(), w.until.toString(), if (w.own) "1" else "0", clean(w.shared), w.ver.toString(), if (w.bare) "1" else "0", clean(w.mixedFrom), clean(w.mixedCodes)).joinToString("\t")
 
         private fun wearOf(p: List<String>): Wear? = runCatching {
             Wear(p[0], p[1], unescape(p[2]), p[3].toLong(), p[4].toLong(), p.getOrNull(5) == "1", p.getOrNull(6).orEmpty(),
-                p.getOrNull(7)?.toIntOrNull() ?: 0, p.getOrNull(8) == "1", p.getOrNull(9).orEmpty())
+                p.getOrNull(7)?.toIntOrNull() ?: 0, p.getOrNull(8) == "1", p.getOrNull(9).orEmpty(), p.getOrNull(10).orEmpty())
         }.getOrNull()
     }
 }
