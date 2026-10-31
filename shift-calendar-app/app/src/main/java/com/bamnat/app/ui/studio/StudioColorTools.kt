@@ -249,7 +249,9 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     // PC 확인 S5 (느낌까지 두 번 밀어야 보임): 느낌 and 섞기 right under the colours, the photo and own pick after.
     Text("느낌", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ThemeSeed.Variant.entries.forEach { v -> FilterChip(selected = v == variant, onClick = { put(v = v) }, label = { Text(v.label) }) }
+        val start = vm.feelStart?.takeIf { it.first == vm.state.value.origin.title }?.second
+        ThemeSeed.Variant.entries.forEach { v -> FilterChip(selected = v == variant, onClick = { put(v = v) },
+            label = { Text(if (v == start) "${v.label} · 처음" else v.label) }) }
         FilterChip(selected = !dark, onClick = { put(dk = false) }, label = { Text("밝은 화면") })
         FilterChip(selected = dark, onClick = { put(dk = true) }, label = { Text("어두운 화면") })
     }

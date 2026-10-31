@@ -312,7 +312,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
-                            vm.feelNow?.takeIf { it.first == s.origin.title && "‘${it.second}’" !in s.origin.title }?.let {
+                            // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
+                            vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
+                                vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }?.let {
                                 Text("지금: ${it.second}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -598,7 +600,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     LaunchedEffect(tool, area) { if ((tool != Tool.SHIFT || area != Area.ALL) && s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) vm.previewAs(com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) }
     if (feelOpen) FeelStartDialog(onDismiss = { feelOpen = false }) { scheme, cell, feel ->
         feelOpen = false
-        guarded { vm.seedFeel = feel.variant to feel.dark; vm.startFeel("‘${feel.label}’ 느낌") { feelDraft(it, scheme, cell) }; pick(Area.ALL) }
+        guarded { vm.seedFeel = feel.variant to feel.dark; vm.startFeel("‘${feel.label}’ 느낌") { feelDraft(it, scheme, cell) }
+            vm.feelNow = null; vm.feelStart = vm.state.value.origin.title to feel.variant; pick(Area.ALL) }
     }
     if (history) HistorySheet(s, onBack = { i -> vm.backTo(i) }, onDismiss = { history = false })
     if (changes) ChangesSheet(vm, s, before, now, onGo = { a -> pick(Area.valueOf(a)); changes = false }, onDismiss = { changes = false })
