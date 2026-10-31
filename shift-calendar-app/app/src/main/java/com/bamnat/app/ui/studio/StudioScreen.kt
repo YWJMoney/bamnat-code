@@ -60,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -571,6 +572,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
                     com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }
+                // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,
+                // whether 레시피 보기 or 뒤로 follows.
+                val upState by up.state.collectAsState()
+                LaunchedEffect(upState.sent != null) { if (upState.sent != null) vm.markKept() }
                 com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; vm.markKept(); onOpen(code) }, finishOnly = true)
             }
         }

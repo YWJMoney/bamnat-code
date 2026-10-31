@@ -478,11 +478,11 @@ fun TalkSheet(holder: TalkHolder) {
                 if (kind == "proposal" && replyTo == null) {
                     ProposalEditor(change, onChange = { change = it; error = null }, withSetup = withSetup, onWithSetup = { withSetup = it })
                 }
-                // [COMM-11] I4: how many more posts today, so the limit is no surprise.
-                o.talk?.leftPosts?.let { n ->
-                    Text(if (n > 0) "오늘 ${n}번 더 쓸 수 있어요" else "오늘은 더 쓸 수 없어요. 내일 다시 써 주세요",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (n > 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                // [COMM-11] I4, 1.36 [LIM-10]: no daily cap; only while reports restrict this install, until when and how many today.
+                o.talk?.limit?.let { l ->
+                    val n = o.talk.leftPosts
+                    Text(l.line(n), style = MaterialTheme.typography.labelSmall,
+                        color = if (n == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {

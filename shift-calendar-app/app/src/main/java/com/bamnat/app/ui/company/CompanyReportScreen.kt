@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -327,7 +328,8 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
                 Text(status.detail(), style = MaterialTheme.typography.bodyMedium)
                 if (status.status == "pending" && !status.review) PointsBar(status.points, status.threshold)
                 if (status.rewardMonths > 0 && status.status == "pending") {
-                    RewardPill(rewardText(status.rewardMonths, androidx.compose.ui.platform.LocalContext.current.appContainer.featureGate.state.value.live))
+                    val gate by androidx.compose.ui.platform.LocalContext.current.appContainer.featureGate.state.collectAsState()
+                    RewardPill(rewardText(status.rewardMonths, gate.live))
                 }
             }
         }

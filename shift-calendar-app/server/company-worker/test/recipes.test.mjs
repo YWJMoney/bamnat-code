@@ -61,7 +61,8 @@ test("[RCP-29][RCP-30][RCX-28] a public recipe is on the plaza at once (no 승�
   assert.equal((await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(2) })).status, 200);
   // Level 0: two a day.
   assert.equal((await up(call, 1, { title: "두 번째 세트" }, "link")).status, 201);
-  assert.equal((await up(call, 1, { title: "세 번째 세트" }, "link")).status, 429);
+  // 1.36 [LIM-10] No daily cap without strikes.
+  assert.equal((await up(call, 1, { title: "세 번째 세트" }, "link")).status, 201);
   const b = await up(call, 3, { title: "링크로만 세트" }, "link");
   assert.equal(b.data.state, "visible");
   assert.equal((await call("GET", `/api/recipes/${b.data.code}`, undefined, { "x-device": device(4) })).status, 200);

@@ -270,9 +270,34 @@ data class TalkPost(
  * [PLZ-04] [past]: an older version's talk, read only since a newer version took its place.
  * [COMM-09] [hiddenByYou]: posts left out because the user chose not to see their writers.
  */
-/** [COMM-11] [leftPosts]: how many more posts this phone may write today; null when the server did not say. */
+/**
+ * [COMM-11] [leftPosts]: how many more posts this phone may write today; null when there is no cap. 1.36 [LIM-10] there is a cap
+ * only while reports restrict this install ([limit]).
+ */
 data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0,
-    val leftPosts: Int? = null)
+    val leftPosts: Int? = null, val limit: WriteLimit? = null)
+
+/**
+ * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
+ * writes a day of each kind. The line under a write box, said only then.
+ */
+data class WriteLimit(val until: Instant, val perDay: Int) {
+    fun line(left: Int?): String {
+        val day = until.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
+        val head = "신고가 쌓여 ${day.monthValue}월 ${day.dayOfMonth}일까지 하루 ${perDay}번만 쓸 수 있어요"
+        return when {
+            left == null -> head
+            left > 0 -> "$head · 오늘 ${left}번 더"
+            else -> "$head. 오늘은 다 썼어요"
+        }
+    }
+
+    companion object {
+        fun of(o: JSONObject?): WriteLimit? = o?.optJSONObject("limit")?.let { l ->
+            runCatching { WriteLimit(Instant.parse(l.getString("until")), l.getInt("perDay")) }.getOrNull()
+        }
+    }
+}
 
 data class PostVote(val agree: Int, val disagree: Int, val trust: Int, val myVote: Boolean?)
 
@@ -1144,6 +1169,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
     past = o.optBoolean("past"),
     hiddenByYou = o.optInt("hiddenByYou"),
     leftPosts = o.optJSONObject("left")?.takeIf { it.has("posts") }?.optInt("posts"),
+    limit = WriteLimit.of(o),
 )
 
 internal fun termsOf(o: JSONObject) =
