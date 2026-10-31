@@ -96,6 +96,11 @@ test("[PLAZA-33] the plaza of each kind of work: any phone with the app, the 투
   assert.equal((await call("GET", "/api/companies/style-field/setups/room/posts", undefined, from(2))).status, 400);
   assert.equal((await write(2, "style-shop", "평일 점심 손님이 지난달보다 10% 늘었어요")).status, 201);
   assert.equal((await write(2, "style-invest", "분할 매수할 때 몇 번에 나눠 사세요?")).status, 201);
+  // [RCP-34] 1.34: 교대·일근 have their own plaza too.
+  assert.equal((await write(2, "style-shift", "야간 끝나고 잠 어떻게 자요?")).status, 201);
+  assert.equal((await write(2, "style-day", "점심시간 1시간 다 쉬세요?")).status, 201);
+  const shift = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, as(3))).data;
+  assert.deepEqual([shift.room, shift.company.name, shift.posts.length], ["style", "교대 광장", 1]);
   for (const advice of ["리딩방 들어오시면 수익 보장해요", "급등주 추천 드려요 오픈채팅으로 오세요", "이 종목 추천 드립니다"]) {
     assert.equal((await write(3, "style-invest", advice)).data.error, "invest_advice", advice);
   }

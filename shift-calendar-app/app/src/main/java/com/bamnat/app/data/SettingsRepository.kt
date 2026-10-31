@@ -47,6 +47,8 @@ data class AppSettings(
     val snoozeMinutes: Int = 5,
     /** The alarm stops by itself after this many minutes. */
     val ringMinutes: Int = 10,
+    /** [ALRM-21] 1.35: minutes before an alarm that 곧 알람이 울려요 shows while the phone is in use; 0 off. */
+    val alarmSoonMinutes: Int = 5,
     /** Master switch: off silences every alarm without losing any alarm settings. */
     val alarmsEnabled: Boolean = true,
     /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
@@ -204,6 +206,26 @@ data class AppSettings(
     val moneyLayout: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
     val memoLayout: String = "",
+    /** [RCP-09] 1.34 달력 테마 ([com.bamnat.core.recipe.CalendarTheme.encode]); empty is the app's own look. In the backup. */
+    val calTheme: String = "",
+    /** [RCX-14] 1.35 위젯 모양 ([com.bamnat.core.recipe.WidgetLook.encode]); empty is the app's own look. In the backup. */
+    val widgetLook: String = "",
+    /** [RCX-30] 1.35 그림 꾸미기 ([com.bamnat.core.recipe.PhotoLook.encode]); empty is the app's own look. In the backup (the pictures are not). */
+    val photoLook: String = "",
+    /** [CVW-01] 1.35 달력 모양 ([com.bamnat.core.recipe.CalendarView.encode]); empty is the app's own cells. In the backup. */
+    val calView: String = "",
+    /** [CVW-08] 1.35 앱 강조색 (ARGB); 0 is the app's own blue. In the backup. */
+    val accentColor: Long = 0L,
+    /** [CVW-09] 1.35 날짜를 길게 누르면: menu (빠른 메뉴, the app's own), memo (바로 메모) or open (하루 열기). In the backup. */
+    val longPress: String = "menu",
+    /** [FREE-04] 1.35 메모장 모양 ([com.bamnat.core.recipe.MemoLook.encode]); empty is the app's own list. In the backup. */
+    val memoLook: String = "",
+    /** [FREE-06] 1.35 가계부 모양 ([com.bamnat.core.recipe.MoneyLook.encode]). In the backup. */
+    val moneyLook: String = "",
+    /** [FREE-05] 1.35 화면 색·배경 by screen ([com.bamnat.core.recipe.ScreenLooks.encode]). In the backup (the pictures are not). */
+    val screenLooks: String = "",
+    /** [FREE-07] 1.35 급여 모양 by kind of work ([com.bamnat.core.recipe.PayLook.encodeAll]). In the backup. */
+    val payLooks: String = "",
     /** [DAILY-16] The 지역 시세 line on the pay screen, worked out on the phone only; off from that line. */
     val rateHint: Boolean = true,
     /** [DAILY-17] The second 리뷰 moment (first 급여 리포트) came, and when any review was last asked (epoch day, 0 for never). */
@@ -294,6 +316,7 @@ class SettingsRepository(context: Context) {
             gradualVolume = prefs.getBoolean(K_GRADUAL, d.gradualVolume),
             snoozeMinutes = prefs.getInt(K_SNOOZE, d.snoozeMinutes),
             ringMinutes = prefs.getInt(K_RING, d.ringMinutes),
+            alarmSoonMinutes = prefs.getInt(K_ALARM_SOON, d.alarmSoonMinutes),
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
@@ -361,6 +384,16 @@ class SettingsRepository(context: Context) {
             widgetMemo = prefs.getBoolean(K_WIDGET_MEMO, d.widgetMemo),
             backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
+            calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
+            widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
+            photoLook = prefs.getString(K_PHOTO_LOOK, null) ?: d.photoLook,
+            calView = prefs.getString(K_CAL_VIEW, null) ?: d.calView,
+            accentColor = prefs.getLong(K_ACCENT, d.accentColor),
+            longPress = prefs.getString(K_LONG_PRESS, null) ?: d.longPress,
+            memoLook = prefs.getString(K_MEMO_LOOK, null) ?: d.memoLook,
+            moneyLook = prefs.getString(K_MONEY_LOOK, null) ?: d.moneyLook,
+            screenLooks = prefs.getString(K_SCREEN_LOOKS, null) ?: d.screenLooks,
+            payLooks = prefs.getString(K_PAY_LOOKS, null) ?: d.payLooks,
             memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
             rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
             payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
@@ -388,6 +421,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_GRADUAL, s.gradualVolume)
             .putInt(K_SNOOZE, s.snoozeMinutes)
             .putInt(K_RING, s.ringMinutes)
+            .putInt(K_ALARM_SOON, s.alarmSoonMinutes)
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
@@ -451,6 +485,16 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_WIDGET_MEMO, s.widgetMemo)
             .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
+            .putString(K_CAL_THEME, s.calTheme)
+            .putString(K_WIDGET_LOOK, s.widgetLook)
+            .putString(K_PHOTO_LOOK, s.photoLook)
+            .putString(K_CAL_VIEW, s.calView)
+            .putLong(K_ACCENT, s.accentColor)
+            .putString(K_LONG_PRESS, s.longPress)
+            .putString(K_MEMO_LOOK, s.memoLook)
+            .putString(K_MONEY_LOOK, s.moneyLook)
+            .putString(K_SCREEN_LOOKS, s.screenLooks)
+            .putString(K_PAY_LOOKS, s.payLooks)
             .putString(K_MEMO_LAYOUT, s.memoLayout)
             .putBoolean(K_RATE_HINT, s.rateHint)
             .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
@@ -491,6 +535,16 @@ class SettingsRepository(context: Context) {
         const val K_WAKE_CHECK = "wake_check_minutes"
         const val K_ALARM_BUTTON = "alarm_button_action"
         const val K_WIDGET_MEMO = "widget_memo"
+        const val K_CAL_THEME = "cal_theme"
+        const val K_WIDGET_LOOK = "widget_look"
+        const val K_PHOTO_LOOK = "photo_look"
+        const val K_CAL_VIEW = "cal_view"
+        const val K_ACCENT = "accent_color"
+        const val K_LONG_PRESS = "long_press"
+        const val K_MEMO_LOOK = "memo_look"
+        const val K_MONEY_LOOK = "money_look"
+        const val K_SCREEN_LOOKS = "screen_looks"
+        const val K_PAY_LOOKS = "pay_looks"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MEMO_LAYOUT = "memo_layout"
@@ -514,6 +568,7 @@ class SettingsRepository(context: Context) {
         const val K_GRADUAL = "gradual"
         const val K_SNOOZE = "snooze"
         const val K_RING = "ring_minutes"
+        const val K_ALARM_SOON = "alarm_soon_minutes"
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"

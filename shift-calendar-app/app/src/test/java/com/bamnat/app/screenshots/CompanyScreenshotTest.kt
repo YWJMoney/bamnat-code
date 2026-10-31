@@ -420,7 +420,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun foldedInquiryMineUnread() {
         inquiriesOn(asked = true)
         shoot("338_folded_inquiry_mine_unread", FOLDED) {
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             tapText("도움말과 문의", exact = true)
         }
     }

@@ -77,7 +77,7 @@ class ServerContractTest {
 
     private val installedBefore31 = LocalDate.of(2026, 10, 1)
 
-    private fun phone(c: LaunchConfig, agreed: Set<String> = setOf("3.1"), consents: Map<String, Boolean> = emptyMap(), versionCode: Int = 39,
+    private fun phone(c: LaunchConfig, agreed: Set<String> = setOf("3.9"), consents: Map<String, Boolean> = emptyMap(), versionCode: Int = 39,
                       admin: Boolean = false, owner: Boolean = false, previews: Set<String> = emptySet(), later: Long = 0) =
         PhoneFacts(now = c.serverTime!!.plusSeconds(later), serverNow = c.serverTime!!.plusSeconds(later), versionCode = versionCode,
             installed = installedBefore31, agreed = agreed, consents = consents, workType = "SHIFT", admin = admin, owner = owner, previews = previews)

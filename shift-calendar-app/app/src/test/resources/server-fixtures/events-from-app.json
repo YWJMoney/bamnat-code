@@ -2,7 +2,7 @@
   "at": "2026-11-28T03:00:00Z",
   "body": {
     "v": 1,
-    "app": "1.28.0",
+    "app": "1.35.0",
     "days": [
       {
         "day": "2026-11-27",
@@ -18,10 +18,16 @@
       "ads",
       "billing",
       "company.report",
+      "diag.observe",
       "inquiry.photos",
       "photo.wrong",
       "plaza.fixed_amount",
       "plaza.news",
+      "recipe.browse",
+      "recipe.publish",
+      "recipe.talk",
+      "recipe.vote",
+      "share.setup",
       "stats.more",
       "type.business",
       "type.day",

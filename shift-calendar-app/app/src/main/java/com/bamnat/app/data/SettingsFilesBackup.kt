@@ -152,6 +152,10 @@ class SettingsFilesBackup(
         /** What travels, file by file. Keys left out of a listed file stay on the phone. */
         internal val PARTS = listOf(
             Part("work_type_prefs"),
+            // [RCP-11] 1.34 메모 틀.
+            Part("memo_templates"),
+            // [RCP-38] 나눔 판 쓰기 and the rules agreed to.
+            Part("recipe"),
             Part("company", keys = setOf("applied", "sent", "pending_pay", "draft", "plaza_entry_closed", "invite_closed")),
             Part("plaza_rate_hint", keys = setOf("own")),
             Part("calendar_view"),
@@ -164,6 +168,9 @@ class SettingsFilesBackup(
             Part("pay_way"),
             // 1.32 [WTYP-11] 희망 오프: 고른 날과 신청 마감일.
             Part("wish_off"),
+            // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
+            // the 프로 mark are this phone's.
+            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver")),
         )
 
         /**
@@ -213,6 +220,8 @@ class SettingsFilesBackup(
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
+            // [ALRM-21] 1.35.
+            "alarm_soon" to "‘이번 알람 끄기’는 이 휴대폰에 곧 울릴 알람 하나의 것",
             "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
             "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",
@@ -251,6 +260,7 @@ class SettingsFilesBackup(
             // 1.32 [PROX-02]: when this phone was offered a free day on a money day (끄기는 기능 스위치로 백업).
             "pro_moments" to "급여일·신고 달의 하루 무료 권유를 이 휴대폰에서 본 날과 닫은 날",
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
+            "recipe_remix_seen" to "내 판마다 고쳐 만든 판을 이 휴대폰에서 본 수, 새로 생긴 것만 점으로 알리려고 (LIN-04)",
             "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",
         )
     }

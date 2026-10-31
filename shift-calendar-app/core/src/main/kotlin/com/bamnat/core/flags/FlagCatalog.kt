@@ -29,6 +29,14 @@ object FlagCatalog {
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
     const val SHARE_SETUP = "share.setup"
+    /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
+    const val RECIPE_BROWSE = "recipe.browse"
+    /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
+    const val RECIPE_PUBLISH = "recipe.publish"
+    /** 1.34 [RCP-37] 좋아요·안좋아요 (with a reason) on recipes and their talk, once 3.8 names it. */
+    const val RECIPE_VOTE = "recipe.vote"
+    /** 1.34 [RCP-37] Writing in a recipe's talk, and (1.35) 요청 판·구독, once 3.8 names it. */
+    const val RECIPE_TALK = "recipe.talk"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -89,10 +97,17 @@ object FlagCatalog {
         ServerSwitch.PLAZA_NEWS to "3.1 1-4항",
     )
 
+    /**
+     * [PRIV-05] 결정 D111 (사용자 2026-10-30 "출시일 전에 개발한 모든 사항은 처리방침을 출시일로, 출시 이후에는 정상적으로"):
+     * every LEGAL row 3.2~3.8 named waits for 3.9's date (정식 출시일) and, on a phone installed before 3.9 was posted, its
+     * yes or 11-29. A row added after 정식 출시 waits for its own version's date again (9항: 7일·30일 전 고지).
+     */
+    private const val EARLY = PolicyConsent.VERSION
+
     /** [FLAG-11] 정식 출시 retired: what the switch and the 3.1 hold did together (결정 D84). */
     private val launch: List<Condition> = listOf(
-        Condition.Date(policy = PolicyConsent.VERSION),
-        Condition.Policy(PolicyConsent.VERSION),
+        Condition.Date(policy = PolicyConsent.LAUNCH_VERSION),
+        Condition.Policy(PolicyConsent.LAUNCH_VERSION),
         Condition.Manual("play.production"),
         Condition.Manual("play.subscription"),
     )
@@ -136,9 +151,9 @@ object FlagCatalog {
     val STATS_MORE_FLAG = Flag(
         STATS_MORE, "사용 통계 더 보내기",
         what = "사용 통계를 켜고 따로 동의한 휴대폰이 켜진 기능 목록과 앱 시작에 걸린 시간을 함께 보내요(휴대폰 구별 없음).",
-        whyOff = "처리방침 1-9항은 서버가 정한 이름의 하루 횟수만 적고 있어요. 서버로 새 정보를 보내는 일이라 3.2 시행과 따로 받는 동의, Play 데이터 보안 답을 고친 뒤에만 보내요.",
+        whyOff = "처리방침 1-9항은 서버가 정한 이름의 하루 횟수만 적고 있어요. 서버로 새 정보를 보내는 일이라 정식 출시일(처리방침 3.9가 3.2를 앞당긴 날)과 따로 받는 동의, Play 데이터 보안 답을 고친 뒤에만 보내요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요.",
         basis = Basis(policy = "3.2 1-9항(개정 예정)", decision = "D100", requirement = "FLAG-16", note = "순번 459 법 검토"),
-        conditions = listOf(Condition.Date(policy = "3.2"), Condition.Consent("usage"), Condition.Consent("usage.stats.more")),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY), Condition.Consent("usage"), Condition.Consent("usage.stats.more")),
         default = false, risk = Risk.LEGAL, group = FlagGroup.STATS,
     )
 
@@ -149,9 +164,9 @@ object FlagCatalog {
     val PHOTO_WRONG_FLAG = Flag(
         PHOTO_WRONG, "사진이 달라요 횟수 보내기",
         what = "사진을 읽은 결과 화면에서 ‘사진이 달라요’를 누르면 날짜·화면 종류·고른 이유·앱 버전의 횟수만 서버로 보내요(휴대폰 구별 없음). 사진과 글은 보내지 않아요.",
-        whyOff = "처리방침 3.3(1-13항)이 시행된 뒤에만 보내요. 그 전에는 휴대폰에 횟수만 모아 두고(60일), ‘직접 문의하기’는 지금도 돼요.",
+        whyOff = "정식 출시일(처리방침 3.9가 3.3(1-13항)을 앞당긴 날)부터 보내요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 휴대폰에 횟수만 모아 두고(60일), ‘직접 문의하기’는 지금도 돼요.",
         basis = Basis(policy = "3.3 1-13항", decision = "D68", requirement = "PHOTO-09", note = "1.29 AQ 사진이 달라요"),
-        conditions = listOf(Condition.Date(policy = "3.3")),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY)),
         default = false, risk = Risk.LEGAL, since = "1.29.0", group = FlagGroup.STATS,
     )
 
@@ -162,10 +177,10 @@ object FlagCatalog {
     val PLAZA_FIXED_AMOUNT_FLAG = Flag(
         PLAZA_FIXED_AMOUNT, "회사 공통 수당 금액 나누기",
         what = "회사 설정을 광장에 올리거나 고치자고 제안할 때, 작성자가 ‘회사 공통 금액’으로 정한 수당(식대·교통비 정액 같은)의 금액을 함께 올려요. 쓰는 분은 그 금액을 다시 적지 않아요. 사람마다 다른 수당의 금액은 보내지 않아요.",
-        whyOff = "처리방침 3.4(1-2항)가 시행된 뒤에만 금액을 함께 올려요. 그 전이나 끄면 회사 공통 수당도 금액 없이 올라가고, 쓰는 분이 각자 적어요(1.29와 같음). 이미 올라간 금액은 그대로예요.",
+        whyOff = "정식 출시일(처리방침 3.9가 3.4(1-2항)를 앞당긴 날)부터 금액을 함께 올려요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전이나 끄면 회사 공통 수당도 금액 없이 올라가고, 쓰는 분이 각자 적어요(1.29와 같음). 이미 올라간 금액은 그대로예요.",
         basis = Basis(policy = "3.4 1-2항", decision = "D102", requirement = "ITEM-03", note = "1.30 BC 수당 종류(회사 공통·사람마다·%)"),
         // 1.30 통합: 1-2항 said "수당 금액은 보내지 않습니다" until 3.4, so the amount waits for 3.4's date like photo.wrong does for 3.3.
-        conditions = listOf(Condition.Date(policy = "3.4")),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY)),
         default = false, risk = Risk.LEGAL, since = "1.30.0", group = FlagGroup.LAW,
     )
 
@@ -178,9 +193,9 @@ object FlagCatalog {
     val STATS_LOOKUP_FLAG = Flag(
         STATS_LOOKUP, "조회 시간 보내기",
         what = "사용 통계를 켜고 따로 동의한 휴대폰이 회사 찾기·회사 화면·광장 조회에 걸린 시간을 하루 가운데 값 하나씩, 정해진 구간 값으로만 함께 보내요(휴대폰 구별 없음). 무엇을 찾았는지는 보내지 않아요.",
-        whyOff = "처리방침 3.5(1-9항)가 시행된 날부터 저절로 켜져요. 그 전에는 조회 시간을 이 휴대폰 안(자가 점검 › 조회 속도)에만 둬요.",
+        whyOff = "정식 출시일(처리방침 3.9가 3.5(1-9항)를 앞당긴 날)부터 저절로 켜져요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 조회 시간을 이 휴대폰 안(자가 점검 › 조회 속도)에만 둬요.",
         basis = Basis(policy = "3.5 1-9항", decision = "D103", requirement = "STAT-08", note = "1.31 상세리뷰 N4"),
-        conditions = listOf(Condition.Date(policy = "3.5"), Condition.Consent("usage"), Condition.Consent("usage.stats.more"), Condition.Consent("usage.stats.lookup")),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY), Condition.Consent("usage"), Condition.Consent("usage.stats.more"), Condition.Consent("usage.stats.lookup")),
         default = false, risk = Risk.LEGAL, since = "1.31.0", group = FlagGroup.STATS,
     )
 
@@ -192,9 +207,9 @@ object FlagCatalog {
     val DIAG_OBSERVE_FLAG = Flag(
         DIAG_OBSERVE, "문의에 멈춤 관찰 기록 붙이기",
         what = "문의할 때 ‘점검 기록도 보내기’를 고르면, 앱이 멈추기 전 3일 동안의 화면 꺼짐·켜짐·잠금 풀림 시각, 앱이 앞·뒤로 간 때, 화면 크기, 앱이 쓴 메모리, 화면이 멈추거나 그려지지 않은 때도 함께 보내요. 적은 글·금액·메모는 들어가지 않아요.",
-        whyOff = "처리방침 3.6(1-3항)이 시행된 날부터 저절로 켜져요. 그 전에는 이 기록을 휴대폰 안(알람 › 알람 점검 › 앱 멈춤 관찰)에만 두고 문의에는 앱 멈춤 기록만 가요.",
+        whyOff = "정식 출시일(처리방침 3.9가 3.6(1-3항)을 앞당긴 날)부터 저절로 켜져요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 이 기록을 휴대폰 안(알람 › 알람 점검 › 앱 멈춤 관찰)에만 두고 문의에는 앱 멈춤 기록만 가요.",
         basis = Basis(policy = "3.6 1-3항", decision = "D104", requirement = "STAB-10", note = "1.32.1 멈춤 관측"),
-        conditions = listOf(Condition.Date(policy = "3.6")),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY)),
         default = false, risk = Risk.LEGAL, since = "1.32.1", group = FlagGroup.STATS,
     )
 
@@ -206,10 +221,47 @@ object FlagCatalog {
     val SHARE_SETUP_FLAG = Flag(
         SHARE_SETUP, "동료 링크에 회사 설정 담기",
         what = "근무표 링크를 ‘같은 회사 동료’에게 보낼 때 회사 설정(근무 주기·근무 시간·조·잔업 종류·급여 규칙·수당 이름)도 링크에 함께 담아요. 받은 동료는 앱에서 기본급만 넣으면 돼요. 기본급·입사일·연차·알람·메모·금액은 담지 않아요(회사 공통 정액만 1-2항처럼).",
-        whyOff = "처리방침 3.7(1항)이 시행된 날부터 저절로 켜져요. 그 전에는 링크에 담지 않고, 공유 창의 ‘회사 설정 파일도 보내기’로 파일을 직접 보내요(서버를 거치지 않음).",
+        whyOff = "정식 출시일(처리방침 3.9가 3.7(1항)을 앞당긴 날)부터 저절로 켜져요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 링크에 담지 않고, 공유 창의 ‘회사 설정 파일도 보내기’로 파일을 직접 보내요(서버를 거치지 않음).",
         basis = Basis(policy = "3.7 1항", decision = "D105", requirement = "SHR-20", note = "1.33 공유 세 갈래(계획 690~694)"),
-        conditions = listOf(Condition.Date(policy = "3.7")),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY)),
         default = false, risk = Risk.LEGAL, since = "1.33.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
+     * and read the public list only, so they are open from 1.34 (the server can still rest them). Sending — a recipe, a vote with
+     * its reason, a post in a recipe's talk — waits for 처리방침 3.8 (게시 2026-10-30, 시행 2026-11-29, 1-4항).
+     */
+    val RECIPE_BROWSE_FLAG = Flag(
+        RECIPE_BROWSE, "나눔 판 보기·적용",
+        what = "유형별 광장의 레시피를 찾아보고, 내 달력에서 미리 보고, 골라 적용하고, 7일 안에 되돌려요. 휴대폰 안에서 하고 공개 목록을 읽기만 해요.",
+        whyOff = "기본으로 켜 둬요. 레시피에 문제가 생기면 관리자가 잠시 강제로 끌 수 있고, 그동안 앱은 ‘잠시 쉬고 있어요’로 보여요.",
+        basis = Basis(policy = "3.8 1-4항", decision = "D109", requirement = "RCP-21", note = "1.34 나눔 판"),
+        conditions = emptyList(), default = true, since = "1.34.0", group = FlagGroup.SERVER,
+    )
+
+    private fun recipeLegal(key: String, name: String, what: String, req: String) = Flag(
+        key, name, what = what,
+        whyOff = "정식 출시일(처리방침 3.9가 3.8(1-4항)을 앞당긴 날)부터 저절로 켜져요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 레시피를 보고 적용하는 것만 돼요.",
+        basis = Basis(policy = "3.8 1-4항", decision = "D109", requirement = req, note = "1.34 나눔 판"),
+        conditions = listOf(Condition.Date(policy = EARLY), Condition.Policy(EARLY)),
+        default = false, risk = Risk.LEGAL, since = "1.34.0", group = FlagGroup.LAW,
+    )
+
+    val RECIPE_PUBLISH_FLAG = recipeLegal(
+        RECIPE_PUBLISH, "레시피 올리기",
+        "내 설정으로 만든 레시피를 광장에 공개하거나 링크로 나눠요. 시급·일당 같은 금액은 받는 사람이 정할 칸으로 바뀌고, 이름·연락처·링크는 담지 않아요.",
+        "RCP-29",
+    )
+    val RECIPE_VOTE_FLAG = recipeLegal(
+        RECIPE_VOTE, "레시피 좋아요·안좋아요",
+        "레시피와 이야기 글에 좋아요·안좋아요를 눌러요. 안좋아요는 이유(고르기와 짧은 의견)를 꼭 적고, 이유는 누가 적었는지 없이 만든 사람에게만 보여요.",
+        "RCP-31",
+    )
+    val RECIPE_TALK_FLAG = recipeLegal(
+        RECIPE_TALK, "레시피 이야기",
+        "레시피마다 질문·의견·아이디어·고친 후기를 써요. 1.35부터 요청 판과 구독도 이 조건을 따라요.",
+        "RCP-35",
     )
 
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
@@ -224,7 +276,7 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

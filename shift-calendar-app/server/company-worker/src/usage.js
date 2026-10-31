@@ -284,6 +284,12 @@ export const EVENTS = {
   ics_export: "캘린더로 내보내기",
   // [STAT-06] 1.23: a notice opened (how often, never which or by whom).
   notice_open: "공지 열기",
+  // [FREE-10] 1.35 테마를 광고 없이 열어 준 횟수, 이유별 (누구인지 없이, 처리방침 3.9).
+  theme_free_no_fill: "테마 무료(광고 없음)",
+  theme_free_timeout: "테마 무료(광고 시간 초과)",
+  theme_free_show_failed: "테마 무료(광고 표시 실패)",
+  theme_free_not_ready: "테마 무료(광고 준비 안 됨)",
+  theme_free_other: "테마 무료(그 밖)",
 };
 
 export async function usage(request, env) {

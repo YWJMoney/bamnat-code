@@ -71,6 +71,8 @@ class PlazaHomeViewModel(
     private val c: AppContainer,
     /** [CALI-08] 1.30 BB: the calendar whose company and kind of work the plaza is about. */
     val calendar: String = PersonalCalendar.MAIN,
+    /** [RCP-34] 1.34: open on the kind of work's own plaza (교대 광장·일근 광장 from the rule plaza), not the company's room. */
+    own: Boolean = false,
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
     val enabled: Boolean = c.companyApi.enabled
@@ -79,7 +81,7 @@ class PlazaHomeViewModel(
     private val company = scope.store.member.value?.takeIf { it.first.isNotBlank() }
         ?.let { it.first to it.second.ifBlank { scope.store.applied.value?.company ?: "우리 회사" } }
 
-    private val _plan = MutableStateFlow(StylePlaza.plan(style, company))
+    private val _plan = MutableStateFlow(if (own) StylePlaza.own(style) else StylePlaza.plan(style, company))
     val plan: StateFlow<StylePlaza.Plan> = _plan.asStateFlow()
 
     /** On a kind of work's plaza reached from the company's room: the way back to it. */
@@ -108,7 +110,7 @@ class PlazaHomeViewModel(
     /** Back and forth between a company's room and its kind of work's plaza ([StylePlaza.Plan.alsoRoom]). */
     fun across() {
         val p = _plan.value
-        _plan.value = if (p.top == StylePlaza.Top.COMPANY_ROOM) StylePlaza.plan(style) else StylePlaza.plan(style, company)
+        _plan.value = if (p.top == StylePlaza.Top.COMPANY_ROOM) StylePlaza.own(style) else StylePlaza.plan(style, company)
         _state.value = State()
         load()
     }
@@ -195,7 +197,7 @@ class PlazaHomeViewModel(
 @Composable
 fun PlazaHomeScreen(
     vm: PlazaHomeViewModel,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     /** The rule plaza of every company (규칙 광장). */
     onAll: () -> Unit,
     onCompany: (String) -> Unit,
@@ -217,8 +219,9 @@ fun PlazaHomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(plan.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
+                title = { Text(listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
     ) { padding ->
@@ -271,7 +274,22 @@ fun PlazaHomeScreen(
     TalkSheet(vm.talk)
 }
 
+/** [RCP-34] 1.34: on the rule plaza of 교대·일근, the way to their own plaza. */
+@Composable
+fun StylePlazaLink(room: String, modifier: Modifier = Modifier, onOpen: () -> Unit) {
+    SoftCard(modifier) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(styleName(room), style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("회사와 상관없이 같은 근무를 하는 분들과 이야기를 나누는 곳이에요", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FilledTonalButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text("${styleName(room)} 가기") }
+        }
+    }
+}
+
 private fun styleName(room: String): String = when (room) {
+    StylePlaza.SHIFT -> "교대 광장"
+    StylePlaza.DAY -> "일근 광장"
     StylePlaza.FIELD -> "현장 광장"
     StylePlaza.SHOP -> "가게 광장"
     StylePlaza.HOURLY -> "알바 광장"

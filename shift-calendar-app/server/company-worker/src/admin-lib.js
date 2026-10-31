@@ -282,8 +282,8 @@ export function adminLib() {
   /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
   const HUBS = [
     { key: "today", label: "오늘", icon: "home", tabs: ["home"] },
-    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "dev", "templates", "sla"] },
-    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "companies", "shares", "adopt"] },
+    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "dev", "templates", "sla"] },
+    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
     { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
     { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "rewards", "server", "account"] },
@@ -298,6 +298,8 @@ export function adminLib() {
   const TABS = {
     home: { label: "오늘", old: "홈 받은함 할 일 지금 할 일 inbox home" },
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
+    // 1.35 [INBOX-01] 정리함: the same waiting questions, sorted by the server into piles with their answers written.
+    sort: { label: "정리함", area: "inquiries", old: "정리함 문의 정리 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 sort" },
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
     dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
     templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },
@@ -305,6 +307,8 @@ export function adminLib() {
     review: { label: "검토", area: "review", badge: (o) => reviewCount(o), old: "제보 앱에 없는 방식 달라요 review" },
     versions: { label: "여러 판", area: "companies", badge: (o) => o.versionConflicts ?? 0, count: false, old: "versions" },
     community: { label: "토론·임금표", area: "community", badge: (o) => o.flaggedPosts ?? 0, strip: "신고 글", old: "토론 임금표 신고된 글 community" },
+    // [RCP-39] 1.34 나눔 판: 첫 3개 검토, 신고된 레시피, 가린 것, 공식·공개 자료, 처리 기록.
+    recipes: { label: "마을 장터", area: "community", badge: (o) => (o.recipeQueue ?? 0) + (o.recipeFlagged ?? 0), strip: "레시피 검토", old: "레시피 나눔 판 recipes" },
     companies: { label: "회사", area: "companies", old: "회사·규칙 companies" },
     shares: { label: "공유 링크", area: "shares", old: "공유 링크 신고 shares" },
     adopt: { label: "채택 규칙", area: "settings", old: "설정 자동 채택 맞았어요 비율 채택 보상 상한 settings" },
@@ -991,7 +995,8 @@ export function adminLib() {
    */
   function noticeWarnings(flag, conds, policy = []) {
     const out = [];
-    const v = String(flag.basis?.policy ?? "").split(" ")[0];
+    // [PRIV-05] The version the date condition waits for (3.9 brings 3.2~3.8 forward), else the one the basis names.
+    const v = (conds ?? []).find((c) => c.type === "date" && c.policy)?.policy ?? String(flag.basis?.policy ?? "").split(" ")[0];
     const p = v ? (policy ?? []).find((x) => x.version === v) : null;
     if (!p) return out;
     const gap = Math.round((Date.parse(`${p.effective}T00:00:00Z`) - Date.parse(`${p.posted}T00:00:00Z`)) / 86400000);
@@ -1032,7 +1037,8 @@ export function adminLib() {
 
   /** A question's title: the first line the asker wrote, 60 letters at most. */
   function copyTitle(q) {
-    return oneLine(askText(q).split("\n").find((l) => l.trim()) ?? "", 60) || "(내용 없음)";
+    // [J135-04] Without the '[설정 > …]' tag the app puts before a question asked from a screen.
+    return oneLine(askText(q).replace(/^\s*\[[^\]\n]{1,40}\]\s*/, "").split("\n").find((l) => l.trim()) ?? "", 60) || "(내용 없음)";
   }
 
   /** The address of a question in the developer app (never a photo's own address), or its id without [base]. */

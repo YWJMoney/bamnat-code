@@ -117,7 +117,7 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   const { env } = await world();
   const t = await signedIn(env);
   // AN 1.28: the six hubs' tabs, and the 1.27 addresses that now lead to them (inbox, ops, settings).
-  for (const s of ["home", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
+  for (const s of ["home", "inquiries", "sort", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
     "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
@@ -576,7 +576,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual(bottom(t), ["today", "ask", "plaza", "release", "more"]);
   // A hub's tabs sit under the title, and in the sidebar under the open hub.
   await t.go("#/review");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "companies", "shares", "adopt"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "recipes", "companies", "shares", "adopt"]);
   assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
   assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
@@ -590,7 +590,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual(sideHubs(u), ["today", "ask", "manage"]);
   assert.deepEqual(bottom(u), ["today", "ask", "manage"], "every hub fits: no 더 보기");
   await u.go("#/inquiries");
-  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "dev", "templates"]);
+  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "sort", "dev", "templates"]);
   await u.go("#/account");
   assert.ok(u.$("#hubtabs").hidden, "관리 has one tab for 민지");
   // A tab 민지 cannot use goes to 오늘.
@@ -603,7 +603,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   const v = await asMember(s, plaza, "", "junho@example.com", 41);
   assert.deepEqual(sideHubs(v), ["today", "plaza", "manage"]);
   await v.go("#/review");
-  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "companies"]);
+  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "recipes", "companies"]);
   assert.equal(Number(v.text('.tabs [data-badge="hub:plaza"]')), 1, "the one report");
   await v.go("#/inquiries");
   assert.equal(v.window.location.hash, "#/home");
@@ -728,7 +728,7 @@ test("[ADMUX-36] 1~6 open the hubs, [ and ] the tabs, and the palette knows the 
   await t.key("2");
   assert.equal(t.window.location.hash, "#/inquiries");
   await t.key("]");
-  assert.equal(t.window.location.hash, "#/dev");
+  assert.equal(t.window.location.hash, "#/sort", "정리함 sits next to 문의");
   await t.key("[");
   await t.key("[");
   assert.equal(t.window.location.hash, "#/sla", "round to the hub's last tab");
@@ -1489,5 +1489,34 @@ test("[ADMX-15] back to the tab while typing an answer: the menu numbers come ag
   assert.ok(!asked.some((p) => /^\/api\/admin\/inquiries\//.test(p)), "the question is not read again under the typing");
   assert.equal(t.$("#reply"), box, "the same box, not a repainted one");
   assert.equal(box.value, "확인하고 있어요");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 넘길 글 is copied and marked", async () => {
+  const { call, env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/sort");
+  const piles = t.$$("#main section.pile").map((s) => s.id);
+  assert.ok(piles.includes("pile-new"), "the three new questions wait in 새 문제·개선");
+  assert.ok(t.$("#sort-tools .handoff-card"), "Claude에게 넘기기 is there");
+  // A card's answer can be changed before it goes; what goes is what the box says.
+  const card = t.$('#pile-new [data-act="sort-reply-only"]');
+  const id = card.dataset.id;
+  t.$(`#sort-reply-${id}`).value = "확인했어요. 고마워요.";
+  await t.click(card);
+  await t.settle(20);
+  assert.ok(!t.$(`#sort-reply-${id}`), "an answered question leaves 정리함");
+  const asked = (await call("GET", `/api/admin/inquiries/${id}`, undefined, await signIn(call))).data;
+  assert.equal(asked.messages.at(-1).text, "확인했어요. 고마워요.");
+  // 넘기기: a 개발사항 made from a card shows up to copy; copying marks it handed.
+  const next = t.$('#pile-new [data-act="sort-do"]');
+  await t.click(next);
+  await t.settle(20);
+  let copied = null;
+  t.window.navigator.clipboard.writeText = async (x) => { copied = x; };
+  await t.click('[data-act="sort-handoff"]');
+  await t.settle(20);
+  assert.match(copied ?? "", /# 밤낮 관리자 앱 → 개발 넘김/);
+  assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
   assert.deepEqual(t.errors, []);
 });

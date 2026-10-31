@@ -15,7 +15,7 @@ const L = adminLib();
 /** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
   "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */,
-  "plaza.fixed_amount" /* BC 1.30 결정 D102 */];
+  "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
@@ -150,6 +150,8 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   t.mock.timers.enable({ apis: ["Date"], now: eve });
   const { call, env } = server(await vapidKeys());
   const owner = await signIn(call);
+  // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
+  await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   const b = await browser(1);
   assert.equal((await call("POST", "/api/admin/me/push", { subscription: b.subscription, kinds: ["flags"] }, owner)).data.ready, true);
   const sent = [];
@@ -306,12 +308,13 @@ test("[FLAG-29][FLAG-33] the owner moves a policy's dates; too little notice is 
   const statsMore = async () => (await call("GET", "/api/admin/flags", undefined, owner)).data.flags.find((f) => f.key === "stats.more");
   assert.deepEqual((await statsMore()).warnings, []);
   assert.equal((await call("POST", "/api/admin/policy", { version: "3.2", posted: "2026-10-28", effective: "2026-10-20", why: "x" }, owner)).data.error, "policy");
-  const moved = await call("POST", "/api/admin/policy", { version: "3.2", posted: "2026-10-28", effective: "2026-11-15", unfavourable: true, why: "검토 끝나 앞당김" }, owner);
+  // [PRIV-05] stats.more follows 3.9 (3.2 brought to 정식 출시일).
+  const moved = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐" }, owner);
   assert.equal(moved.status, 200);
   const row = await statsMore();
-  assert.match(row.warnings[0], /18일.*30일/);
+  assert.match(row.warnings[0], /15일.*30일/);
   assert.equal(row.next, "2026-11-15", "the date condition follows the calendar");
-  assert.deepEqual((await call("GET", "/api/config")).data.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-15", heldUntil: null });
+  assert.equal((await call("GET", "/api/config")).data.policy.find((p) => p.version === "3.9").effective, "2026-11-15");
   assert.ok((await adminHome(call, owner)).data.flagsDue >= 1);
 });
 

@@ -77,7 +77,7 @@ internal fun MoneyField(
         // [PAYS-04] Read back in words (250만 8천원) so a missing or extra zero shows at a glance.
         supportingText = value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+        visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
         modifier = modifier.fillMaxWidth(),
     )
@@ -107,7 +107,7 @@ internal fun WonField(label: String, value: Long?, onChange: (Long?) -> Unit, mo
         suffix = { Text("원") },
         supportingText = { Text(text.toLongOrNull()?.let { won(it) } ?: hint.orEmpty()) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier.fillMaxWidth(),
     )
 }
@@ -304,7 +304,7 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
                     label = { Text("인상 금액") },
                     suffix = { Text("원") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text("끝자리 처리", style = MaterialTheme.typography.labelLarge)

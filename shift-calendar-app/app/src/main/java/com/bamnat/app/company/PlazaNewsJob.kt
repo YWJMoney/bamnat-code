@@ -75,7 +75,7 @@ class PlazaNewsJob : JobService() {
         /** [SRV-10] Whether the daily job has anything to do on this phone. */
         fun wanted(c: AppContainer): Boolean {
             val s = c.settingsRepository.current
-            return (s.plazaNews && (takesPart(c) || c.inquiryStore.asked || c.received.calendars.value.isNotEmpty())) ||
+            return (s.plazaNews && (takesPart(c) || c.inquiryStore.asked || c.received.calendars.value.isNotEmpty() || c.recipes.on.value)) ||
                 s.phoneCalendars.isNotEmpty() || s.alarmsEnabled
         }
 
@@ -101,6 +101,7 @@ class PlazaNewsJob : JobService() {
             c.telemetry.event(DiagEvents.ALIVE)
             calendarPermission(c)
             if (!c.settingsRepository.current.plazaNews) return
+            runCatching { recipeNews(c) }
             val changes = runCatching { receivedChanges(c) }.getOrDefault(emptyList())
             val digest = runCatching { digest(c) }.getOrNull()
             val text = BamnatNews.text(digest?.plaza.orEmpty(), digest?.answers ?: 0, digest?.notices.orEmpty(), changes) ?: return
@@ -122,6 +123,23 @@ class PlazaNewsJob : JobService() {
             // [OBS-01] 기록 지점 10.
             c.journal.note(com.bamnat.core.journal.JournalKind.NEWS)
         }
+
+        /** [RCX-02][RCX-07][RCX-10] 1.35 나눔 판 소식 in a notice of its own (새 판, 팔로우한 분의 새 레시피, 만든 분의 답). */
+        private suspend fun recipeNews(c: AppContainer) {
+            val lines = c.recipes.newsLines()
+            if (lines.isEmpty()) return
+            val n = NotificationCompat.Builder(c.appContext, Notifications.PLAZA_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("마을 장터 소식")
+                .setContentText(lines.first())
+                .setStyle(NotificationCompat.InboxStyle().also { s -> lines.forEach(s::addLine) })
+                .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PLAZA, 2204))
+                .setAutoCancel(true)
+                .build()
+            Notifications.post(c.appContext, RECIPE_NEWS_ID, n)
+        }
+
+        private const val RECIPE_NEWS_ID = 4405
 
         /** What came from the server: the plaza part (empty when it is not asked), answers and notice titles. */
         data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>)

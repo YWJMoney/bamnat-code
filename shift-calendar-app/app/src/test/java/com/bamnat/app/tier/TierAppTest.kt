@@ -116,6 +116,7 @@ class TierAppTest {
                 "LEAVE_PAYOUT" to Tier.PRO,
                 // [TAX-02] 1.25.0 W (결정 W-D4).
                 "TAX_FORECAST" to Tier.PRO,
+                "THEME_WARDROBE" to Tier.PRO,
                 "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },

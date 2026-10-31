@@ -44,6 +44,10 @@ class PlazaAITest {
     @Test fun `each kind of work has its own plaza, a company's members their room`() {
         assertEquals(StylePlaza.Top.RULES, StylePlaza.plan(WorkStyle.SHIFT).top)
         assertNull(StylePlaza.plan(WorkStyle.DAY).room)
+        // [RCP-34] 1.34: the rule plaza of 교대·일근 links their own plaza, which is a talk.
+        assertEquals(StylePlaza.DAY, StylePlaza.plan(WorkStyle.DAY).alsoRoom)
+        assertEquals(listOf("교대 광장", StylePlaza.SHIFT, StylePlaza.Top.TALK), StylePlaza.own(WorkStyle.SHIFT).let { listOf(it.title, it.room, it.top) })
+        assertEquals(StylePlaza.FIELD, StylePlaza.own(WorkStyle.FIELD).room)
         val field = StylePlaza.plan(WorkStyle.FIELD)
         assertEquals(listOf("현장 광장", StylePlaza.FIELD, "construction", "day"), listOf(field.title, field.room, field.rates!!.job, field.rates!!.unit))
         assertEquals("hour", StylePlaza.plan(WorkStyle.HOURLY).rates!!.unit)
@@ -53,7 +57,7 @@ class PlazaAITest {
         assertTrue(invest.note.contains("종목 추천"))
         val room = StylePlaza.plan(WorkStyle.FIELD, "abcdefabcdef" to "예시상사")
         assertEquals(listOf("‘예시상사’ 정보 광장", "abcdefabcdef", StylePlaza.FIELD), listOf(room.title, room.room, room.alsoRoom))
-        assertNull(StylePlaza.plan(WorkStyle.SHIFT, "abcdefabcdef" to "예시상사").alsoRoom)
+        assertEquals(StylePlaza.SHIFT, StylePlaza.plan(WorkStyle.SHIFT, "abcdefabcdef" to "예시상사").alsoRoom)
     }
 
     @Test fun `a change says what changed, the same values saved again say nothing`() {

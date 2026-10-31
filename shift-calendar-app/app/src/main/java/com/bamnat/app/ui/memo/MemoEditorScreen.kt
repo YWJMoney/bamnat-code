@@ -5,6 +5,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -128,6 +129,14 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var answering by remember { mutableStateOf<com.bamnat.core.memo.MemoTime.Found?>(null) }
 
     var showColors by remember { mutableStateOf(false) }
+    // [RCP-11] 1.34 메모 틀.
+    val templates by vm.templates.collectAsStateWithLifecycle()
+    var pickTemplate by remember { mutableStateOf(false) }
+    // [CVW-10] 1.35 A template with 입력 칸 asks them first.
+    var asking by remember { mutableStateOf<com.bamnat.core.memo.MemoTemplate?>(null) }
+    if (pickTemplate) MemoTemplateDialog(templates, onPick = { t -> if (t.asks.isEmpty()) vm.startFrom(t) else asking = t; pickTemplate = false },
+        onRemove = vm::removeTemplate, onDismiss = { pickTemplate = false })
+    asking?.let { t -> TemplateAskDialog(t, onDone = { answers -> vm.startFrom(t, answers); asking = null }, onDismiss = { asking = null }) }
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -187,6 +196,15 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 text = { Text(if (memo.isChecklist) "일반 메모로 바꾸기" else "체크리스트로 바꾸기") },
                                 leadingIcon = { Icon(Icons.Filled.Checklist, null) },
                                 onClick = { menu = false; vm.toggleChecklist() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("이 메모를 틀로 저장") },
+                                leadingIcon = { Icon(Icons.Filled.Checklist, null) },
+                                onClick = {
+                                    menu = false
+                                    if (vm.saveAsTemplate()) Toast.makeText(context, "틀로 저장했어요. 새 메모에서 '틀에서 시작'을 누르세요", Toast.LENGTH_LONG).show()
+                                },
+                                enabled = !memo.isBlank,
                             )
                             DropdownMenuItem(
                                 text = { Text("색상") },
@@ -281,6 +299,12 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
+                // [RCP-11] 1.34: a memo not written yet can start from a 틀.
+                if (memo.isBlank && templates.isNotEmpty()) AssistChip(
+                    onClick = { pickTemplate = true },
+                    label = { Text("틀에서 시작") },
+                    leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
+                )
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
@@ -327,6 +351,12 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 )
                 Spacer(Modifier.size(8.dp))
                 if (memo.isChecklist) {
+                    // [J135-07] F-65: a list started from a template keeps the answers whole here, above the list.
+                    if (memo.body.isNotBlank()) {
+                        PlainField(value = memo.body, onValueChange = vm::setBody, placeholder = "메모",
+                            textStyle = MaterialTheme.typography.bodyMedium, singleLine = false)
+                        Spacer(Modifier.size(8.dp))
+                    }
                     ChecklistEditor(memo = memo, vm = vm)
                 } else CompositionLocalProvider(LocalEdgeScroll provides edge) {
                     MemoBodyField(
@@ -764,11 +794,116 @@ private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> U
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (m in memos) Column {
                     if (m.title.isNotBlank()) Text(m.title, style = MaterialTheme.typography.titleSmall)
-                    val body = if (m.isChecklist) m.checklist.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.checked) "☑ " else "☐ ") + it.text } else m.body
+                    val body = if (m.isChecklist) (listOfNotNull(m.body.ifBlank { null }) + m.checklist.filter { it.text.isNotBlank() }.map { (if (it.checked) "☑ " else "☐ ") + it.text }).joinToString("\n") else m.body
                     Text(com.bamnat.core.memo.MemoSearch.excerpt(body, ""), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+/** [RCP-11] 1.34 메모 틀 고르기: a tap starts the memo from it; 지우기 takes the template away (memos made from it stay). */
+@Composable
+private fun MemoTemplateDialog(
+    templates: List<com.bamnat.core.memo.MemoTemplate>,
+    onPick: (com.bamnat.core.memo.MemoTemplate) -> Unit,
+    onRemove: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // 1.35 자유도 점검: 지우기 asks first, like every other 지우기 (RCX-26).
+    var removing by remember { mutableStateOf<com.bamnat.core.memo.MemoTemplate?>(null) }
+    removing?.let { t ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { removing = null }, title = { Text("이 틀을 지울까요?") },
+            text = { Text("‘${t.title}’ 틀만 지워요. 이 틀로 쓴 메모는 그대로예요" + if (t.from != null) ". 장터에서 받은 틀은 레시피를 다시 넣으면 돌아와요" else "") },
+            confirmButton = { TextButton(onClick = { removing = null; onRemove(t.id) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("닫기") } })
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("틀에서 시작") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                templates.forEach { t ->
+                    Row(Modifier.fillMaxWidth().clickable(onClickLabel = "이 틀로 시작") { onPick(t) }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(listOfNotNull(t.emoji, t.title).joinToString(" "), style = MaterialTheme.typography.bodyLarge)
+                            val what = buildList {
+                                if (t.asks.isNotEmpty()) add("입력 칸 ${t.asks.size}개")
+                                if (t.check.isNotEmpty()) add("체크 ${t.check.size}개")
+                                com.bamnat.core.memo.MemoRepeat.label(t.repeat).takeIf { it.isNotEmpty() }?.let { add(it) }
+                                if (t.from != null) add("장터에서 받음")
+                            }.joinToString(" · ")
+                            if (what.isNotEmpty()) Text(what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { removing = t }) { Icon(Icons.Filled.Delete, "이 틀 지우기") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
+/**
+ * [CVW-10] 1.35 메모 틀의 입력 칸: each thing the template asks, as its kind — a line, a number, 별점 1~5 or one of its choices — then
+ * the memo starts with "칸: 값" lines. Anything left empty is left out; 건너뛰기 starts the memo with none.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Map<String, String>) -> Unit, onDismiss: () -> Unit) {
+    val answers = remember(t.id) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(listOfNotNull(t.emoji, t.title).joinToString(" ")) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                t.asks.forEachIndexed { i, a ->
+                    // By place, so two 칸 with one name keep their own answers (F-55).
+                    val key = "#$i"
+                    val v = answers[key].orEmpty()
+                    when (a.type) {
+                        "star" -> Column {
+                            Text(a.label, style = MaterialTheme.typography.bodyMedium)
+                            Row {
+                                (1..5).forEach { n ->
+                                    val on = (v.toIntOrNull() ?: 0) >= n
+                                    TextButton(onClick = { answers[key] = if (v == "$n") "" else "$n" }, modifier = Modifier.semantics { contentDescription = "${a.label} 별 ${n}개" }) {
+                                        Text(if (on) "★" else "☆", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
+                        "pick" -> Column {
+                            Text(a.label, style = MaterialTheme.typography.bodyMedium)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) }) }
+                            }
+                        }
+                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = (if (a.type == "num") numberOnly(it) else it).take(100) }, label = { Text(a.label) },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = if (a.type == "num") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                                else androidx.compose.foundation.text.KeyboardOptions.Default)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(answers.toMap()) }) { Text("메모 시작") } },
+        dismissButton = { TextButton(onClick = { onDone(emptyMap()) }) { Text("건너뛰기") } },
+    )
+}
+
+/** [J135-06] F-62: a 숫자 칸 keeps digits, one point and a leading minus, so a typed letter or a pasted word does not stay. */
+internal fun numberOnly(typed: String): String {
+    val sb = StringBuilder()
+    var point = false
+    typed.forEachIndexed { i, ch ->
+        when {
+            ch.isDigit() -> sb.append(ch)
+            ch == '.' && !point -> { point = true; sb.append(ch) }
+            ch == '-' && i == 0 -> sb.append(ch)
+        }
+    }
+    return sb.toString()
 }

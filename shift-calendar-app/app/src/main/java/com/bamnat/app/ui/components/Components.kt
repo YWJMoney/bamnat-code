@@ -122,6 +122,8 @@ fun ShiftBadge(
     val shape = RoundedCornerShape(size / 3)
     // The icon only goes with the type's own label, not with stand-in text like "휴" [FEAT-01].
     val icon = if (showIcon && (text == null || text == type?.label)) ShiftIcon.of(type?.icon) else null
+    // [RCP-08] 1.34: an emoji the user (or a recipe) picked goes where the drawn icon would.
+    val emoji = if (showIcon && (text == null || text == type?.label)) ShiftIcon.emoji(type?.icon) else null
     Box(
         modifier = modifier
             .clip(shape)
@@ -135,11 +137,19 @@ fun ShiftBadge(
     ) {
         val fg = if (outlined) color else contentColorOn(color)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            // [RCX-30] 1.35 그림 꾸미기: the kind of day's own picture goes first.
+            val pictured = showIcon && (text == null || text == type?.label) &&
+                type?.id?.let { com.bamnat.app.ui.theme.LocalPhotoLook.current.icons[it] } != null
+            if (pictured && com.bamnat.app.ui.theme.ShiftPicture(type?.id, size * 0.62f)) {
+                Spacer(Modifier.width(2.dp))
+            } else if (icon != null) {
                 Icon(icon.vector, contentDescription = null, tint = fg, modifier = Modifier.size(size * 0.5f))
                 Spacer(Modifier.width(1.dp))
+            } else if (emoji != null) {
+                Text(emoji, fontSize = with(density) { (size * 0.48f).toSp() }, lineHeight = (BADGE_LINE / (size * 0.48f)).em, maxLines = 1)
+                Spacer(Modifier.width(1.dp))
             }
-            val density = androidx.compose.ui.platform.LocalDensity.current
             val textSize = size * 0.52f
             Text(
                 text = label,

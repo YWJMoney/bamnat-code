@@ -90,7 +90,7 @@ class RScreenshotTest : ScreenshotBase() {
     @Test fun auditDaySheet() = auditScreen("day") { openDayBelow(dayCell) }
     @Test fun auditPay() = auditScreen("pay") { payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true)(this) }
     @Test fun auditStats() = auditScreen("stats", wideMatters = true) { w -> withPay()(this); tab(3, w) }
-    @Test fun auditSettings() = auditScreen("settings", wideMatters = true) { w -> tab(4, w) }
+    @Test fun auditSettings() = auditScreen("settings", wideMatters = true) { w -> tab(SETTINGS_TAB, w) }
     @Test fun auditHelp() = auditScreen("help") { askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true)) }
     @Test fun auditMission() = auditScreen("mission") { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofMinutes(1)) }
     @Test fun auditDiag() = auditScreen("diag") { val vm = com.bamnat.app.ui.diag.DiagnosticsViewModel(app.container); content { com.bamnat.app.ui.diag.DiagnosticsScreen(vm, onBack = {}) } }
@@ -130,7 +130,7 @@ class RScreenshotTest : ScreenshotBase() {
     @Test fun s772_day_320_200() = check(772, "day", 11) { openDayBelow(dayCell) }
     @Test fun s773_calendar_fold_cover() = check(773, "calendar", 5, weeks = 2)
     @Test fun s774_year_320_200() = check(774, "year", 11) { year() }
-    @Test fun s775_settings_fold_open() = check(775, "settings", 6) { tab(4, true) }
+    @Test fun s775_settings_fold_open() = check(775, "settings", 6) { tab(SETTINGS_TAB, true) }
     @Test fun s776_help_320() = check(776, "help", 0) { askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true)) }
     // 중-5: one count everywhere, and night-time work by its own name.
     @Test fun s777_stats_393() = check(777, "stats", 3, then = stats)

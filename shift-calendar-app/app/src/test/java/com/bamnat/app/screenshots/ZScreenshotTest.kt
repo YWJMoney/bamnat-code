@@ -69,7 +69,7 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun backGoesToTheTabBeforeAndTwiceClosesFromTheCalendar() = open(FOLDED) { scenario ->
         tab(1, wide = false)
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         assertEquals("설정", tabNow())
         back()
         assertEquals("the tab before, not the calendar", "가계부", tabNow())
@@ -88,7 +88,7 @@ class ZScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun everySettingsPageBacksToTheSettingsList() = open(FOLDED) { scenario ->
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         for (page in SettingsPage.entries) {
             tapText(page.title, exact = true)
             back()
@@ -99,7 +99,7 @@ class ZScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun everyCalendarToolBacksToTheCalendar() = open(FOLDED) { scenario ->
-        for (tool in listOf("근무표 공유", "1년 달력", "근무 주기 설정", "새 달력 만들기", "화면 꾸미기", "이번 달 전부 넣기")) {
+        for (tool in listOf("근무표 공유", "1년 달력", "근무 주기 설정", "새 달력 만들기", "카드 배치", "이번 달 전부 넣기")) {
             tapText("도구", exact = false)
             tapText(tool, exact = true)
             assertNotEquals("$tool must not open the settings tab", "설정", tabNow())
@@ -339,7 +339,8 @@ class ZScreenshotTest : ScreenshotBase() {
     @Test fun widePanelAsksBeforeTypedDaysGo() = open(UNFOLDED) { scenario ->
         tapText("도구")
         tapText("이번 달 전부 넣기", exact = true)
-        while (shownDialogs().isNotEmpty()) backOnTop()
+        repeat(5) { if (shownDialogs().isNotEmpty()) backOnTop() }
+        assertTrue("every dialog closes on back: ${shownDialogs().map { it.javaClass.simpleName }}", shownDialogs().isEmpty())
         tapText("주간 넣기", exact = true)
         back()
         assertTrue("back asks first", appears("넣은 1일을 버릴까요?", exact = true))

@@ -162,33 +162,40 @@ class FlagEvalTest {
         assertFalse(FlagEval.state(FlagCatalog.ADS_FLAG, phone(kst(2026, 11, 1)), confirmed).on)
     }
 
-    @Test fun statsMoreWaitsForPolicy32AndItsOwnYes() {
+    /** [PRIV-05] 결정 D111: 3.2 brought to 정식 출시일 (3.9, 11-10); a tester without a 3.9 yes waits until 11-29. */
+    @Test fun statsMoreWaitsForPolicy39AndItsOwnYes() {
         val f = FlagCatalog.STATS_MORE_FLAG
         assertEquals(Risk.LEGAL, f.risk)
-        val after = phone(kst(2026, 11, 27)).copy(consents = mapOf("usage" to true, "usage.stats.more" to true))
+        val after = phone(kst(2026, 11, 10), agreed = setOf("3.9")).copy(consents = mapOf("usage" to true, "usage.stats.more" to true))
         assertTrue(FlagEval.state(f, after).on)
-        assertFalse("before 3.2", FlagEval.state(f, after.copy(serverNow = kst(2026, 11, 26))).on)
+        assertFalse("before 정식 출시일", FlagEval.state(f, after.copy(serverNow = kst(2026, 11, 9))).on)
         assertFalse("no extra yes", FlagEval.state(f, after.copy(consents = mapOf("usage" to true))).on)
         assertFalse("usage stats off", FlagEval.state(f, after.copy(consents = mapOf("usage" to false, "usage.stats.more" to true))).on)
+        assertFalse("a tester who said no to 3.9", FlagEval.state(f, after.copy(agreed = setOf("3.1"))).on)
+        assertTrue("…until the day 3.8 promised", FlagEval.state(f, after.copy(agreed = setOf("3.1"), serverNow = kst(2026, 11, 29))).on)
+        assertTrue("installed after 3.9 was posted", FlagEval.state(f, after.copy(agreed = emptySet(), installed = LocalDate.of(2026, 11, 2))).on)
     }
 
-    /** [STAT-08] 1.31 N4: lookup times turn on by themselves on 3.5's date, with the same two yeses as stats.more. */
-    @Test fun statsLookupTurnsOnByItselfOnPolicy35sDate() {
+    /** [STAT-08] 1.31 N4 (결정 D111: 3.9's date): lookup times turn on by themselves on 3.5's date, with the same two yeses as stats.more. */
+    @Test fun statsLookupTurnsOnByItselfOnPolicy39sDate() {
         val f = FlagCatalog.STATS_LOOKUP_FLAG
         assertEquals(Risk.LEGAL, f.risk)
         val yes = mapOf("usage" to true, "usage.stats.more" to true, "usage.stats.lookup" to true)
-        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 28)).copy(consents = yes)).on)
-        assertFalse("before 3.5", FlagEval.state(f, phone(kst(2026, 11, 27)).copy(consents = yes)).on)
-        assertFalse("no extra yes", FlagEval.state(f, phone(kst(2026, 11, 28)).copy(consents = mapOf("usage" to true))).on)
-        assertFalse("a yes given before the words named it", FlagEval.state(f, phone(kst(2026, 11, 28)).copy(consents = yes - "usage.stats.lookup")).on)
+        val p = phone(kst(2026, 11, 10), agreed = setOf("3.9"))
+        assertTrue(FlagEval.state(f, p.copy(consents = yes)).on)
+        assertFalse("before 정식 출시일", FlagEval.state(f, phone(kst(2026, 11, 9), agreed = setOf("3.9")).copy(consents = yes)).on)
+        assertFalse("no extra yes", FlagEval.state(f, p.copy(consents = mapOf("usage" to true))).on)
+        assertFalse("a yes given before the words named it", FlagEval.state(f, p.copy(consents = yes - "usage.stats.lookup")).on)
     }
 
     /** [PHOTO-09] 1.29 AQ: 처리방침 3.3 is not in the calendar yet, so '사진이 달라요' counts stay on the phone. */
     /** [PHOTO-09] 1.29 통합: 3.3 is in the calendar (게시 10-28, 시행 11-27, the same day as 3.2): off the day before, on that day. */
-    @Test fun photoWrongWaitsForPolicy33() {
+    @Test fun photoWrongWaitsForPolicy39() {
         val f = FlagCatalog.PHOTO_WRONG_FLAG
-        assertFalse(FlagEval.state(f, phone(kst(2026, 11, 26))).on)
-        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 27))).on)
+        assertFalse(FlagEval.state(f, phone(kst(2026, 11, 9), agreed = setOf("3.9"))).on)
+        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 10), agreed = setOf("3.9"))).on)
+        assertFalse("a tester without a 3.9 yes", FlagEval.state(f, phone(kst(2026, 11, 28))).on)
+        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 29))).on)
     }
 
     // ---- the other kinds of condition ----
@@ -230,6 +237,7 @@ class FlagEvalTest {
         for (f in FlagCatalog.ALL) {
             assertTrue(f.key, f.name.isNotBlank() && f.what.isNotBlank() && f.whyOff.isNotBlank() && f.basis.words.isNotBlank())
             assertTrue(f.key, f.owner.isNotBlank() && f.since == (if (f.key == FlagCatalog.PLAZA_FIXED_AMOUNT) "1.30.0" /* BC 1.30 결정 D102 */
+                else if (f.key.startsWith("recipe.")) "1.34.0" /* 1.34 RCP-37 */
                 else if (f.group == FlagGroup.SERVER) "1.22.0" else if (f.key == FlagCatalog.PHOTO_WRONG) "1.29.0"
                 else if (f.key == FlagCatalog.STATS_LOOKUP) "1.31.0" /* 1.31 N4 */
                 else if (f.key == FlagCatalog.DIAG_OBSERVE) "1.32.1" /* 1.32.1 STAB-10 */

@@ -805,6 +805,10 @@ private fun SettingsHub(
             val (boardTitle, boardLine) = boardRow(work.workStyle)
             GroupRow(Icons.Outlined.Forum, boardTitle, boardLine, false, onClick = onOpenBoard)
         }
+        // [RCP-38] 1.34 나눔 판: on and off, recipes put on (되돌리기), mine, and those being made.
+        GroupRow(Icons.Outlined.Forum, "장터·내 레시피", "받은 레시피 되돌리기 · 내가 올린 레시피 · 만들던 레시피 · 켜고 끄기", false) {
+            SettingsLinks.go(SettingsGo.RECIPES)
+        }
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
         GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "추천 기능 한 번에 켜기 · 쓰지 않는 카드·안내 끄고 다시 켜기", false) {
             SettingsLinks.go(SettingsGo.FEATURES)

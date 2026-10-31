@@ -106,6 +106,18 @@
         "posted": "2026-10-30",
         "effective": "2026-11-29",
         "heldUntil": null
+      },
+      {
+        "version": "3.8",
+        "posted": "2026-10-30",
+        "effective": "2026-11-29",
+        "heldUntil": null
+      },
+      {
+        "version": "3.9",
+        "posted": "2026-10-31",
+        "effective": "2026-11-10",
+        "heldUntil": "2026-11-29"
       }
     ],
     "serverTime": "2026-10-26T01:00:00.000Z"

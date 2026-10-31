@@ -223,7 +223,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
             // [CUST-01] 화면 꾸미기: the cards' order and which show.
-            IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "화면 꾸미기") }
+            IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "카드 배치") }
             com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
         }
         if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false }, style = style, calendar = vm.calendarId)
@@ -833,7 +833,7 @@ private fun StatsEditSheet(
         placed.filter { it.part.movable == movable && fits(it.part) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
-        title = "근무·급여 화면 꾸미기",
+        title = "근무·급여 카드 배치",
         groups = listOf(
             com.bamnat.app.ui.components.EditGroup("위쪽 (이번 달)", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
@@ -850,7 +850,7 @@ private fun StatsEditSheet(
         onReset = { update { it.copy(statsLayout = "") } },
         onAsk = {
             onDismiss()
-            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "카드 배치"))
         },
         onDismiss = onDismiss,
     )

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -281,6 +282,8 @@ fun CalendarScreen(
     val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(fitCalendar.id)
     val calendarParts = remember(settings, fitAdded) { settings.calendarParts(fitAdded) }
     fun partShown(p: CalendarPart) = calendarParts.firstOrNull { it.part == p }?.shown != false
+    // [CVW-06] 1.35: which side of the month each part stands, by where 이번 달 달력 is in the order.
+    val isAbove = remember(calendarParts) { calendarAbove(calendarParts.map { it.part }) }
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
     // [CAL-30] Saved, so the month being typed is still open after folding or unfolding (I 리뷰 P11).
@@ -291,6 +294,7 @@ fun CalendarScreen(
     var rulesOpen by rememberSaveable { mutableStateOf(false) }
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
     val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
+    val restAlarms by vm.restAlarms.collectAsStateWithLifecycle()
     // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
     var editingLayout by rememberSaveable { mutableStateOf(false) }
     // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
@@ -340,10 +344,18 @@ fun CalendarScreen(
         }
     }
     // [FEAT-17][DAY-04] Cells can show the start of the day's first memo under the date.
-    val memoTexts = remember(datedMemos, settings.memoInCells) {
-        if (!settings.memoInCells) emptyMap()
-        else datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.first().let { m -> m.title.ifBlank { m.preview } }.trim().take(4) }
-            .filterValues { it.isNotEmpty() }
+    // [CVW-01] 1.35 달력 모양's 메모 줄: each memo of the day a line, as many as it gives (the cell cuts them to its width).
+    val calView = LocalCalendarView.current
+    val memoTexts = remember(datedMemos, settings.memoInCells, calView.memo) {
+        val lines = calView.memo
+        when {
+            lines != null && lines > 0 -> datedMemos.groupBy { it.date!! }.mapValues { (_, l) ->
+                l.take(lines).joinToString("\n") { m -> m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty() } }
+                .filterValues { it.isNotBlank() }
+            lines == 0 || !settings.memoInCells -> emptyMap()
+            else -> datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.first().let { m -> m.title.ifBlank { m.preview } }.trim().take(4) }
+                .filterValues { it.isNotEmpty() }
+        }
     }
     var quickMoney by rememberSaveable { mutableStateOf(false) }
     // [INV-01] An investor calendar's trades, cells and sheets.
@@ -812,7 +824,7 @@ fun CalendarScreen(
         }
         WeekdayHeader(DayOfWeek.MONDAY, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
+            val cellHeight = calView.cellHeight(maxWidth) + cellTextGrowth()
             val swipe = with(androidx.compose.ui.platform.LocalDensity.current) { WEEK_SWIPE.toPx() }
             val turnTo by rememberUpdatedState(onDateChange)
             WeekStrip(
@@ -1191,12 +1203,58 @@ fun CalendarScreen(
                 com.bamnat.app.ui.guide.JournalHomeLine(Modifier.padding(horizontal = 16.dp), today = today)
             })
             // [CAL-51] On a low screen the user's parts above the month wait here too, after everything else.
-            if (low) calendarParts.filter { it.part.above && it.part.movable && it.shown }.forEach { placed ->
+            if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
         })
-        // [CUST-01] The parts above the month in the user's order (화면 꾸미기).
-        if (!low) calendarParts.filter { it.part.above && it.part.movable && it.shown }.forEach { placed -> aboveParts[placed.part]?.second?.invoke() }
+        // [CUST-01] The parts under the month, by part; [CVW-06] 1.35 any of them can stand above it too.
+        val partBody: @Composable (CalendarPart) -> Unit = { part ->
+            when (part) {
+                CalendarPart.DAY_CARD -> {
+                    if (!wide) {
+                        // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
+                        DayPreview(
+                            day = remember(snap, selected) { snap.resolver.resolve(selected) },
+                            today = today,
+                            snapshot = snap,
+                            vm = vm,
+                            onDateChange = onDateChange,
+                            onOpen = { sheetOpen = true },
+                            onMemo = onMemo,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            weekNote = weekNote,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+                CalendarPart.HOURS -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
+                    HoursLine(
+                        calculator = calculator,
+                        limits = settings.limits,
+                        selected = selected,
+                        month = visibleMonth,
+                        onOpenStats = onOpenStats,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                    )
+                }
+                CalendarPart.REST -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
+                    val rules = settings.rules
+                    val rest = remember(snap, visibleMonth, rules) { vm.restIssues(snap, visibleMonth, rules) }
+                    // [NURS-05][JOB-03] Nights, night pay and a 공무원's 시간외, worked out off the main thread.
+                    val nights by produceState<CalendarViewModel.MonthNights?>(null, payProfile, snap, visibleMonth) {
+                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthNights(payProfile, snap, visibleMonth) }
+                    }
+                    MonthRestCard(rest, nights, onPick = vm::select, onRules = { rulesOpen = true },
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+                }
+                CalendarPart.MEMOS -> memoPart()
+                else -> Unit
+            }
+        }
+        // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
+        if (!low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
+            aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+        }
         // [CAL-03] One week and the whole day under it, or the month.
         if (weekOnly && !wide) {
             weekPart()
@@ -1276,7 +1334,7 @@ fun CalendarScreen(
                     .onGloballyPositioned { c -> gridTop = c.positionInWindow().y; gridBottom = gridTop + c.size.height },
             ) {
                 // [CAL-51] On its side a phone keeps its cells as short as they hold, so weeks show under the bars.
-                val cellHeight = (if (sideways) 66.dp else (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp)) + cellTextGrowth()
+                val cellHeight = calView.cellHeight(maxWidth, sideways) + cellTextGrowth()
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
@@ -1359,48 +1417,8 @@ fun CalendarScreen(
             Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
-            if (settled) calendarParts.filter { !it.part.above && it.shown }.forEach { placed ->
-                when (placed.part) {
-                    CalendarPart.DAY_CARD -> {
-                        if (!wide) {
-                            // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
-                            DayPreview(
-                                day = remember(snap, selected) { snap.resolver.resolve(selected) },
-                                today = today,
-                                snapshot = snap,
-                                vm = vm,
-                                onDateChange = onDateChange,
-                                onOpen = { sheetOpen = true },
-                                onMemo = onMemo,
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                weekNote = weekNote,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                        }
-                    }
-                    CalendarPart.HOURS -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
-                        HoursLine(
-                            calculator = calculator,
-                            limits = settings.limits,
-                            selected = selected,
-                            month = visibleMonth,
-                            onOpenStats = onOpenStats,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                        )
-                    }
-                    CalendarPart.REST -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
-                        val rules = settings.rules
-                        val rest = remember(snap, visibleMonth, rules) { vm.restIssues(snap, visibleMonth, rules) }
-                        // [NURS-05][JOB-03] Nights, night pay and a 공무원's 시간외, worked out off the main thread.
-                        val nights by produceState<CalendarViewModel.MonthNights?>(null, payProfile, snap, visibleMonth) {
-                            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthNights(payProfile, snap, visibleMonth) }
-                        }
-                        MonthRestCard(rest, nights, onPick = vm::select, onRules = { rulesOpen = true },
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
-                    }
-                    CalendarPart.MEMOS -> memoPart()
-                    else -> Unit
-                }
+            if (settled) calendarParts.filter { !isAbove(it.part) && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
+                aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
             }
         }
     }
@@ -1474,6 +1492,8 @@ fun CalendarScreen(
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
+        // [RCX-30] 1.35 그림 꾸미기: the background picture under the page.
+        PhotoBackdrop()
         if (tabletop != null) {
             // [DAILY-09] The month above the hinge, the day panel below it; nothing sits on the fold itself.
             var areaTop by remember { mutableIntStateOf(0) }
@@ -1554,6 +1574,7 @@ fun CalendarScreen(
                     .verticalScroll(pageScroll)
                     .padding(bottom = bottomSpace),
             ) {
+                com.bamnat.app.ui.theme.PhotoHead()
                 calendarPart()
             }
         }
@@ -1601,6 +1622,7 @@ fun CalendarScreen(
         CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false }, calendar = activeCalendar.id)
     }
     coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
+    restAlarms?.let { ask -> RestAlarmDialog(ask, onAnswer = { off -> vm.answerRestAlarms(ask, off) }, onDismiss = vm::closeRestAlarms) }
 
     if (sheetOpen && !wide) {
         DaySheet(snackbar = sheetSnackbar, onDismiss = { sheetOpen = false }) { detailPart(Modifier.fillMaxWidth(), 24.dp) }
@@ -2575,6 +2597,34 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
     com.bamnat.core.work.CalendarFocus.JOBS -> "일감을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.SALES -> "매출을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.INVEST -> "매매를 바로 적을 수 있어요"
+}
+
+/**
+ * [ALRM-20] A day just made a day off or leave had alarms: 끌까요? [J135-10] The shift's own alarms stopped with it and alarms
+ * set by hand still ring; 끄기 leaves none, 그대로 울리기 keeps every one, closing changes nothing more.
+ */
+@Composable
+private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turnOff: Boolean) -> Unit, onDismiss: () -> Unit) {
+    val one = ask.days.singleOrNull()
+    val times = ask.days.flatMap { d -> d.was.map { Fmt.time(it.triggerAt.toLocalTime()) } }.distinct().take(3).joinToString(", ")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.AlarmOff, null) },
+        title = { Text("알람을 끌까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (one != null) "${Fmt.monthDay(one.date)}은 쉬는 날이 됐어요. 이날 $times 알람을 어떻게 할까요?"
+                    else "쉬는 날이 된 ${ask.days.size}일에 알람($times)이 있었어요. 어떻게 할까요?",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text("끄면 그 날 알람이 울리지 않아요. 어느 쪽이든 바로 되돌릴 수 있고, 날짜를 눌러 알람에서 다시 바꿀 수 있어요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { Button(onClick = { onAnswer(true) }) { Text("알람 끄기") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("그대로 울리기") } },
+    )
 }
 
 /**

@@ -70,7 +70,7 @@ class YScreenshotTest : ScreenshotBase() {
 
     @Test fun investCustomizeHasNoShiftParts() = shoot("892_y_invest_customize", FOLDED, style(WorkStyle.INVEST) {
         tools()
-        tapText("화면 꾸미기", exact = true)
+        tapText("카드 배치", exact = true)
         assertTrue(gone("근무 횟수 줄", exact = true))
         assertTrue(gone("주 근무시간 줄", exact = true))
         assertTrue(gone("휴식 점검", exact = true))
@@ -80,7 +80,7 @@ class YScreenshotTest : ScreenshotBase() {
 
     @Test fun investAddsAPartToTheCalendarPage() = shoot("893_y_invest_part_added", FOLDED, style(WorkStyle.INVEST) {
         tools()
-        tapText("화면 꾸미기", exact = true)
+        tapText("카드 배치", exact = true)
         tapText("이 달력에 안 맞아 숨긴 기능")
         tapText("더하기", exact = true)
         assertTrue(added.single().startsWith(FitSurface.CALENDAR_PARTS.name + ":"))
@@ -138,7 +138,7 @@ class YScreenshotTest : ScreenshotBase() {
 
     // ---- 393 [TIER-06][TIER-07] ----
     @Test fun proCollectionOpensTheFeature() = shoot("900_y_pro_collection", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         tapText("프로", exact = true)
         reveal("프로 기능 모아보기")
         reveal("매일 자동 백업", exact = true)
@@ -164,25 +164,25 @@ class YScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun proCollectionDarkInvest() = shoot("903_y_pro_collection_dark", FOLDED_NIGHT, style(WorkStyle.INVEST) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         tapText("프로", exact = true)
         reveal("다른 일에 쓰는 프로 기능")
     })
 
     // ---- 394 [VIS-06] ----
     @Test fun settingsColours() = shoot("904_y_settings_colours", PHONE_393) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("내 근무", exact = true)
     }
     @Test fun settingsColoursDark() = shoot("905_y_settings_colours_dark", FOLDED_NIGHT) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("데이터", exact = true)
     }
-    @Test fun settingsColoursHugeText() = shoot("906_y_settings_colours_200", PHONE, 2f) { tab(4, wide = false) }
+    @Test fun settingsColoursHugeText() = shoot("906_y_settings_colours_200", PHONE, 2f) { tab(SETTINGS_TAB, wide = false) }
 
     // ---- 395 ----
     @Test fun searchFindsTheCollection() = shoot("907_y_search_collection", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "모아보기")
         assertTrue(appears("프로 기능 모아보기"))
     }

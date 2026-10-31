@@ -66,7 +66,7 @@ class AEScreenshotTest : ScreenshotBase() {
     private fun sent() = api.calls.filter { it != "rules" }
 
     private fun Screen.openPro(wide: Boolean = false) {
-        tab(4, wide)
+        tab(SETTINGS_TAB, wide)
         tapText("프로", exact = true, across = if (wide) 0.2f else 0.5f)
         // At 200% text the 프로 screen is long: the card is far down.
         tapText("친구 초대", exact = true, scrolls = 30, across = if (wide) 0.7f else 0.5f)
@@ -248,7 +248,7 @@ class AEScreenshotTest : ScreenshotBase() {
 
     // ---- 427 [INVITE-07] ----
     @Test fun settingsHasTheRow() = shoot("1051_ae_settings_row", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         // While the 함께 만들어요 card shows, it carries 친구 초대 itself (the row would say it twice).
         reveal("초대 링크 만들기", exact = true)
         assertTrue(gone("친구 초대", exact = true))
@@ -257,7 +257,7 @@ class AEScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun settingsRowComesBackAfterTheCardCloses() = shoot("1051b_ae_settings_row_card_closed", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)
         tapText("닫기", exact = true)
         settle()
@@ -267,7 +267,7 @@ class AEScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun searchFindsIt() = shoot("1052_ae_search", FOLDED) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "초대 코드")
         reveal("초대 코드 넣기", exact = true)
     }

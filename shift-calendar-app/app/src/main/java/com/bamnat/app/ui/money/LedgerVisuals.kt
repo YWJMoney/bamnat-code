@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -213,15 +214,25 @@ fun signedWon(e: MoneyEntry): String = when {
 }
 
 @Composable
-@ReadOnlyComposable
 fun amountColor(e: MoneyEntry): Color {
-    val cal = LocalCalendarColors.current
+    val (income, expense) = moneyInks()
     return when {
-        e.kind == MoneyKind.EXPENSE && e.amount < 0 -> cal.income
-        e.kind == MoneyKind.EXPENSE -> cal.expense
-        e.kind == MoneyKind.INCOME -> cal.income
+        e.kind == MoneyKind.EXPENSE && e.amount < 0 -> income
+        e.kind == MoneyKind.EXPENSE -> expense
+        e.kind == MoneyKind.INCOME -> income
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+}
+
+/** [FREE-06] 수입 and 지출 in 가계부 모양's own colours, each kept readable on the page (4.5:1), else the app's own. */
+@Composable
+fun moneyInks(): Pair<Color, Color> {
+    val cal = LocalCalendarColors.current
+    val look = com.bamnat.app.ui.theme.LocalMoneyLook.current
+    val page = MaterialTheme.colorScheme.surface.takeIf { it.alpha > 0.5f } ?: MaterialTheme.colorScheme.surfaceContainerLow
+    fun readable(c: Long?, own: Color): Color = c?.let { Color((it or 0xFF000000L).toInt()) }
+        ?.takeIf { com.bamnat.core.recipe.Palette.contrast((it.toArgb().toLong() and 0xFFFFFFFFL), (page.toArgb().toLong() and 0xFFFFFFFFL)) >= 4.5 } ?: own
+    return readable(look.income, cal.income) to readable(look.expense, cal.expense)
 }
 
 /**

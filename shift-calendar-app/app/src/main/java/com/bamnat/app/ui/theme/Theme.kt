@@ -176,6 +176,41 @@ internal val DarkCalendarColors = CalendarColors(
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }
 
 /**
+ * [RCP-09] 1.34 달력 테마 as the calendar draws it: the user's (or a recipe's) colours for today and 토·일·공휴일, lifted for the
+ * dark calendar, and the cell style. A null colour keeps the app's own ([CalendarColors]).
+ */
+data class CalendarLook(
+    val today: Color? = null,
+    val sat: Color? = null,
+    val sun: Color? = null,
+    val holiday: Color? = null,
+    val cell: String = "tint",
+) {
+    fun sunday(cal: CalendarColors): Color = sun ?: cal.sunday
+    fun saturday(cal: CalendarColors): Color = sat ?: cal.saturday
+    fun holiday(cal: CalendarColors): Color = holiday ?: sun ?: cal.sunday
+
+    /** How strong a working day's wash is: 0 for none ("dot"). */
+    fun washAlpha(dark: Boolean): Float = when (cell) {
+        "fill" -> if (dark) 0.40f else 0.32f
+        "dot" -> 0f
+        else -> if (dark) 0.22f else 0.13f
+    }
+
+    companion object {
+        fun of(theme: com.bamnat.core.recipe.CalendarTheme, dark: Boolean): CalendarLook {
+            fun c(v: Long?) = v?.let { Color((if (dark) com.bamnat.core.layout.Contrast.onBlack(it) else it).toInt()) }
+            return CalendarLook(c(theme.today), c(theme.sat), c(theme.sun), c(theme.holiday), theme.cell ?: "tint")
+        }
+    }
+}
+
+val LocalCalendarLook = staticCompositionLocalOf { CalendarLook() }
+
+/** [RCX-30] 1.35 그림 꾸미기, as the settings keep it (pictures by id, drawn from files/looks/). */
+val LocalPhotoLook = staticCompositionLocalOf { com.bamnat.core.recipe.PhotoLook() }
+
+/**
  * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
  * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions
  * wrap as before). Titles also even out their lines.
@@ -212,6 +247,19 @@ private val AppShapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
 )
 
+/** [RCX-30] 1.35 그림 꾸미기의 모서리: round (더 둥글게), square (거의 각지게); null and "soft" are the app's own. */
+fun shapesFor(corners: String?): Shapes = when (corners) {
+    "round" -> Shapes(
+        extraSmall = RoundedCornerShape(10.dp), small = RoundedCornerShape(16.dp), medium = RoundedCornerShape(24.dp),
+        large = RoundedCornerShape(32.dp), extraLarge = RoundedCornerShape(40.dp),
+    )
+    "square" -> Shapes(
+        extraSmall = RoundedCornerShape(2.dp), small = RoundedCornerShape(4.dp), medium = RoundedCornerShape(6.dp),
+        large = RoundedCornerShape(8.dp), extraLarge = RoundedCornerShape(12.dp),
+    )
+    else -> AppShapes
+}
+
 /** Tabular figures keep hour totals from jumping around as they change. */
 val NumberStyle = TextStyle(fontFeatureSettings = "tnum")
 
@@ -223,6 +271,10 @@ fun BamnatTheme(
     textStep: Int = TextSize.DEFAULT,
     /** U 1.32 [UX132-06] 촘촘하게. */
     compact: Boolean = true,
+    /** [RCX-30] 그림 꾸미기의 모서리 ([shapesFor]). */
+    corners: String? = null,
+    /** [CVW-08] 1.35 앱 강조색 (ARGB, 0 = the app's own): buttons, the picked tab and the selected things. */
+    accent: Long = 0L,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -238,7 +290,7 @@ fun BamnatTheme(
         }
         dark -> DarkColors
         else -> LightColors
-    }
+    }.let { if (accent == 0L) it else accented(it, accent, dark) }
     CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
@@ -248,9 +300,26 @@ fun BamnatTheme(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
-            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = AppShapes, content = content)
+            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = shapesFor(corners), content = content)
         }
     }
+}
+
+/**
+ * [CVW-08] The scheme with [accent] as its primary: on a dark surface it is lifted toward white so it reads, the containers are
+ * washes of it over the surface, and every text on it is black or white by [com.bamnat.core.layout.Contrast] (A11Y 4.5:1).
+ */
+fun accented(base: ColorScheme, accent: Long, dark: Boolean): ColorScheme {
+    val a = Color(accent or 0xFF000000L)
+    val primary = if (dark) androidx.compose.ui.graphics.lerp(a, Color.White, 0.35f) else a
+    val container = androidx.compose.ui.graphics.lerp(base.surface, a, if (dark) 0.35f else 0.18f)
+    val secondary = androidx.compose.ui.graphics.lerp(base.surface, a, if (dark) 0.25f else 0.12f)
+    fun on(c: Color) = com.bamnat.app.ui.components.contentColorOn(c)
+    return base.copy(
+        primary = primary, onPrimary = on(primary), primaryContainer = container, onPrimaryContainer = on(container),
+        secondaryContainer = secondary, onSecondaryContainer = on(secondary), surfaceTint = primary,
+        inversePrimary = androidx.compose.ui.graphics.lerp(a, if (dark) Color.Black else Color.White, 0.4f),
+    )
 }
 
 /** U 1.32 [UX132-05] 설정 › 화면과 글자 › 글자 크기: five steps, times the phone's own 글꼴 크기. */

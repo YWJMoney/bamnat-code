@@ -445,6 +445,28 @@ class MemoEditorViewModel(
 
     fun setTitle(title: String) = update { it.copy(title = title) }
     fun setBody(body: String) = update { it.copy(body = body) }
+
+    /** [RCP-11] 1.34 메모 틀: the user's own and those a 나눔 판 recipe added. */
+    val templates: StateFlow<List<com.bamnat.core.memo.MemoTemplate>> = container.memoTemplates.items
+
+    /** [RCP-11] 틀에서 시작: the template's title, list or text and repeat; the date and calendars stay as they are. */
+    fun startFrom(t: com.bamnat.core.memo.MemoTemplate, answers: Map<String, String> = emptyMap()) = update { t.start(it.date, com.bamnat.core.time.Today.date(), it, answers) }
+
+    /** [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. */
+    fun saveAsTemplate(): Boolean {
+        val m = _memo.value
+        if (m.isBlank) return false
+        container.memoTemplates.add(com.bamnat.core.memo.MemoTemplate(
+            id = "m" + com.bamnat.core.time.Today.millis().toString(36),
+            title = m.title.ifBlank { (m.checklist.firstOrNull()?.text ?: m.body.lineSequence().firstOrNull()).orEmpty() }.take(30),
+            check = if (m.isChecklist) m.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
+            body = if (m.isChecklist) "" else m.body.take(300),
+            repeat = m.repeat.takeIf { it.startsWith("W") || it.startsWith("M") }.orEmpty(),
+        ))
+        return true
+    }
+
+    fun removeTemplate(id: String) = container.memoTemplates.remove(id)
     fun setColor(index: Int) = update { it.copy(colorIndex = index) }
     fun togglePinned() = update { it.copy(pinned = !it.pinned) }
     /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. */

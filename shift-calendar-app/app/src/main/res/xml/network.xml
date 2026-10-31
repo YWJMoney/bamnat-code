@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: https only, the platform's default said out loud. The debug build's copy (src/debug) adds plain http to the PC
+     for testing against a company server run there ([RCX-22]). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

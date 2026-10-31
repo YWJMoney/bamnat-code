@@ -35,6 +35,8 @@ object ProCatalog {
         "shift.yearReport" to "PAY_REPORT",
         "field.statementPdf" to "PAY_REPORT",
         "field.daysProof" to "PAY_REPORT",
+        // 1.35 [FREE-10] 테마 옷장.
+        "look.wardrobe" to "THEME_WARDROBE",
     )
 
     fun isPro(id: String): Boolean = id in tiers

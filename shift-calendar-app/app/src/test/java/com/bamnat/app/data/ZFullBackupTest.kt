@@ -33,7 +33,7 @@ class ZFullBackupTest {
     private fun sample(s: AppSettings, shiftId: Long) = s.copy(
         weekStart = DayOfWeek.MONDAY, weeklyLimitHours = 60, averageLimitHours = 48, themeMode = ThemeMode.DARK,
         dynamicColor = true, showHoursInCells = false, showLunar = true, vibrate = false, gradualVolume = false,
-        snoozeMinutes = 9, ringMinutes = 15, alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
+        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
         extraKinds = ExtraKinds(ExtraKinds.DEFAULTS.map { if (it.id == ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it }),
@@ -43,9 +43,11 @@ class ZFullBackupTest {
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", rateHint = false, alarmSuggest = false,
+        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
+        // 1.35 [FREE-03..08] 꾸미기.
+        memoLook = "layout=grid", moneyLook = "income=FF2F5BEA", screenLooks = "all:bg=FF102030", payLooks = "SHIFT:accent=FF00857A",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].

@@ -119,6 +119,8 @@ internal const val WATCH_ALARM_ROW = "워치에서도 울리기"
 internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 /** [ALRM-08] 1.25 AB: the row in 설정 › 알람 › 울리는 방식. */
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
+/** [ALRM-21] 1.35: the row in 설정 › 알람 › 울리는 방식. */
+internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -235,7 +237,7 @@ internal object SettingsIndex {
         screen("설정", "광장", SettingsGo.BOARD, "알바 광장", "현장 광장", "가게 광장", "투자 이야기", "시세", "이야기").takeIf { board && !company },
         row(P, "회사 찾기", "회사 설정", "같은 회사", "회사 근무표", "회사 계산").takeIf { board && company },
         // [SET-03] 1.22 묶음 B: someone hidden in the plaza comes back from 내 활동.
-        screen("광장 › 내 활동", "가린 사람", SettingsGo.BOARD, "차단", "차단 해제", "안 보기", "가리기", "글 안 보기").takeIf { board },
+        screen("마을 › 광장 › 내 활동", "가린 사람", SettingsGo.BOARD, "차단", "차단 해제", "안 보기", "가리기", "글 안 보기").takeIf { board },
         screen("달력 › 도구", "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
         screen("달력 › 도구", "동료 근무표 받기", SettingsGo.RECEIVE, "받은 링크", "받은 근무표", "바꿔 보기", "같이 쉬는 날", "동료 달력").takeIf { share },
         screen(C.title, "달력 목록", SettingsGo.CALENDARS, "새 달력", "달력 추가", "달력 여러 개", "알바", "부업", "순서", "달력 이름"),
@@ -244,6 +246,13 @@ internal object SettingsIndex {
         row(C, "휴대폰 배경색에 맞추기", "색", "배경화면", "앱 색"),
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),
         row(C, "날짜 칸 아래", "음력", "근무시간 표시", "날짜 밑"),
+        row(C, CAL_THEME_ROW, "달력 테마", "토요일 색", "일요일 색", "공휴일 색", "오늘 색", "칸 색칠", "근무 날 칸", "꾸미기"), // [RCP-09] 1.34
+        row(C, PHOTO_LOOK_ROW, "사진 꾸미기", "배경 사진", "달력 배경", "머리 그림", "근무 사진", "근무 아이콘", "위젯 사진", "모서리", "버튼 모양", "둥글게", "각지게", "테마 사진"), // [RCX-30] 1.35
+        row(C, WIDGET_LOOK_ROW, "위젯 투명도", "위젯 어둡게", "위젯 밝게", "투명 위젯", "위젯 배경", "위젯 꾸미기"), // [RCX-14] 1.35
+        row(C, "달력 모양", "칸 높이", "메모 중심", "다이어리", "한눈에", "큰 글씨", "칸에 메모", "메모 여러 줄", "칸 선", "날짜 위치", "근무 색 띠", "줄 순서"), // [CVW-02] 1.35
+        row(C, LONG_PRESS_ROW, "길게 누르기", "꾹 누르기", "바로 메모", "빠른 메뉴", "하루 열기"), // [CVW-09] 1.35
+        row(C, ACCENT_ROW, "버튼 색", "포인트 색", "강조 색", "앱 색", "메인 색"), // [CVW-08] 1.35
+        row(C, FREE_LOOK_ROW, "꾸미기", "테마", "스킨", "배경", "칸 디자인", "패턴", "메모장 모양", "가계부 모양", "급여 모양", "화면 색", "포스트잇", "다이어리"), // [FREE-03] 1.35
         row(C, "메모 보기", "달력 메모", "메모 표시"),
         // U 1.32 [UX132-05][UX132-06] G [WTYP-07]
         row(C, "글자 크기", "글씨", "글씨 크게", "크게", "작게", "노안", "안 보여요", "큰 글씨", "글꼴"),
@@ -290,6 +299,7 @@ internal object SettingsIndex {
         screen("설정", "기능 켜고 끄기", SettingsGo.FEATURES, "기능 끄기", "기능 켜기", "숨기기", "안 보이게", "카드 끄기", "안내 끄기", "팁 끄기", "위젯 줄"),
         // [EASY-08][OBS-02] 1.23 N, the card at the top of settings (shown "설정 › 맨 위 카드").
         screen("맨 위 카드", "내 정보", SettingsGo.PROFILE, "프로필", "질문 카드", "입사일", "월급날", "다시 묻기", "모두 처음부터", "내 설정"),
+        screen("맨 위 카드", "장터·내 레시피", SettingsGo.RECIPES, "레시피", "나눔 판", "장터", "마을", "나눔", "되돌리기", "받은 레시피", "내 레시피", "테마 나누기", "공유 설정"), // [RCP-38] 1.34
         screen("맨 위 카드", "밤낮이 한 일", SettingsGo.JOURNAL, "한 일", "한 일 기록", "알아서", "자동", "로그", "관측"),
         screen("설정 › 도움말과 문의", "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
         screen("설정 › 도움말과 문의", "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),
@@ -300,6 +310,7 @@ internal object SettingsIndex {
         screen(W.title, "근무표 사진이 안 읽힐 때", SettingsGo.DUTY_ROSTER, "사진 인식", "인식 안 돼", "어느 줄", "내 조", "사진 위에서 누르기", "무엇을 읽었는지", "기울어진 사진"),
         screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
         // 1.25 묶음 AB
+        row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
         screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),

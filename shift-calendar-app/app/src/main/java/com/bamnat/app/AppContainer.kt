@@ -191,7 +191,8 @@ class AppContainer(context: Context) {
         .also { com.bamnat.app.company.NetTimings.sink = it::record }
     val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
-    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) { ringSettings() }
+    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
+        soonMinutes = { settingsRepository.current.alarmSoonMinutes })
     /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
     fun ringSettings(): com.bamnat.app.alarm.BootAlarms.RingSettings =
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current, sureAlarm())
@@ -219,6 +220,8 @@ class AppContainer(context: Context) {
                 autoRecordPrefs.reload()
                 shareGroup.reload()
                 wishOff.reload()
+                memoTemplates.reload()
+                recipes.reload()
             }
         })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
@@ -240,6 +243,16 @@ class AppContainer(context: Context) {
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
         proof = { slipProof() })
+    /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
+    val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
+
+    /** [FREE-10] 1.35 테마 옷장: the theme worn, 입었던 테마 and its days. */
+    val wardrobe by lazy { com.bamnat.app.recipe.ThemeWardrobe(this, appContext) }
+    /** [RCP-11] 1.34 메모 틀. */
+    val memoTemplates by lazy { com.bamnat.app.data.MemoTemplateStore(appContext) }
+    /** [RCP-10] 1.34 나눔 판: the recipe server (the same worker); screenshots and tests put a fake in its place. */
+    var recipeApi: com.bamnat.app.recipe.RecipeApi = com.bamnat.app.recipe.RecipeClient(
+        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [PLAZA-32] 1.27 AI: the one line the company's 정보 광장 shows first after 이 설정 쓰기 (in memory, once). */
     var pendingPlazaNote: String? = null
     /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
@@ -428,12 +441,16 @@ class AppContainer(context: Context) {
     val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
     /**
-     * [PRIV-03] 결정 D84: this phone was installed before 처리방침 3.1 was posted and has not said yes yet. [FLAG-03] The
-     * dates come from the policy calendar (the server may move them).
+     * [PRIV-03] 결정 D84·D111: this phone was installed before 처리방침 3.1 or 3.9 was posted and has not said yes yet (one
+     * card; a yes to 3.9 counts for 3.1 too). [FLAG-03] The dates come from the policy calendar (the server may move them).
      */
-    fun policyAsks(): Boolean = remoteConfig.current.calendar.holds(com.bamnat.core.ops.PolicyConsent.VERSION,
-        installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate(), remoteConfig.agreed.value,
-        com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)) == true
+    fun policyAsks(): Boolean {
+        val calendar = remoteConfig.current.calendar
+        val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
+        val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
+        return listOf(com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
+            .any { calendar.holds(it, installed, remoteConfig.agreed.value, today) == true }
+    }
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
      * built-in data as the app starts.
@@ -722,8 +739,9 @@ class AppContainer(context: Context) {
             runCatching { example.sweep() }
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
             // [MCAL-01] So does one in an added calendar whose alarms ring.
-            val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()
-            combine(calendars.ringing, enabled) { ringing, on -> ringing to on }
+            // [ALRM-21] And a change to 곧 울릴 알람 미리 알리기, which looks ahead from the same alarm.
+            val enabled = settingsRepository.settings.map { it.alarmsEnabled to it.alarmSoonMinutes }.distinctUntilChanged()
+            combine(calendars.ringing, enabled) { ringing, on -> ringing to on.first }
                 .debounce(300)
                 .collect { (ringing, on) ->
                     alarmScheduler.reschedule(ringing, on)

@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +93,8 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
     var thanked by rememberSaveable { mutableStateOf<String?>(null) }
     // The sheets outlive the card that opened them: once 달라요 is sent the card turns into the invitation.
     var sheet by remember { mutableStateOf<Pair<AppliedSetup, Boolean>?>(null) }
+    // [J135-01] The thanks after 맞았어요 goes on its own after a moment (X still closes it at once).
+    LaunchedEffect(thanked) { if (thanked != null) { kotlinx.coroutines.delay(5_000); thanked = null } }
     val draft = invite
     val asked = askVote
     when {

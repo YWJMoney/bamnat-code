@@ -51,6 +51,8 @@ object Notifications {
     private const val GROUP_MONEY = "money"
 
     const val ALARM_NOTIFICATION_ID = 7001
+    /** 1.35 [J135-08] The ringing notice put up again as a new one (an update of the first does not pop up again). */
+    const val ALARM_AGAIN_ID = 7002
     private const val EXACT_WARNING_ID = 7003
     const val SNOOZE_NOTIFICATION_ID = 7004
     const val BRIEFING_ID = 7310

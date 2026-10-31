@@ -60,7 +60,7 @@ import com.bamnat.core.time.Today
 class TeamsWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
-        provideContent { GlanceTheme { WidgetBox { TeamsContent(data) } } }
+        provideContent { WidgetLookTheme { WidgetBox { TeamsContent(data) } } }
     }
 }
 
@@ -70,10 +70,7 @@ class TeamsWidgetReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 private fun WidgetBox(content: @Composable () -> Unit) {
-    Box(
-        GlanceModifier.fillMaxSize().background(GlanceTheme.colors.widgetBackground).cornerRadius(20.dp).padding(12.dp)
-            .clickable(actionStartActivity(NoticeLinks.intent(androidx.glance.LocalContext.current, NoticeLinks.Target.TEAMS))),
-    ) { content() }
+    WidgetSurface(GlanceModifier.clickable(actionStartActivity(NoticeLinks.intent(androidx.glance.LocalContext.current, NoticeLinks.Target.TEAMS)))) { content() }
 }
 
 /** [DAILY-03] Each team's shift today, mine marked, with tomorrow's beside it. */
@@ -209,9 +206,9 @@ class CountdownWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent {
-            GlanceTheme {
+            WidgetLookTheme {
                 Box(
-                    GlanceModifier.fillMaxSize().background(GlanceTheme.colors.widgetBackground).cornerRadius(20.dp).padding(12.dp)
+                    GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(20.dp).padding(12.dp)
                         .clickable(openDay(context, data.today)),
                     contentAlignment = Alignment.CenterStart,
                 ) { CountdownContent(data) }

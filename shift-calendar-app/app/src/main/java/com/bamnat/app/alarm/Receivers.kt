@@ -179,6 +179,11 @@ class AlarmActionReceiver : BroadcastReceiver() {
             // [ALRM-09] 오늘 모두 끄기 on the ringing notice, and 다시 켜기 on the notice that follows.
             AlarmService.ACTION_ALL_OFF -> AlarmService.allOff(context)
             AlarmsOff.ACTION_ON -> AlarmsOff.turnOn(context)
+            // [ALRM-21] 곧 알람이 울려요 and its buttons.
+            AlarmSoon.ACTION_SOON -> AlarmSoon.onSoon(context, intent)
+            AlarmSoon.ACTION_SKIP -> AlarmSoon.skip(context, AlarmSoon.at(intent))
+            AlarmSoon.ACTION_KEEP -> Notifications.cancel(context, AlarmSoon.NOTICE_ID)
+            AlarmSoon.ACTION_UNSKIP -> AlarmSoon.unskip(context)
             ACTION_CANCEL_SNOOZE -> if (BootAlarms.isLocked(context)) {
                 // [REL-10] Still locked after a reboot: the snooze lives only in the device-protected copy.
                 context.getSystemService(android.app.AlarmManager::class.java)?.cancel(AlarmScheduler.snoozeIntent(context, null))

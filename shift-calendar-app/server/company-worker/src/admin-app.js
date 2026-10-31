@@ -621,6 +621,8 @@ function adminApp(L, BUILD, M) {
       if (name === "inquiries" && (!id || wide())) jobs.push(loadInquiries(n));
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
+      // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
+      if (name === "sort") jobs.push(api("/inquiries/sort").then(keep((d) => { S.data.sort = d; })), api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
@@ -651,6 +653,15 @@ function adminApp(L, BUILD, M) {
       }
       if (name === "versions") jobs.push(api(`/versions?show=${S.versionShow}`).then(keep((d) => { S.data.versions = d; })));
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
+      // [RCP-39] 1.34 나눔 판: the list of one tab and the month's numbers.
+      if (name === "recipes") {
+        // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
+        const t = S.recipeTab ?? "flagged";
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
+        jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
+        jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
+        if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
+      }
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
       // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
@@ -947,7 +958,9 @@ function adminApp(L, BUILD, M) {
   function waitingStrip() {
     const hub = hubNow();
     if (!hub || hub.key === "today" || S.route.id || hub.tabs[0] !== S.route.name || !hub.tabs.some((t) => L.TABS[t].badge)) return "";
-    return `<p class="waiting" id="waiting" data-hub="${hub.key}">${waitingItems(hub.key)}</p>`;
+    // 1.35 [ADMHE-01] On a phone the line is left out when all it says is this tab's own number (the tab already shows it).
+    const only = L.waiting(hub.key, S.overview ?? {}, S.me).every((x) => x.tab === S.route.name);
+    return `<p class="waiting${only ? " only-here" : ""}" id="waiting" data-hub="${hub.key}">${waitingItems(hub.key)}</p>`;
   }
 
   function heading(bottom) {
@@ -985,6 +998,7 @@ function adminApp(L, BUILD, M) {
     home: () => V.homeView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
+    sort: () => sortView(),
     templates: () => templatesView(),
     sla: () => slaView(),
     review: () => V.reviewView(),
@@ -992,6 +1006,7 @@ function adminApp(L, BUILD, M) {
     community: () => communityView(),
     companies: (id) => (id ? companyView(S.data.company) : V.companiesView()),
     shares: () => sharesView(),
+    recipes: () => recipesView(),
     adopt: () => adoptView(),
     flags: (id) => (id ? flagView() : flagsView()),
     types: () => typesView(),
@@ -1024,9 +1039,9 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
+      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
-      notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares,
+      notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
     }[name]);
   }
@@ -1206,11 +1221,12 @@ function adminApp(L, BUILD, M) {
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
       ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>
-      <div class="toolbar"><input id="search" type="search" placeholder="문의와 답에서 찾기" value="${esc(S.inquiryQuery)}" autocomplete="off" enterkeyhint="search" aria-label="문의 찾기">
-        <label class="sr" for="inq-sort">정렬</label><select id="inq-sort" data-change="inquiry-sort">${SORTS.map(([k, label]) => `<option value="${k}"${S.inquirySort === k ? " selected" : ""}>${label}</option>`).join("")}</select>
+      <div class="toolbar fold${S.toolsOpen || picking ? " open" : ""}"><input id="search" type="search" placeholder="문의와 답에서 찾기" value="${esc(S.inquiryQuery)}" autocomplete="off" enterkeyhint="search" aria-label="문의 찾기">
+        ${edit && S.inquiryStatus === "open" ? '<button class="btn primary" data-act="queue-start">큐 모드</button>' : ""}
+        <button class="btn tools-toggle" data-act="tools-toggle" aria-expanded="${Boolean(S.toolsOpen || picking)}">${S.toolsOpen || picking ? "접기" : "정렬·더"}</button>
+        <span class="tool-more"><label class="sr" for="inq-sort">정렬</label><select id="inq-sort" data-change="inquiry-sort">${SORTS.map(([k, label]) => `<option value="${k}"${S.inquirySort === k ? " selected" : ""}>${label}</option>`).join("")}</select>
         <button class="btn" data-act="inquiry-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>
-        ${picking ? "" : csvButton("inquiries", S.data.inquiries?.inquiries)}
-        ${edit && S.inquiryStatus === "open" ? '<button class="btn primary" data-act="queue-start">큐 모드</button>' : ""}</div>
+        ${picking ? "" : csvButton("inquiries", S.data.inquiries?.inquiries)}</span></div>
       <div class="filterbar"><div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}</div>`;
     if (!d) return head + skeleton();
@@ -1232,7 +1248,7 @@ function adminApp(L, BUILD, M) {
         <span class="more-acts">${[["assign", "내가 맡기"], ["unassign", "맡기 취소"], ["reply", "같은 답 보내기"], ["close", "닫기"], ["open", "다시 열기"]].map(([k, label]) =>
           `<button class="btn small" data-act="inquiry-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}
         ${can("dev", "edit") ? `<button class="btn small" data-act="inquiry-bulk" data-key="link"${n ? "" : " disabled"}>개발사항에 연결</button>` : ""}</span>` : ""}</div>` : "";
-    return head + freshStrip(d) + `<p class="meta">${found}건${d.sla ? ` · 답 목표: 문제 ${d.sla.slaBug}시간, 질문 ${d.sla.slaQuestion}시간, 제안 ${d.sla.slaIdea}시간` : ""}${picking ? "" : " · 길게 누르거나 Space로 고르고, Shift로 이어서 골라요"}</p>
+    return head + freshStrip(d) + `<p class="meta">${found}건${d.sla ? ` · 답 목표: 문제 ${d.sla.slaBug}시간, 질문 ${d.sla.slaQuestion}시간, 제안 ${d.sla.slaIdea}시간` : ""}${picking ? "" : '<span class="kbd-hint"> · 길게 누르거나 Space로 고르고, Shift로 이어서 골라요</span>'}</p>
       <ul class="rows">${d.inquiries.map((q) => inquiryRow(q, { picking })).join("")}</ul>
       ${moreButton(d.next, "inquiries-more", d.total, d.inquiries.length)}${bar}`;
   }
@@ -1436,6 +1452,107 @@ function adminApp(L, BUILD, M) {
   }
 
   // ---- 개발사항 [ADMIN-10][ADMIN-11] ----
+
+  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계") ----
+  // Every waiting question already sorted by the server into what it is (이미 고침, 개발 목록에 있음, 전에 답한 것과 같음, 자주
+  // 쓰는 답, 새 문제 …) with its answer written; one tap does a card, one tap does a whole pile. Above it, 자동 대응 (owner)
+  // and Claude에게 넘기기: the 개발사항 not handed over yet as one text, and 개발 결과 붙여 넣기 for what comes back.
+
+  const PILE_HELP = {
+    fixed: ["이미 고친 문제예요", "고친 버전보다 오래된 앱에서 온 문의예요. 업데이트 안내로 답해요."],
+    known: ["개발 목록에 있는 내용이에요", "같은 개발사항에 묶고, 진행 중이라고 답해요. 고치면 한 번에 알려요."],
+    again: ["고친 뒤 다시 생겼어요", "고친 버전 이후의 앱에서 온 문의예요. 개발사항을 다시 접수해요."],
+    declined: ["반려한 요청과 같아요", "반려 이유로 답해요."],
+    answered: ["전에 답한 문의와 같아요", "그때 보낸 답을 다시 보내요. 고쳐서 보내도 돼요."],
+    faq: ["자주 쓰는 답으로 충분해요", "저장해 둔 답을 보내요."],
+    new: ["새 문제·개선이에요", "비슷한 문의끼리 묶었어요. 개발사항으로 넘기면 다음 개발에 들어가요."],
+  };
+  const PILE_DO = { fixed: "답 보내기", known: "묶고 답하기", again: "다시 접수하고 답하기", declined: "답 보내기", answered: "이 답 보내기", faq: "이 답 보내기", new: "개발사항으로 넘기기" };
+  const PILE_TONE = { fixed: "good", known: "info", again: "bad", declined: "", answered: "info", faq: "info", new: "warn" };
+
+  function sortView() {
+    const d = S.data.sort;
+    if (!d) return skeleton(3);
+    const owner = S.me?.owner;
+    const order = ["new", "again", "fixed", "known", "answered", "faq", "declined"];
+    const strip = `<div class="pile-strip" role="list">${order.map((k) => d.counts[k] ? `<a role="listitem" class="pile-card ${PILE_TONE[k]}" href="#pile-${k}" data-act="sort-jump" data-key="${k}">
+        <span class="pile-n">${d.counts[k]}</span><span class="pile-name">${esc(d.names[k])}</span></a>`
+      : `<span role="listitem" class="pile-card zero"><span class="pile-n">0</span><span class="pile-name">${esc(d.names[k])}</span></span>`).join("")}</div>`;
+    const auto = `<div class="card auto-card"><div class="auto-head"><b>자동 대응</b>
+        <small>${owner ? "켜 두면 문의가 들어오는 순간 서버가 묶고 답해요. 답에는 ‘자동 정리’가 이름으로 붙어요." : "최고 관리자가 켜고 꺼요."}</small></div>
+      ${["fixed", "known"].map((k) => `<label class="switch"><input type="checkbox" data-act="sort-auto" data-key="${k}"${d.auto[k] ? " checked" : ""}${owner ? "" : " disabled"}>
+        <span class="track" aria-hidden="true"></span><span>${esc(d.names[k])}</span></label>`).join("")}</div>`;
+    const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
+      : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
+    // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
+    const n = S.data.handoff?.items?.length ?? 0;
+    const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
+        <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
+    return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
+      ${strip.replace("</div>", `${go}</div>`)}<div class="sort-top" id="sort-tools">${auto}${handoffCard()}</div>${body}</div>`;
+  }
+
+  function pileSection(k, items) {
+    const [title, help] = PILE_HELP[k];
+    const all = k === "new" || items.length < 2 ? "" : `<button class="btn small primary" data-act="sort-pile" data-key="${k}">${items.length}건 모두 ${esc(PILE_DO[k])}</button>`;
+    return `<section class="pile" id="pile-${k}" aria-labelledby="pile-${k}-h"><div class="pile-head"><div><h3 id="pile-${k}-h">${esc(title)} <span class="pill ${PILE_TONE[k]}">${k === "new" ? items.reduce((n, g) => n + g.group.length, 0) : items.length}</span></h3>
+        <small>${esc(help)}</small></div>${all}</div><ul class="rows">${items.map((x) => sortCard(k, x)).join("")}</ul></section>`;
+  }
+
+  function sortCard(k, x) {
+    const m = x.match;
+    const meta = [esc(KIND_NAMES[x.kind] ?? x.kind), esc(x.topicName ?? ""), x.app ? `앱 ${esc(String(x.app).split(" ")[0])}` : "", esc(ago(x.at)), x.same ? `나도 그래요 ${x.same}` : ""]
+      .filter(Boolean).join(" · ");
+    const matched = m ? `<small class="match">≈ ${m.type === "dev" ? `<a href="${href("dev", m.id)}">개발사항 ‘${esc(m.title)}’</a> · ${esc(DEV_NAMES[m.status] ?? "")}${m.releasedIn ? ` ${esc(m.releasedIn)}` : ""}`
+      : m.type === "inquiry" ? `<a href="${href("inquiries", m.id)}">전에 답한 문의 ‘${esc(m.title)}’</a>` : `자주 쓰는 답 ‘${esc(m.title)}’`} · 비슷함 ${Math.round(m.score * 100)}%</small>` : "";
+    const others = k === "new" && x.others?.length ? `<details><summary>같은 내용 ${x.others.length}건 더</summary><ul class="mini">${x.others.map((o) =>
+      `<li><a href="${href("inquiries", o.id)}">${esc(o.preview)}</a> <small>${esc(o.app ? String(o.app).split(" ")[0] : "")}</small></li>`).join("")}</ul></details>` : "";
+    const title = k === "new" ? `<label class="sort-field"><span>개발사항 제목</span><input id="sort-title-${x.id}" value="${esc(x.title)}" maxlength="100"></label>` : "";
+    const reply = `<label class="sort-field"><span>${k === "new" ? "함께 보낼 답 (비우면 답 없이 넘겨요)" : "보낼 답"}</span><textarea id="sort-reply-${x.id}" rows="3">${esc(x.reply ?? "")}</textarea></label>`;
+    return `<li class="sort-card"><div class="sort-ask"><b><a href="${href("inquiries", x.id)}">${esc(x.preview)}</a></b><small>${meta}</small>${matched}${others}</div>
+      <div class="sort-answer">${title}${reply}
+      <div class="actions"><button class="btn small primary" data-act="sort-do" data-key="${k}" data-id="${x.id}">${esc(k === "new" && x.group.length > 1 ? `${x.group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
+        ${k === "new" ? `<button class="btn small" data-act="sort-reply-only" data-id="${x.id}">답만 보내기</button>` : ""}
+        <button class="btn small ghost" data-act="sort-skip" data-id="${x.id}">빼 두기</button></div></div></li>`;
+  }
+
+  /** The action of one card as the server takes it (sortApply). */
+  function sortAction(k, x) {
+    const text = document.getElementById(`sort-reply-${x.id}`)?.value?.trim() ?? x.reply;
+    if (k === "new") {
+      const title = document.getElementById(`sort-title-${x.id}`)?.value?.trim() || x.title;
+      return { do: "dev", ids: x.group, title, body: [x.preview, ...(x.others ?? []).map((o) => o.preview)].map((t) => `- ${t}`).join("\n").slice(0, 4000), ...(text ? { text } : {}) };
+    }
+    if (k === "known") return { do: "reply", id: x.id, item: x.match.id, text };
+    if (k === "again") return { do: "reopen", id: x.id, item: x.match.id, text };
+    return { do: "reply", id: x.id, text };
+  }
+
+  async function sortApply(actions, done) {
+    const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (r) => [r.replied && `답 ${r.replied}건`, r.linked && `묶음 ${r.linked}건`,
+      r.created?.length && `개발사항 ${r.created.length}개`, r.reopened && `다시 접수 ${r.reopened}개`, r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || done);
+    if (r) { S.data.sort = null; S.data.handoff = null; render({ keepScroll: true }); load(); }
+  }
+
+  /** [INBOX-05][INBOX-06] Claude에게 넘기기 and 개발 결과 붙여 넣기. */
+  function handoffCard() {
+    const h = S.data.handoff;
+    const n = h?.items?.length ?? 0;
+    const res = S.sortResult;
+    const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(DEV_NAMES[l.status] ?? l.status)}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}</ul>
+      <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
+      <div class="actions"><button class="btn small primary" data-act="sort-result-go"${res.lines.some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
+        <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
+    return `<div class="card handoff-card"><b>Claude에게 넘기기</b>
+      <small>${h ? (n ? `아직 넘기지 않은 개발사항 ${n}개 (문의 ${h.items.reduce((a, i) => a + i.asks, 0)}건). 복사해서 Claude에게 붙여 넣으면 다음 개발에 들어가요.` : "새로 넘길 개발사항이 없어요.") : "불러오는 중이에요"}</small>
+      <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (${n})</button>
+        <button class="btn small" data-act="sort-handoff-all">진행 중인 것 모두 복사</button></div>
+      <details${res ? " open" : ""}><summary>개발 결과 붙여 넣기</summary>
+        <p class="hint">Claude가 개발을 마치고 준 ‘결과’ 줄(예: d0123… 완료 1.36.0)을 붙여 넣어요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
+        ${res ? lines : `<textarea id="sort-result" rows="4" placeholder="d0123456789abcde 완료 1.36.0"></textarea>
+        <div class="actions"><button class="btn small" data-act="sort-result-check">무엇이 바뀌는지 보기</button></div>`}</details></div>`;
+  }
 
   function devListView() {
     const d = S.data.devList;
@@ -2083,6 +2200,104 @@ function adminApp(L, BUILD, M) {
   // ---- [SRV-05] 공유 링크 신고 ----
 
   const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
+
+  // [RCP-39] 1.34 나눔 판.
+  // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"]];
+  const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
+  const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
+  const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
+    field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
+    bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
+    memoLook: "메모장 모양", moneyLook: "가계부 모양", screenLook: "화면 색·배경" };
+  const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", showcase: "보여주기", auto: "자동 가림" };
+
+  /** What a recipe holds, in words: its pieces and the 받는 사람이 정할 칸 (never run, only read). */
+  function recipeParts(body) {
+    try {
+      const r = JSON.parse(body);
+      return `${(r.pieces ?? []).map((p) => esc(RECIPE_PIECES[p.kind] ?? p.kind)).join(" · ")}${r.inputs?.length ? ` · 정할 칸 ${r.inputs.length}개` : ""}`;
+    } catch { return ""; }
+  }
+
+  function recipesView() {
+    const d = S.data.recipes;
+    const m = S.data.recipeMonth;
+    const edit = can("community", "edit");
+    const tab = S.recipeTab ?? "flagged";
+    const chips = `<div class="chips" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`;
+    const month = m ? `<p class="hint">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
+    if (!d || (d.tab ?? tab) !== tab) return chips + skeleton(2);
+    if (tab === "picks") return chips + recipePicksView(d, edit);
+    if (tab === "images") return chips + recipeImagesView(d, edit);
+    if (tab === "requests") return chips + recipeRequestsView(d, edit);
+    const help = {
+      queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
+      flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
+      hidden: "가린 레시피는 90일 뒤 지워져요.",
+      visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
+      official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
+      // [RCX-32]
+      showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
+    }[tab];
+    const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
+        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
+        ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
+        <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
+        ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
+          <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
+          ${r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
+          ${r.official ? "" : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
+          ${r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : ""}
+          ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
+          <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
+      : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
+    const upload = edit && (tab === "official" || tab === "showcase") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
+      <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
+      <textarea name="recipe" rows="8" required></textarea>
+      ${tab === "showcase" ? `<p class="hint">showcase-recipes.json 전체를 붙여 넣으면 30개가 한 번에 올라가요. 하나만 붙여 넣어도 보여주기로 올라가요.</p><input type="hidden" name="showcase" value="on">`
+        : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
+      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>` : "";
+    const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
+      `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
+      : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
+    return `${chips}${month}<p class="hint">${esc(help)}</p>${rows}${upload}${log}`;
+  }
+
+  /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
+  function recipePicksView(d, edit) {
+    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.code);
+    return `<p class="hint">${esc(d.week)} 주. 근무 유형마다 레시피 3개까지 골라 광장 맨 위에 보여요. 새로 고르기 전까지 지난주 것이 그대로 보여요. 광장에 보이는 레시피의 코드(8자)를 넣어요.</p>
+      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-picks" data-key="${k}" class="row">
+        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "이번 주 고른 것 없음"}</small>
+        ${edit ? `<input name="codes" aria-label="${esc(label)} 레시피 코드" placeholder="코드 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
+  }
+
+  /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
+  function recipeImagesView(d, edit) {
+    if (!d.items.length) return empty("볼 그림이 없어요", "레시피 표지로 올린 그림이 여기 와요. 본 그림만 다른 분께 보여요.");
+    return `<p class="hint">사람 얼굴·개인정보·광고·남의 저작물이 보이면 가려요. 괜찮으면 보이기를 눌러요.</p>
+      <ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
+        <img src="data:image/webp;base64,${esc(i.data)}" alt="레시피 표지 그림" width="128" height="128" class="cover-img">
+        <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
+          <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
+  function recipeRequestsView(d, edit) {
+    if (!d.items.length) return empty("요청이 없어요", "앱의 ‘이런 레시피 있었으면’에서 올린 요청이 여기 보여요.");
+    const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
+    const style = Object.fromEntries(RECIPE_STYLES);
+    return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
+        <small>${esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
 
   function sharesView() {
     const d = S.data.shares;
@@ -3426,6 +3641,59 @@ function adminApp(L, BUILD, M) {
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
+    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함.
+    "sort-do": ({ key, id }) => {
+      const x = S.data.sort?.piles[key]?.find((i) => i.id === id);
+      if (x) sortApply([sortAction(key, x)], "처리했어요");
+    },
+    "sort-reply-only": ({ id }) => {
+      const x = S.data.sort?.piles.new.find((i) => i.id === id);
+      const text = document.getElementById(`sort-reply-${id}`)?.value?.trim();
+      if (!x || !text) return toast("보낼 답을 적어 주세요");
+      sortApply([{ do: "reply", id, text }], "답했어요");
+    },
+    // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
+    // 1.35 [ADMHE-01] A phone's list toolbar: search and 큐 모드 in one line, the rest behind 정렬·더.
+    "tools-toggle": () => { S.toolsOpen = !S.toolsOpen; render({ keepScroll: true }); },
+    "sort-jump": ({ key }) => document.getElementById(key === "tools" ? "sort-tools" : `pile-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    "sort-skip": ({ id }) => sortApply([{ do: "skip", id }], "정리함에서 뺐어요"),
+    "sort-pile": ({ key }) => {
+      const items = S.data.sort?.piles[key] ?? [];
+      if (!items.length) return;
+      // Read the cards now: what the admin changed in them is what goes, not what the server first wrote.
+      const actions = items.map((x) => sortAction(key, x));
+      confirmBox(`${items.length}건 모두 ${PILE_DO[key]}`, "카드마다 적힌 답이 그대로 가요. 보낸 답은 되돌릴 수 없어요.", PILE_DO[key],
+        () => sortApply(actions, "처리했어요"), "primary");
+    },
+    "sort-auto": async ({ key }, el) => {
+      // The click is default-prevented, so the box springs back: the state is drawn again from the answer.
+      const on = el.checked;
+      const r = await act(() => api("/inquiries/sort/auto", "POST", { ...(S.data.sort?.auto ?? {}), [key]: on }), on ? "자동 대응을 켰어요" : "자동 대응을 껐어요");
+      if (r && S.data.sort) S.data.sort.auto = r;
+      render({ keepScroll: true });
+    },
+    "sort-handoff": async (_, __, all = false) => {
+      const h = all ? await act(() => api("/inquiries/handoff?all=1")) : S.data.handoff;
+      if (!h?.items?.length) return toast("넘길 개발사항이 없어요");
+      if (!(await toClipboard(h.text))) return toast("복사하지 못했어요. 다시 해 주세요");
+      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id) }), `개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
+      S.data.handoff = null; load();
+    },
+    "sort-handoff-all": (a, el) => ACTIONS["sort-handoff"](a, el, true),
+    "sort-result-check": async () => {
+      const text = document.getElementById("sort-result")?.value ?? "";
+      if (!text.trim()) return toast("결과 줄을 붙여 넣어 주세요");
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text, dry: true }));
+      if (r) { S.sortResult = { ...r, text }; render({ keepScroll: true }); }
+    },
+    "sort-result-clear": () => { S.sortResult = null; render({ keepScroll: true }); },
+    "sort-result-go": async () => {
+      const res = S.sortResult;
+      if (!res) return;
+      const notify = document.getElementById("sort-notify")?.checked === true;
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => `개발사항 ${r.changed}개 반영${r.answered ? ` · 문의 ${r.answered}건에 답` : ""}`);
+      if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
+    },
     ...FLAG_ACTIONS,
     refresh: () => load(),
     close: () => dialog.close(),
@@ -4094,6 +4362,32 @@ function adminApp(L, BUILD, M) {
       S.data.rates = null;
       load();
     },
+    // [RCP-39]
+    "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
+    "recipe-log": () => { S.recipeLog = true; load(); },
+    // [RCX-15][RCX-04][RCX-07] 1.35
+    "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
+    "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
+    "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
+      await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
+      load();
+    }),
+    "recipe-do": async ({ id, key }) => {
+      await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
+      load();
+    },
+    // [RCX-32] 보여주기에 넣기·빼기.
+    "recipe-showcase": async ({ id, key }) => {
+      await act(() => api(`/recipes/${id}/showcase`, "POST", { on: key === "on" }), key === "on" ? "보여주기에 넣었어요" : "보여주기에서 뺐어요");
+      load();
+    },
+    "recipe-delete": ({ id }) => confirmBox("이 레시피를 지울까요?", "모든 판과 이야기가 지워지고 되돌릴 수 없어요. 이미 넣은 분들의 달력은 그대로예요.", "지우기", async () => {
+      await act(() => api(`/recipes/${id}/delete`, "POST", {}), "지웠어요");
+      load();
+    }),
+    "recipe-return": ({ id }) => openDialog(`<form data-form="recipe-return" data-id="${id}"><h2>무엇을 고치면 될까요?</h2>
+      <p>만든 분 앱에 이 메모가 보여요. 고쳐서 다시 올리면 검토로 돌아와요.</p><textarea name="note" rows="3" maxlength="200" required></textarea>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">돌려주기</button></div></form>`),
     // [SRV-05]
     "share-remove": ({ id }) => confirmBox("이 링크를 내릴까요?", "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
       const d = await act(() => api(`/shares/${id}/remove`, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
@@ -4286,6 +4580,37 @@ function adminApp(L, BUILD, M) {
         dialog.close();
         go("companies", c.id);
       }
+    },
+    // [RCP-39]
+    "recipe-return": async (form) => {
+      const id = form.dataset.id;
+      const note = String(new FormData(form).get("note") ?? "").trim();
+      if (!note) return;
+      dialog.close();
+      await act(() => api(`/recipes/${id}/return`, "POST", { note }), "돌려줬어요. 만든 분 앱에 메모가 보여요");
+      load();
+    },
+    // [RCX-08]
+    "recipe-picks": async (form) => {
+      const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
+      await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
+      load();
+    },
+    "recipe-upload": async (form) => {
+      const f = new FormData(form);
+      let parsed;
+      try { parsed = JSON.parse(String(f.get("recipe") ?? "")); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
+      // One recipe, or docs/recipes/starter-recipes.json whole ([{publicData, recipe}, …]): each goes up on its own.
+      const list = Array.isArray(parsed) ? parsed : [{ recipe: parsed, publicData: f.get("publicData") === "on", showcase: f.get("showcase") === "on" }];
+      let done = 0;
+      const failed = [];
+      for (const x of list) {
+        // [RCX-32] showcase-recipes.json's own {showcase: true}, or the 보여주기 tab's form.
+        try { await api("/recipes", "POST", { recipe: x.recipe, publicData: x.publicData === true, showcase: x.showcase === true || f.get("showcase") === "on" }); done++; }
+        catch (e) { failed.push(x.recipe?.title ?? "?"); }
+      }
+      toast(`${done}개 올렸어요${failed.length ? ` · 못 올린 것 ${failed.length}개: ${failed.slice(0, 3).join(", ")}` : ""}`);
+      if (done) { form.reset(); S.data.recipes = null; load(); }
     },
     "hide-post": (form) => {
       const mute = form.dataset.mute === "1";

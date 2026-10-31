@@ -176,6 +176,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .hint{margin:.1rem 0 .75rem;font-size:.88rem;color:var(--muted)}
 .section{display:flex;align-items:center;gap:.5rem;font-size:.92rem;margin:1.5rem .25rem .6rem;color:var(--muted);font-weight:800}
 .section .count{font-size:.75rem;background:var(--soft);padding:.05rem .5rem;border-radius:99px}
+.cover-img { border-radius: 12px; object-fit: cover; }
 .pill{flex:none;display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;border-radius:999px;background:var(--soft);color:var(--muted);
 font-size:.8rem;font-weight:800;white-space:nowrap;line-height:1.5}
 .pill.warn{background:var(--warn-bg);color:var(--warn)}
@@ -684,4 +685,52 @@ details.card.events>summary h2{display:inline;font-size:1.06rem}
 /* [ADMX-08] Search in the palette: the server's groups under a heading each. */
 .palette .group-head{padding:.5rem 1rem .2rem;font-size:.75rem;font-weight:800;color:var(--muted);background:var(--soft)}
 .palette .row small.hint2{display:block;font-size:.75rem;color:var(--muted)}
+/* 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: the piles as a strip of counts, the cards with their answers ready. */
+.pile-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:.5rem;margin:0 0 .9rem}
+.pile-card{display:flex;flex-direction:column;gap:.1rem;padding:.65rem .8rem;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);color:inherit;text-decoration:none;box-shadow:var(--shadow)}
+.pile-card .pile-n{font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}
+.pile-card .pile-name{font-size:.78rem;color:var(--muted);font-weight:700}
+.pile-card.good .pile-n{color:var(--ok)}.pile-card.warn .pile-n{color:var(--warn)}.pile-card.bad .pile-n{color:var(--bad)}.pile-card.info .pile-n{color:var(--info)}
+.sort-top{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem;margin:0 0 .5rem}
+@media (min-width:800px){.sort-top{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr)}.sort-top>.card{margin:0}}
+.auto-head small,.handoff-card>small{display:block;margin:.2rem 0 0;font-size:.82rem;color:var(--muted)}
+.handoff-card>b,.auto-head b{font-size:1rem}
+.pile{margin:1.4rem 0 0;scroll-margin-top:4.5rem}
+.pile-head{display:flex;align-items:flex-end;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin:0 .25rem .6rem}
+.pile-head h3{font-size:1rem;display:flex;align-items:center;gap:.4rem;margin:0}
+.pile-head small{display:block;font-size:.82rem;color:var(--muted)}
+.pile-card.zero{box-shadow:none;background:none;opacity:.5}
+.sort-view{display:flex;flex-direction:column}
+.sort-top{scroll-margin-top:4.5rem}
+/* A phone: the piles in one swipeable line (empty ones left out), the questions first, 자동 대응·넘기기 at the end. */
+@media (max-width:599px){.pile-strip{display:flex;overflow-x:auto;scrollbar-width:none;margin:0 -1rem .75rem;padding:0 1rem .2rem}
+.pile-strip::-webkit-scrollbar{display:none}.pile-strip .pile-card{flex:none;min-width:6.5rem}.pile-strip .pile-card.zero:not(.handoff-chip){display:none}
+.sort-view>.sort-top{order:2;margin-top:1.4rem}.sort-view>.pile,.sort-view>.empty{order:1}}
+.sort-card{display:grid;grid-template-columns:minmax(0,1fr);gap:.25rem 1.25rem;border-bottom:1px solid var(--line);padding:.85rem 1rem}
+.sort-card:last-child{border-bottom:0}
+@media (min-width:1024px){.sort-card{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}.sort-answer .sort-field:first-child{margin-top:0}}
+.sort-ask{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.sort-ask>b a{color:inherit;text-decoration:none}
+.sort-ask>b a:hover{text-decoration:underline}
+.sort-ask>small{font-size:.8rem;color:var(--muted)}
+.sort-card .match{display:block;margin:.35rem 0 0;font-size:.82rem;color:var(--info);font-weight:700}
+.sort-card details{margin:.4rem 0 0;padding-top:.25rem}
+.sort-card .actions{margin:.5rem 0 0}
+.sort-field{display:block;margin:.6rem 0 0;font-weight:700}
+.sort-field>span{display:block;font-size:.8rem;color:var(--muted);margin:0 0 .25rem}
+.sort-field textarea{min-height:4.5rem}
+ul.mini{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem;font-size:.86rem}
+ul.mini small{color:var(--muted);margin-left:.3rem}
+/* 1.35 [ADMHE-01] A phone: the list starts higher. 정렬·고르기·CSV fold behind one button; the waiting line that only
+   repeats this tab's own number and the keyboard hint are left out. */
+.tools-toggle{display:none}
+.tool-more{display:contents}
+@media (max-width:599.98px){.toolbar.fold{flex-wrap:nowrap}.toolbar.fold.open{flex-wrap:wrap}.tools-toggle{display:inline-flex}
+.toolbar.fold .tool-more{display:none}.toolbar.fold.open .tool-more{display:flex;flex-wrap:wrap;gap:.5rem;flex-basis:100%}
+.toolbar.fold.open .tool-more select{flex:1 1 10rem}
+.toolbar.fold input[type=search]{flex:1 1 0}
+.waiting.only-here{display:none}.fresh{padding:.45rem .7rem;font-size:.85rem;flex-wrap:nowrap}.fresh span{flex:1 1 auto}.fresh [data-act=fresh-bugs]{display:none}}
+@media (pointer:coarse){.kbd-hint{display:none}}
+.sort-nudge{display:flex;align-items:center;gap:.6rem;margin:0 0 .9rem;padding:.7rem .9rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);text-decoration:none;font-size:.88rem}
+.sort-nudge svg{flex:none;width:1.25rem;height:1.25rem}.sort-nudge span{flex:1;min-width:0}.sort-nudge b{color:var(--info);margin-right:.35rem}
 `;

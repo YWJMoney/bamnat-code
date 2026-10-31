@@ -238,6 +238,10 @@ class MigrationAllVersionsTest(private val from: Int) {
             "pay_observations" to mapOf("id" to 1, "payMonth" to 202609, "net" to 2_812_340, "gross" to 3_200_000, "epochDay" to 20736,
                 "source" to "DEPOSIT", "kind" to "SALARY", "entryId" to 1, "hours" to null, "days" to null, "note" to "", "createdAt" to 1),
             "tax_settings" to mapOf("key" to "biz.vat", "value" to "SIMPLE"),
+            // [RCP-17][RCP-25] Version 24's 나눔 판 tables, likewise new.
+            "applied_recipes" to mapOf("id" to 1, "code" to "ABCD2345", "version" to 1, "hash" to "00", "title" to "야간 파랑", "calendarId" to "main",
+                "body" to "{}", "inputs" to "{}", "pieces" to "shiftLook", "before" to "{}", "appliedAt" to 1, "undoneAt" to null, "replacedAt" to null, "keptSent" to 0),
+            "recipe_drafts" to mapOf("id" to 1, "body" to "{}", "step" to 2, "code" to null, "scope" to "public", "updatedAt" to 1),
         )
 
         /**

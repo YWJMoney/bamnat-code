@@ -1,5 +1,6 @@
 package com.bamnat.app
 
+import androidx.compose.ui.graphics.luminance
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -108,8 +109,24 @@ class MainActivity : ComponentActivity() {
         }
         // G 1.32 [WTYP-07] 오전/오후로 보기: every time on screen is written by Fmt, so the root is drawn again on a change.
         com.bamnat.app.ui.Fmt.clock12 = settings.clock12
-        BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact) {
-            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
+        val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
+        BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
+            corners = photoLook.corners, accent = settings.accentColor) {
+            // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
+            val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val look = androidx.compose.runtime.remember(settings.calTheme, darkSurface) {
+                com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(settings.calTheme), darkSurface)
+            }
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds,
+                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook,
+                // [CVW-01][CVW-09] 1.35 달력 모양 and 날짜를 길게 누르면.
+                com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
+                com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress,
+                // [FREE-04][FREE-05][FREE-06][FREE-07] 1.35 완전 자유 꾸미기.
+                com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(settings.screenLooks) { com.bamnat.core.recipe.ScreenLooks.decode(settings.screenLooks) },
+                com.bamnat.app.ui.theme.LocalMemoLook provides androidx.compose.runtime.remember(settings.memoLook) { com.bamnat.core.recipe.MemoLook.decode(settings.memoLook) },
+                com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
+                com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) }) {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.
@@ -149,9 +166,14 @@ class MainActivity : ComponentActivity() {
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
     private fun openLink(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW || !appContainer.shareApi.enabled) return
+        if (intent?.action != Intent.ACTION_VIEW) return
         // Reopened from Recents, Android hands back the link the app was first opened with: it was offered then.
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        // [RCP-22] 1.34: a recipe link (bamnat://r/CODE from the recipe's public page).
+        if (intent.data?.scheme == "bamnat" && intent.data?.host == "r") {
+            com.bamnat.app.recipe.RecipeLinks.open(com.bamnat.app.recipe.RecipeLinks.find(intent.dataString)); return
+        }
+        if (!appContainer.shareApi.enabled) return
         ShareLinkId.find(intent.dataString)?.let(appContainer.received::open)
     }
 

@@ -110,9 +110,9 @@ class ALScreenshotTest : ScreenshotBase() {
     @Test fun phoneStatsMoreCard() = shoot("1207_phone_stats_more", PHONE) {
         c.settingsRepository.update { it.copy(shareUsageStats = true, usageStatsMore = null) }
         val now = Today.instant()
-        // 3.2 moved by the server to the shot's day, so the ask shows now.
+        // [PRIV-05] 3.9 (which brought 3.2 forward to the launch day) moved by the server to the shot's day, so the ask shows now.
         c.remoteConfig.save(LaunchConfig.parse(JSONObject("""{"flags":{},
-            "policy":[{"version":"3.2","posted":"2026-09-14","effective":"2026-10-14","heldUntil":null}],"serverTime":"$now"}"""), now))
+            "policy":[{"version":"${com.bamnat.core.ops.PolicyConsent.VERSION}","posted":"2026-09-14","effective":"2026-10-14","heldUntil":null}],"serverTime":"$now"}"""), now))
         c.featureGate.refresh()
         until { com.bamnat.app.ui.flags.statsMoreAsks(c) }
         settle()

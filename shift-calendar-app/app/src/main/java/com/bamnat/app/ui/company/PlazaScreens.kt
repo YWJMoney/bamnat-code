@@ -563,7 +563,7 @@ private fun AddRateDialog(filter: RatesViewModel.Filter, onDismiss: () -> Unit, 
                     }
                 }
                 OutlinedTextField(amount, { amount = it.filter(Char::isDigit).take(9); error = null }, label = { Text("${Plaza.unit(unit)} (원)") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true, visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     supportingText = { amount.toLongOrNull()?.let { Text(won(it)) } })
                 OutlinedTextField(note, { note = it.take(100); error = null }, label = { Text("한마디 (선택)") }, placeholder = { Text("예: 식대 별도, 숙련 3년") })
                 Text("이름·회사·전화번호는 적지 마세요. 들은 시세여도 괜찮아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

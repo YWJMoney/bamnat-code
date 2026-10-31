@@ -164,7 +164,7 @@ class ARScreenshotTest : ScreenshotBase() {
 
     /** Where to have it ask first: settings search finds it (the ⋮ menu is a popup window these shots do not reach). */
     @Test fun settingsSearchSaysWhereToBeAskedFirst() = shoot("1275_ar_search_ask_first", PHONE, style(WorkStyle.INVEST) {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "넣기 전에 묻기")
         assertTrue(appears("넣기 전에 묻게 하려면", exact = false))
         reveal("캡처로 바로 넣기", exact = false)

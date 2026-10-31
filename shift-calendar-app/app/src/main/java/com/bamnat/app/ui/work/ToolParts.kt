@@ -126,7 +126,7 @@ internal fun NumberField(
         label = { Text(label) },
         suffix = suffix?.let { { Text(it) } },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number),
+        visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number),
         modifier = modifier.fillMaxWidth(),
     )
 }

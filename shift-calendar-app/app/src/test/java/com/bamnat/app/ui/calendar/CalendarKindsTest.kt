@@ -84,7 +84,11 @@ class CalendarKindsTest {
         assertEquals(DayMark.LEAVE, vm.mark.value)
         vm.paintDays(listOf(work, off))
         settle()
+        // [J135-10][J135-13] 1.35: a day off that had an alarm asks 끌까요? and the change's message leaves the alarm to the answer.
         assertEquals("11월 2일에 연차를 넣었어요 · 근무 없는 1일은 빼고", vm.lastPaint.value?.text)
+        val ask = vm.restAlarms.value
+        assertEquals(listOf(work), ask?.days?.map { it.date })
+        vm.closeRestAlarms()
         assertEquals(Leave(LeaveKind.ANNUAL, 4), stored(work)?.leave)
         assertNull(stored(off)?.leave)
 

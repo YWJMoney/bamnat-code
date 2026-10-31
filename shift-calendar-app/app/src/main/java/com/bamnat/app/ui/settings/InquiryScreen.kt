@@ -2,6 +2,7 @@ package com.bamnat.app.ui.settings
 
 import com.bamnat.app.ui.guide.guideCalendar
 import com.bamnat.app.appContainer
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.outlined.VisibilityOff
 import com.bamnat.app.company.CompanyText
@@ -202,6 +203,20 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     var lastHome by rememberSaveable { mutableStateOf(if (first == NEW) HELP else first) }
     LaunchedEffect(view) { if (home) lastHome = view }
     LaunchedEffect(open?.id, open?.answers) { open?.let(vm::opened) }
+    // [J135-03] 1.35: going back to 내 문의 or opening one reads it again, and while either stays on screen it is read every
+    // 30 seconds, so an answer shows without leaving help or restarting the app (컴퓨터 점검 F-38).
+    val screenLife = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val mineShown = view == LIST || (!home && view != NEW && publicId == null)
+    LaunchedEffect(view, mineShown) {
+        if (!mineShown) return@LaunchedEffect
+        screenLife.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                kotlinx.coroutines.delay(30_000)
+                vm.refresh()
+            }
+        }
+    }
+    LaunchedEffect(view) { if (mineShown) vm.refresh() }
     // A question that is gone (deleted elsewhere) falls back to the list.
     LaunchedEffect(list, view) { if (!home && view != NEW && publicId == null && list != null && open == null) view = LIST }
     val ask: (String, HelpTopic?) -> Unit = { text, topic ->

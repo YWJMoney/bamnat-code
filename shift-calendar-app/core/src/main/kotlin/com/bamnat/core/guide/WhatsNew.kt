@@ -10,6 +10,38 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.35.0 나눔 판 완성 (계획/1.34-나눔판-설계서.md 1.35·1.36 몫).
+        Release(47, "1.35.0", listOf(
+            // [RCX-02][RCX-03]
+            Line("넣은 레시피에 새 판이 나오면 알려 드려요. 내가 고친 곳은 그대로 두고 바뀐 곳만 골라 넣어요", "recipe.update"),
+            // [RCX-04]
+            Line("‘이런 레시피 있었으면’에 바라는 레시피를 적으면 다른 분이 만들어 드려요", "recipe.request"),
+            // [RCX-05..07][RCX-10]
+            Line("만든 분 페이지에서 배지와 다른 레시피를 보고, 팔로우하면 새 레시피 소식을 받아요", "recipe.maker"),
+            // [RCX-08][RCX-09]
+            Line("나눔 판 맨 위에 이번 주 고른 것과 요즘 뜨는 레시피가 보여요", "recipe.picks"),
+            // [RCX-11..15]
+            Line("화면 배치·위젯 모양도 레시피로 나누고, 여러 개를 묶음으로 만들고, 표지에 사진을 넣어요", "recipe.layout"),
+            // [CVW-01..06]
+            Line("달력 모양을 바꿔요. 메모 중심·다이어리처럼 칸을 키워 메모를 여러 줄 보고, 카드를 달력 위로 올릴 수 있어요", "calendar.view"),
+            // [CVW-07..10]
+            Line("앱 강조색, 날짜를 길게 누를 때 할 일, 메모 틀의 입력 칸(별점·숫자·고르기)을 정해요", "app.feel"),
+            // [STU-01..06][LIN-01..05]
+            Line("꾸미기 스튜디오에서 예시 앱을 보며 만들고, 내 앱에만 넣거나 올려요. 내 판을 고친 수정판은 달라진 점을 보고 골라 가져와요", "recipe.studio"),
+        )),
+        // 1.34.0 나눔 판 (계획/1.34-나눔판-설계서.md).
+        Release(46, "1.34.0", listOf(
+            // [RCP-21][RCP-23..26]
+            Line("광장에 ‘나눔 판’이 생겼어요. 다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 내 달력에서 미리 보고 고른 것만 넣어요. 7일 안에 되돌려요", "recipe.browse"),
+            // [RCP-17][RCP-19]
+            Line("내 설정도 레시피로 나눠요. 금액·이름은 받는 분이 넣는 칸으로 바뀌어 보이지 않아요", "recipe.make"),
+            // [RCP-08][RCP-09][RCP-18]
+            Line("근무에 이모지를 달고, 달력의 오늘·주말·공휴일 색을 색상환으로 골라요", "calendar.theme"),
+            // [RCP-11]
+            Line("자주 쓰는 메모를 틀로 저장하고 ‘틀에서 시작’으로 바로 써요", "memo.template"),
+            // [RCP-34]
+            Line("교대·일근에도 같은 일 하는 분들끼리 이야기하는 광장이 생겼어요", "plaza.shiftRoom"),
+        )),
         // 1.33.0 (docs/plans/1.33-개발계획.md, 1.32 실사용 테스트 보고서와 직접 써 보기).
         Release(45, "1.33.0", listOf(
             // [J133-46][J133-50]

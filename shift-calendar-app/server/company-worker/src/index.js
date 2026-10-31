@@ -74,10 +74,14 @@ import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.
 import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
+import { inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
-import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+// 1.34 [RCP-28]..[RCP-36] 나눔 판.
+import { RECIPE_COLUMNS, RECIPE_SCHEMA, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity } from "./recipe-community.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -233,6 +237,8 @@ export default {
  */
 export async function prune(env, now) {
   const invite = await inviteSettings(env);
+  // 1.34 [RCP-33] a hidden recipe nobody restored goes after 90 days (처리방침 3.8).
+  await pruneRecipes(recipeDeps, env, now);
   await batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
@@ -364,7 +370,9 @@ const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, 
   /^\/api\/companies\/all$/,
   /^\/api\/companies\/counts$/, // R131 1.31 [SPD-21]
   // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
-  /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/];
+  /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/,
+  // 1.34 [RCP-29] the 나눔 판's lists and recipes.
+  /^\/api\/recipes$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}(\/talk)?$/];
 const publicReads = new Map();
 
 async function publicAllowed(request, env, path) {
@@ -466,8 +474,17 @@ async function routeOnce(request, env, url, ctx) {
     return money(request, env, path);
   }
   if (path === "/api/invites" || path.startsWith("/api/invites/")) return invites(request, env, path, url);
+  // 1.34 [RCP-29] 나눔 판.
+  if (path === "/api/recipes" || path.startsWith("/api/recipes/")) {
+    // 1.35 [RCX-01..15] 계보·새 판·요청 판·제작자·고른 것·소식·그림 first: their paths are not a recipe's code.
+    const more = await communityRoute(recipeDeps, request, env, path, url);
+    if (more) return more;
+    const res = await recipeRoute(recipeDeps, request, env, path, url, ctx);
+    if (res) return res;
+  }
   return json({ error: "not_found" }, 404);
 }
+
 
 // ---- storage ----
 
@@ -657,6 +674,9 @@ const SCHEMA = [
   // R131 1.31 [ADMX-16] An admin's authenticator secret (on once a code was confirmed) and the last step used (no code twice).
   `CREATE TABLE IF NOT EXISTS admin_totp (admin TEXT PRIMARY KEY, secret TEXT NOT NULL, on_at INTEGER, used_step INTEGER NOT NULL DEFAULT -1,
     created_at INTEGER NOT NULL)`,
+  // 1.34 [RCP-28] 나눔 판 (recipes.js).
+  ...RECIPE_SCHEMA,
+  ...COMMUNITY_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -721,9 +741,15 @@ const COLUMNS = [
   // [ADMCP-03] 복사함: when a question was last copied for development and by whom (the activity log keeps each copy).
   "ALTER TABLE inquiries ADD COLUMN copied_at INTEGER",
   "ALTER TABLE inquiries ADD COLUMN copied_by TEXT",
+  // 1.35 [INBOX-03] 정리함에서 빼 둠, and [INBOX-05] when a 개발사항 went to Claude.
+  "ALTER TABLE inquiries ADD COLUMN sorted_at INTEGER",
+  "ALTER TABLE dev_items ADD COLUMN handed_at INTEGER",
   // AT 1.29 끝
   // S 1.32 [SECX-01] Flags an approved admin phone sees before everyone (미리 보기), as a JSON array the developer app sets.
   "ALTER TABLE admin_devices ADD COLUMN previews TEXT",
+  // 1.34 [RCP-35] 나눔 판의 이야기.
+  ...RECIPE_COLUMNS,
+  ...COMMUNITY_COLUMNS,
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -2091,17 +2117,18 @@ const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : 
 
 // ---- [PLAZA-32][PLAZA-33] 회사 정보 광장 and the plazas of each kind of work ----
 //
-// The talk of a company's people among themselves, and of the kinds of work with no company (현장, 가게, 알바, 투자), in the
+// The talk of a company's people among themselves, and of the kinds of work with no company (교대·일근 since 1.34 [RCP-34],
+// 현장, 가게, 알바, 투자), in the
 // posts table that rule talks use (결정 AI-D5): grp 'room', so 신고 3번 가림, the developer's 가리기·지우기·30일 막기,
 // 이 사람 글 안 보기, 내 것 지우기 and 광장 소식 are the same. A company's room is for the phones that joined it (AI-D6),
 // counted like its pay reads; a kind's room for any phone with the app, held to the public reads an hour (AI-D7).
 
 export const ROOM = "room";
-export const STYLE_ROOMS = { "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
+export const STYLE_ROOMS = { "style-shift": "교대 광장", "style-day": "일근 광장", "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
 const ROOM_LIMITS = { perDay: 10, perNetworkDay: 300, shown: 100 };
 /** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
-export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:field|shop|hourly|invest))\/setups\/room\/posts$/;
+export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:shift|day|field|shop|hourly|invest))\/setups\/room\/posts$/;
 
 /** The place of a room: a company (not hidden) or a kind of work's plaza; null when there is none. */
 async function roomPlace(env, id) {
@@ -3137,7 +3164,11 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE invite_uses SET invitee = ? WHERE invitee = ?", `${gone}i`, dev),
     stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", gone, dev),
   ]);
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
+  // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
+  const recipes = await forgetRecipes(recipeDeps, env, dev);
+  // 1.35 its requests, likes, follows, maker page and pictures.
+  await batch(env, forgetCommunity(recipeDeps, env, dev));
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes, ...(recipes ? { recipes } : {}) });
 }
 
 async function vote(request, env) {
@@ -4080,6 +4111,8 @@ function areaFor(path) {
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings" || path === "/settings/sla" || path === "/settings/invite") return "settings";
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
+  // 1.34 [RCP-36] 나눔 판 검토·신고·임시 조치: the same people who look after the plaza's posts.
+  if (path === "/recipes" || path.startsWith("/recipes/")) return "community";
   // AM 1.28 [FLAG-27] the switches are flags now: 기능 관리 (forcing off checks flagOff as well).
   if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
   if (path.startsWith("/notices") || path === "/ops") return "ops";
@@ -4199,6 +4232,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/versions" && method === "GET") return json(await versions(env, url.searchParams.get("show")));
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})\/promote$/);
   if (m && method === "POST") return promote(env, m[1], now);
+  // 1.35 [INBOX-01] 문의 정리함 and [INBOX-05] Claude에게 넘기기, before the question routes.
+  if (path.startsWith("/inquiries/sort") || path.startsWith("/inquiries/handoff")) {
+    const r = inboxRoute(request, env, url, path, now);
+    if (r) return r;
+  }
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
@@ -4226,6 +4264,12 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  if (path === "/recipes" || path.startsWith("/recipes/")) {
+    const more = await communityAdmin(recipeDeps, request, env, path, url, now);
+    if (more) return more;
+    const res = await recipeAdmin(recipeDeps, request, env, path, url, now, actorName(env));
+    if (res) return res;
+  }
   // [ADMUX-19] 광장 운영 일괄: many posts or 임금표 entries at once, each handled as it is alone.
   if (path === "/posts/bulk" && method === "POST") return plazaBulk(request, env, now, "posts");
   if (path === "/rates/bulk" && method === "POST") return plazaBulk(request, env, now, "rates");
@@ -5017,6 +5061,9 @@ const BADGE_SQL = {
   devTodo: ["dev", "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'todo'"],
   owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
   flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
+  // [RCP-39] 1.34 나눔 판: recipes waiting for 첫 3개 검토, and those with reports still shown.
+  recipeQueue: ["community", "SELECT COUNT(*) AS n FROM recipes WHERE state = 'pending'"],
+  recipeFlagged: ["community", "SELECT COUNT(*) AS n FROM recipes WHERE flags > 0 AND state = 'visible'"],
   // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
   // [FIN130-11] A version held for its shape (BD) is counted once, under 모양이 다른 판 (ax_shape), not here as well.
   versionConflicts: ["companies", `SELECT COUNT(*) AS n FROM (SELECT company_id, dept_norm, COUNT(DISTINCT grp) AS g FROM reports
@@ -6802,3 +6849,15 @@ async function sameSecret(given, secret) {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+
+/**
+ * 1.34 [RCP-29] What recipes.js uses from here (it does not import this file). legalOpen: a LEGAL flag of the 나눔 판 (recipe.publish,
+ * recipe.vote, recipe.talk) as the server sees it now, so nothing is kept before 처리방침 3.8 is in force (결정 D109).
+ */
+const recipeDeps = {
+  one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, overLimit, allow, tooMany, randomId, paused, edgeCached,
+  legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
+  hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
+  authorKey,
+  authorToken,
+};

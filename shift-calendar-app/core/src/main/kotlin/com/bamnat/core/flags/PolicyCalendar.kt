@@ -49,7 +49,7 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
          * 기능 관리 › 일정 › 처리방침 일정) moves both dates without a new app.
          */
         val SEED = PolicyCalendar(listOf(
-            PolicyVersion(PolicyConsent.VERSION, PolicyConsent.POSTED, PolicyConsent.EFFECTIVE, PolicyConsent.HELD_UNTIL),
+            PolicyVersion(PolicyConsent.LAUNCH_VERSION, PolicyConsent.LAUNCH_POSTED, PolicyConsent.LAUNCH_EFFECTIVE, PolicyConsent.LAUNCH_HELD_UNTIL),
             PolicyVersion("3.2", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 27)),
             // [PHOTO-09] 1.29: 사진이 달라요 횟수 (1-13항); the same day as 3.2 so both change at once.
             PolicyVersion("3.3", LocalDate.of(2026, 10, 28), LocalDate.of(2026, 11, 27)),
@@ -61,6 +61,10 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
             PolicyVersion("3.6", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
             // [SHR-20] 1.33: 동료 링크의 회사 설정 (1항); posted with 1.33 the same day as 3.6, 30 days as an item is added.
             PolicyVersion("3.7", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
+            // [RCP-37] 1.34: 나눔 판 (1-4항), merged 2026-10-29 on the public site repository; 30 days as the information grows.
+            PolicyVersion("3.8", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 29)),
+            // [PRIV-05] 결정 D111: 3.2~3.8 brought forward to 정식 출시일; a phone installed before 3.9 that says no keeps 11-29.
+            PolicyVersion(PolicyConsent.VERSION, PolicyConsent.POSTED, PolicyConsent.EFFECTIVE, PolicyConsent.HELD_UNTIL),
         ))
 
         /** "3.10" after "3.9": compared part by part as numbers. */

@@ -159,10 +159,12 @@ private fun DayRow(
     val type = day.shiftType
     val isToday = date == today
     val red = row.holiday != null || date.dayOfWeek == DayOfWeek.SUNDAY
+    val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     val dateColor = when {
         isToday -> scheme.onPrimary
-        red -> cal.sunday
-        date.dayOfWeek == DayOfWeek.SATURDAY -> cal.saturday
+        row.holiday != null -> look.holiday(cal)
+        red -> look.sunday(cal)
+        date.dayOfWeek == DayOfWeek.SATURDAY -> look.saturday(cal)
         else -> scheme.onSurface
     }
     val showShift = focus == CalendarFocus.SHIFTS || day.isWorkDay || (type != null && !type.isOff) || day.leave != null

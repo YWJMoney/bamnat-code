@@ -35,7 +35,7 @@ internal object CalendarToolSlots {
             if (fit.receive) add(Slot(RECEIVE, "동료 근무표 받기"))
             add(Slot(PATTERN, "근무 주기 설정"))
             add(Slot(ADD, "새 달력 만들기"))
-            add(Slot(CUSTOMIZE, "화면 꾸미기", enabled = received == null, note = received))
+            add(Slot(CUSTOMIZE, "카드 배치", enabled = received == null, note = received))
             add(Slot(VIEW_SETTINGS, "달력 보기 설정", away = true))
             add(Slot(HELP, "도움말·문의", away = true))
         }

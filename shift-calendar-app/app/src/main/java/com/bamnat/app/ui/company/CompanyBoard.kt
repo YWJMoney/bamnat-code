@@ -94,7 +94,7 @@ import com.bamnat.core.time.Today
 @Composable
 fun CompanyBoardScreen(
     vm: CompanyBoardViewModel,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onOpen: (String) -> Unit,
     onShare: () -> Unit,
     /** [PLZ-14] 임금표. */
@@ -125,7 +125,7 @@ fun CompanyBoardScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (filter.job.isEmpty()) "규칙 광장" else "${com.bamnat.app.company.Plaza.job(filter.job)} 광장") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     // [PLZ-14][PLZ-08] Plain buttons, not a menu to find first.
                     if (onRates != null) TextButton(onClick = onRates) { Text("임금표") }
@@ -134,11 +134,12 @@ fun CompanyBoardScreen(
             )
         },
         floatingActionButton = {
-            // [SETUP-10] Shrinks to its icon once the list moves, so it does not sit on a card's numbers.
-            val wide by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
-            ExtendedFloatingActionButton(
-                onClick = onShare, expanded = wide, text = { Text("우리 회사 규칙 올리기") },
-                icon = { Icon(Icons.Filled.Add, if (wide) null else "우리 회사 규칙 올리기") },
+            // [SETUP-10] F-98: at the top the button is in the list (under the search and its chips, never on them); the round one
+            // comes only once the list has moved past it.
+            val moved by remember { derivedStateOf { list.firstVisibleItemIndex > 0 && list.layoutInfo.visibleItemsInfo.none { it.key == "share" } } }
+            if (moved) ExtendedFloatingActionButton(
+                onClick = onShare, expanded = false, text = { Text("우리 회사 규칙 올리기") },
+                icon = { Icon(Icons.Filled.Add, "우리 회사 규칙 올리기") },
             )
         },
     ) { padding ->
@@ -188,6 +189,11 @@ fun CompanyBoardScreen(
                     )
                 }
                 item { PlazaFilterBar(filter, plazas, vm::setFilter) }
+                item(key = "share") {
+                    androidx.compose.material3.OutlinedButton(onClick = onShare, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.Add, null); Text("우리 회사 규칙 올리기", Modifier.padding(start = 6.dp))
+                    }
+                }
                 item {
                     Text(
                         if (adopted) "같은 회사 분들이 맞다고 했거나 개발자가 확인한 규칙이에요. 누구나 그대로 가져다 쓸 수 있어요. 금액은 각자 넣어요."

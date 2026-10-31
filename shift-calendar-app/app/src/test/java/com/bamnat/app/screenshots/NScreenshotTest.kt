@@ -122,7 +122,7 @@ class NScreenshotTest : ScreenshotBase() {
         then()
     }
 
-    @Test fun settingsBoard() = shoot("694_n_settings_board", FOLDED, clean { tab(4, wide = false); reveal("밤낮이 한 일", exact = true) })
+    @Test fun settingsBoard() = shoot("694_n_settings_board", FOLDED, clean { tab(SETTINGS_TAB, wide = false); reveal("밤낮이 한 일", exact = true) })
     @Test fun profileFolded() = shoot("695_n_profile_folded", FOLDED, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
     @Test fun profileUnfolded() = shoot("696_n_profile_unfolded", UNFOLDED, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
     @Test fun profileBig() = shoot("697_n_profile_200", FOLDED, 2f, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
@@ -142,17 +142,17 @@ class NScreenshotTest : ScreenshotBase() {
     @Test fun journalDark() = shoot("703_n_journal_dark", FOLDED_NIGHT, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
     @Test fun journalHome() = shoot("704_n_journal_home", FOLDED, journal { settle(); reveal("오늘 밤낮이 한 일", exact = false) })
     @Test fun featureWaits() = shoot("705_n_feature_waits", FOLDED, clean {
-        tab(4, wide = false)
+        tab(SETTINGS_TAB, wide = false)
         tapText("기능 켜고 끄기", exact = true)
         reveal("이걸 알려 주면 시작해요", exact = false)
     })
-    @Test fun settingsBoardUnfolded() = shoot("706_n_settings_board_unfolded", UNFOLDED, clean { tab(4, wide = true); reveal("밤낮이 한 일", exact = true, across = 0.2f) })
+    @Test fun settingsBoardUnfolded() = shoot("706_n_settings_board_unfolded", UNFOLDED, clean { tab(SETTINGS_TAB, wide = true); reveal("밤낮이 한 일", exact = true, across = 0.2f) })
 
     // N-4: 도움말 answers and the update notice that tell of it.
     @Test fun helpProfile() {
         inquiriesOn()
         shoot("707_n_help_profile", FOLDED) {
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             tapText("도움말과 문의", exact = true)
             typeInto("기능과 도움말 찾기", "질문 카드")
             tapText("질문 카드가 떠요 · 답한 정보를 바꾸고 싶어요", exact = true)
@@ -162,7 +162,7 @@ class NScreenshotTest : ScreenshotBase() {
     @Test fun helpJournal() {
         inquiriesOn()
         shoot("708_n_help_journal", FOLDED) {
-            tab(4, wide = false)
+            tab(SETTINGS_TAB, wide = false)
             tapText("도움말과 문의", exact = true)
             typeInto("기능과 도움말 찾기", "밤낮이 한 일")
             tapText("앱이 알아서 무엇을 했는지 보고 싶어요", exact = true)
