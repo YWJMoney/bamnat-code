@@ -238,8 +238,9 @@ fun ShareDialog(
                 Spacer(Modifier.width(8.dp))
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
+            // 빌드 10 (시계를 옮긴 뒤 '12월부터'인데 받은 건 11/2~1/29): a link already made says the months it carries.
             Text(
-                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${((stored?.from) ?: linkMonth).monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
@@ -620,7 +621,8 @@ internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when
 internal fun emptyHint(kind: MoneyShare, field: Boolean): String = when {
     field -> "이 기간에는 근무가 없어요. ‘일정’이나 ‘${kind.label}’을 고르면 링크를 만들 수 있어요."
     kind == MoneyShare.SALES -> "이 기간에는 근무가 없어요. ‘${kind.label}’이나 ‘메모’를 고르면 링크를 만들 수 있어요."
-    else -> "이 기간에는 보낼 근무가 없어요. 근무를 적거나 보여 줄 것을 골라 주세요."
+    // 빌드 10 (알바: 일한 날을 아직 안 칠했는데 무엇을 할지 몰라요): what to do first, in the calendar's words.
+    else -> "이 기간에는 보낼 근무가 없어요. 달력에서 일한 날을 먼저 칠하거나, 보여 줄 것을 골라 주세요."
 }
 
 /** What leaves the phone with a link, where it is kept, and who can open it. Matches privacy policy 1.6, sections 1 and 5. */

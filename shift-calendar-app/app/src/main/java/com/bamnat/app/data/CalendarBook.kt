@@ -248,7 +248,7 @@ class CalendarBook(
     fun leave(id: String): com.bamnat.app.leave.LeaveRepository {
         if (id == PersonalCalendar.MAIN || get(id) == null) return mainLeave()
         val o = opened(id)
-        return o.leave ?: com.bamnat.app.leave.LeaveRepository(o.db, o.schedule, pay(id)).also { o.leave = it }
+        return o.leave ?: com.bamnat.app.leave.LeaveRepository(o.db, o.schedule, pay(id), calendarId = id).also { o.leave = it }
     }
 
     /** [MCAL-01] What the calendar tab works on now; a write started here stays with this calendar. */

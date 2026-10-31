@@ -172,6 +172,8 @@ class SettingsFilesBackup(
             // the 프로 mark are this phone's.
             // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
             Part("calendar_start"),
+            Part("leave_hire"), // [LEAVE-14]
+            Part("pro_trials"), // [MON-13]
             Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays")),
         )
 

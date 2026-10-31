@@ -31,6 +31,8 @@ enum class SettingsGo {
     RECIPES,
     /** [STU-10] 1.35 스튜디오 (화면 꾸미기와 합침). */
     STUDIO,
+    /** [LEAVE-14] 1.36 연차 화면 (설정 › 급여와 연차 › 연차). */
+    LEAVE,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

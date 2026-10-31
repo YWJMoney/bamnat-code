@@ -54,7 +54,7 @@ import java.time.YearMonth
 internal fun NetSummaryLine(line: TaxPlus.NetLine?, gate: Gate) {
     line ?: return
     val locked = line.estimated && gate.locked(Feature.TAX_FORECAST)
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).let { if (locked) it.clickable { openPro(Feature.TAX_FORECAST) } else it },
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).let { if (locked) it.clickable { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) } else it },
         verticalAlignment = Alignment.CenterVertically) {
         Text(if (locked) listOfNotNull(line.gross?.let { "세전 ${Fmt.won(it)}" }, "세후 예상은 프로").joinToString(" · ") else TaxPlus.netText(line),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
@@ -68,7 +68,7 @@ internal fun TaxExplainSection(gross: Long, profile: PayProfile?, month: YearMon
     var open by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("세금이 이렇게 나와요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        TextButton(onClick = { if (gate.allows(Feature.TAX_FORECAST)) open = !open else openPro(Feature.TAX_FORECAST) },
+        TextButton(onClick = { if (com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) open = !open else openPro(Feature.TAX_FORECAST) },
             modifier = Modifier.heightIn(min = 48.dp)) { Text(if (open) "접기" else "자세히") }
     }
     if (!open) return

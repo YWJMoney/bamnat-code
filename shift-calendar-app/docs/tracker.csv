@@ -1601,3 +1601,5 @@ NAV-08,"1.36 빌드 8: 달이 바뀐 뒤 앱으로 돌아오면 보던 달(오�
 FIT-05,"1.36 빌드 8: 가족·연인 근무표를 투자·가게 달력도 받도록 '동료 근무표 받기'를 모든 유형 도구에",1.36,진행 중,에뮬레이터 확인,"FitTable receive, FitTableTest"
 STU-26,"1.36 빌드 8 S29: 스튜디오에서 한 탭만 바꿨으면 올리기 전에 '바꾼 탭만(기능별 탭) / 테마 전체' 고르기, 바꾼 탭만은 그 탭 모양만 올라감",1.36,진행 중,에뮬레이터 확인,"StudioViewModel.changedTab·upload(onlyTab), StudioScreen uploadWhat, StudioVm136Test oneTabChangedGoesUpAlone"
 STU-27,"1.36 빌드 8 S32: 보관함 조각 출처를 모두 적음, 보관함 도구를 영역마다 두 번째로, '이 영역 조각 / 다른 영역 조각' 나눔, 얹은 조각에 '✓ 얹음'",1.36,진행 중,에뮬레이터 확인,"StudioViewModel.save, StudioScreen Area.tools·BoxTool"
+LEAVE-14,"1.36 실사용 S11 (일근): 설정 › 급여와 연차에 '연차' 줄, 설정 검색 '연차'가 연차 화면으로, 연차 화면에서 입사일을 바로 넣어 급여 설정 없이도 법대로 세기, '달력에서 연차 넣기' 단추, 첫 설정 끝 시트와 알림 허용 창이 하나씩",1.36,진행 중,에뮬레이터 확인,"LeaveHire, LeaveSources.withHire, LeaveScreen RulesCard, SettingsGo.LEAVE, AppRoot AlarmNoticeAsk, LeaveHireTest"
+MON-13,"1.36 사용자 결정(2026-10-31): 명세서 '금액 비교하기'와 '세후 예상'은 그 기능을 처음 쓴 날부터 일주일 무료, 그 뒤엔 프로로 이어짐. 남은 날은 기능 밑에 'M월 d일까지 무료' 한 줄",1.36,진행 중,에뮬레이터 확인,"FeatureTrials, Gate.trialUntil·canTry, FeatureGate.tryOrAsk, ProLock tryFeature·TrialNote, TakeHomeLine, FeatureTrialTest"

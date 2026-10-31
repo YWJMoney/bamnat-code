@@ -1857,6 +1857,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
+    SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }
@@ -1886,6 +1887,10 @@ private fun AlarmNoticeAsk() {
     // phone with no shift alarm planned is never asked.
     val alarmsOn = settings.alarmsEnabled && snap?.shiftTypes?.any { it.alarmEnabled && it.alarms.isNotEmpty() } == true &&
         remember(snap) { snap?.let { com.bamnat.core.alarm.AlarmPlanner.nextAlarm(it.resolver, com.bamnat.core.time.Today.dateTime()) } != null }
+    // 빌드 10 S11 (첫 설정 끝 '예상 급여도 볼까요?' 시트와 겹쳐요): one at a time, after the first setup's own sheets.
+    val setupSheet by c.firstSetup.saved.collectAsStateWithLifecycle()
+    val leadAsking by c.leadShare.step.collectAsStateWithLifecycle()
+    if (setupSheet != null || leadAsking != null) return
     if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
     val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
     fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }

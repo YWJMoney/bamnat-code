@@ -538,7 +538,7 @@ fun MoneyScreen(
         if (noticeTarget != NoticeLinks.Target.TAX) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.TAX)
         vm.showPage(MoneyViewModel.Page.SUMMARY)
-        if (gate.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)) { if (taxSide(settings.workStyle) == TaxSide.BUSINESS) bizTax = true else takingHome = true }
+        if (com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.TAX_FORECAST)) { if (taxSide(settings.workStyle) == TaxSide.BUSINESS) bizTax = true else takingHome = true }
     }
     // [TAX-02] 세금·실수령 opened from the help search or the update notice: the summary, where the card is.
     val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
