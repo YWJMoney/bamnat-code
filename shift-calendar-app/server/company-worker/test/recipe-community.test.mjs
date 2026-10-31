@@ -394,3 +394,29 @@ test("[PRF-07][LIM-10] 모음은 하루 제한이 없고, 운영자가 소개를
   assert.equal(refused.status, 429);
   assert.equal(refused.data.why, "device");
 });
+
+test("[V20] 보이는 믿음 단계: 새싹 → 3일 뒤 이웃 → 가려진 것 없이 14일이면 단골; 다음 단계와 쓰기 제한은 본인만", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  await up(call, 1, { title: "야간 달력 칸" }, "public");
+  const me = (await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦉" }, from(1))).data.maker;
+  const page = async (n) => (await call("GET", `/api/recipes/makers/${me}`, undefined, dev(n))).data;
+  let p = await page(1);
+  assert.deepEqual([p.trust, p.trustNext, p.limit], [0, { days: 3 }, undefined]);
+  p = await page(2);
+  assert.deepEqual([p.trust, p.trustNext], [0, undefined]);
+  t.mock.timers.tick(3 * 86400000 + 1000);
+  assert.deepEqual([(await page(1)).trust, (await page(1)).trustNext], [1, { days: 11 }]);
+  t.mock.timers.tick(11 * 86400000);
+  assert.deepEqual([(await page(1)).trust, (await page(1)).trustNext, (await page(3)).trust], [2, undefined, 2]);
+  // 운영자가 소개를 가리고 프로필을 닫으면(두 번) 쓰기 제한이 생기고, 본인 프로필에만 보여요.
+  await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "야간 근무 꾸미기" }, from(1));
+  const admin = await signIn(call);
+  await call("POST", `/api/admin/recipes/makers/${me}/bio-hide`, {}, admin);
+  await call("POST", `/api/admin/recipes/makers/${me}/close`, {}, admin);
+  p = await page(1);
+  assert.equal(p.trust, 1, "a hidden 소개 takes 단골 away");
+  assert.deepEqual(p.trustNext, { held: true });
+  assert.equal(p.limit.perDay, 5);
+  assert.match(p.limit.until, /^\d{4}-/);
+});

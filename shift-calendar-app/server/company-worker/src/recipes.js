@@ -882,10 +882,17 @@ export function listItem(r, now) {
 export async function recipeTrust(d, env, dev, now) {
   await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
   const t = await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev);
+  const { level, days } = trustLevel(t, now);
+  return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
+}
+
+/** [RCP-30] The level of a recipe_trust row (none: 0, just come), without writing anything. */
+export function trustLevel(t, now) {
+  if (!t) return { level: 0, days: 0, hidden: 0 };
   const days = (now - t.first_at) / DAY;
   // [RCX-28] With no 승인 any more, time on the 나눔 판 without anything hidden is what earns it.
   const level = (t.approved >= 3 || days >= 14) && t.hidden === 0 ? 2 : t.approved >= 1 || days >= 3 ? 1 : 0;
-  return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
+  return { level, days, hidden: t.hidden };
 }
 
 async function readDevice(d, request, body) {

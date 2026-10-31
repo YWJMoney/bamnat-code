@@ -123,3 +123,19 @@ test("[PLAZA-35] 광장 소식: new posts in a joined company's room, not one's 
   const mine = (await call("GET", `/api/plaza/news?since=${since}`, undefined, as(1))).data.items.filter((i) => i.kind === "room_posts");
   assert.deepEqual(mine.map((i) => i.count), [1]);
 });
+
+test("[V3] 마을 이름 하나: 유형별 광장에는 마을 이름과 프로필로 가는 길이, 회사 방에는 참여자 번호만", async () => {
+  const { call } = server();
+  const write = (n, place, body) => call("POST", "/api/posts", { device: device(n), company: place, setup: "room", body }, from(n));
+  await call("POST", "/api/nick", { device: device(1), nick: "야간요정" }, from(1));
+  await call("POST", "/api/nick", { device: device(2), nick: "새벽감자" }, from(2));
+  const me = (await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦉" }, from(1))).data.maker;
+  assert.equal((await write(1, "style-shift", "야간 끝나고 잠 어떻게 자요?")).status, 201);
+  assert.equal((await write(2, "style-shift", "암막 커튼 추천해요")).status, 201);
+  const posts = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, as(3))).data.posts;
+  assert.deepEqual(posts.map((p) => [p.nick, p.maker ?? null]), [["야간요정", me], ["새벽감자", null]]);
+  // A hidden 프로필 is not led to; the name stays.
+  await call("POST", "/api/recipes/makers/me", { device: device(1), hidden: true }, from(1));
+  const again = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, as(3))).data.posts;
+  assert.deepEqual([again[0].nick, again[0].maker], ["야간요정", undefined]);
+});
