@@ -168,6 +168,14 @@ data class MakerPage(
     val closed: Boolean = false,
     /** The maker's own: who hid the 소개, "flags" (세 번 신고) or "operator". */
     val bioHiddenBy: String? = null,
+    /** 1.36 [V20] 보이는 믿음 단계: 0 새싹, 1 이웃, 2 단골 (null: 밤낮 운영). */
+    val trust: Int? = null,
+    /** The maker's own: days to the next step, or [trustHeld] when something hidden keeps 단골 away. */
+    val trustDays: Int? = null,
+    val trustHeld: Boolean = false,
+    /** The maker's own: 1.36 [LIM-10] writes a day while reports restrict this install, and until when. */
+    val limitPerDay: Int? = null,
+    val limitUntil: java.time.Instant? = null,
 ) {
     val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
     val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
@@ -433,7 +441,12 @@ class RecipeClient(
             sets = o.optJSONArray("sets").objects().map { s -> MakerSet(s.getString("id"), s.optString("title"), s.optString("summary"),
                 s.optJSONArray("codes").strings(), s.optInt("missing"), s.optBoolean("hidden")) },
             cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"), closed = o.optBoolean("closed"),
-            bioHiddenBy = o.optStringOrNull("bioHiddenBy"))
+            bioHiddenBy = o.optStringOrNull("bioHiddenBy"),
+            trust = if (o.has("trust") && !o.isNull("trust")) o.optInt("trust").coerceIn(0, 2) else null,
+            trustDays = o.optJSONObject("trustNext")?.takeIf { it.has("days") }?.optInt("days"),
+            trustHeld = o.optJSONObject("trustNext")?.optBoolean("held") == true,
+            limitPerDay = o.optJSONObject("limit")?.optInt("perDay"),
+            limitUntil = o.optJSONObject("limit")?.optStringOrNull("until")?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() })
     }
 
     override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {

@@ -264,6 +264,8 @@ data class TalkPost(
     val author: String? = null,
     /** [COMM-11] I2: flagged for 개인 정보 once and being checked; shown dimmed with 확인 중. */
     val review: Boolean = false,
+    /** 1.36 [V3] 마을 이름 하나: in a kind of work's 광장, the writer's 프로필 (null without one, and never in a company's). */
+    val maker: String? = null,
 )
 
 /**
@@ -1168,6 +1170,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             },
             author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
             review = p.optBoolean("review"),
+            maker = p.optStringOrNull("maker")?.takeIf { Regex("[0-9a-f]{12}").matches(it) },
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),

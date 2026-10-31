@@ -534,6 +534,17 @@ fun MakerScreen(
 }
 
 /** The 프로필 head: 표지, face, name, 유형, 소개, 숫자 줄, and 팔로우 or 내 것. */
+/** 1.36 [V20] 새싹·이웃·단골. */
+internal fun trustWord(level: Int): String = when (level) { 0 -> "🌱 새싹"; 1 -> "🏡 이웃"; else -> "⭐ 단골" }
+
+/** 1.36 [V20] The maker's own next step, in a few words. */
+internal fun trustNext(p: MakerPage): String? = when {
+    p.trust == null || p.trust >= 2 -> null
+    p.trust == 1 && p.trustHeld -> "가려진 글이 있어 단골은 다음에 돼요"
+    p.trust == 0 -> p.trustDays?.let { "${it}일 뒤 이웃이 돼요 (좋아요가 온전히 세져요)" }
+    else -> p.trustDays?.let { "가려진 것 없이 ${it}일 더 쓰면 단골이 돼요" }
+}
+
 @Composable
 private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (String) -> Unit, onFace: () -> Unit, onFollowMenu: () -> Unit) {
     val c = vm.c
@@ -558,6 +569,16 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
                 Text(RecipeDescribe.short(st), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
             }
+        }
+        // 1.36 [V20] 보이는 믿음 단계: everyone sees the step; the maker alone sees the next one and a 쓰기 제한.
+        p.trust?.let { t ->
+            Text(trustWord(t) + if (mine) trustNext(p)?.let { " · $it" }.orEmpty() else "", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (mine) p.limitPerDay?.let { n ->
+            val until = p.limitUntil?.let { com.bamnat.app.ui.Fmt.shortFullDate(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) }
+            Text("신고로 가려진 글이 쌓여 ${until?.let { "${it}까지 " }.orEmpty()}" + (if (n > 0) "하루 ${n}번만 쓸 수 있어요" else "글을 쓸 수 없어요") +
+                ". 기간이 지나면 저절로 풀려요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         p.bio?.takeIf { !p.bioHidden || mine }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
             ?: if (mine) Text("한 줄 소개를 적어 보세요 (프로필 고치기)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else Unit
@@ -791,7 +812,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                         }
                     }
                 }
-                OutlinedTextField(nick, { nick = it.replace("\n", "").take(12) }, label = { Text("이름 (광장 별명과 같아요)") }, singleLine = true,
+                OutlinedTextField(nick, { nick = it.replace("\n", "").take(12) }, label = { Text("마을 이름 (광장·장터에 같이 보여요)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth(), isError = nickProblem != null,
                     supportingText = { Text(nickProblem ?: "2~12자 · 비우면 ‘이름 없는 분’으로 보여요") })
                 OutlinedTextField(bio, { bio = it.replace("\n", " ").take(60) }, label = { Text("한 줄 소개") }, modifier = Modifier.fillMaxWidth(),
