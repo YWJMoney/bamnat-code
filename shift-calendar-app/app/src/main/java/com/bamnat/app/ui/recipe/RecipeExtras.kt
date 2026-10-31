@@ -79,11 +79,14 @@ internal fun ThemeTokens(r: Recipe, edit: ((Recipe) -> Recipe) -> Unit) {
  */
 @Composable
 internal fun ExampleCalendars(r: Recipe) {
-    Text("예시 달력에 넣어 보면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+    // 빌드 9 (가계부 탭만 올리는데 마치기에 '예시 달력: 교대 달력'): a recipe that changes nothing on the calendar is shown per kind
+    // of work without calling it a calendar.
+    val onCalendar = r.pieces.any { it.kind == PieceKind.SHIFT_LOOK || it.kind == PieceKind.CAL_THEME }
+    Text(if (onCalendar) "예시 달력에 넣어 보면" else "일 유형마다 넣어 보면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
     WorkStyle.entries.filter { it in r.styles }.forEach { style ->
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${RecipeDescribe.short(style)} 달력", style = MaterialTheme.typography.labelLarge)
+                Text(RecipeDescribe.short(style) + if (onCalendar) " 달력" else "", style = MaterialTheme.typography.labelLarge)
                 ExampleWeek(r, style)
                 r.piecesFor(style).forEach { p ->
                     // 빌드 8: '화면 색·배경: 화면 색·배경: 가계부' — a line that already starts with the piece's name says it once.

@@ -1877,7 +1877,10 @@ private fun AlarmNoticeAsk() {
     }
     val prefs = remember { context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE) }
     var later by remember { mutableStateOf(prefs.getLong("alarm_notice_later", 0L)) }
-    val alarmsOn = settings.alarmsEnabled && snap?.shiftTypes?.any { it.alarmEnabled && it.alarms.isNotEmpty() } == true
+    // 빌드 9 (투자 폰에도 '근무 알람이 울려도…' 창): only when an alarm is actually coming in the next weeks, so a kind of work or a
+    // phone with no shift alarm planned is never asked.
+    val alarmsOn = settings.alarmsEnabled && snap?.shiftTypes?.any { it.alarmEnabled && it.alarms.isNotEmpty() } == true &&
+        remember(snap) { snap?.let { com.bamnat.core.alarm.AlarmPlanner.nextAlarm(it.resolver, com.bamnat.core.time.Today.dateTime()) } != null }
     if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
     val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
     fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }
