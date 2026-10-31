@@ -81,8 +81,9 @@ import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCo
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
-import { RECIPE_COLUMNS, RECIPE_SCHEMA, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity } from "./recipe-community.js";
+import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -99,7 +100,6 @@ export const LIMITS = {
   ask: 1500,
   // [COMM-06] A post in the talk on a rule set.
   post: 500,
-  postsPerDay: 20,
   postsPerNetworkDay: 600,
   flagsToHide: 3,
   muteDays: 30,
@@ -680,6 +680,8 @@ const SCHEMA = [
   ...COMMUNITY_SCHEMA,
   // 1.36 [PSH-01] 프로 나눔 1인: a buyer's install, its one-time code and the one install it gave 프로 to.
   `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
+  // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
+  ...WRITE_LIMITS_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -2128,7 +2130,7 @@ const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : 
 
 export const ROOM = "room";
 export const STYLE_ROOMS = { "style-shift": "교대 광장", "style-day": "일근 광장", "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
-const ROOM_LIMITS = { perDay: 10, perNetworkDay: 300, shown: 100 };
+const ROOM_LIMITS = { perNetworkDay: 300, shown: 100 };
 /** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
 export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:shift|day|field|shop|hourly|invest))\/setups\/room\/posts$/;
@@ -2169,8 +2171,9 @@ async function roomPost(request, env, body) {
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `room|${dev}`, ROOM_LIMITS.perDay, DAY],
-    ["network", `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY]]);
+  // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; the network's stays.
+  const limitHit = (await writeLimitHit(recipeDeps, env, dev, "room", now))
+    ?? (await overLimit(env, now, [["network", `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY]]));
   if (limitHit) return limitHit;
   let parent = null;
   if (given(body.parent)) {
@@ -3168,6 +3171,9 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", gone, dev),
     // 1.36 [PSH-01] 프로 나눔: what it gave and what it was given.
     stmt(env, "DELETE FROM pro_shares WHERE owner = ?", dev),
+    // 1.36 [LIM-10] Strikes go; a restriction still running stays until it ends, like 쓰기 막기 (muted).
+    stmt(env, "DELETE FROM write_strikes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM write_limits WHERE device = ? AND until <= ?", dev, Date.now()),
     stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
   ]);
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
@@ -3401,8 +3407,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     all(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
       (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp),
     me ? one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, now) : null,
-    // [COMM-11] How many more posts today, so the app can say so before a refusal.
-    me ? one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${room ? "room" : "post"}|${me}`, now) : null,
+    // [COMM-11] 1.36 [LIM-10] How many more posts today, only while strikes restrict this install.
+    me ? writeLeft(recipeDeps, env, me, room ? "room" : "post", now) : null,
     sealed,
   ]);
   const dropped = new Set();
@@ -3477,10 +3483,9 @@ async function talkData(request, env, companyId, grp, known = null) {
     }
   }
   const past = !room && !(live.current || live.pending);
-  const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, perDay - (used?.count ?? 0)) } } : {}) } };
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}) } };
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
@@ -3504,8 +3509,8 @@ async function post(request, env) {
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `post|${dev}`, LIMITS.postsPerDay, DAY],
-    ["network", `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY]]);
+  const limitHit = (await writeLimitHit(recipeDeps, env, dev, "post", now))
+    ?? (await overLimit(env, now, [["network", `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY]]));
   if (limitHit) return limitHit;
   // [PLZ-05] A reply goes under a post of the same talk; replies to replies go under the same first post.
   let parent = null;
@@ -4058,6 +4063,7 @@ async function flag(request, env, id) {
     if (after.status === "hidden") {
       await batch(env, plazaResults(env, p, "hidden", "hidden", now));
       await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+      await addStrike(recipeDeps, env, p.device, p.company_id === RECIPE_TABLE ? "talk" : "post", id, now);
       await notifyAdmins(env, "flagged", { title: "신고로 가려진 글", body: "신고가 쌓여 글 하나가 가려졌어요", url: "/admin/#/community" }, now);
     }
   }
@@ -4270,6 +4276,14 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  // 1.36 [LIM-10] 신고 누적 쓰기 제한: who is restricted (or was, in 30 days), the rules, and 풀기.
+  if (path === "/write-limits" && method === "GET") return json({ rules: WRITE_LIMITS, items: await restrictions(recipeDeps, env, now) });
+  m = path.match(/^\/write-limits\/([0-9a-f]{12})\/lift$/);
+  if (m && method === "POST") {
+    const out = await liftLimit(recipeDeps, env, m[1], now);
+    if (out) await audit(env, now, "write_limit_lift", m[1]);
+    return json(out ?? { error: "not_found" }, out ? 200 : 404);
+  }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
     const more = await communityAdmin(recipeDeps, request, env, path, url, now);
     if (more) return more;
@@ -5844,6 +5858,8 @@ async function moderatePost(env, id, body, now) {
         ON CONFLICT (device) DO UPDATE SET until = excluded.until, reason = excluded.reason`, p.device, now + LIMITS.muteDays * DAY, reason));
     }
     await batch(env, stmts);
+    // 1.36 [LIM-10] A post the developer hid counts like one reports hid (once: one already hidden was counted then).
+    if (p.status !== "hidden") await addStrike(recipeDeps, env, p.device, "post", id, now);
     await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
   } else if (body.action === "show") {
     await batch(env, [
@@ -5851,6 +5867,8 @@ async function moderatePost(env, id, body, now) {
       stmt(env, "UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL, kept = 1, flags = 0 WHERE id = ?", id),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id),
       stmt(env, "DELETE FROM muted WHERE device = ?", p.device),
+      // 1.36 [LIM-10] Shown again: its strike no longer counts.
+      stmt(env, "DELETE FROM write_strikes WHERE ref = ?", id),
     ]);
     await audit(env, now, "post_show", target);
   } else if (body.action === "delete") {

@@ -6,10 +6,11 @@
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
 import { CODE, cleanText, graphemes, listItem, makerId, oneEmoji, sha256hex, textProblem } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
+import { writeLimitHit } from "./write-limits.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
-export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerDay: 3, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50 };
+export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerNetworkDay: 200, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50 };
 export const RECIPE_BADGES = {
   first: "첫 레시피",
   users100: "쓰는 분 100명",
@@ -145,7 +146,10 @@ async function rcRequestPost(d, env, request) {
   if (why) return d.json({ error: why, field: "body" }, 400);
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
-  const hit = await d.overLimit(env, now, [["device", `rreq|${dev}`, COMMUNITY_LIMITS.requestsPerDay, DAY]]);
+  // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; one network's day still has one.
+  const net = await d.network(request, env, now);
+  const hit = (await writeLimitHit(d, env, dev, "rreq", now))
+    ?? (await d.overLimit(env, now, [["network", `rreq|${net.day}`, COMMUNITY_LIMITS.requestsPerNetworkDay, DAY]]));
   if (hit) return hit;
   const id = `q${d.randomId(12)}`;
   await d.run(env, "INSERT INTO recipe_requests (id, device, style, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", id, dev, body.style, t, now, now);

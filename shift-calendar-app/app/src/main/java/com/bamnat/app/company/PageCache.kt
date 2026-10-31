@@ -299,6 +299,7 @@ internal fun Talk.toJson(): JSONObject = JSONObject()
     }))
     .put("mutedUntil", mutedUntil?.toString() ?: JSONObject.NULL).put("past", past).put("hiddenByYou", hiddenByYou)
     .apply { leftPosts?.let { put("left", JSONObject().put("posts", it)) } }
+    .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay)) } }
 
 internal fun Board.toJson(): JSONObject = JSONObject().put("next", next ?: JSONObject.NULL)
     .put("items", JSONArray(items.map { i ->

@@ -13,6 +13,7 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
+import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -680,8 +681,10 @@ export const keptPercent = (applied, kept7) => (applied < 20 ? null : Math.min(1
 // ---- the server's part ----
 
 export const RECIPE_LIMITS = {
-  /** 신뢰 0단계 하루 2개, 1단계부터 4개 (S9; 1.35 [RCX-28] 승인 없이 올라가니 조금 넉넉히). */
-  perDay: [2, 4, 4],
+  /**
+   * 1.36 [LIM-10] (사용자 2026-10-31 "제한을 두지마"): no daily cap for one install. Only strikes restrict one (write-limits.js);
+   * one network's day still has a cap against a flood.
+   */
   perNetworkDay: 60,
   /**
    * D108 (1.34) had a phone's first 3 public recipes wait for the operator. 1.35 [RCX-28] (사용자 2026-10-30 "3개는 관리자 승인을
@@ -691,7 +694,6 @@ export const RECIPE_LIMITS = {
   votesPerHour: 60,
   /** S8: more votes than this from one network in an hour wait (held) and count nowhere until the operator lets them. */
   networkVotesHour: 30,
-  talkPerDay: 10,
   appliedPerNetworkDay: 200,
   flagsToHide: 3,
   opinion: [5, 120],
@@ -990,8 +992,8 @@ async function publish(d, env, request) {
   }
   const trust = await recipeTrust(d, env, dev, now);
   const net = await d.network(request, env, now);
-  const hit = await d.overLimit(env, now, [["device", `recipe|${dev}`, RECIPE_LIMITS.perDay[trust.level], DAY],
-    ["network", `recipe|${net.day}`, RECIPE_LIMITS.perNetworkDay, DAY]]);
+  const hit = (await writeLimitHit(d, env, dev, "recipe", now))
+    ?? (await d.overLimit(env, now, [["network", `recipe|${net.day}`, RECIPE_LIMITS.perNetworkDay, DAY]]));
   if (hit) return hit;
   const scope = readScope(body.scope);
   const r = clean.recipe;
@@ -1175,6 +1177,7 @@ async function recipeFlag(d, env, request, code) {
     ...(hide ? [d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'hide', 'flags', '', ?)", code, now),
       d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner)] : []),
   ]);
+  if (hide) await addStrike(d, env, r.owner, "recipe", code, now);
   return d.json({ flagged: true, hidden: hide });
 }
 
@@ -1185,7 +1188,8 @@ async function mine(d, env, request) {
   const now = Date.now();
   const rows = await d.all(env, "SELECT * FROM recipes WHERE owner = ? AND state != 'deleted' ORDER BY updated_at DESC LIMIT 100", dev);
   const trust = await recipeTrust(d, env, dev, now);
-  return d.json({ trust: trust.level, leftToday: null, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
+  const lim = await writeLeft(d, env, dev, "recipe", now);
+  return d.json({ trust: trust.level, leftToday: lim.limit ? lim.limit.left : null, ...lim, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
     items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash })) });
 }
 
@@ -1234,9 +1238,10 @@ async function recipeTalk(d, env, request, code) {
       ...(p.status === "shown" ? {} : { hidden: true }),
     });
   }
-  const used = dev ? await d.one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `rtalk|${dev}`, now) : null;
+  // 1.36 [LIM-10] How many more today only while strikes restrict this install; otherwise nothing, there is no cap.
+  const used = dev ? await writeLeft(d, env, dev, "rtalk", now) : {};
   return d.json({ code, posts, ...(muted ? { mutedUntil: new Date(muted.until).toISOString() } : {}),
-    ...(dev ? { left: Math.max(0, RECIPE_LIMITS.talkPerDay - (used?.count ?? 0)) } : {}) });
+    ...(used.limit ? { left: used.limit.left, limit: used.limit } : {}) });
 }
 
 /** POST /api/recipes/:code/talk — {body, kind, parent?, usingDays?}. */
@@ -1257,7 +1262,7 @@ async function talkPost(d, env, request, code) {
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
   const net = await d.network(request, env, now);
-  const hit = await d.overLimit(env, now, [["device", `rtalk|${dev}`, RECIPE_LIMITS.talkPerDay, DAY], ["network", `rtalk|${net.day}`, 300, DAY]]);
+  const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, [["network", `rtalk|${net.day}`, 300, DAY]]));
   if (hit) return hit;
   let parent = null;
   if (body.parent !== undefined && body.parent !== null) {
@@ -1394,6 +1399,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     if (!r) return d.json({ error: "not_found" }, 404);
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
     const stmts = [];
+    let strike = null;
     if (what === "approve") {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', decided_at = ?, note = '' WHERE code = ?", now, code));
       if (r.state === "pending") stmts.push(d.stmt(env, "UPDATE recipe_trust SET approved = approved + 1 WHERE device = ?", r.owner));
@@ -1402,11 +1408,14 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'returned', decided_at = ?, note = ? WHERE code = ?", now, note, code));
       stmts.push(d.stmt(env, "UPDATE recipe_trust SET returned = returned + 1 WHERE device = ?", r.owner));
     } else if (what === "hide") {
+      // 1.36 [LIM-10] Hidden by the operator counts like reports hiding it (not again when reports already did).
+      if (r.state !== "hidden") strike = r.owner;
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, code));
       stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
     } else if (what === "show") {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '' WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE code = ?", code));
+      stmts.push(d.stmt(env, "DELETE FROM write_strikes WHERE ref = ?", code));
     } else if (what === "official") {
       stmts.push(d.stmt(env, "UPDATE recipes SET official = ? WHERE code = ?", body.on === false ? 0 : 1, code));
     } else if (what === "showcase") {
@@ -1417,6 +1426,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     }
     stmts.push(act(code, what, note));
     await d.batch(env, stmts);
+    if (strike) await addStrike(d, env, strike, "recipe", code, now);
     return d.json({ code, done: what });
   }
   if (path === "/recipes/votes/release" && method === "POST") {

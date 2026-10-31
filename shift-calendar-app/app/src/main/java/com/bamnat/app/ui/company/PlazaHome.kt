@@ -359,7 +359,7 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, onO
                     }
                 }
             }
-            talk?.leftPosts?.let { n -> Text("오늘 ${n}번 더 쓸 수 있어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            talk?.limit?.let { l -> Text(l.line(talk.leftPosts), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("글 보기·쓰기") }
         }
     }
