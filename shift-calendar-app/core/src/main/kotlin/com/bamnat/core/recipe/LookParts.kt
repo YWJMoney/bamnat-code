@@ -114,6 +114,16 @@ object LookParts {
     }
 
     /** The parts whose values differ between [a] and [b] (what was made one's own, 직접 바꾼 곳). */
+    /** [TRY-04] The parts that place things (카드 순서·보이기, 칸 높이, 아래 탭): one frame for both sides of 비교. */
+    val FRAME: List<String> = listOf("cal.cards", "cal.view", "memo.cards", "money.cards", "stats.cards", "app.tabs")
+
+    /**
+     * [TRY-04] 1.36 (사용자 2026-10-31 "서로 다르게 보이는 문제 … 동일하게 움직이게 만들고 달라진 점만 보이게", R-50): [base] laid out as
+     * [over] is — its cards, cell heights and tabs in [over]'s places — so the two sides of 비교 meet on the same day and card and only
+     * the looks differ.
+     */
+    fun frame(base: Recipe, over: Recipe): Recipe = layer(base, pick(over, FRAME))
+
     fun changed(a: Recipe, b: Recipe): List<String> = ALL.filter { p -> pick(a, listOf(p.id)).pieces != pick(b, listOf(p.id)).pieces }.map { it.id }
 
     /**

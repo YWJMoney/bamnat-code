@@ -77,4 +77,22 @@ class LookPartsTest {
         assertEquals(mapOf("corners" to "round"), bare.pieces.first { it.kind == PieceKind.PHOTO_LOOK }.values)
         assertFalse(LookParts.hasPhotos(theme.copy(pieces = theme.pieces.filter { it.kind == PieceKind.CAL_THEME })))
     }
+
+    /** [TRY-04] 비교의 한 뼈대: the side before takes the other's places (cards, cell heights, tabs) and keeps its own looks. */
+    @Test fun frameTakesPlacesNotLooks() {
+        val before = Recipe("b", styles = WorkStyle.entries.toSet(), pieces = listOf(
+            Piece(PieceKind.LAYOUT, mapOf("calendar" to "summary,month", "tabs" to listOf("calendar", "memos"))),
+            Piece(PieceKind.CAL_THEME, mapOf("sun" to 0xFFFF0000))))
+        val after = Recipe("a", styles = WorkStyle.entries.toSet(), pieces = listOf(
+            Piece(PieceKind.LAYOUT, mapOf("calendar" to "month,summary", "tabs" to listOf("memos", "calendar"))),
+            Piece(PieceKind.CAL_VIEW, mapOf("size" to "big")),
+            Piece(PieceKind.CAL_THEME, mapOf("sun" to 0xFF00FF00))))
+        val framed = LookParts.frame(before, after)
+        val layout = framed.pieces.first { it.kind == PieceKind.LAYOUT }.values
+        assertEquals("month,summary", layout["calendar"])
+        assertEquals(listOf("memos", "calendar"), layout["tabs"])
+        assertEquals("big", framed.pieces.first { it.kind == PieceKind.CAL_VIEW }.values["size"])
+        assertEquals(0xFFFF0000, framed.pieces.first { it.kind == PieceKind.CAL_THEME }.values["sun"])
+        assertTrue(LookParts.changed(LookParts.frame(before, after), after).none { it in LookParts.FRAME })
+    }
 }

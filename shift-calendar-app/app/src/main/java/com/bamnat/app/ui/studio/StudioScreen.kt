@@ -305,7 +305,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                     }
                     if (dock != Dock.FOLDED) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (!detail && !area.detailOnly) {
-                            val shown = if (comparing) before else now
+                            // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
+                            val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) } else now
                             if (half && !comparing) CompareCanvas(now, before, vm.style, area.tab, { pick(Area.of(it)) }, dock.scale, 0.5f) { tool = area.tools.first() }
                             else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, dock.scale, onPick = { tool = area.tools.first() })
                         } else {

@@ -1559,6 +1559,7 @@ STU-12,"1.35 색 고르기(최근 쓴 색 먼저, 한 줄) + 조합 자동 점�
 TRY-01,"1.35 입어 보기 하나로 (사용자 21:45 '입어보기랑 넣기 버튼 두개 필요 없음, 전후 비교하고 체크해 선택적으로 도입'): 지금|반반|입으면 + 밀대, 탭 전체·일부 체크, 레시피의 기능 조각도 같은 화면에서",1.35,진행 중,에뮬레이터 확인,"TryOn.kt TryOnScreen·CompareCanvas, ThemeSheet, RecipeDetailScreen '입어 보고 고르기'"
 TRY-02,1.35 테마를 탭별 부분(21개)으로 나누기: 전체·탭 전체·부분만 고르기/입히기,1.35,진행 중,,core LookParts + LookPartsTest
 TRY-03,"1.35 보관함의 조각: 마음에 드는 부분만 담아 두기(무료 20, 프로 200), 스튜디오 보관함 도구로 얹어 조합, 출처 표시, 남의 조각이 든 모양은 그 테마의 기간·광고",1.35,진행 중,에뮬레이터 확인,"ThemeWardrobe.Kept·keep·forgetKept, StudioViewModel.layer, 백업 theme_wardrobe parts"
+TRY-04,"1.36 입어 보기·스튜디오 비교 한 뼈대(사용자 2026-10-31 '서로 다르게 보이는 문제, 동일하게 움직이고 달라진 점만', R-50): 지금 쪽을 입으면의 배치(카드·칸 높이·아래 탭)로 그리고, 스크롤·탭을 함께, 각 쪽을 제 상자로 잘라 반반 화면 사진이 검게 나오지 않게, '바뀌는 곳만' 칩(안 바뀐 곳 흐리게·바뀐 곳 테두리·바뀌는 부분 이름)",1.36,진행 중,에뮬레이터 확인,"core LookParts.FRAME·frame + LookPartsTest.frameTakesPlacesNotLooks, TryOn.kt CompareCanvas·changedBlocks, StudioScreen 누르고 있으면 전 모양"
 THM-01,"1.35 테마 광고 규칙 (사용자 2026-10-30 21:53, 21:56): 장터에 공개 중인 내 테마는 광고 없음, 혼자 쓰는 내 테마는 남의 테마처럼 처음 2번 무료 뒤 광고 한 번에 30일, 직접 꾸미기(스튜디오에서 바로 입히기)는 무료, 장터에서 내리거나 가려지면 30일 유예",1.35,진행 중,에뮬레이터 확인,"ThemeLease.Wear shared·ver·bare, needsAd(shared), shared()/unshared(), ThemeWardrobe.syncShared·markShared, ThemeLeaseTest"
 THM-02,"1.35 복제 올리기 막기: 남의 테마·조각에서 직접 바꾼 부분이 3곳 미만이면 내 테마가 아니라 그 테마의 조합(보관함, 기간·광고 그대로)",1.35,진행 중,,"LookParts.changed·OWN_PARTS, StudioViewModel.ownMake"
 THM-03,"1.35 사진 빼고 올리기: 가족 사진 등은 내 휴대폰에만, 받는 분께는 색만. 그래도 공개한 테마로 침",1.35,진행 중,,"LookParts.withoutPhotos·hasPhotos, 만들기 5단계 스위치"
