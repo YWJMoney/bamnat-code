@@ -212,7 +212,7 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
     val rules = calendars.firstOrNull { it.id == calendarId }?.shopMoney ?: ShopMoney()
     // [DAILY-13] Sales from notices that wait for 적기, first.
     PendingSalesCard(calendarId)
-    val split = remember(book, month) { SalesSplit.of(month, book.sales) }
+    val split = remember(book, month) { SalesSplit.creditByDay(book.receivables).let { cr -> SalesSplit.of(month, book.sales) { cr[it] ?: 0 } } }
     // [GUIDE-05] Each card can be turned off for its calendar.
     if (split.total > split.unsplit) FeatureCard("shop.split", calendarId) {
         SectionCard(title = "결제 수단별") {

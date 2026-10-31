@@ -151,7 +151,10 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
 /** F 1.32 [TAXP-06] 597: this month's sales by how they were paid. Free. */
 @Composable
 internal fun SalesSplitCard(book: MoneyBook, month: YearMonth) {
-    val s = remember(book.sales, month) { TaxPlus.salesSplit(book.sales, month.atDay(1), month.atEndOfMonth()) }
+    val s = remember(book, month) {
+        val credit = com.bamnat.core.work.SalesSplit.creditByDay(book.receivables)
+        TaxPlus.salesSplit(book.sales, month.atDay(1), month.atEndOfMonth()) { credit[it] ?: 0 }
+    }
     if (s.total <= 0) return
     SectionCard(title = "${month.monthValue}월 매출 나눠 보기") {
         s.rows.forEach { (name, v) ->

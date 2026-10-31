@@ -297,8 +297,10 @@ internal fun TradeSheet(
             FieldLabel(if (side == Side.SELL) "갖고 있는 종목" else "전에 산 종목")
             val picks = if (side == Side.SELL) known.filter { it.held } else known
             ChoiceChips(picks, { it.key == key }, { it.title }, { h ->
+                val changed = h.key != key
                 name = h.name; symbol = h.symbol; market = h.market
-                if (side == Side.SELL && qty.isEmpty()) {
+                // 1.36 실사용 S22: a sell stays a sell, and picking a holding fills what is held there (another holding replaces it).
+                if (side == Side.SELL && (qty.isEmpty() || changed)) {
                     val inAccount = state.fullResult.holdings.firstOrNull { it.accountId == accountId && it.key == h.key }?.quantity ?: h.quantity
                     if (inAccount > EPS) qty = InvestFmt.input(inAccount)
                 }

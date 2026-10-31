@@ -67,6 +67,9 @@ data class ScheduleSnapshot(
     val isEmpty: Boolean get() = patterns.isEmpty() && entries.isEmpty()
     val hasPattern: Boolean get() = patterns.isNotEmpty()
 
+    /** 1.36 실사용 S19: the calendar's first day (its first pattern or entry), so stats don't count days before it as 휴무. */
+    val firstDay: LocalDate? get() = (patterns.map { it.startDate } + entries.map { it.date }).minOrNull()
+
     /** [PERF-07] Whether this holds every day, not only the months around the first one drawn. */
     val isComplete: Boolean get() = window == null
 

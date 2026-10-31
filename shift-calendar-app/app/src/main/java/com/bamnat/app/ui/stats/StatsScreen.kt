@@ -268,7 +268,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         if (money != null && style == WorkStyle.FIELD) FieldStatsCards(money, month, calendarId = vm.calendarId)
         // [FLD-11][FLD-13] 일용직 세금과 견적서.
         if (money != null && style == WorkStyle.FIELD) com.bamnat.app.ui.work.FieldToolCards(vm.calendarId, money, month)
-        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns) { snap.resolver.resolve(it).isWorkDay }
+        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns, snap.firstDay) { snap.resolver.resolve(it).isWorkDay }
         if (money != null && style == WorkStyle.BUSINESS) ShopStatsCards(vm.calendarId, money, month, { snap.resolver.resolve(it).isWorkDay })
         // [SHOP-09][SHOP-10][SHOP-11] 직원 인건비, 날씨별 매출, 간이과세 기준.
         if (money != null && style == WorkStyle.BUSINESS) com.bamnat.app.ui.work.ShopToolCards(vm.calendarId, money, month)
@@ -714,10 +714,11 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
  * open and closed days, each weekday's average and six months of sales.
  */
 @Composable
-private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen: (java.time.LocalDate) -> Boolean) {
+private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, firstDay: java.time.LocalDate?, isOpen: (java.time.LocalDate) -> Boolean) {
     val m = remember(book, month) { book.month(month) }
     val today = com.bamnat.core.time.Today.date()
-    val shop = remember(book, month, isOpen, today) { WorkStats.shop(month, book.sales, today, isOpen) }
+    val since = remember(book, firstDay) { listOfNotNull(firstDay, book.sales.minOfOrNull { it.date }).minOrNull() }
+    val shop = remember(book, month, isOpen, today, since) { WorkStats.shop(month, book.sales, today, since, isOpen) }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).sales } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
