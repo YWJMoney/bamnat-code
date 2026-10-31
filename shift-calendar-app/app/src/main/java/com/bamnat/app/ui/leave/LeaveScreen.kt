@@ -215,7 +215,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                         "연차가 없어지기 6개월 전과 2개월 전(첫해 월 연차는 3개월 전·1개월 전) 아침 9시에, 쓸 예정을 빼고도 남는 날을 알려 드려요.")
                     s?.nextLapse?.let { (date, days) ->
                         val next = LeavePromotion.next(s.lots.map { it.lot }, Today.dateTime())
-                        Hint("${Fmt.fullDate(date)}에 ${LeaveAccrual.days(days)}가 없어질 수 있어요." +
+                        Hint("${Fmt.fullDate(date)}에 ${LeaveAccrual.days(days)}${Fmt.iga(LeaveAccrual.days(days))} 없어질 수 있어요." +
                             (next?.let { " 다음 알림은 ${Fmt.shortDate(it.at.toLocalDate())}이에요." } ?: ""))
                     }
                     Hint("회사도 같은 때 서면으로 알려야 해요(근로기준법 제61조). 알림은 연차를 쓰도록 돕는 것뿐이라 켜 두어도 손해가 없어요. 필요 없으면 여기서 끄면 돼요.")

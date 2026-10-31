@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.diag
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
@@ -519,6 +520,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                             FilterChip(selected = preview == t, onClick = { vm.setPreview(t) }, label = { Text(t.label) })
                         }
                     }
+                    val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                    // [MON-13] 1.36: 금액 비교하기·세후 예상 일주일 무료, tried again from the start.
+                    if (BuildConfig.DEBUG) androidx.compose.material3.TextButton(onClick = { trialCtx.appContainer.featureGate.resetTrials() }) { Text("일주일 무료 맛보기 처음부터") }
                 }
             }
             // S 1.32 [SECX-01] 기능 상태 and its 관리자 미리 보기 switches are gone from the phone (the developer app sets previews).

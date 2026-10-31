@@ -358,7 +358,15 @@ class ScheduleRepository(
      * draft does not use and nothing points at removed, then its pattern from two years back (from today
      * when a pattern was made meanwhile) or its painted days. Returns the draft with the saved ids.
      */
-    suspend fun applySetup(draft: SetupDraft, today: LocalDate = Today.date()): SetupDraft = db.withTransaction {
+    suspend fun applySetup(
+        draft: SetupDraft,
+        today: LocalDate = Today.date(),
+        /**
+         * 1.36 실사용 S14 (오늘 만든 두 번째 근무지가 1월부터 채워져 합계에 들어가요): false for an added calendar, whose pattern starts on
+         * the day it was made, so nothing before it counts as worked there.
+         */
+        backfill: Boolean = true,
+    ): SetupDraft = db.withTransaction {
         val existing = shiftTypeDao.getAll().map { it.toModel() }
         val ids = LinkedHashMap<Long, Long>()
         for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
@@ -380,7 +388,7 @@ class ScheduleRepository(
         saved.pattern(today)?.let { pattern ->
             val periods = patternDao.getAll().mapNotNull { it.toModel() }
             when {
-                periods.isEmpty() -> setFirstPattern(pattern, today)
+                periods.isEmpty() -> if (backfill) setFirstPattern(pattern, today) else replacePatterns(listOf(pattern))
                 // A save cut short and finished on the next start: the order is already there.
                 PatternTimeline.on(periods, today)?.withRange(pattern.startDate, pattern.endDate) == pattern -> Unit
                 else -> changePatternFrom(pattern, today)

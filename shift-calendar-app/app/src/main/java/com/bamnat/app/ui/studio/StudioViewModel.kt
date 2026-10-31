@@ -279,6 +279,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
 
     /** The theme whose days and ad 입히기 follows: someone else's started from, or the first of others' parts laid on. */
+    /** [THM-08] Every other maker's theme the draft took parts from, by name. */
+    fun mixedSources(): List<String> =
+        (listOfNotNull(othersTheme?.title) + _state.value.sources.values).filter { it.isNotBlank() }.distinct()
+
     private fun leasedFrom(): Pair<String, String>? = othersTheme?.let { it.code to it.title } ?: _state.value.sources.entries.firstOrNull()?.toPair()
 
     fun needsAd(): Boolean = when {
@@ -365,6 +369,15 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      */
     fun save(title: String, toPlaza: Boolean = true) = viewModelScope.launch {
         val name = title.ifBlank { "내 테마" }.take(30)
+        // [THM-08] 1.36 (사용자 승인 섞은 테마): parts of two or more themes mixed are mine to keep in 내 테마 under my name, every
+        // theme named; mostly others' parts, so it wears by the 30-day rule and 장터 takes it only as a 수정판.
+        val mixed = mixedSources()
+        if (!ownMake() && mixed.size >= 2) {
+            val ok = c.wardrobe.saveLook(recipe(name), null, mixedFrom = mixed.joinToString("·"))
+            _state.value = _state.value.copy(said = if (!ok) "더 저장할 수 없어요. 무료는 ${c.wardrobe.outfitLimit()}벌까지예요"
+                else "‘$name’로 내 테마에 담았어요. 출처: ${mixed.joinToString("·") { "‘$it’" }}. 대부분 다른 분 조각이라 입을 때는 30일 규칙이에요(프로는 광고 없이)")
+            return@launch
+        }
         if (!ownMake()) {
             val from = leasedFrom() ?: return@launch
             val r = recipe("조합 · $name".take(30))
@@ -440,8 +453,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val min = com.bamnat.app.ui.recipe.RecipeMakeViewModel.MIN_WAGE
         val r = com.bamnat.core.recipe.InputExtract.extract(withExtras) { _, f -> if (f == "wage") min else null }
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.
-        com.bamnat.app.recipe.RecipeLinks.ownTheme = if (onlyTab != null || s.extras.isNotEmpty() || s.meta != null) null else ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key
-            ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN.takeIf { ownMake() }
+        // [THM-08] A mixed theme (fewer than 3 changes by hand) goes up only as a 수정판: never marked as mine in 장터 (no ad-free).
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = if (onlyTab != null || s.extras.isNotEmpty() || s.meta != null || !ownMake()) null
+            else ownStart?.key ?: c.wardrobe.ownWithLook(recipe())?.key ?: com.bamnat.app.recipe.RecipeLinks.NEW_OWN
         return RecipeCodec.write(r) to parent
     }
 

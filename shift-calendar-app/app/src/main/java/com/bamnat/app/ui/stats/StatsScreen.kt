@@ -303,6 +303,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 month = month,
                 total = total,
                 hasProfile = payProfile != null,
+                style = style,
                 onClick = onOpenPay,
                 onFocus = if (payProfile != null) onOpenPayFocus else null,
             )
@@ -598,7 +599,7 @@ private fun MonthTrend(values: List<Pair<YearMonth, Long>>, floor: Long, label: 
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, style: WorkStyle? = null, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -619,7 +620,10 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요" else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
+                    if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요"
+                    // 빌드 10 S13 (알바에게 '직군·기본급'): 시급 for work paid by the hour.
+                    else if (style == WorkStyle.HOURLY) "시급만 넣으면 주휴수당까지 계산해요"
+                    else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )

@@ -227,6 +227,9 @@ private fun Shelf(items: List<ThemeLease.Wear>, onRemove: ((ThemeLease.Wear) -> 
                 look?.let { ThemeThumb(it, width = 112.dp) }
                 Text((if (w.own) "🎨 " else "") + w.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(if (w.free) "내 테마 · 장터에 있음" else if (w.own) "내 테마 · 나만" else "다시 입기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                // [THM-08] 1.36 섞은 테마: the themes its parts came from.
+                if (w.mixedFrom.isNotBlank()) Text("섞음 · " + w.mixedFrom.split("·").joinToString("·") { "‘$it’" }, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 onRemove?.let { rm ->
                     TextButton(onClick = { rm(w) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
                         modifier = Modifier.heightIn(min = 48.dp)) { Text(if (w.own) "지우기" else "빼기", maxLines = 1, softWrap = false) }

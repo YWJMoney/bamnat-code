@@ -149,8 +149,12 @@ object ShareLinkPayload {
     private val ZONE = Regex("""[A-Za-z]+(?:/[A-Za-z0-9_+-]+){1,2}""")
 
     /** [SHR-01] The months a link made from [from] covers, for its pay. */
-    fun months(from: LocalDate): List<YearMonth> =
-        generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.atDay(1).isAfter(from.plusDays(DAYS - 1L)) }.toList()
+    fun months(from: LocalDate): List<YearMonth> {
+        val end = from.plusDays(DAYS - 1L)
+        // 빌드 10 (3개월 링크인데 급여 줄이 '1월·2월·3월·4월'): a month the link only touches for its last day or two is left out.
+        return generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.atDay(1).isAfter(end) }
+            .filterIndexed { i, m -> i == 0 || java.time.temporal.ChronoUnit.DAYS.between(m.atDay(1), end) + 1 >= 7 }.toList()
+    }
 
     /** [SHR-01] A day's memos as one line of at most 80 characters, the way the page shows them: each memo's first line only. */
     fun memoLine(memos: List<Memo>): String? {

@@ -208,8 +208,18 @@ class AGScreenshotTest : ScreenshotBase() {
 
     // ---- 434 [MON-12] the 프로 sheet, in the alarm check's 등급 미리 보기 (before the launch nothing is locked) ----
     private fun lockedPay(): Screen.() -> Unit = payScreen(Tier.FREE, withProfile = true) { vm ->
+        // [MON-13] 1.36: its free week used up long ago, so the tap asks for 프로.
+        androidx.compose.runtime.remember { app.container.featureGate.startTrial(com.bamnat.app.tier.Feature.PAYSLIP_MATCH, 0L) }
         PayScreen(vm, onBack = {})
         com.bamnat.app.ui.pro.ProOfferHost(app.container)
+    }
+
+    /** [MON-13] 1.36 (사용자 결정): the first tap on 금액 비교하기 opens it for a week instead of asking for 프로. */
+    @Test fun theFirstUseOpensAWeek() = shoot("1086b_ag_trial_first_use", PHONE_393) {
+        payScreen(Tier.FREE, withProfile = true) { vm -> PayScreen(vm, onBack = {}); com.bamnat.app.ui.pro.ProOfferHost(app.container) }.invoke(this)
+        reveal("처음 쓰는 날부터 일주일은 무료예요")
+        tapText("금액 비교하기", scrolls = 30)
+        reveal("어느 달 명세서인가요?")
     }
 
     @Test fun aLockedFeatureOffersThreeWays() = shoot("1086_ag_pro_sheet", PHONE_393) {

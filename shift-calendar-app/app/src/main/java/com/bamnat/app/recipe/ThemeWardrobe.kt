@@ -310,7 +310,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     /** 1.35 [STU-10] 스튜디오의 내 테마로 저장: [r]'s looks kept as one of mine, as [saveMine] keeps the phone's. */
-    fun saveLook(r: Recipe, was: ThemeLease.Wear? = null): Boolean {
+    fun saveLook(r: Recipe, was: ThemeLease.Wear? = null, mixedFrom: String = ""): Boolean {
         val l = _lease.value
         val name = r.title.take(30)
         // Saving over one of mine of the same name replaces it (and keeps it in 장터 if it was).
@@ -320,7 +320,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if ((same == null && mine >= outfitLimit()) || only.pieces.isEmpty()) return false
         val keep = was ?: same
         val w = ThemeLease.Wear(name.ifBlank { "내 테마 ${mine + 1}" }, "", RecipeCodec.write(only), keep?.from ?: Today.date().toEpochDay(),
-            keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true)
+            keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true,
+            mixedFrom = mixedFrom)
         save(l.copy(history = (l.history.filter { it.key != w.key } + w).take(ThemeLease.HISTORY)))
         return true
     }

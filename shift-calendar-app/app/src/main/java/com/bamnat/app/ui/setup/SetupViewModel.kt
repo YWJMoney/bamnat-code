@@ -706,7 +706,7 @@ class SetupViewModel(
             store.flush()
         }
         repo.ensureDefaults()
-        repo.applySetup(marked, today)
+        repo.applySetup(marked, today, backfill = false)
         // [CALI-05] 1.30 BB: the company chosen in this setup is this calendar's (its rules into its own pay, its 이 설정 쓰기,
         // its pay way), as the first setup does for 내 달력. 1.29 kept nothing, so the pay asked the same company again.
         runCatching { com.bamnat.app.data.FirstSetup.keepCompany(c.companyOf(id), marked, c::companySetupUsed) }

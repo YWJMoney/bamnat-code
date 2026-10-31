@@ -144,12 +144,19 @@ class FeatureGate(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, withTrials(gate(settings.current.previewTier, remote.current, pro.current, flags.byKey.value), trials.all.value))
 
-    private fun withTrials(g: Gate, t: Map<String, Long>): Gate = if (g.preview) g else g.copy(trials = t, now = clock().toEpochMilli())
+    // The 프로 둘러보기 preview (무료) shows the free weeks too, so a tester sees them as a user would.
+    private fun withTrials(g: Gate, t: Map<String, Long>): Gate = g.copy(trials = t, now = clock().toEpochMilli())
 
     /**
      * [MON-13] The first use of a trial feature while it is locked: its week starts now. True when it is open (프로, a week
      * going on, or one just started); false when it asks for 프로.
      */
+    /** [MON-13] A trial's week as if begun at [at] (tests: one used up long ago). */
+    internal fun startTrial(feature: Feature, at: Long) = trials.start(feature, at)
+
+    /** [MON-13] Debug builds' 미리 보기: the free weeks start again. */
+    fun resetTrials() = trials.clear()
+
     fun tryOrAsk(feature: Feature): Boolean {
         val g = state.value
         if (g.allows(feature)) return true

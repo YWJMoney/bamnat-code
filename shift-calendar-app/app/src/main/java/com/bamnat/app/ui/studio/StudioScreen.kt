@@ -569,13 +569,18 @@ private fun SaveDialog(vm: StudioViewModel, s: StudioViewModel.State, onDismiss:
     var name by remember { mutableStateOf(own?.title ?: "내 테마 ${vm.mineCount() + 1}") }
     var toPlaza by remember { mutableStateOf(true) }
     val ownMake = remember { vm.ownMake() }
+    val mixed = remember { vm.mixedSources() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("내 테마로 저장") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it.take(30) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (!ownMake) Text("다른 분의 테마에서 직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어요. 그 테마의 조합으로 보관함에 담기고, 입힐 때는 그 테마처럼 30일이에요",
+                // [THM-08] 1.36 섞은 테마.
+                if (!ownMake && mixed.size >= 2) Text("${mixed.joinToString("·") { "‘$it’" }}의 조각을 섞었어요. 내 테마에 내 이름으로 담기고 출처도 함께 적혀요. " +
+                    "직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어 입을 때는 30일 규칙이고(프로는 광고 없이), 장터에는 수정판으로만 올라가요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                else if (!ownMake) Text("다른 분의 테마에서 직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어요. 그 테마의 조합으로 보관함에 담기고, 입힐 때는 그 테마처럼 30일이에요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                 else if (vm.inPlaza() && name == own?.title) Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(toPlaza, { toPlaza = it })

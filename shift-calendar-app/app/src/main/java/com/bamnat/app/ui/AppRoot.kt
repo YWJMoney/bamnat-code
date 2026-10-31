@@ -1870,7 +1870,6 @@ private fun SettingsGo.route(): String? = when (this) {
 private fun AlarmNoticeAsk() {
     val context = LocalContext.current
     val c = context.appContainer
-    val snap by c.scheduleRepository.snapshot.collectAsStateWithLifecycle(null)
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle(c.settingsRepository.current)
     var canPost by remember { mutableStateOf(com.bamnat.app.alarm.Notifications.canPost(context)) }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -1883,10 +1882,9 @@ private fun AlarmNoticeAsk() {
     androidx.compose.runtime.LaunchedEffect(canPost) {
         if (canPost && later != 0L) { later = 0L; prefs.edit().remove("alarm_notice_later").apply() }
     }
-    // 빌드 9 (투자 폰에도 '근무 알람이 울려도…' 창): only when an alarm is actually coming in the next weeks, so a kind of work or a
-    // phone with no shift alarm planned is never asked.
-    val alarmsOn = settings.alarmsEnabled && snap?.shiftTypes?.any { it.alarmEnabled && it.alarms.isNotEmpty() } == true &&
-        remember(snap) { snap?.let { com.bamnat.core.alarm.AlarmPlanner.nextAlarm(it.resolver, com.bamnat.core.time.Today.dateTime()) } != null }
+    // 빌드 9·10 (투자 폰, 알람을 켜지 않은 알바 폰에도 '근무 알람이 울려도…' 창): only when an alarm is really set to ring.
+    val upcoming by c.alarmScheduler.upcoming.collectAsStateWithLifecycle()
+    val alarmsOn = settings.alarmsEnabled && upcoming != null
     // 빌드 10 S11 (첫 설정 끝 '예상 급여도 볼까요?' 시트와 겹쳐요): one at a time, after the first setup's own sheets.
     val setupSheet by c.firstSetup.saved.collectAsStateWithLifecycle()
     val leadAsking by c.leadShare.step.collectAsStateWithLifecycle()

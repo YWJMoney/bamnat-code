@@ -26,6 +26,12 @@ class FeatureTrials(context: Context?) {
         return true
     }
 
+    /** For testing on a debug build: every trial back to never used. */
+    fun clear() {
+        started.value = emptyMap()
+        prefs?.edit()?.clear()?.apply()
+    }
+
     companion object {
         const val FILE = "pro_trials"
         const val DAYS = 7
