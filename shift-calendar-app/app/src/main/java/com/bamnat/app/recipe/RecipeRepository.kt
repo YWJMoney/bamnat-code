@@ -62,13 +62,23 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
      * [PRF-03] 내 프로필 최근 알림: the milestones and badges already shown (the server works out where each stands, the phone
      * remembers what it told), and since when new followers, questions and 수정판 count.
      */
-    fun seenInbox(): Set<String> = prefs.getStringSet(K_SEEN_INBOX, emptySet()).orEmpty()
+    fun seenInbox(): Set<String> = keyList(K_SEEN_INBOX_LIST).toSet()
     fun markInboxSeen(keys: Collection<String>) {
-        prefs.edit().putStringSet(K_SEEN_INBOX, (seenInbox() + keys).toList().takeLast(400).toSet())
+        prefs.edit().putString(K_SEEN_INBOX_LIST, keyListJson(keyList(K_SEEN_INBOX_LIST), keys))
             .putString(K_INBOX_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
     }
+    /**
+     * Keys kept in the order they were seen, newest last, so the oldest go first past [KEYS_KEPT]
+     * (a string set has no order, and cutting it could forget a new key and say it again).
+     */
+    private fun keyList(key: String): List<String> = prefs.getString(key, null)?.let { s ->
+        runCatching { org.json.JSONArray(s).let { a -> List(a.length()) { a.getString(it) } } }.getOrNull()
+    }.orEmpty()
+    private fun keyListJson(was: List<String>, add: Collection<String>): String =
+        org.json.JSONArray((was.filterNot { it in add } + add.distinct()).takeLast(KEYS_KEPT)).toString()
     /** Set once this phone has a public recipe, so 소식 asks about my profile only then. */
     fun hasProfile(v: Boolean) = prefs.edit().putBoolean(K_HAS_PROFILE, v).apply()
+    fun hasProfile(): Boolean = prefs.getBoolean(K_HAS_PROFILE, false)
     fun inboxSince(): java.time.Instant? = prefs.getString(K_INBOX_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
 
     /** 요청 판 보이기: the 요청 판 way in on the 나눔 판 card. */
@@ -201,11 +211,11 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 // [PRF-03] 1.36 My own profile's news, once: new followers and a milestone passed (the rest waits in 내 프로필).
                 // Asked only of a phone with recipes up (내 프로필 has something to say), with the same since as 소식.
                 if (followNews() && prefs.getBoolean(K_HAS_PROFILE, false)) runCatching { c.recipeApi.inbox(c.companyStore.device, since) }.getOrNull()?.let { box ->
-                    val told = prefs.getStringSet(K_TOLD, emptySet()).orEmpty() + seenInbox()
+                    val told = keyList(K_TOLD_LIST).toSet() + seenInbox()
                     if (box.newFollowers > 0) lines += "새 팔로워 ${box.newFollowers}명이 생겼어요 (마을 › 내 프로필)"
                     box.milestones.firstOrNull { it.key !in told }?.let { m ->
                         lines += "‘${m.title}’" + (if (m.kind == "users") "을(를) 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
-                        prefs.edit().putStringSet(K_TOLD, (told + m.key).toList().takeLast(400).toSet()).apply()
+                        prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()
                     }
                 }
                 n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’을 고친 수정판 ‘${r.title}’이 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
@@ -266,9 +276,10 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
         private const val K_BLOCKED = "blocked_makers"
-        private const val K_SEEN_INBOX = "seen_inbox"
+        private const val K_SEEN_INBOX_LIST = "seen_inbox_list"
+        private const val KEYS_KEPT = 400
         private const val K_INBOX_SINCE = "inbox_since"
-        private const val K_TOLD = "told_inbox"
+        private const val K_TOLD_LIST = "told_inbox_list"
         private const val K_HAS_PROFILE = "has_profile"
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L

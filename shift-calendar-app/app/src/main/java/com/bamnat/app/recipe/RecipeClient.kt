@@ -162,6 +162,8 @@ data class MakerPage(
     /** [PRF-12] 표지 그림 (shown once the operator looked), or the maker's own still waiting. */
     val cover: String? = null,
     val coverPending: String? = null,
+    /** The maker's own: the operator closed the profile (others cannot see or follow it). */
+    val closed: Boolean = false,
 ) {
     val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
     val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
@@ -419,7 +421,7 @@ class RecipeClient(
             blocked = o.optBoolean("blocked"), hidden = o.optBoolean("hidden"),
             sets = o.optJSONArray("sets").objects().map { s -> MakerSet(s.getString("id"), s.optString("title"), s.optString("summary"),
                 s.optJSONArray("codes").strings(), s.optInt("missing"), s.optBoolean("hidden")) },
-            cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"))
+            cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"), closed = o.optBoolean("closed"))
     }
 
     override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {
@@ -592,6 +594,8 @@ class RecipeClient(
                 "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 기능별 탭으로 골라 주세요"
                 "codes" -> "작품을 2~6개 골라 주세요"
                 "title" -> "이름을 2~30자로 적어 주세요"
+                "summary" -> "한 줄 설명은 80자까지 쓸 수 있어요"
+                "blocked" -> "차단한 분이에요. 차단을 풀면 팔로우할 수 있어요"
                 "too_many" -> "더 늘릴 수 없어요. 안 쓰는 것을 지우고 다시 해 주세요"
                 "not_yours" -> "내 작품만 넣을 수 있어요"
                 "same" -> "바뀐 것이 없어요"

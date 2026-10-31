@@ -107,6 +107,13 @@ import kotlinx.coroutines.launch
 // ---- [PRF-01]..[PRF-12] 1.36 창작자 프로필 (사용자 2026-10-31 "인스타처럼 내가 만든 테마를 멋지게, 팔로워·최근 알림, 팔로우한 분 프로필에서 공개된 것") ----
 
 /** 대표 작품 수: 3, 프로 꾸미기 6 (server COMMUNITY_LIMITS.pins). */
+/** 프로필에서의 실패 말: 레시피 말("지워졌거나 가려진 레시피예요", "더 올릴 수 없어요") 대신 프로필·팔로우에 맞게. */
+internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
+    "not_found" -> "볼 수 없는 프로필이에요"
+    "rate_limited" -> "오늘은 여기까지 할 수 있어요. 내일 다시 해 주세요"
+    else -> RecipeClient.problem(e)
+}
+
 internal fun pinLimit(c: AppContainer): Int = if (c.featureGate.allows(Feature.CREATOR_PRO)) 6 else 3
 
 /** The words of 프로필 신고's reasons (server PROFILE_FLAG_REASONS). */
@@ -137,7 +144,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
                 .fold({ p ->
                     if (p.mine) c.recipes.hasProfile(p.recipes.isNotEmpty())
                     _state.value.copy(page = p, error = null)
-                }, { _state.value.copy(error = if ((it as? com.bamnat.app.company.CompanyException)?.code == "not_found") "볼 수 없는 프로필이에요" else RecipeClient.problem(it)) })
+                }, { _state.value.copy(error = profileProblem(it)) })
             if (_state.value.page?.mine == true) loadInbox()
         }
     }
@@ -163,7 +170,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
     private fun act(done: String?, f: suspend () -> Unit) {
         viewModelScope.launch {
             _state.value = _state.value.copy(busy = true)
-            runCatching { f() }.onSuccess { load(); done?.let(::say) }.onFailure { say(RecipeClient.problem(it)) }
+            runCatching { f() }.onSuccess { load(); done?.let(::say) }.onFailure { say(profileProblem(it)) }
             _state.value = _state.value.copy(busy = false)
         }
     }
@@ -310,6 +317,8 @@ fun MakerScreen(
                 }
                 Header(p, mine, vm, onPeople = onPeople, onFace = { picking = true }, onFollowMenu = { followMenu = true })
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (p.mine && p.closed && !s.asOthers) Text("⛔ 운영 규칙에 따라 프로필이 닫혔어요. 다른 분은 볼 수도 팔로우할 수도 없고, 작품은 장터에 그대로 있어요. 궁금하면 설정 › 도움말과 문의로 물어봐 주세요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (p.mine && p.hidden && !s.asOthers) Text("🔒 프로필을 숨겨 두었어요. 다른 분은 볼 수 없어요 (⋮ › 프로필 다시 보이기)",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (mine && p.bioHidden) Text("소개 글이 신고로 가려져 있어요. 고치면 다시 보여요", style = MaterialTheme.typography.bodySmall,
@@ -523,7 +532,9 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("최근 알림" + if (fresh) " · 새 소식 ${unseen.size}" else "", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
-                if (lines.isNotEmpty()) TextButton(onClick = { open = !open; if (fresh) onSeen() }) { Text(if (open || fresh) "접기" else "펼치기") }
+                if (lines.isNotEmpty()) TextButton(onClick = { if (fresh) { onSeen(); open = false } else open = !open }) {
+                    Text(if (fresh) "다 봤어요" else if (open) "접기" else "펼치기")
+                }
             }
             if (lines.isEmpty()) Text("지난 7일 동안 새 소식이 없어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else if (fresh || open) lines.take(8).forEach { (text, go) ->
@@ -551,7 +562,15 @@ private fun SetCard(set: MakerSet, works: List<RecipeItem>, mine: Boolean, onOpe
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             if (mine) {
                 if (set.missing > 0) Text("내린 작품 ${set.missing}개는 빠져 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                Row { TextButton(onClick = onEdit) { Text("고치기") }; TextButton(onClick = onDelete) { Text("지우기") } }
+                var asking by remember { mutableStateOf(false) }
+                Row { TextButton(onClick = onEdit) { Text("고치기") }; TextButton(onClick = { asking = true }) { Text("지우기") } }
+                if (asking) AlertDialog(
+                    onDismissRequest = { asking = false },
+                    title = { Text("‘${set.title}’ 모음을 지울까요?") },
+                    text = { Text("모음만 지워지고 안에 있던 작품은 그대로 남아요.") },
+                    confirmButton = { TextButton(onClick = { asking = false; onDelete() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+                    dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+                )
             }
         }
     }
@@ -566,6 +585,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, onSave: (Stri
     val themes = picked.count { c -> works.firstOrNull { it.code == c }?.scope != "tab" }
     val problem = when {
         RecipeText.graphemes(title.trim()) !in 2..30 -> "이름을 2~30자로 적어 주세요"
+        RecipeText.graphemes(summary.trim()) > 80 -> "한 줄 설명은 80자까지 쓸 수 있어요"
         picked.size !in 2..6 -> "작품을 2~6개 골라 주세요"
         themes > 1 -> "테마는 하나만 넣을 수 있어요"
         else -> null
@@ -576,7 +596,8 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, onSave: (Stri
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(title, { title = it.take(40) }, label = { Text("이름 (예: 야간 3교대 세트)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(summary, { summary = it.take(100) }, label = { Text("한 줄 설명 (안 써도 돼요)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(summary, { summary = it.take(100) }, label = { Text("한 줄 설명 (안 써도 돼요)") }, modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("${RecipeText.graphemes(summary.trim())}/80") }, isError = RecipeText.graphemes(summary.trim()) > 80)
                 Text("테마 하나 + 기능별 탭 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
                 works.forEach { r ->
                     val on = r.code in picked
@@ -701,7 +722,7 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
     fun unblock(id: String) = act { c.recipeApi.block(device, id, false); c.recipes.block(id, false) }
 
     private fun act(f: suspend () -> Unit) {
-        viewModelScope.launch { runCatching { f() }.onSuccess { load() }.onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) } }
+        viewModelScope.launch { runCatching { f() }.onSuccess { load() }.onFailure { _state.value = _state.value.copy(message = profileProblem(it)) } }
     }
 
     fun shown() { _state.value = _state.value.copy(message = null) }
@@ -803,13 +824,19 @@ class FollowingStripViewModel(private val c: AppContainer, private val style: Wo
             val device = c.companyStore.device
             val f = runCatching { c.recipeApi.following(device) }.getOrNull()
             f?.let { c.recipes.setBlocked(it.blocked.map { b -> b.maker }.toSet()) }
-            val month = if (f?.items.isNullOrEmpty()) runCatching { c.recipeApi.monthMakers(style) }.getOrDefault(emptyList()) else emptyList()
+            val blocked = f?.blocked?.map { it.maker }?.toSet() ?: c.recipes.blocked.value
+            val month = if (f?.items.isNullOrEmpty()) runCatching { c.recipeApi.monthMakers(style) }.getOrDefault(emptyList()).filterNot { it.maker in blocked }
+                else emptyList()
+            // 내 프로필 only once there is one (a public recipe, a face or a 소개): asking makes none on the server.
             val me = runCatching { c.recipeApi.makerMe(device) }.getOrNull()?.let { id ->
-                runCatching { c.recipeApi.maker(device, id) }.getOrNull()?.let { p ->
+                runCatching { c.recipeApi.maker(device, id) }.getOrNull()?.takeIf { p ->
+                    p.recipes.isNotEmpty() || p.face != null || p.bio != null || p.sets.isNotEmpty()
+                }?.let { p ->
+                    c.recipes.hasProfile(p.recipes.isNotEmpty())
                     MakerFaceItem(p.maker, p.nick, p.face, p.color, fresh = c.recipes.seenInbox().let { seen ->
                         runCatching { c.recipeApi.inbox(device, c.recipes.inboxSince()) }.getOrNull()?.let { b -> MakerViewModel.inboxKeys(b, c.recipes.inboxSince()).any { it !in seen } } ?: false
                     })
-                } ?: MakerFaceItem(id, null, null, null)
+                }
             }
             _state.value = State(me, f?.items.orEmpty(), month, loaded = true)
         }
