@@ -43,6 +43,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -392,12 +393,21 @@ internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamna
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (String) -> Unit) {
+fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (String) -> Unit,
+                     /**
+                      * [STU-21] 1.36 스튜디오 하나로: 올리기 from the studio — the look and 기능 are made there, so only 받는 분이 넣을 값 ·
+                      * 이름·표지 · 설명 · 마치기 (four steps); going back from the first, or a check that points at 꾸미기, returns to the studio.
+                      */
+                     finishOnly: Boolean = false) {
     val s by vm.state.collectAsStateWithLifecycle()
+    var begun by remember { mutableStateOf(false) }
+    if (finishOnly) LaunchedEffect(s.step) { if (s.step == 1) { if (begun) onBack() else vm.go(2) } else begun = true }
     // [STU-01] 1.35: 꾸미기 스튜디오 first; what was 고르기 lives under it.
     val titles = listOf("꾸미기", "받는 분이 넣을 값", "이름·표지", "설명", "마치기")
+    val shift = if (finishOnly) 1 else 0
     Scaffold(topBar = {
-        TopAppBar(title = { Text((if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") + " ${s.step}/5 · ${titles[s.step - 1]}") },
+        TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") +
+            " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}") },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
     }, bottomBar = {
         // 1.35 [J135-22] (실사용 F-87 '다음'까지 큰 스크롤 10번): 이전·다음 stay at the bottom of every step, with why 다음 waits.
@@ -411,7 +421,9 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이전") }
+                    if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
+                    }
                     Spacer(Modifier.weight(1f))
                     if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()) &&
                         (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
@@ -429,7 +441,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LinearProgressIndicator(progress = { s.step / 5f }, modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(progress = { (s.step - shift) / (5f - shift) }, modifier = Modifier.fillMaxWidth())
                 s.sent?.let { sent ->
                     SentCard(s.recipe.title, sent, onOpen)
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }

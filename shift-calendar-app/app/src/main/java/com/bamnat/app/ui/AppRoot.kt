@@ -702,7 +702,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(sharing) {
         val kind = sharing ?: return@LaunchedEffect
         com.bamnat.app.recipe.RecipeLinks.shared()
-        nav.navigate(Routes.recipeMake(kind = kind.key))
+        nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_FEATURE + kind.key)) { launchSingleTop = true }
     }
 
     // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).
@@ -1441,11 +1441,11 @@ private fun AppNavHost(
                     LaunchedEffect(kind) { if (kind != null && vm.state.value.kind != kind) vm.kind(kind) }
                     com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = null,
                         onOpen = { code -> nav.navigate(Routes.recipe(code, recipeCal)) },
-                        onMake = { nav.navigate(Routes.recipeMake(recipeCal)) },
+                        onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                         onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
                         title = com.bamnat.app.ui.hub.HubSection.SHARE.label)
                 },
-                onMake = { nav.navigate(Routes.recipeMake(recipeCal)) },
+                onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
                 onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
@@ -1455,10 +1455,9 @@ private fun AppNavHost(
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
             val start = entry.arguments?.getString("start") ?: "mine"
             val vm = appViewModel(key = "studio-$start") { com.bamnat.app.ui.studio.StudioViewModel(it, start) }
-            com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onUpload = { (body, parent) ->
-                com.bamnat.app.recipe.RecipeLinks.remake = body to parent
-                // F-101: one of mine already in 장터 goes up as its next 판, not a new code.
-                nav.navigate(Routes.recipeMake(PersonalCalendar.MAIN, code = vm.plazaCode().orEmpty()))
+            // [STU-21] 1.36 올리기 happens inside the studio; once up, the recipe opens in place of it.
+            com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onOpen = { code ->
+                nav.navigate(Routes.recipe(code)) { popUpTo(Routes.STUDIO) { inclusive = true } }
             })
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
@@ -1474,7 +1473,7 @@ private fun AppNavHost(
                     header = {
                         if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
                             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
-                            onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+                            onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                             onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
                             onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
                         )
@@ -1501,7 +1500,7 @@ private fun AppNavHost(
             LaunchedEffect(kind) { if (kind.isNotEmpty() && vm.state.value.kind != kind) vm.kind(kind) }
             com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = { nav.popFrom(Routes.RECIPES) },
                 onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) },
-                onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+                onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
                 title = if (kind == "skin") "다른 분들이 만든 테마" else com.bamnat.app.ui.hub.HubSection.SHARE.label,
                 askCode = entry.arguments?.getBoolean("code") == true)
@@ -1513,17 +1512,17 @@ private fun AppNavHost(
             val vm = appViewModel(key = "recipe-$code-$calendar") { com.bamnat.app.ui.recipe.RecipeDetailViewModel(it, code, calendar) }
             com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = { nav.popFrom(Routes.RECIPE) }, onRemake = { body ->
                 com.bamnat.app.recipe.RecipeLinks.remake = body to code
-                nav.navigate(Routes.recipeMake(calendar))
+                nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(null)))
             }, onOpen = { other -> nav.navigate(Routes.recipe(other, calendar)) }, onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) },
                 onNewVersion = { body ->
                     // [RCX-31] The same code, its next 판.
                     com.bamnat.app.recipe.RecipeLinks.remake = body to code
-                    nav.navigate(Routes.recipeMake(calendar, code = code))
+                    nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(code)))
                 },
                 onTakeInto = { mine, body ->
                     // [LIN-03] My recipe's next 판, with what the 수정판 changed in it.
                     com.bamnat.app.recipe.RecipeLinks.remake = body to mine
-                    nav.navigate(Routes.recipeMake(calendar, code = mine))
+                    nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(mine)))
                 })
         }
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -1535,7 +1534,7 @@ private fun AppNavHost(
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "recipe-requests-$calendar") { com.bamnat.app.ui.recipe.RequestsViewModel(it, calendar) }
             com.bamnat.app.ui.recipe.RequestsScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_REQUESTS) },
-                onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) }, onMake = { nav.navigate(Routes.recipeMake(calendar)) })
+                onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) }, onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } })
         }
         composable(Routes.RECIPE_MAKE, arguments = listOf(
             navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
@@ -1559,12 +1558,12 @@ private fun AppNavHost(
             val vm = appViewModel { com.bamnat.app.ui.recipe.RecipeMineViewModel(it) }
             com.bamnat.app.ui.recipe.RecipeMineScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MINE) },
                 onOpen = { code -> nav.navigate(Routes.recipe(code)) },
-                onDraft = { id -> nav.navigate(Routes.recipeMake(draft = id)) },
+                onDraft = { id -> nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + id)) },
                 onList = { nav.navigate(Routes.recipes()) { launchSingleTop = true } },
                 onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) },
                 onNewVersion = { code, body ->
                     com.bamnat.app.recipe.RecipeLinks.remake = body to code
-                    nav.navigate(Routes.recipeMake(code = code))
+                    nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(code)))
                 })
         }
         composable(Routes.PLAZA_RATES) {
@@ -1931,7 +1930,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         // [HUB-01] In 마을 the recipes have their own 장터 next to 광장.
         if (!inHub && recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
-            onMake = { nav.navigate(Routes.recipeMake(calendar)) },
+            onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
             onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
             onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
         )

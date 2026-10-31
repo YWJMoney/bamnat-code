@@ -241,13 +241,16 @@ fun RecipeListScreen(
                 title = { Text(title + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: "")) },
                 navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
-                    TextButton(onClick = { codeAsk = true }) { Text("코드로 받기") }
-                    TextButton(onClick = onMine) { Text("내 레시피") }
+                    // [R136-13] In 마을 these live in 공방 (내 것 한곳, 코드로 받기 하나); a 장터 opened on its own keeps them.
+                    if (onBack != null) {
+                        TextButton(onClick = { codeAsk = true }) { Text("코드로 받기") }
+                        TextButton(onClick = onMine) { Text("내 레시피") }
+                    }
                 },
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("만들기") })
+            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") })
         },
     ) { padding ->
         LazyColumn(

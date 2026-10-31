@@ -69,7 +69,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     LaunchedEffect(message) { message?.let { vm.shown(); snack.showSnackbar(it) } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text("장터·내 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {

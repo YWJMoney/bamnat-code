@@ -249,6 +249,20 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
     }
 }
 
+/**
+ * [STU-23] 1.36 눌러서 고치기 (설계서 B-3 "미리 보기에서 바로 누르면 그 부분의 도구가 열림"): where on the example was tapped —
+ * "cells" (달력 칸), "days" (근무 이름 줄), "cards" (카드), "memo" (메모장), "money" (가계부), "colors" (바탕). Null: the tap is the
+ * screen's own ([MockPhone] onPick).
+ */
+val LocalMockPick = androidx.compose.runtime.compositionLocalOf<((String) -> Unit)?> { null }
+
+/** A part of the example that opens its own tool when [LocalMockPick] listens. */
+@Composable
+internal fun Modifier.mockPick(region: String): Modifier {
+    val pick = LocalMockPick.current ?: return this
+    return this.clickable(onClickLabel = "이 부분 고치기") { pick(region) }
+}
+
 /** The kinds of day an example calendar shows when the recipe brings none: what this kind of work usually has. */
 private fun exampleDays(style: WorkStyle?): List<Map<String, Any?>> = when (style) {
     WorkStyle.SHIFT, null -> listOf(day("주간", "day", "주", 0xFFEF6C00), day("야간", "night", "야", 0xFF3949AB), day("휴무", "off", "휴", 0xFF757575))
@@ -285,13 +299,13 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL &&
         fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
     placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
-    if (placed.any { it.part == CalendarPart.SUMMARY }) MockSummary(style)
+    if (placed.any { it.part == CalendarPart.SUMMARY }) Box(Modifier.mockPick("cards")) { MockSummary(style) }
     val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
-    if (placed.any { it.part == CalendarPart.COUNTS }) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (placed.any { it.part == CalendarPart.COUNTS }) Row(Modifier.mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         days.forEach { d -> Text("${d["label"]} ${if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
-    MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]))
+    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW])) }
     placed.filter { !above(it.part) }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
 }
 
@@ -376,7 +390,7 @@ private fun MockSummary(style: WorkStyle?) {
 
 @Composable
 private fun MockCard(title: String, what: String, bars: Boolean = false) {
-    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    Card(Modifier.fillMaxWidth().mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge)
             Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
@@ -418,7 +432,7 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
     }
     if (journal.isNotEmpty()) MockCard("📒 투자일지", journal.joinToString(" · "))
     // [FREE-04] The memos in the recipe's 메모장 모양.
-    resolved[PieceKind.MEMO_LOOK]?.let { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it)) {} }
+    resolved[PieceKind.MEMO_LOOK]?.let { Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it)) {} } }
 }
 
 /** [FREE-04][FREE-06] A piece's values as the look they write (the same k=v line the settings keep). */
@@ -577,14 +591,14 @@ private fun PieceSection(r: Recipe, kind: PieceKind, vm: RecipeMakeViewModel) {
 }
 
 /** Fields the studio edits by hand: the pictures (그림 꾸미기) come from the settings screen, the company file from 회사 화면. */
-private fun studioField(f: Field): Boolean = when (f) {
+internal fun studioField(f: Field): Boolean = when (f) {
     is Field.Text -> f.guard || f.key == "body"
     is Field.Items -> f.key != "icons"
     else -> true
 }
 
 @Composable
-private fun StudioCard(title: String, sub: String, onReset: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, body: @Composable () -> Unit) {
+internal fun StudioCard(title: String, sub: String, onReset: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, body: @Composable () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -608,7 +622,7 @@ private val PICK_LABELS = com.bamnat.core.recipe.RecipeWords.PICKS
 @OptIn(ExperimentalLayoutApi::class)
 @Suppress("UNCHECKED_CAST")
 @Composable
-private fun FieldsForm(fields: List<Field>, values: Map<String, Any?>, kind: PieceKind, onChange: (String, Any?) -> Unit) {
+internal fun FieldsForm(fields: List<Field>, values: Map<String, Any?>, kind: PieceKind, onChange: (String, Any?) -> Unit) {
     fields.forEach { f ->
         val label = com.bamnat.core.recipe.RecipeWords.KIND_KEYS["${kind.key}.${f.key}"] ?: KEY_LABELS[f.key] ?: f.key
         val v = values[f.key]
