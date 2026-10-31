@@ -366,6 +366,8 @@ test("[PRF-05][PRF-06] 리뷰: 모두 지우기로 남의 차단·운영자 닫�
   const m5 = (await call("POST", "/api/recipes/makers/me", { device: device(5), bio: "나쁜 소개" }, from(5))).data.maker;
   for (const n of [6, 7, 8]) await call("POST", `/api/recipes/makers/${m5}/flag`, { device: device(n), reason: "bio" }, from(n));
   assert.equal((await call("GET", `/api/recipes/makers/${m5}`, undefined, dev(3))).data.bio, undefined);
+  const own = (await call("GET", `/api/recipes/makers/${m5}`, undefined, dev(5))).data;
+  assert.deepEqual([own.bioHidden, own.bioHiddenBy, own.bioHiddenWhy], [true, "flags", "bio"]);
   assert.equal((await call("POST", "/api/recipes/makers/me", { device: device(5), bio: "고친 소개" }, from(5))).data.bioHidden, false);
   assert.equal((await call("GET", `/api/recipes/makers/${m5}`, undefined, dev(3))).data.bio, "고친 소개");
   await call("POST", `/api/admin/recipes/makers/${m5}/bio-hide`, {}, admin);

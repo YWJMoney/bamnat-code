@@ -300,7 +300,10 @@ async function rcMakerPage(d, env, request, id) {
     sets, ...(cover ? { cover: cover.id } : {}), ...(mine && m?.cover && !cover ? { coverPending: m.cover } : {}),
     maker: id, nick, face: m?.face ?? null, color: m?.color ?? null, mine,
     ...(m?.bio && !m.bio_hidden ? { bio: m.bio } : {}),
-    ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true, bioHiddenBy: m.bio_hidden === 2 ? "operator" : "flags" } : {}),
+    ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true, bioHiddenBy: m.bio_hidden === 2 ? "operator" : "flags",
+      // 1.36 PC 사용성 P10: the reason most reports gave, so the maker knows what to fix (never who).
+      ...(m.bio_hidden === 1 ? { bioHiddenWhy: (await d.one(env, `SELECT reason, COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ?
+        GROUP BY reason ORDER BY n DESC LIMIT 1`, id))?.reason ?? null } : {}) } : {}),
     ...(m?.style_tag ? { styleTag: m.style_tag } : {}),
     ...(mine ? { hidden: Boolean(m?.hidden), closed: Boolean(m?.closed) } : {}),
     pins: rcPinsOf(m).filter((c) => codes.has(c)),

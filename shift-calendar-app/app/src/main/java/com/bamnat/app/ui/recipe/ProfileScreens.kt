@@ -236,11 +236,13 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
         c.recipeApi.makerMe(device, null, null, set = true)
         if (works) p.recipes.forEach { runCatching { c.recipeApi.delete(device, it.code) } }
         c.recipes.hasProfile(!works && p.recipes.isNotEmpty())
+        c.recipes.profileCleared(!works && p.recipes.isNotEmpty())
         c.recipes.peopleChanged()
     }
 
     /** [PRF-01] 이름: the same 별명 as 광장 (2~12자), saved with the rest of 프로필 고치기. */
     fun save(e: ProfileEdit, nick: String?) = act("프로필을 고쳤어요") {
+        c.recipes.profileCleared(false)
         if (nick != null) {
             val t = nick.trim()
             if (t.isNotEmpty() && t.length !in 2..12) throw com.bamnat.app.company.CompanyException("nick_length")
@@ -249,7 +251,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
         c.recipeApi.profile(device, e)
     }
 
-    fun face(emoji: String?, color: Long?) = act(null) { c.recipeApi.makerMe(device, emoji, color, set = true) }
+    fun face(emoji: String?, color: Long?) = act(null) { c.recipes.profileCleared(false); c.recipeApi.makerMe(device, emoji, color, set = true) }
 
     fun edit(e: ProfileEdit, done: String = "프로필을 고쳤어요") = act(done) { c.recipeApi.profile(device, e) }
 
@@ -393,11 +395,15 @@ fun MakerScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (p.mine && p.hidden && !s.asOthers) Text("🔒 프로필을 숨겨 두었어요. 다른 분은 볼 수 없어요 (⋮ › 프로필 다시 보이기)",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    if (mine && p.bioHidden) Text(if (p.bioHiddenBy == "operator") "운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
-                        else "소개 글이 신고로 가려져 있어요. 고치면 다시 보여요", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error)
+                    // 1.36 PC 사용성 P10: why (the reports' most common reason) and 지금 고치기.
+                    if (mine && p.bioHidden) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (p.bioHiddenBy == "operator") "운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
+                            else "소개 글이 신고로 가려져 있어요" + (bioWhy(p.bioHiddenWhy)?.let { " (많이 받은 이유: $it)" } ?: "") + ". 고치면 다시 보여요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { editing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 고치기") }
+                    }
                     // [PRF-05] 1.36 PC 사용성 P7: 프로필만 지운 뒤 — what is left and the next step.
-                    if (mine && !s.asOthers && p.face == null && p.bio.isNullOrBlank() && p.pins.isEmpty() && p.sets.isEmpty() && p.cover == null && p.recipes.isNotEmpty()) {
+                    if (mine && !s.asOthers && vm.c.recipes.profileCleared() && p.face == null && p.bio.isNullOrBlank() && p.pins.isEmpty() && p.sets.isEmpty() && p.cover == null && p.recipes.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("작품 ${p.recipes.size}개만 남은 빈 프로필이에요. 다른 분은 작품의 ‘만든 분’으로 들어와요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -534,6 +540,11 @@ fun MakerScreen(
 }
 
 /** The 프로필 head: 표지, face, name, 유형, 소개, 숫자 줄, and 팔로우 or 내 것. */
+/** 1.36 PC 사용성 P10: a 신고 reason in words. */
+internal fun bioWhy(reason: String?): String? = when (reason) {
+    "impersonate" -> "다른 사람인 척"; "bio" -> "소개가 불쾌함"; "spam" -> "광고·도배"; "other" -> "기타"; else -> null
+}
+
 /** 1.36 [V20] 새싹·이웃·단골. */
 internal fun trustWord(level: Int): String = when (level) { 0 -> "🌱 새싹"; 1 -> "🏡 이웃"; else -> "⭐ 단골" }
 
@@ -572,12 +583,24 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
         }
         // 1.36 [V20] 보이는 믿음 단계: everyone sees the step; the maker alone sees the next one and a 쓰기 제한.
         p.trust?.let { t ->
-            Text(trustWord(t) + if (mine) trustNext(p)?.let { " · $it" }.orEmpty() else "", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.36 PC 사용성 P11: 누르면 단계 설명.
+            var explaining by remember { mutableStateOf(false) }
+            Text(trustWord(t) + if (mine) trustNext(p)?.let { " · $it" }.orEmpty() else " ⓘ", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clickable(onClickLabel = "믿음 단계 설명") { explaining = true }.heightIn(min = 32.dp))
+            if (explaining) AlertDialog(
+                onDismissRequest = { explaining = false },
+                title = { Text("새싹 · 이웃 · 단골") },
+                text = { Text("🌱 새싹: 마을을 쓴 지 3일 전이에요. 누른 좋아요가 반만 세져요.\n🏡 이웃: 3일이 지났어요.\n⭐ 단골: 가려진 글 없이 14일을 썼어요.\n\n" +
+                    "단계는 쓴 날과 가려진 글로만 정해지고, 다른 정보는 쓰지 않아요.") },
+                confirmButton = { TextButton(onClick = { explaining = false }) { Text("닫기") } },
+            )
         }
         if (mine) p.limitPerDay?.let { n ->
-            val until = p.limitUntil?.let { com.bamnat.app.ui.Fmt.shortFullDate(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) }
-            Text("신고로 가려진 글이 쌓여 ${until?.let { "${it}까지 " }.orEmpty()}" + (if (n > 0) "하루 ${n}번만 쓸 수 있어요" else "글을 쓸 수 없어요") +
+            // 1.36 PC 6차: the same words (and date) as 광장's 쓰기 제한 line.
+            val until = p.limitUntil
+            Text((if (until != null && n > 0) com.bamnat.app.company.WriteLimit(until, n).line(null)
+                else "신고가 쌓여 " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
                 ". 기간이 지나면 저절로 풀려요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         p.bio?.takeIf { !p.bioHidden || mine }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }

@@ -168,6 +168,8 @@ data class MakerPage(
     val closed: Boolean = false,
     /** The maker's own: who hid the 소개, "flags" (세 번 신고) or "operator". */
     val bioHiddenBy: String? = null,
+    /** The maker's own: the reason most reports gave ("impersonate", "bio", "spam", "other"), never who. */
+    val bioHiddenWhy: String? = null,
     /** 1.36 [V20] 보이는 믿음 단계: 0 새싹, 1 이웃, 2 단골 (null: 밤낮 운영). */
     val trust: Int? = null,
     /** The maker's own: days to the next step, or [trustHeld] when something hidden keeps 단골 away. */
@@ -441,7 +443,7 @@ class RecipeClient(
             sets = o.optJSONArray("sets").objects().map { s -> MakerSet(s.getString("id"), s.optString("title"), s.optString("summary"),
                 s.optJSONArray("codes").strings(), s.optInt("missing"), s.optBoolean("hidden")) },
             cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"), closed = o.optBoolean("closed"),
-            bioHiddenBy = o.optStringOrNull("bioHiddenBy"),
+            bioHiddenBy = o.optStringOrNull("bioHiddenBy"), bioHiddenWhy = o.optStringOrNull("bioHiddenWhy"),
             trust = if (o.has("trust") && !o.isNull("trust")) o.optInt("trust").coerceIn(0, 2) else null,
             trustDays = o.optJSONObject("trustNext")?.takeIf { it.has("days") }?.optInt("days"),
             trustHeld = o.optJSONObject("trustNext")?.optBoolean("held") == true,

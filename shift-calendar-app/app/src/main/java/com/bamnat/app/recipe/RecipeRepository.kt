@@ -84,6 +84,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     /** Set once this phone has a public recipe, so 소식 asks about my profile only then. */
     fun hasProfile(v: Boolean) = prefs.edit().putBoolean(K_HAS_PROFILE, v).apply()
     fun hasProfile(): Boolean = prefs.getBoolean(K_HAS_PROFILE, false)
+    /** 1.36 PC 6차: 프로필만 지우기 left the works (the 빈 프로필 line shows only then, not on a first upload). */
+    fun profileCleared(v: Boolean) = prefs.edit().putBoolean(K_PROFILE_CLEARED, v).apply()
+    fun profileCleared(): Boolean = prefs.getBoolean(K_PROFILE_CLEARED, false)
     fun inboxSince(): java.time.Instant? = prefs.getString(K_INBOX_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
 
     /** 요청 판 보이기: the 요청 판 way in on the 나눔 판 card. */
@@ -286,6 +289,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_INBOX_SINCE = "inbox_since"
         private const val K_TOLD_LIST = "told_inbox_list"
         private const val K_HAS_PROFILE = "has_profile"
+        private const val K_PROFILE_CLEARED = "profile_cleared"
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
