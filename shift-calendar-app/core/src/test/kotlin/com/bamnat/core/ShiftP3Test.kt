@@ -46,6 +46,11 @@ class ShiftP3Test {
         assertNull(codes.match("김민지"))
         assertEquals(listOf("D", "D", "E", "N"), codes.split("DDEN"))
         assertNull(codes.split("OFF"))
+        // 1.36 PC Y1: two cells stuck together in a photo, a letter and a word code.
+        assertEquals(listOf("N", "OFF"), codes.split("NOFF"))
+        assertEquals(listOf("D", "OFF", "N"), codes.split("DOFFN"))
+        assertNull(codes.split("NOFQ"))
+        assertNull(codes.split("김민지"))
     }
 
     @Test

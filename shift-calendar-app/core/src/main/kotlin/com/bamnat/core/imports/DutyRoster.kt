@@ -231,7 +231,28 @@ class DutyCodes(
         // Letters only: "N/" is a code with a mark and "N-O" two codes joined, never N and a day off.
         if (n.length < 2 || match(token) != null || n in RANKS || !n.all { it.isLetter() }) return null
         val chars = n.map { it.toString() }
-        return chars.takeIf { cs -> cs.all { match(it) != null } }
+        if (chars.all { match(it) != null }) return chars
+        // Latin letters only, so a Korean name in a row is never cut into 주·야·휴.
+        return if (n.all { it in 'A'..'Z' }) segments(n) else null
+    }
+
+    /**
+     * 1.36 PC Y1: two cells read as one word ("NOFF" → N + OFF, "DOFFN" → D OFF N): [n] cut into known codes of up to
+     * [MAX_PART] letters, the fewest pieces; null when it cannot be cut whole.
+     */
+    private fun segments(n: String): List<String>? {
+        val best = arrayOfNulls<List<String>>(n.length + 1)
+        best[0] = emptyList()
+        for (end in 1..n.length) {
+            for (len in 1..minOf(MAX_PART, end)) {
+                val before = best[end - len] ?: continue
+                val part = n.substring(end - len, end)
+                if (match(part) == null) continue
+                val next = before + part
+                if (best[end] == null || next.size < best[end]!!.size) best[end] = next
+            }
+        }
+        return best[n.length]?.takeIf { it.size >= 2 }
     }
 
     /**
@@ -249,6 +270,8 @@ class DutyCodes(
     }
 
     companion object {
+        /** The longest code [segments] cuts out of a stuck-together word. */
+        private const val MAX_PART = 4
         private val STRIP = Regex("""[\s.,·:;|()\[\]{}'"`‘’“”]""")
         /** [ROST-04] Full-width letters and digits from a 한글 document (Ｄ, １) read as plain ones (중-7). */
         fun fold(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFKC)

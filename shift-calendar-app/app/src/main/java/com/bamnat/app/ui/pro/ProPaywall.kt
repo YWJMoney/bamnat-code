@@ -47,7 +47,10 @@ import kotlinx.coroutines.flow.asStateFlow
 object ProPaywall {
     private val _open = MutableStateFlow(false)
     val open: StateFlow<Boolean> = _open.asStateFlow()
-    fun show() { _open.value = true }
+    /** 1.36 PC P21: a lock's '1개월 무료로 써 보기' opens straight on the plans. */
+    var plansFirst = false
+        private set
+    fun show(plans: Boolean = false) { plansFirst = plans; _open.value = true }
     fun close() { _open.value = false }
 }
 
@@ -70,7 +73,7 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
     val yearly = plans.firstOrNull { it.yearly }
     val ledger = ledgerOf(c, gate, yearly?.priceMicros)
     val pages = listOfNotNull(0.takeIf { !ledger.empty }, 1, 2)
-    var at by rememberSaveable { mutableIntStateOf(0) }
+    var at by rememberSaveable { mutableIntStateOf(if (ProPaywall.plansFirst) pages.lastIndex else 0) }
     val page = pages[at.coerceIn(0, pages.lastIndex)]
     LaunchedEffect(page) { c.telemetry.event("pro_paywall", "page${page + 1}") }
     Column(

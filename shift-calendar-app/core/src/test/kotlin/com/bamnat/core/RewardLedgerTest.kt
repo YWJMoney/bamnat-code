@@ -33,6 +33,9 @@ class RewardLedgerTest {
         assertEquals(3_600L, m.wonValue) // 44 × 29,990 ÷ 365 ≈ 3,615 → 3,600
         assertEquals(68_400L, m.found)
         assertNull("no price, no 원 said", RewardLedger.month(s, monthStart, nextMonth, emptyList(), null, 0).wonValue)
+        // 1.36 PC P22: a bundle opened two ways says both.
+        val both = FeatureLease.granted(s, Bundle.PAY, monthStart.plus(Duration.ofDays(9)), today.withDayOfMonth(10))
+        assertEquals("급여 14일(처음 7일 + 광고 7일) · 돈 통계 7일", RewardLedger.month(both, monthStart, nextMonth, emptyList(), yearly, 0).partsLine)
         assertEquals(82L, RewardLedger.perDay(yearly))
         assertEquals(2_499L, RewardLedger.perMonth(yearly))
     }

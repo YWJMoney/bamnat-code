@@ -83,7 +83,7 @@ fun ProOfferHost(c: AppContainer) {
         ProOffer.close()
     }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        ProOfferContent(c, feature, gate, onPro = { ProOffer.close(); goPro() })
+        ProOfferContent(c, feature, gate, onPro = { ProOffer.close(); ProPaywall.show(plans = true) })
     }
 }
 

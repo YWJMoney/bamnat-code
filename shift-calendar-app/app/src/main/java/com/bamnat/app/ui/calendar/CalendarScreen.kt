@@ -1238,7 +1238,7 @@ fun CalendarScreen(
             // AG 1.27 [INVITE-11] Inviting friends, three days after the install, two weeks apart (결정 AG-D6).
             if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구 초대") { com.bamnat.app.ui.pro.InviteNudgeNotice() })
             // 1.32 [PROX-02] A money day's one 하루 무료 권유 (급여일 사흘, 근무표 넣은 날, 신고 달).
-            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "하루 무료로 열어 보기") {
+            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "프로 제안") {
                 val payday = payProfile?.period?.let { p ->
                     p.payWeekday == today.dayOfWeek || listOf(YearMonth.from(today), YearMonth.from(today).minusMonths(1)).mapNotNull(p::payDate)
                         .any { !it.isAfter(today) && !it.isBefore(today.minusDays(2)) }

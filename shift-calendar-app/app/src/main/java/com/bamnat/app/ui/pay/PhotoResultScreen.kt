@@ -32,6 +32,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -102,13 +104,24 @@ internal fun PhotoResultScreen(
     if (reviewAsk != lastAsk) { lastAsk = reviewAsk; tabs.indexOf(ResultTab.SLIP).takeIf { it >= 0 }?.let { tabIndex = it } }
     val tab = tabs.getOrElse(tabIndex) { tabs.first() }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // 1.36 PC Y4: × or back with lines read (or 칸 filled) asks before they go, like the first step does (W8).
+    var askClose by remember { mutableStateOf(false) }
+    val kept = read.lines.size + (sheet?.sheet?.toChanges()?.size ?: 0)
+    val leave = { if (kept > 0) askClose = true else onDismiss() }
+    if (askClose) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { askClose = false },
+        title = { Text("읽은 내용을 버릴까요?") },
+        text = { Text(if (read.lines.isNotEmpty()) "명세서에서 읽은 ${read.lines.size}줄이 사라져요. 넣으려면 아래 단추를 눌러 주세요." else "채운 칸이 사라져요.") },
+        confirmButton = { TextButton(onClick = { askClose = false; onDismiss() }) { Text("버리기") } },
+        dismissButton = { TextButton(onClick = { askClose = false }) { Text("계속 보기") } },
+    )
+    Dialog(onDismissRequest = leave, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
                 topBar = {
                     TopAppBar(
                         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") } },
+                        navigationIcon = { IconButton(onClick = leave) { Icon(Icons.Filled.Close, "닫기") } },
                         actions = { TextButton(onClick = onRetake, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 하기") } },
                     )
                 },

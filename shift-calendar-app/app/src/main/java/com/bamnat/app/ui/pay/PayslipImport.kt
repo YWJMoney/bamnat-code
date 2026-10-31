@@ -223,7 +223,8 @@ fun PayslipFillDialog(
         PickDialog(
             title, rules, rulesOnly, text, second, typing, notice,
             onText = { text = it; notice = null }, onTyping = { typing = it },
-            onScan = { s -> scan = s; text = s.text; if (rules == null) analyse() },
+            // 1.36 PC Y3: the payslip read goes straight to its result (the rules' photo, when opened, waits for '읽기').
+            onScan = { s -> scan = s; text = s.text; if (rules == null || second.isBlank() && !typing) analyse() },
             onScanSecond = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text },
             onPaste = { t -> text = t; scan = null; if (rules == null) analyse() },
             onEmpty = ::byHand, onByHand = ::rulesByHand, onAnalyse = ::analyse, onDismiss = onDismiss,
