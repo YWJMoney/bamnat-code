@@ -279,9 +279,25 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
 
     /** The theme whose days and ad 입히기 follows: someone else's started from, or the first of others' parts laid on. */
+    /**
+     * [THM-08] A mixed theme of mine the draft starts from: opened from 내 테마, or worn now as the phone's look. It stays others'
+     * work (30일, 수정판) until [LookParts.OWN_PARTS] parts are changed by hand from it.
+     */
+    private fun mixedStart(): ThemeLease.Wear? = when (val o = _state.value.origin) {
+        is Origin.Theme -> o.wear.takeIf { it.own && it.mixedFrom.isNotBlank() }
+        is Origin.Mine -> c.wardrobe.lease.value.worn?.takeIf { it.own && it.mixedFrom.isNotBlank() }
+        else -> null
+    }
+
     /** [THM-08] Every other maker's theme the draft took parts from, by name. */
     fun mixedSources(): List<String> =
-        (listOfNotNull(othersTheme?.title) + _state.value.sources.values).filter { it.isNotBlank() }.distinct()
+        (listOfNotNull(othersTheme?.title) + _state.value.sources.values + mixedStart()?.mixedFrom?.split("·").orEmpty())
+            .filter { it.isNotBlank() }.distinct()
+
+    /** [THM-08] Their 장터 codes, in the same order (built-in looks have none). */
+    private fun mixedCodes(): List<String> =
+        (listOfNotNull(othersTheme?.code) + _state.value.sources.keys + mixedStart()?.mixedCodes?.split(",").orEmpty())
+            .filter { it.isNotBlank() && !it.startsWith("builtin:") }.distinct()
 
     private fun leasedFrom(): Pair<String, String>? = othersTheme?.let { it.code to it.title } ?: _state.value.sources.entries.firstOrNull()?.toPair()
 
@@ -298,7 +314,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun ownMake(): Boolean {
         val s = _state.value
         val others = othersTheme ?: (s.origin as? Origin.Theme)?.wear?.takeIf { !it.own }
-        if (others == null && s.sources.isEmpty()) return true
+        if (others == null && s.sources.isEmpty() && mixedStart() == null) return true
         val now = recipe()
         val start = Recipe("", styles = WorkStyle.entries.toSet(), pieces = s.basePieces)
         val taken = s.layered.filter { !it.own }.mapNotNull { k -> runCatching { RecipeCodec.read(k.body) }.getOrNull() }
@@ -373,7 +389,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         // theme named; mostly others' parts, so it wears by the 30-day rule and 장터 takes it only as a 수정판.
         val mixed = mixedSources()
         if (!ownMake() && mixed.size >= 2) {
-            val ok = c.wardrobe.saveLook(recipe(name), null, mixedFrom = mixed.joinToString("·"))
+            val ok = c.wardrobe.saveLook(recipe(name), mixedStart()?.takeIf { it.title == name }, mixedFrom = mixed.joinToString("·"),
+                mixedCodes = mixedCodes().joinToString(","))
             _state.value = _state.value.copy(said = if (!ok) "더 저장할 수 없어요. 무료는 ${c.wardrobe.outfitLimit()}벌까지예요"
                 else "‘$name’로 내 테마에 담았어요. 출처: ${mixed.joinToString("·") { "‘$it’" }}. 대부분 다른 분 조각이라 입을 때는 30일 규칙이에요(프로는 광고 없이)")
             return@launch
@@ -442,14 +459,17 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     /** [onlyTab] sends that tab's looks alone (a 기능별 탭, no 기능); null sends the whole theme with its 기능. */
     fun upload(onlyTab: String? = null): Pair<String, String> {
         val s = _state.value
-        val parent = (s.parentCode ?: leasedFrom()?.first ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
+        // [THM-08] A mixed theme goes up as a 수정판 of the first theme it took parts from.
+        val parent = (s.parentCode ?: leasedFrom()?.first ?: mixedCodes().firstOrNull().takeIf { !ownMake() }
+            ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
         // [STU-21] The 기능 go up with the look; every amount in them becomes 받는 분이 넣을 값 first (S7), as 레시피 만들기 did.
         val pieces = if (onlyTab != null) {
             val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
             com.bamnat.core.recipe.LookParts.pick(draft, com.bamnat.core.recipe.LookParts.of(draft).filter { it.tab == onlyTab }.map { it.id }).pieces
         } else (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
         val withExtras = s.meta?.copy(pieces = pieces, parent = null)
-            ?: recipe("").copy(title = "", styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
+            // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
+            ?: recipe("").copy(title = (myTheme ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
         val min = com.bamnat.app.ui.recipe.RecipeMakeViewModel.MIN_WAGE
         val r = com.bamnat.core.recipe.InputExtract.extract(withExtras) { _, f -> if (f == "wage") min else null }
         // [THM-01] One of mine (or the phone's look) sent: 만들기 marks it as in 장터 once it is up.

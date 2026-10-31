@@ -310,6 +310,10 @@ fun PayQuickSetup(
         Surface(tonalElevation = 3.dp, modifier = Modifier.imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val finding = step == COMPANY && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
+                // 빌드 e382585e ('이대로 계산' 화면에서 뒤로 가면 묻지 않고 설정이 버려져요): the system back goes one step back, as 이전.
+                androidx.activity.compose.BackHandler(enabled = finding || index > 0) {
+                    if (finding) payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME else go(steps[index - 1])
+                }
                 when {
                     // [PAYF-01] Back inside 급여 방식 찾기 goes back to the box, never out of the setup by surprise.
                     finding -> OutlinedButton(onClick = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME }) { Text("이전") }

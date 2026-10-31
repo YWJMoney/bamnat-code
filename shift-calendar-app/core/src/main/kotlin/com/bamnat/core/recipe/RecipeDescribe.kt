@@ -1,5 +1,7 @@
 package com.bamnat.core.recipe
 
+import com.bamnat.core.work.words
+
 /**
  * [RCP-17][RCP-23] What a piece holds, in one line the user reads (만들기 1단계, 레시피 보기의 조각 목록, 미리 보기): "근무 4개:
  * 주🌞 야🌙 비 휴", "알람 3개 더하기 · 계산 미션". Values the receiver fills in read "받는 사람이 정해요".
@@ -29,7 +31,7 @@ object RecipeDescribe {
     }
 
     /** [p] in one line; [amounts] false writes "정해 둔 금액" for a fixed amount (for text that leaves the phone). */
-    fun line(p: Piece, amounts: Boolean = true): String = when (p.kind) {
+    fun line(p: Piece, amounts: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): String = when (p.kind) {
         PieceKind.SHIFT_LOOK -> items(p, "items").let { l ->
             "근무 ${l.size}개: " + l.joinToString(" ") { (it["label"] as? String ?: "") + (it["emoji"] as? String ?: "") }
         }
@@ -73,7 +75,7 @@ object RecipeDescribe {
         PieceKind.COMPANY -> "근무 주기와 급여 방식 (회사 설정 파일)"
         PieceKind.BUNDLE -> "레시피 ${items(p, "items").size}개 묶음"
         PieceKind.LAYOUT -> listOfNotNull(
-            texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { TABS[it] ?: it } },
+            texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { tabName(it, style) } },
             (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "화면 배치" }
         PieceKind.CARDS -> listOfNotNull(
@@ -166,6 +168,10 @@ object RecipeDescribe {
     )
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
+
+    /** 빌드 e382585e (알바 마치기에 '근무·급여'): the 통계 tab in the words of the kind of work it is shown for. */
+    private fun tabName(t: String, style: com.bamnat.core.work.WorkStyle?): String =
+        if (t == "stats" && style != null) style.words().tab else TABS[t] ?: t
 
     private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "근무·급여", "plaza" to "마을", "settings" to "설정")
 

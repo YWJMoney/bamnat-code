@@ -90,7 +90,7 @@ internal fun ExampleCalendars(r: Recipe) {
                 ExampleWeek(r, style)
                 r.piecesFor(style).forEach { p ->
                     // 빌드 8: '화면 색·배경: 화면 색·배경: 가계부' — a line that already starts with the piece's name says it once.
-                    Text("• ${p.kind.label}: ${RecipeDescribe.line(p, amounts = false).removePrefix("${p.kind.label}: ")}", style = MaterialTheme.typography.bodySmall)
+                    Text("• ${p.kind.label}: ${RecipeDescribe.line(p, amounts = false, style = style).removePrefix("${p.kind.label}: ")}", style = MaterialTheme.typography.bodySmall)
                 }
                 val not = r.piecesNotFor(style)
                 if (not.isNotEmpty()) Text("이 유형에는 없어요: ${not.joinToString(", ") { it.kind.label }}", style = MaterialTheme.typography.bodySmall,
