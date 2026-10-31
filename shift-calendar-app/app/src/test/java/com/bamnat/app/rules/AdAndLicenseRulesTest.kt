@@ -8,9 +8,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * [REL-02][MON-07] The ad rules held by a test: a banner only in the one slot ([AdSlot] between the
- * content and the bottom bar), a rewarded ad only when the user asks for a day of 프로, never at launch,
- * full screen on its own, as native ads or on the alarm. Both follow [com.bamnat.core.tier.AdRules].
+ * [REL-02][MON-07] The ad rules held by a test: 1.36 838 no banner at all, a rewarded ad only when the user asks
+ * for it, never at launch, full screen on its own, as native ads or on the alarm. Both follow [com.bamnat.core.tier.AdRules].
  * [OPS-23] Every library in the build has an entry in 오픈소스 라이선스.
  */
 class AdAndLicenseRulesTest {
@@ -19,28 +18,28 @@ class AdAndLicenseRulesTest {
     private val sources by lazy { main.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "xml") }.toList() }
     private fun read(path: String) = File(main, "java/com/bamnat/app/$path").readText()
 
-    @Test fun noAdFormatOtherThanTheBannerAndTheAskedForReward() {
-        val banned = Regex("""\b(InterstitialAd|RewardedInterstitialAd|AppOpenAd|NativeAd|AdManagerInterstitialAd)\b""")
+    @Test fun noAdFormatOtherThanTheAskedForReward() {
+        val banned = Regex("""\b(InterstitialAd|RewardedInterstitialAd|AppOpenAd|NativeAd|AdManagerInterstitialAd|AdView|AdSize)\b""")
         val hits = sources.filter { banned.containsMatchIn(it.readText()) }.map { it.path }
-        assertEquals("전면·앱 열기·네이티브 광고는 쓰지 않아요", emptyList<String>(), hits)
+        assertEquals("띠·전면·앱 열기·네이티브 광고는 쓰지 않아요", emptyList<String>(), hits)
         val rewarded = sources.filter { Regex("""\bRewardedAd\b""").containsMatchIn(it.readText()) }.map { it.name }
         assertEquals("보상형 광고는 ‘광고 보고 오늘 하루 열기’ 버튼에서만", listOf("RewardedAds.kt"), rewarded)
     }
 
-    @Test fun theBannerSlotIsUsedOnlyInTheAppFrame() {
-        val users = sources.filter { it.name != "AdSlot.kt" && Regex("""\bAdSlot\(""").containsMatchIn(it.readText()) }.map { it.name }
-        assertEquals(listOf("AppRoot.kt"), users)
+    @Test fun thereIsNoBanner() {
+        assertFalse("띠 광고 자리는 없어요", File(main, "java/com/bamnat/app/ui/components/AdSlot.kt").exists())
+        assertFalse(sources.any { Regex("""AdSlot\(""").containsMatchIn(it.readText()) })
+        assertFalse(File("build.gradle.kts").readText().contains("ADMOB_BANNER"))
         val alarmScreens = File(main, "java/com/bamnat/app/alarm").walkTopDown().filter { it.isFile }
-        assertTrue("알람 화면에는 광고가 없어요", alarmScreens.none { it.readText().contains("AdSlot") || it.readText().contains("com.google.android.gms.ads") })
+        assertTrue("알람 화면에는 광고가 없어요", alarmScreens.none { it.readText().contains("com.google.android.gms.ads") })
     }
 
     @Test fun theAdsSdkIsOnlyInItsOwnPlaces() {
         val users = sources.filter { it.extension == "kt" && it.readText().contains("com.google.android.gms.ads") }.map { it.name }.sorted()
-        assertEquals(listOf("AdSlot.kt", "Ads.kt", "RewardedAds.kt"), users)
+        assertEquals(listOf("Ads.kt", "RewardedAds.kt"), users)
     }
 
     @Test fun adsFollowTheRules() {
-        assertTrue("배너는 AdRules.banner를 따라요", read("ui/components/AdSlot.kt").contains("AdRules.banner("))
         assertTrue("보상형은 AdRules.rewardedOffer를 따라요", read("ads/RewardedAds.kt").contains("AdRules.rewardedOffer("))
         // [FLAG-09][FLAG-18] Nothing while the `ads` row is off (it replaced the 정식 출시 switch), and nothing for 프로:
         // the SDK and consent start only then.
@@ -48,8 +47,8 @@ class AdAndLicenseRulesTest {
         val at = activity.indexOfFirst { it.contains("ads.start(") }
         val start = activity[at - 1] + activity[at]
         assertTrue(start, start.contains("AdRules.sdkMayStart(") && start.contains("FlagCatalog.ADS") && start.contains("Feature.NO_ADS"))
-        // The banner and the rewarded ad read the same row, never the old switch.
-        for (f in listOf("ui/components/AdSlot.kt", "ads/RewardedAds.kt")) {
+        // The rewarded ad reads the row, never the old switch.
+        for (f in listOf("ads/RewardedAds.kt")) {
             assertTrue(f, read(f).contains("FlagCatalog.ADS") && !read(f).contains("billingLive"))
         }
         // The row waits for the billing conditions (3.1 시행·보류·Play 승인·정기 결제) and Google's consent path.
@@ -69,7 +68,6 @@ class AdAndLicenseRulesTest {
         assertTrue(File(main, "AndroidManifest.xml").readText().contains("com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"))
         // Google's test units are for debug builds only; a release without ids has no ads at all.
         val ids = read("ads/Ads.kt")
-        assertTrue(ids.contains("ifBlank { if (BuildConfig.DEBUG) TEST_BANNER else \"\" }"))
         assertTrue(ids.contains("ifBlank { if (BuildConfig.DEBUG) TEST_REWARDED else \"\" }"))
         // Such a release leaves out the advertising ID permissions the SDK brings (no 광고 ID declaration needed).
         val noAdId = File("src/noAdId/AndroidManifest.xml").readText()

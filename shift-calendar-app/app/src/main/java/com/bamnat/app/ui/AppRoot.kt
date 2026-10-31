@@ -88,7 +88,6 @@ import com.bamnat.app.ui.calendar.CalendarsScreen
 import com.bamnat.app.ui.calendar.CalendarsViewModel
 import com.bamnat.app.ui.calendar.rememberAddCalendar
 import com.bamnat.app.data.PersonalCalendar
-import com.bamnat.app.ui.components.AdSlot
 import com.bamnat.app.ui.diag.DiagnosticsScreen
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import com.bamnat.core.diag.DiagEvents
@@ -181,15 +180,6 @@ internal enum class TopLevel(val route: String, val label: String, val icon: Ima
     }
 }
 
-/** [MON-07] Where the banner may go: under 근무·급여 and 돈 only ([com.bamnat.core.tier.AdRules.banner]). */
-private fun TopLevel?.adPlace(): com.bamnat.core.tier.AdRules.Place = when (this) {
-    TopLevel.MONEY -> com.bamnat.core.tier.AdRules.Place.MONEY
-    TopLevel.STATS -> com.bamnat.core.tier.AdRules.Place.STATS
-    TopLevel.CALENDAR -> com.bamnat.core.tier.AdRules.Place.CALENDAR
-    TopLevel.MEMOS -> com.bamnat.core.tier.AdRules.Place.MEMOS
-    TopLevel.SETTINGS -> com.bamnat.core.tier.AdRules.Place.SETTINGS
-    TopLevel.PLAZA, null -> com.bamnat.core.tier.AdRules.Place.OTHER
-}
 
 private object Routes {
     // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
@@ -859,8 +849,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 bottomBar = {
                     if (!wide && showNav) {
                         Column {
-                            // [NAV-06] While the tabs are moved, the line about it takes the ad's place.
-                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs) else AdSlot(topLevel.adPlace())
+                            // [NAV-06] While the tabs are moved, the line about it shows over the tabs.
+                            if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs)
                             NavigationBar {
                                 tabs.forEachIndexed { index, dest ->
                                     androidx.compose.runtime.key(dest.route) {
@@ -897,7 +887,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             start = startTab,
                             modifier = Modifier.weight(1f),
                         )
-                        if (wide && showNav) AdSlot(topLevel.adPlace())
                     }
                     // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else. Beside the
                     // rail the line about it lies over the bottom of the screen, which keeps its size.
