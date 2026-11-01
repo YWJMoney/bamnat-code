@@ -28,7 +28,7 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -351,7 +351,7 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() ->
                     color = MaterialTheme.colorScheme.primary)
             }
             // [RCX-31] The way to the next 판: what this phone has now, or the recipe as it is, changed and sent again.
-            if (onNewVersion != null) androidx.compose.material3.Button(onClick = onNewVersion, modifier = Modifier.padding(top = 6.dp)) {
+            if (onNewVersion != null) com.bamnat.app.ui.components.Button(onClick = onNewVersion, modifier = Modifier.padding(top = 6.dp)) {
                 Text("새 판 만들기 (v${doc.item.version + 1})")
             }
         }
@@ -646,7 +646,7 @@ private fun DiffSection(parent: com.bamnat.app.recipe.RecipeDoc, diff: List<com.
             if (mine && diff.isNotEmpty()) {
                 Text("고른 것만 내 판의 새 판으로 가져와요. 올리기 전에 한 번 더 보고 고칠 수 있고, 이 수정판 이름이 '도움 준 수정판'으로 설명에 남아요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.Button(onClick = { onTake(picked) }, enabled = picked.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                com.bamnat.app.ui.components.Button(onClick = { onTake(picked) }, enabled = picked.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("고른 ${picked.size}개 내 판에 가져오기")
                 }
             }

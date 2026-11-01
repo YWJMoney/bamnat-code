@@ -67,7 +67,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.bamnat.app.appContainer
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip

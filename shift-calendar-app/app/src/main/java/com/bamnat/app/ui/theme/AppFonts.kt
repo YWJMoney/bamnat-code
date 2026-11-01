@@ -77,7 +77,10 @@ object AppFonts {
     }
 
     /** Why the last try for an open font failed, in a line for the user. */
-    val reasons = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    val reasons = androidx.compose.runtime.mutableStateMapOf<String, OpenFonts.Reason>()
+
+    /** How far an open font has come down: bytes so far and in all (0 when the server does not say). */
+    val progress = androidx.compose.runtime.mutableStateMapOf<String, Pair<Long, Long>>()
 
     /** [MAT-05] PC 확인 1차: whether an open font has come down yet, shown as 받는 중… · 받았어요 · 못 받았어요 · 다시. */
     enum class Load { LOADING, READY, FAILED }
@@ -97,9 +100,18 @@ object AppFonts {
         if (OpenFonts.file(context, id, bold = false) != null) { loads[id] = Load.READY; return }
         loads[id] = Load.LOADING
         reasons.remove(id)
-        val why = runCatching { kotlinx.coroutines.withTimeout(120_000) { OpenFonts.download(context, id) } }
-            .fold({ it }, { if (it is kotlinx.coroutines.TimeoutCancellationException) "시간이 오래 걸려 멈췄어요" else OpenFonts.reasonOf(it) })
+        progress.remove(id)
+        var last = 0L
+        val why = runCatching {
+            kotlinx.coroutines.withTimeout(120_000) {
+                OpenFonts.download(context, id) { read, total ->
+                    // A step every 256 KB is enough for the bar.
+                    if (read - last >= 256 * 1024 || read == total) { last = read; progress[id] = read to total }
+                }?.let { OpenFonts.Reason(it) }
+            }
+        }.fold({ it }, { if (it is kotlinx.coroutines.TimeoutCancellationException) OpenFonts.Reason("시간이 오래 걸려 멈췄어요") else OpenFonts.reasonOf(it) })
         forget(id)
+        progress.remove(id)
         if (why == null) loads[id] = Load.READY else { reasons[id] = why; loads[id] = Load.FAILED }
     }
 

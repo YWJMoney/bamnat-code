@@ -31,7 +31,7 @@ import com.bamnat.app.ui.components.SystemSettings
 import com.bamnat.app.alarm.AlarmScheduler
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.CheckCircle

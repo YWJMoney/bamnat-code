@@ -18,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -45,7 +48,8 @@ import kotlin.random.Random
 
 /**
  * [MAT-01] 1.36 채우기를 그려요: every [Fill] the core knows, on any part, inside [shape]. Gradients are Compose brushes; 무늬 and 질감
- * are small tiles the app draws itself (no picture in the app or the recipe) repeated; 유리 is a frosted wash; 셰이더 is one the app
+ * are small tiles the app draws itself (no picture in the app or the recipe) repeated; 유리 shows the screen's background behind it
+ * blurred ([Backdrop], 누락 점검 N10) under a frosted wash, or the wash alone where there is no background to see; 셰이더 is one the app
  * ships (AGSL, Android 13+) and under 13, or when [animate] is false or 움직임 is off, the same colours as a still gradient.
  */
 fun Modifier.fillWith(fill: Fill?, shape: Shape = RectangleShape, alpha: Float = 1f, animate: Boolean = true): Modifier =
@@ -57,10 +61,17 @@ fun Modifier.fillWith(fill: Fill?, shape: Shape = RectangleShape, alpha: Float =
             rememberInfiniteTransition(label = "fill").animateFloat(0f, 3600f, infiniteRepeatable(tween(3_600_000, easing = LinearEasing)), label = "t")
         } else remember { mutableFloatStateOf(0f) }
         val shader = remember(fill) { if (fill is Fill.Shader && Build.VERSION.SDK_INT >= 33) FillShaders.make(fill) else null }
-        drawBehind {
+        // [N10] 유리 sees the screen's background behind it, blurred: where this part is on the window tells which piece.
+        val behind = if (fill is Fill.Glass) LocalBackdrop.current else null
+        val at = remember { androidx.compose.runtime.mutableStateOf(Offset.Unspecified) }
+        (if (behind != null) Modifier.onGloballyPositioned { c -> c.positionInWindow().let { if (it != at.value) at.value = it } } else Modifier).drawBehind {
             val outline = shape.createOutline(size, layoutDirection, this)
             val path = Path().apply { addOutline(outline) }
-            clipPath(path) { paintFill(fill, tile, shader, if (fill is Fill.Shader) time.value * fill.speed / 3f else 0f, alpha) }
+            clipPath(path) {
+                val back = behind?.current
+                if (fill is Fill.Glass && back != null && at.value.isSpecified) drawBackdrop(back, at.value, fill.blur, alpha)
+                paintFill(fill, tile, shader, if (fill is Fill.Shader) time.value * fill.speed / 3f else 0f, alpha)
+            }
         }
     }
 

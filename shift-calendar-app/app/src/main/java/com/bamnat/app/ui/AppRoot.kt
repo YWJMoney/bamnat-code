@@ -23,7 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import com.bamnat.app.appContainer
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth

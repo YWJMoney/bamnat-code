@@ -47,9 +47,15 @@ fun BoxScope.PhotoBackdrop() {
     val pageLight = surface.luminance() >= 0.5f
     val opposite = (light < 0.5f) == pageLight
     val veil = (if (opposite) maxOf(look.dim, 55) else look.dim) / 100f
+    // [N10] 1.36 the glass parts over the calendar see this picture (its veil too) behind them.
+    val backdrop = Modifier.pageBackdrop(Triple(picture, look.adjust, surface.copy(alpha = veil))) {
+        drawRect(surface)
+        drawCropped(picture, look.adjust)
+        drawRect(surface.copy(alpha = veil))
+    }
     // [MAT-03] 1.36 그림 조정.
-    if (look.adjust.isDefault) Image(picture, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
-    else Box(Modifier.matchParentSize().adjustedPhoto(picture, look.adjust))
+    if (look.adjust.isDefault) Image(picture, contentDescription = null, modifier = Modifier.matchParentSize().then(backdrop), contentScale = ContentScale.Crop)
+    else Box(Modifier.matchParentSize().adjustedPhoto(picture, look.adjust).then(backdrop))
     Box(Modifier.matchParentSize().background(surface.copy(alpha = veil)))
 }
 

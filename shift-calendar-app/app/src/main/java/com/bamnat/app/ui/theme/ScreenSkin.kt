@@ -8,8 +8,17 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -93,8 +102,27 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
     // [MAT-05] 1.36 이 화면 글꼴: every text style of the screen in it (sizes and weights stay, 큰 글자 still grows them).
     val family = rememberFontFamily(look.font)
+    // [N10] 1.36 진짜 유리: the background (colour, fill, picture and its veil) kept small for the glass parts of this screen to see.
+    val holder = remember { BackdropHolder() }
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    var placed by remember { mutableStateOf<Pair<IntSize, Offset>?>(null) }
+    val pageColor = look.bg?.let { Color(it) } ?: base.background
+    val veilColor = (look.ground?.let { Color(it) } ?: base.background).copy(alpha = maxOf((look.dim ?: 30).coerceIn(0, 80), 20) / 100f)
+    val made = remember(plain, look, photo?.first, placed, pageColor, veilColor, density) {
+        val p = placed
+        if (plain || p == null) null else Backdrop.make(p.first, p.second, density) {
+            drawRect(pageColor)
+            look.fill?.let { paintFill(it, FillTiles.tile(it, this.density), null, 0f, 1f) }
+            photo?.first?.let { img ->
+                drawCropped(img, look.adjust)
+                drawRect(veilColor)
+            }
+        }
+    }
+    SideEffect { holder.screen = made }
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography.inFamily(family), shapes = MaterialTheme.shapes) {
-        Box(if (plain && !darkened) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background).fillWith(look.fill)) {
+        Box((if (plain && !darkened) modifier else modifier.background(pageColor).fillWith(look.fill))
+            .onGloballyPositioned { c -> if (!plain) (c.size to c.positionInWindow()).let { if (it != placed) placed = it } }) {
             if (photo != null && !plain) {
                 // [MAT-03] 1.36 사진 조정·블렌드: drawn through the look's colour matrix, blend and blur.
                 if (look.adjust == null) Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
@@ -107,7 +135,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
             val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
             val grounded = if (plain && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
-            CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
+            CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted, LocalBackdrop provides holder,
                 com.bamnat.app.ui.parts.LocalBlueprint provides (if (raw.isEmpty) com.bamnat.app.ui.parts.LocalBlueprint.current else grounded),
                 androidx.compose.material3.LocalContentColor provides if (plain && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()

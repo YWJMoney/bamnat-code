@@ -39,14 +39,17 @@ fun PhotoAdjust?.blendMode(): BlendMode = when (this?.blend) {
  * and its blur (Android 12+; under 12 the picture is sharp).
  */
 fun Modifier.adjustedPhoto(image: ImageBitmap, adjust: PhotoAdjust?, alpha: Float = 1f): Modifier =
-    (if ((adjust?.blur ?: 0) > 0) this.blur(adjust!!.blur.dp) else this).drawBehind {
-        val iw = image.width.toFloat(); val ih = image.height.toFloat()
-        val scale = maxOf(size.width / iw, size.height / ih)
-        val sw = size.width / scale; val sh = size.height / scale
-        val sx = ((iw - sw) / 2).roundToInt().coerceAtLeast(0); val sy = ((ih - sh) / 2).roundToInt().coerceAtLeast(0)
-        drawImage(image, srcOffset = IntOffset(sx, sy), srcSize = IntSize(sw.roundToInt().coerceAtMost(image.width - sx), sh.roundToInt().coerceAtMost(image.height - sy)),
-            dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()), alpha = alpha, colorFilter = adjust.colorFilter(), blendMode = adjust.blendMode())
-    }
+    (if ((adjust?.blur ?: 0) > 0) this.blur(adjust!!.blur.dp) else this).drawBehind { drawCropped(image, adjust, alpha) }
+
+/** [MAT-03] [image] cut to fill this scope (ContentScale.Crop) through [adjust]'s colours and blend; its blur is the caller's. */
+fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCropped(image: ImageBitmap, adjust: PhotoAdjust?, alpha: Float = 1f) {
+    val iw = image.width.toFloat(); val ih = image.height.toFloat()
+    val scale = maxOf(size.width / iw, size.height / ih)
+    val sw = size.width / scale; val sh = size.height / scale
+    val sx = ((iw - sw) / 2).roundToInt().coerceAtLeast(0); val sy = ((ih - sh) / 2).roundToInt().coerceAtLeast(0)
+    drawImage(image, srcOffset = IntOffset(sx, sy), srcSize = IntSize(sw.roundToInt().coerceAtMost(image.width - sx), sh.roundToInt().coerceAtMost(image.height - sy)),
+        dstSize = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1)), alpha = alpha, colorFilter = adjust.colorFilter(), blendMode = adjust.blendMode())
+}
 
 /** [MAT-04] The shape a picture is cut to; null or unknown is [fallback] (the app's own). */
 fun frameShape(frame: String?, fallback: Shape = RoundedCornerShape(6.dp)): Shape {

@@ -354,6 +354,7 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // PC 확인 2차: the font before the last pick, for 전 글꼴로 when the new one could not come down.
     var before by remember { mutableStateOf<String?>(null) }
+    var picked by remember { mutableStateOf(false) }
     val load = value?.let { AppFonts.loads[it] }
     val base = value?.let { id -> FontCatalog.byId(id)?.name ?: UserFonts.list(ctx).firstOrNull { it.id == id }?.name ?: "내 글꼴" } ?: "처음대로"
     val name = when (load) { AppFonts.Load.LOADING -> "$base (받는 중)"; AppFonts.Load.FAILED -> "$base (못 받음)"; else -> base }
@@ -365,11 +366,12 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }
-    if (value != null) FontLoadLine(load, value?.let { AppFonts.reasons[it] },
+    if (value != null) FontLoadLine(load, AppFonts.reasons[value], AppFonts.progress[value],
         retry = { scope.launch { AppFonts.fetch(ctx, value) } },
         standIn = { onPick(AppFonts.standInId(value)) },
-        back = before?.takeIf { it != value }?.let { b -> { onPick(b) } })
-    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); before = value; onPick(it) }
+        // PC 확인 3차: 전 글꼴로 always, 처음대로 when there was none before.
+        back = { onPick(if (picked) before else null) }, backName = if (picked && before != null) FontCatalog.byId(before!!)?.name else null)
+    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); before = value; picked = true; onPick(it) }
 }
 
 /**
@@ -378,20 +380,30 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FontLoadLine(load: AppFonts.Load?, reason: String?, retry: () -> Unit, standIn: () -> Unit, back: (() -> Unit)?) {
+private fun FontLoadLine(load: AppFonts.Load?, reason: com.bamnat.app.ui.theme.OpenFonts.Reason?, progress: Pair<Long, Long>?, retry: () -> Unit,
+                         standIn: () -> Unit, back: () -> Unit, backName: String?) {
     val scheme = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
     when (load) {
-        AppFonts.Load.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            androidx.compose.material3.CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
-            Text("글꼴 받는 중… 받기 전에는 비슷한 앱 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        AppFonts.Load.LOADING -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // PC 확인 3차 (사용성 제안 "진행 막대와 '받는 중 · 14MB'").
+            val (read, total) = progress ?: (0L to 0L)
+            if (total > 0) androidx.compose.material3.LinearProgressIndicator(progress = { (read.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+            else androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            val mb = { b: Long -> "%.1f".format(b / 1048576f) }
+            Text(if (total > 0) "글꼴 받는 중 · ${mb(read)} / ${mb(total)}MB. 받기 전에는 비슷한 앱 글꼴로 보여요" else "글꼴 받는 중… 받기 전에는 비슷한 앱 글꼴로 보여요",
+                style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
         }
         AppFonts.Load.READY -> Text("받았어요", style = MaterialTheme.typography.labelSmall, color = scheme.primary)
         AppFonts.Load.FAILED -> Column {
-            Text("못 받았어요: ${reason ?: "글꼴을 받지 못했어요"}. 지금은 비슷한 앱 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.error)
+            Text("못 받았어요: ${reason?.text ?: "글꼴을 받지 못했어요"}. 지금은 비슷한 앱 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.error)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (reason?.time == true) TextButton(onClick = {
+                    runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_DATE_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                }) { Text("날짜·시간 설정 열기") }
                 TextButton(onClick = retry) { Text("다시") }
-                TextButton(onClick = standIn) { Text("비슷한 앱 글꼴로 쓰기") }
-                back?.let { TextButton(onClick = it) { Text("전 글꼴로") } }
+                TextButton(onClick = standIn) { Text("비슷한 앱 글꼴로") }
+                TextButton(onClick = back) { Text(if (backName != null) "전 글꼴로 ($backName)" else "전 글꼴로") }
             }
         }
         null -> {}
