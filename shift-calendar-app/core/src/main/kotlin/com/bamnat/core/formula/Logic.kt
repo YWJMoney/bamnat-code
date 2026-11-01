@@ -21,6 +21,18 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
         if (rules.isNotEmpty()) put("rules", rules.map { it.toMap() })
     }
 
+    /**
+     * 1.36 [SEC-12] 보안 점검 M4: these as they come in from someone else's recipe: a 가계부 amount is held to [RECEIVED_MAX_WON]
+     * (a prank or a mistake cannot put 1억 원 in each day). The phone's own buttons and rules are never held.
+     */
+    fun received(): Logic = Logic(buttons.map { it.copy(act = it.act.held()) }, rules.map { it.copy(act = it.act.held()) })
+
+    /** Whether [received] would hold an amount down. */
+    val overReceived: Boolean get() = buttons.any { it.act.held() != it.act } || rules.any { it.act.held() != it.act }
+
+    /** 1.36 [SEC-12] The rules that write data and run by themselves or by a tap (not a press of a button the user put there). */
+    val writingRules: List<LogicRule> get() = rules.filter { it.act.verb.writes }
+
     /** [RUL-07] 보관함 빼기: these without [other]'s buttons and rules (what [plus] added). */
     fun minus(other: Logic): Logic = Logic(
         buttons.filter { b -> other.buttons.none { it.toMap() == b.toMap() } },
@@ -39,6 +51,8 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
     companion object {
         const val MAX_BUTTONS = 8
         const val MAX_RULES = 12
+        /** 1.36 [SEC-12] The most one act of a received recipe puts in the 가계부. */
+        const val RECEIVED_MAX_WON = 1_000_000L
 
         /** From the piece's values as [com.bamnat.core.recipe.RecipeCodec] checked them; what the app cannot use is left out. */
         @Suppress("UNCHECKED_CAST")
@@ -73,6 +87,10 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
         if (arg.isNotEmpty()) put("arg", arg)
         amount?.let { put("amount", it) }
     }
+
+    /** 1.36 [SEC-12] This act with a 가계부 amount held to [Logic.RECEIVED_MAX_WON]. */
+    fun held(): LogicAct = if ((verb == LogicVerb.ADD_MONEY || verb == LogicVerb.ADD_INCOME) && (amount ?: 0L) > Logic.RECEIVED_MAX_WON)
+        copy(amount = Logic.RECEIVED_MAX_WON) else this
 
     /** "‘인수인계’ 메모 틀 열기", "‘식비 8,000원’ 가계부에 넣기". */
     fun say(): String = when (verb) {

@@ -262,9 +262,15 @@ class RecipePieces(private val c: AppContainer) {
             ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         // [RUL-04] 켜기 전 한 줄 요약 (사용성 제안): each button and rule as it will act; one that writes data says so first.
-        PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { l ->
+        PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
+            val l = raw.received()
             (l.buttons.map { Change((if (it.act.verb.writes) "⚠ " else "") + it.say()) } +
-                l.rules.map { Change((if (it.act.verb.writes) "⚠ " else "") + "규칙 ‘${it.name}’: " + it.say()) })
+                l.rules.map { Change((if (it.act.verb.writes) "⚠ " else "") + "규칙 ‘${it.name}’: " + it.say() + if (it.act.verb.writes) " (꺼진 채로 들어와요)" else "") } +
+                // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
+                listOfNotNull(
+                    Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },
+                    Change("받은 규칙·단추는 가계부에 한 번에 100만 원까지만 넣어요").takeIf { raw.overReceived },
+                ))
                 .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
@@ -439,11 +445,20 @@ class RecipePieces(private val c: AppContainer) {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
                 if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
-                val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(now, k) != v }
+                // 1.36 [SEC-12] 보안 점검 M4: someone else's buttons and rules come in with 가계부 amounts held to 100만 원.
+                val vals = if (kind == PieceKind.LOGIC) com.bamnat.core.formula.Logic.from(values).received().toValues() else values
+                val changes = settingsAfter(kind, vals, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {
                     val out = JSONObject()
                     changes.forEach { (k, v) -> out.put(k, JSONArray().put(settingOf(now, k)).put(v)) }
                     c.settingsRepository.update { cur -> changes.entries.fold(cur) { acc, (k, v) -> withSetting(acc, k, v) } }
+                    // ...and a rule of theirs that writes the memo or the 가계부 starts switched off (one that was here already keeps its switch).
+                    if (kind == PieceKind.LOGIC) {
+                        val had = com.bamnat.core.formula.Logic.decode(now.logic).rules.map { it.key }.toSet()
+                        val store = com.bamnat.app.logic.LogicStore(c.appContext)
+                        com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.setOff(it.key, true) }
+                        com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+                    }
                     JSONObject().put("settings", out)
                 }
             }

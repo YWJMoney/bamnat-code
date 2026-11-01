@@ -79,6 +79,8 @@ object BlueprintParts {
     val FONTS = listOf("sans", "serif", "mono", "hand", "round")
     private val FONT_ID = Regex("^[a-z][a-z0-9-]{1,39}$")
     const val MAX_LINES = 96
+    /** 1.36 [SEC-12] 보안 점검 L1: day-changing lines (`when` or a formula value) a blueprint works out; the rest are left out. */
+    const val MAX_BY_DAY = 24
 
     /** The fields a part may carry besides `id` and `on`, every one optional. */
     val STYLE_FIELDS: List<Field> = listOf(
@@ -204,8 +206,15 @@ data class PartStyle(
  */
 class Blueprint(val lines: List<Map<String, Any?>>) {
     /** [RUL-02] Lines that change by the day: a `when` formula, or a style value that is a formula (`{"fx":…}`). */
-    private val dynamic: List<Map<String, Any?>> = lines.filter { l -> l["when"] != null || l.values.any { it is Ref.Formula } }
-    private val byKey: Map<String, PartStyle> = lines.filter { it !in dynamic }
+    private val changing: List<Map<String, Any?>> = lines.filter { l -> l["when"] != null || l.values.any { it is Ref.Formula } }
+
+    /**
+     * 1.36 [SEC-12] 보안 점검 L1: at most [BlueprintParts.MAX_BY_DAY] of them are worked out (the first, in the blueprint's order), so a heavy
+     * received look cannot make each month cost millions of steps; [heavy] says some were left out.
+     */
+    private val dynamic: List<Map<String, Any?>> = changing.take(BlueprintParts.MAX_BY_DAY)
+    val heavy: Boolean get() = changing.size > BlueprintParts.MAX_BY_DAY
+    private val byKey: Map<String, PartStyle> = lines.filter { it !in changing }
         .associate { (it["id"] as String) + "|" + (it["on"] as? String ?: "") to PartStyle.of(it) }
     private val cache = HashMap<String, PartStyle>()
     private val dynamicIds: Set<String> = dynamic.mapTo(HashSet()) { it["id"] as String }
@@ -218,17 +227,29 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
         (com.bamnat.core.formula.Formula.parse(src) as? com.bamnat.core.formula.Parsed.Ok)?.formula
     }
 
+    /**
+     * 1.36 [SEC-12] L1: each formula worked out once for a day's values: a cell's date, memo and money parts ask for the cell's
+     * `when` again through their parent, and now that is one run, not one for each.
+     */
+    private var lastScope: com.bamnat.core.formula.FormulaScope? = null
+    private val runs = HashMap<String, com.bamnat.core.formula.Value?>()
+    private fun runOn(src: String, scope: com.bamnat.core.formula.FormulaScope): com.bamnat.core.formula.Value? {
+        if (scope !== lastScope) { runs.clear(); lastScope = scope }
+        if (src in runs) return runs[src]
+        return formula(src)?.run(scope).also { runs[src] = it }
+    }
+
     /** Whether a dynamic line fits [states] and its `when` holds for the day [scope] describes. */
     private fun fits(l: Map<String, Any?>, states: Set<String>, scope: com.bamnat.core.formula.FormulaScope): Boolean {
         val on = l["on"] as? String
         if (on != null && on !in states) return false
         val w = l["when"] as? String ?: return true
-        return formula(w)?.run(scope)?.truthy == true
+        return runOn(w, scope)?.truthy == true
     }
 
     /** A dynamic line's values with each formula worked out for the day, as its field takes it; one that fails is left out. */
     private fun worked(l: Map<String, Any?>, scope: com.bamnat.core.formula.FormulaScope): Map<String, Any?> = l.mapValues { (k, v) ->
-        if (v !is Ref.Formula) v else formula(v.src)?.run(scope)?.let { FormulaValues.forField(k, it) }
+        if (v !is Ref.Formula) v else runOn(v.src, scope)?.let { FormulaValues.forField(k, it) }
     }
 
     val isEmpty: Boolean get() = lines.isEmpty()

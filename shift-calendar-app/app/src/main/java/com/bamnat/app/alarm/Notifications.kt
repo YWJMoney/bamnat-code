@@ -165,6 +165,8 @@ object Notifications {
         val rules = NotificationChannel(RULES_CHANNEL_ID, "내 규칙 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "스튜디오나 받은 테마의 규칙이 띄우는 알림이에요(예: 야간 근무 3시간 전 준비). 규칙은 설정 › 알람 › 수식·규칙·버튼에서 하나씩 끌 수 있어요"
             group = GROUP_DAY
+            // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
         nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)

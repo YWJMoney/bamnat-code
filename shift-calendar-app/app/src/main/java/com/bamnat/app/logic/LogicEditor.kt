@@ -488,6 +488,31 @@ fun LogicEditor(
         if (!readOnly && logic.rules.size < Logic.MAX_RULES) TextButton(onClick = { editRule = -1 }) { Text("+ 규칙 만들기") }
         }
         if (phone && store.undo != null) OutlinedButton(onClick = { c.appScope.launch { LogicRunner.undo(c); bump++ } }) { Text("마지막 동작 되돌리기") }
+        // 1.36 [SEC-12] 보안 점검 M4 '규칙이 쓴 것': what rules and buttons wrote in 7 days, in a line each, and all of it taken back at once.
+        if (phone) {
+            val written = remember(bump) { store.written() }
+            var open by remember { mutableStateOf(false) }
+            var asking by remember { mutableStateOf(false) }
+            if (written.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("규칙이 쓴 것 (최근 7일) ${written.size}개", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "보기") }
+                    TextButton(onClick = { asking = true }) { Text("모두 되돌리기") }
+                }
+                if (open) written.asReversed().forEach { o ->
+                    val at = java.time.Instant.ofEpochMilli(o.optLong("at")).atZone(com.bamnat.core.time.Today.zone())
+                    Text("${at.monthValue}/${at.dayOfMonth} ${"%02d:%02d".format(at.hour, at.minute)} · ${o.optString("who")}: ${o.optString("say")}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (asking) androidx.compose.material3.AlertDialog(
+                onDismissRequest = { asking = false },
+                title = { Text("규칙이 쓴 것을 모두 되돌릴까요?") },
+                text = { Text("최근 7일 동안 규칙과 단추가 만든 메모·메모 줄·가계부 ${written.size}개를 지우고, 비운 체크는 다시 채워요. 직접 쓴 것은 그대로예요") },
+                confirmButton = { TextButton(onClick = { asking = false; c.appScope.launch { val n = LogicRunner.undoAll(c); bump++; LogicRunner.say("${n}개를 되돌렸어요") } }) { Text("모두 되돌리기") } },
+                dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+            )
+        }
     }
     editRule?.let { i ->
         RuleDialog(logic.rules.getOrNull(i), scope, { r ->

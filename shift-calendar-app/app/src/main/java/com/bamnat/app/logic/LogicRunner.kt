@@ -45,6 +45,8 @@ object LogicRunner {
     /** A line to show after a button or a tap rule acted ("가계부에 ‘식비 8,000원’ 넣었어요"), with 되돌리기 when it wrote. */
     val message: StateFlow<String?> = _message.asStateFlow()
     fun consumeMessage() { _message.value = null }
+    /** A line for the screen that just acted (모두 되돌리기). */
+    fun say(line: String) { _message.value = line }
 
     fun logic(c: AppContainer): Logic = Logic.decode(c.settingsRepository.current.logic)
 
@@ -58,8 +60,15 @@ object LogicRunner {
         )
     }
 
+    /**
+     * 1.36 [SEC-12] 보안 점검 M2: 안전 모드 (the app stopped three times in a row) runs no rule and no button, so a received rule cannot be
+     * what keeps it from opening; 평소대로 brings them back.
+     */
+    private val resting: Boolean get() = com.bamnat.app.diag.StartGuard.safe.value
+
     /** Does [act] for [date]; [who] names the rule or the button (for its count and its line). */
     suspend fun run(c: AppContainer, act: LogicAct, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false) {
+        if (resting) { if (!quiet) _message.value = "안전 모드라 규칙과 단추는 쉬어요. 달력 위 ‘평소대로’를 누르면 다시 돌아요"; return }
         val ctx = c.appContext
         val store = LogicStore(ctx)
         val words = FormulaText.render(act.arg, scope)
@@ -82,7 +91,7 @@ object LogicRunner {
                 val base = Memo(calendars = setOf(c.calendars.active.value))
                 val memo = t?.start(date, Today.date(), base) ?: base.copy(date = date, title = words.ifBlank { act.arg }.take(60))
                 val saved = c.memoRepository.save(fillMemo(c, memo))
-                store.undo = JSONObject().put("memo", saved.id).put("say", act.say()).toString()
+                store.wrote(who, JSONObject().put("memo", saved.id).put("say", act.say()))
             }
             LogicVerb.CHECK_RESET -> {
                 val memos = c.memoRepository.memos.first().filter { it.date == date && !it.inTrash && it.isChecklist && (act.arg.isEmpty() || it.title.contains(act.arg)) }
@@ -92,7 +101,7 @@ object LogicRunner {
                     before.put(JSONObject().put("id", m.id).put("checked", JSONArray(m.checklist.map { it.checked })))
                     c.memoRepository.save(m.copy(checklist = m.checklist.map { it.copy(checked = false) }))
                 }
-                if (before.length() > 0) store.undo = JSONObject().put("checks", before).put("say", act.say()).toString()
+                if (before.length() > 0) store.wrote(who, JSONObject().put("checks", before).put("say", act.say()))
             }
             LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME -> {
                 val amount = act.amount ?: return
@@ -100,7 +109,7 @@ object LogicRunner {
                     MoneyEntry(date = date, kind = if (act.verb == LogicVerb.ADD_INCOME) MoneyKind.INCOME else MoneyKind.EXPENSE, amount = amount,
                         category = act.arg.ifBlank { "기타" }, memo = "규칙·단추: $who"),
                 )
-                store.undo = JSONObject().put("money", entry.id).put("cal", c.calendars.active.value).put("say", act.say()).toString()
+                store.wrote(who, JSONObject().put("money", entry.id).put("cal", c.calendars.active.value).put("say", act.say()))
             }
             // 사용자 2026-11-01 "메모와 달력을 연동": the day's first memo gets a line made from its values; none, a new one.
             LogicVerb.MEMO_LINE -> {
@@ -108,15 +117,17 @@ object LogicRunner {
                 val m = c.memoRepository.memos.first().firstOrNull { it.date == date && !it.inTrash && !it.isChecklist && it.showsOn(c.calendars.active.value) }
                 if (m != null) {
                     c.memoRepository.save(m.copy(body = listOf(m.body, line).filter { it.isNotEmpty() }.joinToString("\n")))
-                    store.undo = JSONObject().put("line", m.id).put("body", m.body).put("say", act.say()).toString()
+                    store.wrote(who, JSONObject().put("line", m.id).put("body", m.body).put("text", line).put("say", act.say()))
                 } else {
                     val saved = c.memoRepository.save(Memo(date = date, title = line.take(60), body = if (line.length > 60) line else "",
                         calendars = setOf(c.calendars.active.value)))
-                    store.undo = JSONObject().put("memo", saved.id).put("say", act.say()).toString()
+                    store.wrote(who, JSONObject().put("memo", saved.id).put("say", act.say()))
                 }
             }
         }
         store.ran(who)
+        // 1.36 [SEC-12] 보안 점검 M4: a rule that wrote while nobody looked says so in a quiet notice (one per rule, the last).
+        if (quiet && act.verb.writes) wroteQuietly(ctx, who, act)
         if (!quiet && act.verb != LogicVerb.SCREEN && act.verb != LogicVerb.MEMO_TEMPLATE) {
             _message.value = when (act.verb) {
                 LogicVerb.NOTIFY -> words.ifBlank { who }
@@ -135,8 +146,34 @@ object LogicRunner {
         val store = LogicStore(c.appContext)
         val o = store.undo?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return false
         store.undo = null
+        store.forgetWritten(o)
+        takeBack(c, o)
+        return true
+    }
+
+    /**
+     * 1.36 [SEC-12] 보안 점검 M4 '규칙이 쓴 것 모두 되돌리기': everything the rules and buttons wrote in the last 7 days, newest first
+     * (a memo line comes out of the memo, an entry out of the 가계부). Answers how many.
+     */
+    suspend fun undoAll(c: AppContainer): Int {
+        val store = LogicStore(c.appContext)
+        val all = store.written()
+        store.undo = null
+        store.clearWritten()
+        var n = 0
+        for (o in all.asReversed()) if (runCatching { takeBack(c, o) }.isSuccess) n++
+        return n
+    }
+
+    private suspend fun takeBack(c: AppContainer, o: JSONObject) {
         when {
-            o.has("line") -> c.memoRepository.get(o.getLong("line"))?.let { c.memoRepository.save(it.copy(body = o.optString("body"))) }
+            // 1.36 [SEC-12] Only the line the rule added comes out (what was written after it stays), and the words before if it is not found.
+            o.has("line") -> c.memoRepository.get(o.getLong("line"))?.let { m ->
+                val text = o.optString("text")
+                val lines = m.body.lines()
+                val i = if (text.isEmpty()) -1 else lines.lastIndexOf(text)
+                c.memoRepository.save(m.copy(body = if (i >= 0) lines.filterIndexed { j, _ -> j != i }.joinToString("\n") else o.optString("body")))
+            }
             o.has("memo") -> c.memoRepository.get(o.getLong("memo"))?.let { c.memoRepository.delete(it, offerUndo = false) }
             o.has("money") -> c.scopeOf(o.optString("cal", c.calendars.active.value)).money.book.first().entries
                 .firstOrNull { it.id == o.getLong("money") }?.let { c.scopeOf(o.optString("cal")).money.delete(it) }
@@ -150,7 +187,6 @@ object LogicRunner {
                 }
             }
         }
-        return true
     }
 
     /** The rules for [on] that are switched on and whose 조건 holds on [date]. */
@@ -165,6 +201,7 @@ object LogicRunner {
     /** 날짜를 누르면: the tap rules that hold run (a screen or 메모 틀 the first only, so one tap opens one thing). */
     fun onTap(c: AppContainer, date: LocalDate, facts: DayFactsBook?) {
         facts ?: return
+        if (resting) return
         val rules = due(c, RuleTrigger.TAP, date, facts)
         if (rules.isEmpty()) return
         c.appScope.launch {
@@ -184,6 +221,7 @@ object LogicRunner {
      */
     fun onHold(c: AppContainer, date: LocalDate, facts: DayFactsBook?): Boolean {
         facts ?: return false
+        if (resting) return false
         val rules = due(c, RuleTrigger.HOLD, date, facts)
         if (rules.isEmpty()) return false
         val opens = rules.any { it.act.verb == LogicVerb.SCREEN || it.act.verb == LogicVerb.MEMO_TEMPLATE }
@@ -218,7 +256,7 @@ object LogicRunner {
 
     /** 메모를 저장하면 (the memo's own day) and 하루 처음 앱을 열면 (today, once a day). */
     fun onMemoSaved(c: AppContainer, date: LocalDate?) {
-        if (logic(c).rules.none { it.on == RuleTrigger.MEMO }) return
+        if (resting || logic(c).rules.none { it.on == RuleTrigger.MEMO }) return
         c.appScope.launch {
             val f = facts(c)
             val d = date ?: Today.date()
@@ -238,7 +276,7 @@ object LogicRunner {
 
     /** 가계부에 적으면 (사용자 2026-11-01 "가계부와 연동"): the entry's day. */
     fun onMoneySaved(c: AppContainer, date: LocalDate) {
-        if (logic(c).rules.none { it.on == RuleTrigger.MONEY }) return
+        if (resting || logic(c).rules.none { it.on == RuleTrigger.MONEY }) return
         c.appScope.launch {
             val f = facts(c)
             due(c, RuleTrigger.MONEY, date, f).forEach { runCatching { run(c, it.act, date, f.scope(date), it.name, quiet = true) } }
@@ -248,7 +286,7 @@ object LogicRunner {
     fun onOpen(c: AppContainer) {
         val store = LogicStore(c.appContext)
         val today = Today.date()
-        if (store.lastOpen == today.toString() || logic(c).rules.none { it.on == RuleTrigger.OPEN }) return
+        if (resting || store.lastOpen == today.toString() || logic(c).rules.none { it.on == RuleTrigger.OPEN }) return
         store.lastOpen = today.toString()
         c.appScope.launch {
             val f = facts(c)
@@ -323,6 +361,8 @@ object LogicRunner {
      * next is registered.
      */
     internal suspend fun fire(c: AppContainer) {
+        // 안전 모드: the times that come are let pass (not run late after 평소대로), and the next is registered.
+        if (resting) { LogicStore(c.appContext).checked = Today.dateTime().toString(); schedule(c); return }
         val f = facts(c)
         val now = Today.dateTime()
         val store = LogicStore(c.appContext)
@@ -353,17 +393,30 @@ object LogicRunner {
     private val TIMED = setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END)
     private const val LATE_MINUTES = 60L
 
-    private fun notify(ctx: Context, title: String, text: String) {
+    private fun notify(ctx: Context, title: String, text: String, quietly: Boolean = false) {
+        // 1.36 [SEC-12] 보안 점검 M5: on the lock screen only "규칙 알림" (the words may hold the 가계부's numbers).
+        val public = NotificationCompat.Builder(ctx, Notifications.RULES_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("밤낮 규칙 알림")
+            .setContentText("휴대폰을 열면 보여요")
+            .build()
         val n = NotificationCompat.Builder(ctx, Notifications.RULES_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(Notifications.open(ctx, NoticeLinks.Target.TODAY, REQ + 1))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
+            .setSilent(quietly)
             .setAutoCancel(true)
             .build()
         Notifications.post(ctx, NOTICE_ID, n, tag = title)
     }
+
+    /** 1.36 [SEC-12] "규칙 ‘월급날 저축’: 가계부에 ‘저축 100,000원’ 넣기를 했어요" without a sound, with where to take it back. */
+    private fun wroteQuietly(ctx: Context, who: String, act: LogicAct) =
+        notify(ctx, "규칙 ‘$who’", "${act.say()}를 했어요. 설정 › 알람 › 수식·규칙·버튼의 ‘규칙이 쓴 것’에서 되돌릴 수 있어요", quietly = true)
 
     private const val REQ = 2601
     private const val NOTICE_ID = 7601
@@ -429,6 +482,56 @@ class LogicStore(context: Context) {
     var undo: String?
         get() = p.getString("undo", null)
         set(v) { p.edit().putString("undo", v).apply() }
+
+    /**
+     * 1.36 [SEC-12] 보안 점검 M4·M5: what [who] wrote ([o], as [undo] keeps it), kept for '규칙이 쓴 것' (the last 7 days, at most
+     * [WRITTEN_MAX]) and for share links, which leave out the memos and lines the rules made.
+     */
+    fun wrote(who: String, o: JSONObject) {
+        o.put("who", who).put("at", Today.millis())
+        undo = o.toString()
+        val keep = written().filter { it.optLong("at") >= Today.millis() - 7 * 86_400_000L }.takeLast(WRITTEN_MAX - 1) + o
+        p.edit().putString("written", JSONArray(keep.map { it.toString() }).toString()).apply()
+        o.optLong("memo", -1L).takeIf { it >= 0 }?.let { made(it, null) }
+        if (o.has("line")) made(o.getLong("line"), o.optString("text"))
+    }
+
+    fun written(): List<JSONObject> = runCatching {
+        val a = JSONArray(p.getString("written", "[]"))
+        (0 until a.length()).mapNotNull { runCatching { JSONObject(a.getString(it)) }.getOrNull() }
+    }.getOrDefault(emptyList())
+
+    fun forgetWritten(o: JSONObject) {
+        val at = o.optLong("at", -1L)
+        p.edit().putString("written", JSONArray(written().filterNot { it.optLong("at") == at && it.optString("who") == o.optString("who") }.map { it.toString() }).toString()).apply()
+    }
+
+    fun clearWritten() = p.edit().remove("written").apply()
+
+    /** A memo a rule made ([line] null), or a line a rule added to one. */
+    private fun made(memo: Long, line: String?) {
+        val o = runCatching { JSONObject(p.getString("made", "{}")) }.getOrDefault(JSONObject())
+        val key = memo.toString()
+        val a = o.optJSONArray(key) ?: JSONArray()
+        a.put(line ?: "*")
+        // At most the last 20 a memo, and 300 memos.
+        o.put(key, JSONArray((0 until a.length()).map { a.getString(it) }.takeLast(20)))
+        val keys = o.keys().asSequence().toList()
+        if (keys.size > 300) keys.take(keys.size - 300).forEach { o.remove(it) }
+        p.edit().putString("made", o.toString()).apply()
+    }
+
+    /** Whether a rule made memo [id], and the lines rules added to it (for share links). */
+    fun madeMemo(id: Long): Boolean = madeOf(id).contains("*")
+    fun madeLines(id: Long): Set<String> = madeOf(id).filter { it != "*" }.toSet()
+    private fun madeOf(id: Long): List<String> = runCatching {
+        val a = JSONObject(p.getString("made", "{}")).optJSONArray(id.toString()) ?: return emptyList()
+        (0 until a.length()).map { a.getString(it) }
+    }.getOrDefault(emptyList())
+
+    companion object {
+        const val WRITTEN_MAX = 60
+    }
 
     var lastOpen: String?
         get() = p.getString("open", null)
