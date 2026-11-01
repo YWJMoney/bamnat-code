@@ -589,6 +589,9 @@ private fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPoin
     }
 }
 
+/** How many of [SWATCHES] are the light ones (the top row). */
+private const val LIGHT_SWATCHES = 10
+
 private val SWATCHES: List<Long> = listOf(
     0xFFFFFFFF, 0xFFF7F8FC, 0xFFFFF8E1, 0xFFFFF4CC, 0xFFFFE2CC, 0xFFFFDDE4, 0xFFE6DDFF, 0xFFD9E7FF, 0xFFCFF3EA, 0xFFE8F5D0,
     0xFFF2994A, 0xFFE5484D, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF00A3C4, 0xFF00857A, 0xFF27AE60, 0xFF8E9AAF, 0xFF4A5068,
@@ -627,6 +630,20 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             }
             if (allowNone && value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
         }
+        // PC 제안 1.36 (25개가 한 줄이라 넘기기 힘듦): two rows that scroll together — 최근·밝은 색 위, 진한·어두운 색 아래.
+        val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
+        val row = recent + SWATCHES
+        val names = remember(row) { colorNames(row) }
+        @Composable fun Dot(i: Int) {
+            val c = row[i]
+            val on = value == c
+            Box(
+                Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
+                    .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
+            )
+        }
+        val split = recent.size + LIGHT_SWATCHES
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -634,17 +651,14 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-            val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
-            val row = recent + SWATCHES
-            val names = remember(row) { colorNames(row) }
-            row.forEachIndexed { i, c ->
-                if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                val on = value == c
-                Box(
-                    Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
-                        .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    for (i in 0 until split) {
+                        if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        Dot(i)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { for (i in split until row.size) Dot(i) }
             }
         }
     }
@@ -711,13 +725,10 @@ internal fun colorName(c: Long): String {
     // PC 확인 W33 1.36 (흰 동그라미 셋이 모두 '흰 색'): greys by how light, near-whites by their hint of colour.
     if (a[1] < 0.04f) return when { a[2] > 0.97f -> "흰색"; a[2] > 0.85f -> "밝은 회색"; a[2] > 0.6f -> "회색"; a[2] > 0.25f -> "진한 회색"; else -> "검정" }
     val hue = when { a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
-        a[0] < 250 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍" }
+        a[0] < 245 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍" }
     if (a[1] < 0.12f) return if (a[2] > 0.85f) "아주 연한 $hue" else "회색빛 $hue"
     // PC 확인 1.36 (연한 파랑이 셋: 하늘색·연보라·회청색): a dull one is 회색빛, not 연한.
-    val tone = when { a[2] < 0.25f -> "어두운"; a[1] < 0.25f && a[2] < 0.8f -> "회색빛"; a[1] < 0.25f -> "연한"; else -> "" }
-    val kind = when {
-        a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
-        a[0] < 260 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍"
-    }
-    return listOf(tone, kind).filter { it.isNotEmpty() }.joinToString(" ")
+    // PC 확인 1.36 ('어두운 파랑'이 '짙은 파랑'과 헷갈림): the darkest say 아주 짙은, above the 밝은·짙은 of a group.
+    val tone = when { a[2] < 0.25f -> "아주 짙은"; a[1] < 0.25f && a[2] < 0.8f -> "회색빛"; a[1] < 0.25f -> "연한"; else -> "" }
+    return listOf(tone, hue).filter { it.isNotEmpty() }.joinToString(" ")
 }
