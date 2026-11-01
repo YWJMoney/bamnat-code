@@ -60,9 +60,11 @@ object RecipeDiff {
         is Boolean -> if (v) "켬" else "끔"
         is Ref.Input -> "받는 분이 정해요"
         is Ref.Token -> "테마 색"
+        is Ref.Formula -> "수식으로 정해요"
         is Map<*, *> -> when {
             v.containsKey("input") -> "받는 분이 정해요"
             v.containsKey("token") -> "테마 색 ${v["token"]}"
+            v.containsKey("fx") -> "수식으로 정해요"
             else -> v.values.joinToString(" · ") { say(it) }
         }
         is List<*> -> v.joinToString(", ") { say(it) }.ifEmpty { "없음" }

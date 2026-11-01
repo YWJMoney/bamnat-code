@@ -168,7 +168,7 @@ export const PART_STYLE = [
 const partLines = (lines) => {
   const seen = new Set();
   for (const l of lines) {
-    const k = `${l.id}|${l.on ?? ""}`;
+    const k = `${l.id}|${l.on ?? ""}|${l.when ?? ""}`;
     if (seen.has(k)) return "dup";
     seen.add(k);
     if (typeof l.order === "string" && l.order.split(",").some((x) => !(PART_CHILDREN[l.id] ?? []).includes(x))) return "order";
@@ -248,7 +248,9 @@ export const RECIPE_PIECES = {
   screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
   // [BLU-01] 1.36 부품 꾸미기.
-  parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }), ...PART_STYLE], { min: 1, check: partLines })] },
+  parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }),
+    // 1.36 [RUL-02] 조건부 꾸미기: the line only on days its formula holds.
+    T("when", FORMULA.maxLen, { optional: true, guard: false, check: (s) => logicFormula(s) }), ...PART_STYLE], { min: 1, check: partLines })] },
   // 1.36 [RUL-03][RUL-04] 수식·규칙·버튼 (core PieceKind.LOGIC, formula/Logic.kt): formulas read as core reads them, safe verbs only.
   logic: { styles: STYLES, fields: [
     I("buttons", 8, [T("label", 16, { min: 1 }), E("emoji", { input: false }), P("where", BUTTON_PLACES), P("do", LOGIC_VERBS),
@@ -504,6 +506,15 @@ function ref(f, v, path, ctx) {
   if (!isObj(v)) return null;
   const keys = Object.keys(v);
   if (keys.length !== 1) fail("ref", path);
+  // 1.36 [RUL-02] a formula, only where a part's style takes one (core RecipeCodec.ref).
+  if (typeof v.fx === "string") {
+    if (!PART_STYLE.includes(f)) fail("ref", path);
+    const t = v.fx.trim();
+    if (t.length === 0 || t.length > FORMULA.maxLen) fail("text", path);
+    const why = logicFormula(t);
+    if (why) fail(why, path);
+    return { fx: t };
+  }
   if (typeof v.token === "string") {
     if (f.t !== "color" || !ctx.tokens.has(v.token)) fail("ref", path);
     return { token: v.token };

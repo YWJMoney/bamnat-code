@@ -59,8 +59,9 @@ class BlueprintTest {
         assertEquals("range", refused(listOf(mapOf("id" to "app.card", "r" to 49L))))
         assertEquals("font", refused(listOf(mapOf("id" to "app", "font" to "Noto Sans"))))
         assertEquals("ok", refused(listOf(mapOf("id" to "app", "font" to "u0123456789abcdef"))))
-        // 수식 자리 (갈래 D) is not open in the first format.
-        assertEquals("ref", refused(listOf(mapOf("id" to "cal.cell", "fill" to mapOf("fx" to "1")))))
+        // [RUL-02] 수식 자리 (갈래 D): open in a part's style fields, refused when it does not read.
+        assertEquals("ok", refused(listOf(mapOf("id" to "cal.cell", "fill" to mapOf("fx" to "1")))))
+        assertEquals("name", refused(listOf(mapOf("id" to "cal.cell", "fill" to mapOf("fx" to "근뮤")))))
         assertEquals("list", refused(List(BlueprintParts.MAX_LINES + 1) { i -> mapOf("id" to BlueprintParts.IDS[i % BlueprintParts.IDS.size], "on" to BlueprintParts.STATES[i / BlueprintParts.IDS.size]) }))
     }
 
