@@ -218,6 +218,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var area by rememberSaveable { mutableStateOf(Area.CALENDAR) }
     var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
     var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
@@ -532,9 +533,23 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // [BLU-06] Which part the tools below change, kept in sight while they scroll (PC 1차 사용성 제안).
                 if ((if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS) partNow?.let { (pid, pon) ->
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
-                        Text("${partWords(pid, pon)} 고치는 중", style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                        Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                            // PC 4차 사용성 제안: the state changes from here too, when the chips have scrolled away.
+                            val states = statesFor(pid)
+                            if (states.isNotEmpty()) Box {
+                                var open by remember { mutableStateOf(false) }
+                                TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${STATE_WORDS[pon] ?: "언제나"} ▾") }
+                                androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                                    (listOf<String?>(null) + states).forEach { st ->
+                                        androidx.compose.material3.DropdownMenuItem(text = { Text(STATE_WORDS[st] ?: "언제나") },
+                                            onClick = { open = false; partPick = pid to st })
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -557,7 +572,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
                         Tool.SEED -> SeedTool(vm, d)
-                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, onFocus = { pid, pon -> partNow = pid to pon },
+                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
                             onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }

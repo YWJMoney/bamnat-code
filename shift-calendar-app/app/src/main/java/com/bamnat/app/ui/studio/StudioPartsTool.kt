@@ -209,7 +209,7 @@ private fun cornerNote(id: String): String = "처음대로 · 지금 " + when (i
 internal fun partWords(id: String, on: String?): String =
     (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + (STATE_WORDS[it] ?: it) } ?: "")
 
-private fun statesFor(id: String): List<String> = when {
+internal fun statesFor(id: String): List<String> = when {
     // The shift a mark shows comes first there (PC 3차: '야간 근무'가 줄 끝에 있어 밀어야 보여요).
     id == "cal.cell.mark" -> listOf("role.day", "role.eve", "role.night", "role.long", "role.off", "today", "sat", "sun", "holiday", "dim", "sel")
     id.startsWith("cal.cell") -> listOf("today", "sat", "sun", "holiday", "dim", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off")
@@ -219,7 +219,7 @@ private fun statesFor(id: String): List<String> = when {
     else -> emptyList()
 }
 
-private val STATE_WORDS = mapOf<String?, String>(
+internal val STATE_WORDS = mapOf<String?, String>(
     "today" to "오늘", "sat" to "토요일", "sun" to "일요일", "holiday" to "공휴일", "dim" to "다른 달", "sel" to "고른 것",
     "role.day" to "주간 근무", "role.eve" to "오후·저녁 근무", "role.night" to "야간 근무", "role.long" to "24시간·당직", "role.off" to "쉬는 날",
     "role.other" to "그 밖 근무", "in" to "수입", "out" to "지출",

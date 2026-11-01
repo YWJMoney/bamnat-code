@@ -637,9 +637,10 @@ private fun StepButton(text: String, description: String, enabled: Boolean, onSt
                 detectTapGestures(onPress = {
                     step()
                     val held = scope.launch {
-                        kotlinx.coroutines.delay(400)
-                        var wait = 120L
-                        while (true) { step(); kotlinx.coroutines.delay(wait); wait = maxOf(40L, wait - 10L) }
+                        // Slow for the first second (PC 4차: 2.5초에 40을 넘어 멈추기 어려웠어요), then quicker.
+                        kotlinx.coroutines.delay(450)
+                        var n = 0
+                        while (true) { step(); n++; kotlinx.coroutines.delay(if (n < 4) 250L else maxOf(70L, 180L - (n - 4) * 10L)) }
                     }
                     tryAwaitRelease()
                     held.cancel()
