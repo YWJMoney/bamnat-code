@@ -705,6 +705,12 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
         }
         SliderRow("투명도", first.alpha.toFloat(), 0f..100f, "%") { v -> all("꾸밈 투명도") { it.copy(alpha = v.roundToInt()) } }
         SliderRow("그림자", first.shadow.toFloat(), 0f..24f, "dp") { v -> all("꾸밈 그림자") { it.copy(shadow = v.roundToInt()) } }
+        // PC 확인 C5 1.36 사용성 제안 (배경 사진이 칸 뒤에만 깔려 칸 사이로 조금만 보여요): a screen's background picks 칸 뒤 or 칸 위(흐리게)
+        // in one tap — over the cells at a third, so the dates still read.
+        if (place == Decor.APP || place.startsWith("bg.")) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            FilterChip(selected = !first.over, onClick = { all(null) { it.copy(over = false, alpha = if (it.over && it.alpha == 35) 100 else it.alpha) } }, label = { Text("칸·글 뒤") })
+            FilterChip(selected = first.over && first.alpha <= 40, onClick = { all(null) { it.copy(over = true, alpha = minOf(it.alpha, 35)) } }, label = { Text("칸 위에 흐리게") })
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("날짜·근무 위로 올리기", style = MaterialTheme.typography.bodyMedium)
