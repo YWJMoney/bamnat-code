@@ -52,7 +52,7 @@ test("[SEC-10] M7: the font's own words, and a foundry that sells fonts is turne
   assert.equal(fontSold(fontInfo(fakeFont({ maker: "Monotype Imaging Inc.", license: OFL }))), false);
 });
 
-test("[SEC-10] a sold font is refused; the first waits for the operator, the next with OFL words goes straight up", async (t) => {
+test("[SEC-10] M8: a sold font is refused; every font waits for the operator, a passed sender's OFL font too", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });
   const send = (font, n = 1, at = "203.0.113.1") => call("POST", "/api/recipes/fonts", { device: device(n), name: "글꼴", license: "ofl", ttf: font.toString("base64") }, ip(at));
@@ -66,10 +66,37 @@ test("[SEC-10] a sold font is refused; the first waits for the operator, the nex
   assert.equal(list.state, "pending", "the operator sees what waits first");
   assert.equal(list.items[0].info.family, "나눔손글씨 붓");
   assert.equal(list.items[0].says, "ofl");
+  assert.equal(list.items[0].glyphs, undefined, "the glyph hash stays on the server");
   await call("POST", `/api/admin/recipes/fonts/${first.data.id}/ok`, {}, admin);
-  assert.equal((await send(fakeFont({ fill: 2 }))).data.state, "ok", "a sender with a passed font, and the font says OFL");
-  assert.equal((await send(fakeFont({ fill: 3, license: "Free for personal use", url: "" }))).data.state, "pending", "its words do not say OFL·Apache");
-  assert.equal((await send(fakeFont({ fill: 4 }), 2, "203.0.113.2")).data.state, "pending", "another sender's first");
+  assert.equal((await send(fakeFont({ fill: 2 }))).data.state, "pending", "a sender with a passed font, and the font says OFL: still waits");
+  // The same letters under another name, and a font naming the same family, are shown beside the one already shared.
+  const renamed = await send(fakeFont({ fill: 1, family: "다른 이름", copyright: "x" }), 2, "203.0.113.2");
+  assert.equal(renamed.data.state, "pending");
+  const waiting = (await call("GET", "/api/admin/recipes/fonts", undefined, admin)).data.items;
+  const r = waiting.find((i) => i.id === renamed.data.id);
+  assert.equal(r.like[0].id, first.data.id);
+  assert.equal(r.like[0].why, "glyphs");
+  assert.equal(r.like[0].diff, fakeFont({ fill: 1, family: "다른 이름", copyright: "x" }).length - fakeFont({ fill: 1 }).length);
+  const same = waiting.find((i) => i.id !== renamed.data.id);
+  assert.equal(same.like[0].why, "family", "another font naming the same family");
+});
+
+test("[SEC-10] M8: bytes past a font's last table are refused (they only change its id)", async (t) => {
+  assert.equal(fontProblem(Buffer.concat([fakeFont(), Buffer.alloc(4)])), "font");
+  assert.equal(fontProblem(Buffer.concat([fakeFont(), Buffer.from("PK")])), "font");
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const r = await call("POST", "/api/recipes/fonts", { device: device(1), name: "글꼴", license: "ofl", ttf: Buffer.concat([fakeFont(), Buffer.alloc(4)]).toString("base64") }, ip("203.0.113.1"));
+  assert.equal(r.status, 400);
+  assert.equal(r.data.error, "font");
+  // A real open font with four bytes added (the security check's case), when the test files are here.
+  const { existsSync, readFileSync } = await import("node:fs");
+  const gaegu = "/mnt/project-files/release/1.36-빌드/글꼴-시험파일/Gaegu-Regular.ttf";
+  if (existsSync(gaegu)) {
+    const g = readFileSync(gaegu);
+    assert.equal(fontProblem(g), null);
+    assert.equal(fontProblem(Buffer.concat([g, Buffer.alloc(4)])), "font");
+  }
 });
 
 test("[SEC-10] H1: one network sends at most three fonts a day however many installs it makes", async (t) => {

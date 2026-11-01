@@ -179,7 +179,11 @@ fun Typography.inFamily(family: FontFamily?): Typography = if (family == null) t
 object UserFonts {
     /** [sold]: PC 확인 6차, the font says a foundry that sells fonts made it, so it cannot be shared (the server turns it away too). */
     data class Mine(val id: String, val name: String, val fallback: String, val open: Boolean, val bytes: Long, val received: Boolean = false,
-        val sold: Boolean = false)
+        val sold: Boolean = false,
+        /** PC 확인 7차: false when it has no 한글 (its 한글 is drawn in [fallback]). */
+        val hangul: Boolean = true,
+        /** PC 확인 7차: the user already said to use it though it has no 한글 (asked once). */
+        val hangulOk: Boolean = false)
 
     sealed interface Result {
         data class Added(val font: Mine) : Result
@@ -196,6 +200,11 @@ object UserFonts {
             val id = f.name.removeSuffix(".json")
             val ttf = File(dir(c), "$id.ttf")
             // A font put in before 1.36 PC 6차 has not been read for its maker yet: once, here.
+            // PC 확인 7차: and for 한글, once.
+            if (!o.has("hangul") && ttf.isFile) {
+                o.put("hangul", runCatching { FontNames.hangul(ttf.readBytes()) }.getOrNull() ?: true)
+                f.writeText(o.toString())
+            }
             if (!o.has("sold") && ttf.isFile) {
                 val info = runCatching { FontNames.read(ttf.readBytes()) }.getOrDefault(FontNames.Info())
                 val sold = !o.optBoolean("received") && FontNames.sold(info)
@@ -205,7 +214,7 @@ object UserFonts {
                 f.writeText(o.toString())
             }
             Mine(id, o.optString("name", "내 글꼴"), o.optString("fallback", "sans"), o.optBoolean("open"), ttf.length(), o.optBoolean("received"),
-                o.optBoolean("sold"))
+                o.optBoolean("sold"), o.optBoolean("hangul", true), o.optBoolean("hangulOk"))
         }.getOrNull()?.takeIf { file(c, it.id) != null }
     }.sortedBy { it.name }
 
@@ -242,8 +251,11 @@ object UserFonts {
      * [bytes] kept as a font named [name]: checked as a font the phone can read. [open] is what the user said of its licence, or
      * true for a font that came with a recipe (its sender said so and the server keeps only such fonts).
      */
-    fun addBytes(c: Context, bytes: ByteArray, name: String?, open: Boolean, received: Boolean = false): Result {
-        if (!looksLikeFont(bytes)) return Result.Problem("TTF·OTF 글꼴 파일이 아니에요")
+    fun addBytes(c: Context, whole: ByteArray, name: String?, open: Boolean, received: Boolean = false): Result {
+        if (!looksLikeFont(whole)) return Result.Problem("TTF·OTF 글꼴 파일이 아니에요")
+        // 1.36 [SEC-10] M8: bytes past its last table are not the font (the server turns such a file away): left out. A font that
+        // came with a recipe is kept as it came, since the recipe names it by its bytes.
+        val bytes = if (received) whole else FontNames.trimmed(whole)
         val id = idOf(bytes)
         file(c, id)?.let { list(c).firstOrNull { m -> m.id == id }?.let { m -> return Result.Added(m) } }
         if (list(c).size >= FontCatalog.USER_MAX_COUNT) return Result.Problem("내 글꼴은 ${FontCatalog.USER_MAX_COUNT}개까지 넣을 수 있어요. 안 쓰는 글꼴을 빼 주세요")
@@ -256,10 +268,11 @@ object UserFonts {
         val info = FontNames.read(bytes)
         val sold = !received && FontNames.sold(info)
         val guess = lookOf(info, shown) ?: "sans"
+        val hangul = FontNames.hangul(bytes) ?: true
         File(dir(c), "$id.json").writeText(JSONObject().put("name", shown).put("fallback", guess).put("open", open && !sold).put("received", received)
-            .put("sold", sold).toString())
+            .put("sold", sold).put("hangul", hangul).toString())
         AppFonts.forget(id)
-        return Result.Added(Mine(id, shown, guess, open && !sold, bytes.size.toLong(), received, sold))
+        return Result.Added(Mine(id, shown, guess, open && !sold, bytes.size.toLong(), received, sold, hangul))
     }
 
     /**
@@ -283,6 +296,9 @@ object UserFonts {
 
     /** PC 확인 6차: the server turned [id] away as a paid foundry's; it stays on this phone, not shared. */
     fun markSold(c: Context, id: String) = edit(c, id) { it.put("sold", true).put("open", false) }
+
+    /** PC 확인 7차: the user said to use [id] though it has no 한글; not asked again. */
+    fun markHangulOk(c: Context, id: String) = edit(c, id) { it.put("hangulOk", true) }
 
     fun setFallback(c: Context, id: String, fallback: String) = edit(c, id) { it.put("fallback", fallback) }.also { AppFonts.forget(id) }
 

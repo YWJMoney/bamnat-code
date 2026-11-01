@@ -260,9 +260,8 @@ class MainActivity : ComponentActivity() {
             // [MAT-06] PC 확인 6차: shared fonts a theme was waiting for (the operator had not looked yet) come down by themselves.
             c.appScope.launch {
                 val got = runCatching { com.bamnat.app.recipe.RecipeFonts.retryWaiting(c) }.getOrDefault(emptyList())
-                if (got.isNotEmpty()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    android.widget.Toast.makeText(this@MainActivity, "기다리던 글꼴 ‘${got.joinToString("’, ‘")}’을 받아 입혔어요", android.widget.Toast.LENGTH_LONG).show()
-                }
+                // PC 확인 7차: a line over the calendar with 되돌리기, not a toast.
+                if (got.isNotEmpty()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { com.bamnat.app.ui.calendar.FontArrivals.add(got) }
             }
         }
         // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and

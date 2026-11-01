@@ -294,7 +294,7 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
         if (l.dateShape != null && l.dateShape != "none") ColorPick("날짜 바탕", l.dateFill) { set(l.copy(dateFill = it)) }
         ColorPick("평일 날짜 색", l.dateColor) { set(l.copy(dateColor = it)) }
         // [MAT-05] 1.36 날짜 글꼴 (숫자·영문 전용 글꼴도 날짜에 잘 어울려요).
-        FontRow("날짜 글꼴", l.dateFont) { set(l.copy(dateFont = it)) }
+        FontRow("날짜 글꼴", l.dateFont, numbersOnly = true) { set(l.copy(dateFont = it)) }
         Text("토·일·공휴일 색은 ‘오늘·주말 색’에서 바꿔요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Group("근무 표시") {

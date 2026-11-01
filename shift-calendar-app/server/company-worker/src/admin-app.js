@@ -2317,7 +2317,7 @@ function adminApp(L, BUILD, M) {
 
   /**
    * [MAT-06] 1.36 나눈 글꼴: 신고 셋이면 저절로 내려가요. 라이선스가 맞으면 다시 올리고, 아니면 내린 채로 둬요.
-   * 1.36 [SEC-10] 보안 점검 H3·M7: 처음 나누는 글꼴은 여기서 본 뒤에 다른 분께 가요. 글꼴이 스스로 밝힌 이름·만든 곳·라이선스 글을 함께 보여요.
+   * 1.36 [SEC-10] 보안 점검 H3·M7·M8: 나누는 글꼴은 모두 여기서 본 뒤에 다른 분께 가요. 글꼴이 스스로 밝힌 이름·만든 곳·라이선스 글을 함께 보여요.
    */
   function recipeFontsView(d, edit) {
     const state = d.state ?? "pending";
@@ -2332,9 +2332,15 @@ function adminApp(L, BUILD, M) {
       const bits = [i.family && `이름 ${i.family}`, i.maker && `만든 곳 ${i.maker}`, i.designer && `디자이너 ${i.designer}`, i.vendor && `회사 코드 ${i.vendor}`].filter(Boolean);
       return `<small>${bits.length ? esc(bits.join(" · ")) : "글꼴 안에 이름 정보가 없어요"}</small>
         <small>${f.says ? `<span class="pill ok">${esc(says[f.says])}</span>` : '<span class="pill warn">글꼴 안에 OFL·Apache 글이 없어요</span>'}${i.license ? ` ${esc(i.license.slice(0, 160))}` : ""}${i.licenseUrl ? ` · ${esc(i.licenseUrl)}` : ""}</small>
-        ${i.copyright ? `<small>${esc(i.copyright.slice(0, 160))}</small>` : ""}`;
+        ${i.copyright ? `<small>${esc(i.copyright.slice(0, 160))}</small>` : ""}
+        ${like(f)}`;
     };
-    return `${sub}<p class="hint">${state === "pending" ? "처음 나누는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
+    // 1.36 [SEC-10] M8 (PC 7차): 이미 나누는 글꼴과 같은 글자 모양이거나 같은 이름·저작권이면 나란히 보여요. 크기 차이가 작으면 이름만 바꾼 복사본일 수 있어요.
+    const likeWhy = { glyphs: "글자 모양이 같은", family: "글꼴 이름이 같은", copyright: "저작권 글이 같은" };
+    const bytesDiff = (n) => n === 0 ? "크기 같음" : `${n > 0 ? "+" : "−"}${Math.abs(n) < 1024 ? `${Math.abs(n)}B` : `${(Math.abs(n) / 1024).toFixed(1)}KB`}`;
+    const like = (f) => (f.like ?? []).length ? `<small class="like">${f.like.map((l) =>
+      `<span class="pill ${l.why === "glyphs" ? "ok" : "warn"}">${esc(likeWhy[l.why] ?? "비슷한")} 글꼴을 나누는 중: ${esc(l.name)} · ${esc(bytesDiff(l.diff))}</span>`).join(" ")}</small>` : "";
+    return `${sub}<p class="hint">${state === "pending" ? "다른 분께 가기 전에 보는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
       <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
         <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · 신고 ${f.reports}${Object.entries(f.whys ?? {}).map(([k, n]) => ` · ${esc(whys[k] ?? k)} ${n}`).join("")} · ${esc(ago(f.at))}</small>
         ${own(f)}

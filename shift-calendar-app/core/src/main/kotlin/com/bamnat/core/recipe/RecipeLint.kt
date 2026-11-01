@@ -39,7 +39,7 @@ object RecipeLint {
         }
         // [STU-25] 1.36 빌드 7: the studio's starting words and an empty 틀 채우기 are not the maker's own words yet.
         out += if (r.summary.isBlank()) Line("summary", Level.WARN, "한 줄 설명을 적으면 목록에서 더 잘 보여요", 4)
-            else if (r.summary.trim() in STARTER_SUMMARIES) Line("summary", Level.WARN, "한 줄 설명을 내 말로 바꿔 주세요 (‘${r.summary.trim()}’는 처음 넣어 둔 말이에요)", 4)
+            else if (r.summary.trim() in STARTER_SUMMARIES) Line("summary", Level.WARN, "한 줄 설명을 내 말로 바꿔 주세요 (처음 넣어 둔 말 ‘${r.summary.trim()}’ 그대로예요)", 4)
             else Line("summary", Level.OK, "한 줄 설명이 있어요", 4)
         out += if (RecipeText.graphemes(ownWords(r.desc)) < 10) Line("desc", Level.WARN, "설명에 누구에게 좋은지 적어 주세요", 4)
             else Line("desc", Level.OK, "설명이 있어요", 4)

@@ -6,8 +6,9 @@
 // what it is and the same file sent twice is one font. D1 keeps at most 2 MB in a value, so the bytes are kept in parts.
 //
 // 1.36 보안 점검(조사/1.36-보안-점검.md) H1·H3·M3·M7: a font is read by the phone's native font engine, so the server reads its
-// table directory first and turns away one that does not hold together; a font waits for the operator before others get it
-// unless its sender already had one passed and its own name table says OFL·Apache; a day's fonts are counted per network and
+// table directory first and turns away one that does not hold together (or carries bytes past its tables); every font waits for
+// the operator before others get it (M8: a fast path for senders with a passed font trusted words the sender writes, so it
+// is gone — the day's limits keep the operator's queue small); a day's fonts are counted per network and
 // for everyone, not only per install; and reports from new installs or a second one from the same network do not take it down.
 import { DAY } from "./units.js";
 
@@ -32,6 +33,9 @@ export const FONT_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS recipe_fonts_state ON recipe_fonts (state, at)",
   // 1.36 [SEC-10] What the font says of itself (fontInfo), as JSON, for the operator.
   "ALTER TABLE recipe_fonts ADD COLUMN info TEXT",
+  // 1.36 [SEC-10] M8: the SHA-256 of its outlines and cmap (fontGlyphs), so the operator sees a font that draws the same as one
+  // already shared whatever its names say.
+  "ALTER TABLE recipe_fonts ADD COLUMN glyphs TEXT",
   `CREATE TABLE IF NOT EXISTS recipe_font_parts (id TEXT NOT NULL, part INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (id, part))`,
   `CREATE TABLE IF NOT EXISTS recipe_font_reports (id TEXT NOT NULL, device TEXT NOT NULL, why TEXT, at INTEGER NOT NULL, PRIMARY KEY (id, device))`,
 ];
@@ -88,6 +92,8 @@ export function fontTables(b) {
 export function fontProblem(b) {
   const faces = fontTables(b);
   if (!faces) return "font";
+  // 1.36 [SEC-10] M8: nothing past the last table (rounded up to 4) — bytes there are not a font, and only change its id.
+  if (b.length > fontEnd(b, faces)) return "font";
   for (const t of faces) {
     for (const need of ["cmap", "head", "hhea", "hmtx", "maxp", "name"]) if (!t[need]) return "font";
     if (!(t.glyf && t.loca) && !t["CFF "] && !t.CFF2) return "font";
@@ -96,6 +102,41 @@ export function fontProblem(b) {
     if (t.name.len < 6) return "font";
   }
   return null;
+}
+
+/** Where the font's own bytes end: its headers and every table of every face, rounded up to 4. */
+function fontEnd(b, faces) {
+  const ttc = rfTag(b, 0) === "ttcf";
+  const n = ttc ? rfU32(b, 8) : 1;
+  let end = ttc ? 12 + n * 4 : 0;
+  // A version 2 collection may sign itself: its DSIG header follows the face offsets, its DSIG table may lie anywhere.
+  if (ttc && rfU16(b, 4) === 2 && 12 + n * 4 + 12 <= b.length) {
+    end += 12;
+    const len = rfU32(b, 12 + n * 4 + 4);
+    const off = rfU32(b, 12 + n * 4 + 8);
+    if (off && off + len <= b.length) end = Math.max(end, off + len);
+  }
+  const starts = ttc ? Array.from({ length: n }, (_, i) => rfU32(b, 12 + i * 4)) : [0];
+  faces.forEach((t, i) => {
+    end = Math.max(end, starts[i] + 12 + Object.keys(t).length * 16);
+    for (const { off, len } of Object.values(t)) end = Math.max(end, off + len);
+  });
+  return Math.ceil(end / 4) * 4;
+}
+
+/**
+ * 1.36 [SEC-10] M8: what the font draws, whatever its names say: the SHA-256 of the first face's outlines (glyf, or CFF / CFF2)
+ * and its cmap, in hex. Two files with these the same draw the same letters.
+ */
+export async function fontGlyphs(b) {
+  const t = fontTables(b)?.[0];
+  if (!t) return null;
+  const parts = ["glyf", "loca", "CFF ", "CFF2", "cmap"].filter((k) => t[k]).map((k) => b.subarray(t[k].off, t[k].off + t[k].len));
+  const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { all.set(p, at); at += p.length; }
+  const digest = await crypto.subtle.digest("SHA-256", all);
+  return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 function rfNameText(b, off, len, platform) {
@@ -214,15 +255,15 @@ async function rfPost(d, env, request) {
   const hit = await d.overLimit(env, now, [["device", `rfont|${dev}`, FONT_LIMITS.perDay, DAY],
     ["network", `rfontnet|${net.day}`, FONT_LIMITS.perNetworkDay, DAY], ["network", `rfontall|${Math.floor(now / DAY)}`, FONT_LIMITS.allDay, DAY]]);
   if (hit) return hit;
-  // 1.36 [SEC-10] H3·M7: others get it after the operator looked, unless its sender already had a font passed and the font's own
-  // words name an open licence.
-  const passed = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_fonts WHERE owner = ? AND state = 'ok' AND decided_at IS NOT NULL", dev);
-  const state = (passed?.n ?? 0) >= 1 && fontLicenseSays(info) ? "ok" : "pending";
+  // 1.36 [SEC-10] H3·M7·M8: others get it after the operator looked, always. The words of its name table are the sender's to
+  // write, so they only help the operator (beside the font already shared that draws the same, fontAdmin).
+  const state = "pending";
+  const glyphs = await fontGlyphs(bytes);
   const parts = [];
   for (let i = 0; i < body.ttf.length; i += FONT_LIMITS.part) parts.push(body.ttf.slice(i, i + FONT_LIMITS.part));
   await d.batch(env, [
-    d.stmt(env, "INSERT INTO recipe_fonts (id, owner, name, license, bytes, parts, state, info, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id, dev, rfName(body.name), body.license, bytes.length, parts.length, state, JSON.stringify(info), now),
+    d.stmt(env, "INSERT INTO recipe_fonts (id, owner, name, license, bytes, parts, state, info, glyphs, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id, dev, rfName(body.name), body.license, bytes.length, parts.length, state, JSON.stringify(info), glyphs, now),
     ...parts.map((p, i) => d.stmt(env, "INSERT INTO recipe_font_parts (id, part, data) VALUES (?, ?, ?)", id, i, p)),
   ]);
   return d.json({ id, state }, 201);
@@ -294,13 +335,15 @@ export async function fontAdmin(d, request, env, path, url, now) {
   const method = request.method;
   if (path === "/recipes/fonts" && method === "GET") {
     const state = ["pending", "reported", "hidden", "ok"].includes(url.searchParams.get("state")) ? url.searchParams.get("state") : "pending";
-    const rows = await d.all(env, "SELECT id, name, license, bytes, state, reports, info, at FROM recipe_fonts WHERE state = ? ORDER BY reports DESC, at DESC LIMIT 100", state);
+    const rows = await d.all(env, "SELECT id, name, license, bytes, state, reports, info, glyphs, at FROM recipe_fonts WHERE state = ? ORDER BY reports DESC, at DESC LIMIT 100", state);
     const items = [];
     for (const r of rows) {
       const whys = await d.all(env, "SELECT why, COUNT(*) AS n FROM recipe_font_reports WHERE id = ? GROUP BY why", r.id);
       let info = {};
       try { info = JSON.parse(r.info ?? "{}") ?? {}; } catch {}
-      items.push({ ...r, info, says: fontLicenseSays(info), licenseName: FONT_LICENSE_NAMES[r.license],
+      const { glyphs, ...row } = r;
+      items.push({ ...row, info, says: fontLicenseSays(info), licenseName: FONT_LICENSE_NAMES[r.license],
+        like: r.state === "ok" ? [] : await fontLike(d, env, r, info),
         whys: Object.fromEntries(whys.map((w) => [w.why, w.n])), at: new Date(r.at).toISOString() });
     }
     const counts = await d.all(env, "SELECT state, COUNT(*) AS n FROM recipe_fonts GROUP BY state");
@@ -316,6 +359,33 @@ export async function fontAdmin(d, request, env, path, url, now) {
     return d.json({ id: m[1], state });
   }
   return null;
+}
+
+/**
+ * 1.36 [SEC-10] M8 (PC 7차): shared fonts like a waiting one, for the operator — one that draws the same (its glyphs), else one whose
+ * name table names the same family or copyright — with how many bytes this one has more (+) or fewer (−). At most three.
+ */
+async function fontLike(d, env, r, info) {
+  const out = [];
+  const seen = new Set([r.id]);
+  const add = (f, why) => {
+    if (seen.has(f.id) || out.length >= 3) return;
+    seen.add(f.id);
+    out.push({ id: f.id, name: f.name, why, diff: r.bytes - f.bytes });
+  };
+  if (r.glyphs) {
+    for (const f of await d.all(env, "SELECT id, name, bytes FROM recipe_fonts WHERE state = 'ok' AND glyphs = ? LIMIT 3", r.glyphs)) add(f, "glyphs");
+  }
+  const keys = [["family", info.family], ["copyright", info.copyright]].filter(([, v]) => v);
+  if (keys.length && out.length < 3) {
+    for (const f of await d.all(env, "SELECT id, name, bytes, info FROM recipe_fonts WHERE state = 'ok' ORDER BY at DESC LIMIT 300")) {
+      let fi = {};
+      try { fi = JSON.parse(f.info ?? "{}") ?? {}; } catch {}
+      const hit = keys.find(([k, v]) => fi[k] === v);
+      if (hit) add(f, hit[0]);
+    }
+  }
+  return out;
 }
 
 /** 이 휴대폰이 보낸 정보 모두 지우기: the fonts it shared and its reports. */

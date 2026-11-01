@@ -79,6 +79,110 @@ internal object FontNames {
         return Info(out["family"], out["copyright"], out["maker"], out["license"], out["licenseUrl"], vendor, cls, pFamily, pSerif, fixed)
     }
 
+    /**
+     * 1.36 [SEC-10] M8 (보안 점검): where the font's own bytes end — its headers and every table of every face, rounded up to 4, as
+     * the server reads it (`recipe-fonts.js` fontEnd) — or null when the directory does not hold together.
+     */
+    fun end(b: ByteArray): Int? {
+        if (b.size < 12) return null
+        val ttc = String(b, 0, 4, Charsets.ISO_8859_1) == "ttcf"
+        val n = if (ttc) u32(b, 8).toInt() else 1
+        if (n !in 1..16 || (ttc && 12 + n * 4 > b.size)) return null
+        var end = if (ttc) 12L + n * 4 else 0L
+        if (ttc && u16(b, 4) == 2 && 12 + n * 4 + 12 <= b.size) {
+            end += 12
+            val len = u32(b, 12 + n * 4 + 4)
+            val off = u32(b, 12 + n * 4 + 8)
+            if (off != 0L && off + len <= b.size) end = maxOf(end, off + len)
+        }
+        for (k in 0 until n) {
+            val at = if (ttc) u32(b, 12 + k * 4).toInt() else 0
+            if (at < 0 || at + 12 > b.size) return null
+            val num = u16(b, at + 4)
+            if (num !in 1..64 || at + 12 + num * 16 > b.size) return null
+            end = maxOf(end, at + 12L + num * 16)
+            for (i in 0 until num) {
+                val r = at + 12 + i * 16
+                val off = u32(b, r + 8)
+                val len = u32(b, r + 12)
+                if (off + len > b.size) return null
+                end = maxOf(end, off + len)
+            }
+        }
+        return ((end + 3) / 4 * 4).toInt()
+    }
+
+    /**
+     * [b] without bytes past its last table: they are not part of the font (the server turns such a file away, and they only change
+     * its id), so the font goes in, and goes along with a recipe, as the font it is.
+     */
+    fun trimmed(b: ByteArray): ByteArray = end(b)?.takeIf { it < b.size }?.let { b.copyOf(it) } ?: b
+
+    /**
+     * 1.36 PC 확인 7차 (사용성 제안 "한글 없는 글꼴은 넣을 때 알려 주기"): whether its cmap draws 가 and 한; null when the cmap does not
+     * read (then nothing is said).
+     */
+    fun hangul(b: ByteArray): Boolean? {
+        val cmap = tables(b)?.get("cmap") ?: return null
+        val (base, size) = cmap
+        if (size < 4) return null
+        val count = u16(b, base + 2)
+        var best = -1
+        var bestScore = 0
+        for (i in 0 until count) {
+            val r = base + 4 + i * 8
+            if (r + 8 > base + size) break
+            val p = u16(b, r)
+            val e = u16(b, r + 2)
+            val off = base + u32(b, r + 4).toInt()
+            val format = u16(b, off)
+            val score = when {
+                format == 12 && (p == 3 && e == 10 || p == 0) -> 3
+                format == 4 && (p == 3 && e == 1 || p == 0) -> 2
+                else -> 0
+            }
+            if (score > bestScore) { best = off; bestScore = score }
+        }
+        if (best < 0) return null
+        return listOf(0xAC00, 0xD55C).all { glyphOf(b, best, it) != 0 }
+    }
+
+    private fun glyphOf(b: ByteArray, at: Int, c: Int): Int = when (u16(b, at)) {
+        4 -> {
+            val segs = u16(b, at + 6) / 2
+            val ends = at + 14
+            val starts = ends + segs * 2 + 2
+            val deltas = starts + segs * 2
+            val ranges = deltas + segs * 2
+            var g = 0
+            for (k in 0 until segs) {
+                val end = u16(b, ends + k * 2)
+                if (end < c) continue
+                val start = u16(b, starts + k * 2)
+                if (start > c) break
+                val delta = u16(b, deltas + k * 2)
+                val ro = u16(b, ranges + k * 2)
+                g = if (ro == 0) (c + delta) and 0xFFFF
+                    else u16(b, ranges + k * 2 + ro + 2 * (c - start)).let { if (it == 0) 0 else (it + delta) and 0xFFFF }
+                break
+            }
+            g
+        }
+        12 -> {
+            val groups = u32(b, at + 12).toInt()
+            var g = 0
+            for (k in 0 until groups.coerceAtMost(100_000)) {
+                val r = at + 16 + k * 12
+                if (r + 12 > b.size) break
+                val start = u32(b, r)
+                val end = u32(b, r + 4)
+                if (c in start..end) { g = (u32(b, r + 8) + (c - start)).toInt(); break }
+            }
+            g
+        }
+        else -> 0
+    }
+
     /** The first face's tables by tag: offset and length, or null when the file does not read as one. */
     private fun tables(b: ByteArray): Map<String, Pair<Int, Int>>? {
         if (b.size < 12) return null

@@ -1542,5 +1542,10 @@ test("[SEC-10] 마을 장터 › 글꼴: a first font waits with what it says of
   await u.click(`#main [data-act="recipe-font"][data-id="${id}"][data-key="ok"]`);
   await u.settle(20);
   assert.equal((await call("GET", `/api/recipes/fonts/${id}`)).status, 200, "others get it now");
+  // 1.36 [SEC-10] M8: the same letters sent again under another name wait beside the one already shared.
+  await call("POST", "/api/recipes/fonts", { device: device(2), name: "복사본", license: "ofl", ttf: fakeFont({ family: "새 이름", maker: "x" }).toString("base64") }, from(2));
+  await u.click('#main [data-act="font-state"][data-key="pending"]');
+  await u.settle(20);
+  assert.match(u.text("#main"), /글자 모양이 같은 글꼴을 나누는 중: 손글씨 · [+−]\d+B/);
   assert.deepEqual(u.errors, []);
 });

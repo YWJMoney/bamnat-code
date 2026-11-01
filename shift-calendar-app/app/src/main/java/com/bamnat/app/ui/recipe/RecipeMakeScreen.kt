@@ -806,6 +806,17 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
             else if (l.level != RecipeLint.Level.OK) TextButton(onClick = { vm.go(l.step) }) { Text("가기") }
         }
     }
+    // [MAT-06] PC 확인 7차: the fonts that will not go along, said before 올리기 (not only after).
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val fontLines by androidx.compose.runtime.produceState(emptyList<String>(), s.recipe) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.recipe.RecipeFonts.before(ctx, s.recipe) }.getOrDefault(emptyList()) }
+    }
+    fontLines.forEach { t ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("!", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.width(24.dp))
+            Text(t, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        }
+    }
     ExampleCalendars(s.recipe)
     Text("어디에 둘까요?", style = MaterialTheme.typography.titleSmall)
     listOf("public" to "장터에 올리기 (바로 모두에게 보여요)", "link" to "링크로만 (링크를 받은 분만 열어요)", "private" to "나만 (내 휴대폰들에서만 열어요)").forEach { (k, label) ->

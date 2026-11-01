@@ -54,6 +54,24 @@ object RecipeFonts {
         return Sent(shared, kept, waiting, sold)
     }
 
+    /**
+     * PC 확인 7차 (사용성 제안 "올리기 전에 유료라 함께 안 가는 글꼴을 미리"): before 올리기, a line for each font [r] names that will not go
+     * along (a paid foundry's, not marked open, over 8MB), and one for those that wait for the operator. Read off the main thread.
+     */
+    fun before(c: android.content.Context, r: Recipe): List<String> {
+        val ids = idsIn(r)
+        if (ids.isEmpty()) return emptyList()
+        val mine = UserFonts.list(c).filter { it.id in ids && !it.received }
+        val q = { names: List<String> -> "‘${names.joinToString("’, ‘")}’ 글꼴은" }
+        return listOfNotNull(
+            mine.filter { it.sold }.map { it.name }.takeIf { it.isNotEmpty() }?.let { "${q(it)} 유료 글꼴이라 함께 가지 않아요. 받는 분께는 비슷한 글꼴로 보여요" },
+            mine.filter { !it.sold && !it.open }.map { it.name }.takeIf { it.isNotEmpty() }?.let { "${q(it)} 공개 글꼴로 밝히지 않아 함께 가지 않아요. 글꼴 고르기 › 내 글꼴에서 밝힐 수 있어요" },
+            mine.filter { !it.sold && it.open && it.bytes > RecipeClient.FONT_MAX }.map { it.name }.takeIf { it.isNotEmpty() }?.let { "${q(it)} 8MB가 넘어 함께 가지 않아요" },
+            mine.filter { !it.sold && it.open && it.bytes <= RecipeClient.FONT_MAX && !UserFonts.sent(c, it.id) }.map { it.name }.takeIf { it.isNotEmpty() }
+                ?.let { "${q(it)} 함께 가고, 운영자가 확인한 뒤(보통 하루 안) 받는 분께 보여요" },
+        )
+    }
+
     /** A line for 올리기's end when some fonts stay on this phone; null when every font goes along. */
     fun keptNote(s: Sent): String? = listOfNotNull(
         s.kept.takeIf { it.isNotEmpty() }?.let { names ->
@@ -62,9 +80,9 @@ object RecipeFonts {
         s.sold.takeIf { it.isNotEmpty() }?.let { names ->
             "‘${names.joinToString("’, ‘")}’ 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. 이 휴대폰에서는 그대로 쓰고, 받는 분께는 비슷한 글꼴로 보여요"
         },
-        // 1.36 [SEC-10] 보안 점검 H3·M7: a first font is looked at before others get it.
+        // 1.36 [SEC-10] 보안 점검 H3·M7·M8: a shared font is looked at before others get it.
         s.waiting.takeIf { it.isNotEmpty() }?.let { names ->
-            "‘${names.joinToString("’, ‘")}’ 글꼴은 처음 나누는 글꼴이라 운영자가 라이선스를 확인한 뒤(보통 하루 안) 받는 분께 보여요. 그 전에는 비슷한 글꼴로 보여요"
+            "‘${names.joinToString("’, ‘")}’ 글꼴은 운영자가 라이선스를 확인한 뒤(보통 하루 안) 받는 분께 보여요. 그 전에는 비슷한 글꼴로 보이고, 확인되면 받는 분 휴대폰에 저절로 들어가요"
         },
     ).joinToString("\n").ifBlank { null }
 
@@ -83,14 +101,14 @@ object RecipeFonts {
         return p.all.filter { (k, v) -> (v as? Long ?: 0L) >= cut && ID.matches(k) }.keys
     }
 
-    /** Asks again for the fonts still waiting; the names of those that came, for a line to the user. */
-    suspend fun retryWaiting(c: AppContainer): List<String> {
+    /** Asks again for the fonts still waiting; those that came, for a line to the user. */
+    suspend fun retryWaiting(c: AppContainer): List<UserFonts.Mine> {
         val ids = waiting(c)
         prefs(c).edit().apply { prefs(c).all.keys.filter { it !in ids }.forEach { remove(it) } }.apply()
         if (ids.isEmpty()) return emptyList()
         val before = UserFonts.ids(c.appContext)
         fetchIn(c, ids.joinToString(" "))
-        return UserFonts.list(c.appContext).filter { it.id in ids && it.id !in before }.map { it.name }
+        return UserFonts.list(c.appContext).filter { it.id in ids && it.id !in before }
     }
 
     /** Brings down the fonts named in [text] that this phone lacks; false for none got. */

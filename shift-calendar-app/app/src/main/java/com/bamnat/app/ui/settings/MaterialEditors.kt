@@ -36,6 +36,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.background
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -354,7 +356,7 @@ object FontRowFocus {
 
 /** A line that shows the font now (in itself) and opens [FontPickerDialog]. */
 @Composable
-fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
+fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     // PC 확인 2차: the font before the last pick, for 전 글꼴로 when the new one could not come down.
@@ -371,10 +373,27 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
     val name = when (load) { AppFonts.Load.LOADING -> "$base (받는 중)"; AppFonts.Load.FAILED -> "$base (못 받음)"; else -> base }
     // PC 확인 6차 (사용성 제안 "설정 검색에서 오면 글꼴 칸으로 바로"): the studio asks for this row by its label.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    // PC 확인 7차 (사용성 제안 "검색에서 온 칸을 화면 가운데로, 잠깐 반짝"): the row is asked into view with half a screen round it, so it
+    // lands in the middle, and its background flashes twice.
+    var rowSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val flash = remember { androidx.compose.animation.core.Animatable(0f) }
+    val screenPx = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
     androidx.compose.runtime.LaunchedEffect(label) {
-        if (FontRowFocus.label == label) { FontRowFocus.label = null; kotlinx.coroutines.delay(150); bring.bringIntoView() }
+        if (FontRowFocus.label == label) {
+            FontRowFocus.label = null
+            kotlinx.coroutines.delay(150)
+            val h = rowSize.height.toFloat()
+            val room = ((screenPx - h) / 2f).coerceAtLeast(0f)
+            bring.bringIntoView(androidx.compose.ui.geometry.Rect(0f, -room, rowSize.width.toFloat(), h + room))
+            repeat(2) {
+                flash.animateTo(1f, androidx.compose.animation.core.tween(220))
+                flash.animateTo(0f, androidx.compose.animation.core.tween(380))
+            }
+        }
     }
-    Row(Modifier.fillMaxWidth().bringIntoViewRequester(bring).clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    val flashColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f * flash.value)
+    Row(Modifier.fillMaxWidth().onSizeChanged { rowSize = it }.bringIntoViewRequester(bring).background(flashColor, MaterialTheme.shapes.small)
+        .clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -387,7 +406,7 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
         standIn = { onPick(AppFonts.standInId(value)) },
         // PC 확인 3차: 전 글꼴로 always, 처음대로 when there was none before.
         back = { onPick(if (picked) before else null) }, backName = if (picked && before != null) FontCatalog.byId(before!!)?.name else null)
-    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); before = value; picked = true; onPick(it) }
+    if (open) FontPickerDialog(value, numbersOnly, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); before = value; picked = true; onPick(it) }
 }
 
 /**
@@ -442,11 +461,18 @@ internal object FontRecent {
  * 내 글꼴 first with 넣기·빼기·나눌 수 있음. An open font comes down the first time its sample is drawn.
  */
 @Composable
-fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: () -> Unit, onPick: (String) -> Unit) {
     val ctx = LocalContext.current
     var group by remember { mutableStateOf<FontCatalog.Group?>(null) }
     var mine by remember { mutableStateOf(UserFonts.list(ctx)) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // PC 확인 7차: a font without 한글 is said so when it goes in (not in red: it works), and asked about once before it draws whole screens.
+    var note by remember { mutableStateOf<String?>(null) }
+    var askHangul by remember { mutableStateOf<UserFonts.Mine?>(null) }
+    val choose: (String) -> Unit = { id ->
+        val m = mine.firstOrNull { it.id == id }
+        if (m != null && !m.hangul && !m.hangulOk && !numbersOnly) askHangul = m else onPick(id)
+    }
     var stamp by remember { mutableIntStateOf(0) }
     var reportOf by remember { mutableStateOf<UserFonts.Mine?>(null) }
     var q by remember { mutableStateOf("") }
@@ -461,9 +487,10 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
         when (val r = UserFonts.add(ctx, uri, name)) {
             is UserFonts.Result.Added -> {
                 mine = UserFonts.list(ctx); stamp++
-                problem = if (r.font.sold) "‘${r.font.name}’은 글꼴 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(레시피와 함께 나눌 수 없어요)" else null
+                problem = if (r.font.sold) "‘${r.font.name}’ 글꼴은 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(레시피와 함께 나눌 수 없어요)" else null
+                note = if (!r.font.hangul) "‘${r.font.name}’ 글꼴에는 한글이 없어요. 숫자·영문만 이 글꼴로, 한글은 ${FontCatalog.byId(r.font.fallback)?.name ?: "기본 글꼴"}로 보여요" else null
             }
-            is UserFonts.Result.Problem -> problem = r.text
+            is UserFonts.Result.Problem -> { problem = r.text; note = null }
         }
     }
     AlertDialog(
@@ -480,12 +507,13 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                     placeholder = { Text("글꼴 이름 찾기 (예: 명조, 손글씨)") },
                     trailingIcon = { if (q.isNotEmpty()) TextButton(onClick = { q = "" }) { Text("지우기") } })
                 problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                note?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodySmall) }
                 LazyColumn(Modifier.heightIn(max = 420.dp)) {
                     if (group == null && q.isBlank() && recent.isNotEmpty()) {
                         item(key = "recent") { Text("최근 쓴 글꼴", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
                         items(recent, key = { "r-$it" }) { id ->
                             val n = FontCatalog.byId(id)?.name ?: mine.firstOrNull { it.id == id }?.name ?: "내 글꼴"
-                            FontLine(id, n, "최근", id == value, onPick)
+                            FontLine(id, n, "최근", id == value, choose)
                         }
                     }
                     if (group == null) {
@@ -500,7 +528,8 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         items(mine.filter { hit(it.name) }, key = { it.id + stamp }) { f ->
-                            FontLine(f.id, f.name, "비슷한 앱 글꼴: " + (FontCatalog.byId(f.fallback)?.name ?: "기본"), f.id == value, onPick)
+                            val like = FontCatalog.byId(f.fallback)?.name ?: "기본"
+                            FontLine(f.id, f.name, if (f.hangul) "비슷한 앱 글꼴: $like" else "한글 없음 · 한글은 $like", f.id == value, choose)
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (f.received) {
                                     // [MAT-06] A font that came with a recipe: its sender said it is open; 신고 if it is not.
@@ -523,7 +552,7 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                         .filter { it.second.isNotEmpty() }.forEach { (g, fonts) ->
                         item(key = "g-${g.name}") { Text(g.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)) }
                         items(fonts, key = { it.id }) { f ->
-                            FontLine(f.id, f.name, if (f.system) "휴대폰 기본" else if (!f.korean) "숫자·영문만 이 글꼴" else "공개 글꼴 · 고르면 받아요", f.id == value, onPick)
+                            FontLine(f.id, f.name, if (f.system) "휴대폰 기본" else if (!f.korean) "숫자·영문만 이 글꼴" else "공개 글꼴 · 고르면 받아요", f.id == value, choose)
                         }
                     }
                 }
@@ -531,6 +560,16 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+    askHangul?.let { f ->
+        val like = FontCatalog.byId(f.fallback)?.name ?: "기본 글꼴"
+        AlertDialog(
+            onDismissRequest = { askHangul = null },
+            title = { Text("한글이 없는 글꼴이에요") },
+            text = { Text("‘${f.name}’ 글꼴로는 숫자·영문만 보이고, 한글은 $like 글꼴로 보여요. 그래도 쓸까요? 다음부터는 묻지 않아요") },
+            confirmButton = { TextButton(onClick = { UserFonts.markHangulOk(ctx, f.id); mine = UserFonts.list(ctx); askHangul = null; onPick(f.id) }) { Text("그래도 쓰기") } },
+            dismissButton = { TextButton(onClick = { askHangul = null }) { Text("다른 글꼴 고르기") } },
+        )
+    }
     // [MAT-06] 받은 글꼴 신고: three phones take it down for everyone until the operator looks; it leaves this phone at once.
     reportOf?.let { f ->
         val whys = listOf("license" to "허락 없이 나눈 글꼴 같아요", "broken" to "글자가 깨져요", "bad" to "불쾌한 모양이에요")
