@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.settings.Chips
 import com.bamnat.app.ui.settings.ColorPick
@@ -84,6 +85,11 @@ internal fun PartsTool(
             FilterChip(selected = st == on, onClick = { on = st }, label = { Text(STATE_WORDS[st] ?: "언제나") })
         }
     }
+    // [TAB-07] PC 확인 b81b643f: the 판 부품 (근무 띠·타임라인·보드·표) drew nowhere in the month example, so they show their own small
+    // example here, and the box says which part it is.
+    BoardPartSample(id, bp)
+    Text("${BlueprintParts.LABELS[id] ?: id} 꾸미기" + (on?.let { " · ${STATE_WORDS[it]}" } ?: ""), style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.semantics { heading() })
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
     fun set(k: String, v: Any?) {
         val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + (k to v)).filterValues { it != null }
@@ -207,6 +213,8 @@ private fun statesFor(id: String): List<String> = when {
     id == "cal.week.day" -> listOf("sat", "sun")
     id == "app.tab" || id == "app.chip" -> listOf("sel")
     id == "money.amount" || id == "money.row" -> listOf("in", "out")
+    // [TAB-07] 1.36 탭 판 부품.
+    id == "cal.band.slot" || id == "cal.line.row" || id == "money.cal.cell" -> listOf("today", "sel")
     else -> emptyList()
 }
 

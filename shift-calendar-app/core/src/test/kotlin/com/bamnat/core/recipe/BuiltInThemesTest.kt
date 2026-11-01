@@ -13,7 +13,13 @@ import org.junit.Test
 class BuiltInThemesTest {
     @Test fun themesAreLooksOnlyAndPass() {
         val all = BuiltInThemes.all
-        for (s in WorkStyle.entries) assertEquals("$s 테마", 8, BuiltInThemes.of(s).size)
+        for (s in WorkStyle.entries) assertEquals("$s 테마", 9, BuiltInThemes.of(s).size)
+        for (s in WorkStyle.entries) {
+            val e = BuiltInThemes.of(s).first()
+            assertEquals("전문 달력이 맨 앞", "${e.title.substringBefore(' ')} 전문 달력", e.title)
+            val view = e.pieces.first { it.kind == PieceKind.TAB_VIEW }.values
+            assertEquals(com.bamnat.core.layout.CalendarBoard.expertFor(s).key, view["cal"])
+        }
         for (r in all) {
             val read = RecipeCodec.read(RecipeCodec.write(r))
             assertEquals("${r.title}: 조각이 다 읽혀요", r.pieces.size, read.pieces.size)

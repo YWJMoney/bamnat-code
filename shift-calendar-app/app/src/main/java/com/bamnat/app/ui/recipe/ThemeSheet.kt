@@ -270,6 +270,17 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
         onKeep = { ids -> c.wardrobe.keep(r, code, ids.toList()) },
     ) { picked ->
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        // [TAB-05] PC 확인 bf62e966 사용성 제안: before wearing a 전문 달력, one line on how the 달력·메모·가계부 will be laid out.
+        r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.TAB_VIEW }?.let { tv ->
+            val keep = buildSet {
+                if ("cal.board" in picked) add("cal")
+                if ("memo.view" in picked) addAll(listOf("memo", "memoBy", "memoSort"))
+                if ("money.board" in picked) add("money")
+            }
+            val shown = tv.copy(values = tv.values.filterKeys { it in keep })
+            if (shown.values.isNotEmpty()) Text("입으면 바뀌는 판: ${com.bamnat.core.recipe.RecipeDescribe.line(shown)}. 탭마다 보기 단추에서 언제든 바꿔요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        }
         val label = if (picked.containsAll(all)) "이 테마 입기" else "고른 ${picked.size}개 입히기"
         if (picked.isEmpty()) Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("입힐 것을 골라 주세요") }
         else if (needsAd) com.bamnat.app.ads.ThemeAdButton(

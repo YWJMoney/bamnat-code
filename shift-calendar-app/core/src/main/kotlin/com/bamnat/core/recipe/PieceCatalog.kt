@@ -362,7 +362,23 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     ),
 
     /** [BLU-01] 1.36 부품 꾸미기: every part of a screen with the same style and layout fields (docs/blueprint-format.md). */
-    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS);
+    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS),
+
+    /**
+     * [TAB-07] 1.36 탭 보기 (사용자 2026-11-01 "탭마다 엄청난 자유도"): the board the calendar is laid on (월·목록·근무 띠·타임라인), how the
+     * 메모장 shows its memos (목록·보드·표·갤러리, the board's 묶음 and the order) and the 가계부's board (목록·달력·분류 보드·표). Only how
+     * records are shown; never a record ([com.bamnat.core.layout.TabViews]).
+     */
+    TAB_VIEW(
+        "tabView", "탭 보기", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Pick("cal", com.bamnat.core.layout.CalendarBoard.KEYS, optional = true),
+            Field.Pick("memo", com.bamnat.core.memo.MemoView.VIEWS, optional = true),
+            Field.Text("memoBy", 22, optional = true, guard = false, check = { if (com.bamnat.core.memo.MemoView.validBy(it)) null else "memoBy" }),
+            Field.Text("memoSort", 23, optional = true, guard = false, check = { if (com.bamnat.core.memo.MemoView.validSort(it)) null else "memoSort" }),
+            Field.Pick("money", com.bamnat.core.money.LedgerBoard.KEYS, optional = true),
+        ),
+    );
 
     companion object {
         fun of(key: String): PieceKind? = entries.firstOrNull { it.key == key }

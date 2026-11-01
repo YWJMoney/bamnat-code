@@ -1362,11 +1362,21 @@ fun CalendarScreen(
                 }
             }
             // [CAL-06][CAL-08] The month's shifts at a glance, what the marks mean, and grid or list.
-            val showList = listView && paint == null
+            // [TAB-04] 1.36 달력 판: 월·목록·근무 띠·타임라인. A 목록 kept from before 1.36 (the old switch) still reads as 목록.
+            val savedBoard = remember(settings.tabViews, listView) {
+                com.bamnat.core.layout.TabViews.decode(settings.tabViews).cal.let { if (it == com.bamnat.core.layout.CalendarBoard.MONTH && listView) com.bamnat.core.layout.CalendarBoard.LIST else it }
+            }
+            val board = if (paint == null) savedBoard else com.bamnat.core.layout.CalendarBoard.MONTH
+            val showList = board != com.bamnat.core.layout.CalendarBoard.MONTH
+            val pickBoard: (com.bamnat.core.layout.CalendarBoard) -> Unit = { b ->
+                vm.setListView(b == com.bamnat.core.layout.CalendarBoard.LIST)
+                vm.setBoard(b)
+            }
             val countsPart: @Composable (Modifier) -> Unit = { place ->
-                Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // The counts take what is left, so the two buttons always sit at the right edge.
-                    // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                // [TAB-04] PC 확인 bf62e966: at 1.3× text the '월 ▾' button pushed '휴 10' off the row, so with big text the counts
+                // take a line of their own under the buttons.
+                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.2f
+                val teamsChip: @Composable () -> Unit = {
                     openTeams?.let { open ->
                         androidx.compose.material3.AssistChip(
                             // [CAL-45] Unfolded, the teams open beside the month; on the cover screen, their own page.
@@ -1376,8 +1386,27 @@ fun CalendarScreen(
                             modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "모든 조 보기와 대근 찾기" },
                         )
                     }
+                }
+                val switch: @Composable () -> Unit = {
+                    Box {
+                        var boardMenu by remember { mutableStateOf(false) }
+                        CalendarViewSwitch(listView = showList, onListView = { if (paint == null) boardMenu = true }, onLegend = { legendOpen = true }, boardLabel = board.label)
+                        CalendarBoardMenu(boardMenu, board, com.bamnat.core.layout.CalendarBoard.expertFor(settings.workStyle), onPick = pickBoard, onDismiss = { boardMenu = false })
+                    }
+                }
+                if (bigText) Column(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        teamsChip()
+                        Spacer(Modifier.weight(1f))
+                        switch()
+                    }
+                    if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The counts take what is left, so the two buttons always sit at the right edge.
+                    // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                    teamsChip()
                     Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
-                    CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
+                    switch()
                 }
             }
             if (sideways) {
@@ -1414,7 +1443,11 @@ fun CalendarScreen(
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
                     userScrollEnabled = !stamping,
                 ) { page ->
-                    if (showList) {
+                    if (board == com.bamnat.core.layout.CalendarBoard.BAND) {
+                        ShiftBandMonth(pageToMonth(baseMonth, page), snap, settings.weekStart, today, selected, onDayClick)
+                    } else if (board == com.bamnat.core.layout.CalendarBoard.LINE) {
+                        TimelineMonth(pageToMonth(baseMonth, page), snap, today, selected, onDayClick)
+                    } else if (showList) {
                         AgendaList(
                             month = pageToMonth(baseMonth, page),
                             focus = focus,

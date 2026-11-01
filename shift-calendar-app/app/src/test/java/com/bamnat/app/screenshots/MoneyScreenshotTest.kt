@@ -112,10 +112,10 @@ class MoneyScreenshotTest : ScreenshotBase() {
     @Test fun calBusinessDay() = shoot("299_folded_business_day", FOLDED, plain(WorkStyle.BUSINESS, moreSales) { openDay(today) })
 
     @Test fun calListField() = shoot("303_folded_field_list_view", FOLDED, plain(WorkStyle.FIELD, moreJobs) {
-        tapText("목록으로 보기", exact = true, scrolls = 0)
+        pickListBoard()
     })
     @Test fun calListBusiness() = shoot("304_unfolded_business_list_view", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales) {
-        tapText("목록으로 보기", exact = true, scrolls = 0)
+        pickListBoard()
     })
 
     @Test fun calLegendField() = shoot("306_folded_legend_field", FOLDED, plain(WorkStyle.FIELD, moreJobs) {

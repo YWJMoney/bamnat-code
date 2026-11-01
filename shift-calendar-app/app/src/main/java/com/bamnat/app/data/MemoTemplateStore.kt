@@ -26,7 +26,13 @@ class MemoTemplateStore(private val context: Context) {
         _items.value = kept
     }
 
-    fun add(t: MemoTemplate) = save(_items.value.filter { it.id != t.id } + t)
+    /** Adds [t]; false when the list is already full ([MemoTemplate.MAX]), so the caller can say so instead of dropping it unseen. */
+    fun add(t: MemoTemplate): Boolean {
+        val others = _items.value.filter { it.id != t.id }
+        if (others.size >= MemoTemplate.MAX) return false
+        save(others + t)
+        return true
+    }
     fun remove(id: String) = save(_items.value.filter { it.id != id })
 
     private fun read(): List<MemoTemplate> = runCatching { decode(JSONArray(prefs.getString(KEY, "[]"))) }.getOrDefault(emptyList())

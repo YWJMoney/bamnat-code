@@ -827,6 +827,8 @@ internal object StudioStarters {
             com.bamnat.core.recipe.ScreenLooks.ALL, com.bamnat.core.recipe.ScreenLook(bg = 0xFFFFF8EEL, card = 0xFFFFFFFFL, accent = 0xFFE07A5FL),
         ).encode())
         PieceKind.COMPANY, PieceKind.BUNDLE -> emptyMap()
+        // [TAB-07] 1.36 탭 보기: a 근무 띠 calendar and a 보드 메모장 to start from.
+        PieceKind.TAB_VIEW -> mapOf("cal" to "rota", "memo" to "board", "memoBy" to "tag", "money" to "board")
     }
 }
 

@@ -416,10 +416,10 @@ class ZScreenshotTest : ScreenshotBase() {
         val file = runBlocking { c.backupManager.export() }
         view.edit().putBoolean("list", false).commit()
         open(FOLDED) {
-            assertTrue("the month as a grid", appears("목록으로 보기", exact = true))
+            assertTrue("the month as a grid", appears("달력 판 고르기, 지금 월", exact = true))
             runBlocking { c.backupManager.restore(file) }
             settle()
-            assertTrue("the list, at once", appears("달력으로 보기", exact = true))
+            assertTrue("the list, at once", appears("달력 판 고르기, 지금 목록", exact = true))
         }
     }
 }

@@ -452,18 +452,15 @@ class MemoEditorViewModel(
     /** [RCP-11] 틀에서 시작: the template's title, list or text and repeat; the date and calendars stay as they are. */
     fun startFrom(t: com.bamnat.core.memo.MemoTemplate, answers: Map<String, String> = emptyMap()) = update { t.start(it.date, com.bamnat.core.time.Today.date(), it, answers) }
 
-    /** [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. */
-    fun saveAsTemplate(): Boolean {
+    /**
+     * [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. [TAB-03] 1.36: under the name the user
+     * gave, with the "칸: 값" lines they picked as 입력 칸. Null when saved, else why not (empty memo, 40 틀 already).
+     */
+    fun saveAsTemplate(name: String = "", asked: Set<String> = emptySet()): String? {
         val m = _memo.value
-        if (m.isBlank) return false
-        container.memoTemplates.add(com.bamnat.core.memo.MemoTemplate(
-            id = "m" + com.bamnat.core.time.Today.millis().toString(36),
-            title = m.title.ifBlank { (m.checklist.firstOrNull()?.text ?: m.body.lineSequence().firstOrNull()).orEmpty() }.take(30),
-            check = if (m.isChecklist) m.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
-            body = if (m.isChecklist) "" else m.body.take(300),
-            repeat = m.repeat.takeIf { it.startsWith("W") || it.startsWith("M") }.orEmpty(),
-        ))
-        return true
+        if (m.isBlank) return "빈 메모는 틀로 저장할 수 없어요"
+        val t = com.bamnat.core.memo.MemoTemplate.fromMemo(m, "m" + com.bamnat.core.time.Today.millis().toString(36), name, asked)
+        return if (container.memoTemplates.add(t)) null else "틀이 ${com.bamnat.core.memo.MemoTemplate.MAX}개로 가득 찼어요. 새 메모의 ‘틀에서 시작’에서 안 쓰는 틀을 지워 주세요"
     }
 
     fun removeTemplate(id: String) = container.memoTemplates.remove(id)

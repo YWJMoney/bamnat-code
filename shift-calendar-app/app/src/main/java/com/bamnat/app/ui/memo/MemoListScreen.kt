@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Palette
@@ -210,8 +211,28 @@ fun MemoListScreen(
             }
             // With the search box hidden there is no icon to unfold them, so they stay open.
             if (!fold || filtersOpen || filterOn || parts.none { it.part == MemoPart.SEARCH && it.shown }) FilterRow(state, vm)
+            // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
+            val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
+            val memoView = tabViews.memo
+            val shown = remember(state.tab, state.upcoming, state.past, state.general) {
+                if (state.tab == MemoTab.CALENDAR) (state.upcoming + state.past).flatMap { it.memos }.distinctBy { it.id } else state.general
+            }
+            val shiftOf = remember(state.upcoming, state.past) {
+                val m = (state.upcoming + state.past).associate { it.date to it.day?.shiftType?.name };
+                { d: LocalDate -> m[d] }
+            }
+            val propColumns = remember(shown) { com.bamnat.core.memo.MemoProps.columns(shown) }
+            val setView: (com.bamnat.core.memo.MemoView) -> Unit = { v ->
+                container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
+            }
+            // PC 확인 bad7d860 사용성 제안: the chips show from the first visit, so the views are found before there are memos.
+            if (state.loaded) MemoViewChips(memoView, propColumns, setView)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
+                memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions)
+                memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
+                !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
                 state.tab == MemoTab.CALENDAR -> CalendarMemoList(state, today, actions)
                 else -> GeneralMemoGrid(state, actions)
             }
@@ -289,7 +310,7 @@ internal fun MemoEditSheet(layout: String, update: ((com.bamnat.app.data.AppSett
     )
 }
 
-private class CardActions(
+internal class CardActions(
     val onOpen: (Memo) -> Unit,
     val onSelect: (Memo) -> Unit,
     val onTogglePin: (Memo) -> Unit,
@@ -563,7 +584,7 @@ fun ShiftLabel(day: ResolvedDay?, modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemoCard(
+internal fun MemoCard(
     memo: Memo,
     query: String,
     selected: Boolean,
@@ -572,6 +593,8 @@ private fun MemoCard(
     actions: CardActions,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var toLedger by remember { mutableStateOf(false) }
+    if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
@@ -649,6 +672,8 @@ private fun MemoCard(
                 }
                 Column(Modifier.padding(end = 10.dp)) {
                     if (look.layout != "compact") MemoContent(memo, query)
+                    // [TAB-01] 1.36 메모 속성: the memo's "칸: 값" lines as pills.
+                    if (look.layout != "compact") PropPills(memo, modifier = Modifier.padding(top = 6.dp))
                     Footer(memo, showDate && look.date != false)
                 }
             }
@@ -664,6 +689,12 @@ private fun MemoCard(
                 text = { Text("복제") },
                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                 onClick = { menu = false; actions.onDuplicate(memo) },
+            )
+            // [TAB-03] PC 확인 bad7d860: '가계부에 넣기' from a card's menu too.
+            DropdownMenuItem(
+                text = { Text("가계부에 넣기") },
+                leadingIcon = { Icon(Icons.Outlined.AccountBalanceWallet, null) },
+                onClick = { menu = false; toLedger = true },
             )
             DropdownMenuItem(
                 text = { Text("여러 개 선택") },
