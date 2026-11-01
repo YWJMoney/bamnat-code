@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -512,7 +513,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     2 -> StepInputs(s, vm)
                     3 -> StepLook(s, vm)
                     4 -> StepWords(s, vm)
-                    else -> StepCheck(s, vm)
+                    else -> StepCheck(s, vm) { scope.launch { scroll.animateScrollTo(0) } }
                 }
                 s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 마을 › 공방 › 내 것에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
@@ -703,7 +704,7 @@ private fun StepWords(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 }
 
 @Composable
-private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
+private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onTop: () -> Unit = {}) {
     val lines = vm.lint
     lines.forEach { l ->
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -760,8 +761,8 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }
     // PC 확인 W31 1.36: a '!' is advice — said so, and it never holds 올리기 back.
     val advice = lines.count { it.level == RecipeLint.Level.WARN }
-    if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.tertiary)
+    if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요 · 보기", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").

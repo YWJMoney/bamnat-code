@@ -384,7 +384,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 if (tab != null) { uploadWhat = tab; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
-                                    publishing = Triple(body, parent, vm.nextOf()); preparing = false
+                                    publishing = Triple(body, parent, vm.nextOf())
                                 }
                             } }, enabled = !preparing && publishing == null,
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text(if (preparing) "준비 중…" else "올리기") }
@@ -634,12 +634,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                 }
             },
+            // PC 확인 W37 1.36 (고르기 창 '다음' 뒤 8초 동안 아무 표시 없음): 준비 중 with a spinner, and this window stays until 올리기 is up.
             confirmButton = { TextButton(onClick = {
-                uploadWhat = null
-                val (body, parent) = vm.upload(if (alone) tab else null)
-                publishing = Triple(body, parent, if (alone) null else vm.nextOf())
-            }) { Text("다음") } },
-            dismissButton = { TextButton(onClick = { uploadWhat = null }) { Text("닫기") } },
+                preparing = true
+                scope.launch {
+                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(if (alone) tab else null) }
+                    publishing = Triple(body, parent, if (alone) null else vm.nextOf())
+                }
+            }, enabled = !preparing) {
+                if (preparing) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
+                Text(if (preparing) "준비 중…" else "다음")
+            } },
+            dismissButton = { TextButton(onClick = { uploadWhat = null }, enabled = !preparing) { Text("닫기") } },
         )
     }
     publishing?.let { (body, parent, own) ->
@@ -647,6 +653,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         androidx.compose.ui.window.Dialog(onDismissRequest = { publishing = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize()) {
+                // W37: once 올리기 is drawn, the 무엇을 올릴까요 window and 준비 중 go.
+                LaunchedEffect(Unit) { uploadWhat = null; preparing = false }
                 val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
                     com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }

@@ -690,7 +690,16 @@ private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart
 internal fun colorNames(cs: List<Long>): List<String> {
     val names = cs.map(::colorName)
     val seen = mutableMapOf<String, Int>()
-    return names.map { n -> if (names.count { it == n } < 2) n else "$n ${seen.merge(n, 1, Int::plus)}" }
+    fun light(c: Long): Float { val a = FloatArray(3); android.graphics.Color.colorToHSV(c.toInt(), a); return a[2] * (1f - a[1] / 2f) }
+    return names.mapIndexed { i, n ->
+        val same = names.indices.filter { names[it] == n }
+        when {
+            same.size < 2 -> n
+            // PC 제안 1.36: two that read alike are told apart in words, the lighter and the deeper one.
+            same.size == 2 -> if (light(cs[i]) >= light(cs[same.first { it != i }])) "더 밝은 $n" else "더 짙은 $n"
+            else -> "$n ${seen.merge(n, 1, Int::plus)}"
+        }
+    }
 }
 
 /** A colour said in words for 화면 읽기: light or dark and its kind. */
