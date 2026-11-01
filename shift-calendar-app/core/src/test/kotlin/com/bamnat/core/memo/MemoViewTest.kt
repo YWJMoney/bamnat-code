@@ -54,6 +54,10 @@ class MemoViewTest {
         assertEquals(MemoProps.Type.STAR, cols["별점"])
         assertEquals(3.0, MemoProps.average(ms, "별점")!!, 0.001)
         assertEquals(15000.0, MemoProps.total(ms, "금액")!!, 0.001)
+        val typed = listOf(memo(3, "별점: 4"), memo(4, "별점: 5점"))
+        assertEquals(MemoProps.Type.STAR, MemoProps.columns(typed).toMap()["별점"])
+        assertEquals(4.5, MemoProps.average(typed, "별점")!!, 0.001)
+        assertEquals(null, MemoProps.total(typed, "별점"))
     }
 
     @Test fun savingAMemoAsTemplateTurnsPickedLinesIntoAsks() {

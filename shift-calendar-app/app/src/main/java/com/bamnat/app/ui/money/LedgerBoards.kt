@@ -72,7 +72,10 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
     val days = remember(shown, month) { LedgerBoard.days(shown, month) }
     val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
     val weeks = (0 until 6).map { w -> (0 until 7).map { first.plusDays((w * 7 + it).toLong()) } }.filter { wk -> wk.any { YearMonth.from(it) == month } }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    // [TAB-07] 부품 money.cal · money.cal.cell (오늘, 고른 날).
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val today = com.bamnat.core.time.Today.date()
+    Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal"), RoundedCornerShape(10.dp))), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(Modifier.fillMaxWidth()) {
             for (d in listOf("일", "월", "화", "수", "목", "금", "토")) Text(d, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -86,6 +89,7 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
                     Modifier.weight(1f).heightIn(min = 54.dp)
                         .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
                         .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
+                        .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on })), RoundedCornerShape(8.dp)))
                         .clickable(enabled = inMonth) { onPick(date) }
                         .clearAndSetSemantics {
                             contentDescription = "${Fmt.monthDay(date)}" + (day?.let { d -> " 지출 ${Fmt.won(d.expense)}" + (if (d.income > 0) " 수입 ${Fmt.won(d.income)}" else "") } ?: " 기록 없음")
@@ -109,9 +113,13 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
 @Composable
 internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -> Unit) {
     val columns = remember(shown) { LedgerBoard.columns(shown) }
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    // [TAB-07] 부품 money.board · money.board.col.
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val colPart = bp.style("money.board.col")
+    Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.board"), RoundedCornerShape(0.dp))).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         for (col in columns) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(220.dp)) {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.width(220.dp).then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp)))) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(col.category, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
                     if (col.expense > 0) Text("나감 ${Fmt.won(col.expense)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
@@ -142,7 +150,14 @@ private const val MAX_BOARD_LINES = 30
 @Composable
 internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, onSort: (Pair<String, Boolean>) -> Unit, onOpen: (MoneyEntry) -> Unit) {
     val rows = remember(shown, sort) { LedgerBoard.sortTable(shown, sort.first, sort.second) }
-    val widths = mapOf("date" to 64.dp, "category" to 72.dp, "what" to 120.dp, "amount" to 96.dp)
+    // [TAB-07] 부품 money.table · money.table.row. PC 확인 b81b643f: the date wrapped to two lines with the right side empty, so the
+    // date is short ("11/12", one line) and 내용 takes the room that is left.
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val rowPart = bp.style("money.table.row")
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.table"), RoundedCornerShape(10.dp)))) {
+    val fixed = 64.dp + 84.dp + 104.dp
+    val widths = mapOf("date" to 64.dp, "category" to 84.dp, "what" to maxOf(120.dp, maxWidth - fixed), "amount" to 104.dp)
+    val total = widths.values.fold(0.dp) { a, b -> a + b }
     val sideways = rememberScrollState()
     Column(Modifier.fillMaxWidth().horizontalScroll(sideways)) {
         Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))) {
@@ -150,24 +165,27 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
                 val on = sort.first == key
                 Row(Modifier.width(widths[key]!!).clickable { onSort(key to (if (on) !sort.second else key == "date" || key == "amount")) }.padding(8.dp)
                     .semantics { contentDescription = "$label 열, 눌러 정렬"; selected = on }, verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     if (on) Icon(if (sort.second) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward, null, Modifier.size(14.dp))
                 }
             }
         }
         for (e in rows.take(MAX_TABLE_ROWS)) {
             val (amount, color) = signedText(e)
-            Row(Modifier.clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(Fmt.monthDay(e.date), style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(widths["date"]!!).padding(horizontal = 8.dp))
+            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(rowPart, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${e.date.monthValue}/${e.date.dayOfMonth}", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
+                    modifier = Modifier.width(widths["date"]!!).padding(horizontal = 8.dp).semantics { contentDescription = Fmt.monthDay(e.date) })
                 Text(e.category, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(widths["category"]!!).padding(horizontal = 8.dp))
                 Text(LedgerBoard.what(e), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(widths["what"]!!).padding(horizontal = 8.dp))
-                Text(amount, style = MaterialTheme.typography.bodySmall, color = color, textAlign = TextAlign.End, modifier = Modifier.width(widths["amount"]!!).padding(horizontal = 8.dp))
+                Text(amount, style = MaterialTheme.typography.bodySmall, color = color, textAlign = TextAlign.End, maxLines = 1, softWrap = false,
+                    modifier = Modifier.width(widths["amount"]!!).padding(horizontal = 8.dp))
             }
-            HorizontalDivider(Modifier.width(352.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            HorizontalDivider(Modifier.width(total), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
         if (rows.size > MAX_TABLE_ROWS) Text("앞의 ${MAX_TABLE_ROWS}줄만 보여요. 기간을 좁히면 다 보여요.", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
         Box(Modifier.height(8.dp))
+    }
     }
 }
 

@@ -151,7 +151,7 @@ internal fun MemoBoardView(memos: List<Memo>, view: MemoView, shiftOf: (LocalDat
     val colPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.col")
     val headPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.head")
     LazyRow(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board"), RoundedCornerShape(0.dp))),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -212,8 +212,11 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
             if (on) Icon(if (view.sort.startsWith("-")) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward, null, Modifier.size(14.dp))
         }
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-        Row(Modifier.border(1.dp, line, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))) {
+    // [TAB-07] 부품 memo.table · memo.table.head.
+    val headRowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.head")
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), RoundedCornerShape(10.dp)))) {
+        Row(Modifier.border(1.dp, line, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+            .then(com.bamnat.app.ui.parts.PartMods.box(headRowPart, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)))) {
             headCell("제목", MemoView.SORT_TITLE, titleW)
             Row(Modifier.horizontalScroll(sideways)) {
                 for ((c, _) in columns) headCell(c, "p:$c", colW)

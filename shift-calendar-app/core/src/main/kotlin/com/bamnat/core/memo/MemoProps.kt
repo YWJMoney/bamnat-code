@@ -19,6 +19,7 @@ object MemoProps {
 
     // A 칸 name: up to 20 letters, at most three words, not starting with a list mark or '#', with a letter in it (so "10:30 회의" is not one).
     private val LINE = Regex("^\\s*([^:#\\-•*\\s][^:\\n]{0,19}?)\\s*:\\s*(.+?)\\s*$")
+    private val STAR_WORDS = listOf("별점", "평점")
     private val STARS = Regex("^[★☆]{1,5}$")
     private val NUM = Regex("^[-+]?[0-9][0-9,]*(\\.[0-9]+)?$")
     private val MONEY = Regex("^[-+]?[0-9][0-9,]*\\s*(원|₩)$|^₩\\s*[0-9][0-9,]*$")
@@ -59,6 +60,10 @@ object MemoProps {
     fun read(label: String, raw: String, year: Int = com.bamnat.core.time.Today.date().year): Prop {
         val v = raw.trim()
         STARS.matchEntire(v)?.let { return Prop(label, v, Type.STAR, v.count { it == '★' }.toDouble()) }
+        // PC 확인 b81b643f: "별점: 4" is a 별점 (averaged in the 표, asked as stars in a 틀), not a number to add up.
+        if (STAR_WORDS.any { label.contains(it) }) v.removeSuffix("점").trim().toIntOrNull()?.takeIf { it in 1..5 }?.let {
+            return Prop(label, v, Type.STAR, it.toDouble())
+        }
         if (v in YES) return Prop(label, v, Type.CHECK, 1.0)
         if (v in NO) return Prop(label, v, Type.CHECK, 0.0)
         MAN.matchEntire(v)?.let { return Prop(label, v, Type.MONEY, it.groupValues[1].toDouble() * 10_000) }

@@ -173,7 +173,8 @@ internal fun TimelineMonth(
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val barColor = bp.style("cal.line.bar").fillColor
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+    val rowShape = RoundedCornerShape(8.dp)
+    Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line"), RoundedCornerShape(0.dp))).padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 64.dp, bottom = 4.dp)) {
             for (h in listOf("0", "6", "12", "18")) Text(h, style = MaterialTheme.typography.labelSmall, color = ink, modifier = Modifier.weight(1f))
         }
@@ -186,6 +187,8 @@ internal fun TimelineMonth(
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 30.dp)
                     .background(if (date == selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    // [TAB-07] 부품 cal.line.row (오늘, 고른 날).
+                    .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line.row", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked })), rowShape))
                     .clickable { onDay(date) }
                     .clearAndSetSemantics {
                         contentDescription = "${Fmt.monthDay(date)} ${day.shiftType?.name ?: "근무 없음"}" + (times?.let { " $it" } ?: "") +

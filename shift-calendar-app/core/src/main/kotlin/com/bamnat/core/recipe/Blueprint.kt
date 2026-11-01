@@ -38,7 +38,7 @@ object BlueprintParts {
         "cal.cell.spend" to "쓴 돈 줄", "cal.cell.lunar" to "음력 줄", "cal.cell.holiday" to "공휴일 이름", "cal.foot" to "달력 아래 요약",
         "memo.head" to "메모장 머리", "memo.tags" to "꼬리표 줄", "memo.card" to "메모 카드", "memo.card.title" to "메모 제목",
         "memo.card.body" to "메모 내용", "memo.card.date" to "메모 날짜",
-        "cal.band" to "근무 띠 판", "cal.band.slot" to "근무 띠 하루", "cal.line" to "타임라인 판", "cal.line.row" to "타임라인 하루 줄", "cal.line.bar" to "근무 막대",
+        "cal.band" to "근무 띠 판", "cal.band.slot" to "근무 띠 하루", "cal.line" to "타임라인 판", "cal.line.row" to "타임라인 하루 줄", "cal.line.bar" to "타임라인 근무 막대",
         "memo.prop" to "메모 속성", "memo.board" to "메모 보드", "memo.board.col" to "보드 칸", "memo.board.head" to "보드 칸 머리",
         "memo.table" to "메모 표", "memo.table.head" to "표 머리줄", "memo.table.row" to "표 한 줄",
         "money.cal" to "가계부 달력", "money.cal.cell" to "가계부 달력 칸", "money.board" to "분류 보드", "money.board.col" to "분류 칸",
