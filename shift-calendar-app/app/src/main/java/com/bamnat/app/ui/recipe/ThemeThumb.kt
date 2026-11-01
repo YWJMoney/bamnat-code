@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -90,7 +91,10 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
                             maxLines = 1, softWrap = false)
                         // PC 확인 V44: an example week says its days, 주·야·휴, as the calendar does.
                         if (look.example && d.label.isNotEmpty()) Text(d.label.take(1), fontSize = if (numbers) tiny else small, lineHeight = small, maxLines = 1, softWrap = false,
-                            color = if (off) ink.copy(alpha = 0.6f) else color, fontWeight = FontWeight.Bold,
+                            // PC 확인 7b26965a: on a dark card the day's own colour can be too dim to read; then the page's ink.
+                            color = if (off) ink.copy(alpha = 0.6f)
+                                else if (com.bamnat.core.layout.Contrast.ratio(color.argb(), (tint?.compositeOver(card) ?: card).argb()) < 3.0) ink else color,
+                            fontWeight = FontWeight.Bold,
                             modifier = Modifier.align(if (numbers) Alignment.BottomCenter else Alignment.Center).padding(bottom = if (numbers) 1.dp else 0.dp))
                         else if (!off && cellLook?.mark != "none") Box(
                             Modifier.align(if (cellLook?.markPlace == "bottom") Alignment.BottomCenter else Alignment.Center)

@@ -177,6 +177,7 @@ fun HubScreen(
  * [VIL-04] 1.36 마을 V4 '오늘의 마을': under the 팔로잉 줄, one thing for today that fits the kind of work — this week's pick, or a
  * popular one — changing each day; '오늘은 그만' folds it until tomorrow. Nothing shows while there is nothing to show.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.SharedPreferences, onRecipe: (String) -> Unit, onMake: () -> Unit = {}) {
     val today = com.bamnat.core.time.Today.date().toString()
@@ -195,13 +196,18 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     // PC 확인 V40: nothing for this kind of work yet: one line asking for its first, folded with 오늘은 그만 like the rest.
     if (r == null) {
         if (!looked || style == null) return
+        val bigEmpty = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+        val emptyButtons: @Composable () -> Unit = {
+            TextButton(onClick = onMake) { Text("만들기") }
+            TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text("아직 ${when (style) { WorkStyle.SHIFT -> "교대"; WorkStyle.DAY -> "일근"; WorkStyle.HOURLY -> "알바"; WorkStyle.FIELD -> "현장"; WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "투자" }} 작품이 없어요. 첫 작품을 만들어 보세요", style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                Text("아직 ${when (style) { WorkStyle.SHIFT -> "교대"; WorkStyle.DAY -> "일근"; WorkStyle.HOURLY -> "알바"; WorkStyle.FIELD -> "현장"; WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "투자" }} 작품이 없어요. 첫 작품을 만들어 보세요", style = MaterialTheme.typography.bodyMedium, maxLines = if (bigEmpty) 3 else 2)
+                if (bigEmpty) androidx.compose.foundation.layout.FlowRow { emptyButtons() }
             }
-            TextButton(onClick = onMake) { Text("만들기") }
-            TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
+            if (!bigEmpty) emptyButtons()
         }
         return
     }
@@ -210,12 +216,18 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
         // PC 확인: big enough to see the week, not an icon.
         r.thumb()?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 88.dp); Spacer(Modifier.padding(start = 8.dp)) }
+        // PC 확인 7b26965a ("아주 크게"에서 제목이 세로로 꺾여요): with big letters the two buttons go under the title.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+        val buttons: @Composable () -> Unit = {
+            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) { Text("입어 보기") }
+            TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
+        }
         Column(Modifier.weight(1f)) {
             Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = if (big) 2 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (big) androidx.compose.foundation.layout.FlowRow { buttons() }
         }
-        TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) { Text("입어 보기") }
-        TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
+        if (!big) buttons()
     }
 }
 
