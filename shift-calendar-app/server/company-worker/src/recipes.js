@@ -1477,12 +1477,16 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     code, action, String(reason).slice(0, 200), actorName, now);
   if (path === "/recipes" && method === "GET") {
     const tab = url.searchParams.get("tab") ?? "queue";
-    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
+    // 1.36 [GRW-12] PC 20ab0254: 사진 검토·고친 판에서 '작품 열기' — 작품 하나만 (지운 것은 빼고).
+    const code = (url.searchParams.get("code") ?? "").toUpperCase();
+    if (tab === "one" && !/^[2-9A-HJ-NP-Z]{8}$/.test(code)) return d.json({ error: "code", field: "code" }, 400);
+    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
+      one: "code = ? AND state != 'deleted'" }[tab]
       ?? "state = 'pending'";
-    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
+    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`, ...(tab === "one" ? [code] : []));
     const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${rows.map(() => "?").join(",")})
       GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
-    return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
+    return d.json({ tab, ...(tab === "one" ? { code } : {}), items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n })),
       hidden: r.hidden_reason ?? null })) });
   }

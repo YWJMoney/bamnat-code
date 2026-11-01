@@ -1520,3 +1520,32 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
   assert.deepEqual(t.errors, []);
 });
+
+test("[GRW-12] 작품 열기: one recipe opens by its code with its own buttons, and 돌아가기 leads back to where it was opened", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const s = server({ plaza: true });
+  const body = { format: "bamnat-recipe", v: 1, title: "열어 볼 세트", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const made = await s.call("POST", "/api/recipes", { device: device(1), recipe: body, scope: "public" }, from(1));
+  assert.equal(made.status, 201);
+  const code = made.data.code;
+  const t1 = await signedIn(s.env);
+  await t1.go("#/recipes");
+  await t1.click('[data-act="recipe-tab"][data-key="images"]');
+  // As a 사진 검토 row's link does (that list needs an uploaded photo, so the same button is put on the page here).
+  const b = t1.document.createElement("button");
+  b.dataset.act = "recipe-open";
+  b.dataset.id = code;
+  t1.$("#main").append(b);
+  await t1.click(b);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), new RegExp(`작품 ${code} 하나만`));
+  assert.match(t1.text("#main"), /열어 볼 세트/);
+  assert.ok(t1.$(`[data-act="recipe-do"][data-id="${code}"][data-key="hide"]`), "가리기 is right there");
+  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.chip)');
+  assert.match(back.textContent, /돌아가기 · 사진 검토/);
+  await t1.click(back);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), /볼 사진이 없어요/);
+  assert.deepEqual(t1.errors, []);
+});

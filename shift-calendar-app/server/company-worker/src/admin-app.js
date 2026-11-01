@@ -675,7 +675,7 @@ function adminApp(L, BUILD, M) {
         const t = S.recipeTab ?? "flagged";
         // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
         const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
-          month: "/recipes/makers/month" }[t] ?? `/recipes?tab=${t}`;
+          month: "/recipes/makers/month" }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : `/recipes?tab=${t}`);
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
@@ -2340,7 +2340,7 @@ function adminApp(L, BUILD, M) {
     const chips = `<div class="chips" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`;
     const month = m ? `<p class="hint">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
-    if (!d || (d.tab ?? tab) !== tab) return chips + skeleton(2);
+    if (!d || (d.tab ?? tab) !== tab || (tab === "one" && d.code !== S.recipeCode)) return chips + skeleton(2);
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
     // 1.36 [GRW-05] 기본 도구 후보·모두의 도구 (문의 › 스튜디오 요구에도 같은 목록).
@@ -2355,6 +2355,7 @@ function adminApp(L, BUILD, M) {
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
       // [RCX-32]
+      one: `작품 ${S.recipeCode ?? ""} 하나만 보고 있어요. 가리기·지우기도 여기서 바로 할 수 있어요.`,
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
     const sec = S.recipeSection ?? "all";
@@ -2385,7 +2386,9 @@ function adminApp(L, BUILD, M) {
     const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
       `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
-    return `${chips}${month}<p class="hint">${esc(help)}</p>${secChips}${rows}${upload}${log}`;
+    // 1.36 [GRW-12] 작품 하나를 연 곳(사진 검토·고친 판)으로 돌아가기.
+    const back = tab === "one" ? `<p><button type="button" class="btn small" data-act="recipe-tab" data-key="${esc(S.recipeBack ?? "flagged")}">← 돌아가기 · ${esc(RECIPE_TABS.find(([k]) => k === (S.recipeBack ?? "flagged"))?.[1] ?? "목록")}</button></p>` : "";
+    return `${chips}${month}${back}<p class="hint">${esc(help)}</p>${tab === "one" ? "" : secChips}${rows}${upload}${tab === "one" ? "" : log}`;
   }
 
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
@@ -2411,7 +2414,7 @@ function adminApp(L, BUILD, M) {
     return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
         <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
         <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
-        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (${esc(u.code)})`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
+        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
         <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
@@ -4563,8 +4566,13 @@ function adminApp(L, BUILD, M) {
     "recipe-find": ({ id }) => {
       const row = [...document.querySelectorAll("[data-act='recipe-do']")].find((b) => b.dataset.id === id)?.closest("li");
       if (row) { row.scrollIntoView({ block: "center" }); row.classList.add("flash"); setTimeout(() => row.classList.remove("flash"), 1500); return; }
-      navigator.clipboard?.writeText(id).catch(() => {});
-      toast(`원본 ${id}은 이 목록에 없어요. 코드를 복사했어요`);
+      // 1.36 [GRW-12] 목록에 없으면 그 작품 하나를 열어요(전에는 코드만 복사).
+      ACTIONS["recipe-open"]({ id });
+    },
+    // 1.36 [GRW-12] PC 20ab0254 제안: 사진 검토에서 그 사진을 쓴 작품을 바로 열기. 돌아가기는 연 곳으로.
+    "recipe-open": ({ id }) => {
+      if ((S.recipeTab ?? "flagged") !== "one") S.recipeBack = S.recipeTab ?? "flagged";
+      S.recipeTab = "one"; S.recipeCode = id; S.recipeSection = "all"; S.data.recipes = null; load();
     },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
