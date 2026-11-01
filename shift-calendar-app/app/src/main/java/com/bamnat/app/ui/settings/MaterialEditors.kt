@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -346,6 +347,11 @@ fun PhotoFrameEditor(label: String, value: String?, onChange: (String?) -> Unit)
 
 // ---- [MAT-05][MAT-06] 글꼴 ----
 
+/** The [FontRow] to bring into view when it appears (설정 검색 › 화면마다 글꼴·날짜 숫자 글꼴), by its label; once. */
+object FontRowFocus {
+    @Volatile var label: String? = null
+}
+
 /** A line that shows the font now (in itself) and opens [FontPickerDialog]. */
 @Composable
 fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
@@ -355,9 +361,20 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
     var before by remember { mutableStateOf<String?>(null) }
     var picked by remember { mutableStateOf(false) }
     val load = value?.let { AppFonts.loads[it] }
-    val base = value?.let { id -> FontCatalog.byId(id)?.name ?: UserFonts.list(ctx).firstOrNull { it.id == id }?.name ?: "내 글꼴" } ?: "처음대로"
+    // PC 확인 6차 (StrictMode: 화면 스레드에서 파일 읽기): a user font's name is read off the main thread.
+    val picked0 = value
+    val userName by androidx.compose.runtime.produceState<String?>(null, picked0) {
+        this.value = if (picked0 == null || FontCatalog.byId(picked0) != null) null
+            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { UserFonts.list(ctx).firstOrNull { it.id == picked0 }?.name }
+    }
+    val base = value?.let { id -> FontCatalog.byId(id)?.name ?: userName ?: "내 글꼴" } ?: "처음대로"
     val name = when (load) { AppFonts.Load.LOADING -> "$base (받는 중)"; AppFonts.Load.FAILED -> "$base (못 받음)"; else -> base }
-    Row(Modifier.fillMaxWidth().clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    // PC 확인 6차 (사용성 제안 "설정 검색에서 오면 글꼴 칸으로 바로"): the studio asks for this row by its label.
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    androidx.compose.runtime.LaunchedEffect(label) {
+        if (FontRowFocus.label == label) { FontRowFocus.label = null; kotlinx.coroutines.delay(150); bring.bringIntoView() }
+    }
+    Row(Modifier.fillMaxWidth().bringIntoViewRequester(bring).clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -442,7 +459,10 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
             ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         }.getOrNull()
         when (val r = UserFonts.add(ctx, uri, name)) {
-            is UserFonts.Result.Added -> { problem = null; mine = UserFonts.list(ctx); stamp++ }
+            is UserFonts.Result.Added -> {
+                mine = UserFonts.list(ctx); stamp++
+                problem = if (r.font.sold) "‘${r.font.name}’은 글꼴 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(레시피와 함께 나눌 수 없어요)" else null
+            }
             is UserFonts.Result.Problem -> problem = r.text
         }
     }
@@ -472,7 +492,7 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                         item {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("내 글꼴 ${mine.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                                TextButton(onClick = { pick.launch(arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf", "application/x-font-otf", "application/octet-stream")) }) {
+                                TextButton(onClick = { pick.launch(arrayOf("*/*")) }) {
                                     Text("+ 내 글꼴 넣기")
                                 }
                             }
@@ -486,6 +506,10 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                                     // [MAT-06] A font that came with a recipe: its sender said it is open; 신고 if it is not.
                                     Text("레시피와 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     TextButton(onClick = { reportOf = f }) { Text("신고") }
+                                } else if (f.sold) {
+                                    // PC 확인 6차: told when it goes in, not only after 올리기.
+                                    Text("글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. 이 휴대폰에서는 쓸 수 있어요", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
                                 } else {
                                     Text("누구나 쓰게 허락한 공개 글꼴(OFL 등)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     Switch(f.open, { UserFonts.setOpen(ctx, f.id, it); mine = UserFonts.list(ctx) },

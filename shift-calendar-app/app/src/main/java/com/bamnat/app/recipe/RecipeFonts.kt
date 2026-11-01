@@ -24,7 +24,7 @@ object RecipeFonts {
      * What 올리기 did with the fonts: those sent and those kept back (not open, or too big), by name. 1.36 [SEC-10] [waiting]: sent,
      * and others get them once the operator looked (a first font).
      */
-    data class Sent(val shared: List<String>, val kept: List<String>, val waiting: List<String> = emptyList())
+    data class Sent(val shared: List<String>, val kept: List<String>, val waiting: List<String> = emptyList(), val sold: List<String> = emptyList())
 
     /** Sends the open fonts [r] names that the server does not have yet. A font that fails stays a stand-in for others. */
     suspend fun send(c: AppContainer, r: Recipe, license: String = "ofl"): Sent {
@@ -34,16 +34,24 @@ object RecipeFonts {
         val shared = mutableListOf<String>()
         val kept = mutableListOf<String>()
         val waiting = mutableListOf<String>()
+        val sold = mutableListOf<String>()
         for (m in mine) {
+            // PC 확인 6차: a paid foundry's font is told as such (it was told 'not open or over 8MB' though marked open).
+            if (m.sold) { sold += m.name; continue }
             if (!m.open || m.bytes > RecipeClient.FONT_MAX) { kept += m.name; continue }
             if (UserFonts.sent(c.appContext, m.id)) { shared += m.name; continue }
             val sent = runCatching {
                 val bytes = withContext(Dispatchers.IO) { UserFonts.file(c.appContext, m.id)!!.readBytes() }
                 c.recipeApi.fontSend(c.companyStore.device, m.id, m.name, license, bytes).takeIf { it.id == m.id }
-            }.getOrNull()
-            if (sent != null) { UserFonts.markSent(c.appContext, m.id); shared += m.name; if (sent.waiting) waiting += m.name } else kept += m.name
+            }
+            val e = sent.exceptionOrNull() as? com.bamnat.app.company.CompanyException
+            when {
+                sent.getOrNull() != null -> { UserFonts.markSent(c.appContext, m.id); shared += m.name; if (sent.getOrNull()!!.waiting) waiting += m.name }
+                e?.code == "sold" -> { withContext(Dispatchers.IO) { UserFonts.markSold(c.appContext, m.id) }; sold += m.name }
+                else -> kept += m.name
+            }
         }
-        return Sent(shared, kept, waiting)
+        return Sent(shared, kept, waiting, sold)
     }
 
     /** A line for 올리기's end when some fonts stay on this phone; null when every font goes along. */
@@ -51,11 +59,39 @@ object RecipeFonts {
         s.kept.takeIf { it.isNotEmpty() }?.let { names ->
             "‘${names.joinToString("’, ‘")}’ 글꼴은 공개 글꼴로 밝히지 않았거나 8MB가 넘어 함께 가지 않아요. 받는 분께는 비슷한 글꼴로 보여요. 내 글꼴에서 공개 글꼴로 밝히면 다음 판부터 함께 가요"
         },
+        s.sold.takeIf { it.isNotEmpty() }?.let { names ->
+            "‘${names.joinToString("’, ‘")}’ 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. 이 휴대폰에서는 그대로 쓰고, 받는 분께는 비슷한 글꼴로 보여요"
+        },
         // 1.36 [SEC-10] 보안 점검 H3·M7: a first font is looked at before others get it.
         s.waiting.takeIf { it.isNotEmpty() }?.let { names ->
             "‘${names.joinToString("’, ‘")}’ 글꼴은 처음 나누는 글꼴이라 운영자가 라이선스를 확인한 뒤(보통 하루 안) 받는 분께 보여요. 그 전에는 비슷한 글꼴로 보여요"
         },
     ).joinToString("\n").ifBlank { null }
+
+    /**
+     * PC 확인 6차 (사용성 제안 "나누기 뒤 받는 쪽은 테마를 다시 넣어야 바뀜"): fonts a recipe named that the server did not give yet
+     * (waiting for the operator, or offline), asked again each time the app opens, for [WAIT_DAYS].
+     */
+    private const val WAITING = "font_waiting"
+    private const val WAIT_DAYS = 14L
+
+    private fun prefs(c: AppContainer) = c.appContext.getSharedPreferences(WAITING, android.content.Context.MODE_PRIVATE)
+
+    fun waiting(c: AppContainer): Set<String> {
+        val p = prefs(c)
+        val cut = com.bamnat.core.time.Today.millis() - WAIT_DAYS * 86_400_000L
+        return p.all.filter { (k, v) -> (v as? Long ?: 0L) >= cut && ID.matches(k) }.keys
+    }
+
+    /** Asks again for the fonts still waiting; the names of those that came, for a line to the user. */
+    suspend fun retryWaiting(c: AppContainer): List<String> {
+        val ids = waiting(c)
+        prefs(c).edit().apply { prefs(c).all.keys.filter { it !in ids }.forEach { remove(it) } }.apply()
+        if (ids.isEmpty()) return emptyList()
+        val before = UserFonts.ids(c.appContext)
+        fetchIn(c, ids.joinToString(" "))
+        return UserFonts.list(c.appContext).filter { it.id in ids && it.id !in before }.map { it.name }
+    }
 
     /** Brings down the fonts named in [text] that this phone lacks; false for none got. */
     suspend fun fetchIn(c: AppContainer, text: String): Boolean {
@@ -63,7 +99,8 @@ object RecipeFonts {
         var got = false
         for (id in idsIn(text) - have) {
             if (FontProbe.failed(id)) continue
-            val (name, bytes) = runCatching { c.recipeApi.fontGet(c.companyStore.device, id) }.getOrNull() ?: continue
+            val (name, bytes) = runCatching { c.recipeApi.fontGet(c.companyStore.device, id) }.getOrNull()
+                ?: run { if (!prefs(c).contains(id)) prefs(c).edit().putLong(id, com.bamnat.core.time.Today.millis()).apply(); null } ?: continue
             if (UserFonts.idOf(bytes) != id) continue
             // 1.36 [SEC-10] 보안 점검 H3: opened first in a process with no rights; only then in the app's own.
             val look = java.io.File(c.appContext.cacheDir, "font-look-$id.ttf")
@@ -75,7 +112,12 @@ object RecipeFonts {
             }
             if (!safe) continue
             val r = withContext(Dispatchers.IO) { UserFonts.addBytes(c.appContext, bytes, name, open = true, received = true) }
-            if (r is UserFonts.Result.Added) got = true
+            if (r is UserFonts.Result.Added) {
+                got = true
+                prefs(c).edit().remove(id).apply()
+                // Every text in that font redraws in it now (the screens key their font on this).
+                withContext(Dispatchers.Main) { com.bamnat.app.ui.theme.AppFonts.loads[id] = com.bamnat.app.ui.theme.AppFonts.Load.READY }
+            }
         }
         return got
     }

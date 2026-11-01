@@ -177,7 +177,9 @@ fun Typography.inFamily(family: FontFamily?): Typography = if (family == null) t
  * its id and its stand-in; a phone without the file draws the stand-in.
  */
 object UserFonts {
-    data class Mine(val id: String, val name: String, val fallback: String, val open: Boolean, val bytes: Long, val received: Boolean = false)
+    /** [sold]: PC 확인 6차, the font says a foundry that sells fonts made it, so it cannot be shared (the server turns it away too). */
+    data class Mine(val id: String, val name: String, val fallback: String, val open: Boolean, val bytes: Long, val received: Boolean = false,
+        val sold: Boolean = false)
 
     sealed interface Result {
         data class Added(val font: Mine) : Result
@@ -192,7 +194,18 @@ object UserFonts {
         runCatching {
             val o = JSONObject(f.readText())
             val id = f.name.removeSuffix(".json")
-            Mine(id, o.optString("name", "내 글꼴"), o.optString("fallback", "sans"), o.optBoolean("open"), File(dir(c), "$id.ttf").length(), o.optBoolean("received"))
+            val ttf = File(dir(c), "$id.ttf")
+            // A font put in before 1.36 PC 6차 has not been read for its maker yet: once, here.
+            if (!o.has("sold") && ttf.isFile) {
+                val info = runCatching { FontNames.read(ttf.readBytes()) }.getOrDefault(FontNames.Info())
+                val sold = !o.optBoolean("received") && FontNames.sold(info)
+                o.put("sold", sold)
+                if (sold) o.put("open", false)
+                if (o.optString("fallback", "sans") == "sans") lookOf(info, o.optString("name"))?.let { o.put("fallback", it) }
+                f.writeText(o.toString())
+            }
+            Mine(id, o.optString("name", "내 글꼴"), o.optString("fallback", "sans"), o.optBoolean("open"), ttf.length(), o.optBoolean("received"),
+                o.optBoolean("sold"))
         }.getOrNull()?.takeIf { file(c, it.id) != null }
     }.sortedBy { it.name }
 
@@ -239,11 +252,24 @@ object UserFonts {
         val ok = runCatching { android.graphics.Typeface.Builder(ttf).build() != null }.getOrDefault(false)
         if (!ok) { ttf.delete(); return Result.Problem("이 글꼴은 휴대폰이 읽지 못해요") }
         val shown = name?.take(30)?.ifBlank { null } ?: "내 글꼴"
-        val guess = guessFallback(shown)
-        File(dir(c), "$id.json").writeText(JSONObject().put("name", shown).put("fallback", guess).put("open", open).put("received", received).toString())
+        // PC 확인 6차: its own words say who made it and what it looks like (a handwriting font stood in as 기본 고딕).
+        val info = FontNames.read(bytes)
+        val sold = !received && FontNames.sold(info)
+        val guess = lookOf(info, shown) ?: "sans"
+        File(dir(c), "$id.json").writeText(JSONObject().put("name", shown).put("fallback", guess).put("open", open && !sold).put("received", received)
+            .put("sold", sold).toString())
         AppFonts.forget(id)
-        return Result.Added(Mine(id, shown, guess, open, bytes.size.toLong(), received))
+        return Result.Added(Mine(id, shown, guess, open && !sold, bytes.size.toLong(), received, sold))
     }
+
+    /**
+     * The app font most like a font: by its own looks (PANOSE·class), then by the open font of the same family the app knows
+     * (Gaegu is 손글씨), then by its name; null for none of these.
+     */
+    internal fun lookOf(info: FontNames.Info, name: String?): String? =
+        FontNames.lookalike(info)
+            ?: info.family?.let { fam -> FontCatalog.ALL.firstOrNull { it.family.equals(fam, ignoreCase = true) } }?.let { when (it.group) { FontCatalog.Group.SERIF -> "serif"; FontCatalog.Group.HAND -> "hand"; FontCatalog.Group.MONO -> "mono"; else -> null } }
+            ?: guessFallback(listOfNotNull(name, info.family).joinToString(" ")).takeIf { it != "sans" }
 
     /** "u" + the first 16 hex of the file's SHA-256: the same on every phone and on the server. */
     fun idOf(bytes: ByteArray): String = "u" + MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }.take(16)
@@ -253,7 +279,10 @@ object UserFonts {
     fun markSent(c: Context, id: String) = edit(c, id) { it.put("sent", true) }
 
     /** Whether the maker lets others use it (OFL·공개 글꼴), as the user says; only such a font may be shared. */
-    fun setOpen(c: Context, id: String, open: Boolean) = edit(c, id) { it.put("open", open) }
+    fun setOpen(c: Context, id: String, open: Boolean) = edit(c, id) { it.put("open", open && !it.optBoolean("sold")) }
+
+    /** PC 확인 6차: the server turned [id] away as a paid foundry's; it stays on this phone, not shared. */
+    fun markSold(c: Context, id: String) = edit(c, id) { it.put("sold", true).put("open", false) }
 
     fun setFallback(c: Context, id: String, fallback: String) = edit(c, id) { it.put("fallback", fallback) }.also { AppFonts.forget(id) }
 
@@ -280,7 +309,7 @@ object UserFonts {
         val n = name.lowercase()
         return when {
             listOf("명조", "바탕", "serif", "myeongjo", "batang").any { it in n } -> "serif"
-            listOf("손글씨", "펜", "붓", "hand", "script", "pen", "brush").any { it in n } -> "hand"
+            listOf("손글씨", "펜", "붓", "hand", "script", "pen", "brush", "글씨", "writing", "marker", "crayon").any { it in n } -> "hand"
             listOf("mono", "coding", "코딩", "고정").any { it in n } -> "mono"
             else -> "sans"
         }

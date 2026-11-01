@@ -257,6 +257,13 @@ class MainActivity : ComponentActivity() {
         if (lastCatchUp == 0L || now - lastCatchUp >= CATCH_UP_EVERY) {
             lastCatchUp = now
             c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
+            // [MAT-06] PC 확인 6차: shared fonts a theme was waiting for (the operator had not looked yet) come down by themselves.
+            c.appScope.launch {
+                val got = runCatching { com.bamnat.app.recipe.RecipeFonts.retryWaiting(c) }.getOrDefault(emptyList())
+                if (got.isNotEmpty()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(this@MainActivity, "기다리던 글꼴 ‘${got.joinToString("’, ‘")}’을 받아 입혔어요", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
         }
         // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and
         // the ads SDK start only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and
