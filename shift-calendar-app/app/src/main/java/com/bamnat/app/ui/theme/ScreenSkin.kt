@@ -68,7 +68,12 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     // 사용자 2026-11-01: 결제·처리방침·동의 화면은 어떤 테마에서도 앱 기본 모양 그대로 — 값과 약관이 늘 똑같이 또렷하게 읽혀요.
     val raw = if (key == ScreenLooks.GUARDED) ScreenLook() else all.of(key)
     val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji) else raw
-    val base = MaterialTheme.colorScheme
+    // PC 확인 W44 1.36 (어두운 테마에서 프로 화면만 갑자기 밝아 눈부심): the plain 결제·처리방침 look follows how dark the app is made.
+    val outer = MaterialTheme.colorScheme
+    val base = outer.let { b ->
+        val allBg = all.of(ScreenLooks.ALL).bg
+        if (key == ScreenLooks.GUARDED && allBg != null && Palette.luminance(allBg) < 0.3 && Palette.luminance(b.background.argb()) >= 0.5) DarkColors else b
+    }
     val photo = rememberLookPicture(look.photo)
     val plain = look.isDefault
     val scheme = if (plain) base else skinned(base, look, photo?.second)
@@ -78,14 +83,15 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
     // so a 허용 on an alarm warning card reads on a dark theme too.
     val cal = LocalCalendarColors.current
-    val fitted = if (plain) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
+    val darkened = base !== outer
+    val fitted = if (plain && !darkened) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
         cal.copy(warning = tone.warning, warningContainer = tone.warningContainer, income = tone.income, expense = tone.expense,
             alarmOff = tone.alarmOff, changed = tone.changed, holidayWork = tone.holidayWork)
     }
     // [J135-15] One shape of tree for the user's own look and for a theme: putting a theme on or taking it off only changes colours.
     // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        Box(if (plain) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
+        Box(if (plain && !darkened) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
             if (photo != null && !plain) {
                 Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
@@ -93,7 +99,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             }
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
-                androidx.compose.material3.LocalContentColor provides if (plain) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
+                androidx.compose.material3.LocalContentColor provides if (plain && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
         }
