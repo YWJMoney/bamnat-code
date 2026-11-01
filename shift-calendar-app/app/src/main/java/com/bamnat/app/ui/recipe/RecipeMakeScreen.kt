@@ -619,7 +619,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
     val clash = vm.sameAsParent(s)
     OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’${withWa(s.parentTitle)} 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null)
+        isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’${withWa(s.parentTitle.orEmpty())} 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null)
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))
