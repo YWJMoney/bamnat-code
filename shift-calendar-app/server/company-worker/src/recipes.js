@@ -120,6 +120,61 @@ const companyCheck = (text) => {
   }
 };
 
+// [BLU-01] 1.36 부품 설계도 (docs/blueprint-format.md), as core BlueprintParts: the same ids, states and fields.
+export const PART_IDS = [
+  "app", "app.bar", "app.bar.title", "app.tabs", "app.tab", "app.button", "app.chip", "app.card", "app.sheet",
+  "cal", "cal.head", "cal.head.title", "cal.head.nav", "cal.head.today", "cal.week", "cal.week.day", "cal.grid",
+  "cal.cell", "cal.cell.date", "cal.cell.mark", "cal.cell.memo", "cal.cell.money", "cal.cell.hours", "cal.cell.spend",
+  "cal.cell.lunar", "cal.cell.holiday", "cal.foot",
+  "memo.head", "memo.tags", "memo.card", "memo.card.title", "memo.card.body", "memo.card.date",
+  "money.head", "money.day", "money.row", "money.amount",
+  "pay.head", "pay.total", "pay.row",
+  "widget", "widget.head", "widget.cell",
+];
+const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel"];
+const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
+  : PART_IDS.includes(id.slice(0, id.lastIndexOf("."))) ? id.slice(0, id.lastIndexOf(".")) : "app");
+const PART_CHILDREN = {};
+for (const id of PART_IDS) {
+  const p = partParent(id);
+  if (p) (PART_CHILDREN[p] ??= []).push(id.slice(id.lastIndexOf(".") + 1));
+}
+const FONT_ID = /^[a-z][a-z0-9-]{1,39}$/;
+const PART_ORDER = /^[a-z]{1,12}(,[a-z]{1,12}){0,15}$/;
+const partOrder = (s) => (PART_ORDER.test(s) && new Set(s.split(",")).size === s.split(",").length ? null : "order");
+export const PART_STYLE = [
+  C("fill", { optional: true }), N("fillA", 0, 100, { optional: true }),
+  P("line", ["none", "solid", "dash", "dot", "double"], { optional: true }), N("lineW", 0, 8, { decimals: 1, optional: true }),
+  C("lineC", { optional: true }), N("lineA", 0, 100, { optional: true }),
+  N("r", 0, 48, { optional: true }), N("rTL", 0, 48, { optional: true }), N("rTR", 0, 48, { optional: true }),
+  N("rBR", 0, 48, { optional: true }), N("rBL", 0, 48, { optional: true }),
+  N("shadow", 0, 24, { optional: true }), C("shadowC", { optional: true }),
+  N("pad", 0, 32, { optional: true }), N("padX", 0, 32, { optional: true }), N("padY", 0, 32, { optional: true }),
+  N("out", 0, 32, { optional: true }),
+  T("font", 40, { optional: true, guard: false, check: (s) => (FONT_ID.test(s) ? null : "font") }),
+  N("size", 6, 96, { decimals: 1, optional: true }), N("weight", 100, 900, { optional: true }),
+  C("ink", { optional: true }), N("track", -5, 30, { decimals: 1, optional: true }),
+  N("leading", 80, 300, { optional: true }), N("stroke", 0, 4, { decimals: 1, optional: true }),
+  C("strokeC", { optional: true }), F("italic", { input: false }), P("talign", ["start", "center", "end"], { optional: true }),
+  N("lines", 1, 10, { optional: true }), N("alpha", 0, 100, { optional: true }), F("hide", { input: false }),
+  P("dir", ["row", "col", "stack"], { optional: true }), N("gap", 0, 32, { optional: true }),
+  P("align", ["start", "center", "end", "stretch"], { optional: true }),
+  P("justify", ["start", "center", "end", "between", "around"], { optional: true }),
+  T("order", 200, { optional: true, guard: false, check: partOrder }),
+  P("place", ["tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br"], { optional: true }), N("grow", 0, 10, { optional: true }),
+  N("w", 0, 600, { optional: true }), N("h", 0, 600, { optional: true }),
+];
+const partLines = (lines) => {
+  const seen = new Set();
+  for (const l of lines) {
+    const k = `${l.id}|${l.on ?? ""}`;
+    if (seen.has(k)) return "dup";
+    seen.add(k);
+    if (typeof l.order === "string" && l.order.split(",").some((x) => !(PART_CHILDREN[l.id] ?? []).includes(x))) return "order";
+  }
+  return null;
+};
+
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 export const RECIPE_PIECES = {
   shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", 20, { min: 1 }), P("role", ROLES),
@@ -184,6 +239,8 @@ export const RECIPE_PIECES = {
   // [FREE-05][FREE-07] 1.35 화면 색·배경 (pictures by recipe_images id, looked at before others see them) and 급여 모양 by kind of work.
   screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
+  // [BLU-01] 1.36 부품 꾸미기.
+  parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }), ...PART_STYLE], { min: 1, check: partLines })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
@@ -520,6 +577,10 @@ function fields(schema, o, path, ctx) {
       case "items":
         if (!Array.isArray(v) || v.length > f.max || v.length < f.min) fail("list", p);
         value = v.map((item, i) => (isObj(item) ? fields(f.fields, item, `${p}.${i}`, ctx) : fail("list", `${p}.${i}`)));
+        if (f.check) {
+          const why = f.check(value);
+          if (why) fail(why, p);
+        }
         break;
       default:
         fail("field", p);

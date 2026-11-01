@@ -56,8 +56,11 @@ sealed interface Field {
     /** A list of days of the week (MONDAY..SUNDAY), each once. */
     data class Days(override val key: String, override val optional: Boolean = true) : Field
 
-    /** A list of objects of [fields], at most [max]. */
-    data class Items(override val key: String, val max: Int, val fields: List<Field>, val min: Int = 0, override val optional: Boolean = false) : Field
+    /** A list of objects of [fields], at most [max]; [check] looks at the whole cleaned list (null passes, else the refusal's code). */
+    data class Items(
+        override val key: String, val max: Int, val fields: List<Field>, val min: Int = 0, override val optional: Boolean = false,
+        val check: ((List<Map<String, Any?>>) -> String?)? = null,
+    ) : Field
 }
 
 /** The kinds of piece, each with the kinds of work it fits and the screen it comes from. */
@@ -356,7 +359,10 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Text("screens", 1600, optional = true, guard = false, check = ScreenLooks::problem),
             Field.Text("pay", 400, optional = true, guard = false, check = PayLook::problem),
         ),
-    );
+    ),
+
+    /** [BLU-01] 1.36 부품 꾸미기: every part of a screen with the same style and layout fields (docs/blueprint-format.md). */
+    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS);
 
     companion object {
         fun of(key: String): PieceKind? = entries.firstOrNull { it.key == key }

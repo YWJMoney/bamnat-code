@@ -222,6 +222,7 @@ object RecipeCodec {
                 }.distinct().sortedBy { PieceKind.DAYS.indexOf(it) }
                 is Field.Items -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max || it.size < f.min) throw RecipeException("list", p) }
                     .mapIndexed { i, item -> fields(f.fields, item as? Map<String, Any?> ?: throw RecipeException("list", "$p.$i"), "$p.$i", ctx) }
+                    .also { list -> f.check?.invoke(list)?.let { throw RecipeException(it, p) } }
                     .takeUnless { it.isEmpty() && f.optional }
             }
             if (value != null) out[f.key] = value
