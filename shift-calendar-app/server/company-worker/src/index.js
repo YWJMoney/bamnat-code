@@ -84,6 +84,8 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
+import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
+import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -228,6 +230,7 @@ export default {
       .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
       // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
       .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).then(() => digestTick(env, Date.now())) // R131 1.31 [ADMX-14]
+      .then(() => growthTick(env, Date.now())) // 1.36 [GRW-02][GRW-03][GRW-05]
       .finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
@@ -491,6 +494,9 @@ async function routeOnce(request, env, url, ctx) {
   // 1.34 [RCP-29] 나눔 판.
   if (path === "/api/recipes" || path.startsWith("/api/recipes/")) {
     // 1.35 [RCX-01..15] 계보·새 판·요청 판·제작자·고른 것·소식·그림 first: their paths are not a recipe's code.
+    // 1.36 [GRW-05] 모두의 도구.
+    const tools = await growthRoute(request, env, path, url);
+    if (tools) return tools;
     const more = await communityRoute(recipeDeps, request, env, path, url);
     if (more) return more;
     const res = await recipeRoute(recipeDeps, request, env, path, url, ctx);
@@ -700,6 +706,10 @@ const SCHEMA = [
   ...WRITE_LIMITS_SCHEMA,
   // 1.36 [VIL-11] 마을 (village.js): 이번 주 이야기 주제.
   ...VILLAGE_SCHEMA,
+  // 1.36 [GRW-01]~[GRW-05] 자가 발전 바퀴 (growth.js): 스튜디오 요구 묶음과 승격 사다리.
+  ...GROWTH_SCHEMA,
+  // 1.36 [GRW-08] 사진 세 겹 (photo-guard.js).
+  ...PHOTO_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -773,6 +783,8 @@ const COLUMNS = [
   // 1.34 [RCP-35] 나눔 판의 이야기.
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
+  ...GROWTH_COLUMNS,
+  ...PHOTO_COLUMNS,
   // 1.36 [VIL-09] 마을 V9: the reply a question's writer chose as 도움 됐어요.
   "ALTER TABLE posts ADD COLUMN answer TEXT",
   // 1.36 [VIL-10] 마을 V10 투표 글: a question's 2~4 choices (JSON), and one choice per install.
@@ -4307,6 +4319,9 @@ function areaFor(path) {
   // 1.34 [RCP-36] 나눔 판 검토·신고·임시 조치: the same people who look after the plaza's posts.
   if (path === "/recipes" || path.startsWith("/recipes/")) return "community";
   if (path.startsWith("/village/")) return "community";
+  // 1.36 [GRW-02] 스튜디오 요구는 문의를 맡은 사람이, 기본 도구 후보는 장터를 맡은 사람이.
+  if (path.startsWith("/growth/needs")) return "inquiries";
+  if (path.startsWith("/growth/")) return "community";
   // AM 1.28 [FLAG-27] the switches are flags now: 기능 관리 (forcing off checks flagOff as well).
   if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
   if (path.startsWith("/notices") || path === "/ops") return "ops";
@@ -4473,6 +4488,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
       if (request.method === "POST") await audit(env, now, path.startsWith("/village/contests") ? "village_contest" : "village_topic", path);
       return v;
     }
+  }
+  // 1.36 [GRW-02]~[GRW-06] 스튜디오 요구 묶음·손잡이 지도·기본 도구 후보.
+  if (path.startsWith("/growth/")) {
+    const g = await growthAdmin(request, env, url, path, now);
+    if (g) return g;
   }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
     const more = await communityAdmin(recipeDeps, request, env, path, url, now);
@@ -7090,4 +7110,8 @@ const recipeDeps = {
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
   authorKey,
   authorToken,
+  // 1.36 [GRW-03] 요청 판 '완성' → 그 요청이 온 스튜디오 요구 묶음도 풀림.
+  needSolved,
+  // 1.36 [GRW-08] 사진이 든 작품의 신고 → 사진 신고.
+  flagRecipeImages,
 };

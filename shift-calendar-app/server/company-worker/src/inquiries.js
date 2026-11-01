@@ -1,6 +1,7 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
+import { needFromInquiry } from "./growth.js";
 import { kstDay } from "./usage.js";
 // ---- questions from the app [ADMIN-02] ----
 //
@@ -13,7 +14,7 @@ import { kstDay } from "./usage.js";
 
 export const INQUIRY = {
   // [INQ-01] Since 1.14.1 suggestions, anything else and a company's way the app cannot set come here too.
-  kinds: ["question", "bug", "idea", "company", "other"],
+  kinds: ["question", "bug", "idea", "company", "other", "studio"],
   text: 2000,
   diag: 6000,
   pay: 3000,
@@ -39,6 +40,8 @@ export const INQUIRY_INFO = [
   ["급여 계산", "pay", INQUIRY.pay],
   // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
   ["회사 설정", "setup", INQUIRY.setup],
+  // 1.36 [GRW-01] 스튜디오 요구: 보낸 분의 근무 유형(SHIFT…), 장터 요청 판의 어느 칸에 올릴지.
+  ["근무 유형", "studio", 12],
 ];
 
 /** [INQ-01] A company's way names the workplace: it stays with the developer, whatever the app asks. */
@@ -85,7 +88,9 @@ export function triage(kind, text, info) {
   // with 앱 멈춤 (the app puts it first for a stop's inquiry) is 앱 동작; any other 점검 기록 with no word is still 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
   else if (best === 0 && info?.diag) topic = "alarm";
-  const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
+  if (kind === "studio") topic = "look";
+  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
 
@@ -187,11 +192,13 @@ export async function ask(request, env) {
   // happens without VAPID keys, and a push that fails never fails the question.
   await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
     title: "새 문의",
-    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식" })[body.kind] ?? "문의"} 1건`,
+    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건`,
     url: "/admin/#/inquiries",
   }, now);
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
+  // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
+  await needFromInquiry(env, id, dev, body.kind, text, info, now);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
   return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);

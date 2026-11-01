@@ -1199,11 +1199,13 @@ async function recipeFlag(d, env, request, code) {
   const now = Date.now();
   const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
   if (hit) return hit;
-  const r = await d.one(env, "SELECT code, owner, state, flags FROM recipes WHERE code = ?", code);
+  const r = await d.one(env, "SELECT code, owner, state, flags, body, cover FROM recipes WHERE code = ?", code);
   if (!r || r.state !== "visible") return d.json({ error: "not_found" }, 404);
   if (r.owner === dev) return d.json({ error: "own" }, 400);
   const res = await d.run(env, "INSERT OR IGNORE INTO recipe_flags (code, device, reason, at) VALUES (?, ?, ?, ?)", code, dev, reason, now);
   if (!res?.meta?.changes) return d.json({ flagged: true, already: true });
+  // 1.36 [GRW-08] 셋째 겹: 사진이 든 작품의 신고는 그 사진들의 신고이기도 해요(사진은 두 번이면 먼저 가려요).
+  if (d.flagRecipeImages) await d.flagRecipeImages(env, r.body, r.cover, dev, reason, now);
   const flags = r.flags + 1;
   const hide = flags >= RECIPE_LIMITS.flagsToHide;
   await d.batch(env, [
