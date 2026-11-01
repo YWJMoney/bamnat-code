@@ -85,8 +85,11 @@ internal fun PartsTool(
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = many, onClick = { many = !many; if (!many) multi = emptyList() },
             label = { Text(if (many) "여럿 고르기 · ${multi.size + 1}곳" else "여럿 고르기") })
-        if (many) Text("칩을 눌러 더해요. 고친 값이 고른 곳 모두에 들어가요", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // PC 확인 C7 1.36 사용성 제안 (처음 부품이 같이 세어지는 줄 몰랐어요): the part already open is the first of them, said by name.
+        val first = BlueprintParts.LABELS[id] ?: id
+        if (many) Text(if (multi.isEmpty()) "지금 연 ‘$first’${com.bamnat.app.ui.Fmt.iga(first)} 첫 곳이에요. 칩을 눌러 더해요"
+            else "‘$first’${com.bamnat.app.ui.Fmt.wa(first)} 칩 ${multi.size}개. 고친 값이 고른 곳 모두에 들어가요", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
     // 어느 부품, 묶음마다 제목을 달아서 (PC 1차 사용성 제안): 달력 머리 · 요일 줄 · 날짜 칸 …
     ids.groupBy { it.split('.').take(2).joinToString(".") }.forEach { (head, list) ->

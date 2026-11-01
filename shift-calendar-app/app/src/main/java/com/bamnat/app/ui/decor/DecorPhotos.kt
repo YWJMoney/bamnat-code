@@ -4,7 +4,11 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -21,7 +25,11 @@ import com.bamnat.app.data.AppSettings
  */
 object DecorPhotos {
     private val shown = mutableStateMapOf<String, ImageBitmap>()
-    private val asked = java.util.Collections.synchronizedSet(HashSet<String>())
+    /** When each photo the phone does not have was last asked of the server. */
+    private val asked = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** PC 확인 C7 1.36 (운영자가 보이기로 한 뒤에도 앱을 다시 열어야 사진이 보여요): a photo still waiting is asked again after this long. */
+    const val AGAIN_MS = 20_000L
 
     fun of(id: String): ImageBitmap? = shown[id]
 
@@ -29,17 +37,29 @@ object DecorPhotos {
         for (id in ids) {
             if (shown.containsKey(id)) continue
             var bmp = LookImages.bitmap(c.appContext, id)
-            if (bmp == null && asked.add(id) && LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
+            if (bmp == null && ask(id) && LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
             bmp?.let { if (shown.size >= 32) shown.clear(); shown[id] = it.asImageBitmap() }
         }
     }
 
-    /** Loads [ids] while the caller is shown. */
+    private fun ask(id: String, now: Long = System.currentTimeMillis()): Boolean {
+        val last = asked[id]
+        if (last != null && now - last < AGAIN_MS) return false
+        asked[id] = now
+        return true
+    }
+
+    /**
+     * Loads [ids] while the caller is shown: when it is shown and each time the app comes back to it, so a photo the operator let
+     * show meanwhile appears on the calendar without opening the app again.
+     */
     @Composable
     fun Load(ids: Set<String>) {
         if (ids.isEmpty()) return
         val c = LocalContext.current.appContainer
-        LaunchedEffect(ids) { load(c, ids) }
+        var back by remember { mutableIntStateOf(0) }
+        androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { back++; onPauseOrDispose { } }
+        LaunchedEffect(ids, back) { load(c, ids) }
     }
 
     /** For the widget, drawn off the main thread: the phone's own file, or nothing (a grey box). */

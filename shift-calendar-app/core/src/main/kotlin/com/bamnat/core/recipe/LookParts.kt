@@ -227,10 +227,17 @@ object LookParts {
             }
             PieceKind.PHOTO_LOOK -> p.copy(values = p.values - PHOTO_KEYS).takeIf { it.values.isNotEmpty() }
             // [LAY-10] 꾸밈 사진 stay on the phone too; the shapes, icons and words go.
-            PieceKind.DECOR -> (p.values["items"] as? List<*>)?.let { l ->
-                val bare = l.filterNot { (it as? Map<*, *>)?.containsKey("photo") == true }
-                if (bare.size == l.size) p else if (bare.isEmpty()) null else p.copy(values = p.values + ("items" to bare))
-            } ?: p
+            // PC 확인 C7 1.36 (꾸밈이 사진 하나뿐이면 '사진 빼고 올리기'가 안 나옴): a piece of photos alone goes as a whole, not kept by
+            // the "no items" fallback.
+            PieceKind.DECOR -> {
+                val l = p.values["items"] as? List<*>
+                val bare = l?.filterNot { (it as? Map<*, *>)?.containsKey("photo") == true }
+                when {
+                    l == null || bare!!.size == l.size -> p
+                    bare.isEmpty() -> null
+                    else -> p.copy(values = p.values + ("items" to bare))
+                }
+            }
             else -> p
         }
     })

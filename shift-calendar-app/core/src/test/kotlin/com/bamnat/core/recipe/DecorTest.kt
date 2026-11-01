@@ -99,6 +99,10 @@ class DecorTest {
         val bare = LookParts.withoutPhotos(r)
         assertEquals(Decor(listOf(bell)), Decor.of(bare.pieces.single().values))
         assertTrue(LookParts.hasPhotos(r))
+        // PC 확인 C7: a 꾸밈 of one photo alone is a photo too, and goes as a whole.
+        val alone = Recipe("꾸밈", styles = setOf(com.bamnat.core.work.WorkStyle.SHIFT), pieces = listOf(Piece(PieceKind.DECOR, Decor(listOf(photo)).values())))
+        assertTrue(LookParts.hasPhotos(alone))
+        assertTrue(LookParts.withoutPhotos(alone).pieces.isEmpty())
         // A photo that is not a picture id, or a button id that is not one, is not taken.
         assertEquals(Decor(), Decor.decode("""[{"photo":"../x","at":"app","w":10,"h":10}]"""))
         assertNull(Decor.decode("""[{"emoji":"⭐","at":"app","tap":"Bad-Id","w":10,"h":10}]""").items.single().tap)

@@ -73,10 +73,15 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val plain = look.isDefault
     // PC 확인 C4 1.36 (꾸밈 사진을 달력 화면 배경에 넣었는데 실제 화면에는 안 보여요): the screen's page and bars are opaque and covered
     // what the 꾸밈 층 drew under them. With a decoration under the words, the ground is drawn here once and the page above it is clear.
-    val decorUnder = com.bamnat.app.ui.decor.LocalDecor.current.let { d ->
+    val under = com.bamnat.app.ui.decor.LocalDecor.current.let { d ->
         val bg = "bg." + key.substringBefore('.')
-        !d.isDefault && bg.removePrefix("bg.") in com.bamnat.core.recipe.Decor.SCREENS && d.items.any { (it.at == com.bamnat.core.recipe.Decor.APP || it.at == bg) && !it.over && !it.hide }
+        if (d.isDefault || bg.removePrefix("bg.") !in com.bamnat.core.recipe.Decor.SCREENS) emptyList()
+        else d.items.filter { (it.at == com.bamnat.core.recipe.Decor.APP || it.at == bg) && !it.over && !it.hide }
     }
+    val decorUnder = under.isNotEmpty()
+    // PC 확인 C7 1.36 (진한 사진 위에서 '2026년'·요일 줄·'모든 조'가 거의 안 읽혀요): a photo filling the screen under the words gets a
+    // veil of the page's colour, as a 화면 배경 사진 does, so the screen's own ink reads on it.
+    val photoUnder = under.any { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full }
     val skin = if (plain) base else skinned(base, look, photo?.second)
     val scheme = if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin
     val dark = Palette.luminance((if (plain) base.background else groundOf(base, look, photo?.second)).argb()) < if (plain) 0.5 else 0.3
@@ -100,6 +105,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             }
             // [LAY-03] 1.36 꾸밈 층 on the screen's background: under its words, then (the maker's choice) over them.
             ScreenDecor(key, over = false)
+            if (photoUnder) Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = PHOTO_VEIL)))
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
                 androidx.compose.material3.LocalContentColor provides if (plain) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
@@ -109,6 +115,9 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
         }
     }
 }
+
+/** PC 확인 C7 1.36: how much of the page lies over a 꾸밈 사진 that fills the screen under the words (the words keep the page's ink). */
+const val PHOTO_VEIL = 0.55f
 
 /** [J135-11] The status and navigation bar icons dark ([light] ground) or light, on the window that draws this (a full-screen dialog's own). */
 @Composable
