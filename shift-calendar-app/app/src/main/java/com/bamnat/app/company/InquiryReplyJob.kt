@@ -45,16 +45,22 @@ class InquiryReplyJob : JobService() {
         // 1.36 PC 확인 a4899e83: 4403은 OutboxJob과 같은 번호라 문의를 보낼 때 대기 작업이 이 작업을 덮어써, 답 알림이 뜨지 않았어요.
         private const val ID = 4405
         private val EVERY = TimeUnit.HOURS.toMillis(3)
+        /** 1.36 (사용자 2026-11-01 "답을 바로"): 보낸 지 하루 안에는 15분마다(안드로이드가 허락하는 가장 짧은 주기), 그 뒤는 3시간마다. */
+        private val SOON = TimeUnit.MINUTES.toMillis(15)
+        private val SOON_FOR = TimeUnit.DAYS.toMillis(1)
         private const val PREFS = "inquiry_reply"
         private const val K_SAID = "said"
 
         /** After a question went, or the app opened with one waiting. */
-        fun schedule(context: Context) {
+        fun schedule(context: Context, soon: Boolean = true) {
+            // 1.36 [PUSH-01] With 바로 알림 in the build, the phone's token goes to the server too (the job stays as the fallback).
+            if (PushPhone.configured) context.applicationContext.appContainer.let { c -> c.appScope.launch { runCatching { PushPhone.sync(c) } } }
             val jobs = context.getSystemService(JobScheduler::class.java) ?: return
-            if (jobs.getPendingJob(ID) != null) return
+            val every = if (soon) SOON else EVERY
+            if (jobs.getPendingJob(ID)?.intervalMillis == every) return
             jobs.schedule(
                 JobInfo.Builder(ID, ComponentName(context, InquiryReplyJob::class.java))
-                    .setPeriodic(EVERY, EVERY / 3)
+                    .setPeriodic(every, every / 3)
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setPersisted(true)
                     .build(),
@@ -68,9 +74,12 @@ class InquiryReplyJob : JobService() {
         /** The answers already said in a notice, so the daily news does not say them again. */
         fun said(context: Context): Int = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(K_SAID, 0)
 
-        suspend fun check(c: AppContainer) {
+        /** [fromPush]: 1.36 [PUSH-01] the server said an answer was just written. */
+        suspend fun check(c: AppContainer, fromPush: Boolean = false) {
             if (!c.settingsRepository.current.plazaNews || !c.inquiryApi.enabled || !c.inquiryStore.asked) {
                 cancel(c.appContext)
+                // 밤낮 소식 off: the server forgets this phone's token as well.
+                runCatching { PushPhone.sync(c) }
                 return
             }
             val list = c.inquiryApi.mine(c.companyStore.device)
@@ -81,6 +90,8 @@ class InquiryReplyJob : JobService() {
             if (unread > said) post(c, unread)
             if (unread != said) prefs.edit().putInt(K_SAID, unread).apply()
             if (list.none { it.waiting }) cancel(c.appContext)
+            // A question sent in the last day is looked at every 15 minutes; an older one every 3 hours.
+            else schedule(c.appContext, soon = list.any { it.waiting && java.time.Duration.between(it.updatedAt, com.bamnat.core.time.Today.instant()).toMillis() < SOON_FOR })
         }
 
         private fun post(c: AppContainer, unread: Int) {

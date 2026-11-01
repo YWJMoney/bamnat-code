@@ -162,6 +162,9 @@ interface InquiryApi {
         send(device, kind, text, info)
 
     suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text)
+
+    /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
+    suspend fun pushPhone(device: String, token: String?): Boolean = false
 }
 
 class InquiryClient(
@@ -202,6 +205,11 @@ class InquiryClient(
     }
 
     /** One already gone counts as deleted. */
+    override suspend fun pushPhone(device: String, token: String?): Boolean = serverCall {
+        val body = JSONObject().put("device", device).apply { if (token != null) put("token", token) }
+        serverRequest(baseUrl, if (token != null) "POST" else "DELETE", "/api/push/phone", body, device = device).optBoolean("on")
+    }
+
     override suspend fun delete(device: String, id: String) = serverCall {
         try {
             serverRequest(baseUrl, "DELETE", "/api/inquiries/$id", device = device)

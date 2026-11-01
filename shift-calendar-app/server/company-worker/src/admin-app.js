@@ -2328,6 +2328,10 @@ function adminApp(L, BUILD, M) {
     } catch { return ""; }
   }
 
+  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름).
+  const RECIPE_SECTIONS = { theme: "테마", tab: "탭 하나", part: "부품", logic: "규칙·단추" };
+  const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
+
   function recipesView() {
     const d = S.data.recipes;
     const m = S.data.recipeMonth;
@@ -2353,8 +2357,12 @@ function adminApp(L, BUILD, M) {
       // [RCX-32]
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
-    const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
-        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
+    const sec = S.recipeSection ?? "all";
+    const secChips = d.items.some((r) => r.section) ? `<div class="chips" role="group" aria-label="구간">${[["all", "모든 구간"], ...Object.entries(RECIPE_SECTIONS)].map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${k === "all" ? d.items.length : d.items.filter((r) => r.section === k).length}</button>`).join("")}</div>` : "";
+    const shown = sec === "all" ? d.items : d.items.filter((r) => r.section === sec);
+    const rows = shown.length ? `<ul class="rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
+        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}${r.tabs?.length ? ` · ${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")}` : ""}</span>` : ""} <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
@@ -2376,7 +2384,7 @@ function adminApp(L, BUILD, M) {
     const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
       `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
-    return `${chips}${month}<p class="hint">${esc(help)}</p>${rows}${upload}${log}`;
+    return `${chips}${month}<p class="hint">${esc(help)}</p>${secChips}${rows}${upload}${log}`;
   }
 
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
@@ -4128,7 +4136,7 @@ function adminApp(L, BUILD, M) {
     },
     "contest-save": async ({ id }) => {
       const theme = document.getElementById(`contest-${id}`)?.value?.trim() ?? "";
-      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? `이달의 공모 주제(${L.WORK_NAMES?.[id] ?? id})를 저장했어요. 앱 마을 › 공방 맨 위에 보여요` : `이달의 공모 주제(${L.WORK_NAMES?.[id] ?? id})를 내렸어요`);
+      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? `${STYLE_NAMES[id] ?? id} 공모 주제를 저장했어요 (앱 공방 맨 위)` : `${STYLE_NAMES[id] ?? id} 공모 주제를 내렸어요`);
       S.data.contests = null;
       load();
     },
@@ -4548,7 +4556,8 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCP-39]
-    "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
+    "recipe-tab": ({ key }) => { S.recipeTab = key; S.recipeSection = "all"; S.data.recipes = null; load(); },
+    "recipe-section": ({ key }) => { S.recipeSection = key; render({ keepScroll: true }); },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
     "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },

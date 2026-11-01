@@ -85,6 +85,7 @@ import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCH
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
+import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
@@ -482,6 +483,8 @@ async function routeOnce(request, env, url, ctx) {
   if (m && method === "POST" && m[2]) return rateVote(request, env, m[1]);
   if (m && method === "DELETE" && !m[2]) return takeRateBack(request, env, m[1]);
   if (path === "/api/activity" && method === "GET") return activity(request, env);
+  // 1.36 [PUSH-01] 문의 답 바로 알리기: the phone's FCM token.
+  if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path === "/api/events" && method === "POST") return usage(request, env);
@@ -713,6 +716,8 @@ const SCHEMA = [
   ...PHOTO_SCHEMA,
   // 1.36 [GRW-07] 할 일함 상태와 기록 (work.js).
   ...WORK_SCHEMA,
+  // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
+  ...FCM_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */

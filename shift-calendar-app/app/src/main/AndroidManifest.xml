@@ -411,5 +411,16 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+        <!-- 1.36 [PUSH-01] 문의 답 바로 알림: FCM data messages only. Firebase never starts by itself (no google-services values,
+             auto-init off); PushPhone starts it by hand when the build has the ids and the user has a question. -->
+        <service
+            android:name=".company.PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+        <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
     </application>
 </manifest>

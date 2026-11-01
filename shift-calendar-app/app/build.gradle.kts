@@ -60,6 +60,12 @@ android {
         buildConfigField("String", "COMPANY_FALLBACK_URL", "\"$companyFallbackUrl\"")
         buildConfigField("String", "REMOTE_BASE_URL", "\"${remoteBaseUrl.takeIf { shareBaseUrl.isNotBlank() || companyBaseUrl.isNotBlank() }.orEmpty()}\"")
         buildConfigField("String", "ADMOB_BANNER", "\"${adProp("bamnat.admobBanner")}\"")
+        // 1.36 [PUSH-01] 문의 답 바로 알림: the Firebase app's public ids (not secrets, the same as a google-services.json carries).
+        // Empty in a build without them: no Firebase starts and the phone checks by itself (15 minutes, then 3 hours).
+        buildConfigField("String", "FCM_APP_ID", "\"${adProp("bamnat.fcmAppId")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${adProp("bamnat.fcmApiKey")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${adProp("bamnat.fcmProjectId")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${adProp("bamnat.fcmSenderId")}\"")
         buildConfigField("String", "ADMOB_REWARDED", "\"${adProp("bamnat.admobRewarded")}\"")
         manifestPlaceholders["admobAppId"] = admobAppId
         // [SHR-02] The share server's host, for its /s/ links to open in the app (src/onlineShare).
@@ -235,6 +241,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-cronet:18.1.1")
     // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
     implementation("com.android.billingclient:billing:9.1.0")
+    // 1.36 [PUSH-01] 문의 답 바로 알림: data messages only ({kind: inquiry}, no words), started by hand only when the ids are set.
+    implementation("com.google.firebase:firebase-messaging:24.1.1")
     // [MON-07] AdMob and Google's consent form (UMP); nothing shows before the 정식 출시 switch.
     // 25.3.0 and later are built with Kotlin 2.3, which this project's Kotlin 2.1 cannot read: raise both together.
     implementation("com.google.android.gms:play-services-ads:25.2.0")

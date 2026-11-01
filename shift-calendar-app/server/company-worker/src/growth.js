@@ -1,6 +1,7 @@
 import { all, audit, batch, iso, json, one, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
 import { grams, likeness, titleFrom } from "./inbox.js";
+import { fcmTell } from "./fcm.js";
 import { grantMakerReward } from "./maker-reward.js";
 
 // ---- 1.36 자가 발전 바퀴 [GRW-01]~[GRW-06] (사용자 2026-11-01 "자가 발전을 자동으로", 2차 조사 4장) ----
@@ -144,6 +145,7 @@ async function tellAskers(env, need, how, now) {
   }
   stmts.push(stmt(env, "UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq'", need.id));
   if (stmts.length) await batch(env, stmts);
+  await fcmTell(env, links.map((l) => l.ref), now);
   return links.length;
 }
 

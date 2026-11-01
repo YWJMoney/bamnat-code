@@ -856,12 +856,90 @@ export function scopeOf(tabs) {
   return tabs.includes("app") || tabs.length >= 2 ? "theme" : "tab";
 }
 
+/**
+ * 1.36 [MKX-05] 장터 네 구간 (사용자 2026-11-01 "테마는 종합, 가계부·달력·메모·근무 급여는 개별 카테고리, 그 밖의 부품·기능을 만든 것도
+ * 해당 카테고리에 맞게 찾아서 스튜디오에서"): a recipe that carries only 부품 lines (A 갈래 piece "parts") is a 부품, one with
+ * 수식·규칙·버튼 (D 갈래 piece "logic", with or without parts) is a 규칙·단추. Their tabs come from what they touch: a part's id
+ * (cal.* → calendar, memo.* → memo, money.* → money, pay.* → pay, app.* → app, widget.* → widget), a button's place and a rule's verb.
+ */
+export const MARKET_SCOPES = ["theme", "tab", "part", "logic"];
+const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm" };
+const LOGIC_TAB = { day: "calendar", cal: "calendar", calendar: "calendar", memo: "memo", memoTpl: "memo", newMemo: "memo", checkReset: "memo", memoLine: "memo",
+  money: "money", addMoney: "money", addIncome: "money", notify: "alarm", pay: "pay", stats: "pay", alarm: "alarm" };
+// D 갈래: 'screen' 동작은 arg가 보낼 탭이에요.
+const logicTab = (x) => (x?.do === "screen" ? LOGIC_TAB[x.arg] : null) ?? LOGIC_TAB[x?.do];
+
+export function sectionOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return { scope: null, tabs: [] };
+  }
+  const pieces = rec?.pieces ?? [];
+  const kinds = new Set(pieces.map((p) => p.kind));
+  const extra = [...kinds].filter((k) => k !== "parts" && k !== "logic" && k !== "tabView");
+  if (!pieces.length || extra.length || !(kinds.has("parts") || kinds.has("logic") || kinds.has("tabView"))) {
+    const tabs = tabsOf(rec);
+    return { scope: scopeOf(tabs), tabs };
+  }
+  // A 갈래와 같은 규칙: 부품 작품은 parts 조각 하나에, 모든 줄이 한 단위(설계도 id 앞 두 마디, cal.head.title → cal.head) 안.
+  const unit = partUnitOf(rec);
+  if (!kinds.has("logic") && !unit) {
+    const tabs = tabsOf(rec);
+    return { scope: scopeOf(tabs), tabs };
+  }
+  const out = new Set();
+  if (unit && !unit.startsWith("part:")) out.add({ cal: "calendar", memo: "memo", money: "money" }[unit.split(".")[0]]);
+  for (const p of pieces) {
+    if (p.kind === "parts") for (const l of p.parts ?? []) { const t = PART_TAB[String(l.id ?? "").split(".")[0]]; if (t) out.add(t); }
+    if (p.kind === "logic") {
+      for (const b of p.buttons ?? []) { const t = LOGIC_TAB[b.where] ?? logicTab(b); if (t) out.add(t); }
+      for (const r of p.rules ?? []) { const t = LOGIC_TAB[r.on] ?? logicTab(r); if (t) out.add(t); }
+    }
+  }
+  return { scope: kinds.has("logic") ? "logic" : "part", tabs: [...out].sort(), ...(kinds.has("logic") ? {} : { unit }) };
+}
+
+/** The part unit of a blueprint id: its first two names (cal.head.title → cal.head; app → app). Same as A's BlueprintParts.unitOf. */
+export function partUnit(id) {
+  return String(id ?? "").split(".").slice(0, 2).join(".") || null;
+}
+
+const BOARD_OF = { cal: "cal.board", memo: "memo.view", memoBy: "memo.view", memoSort: "memo.view", money: "money.board" };
+
+/**
+ * The app's LookParts id of a 부품 작품, or null: "part:cal.head" when its one piece is parts with every line in one unit,
+ * "cal.board"·"memo.view"·"money.board" when its one piece is tabView with keys of one tab only (E의 판 부품).
+ * Same as A's LookParts.partUnit; when the branches meet, keep A's and this one goes.
+ */
+export function partUnitOf(body) {
+  let rec = body;
+  try {
+    if (typeof body === "string") rec = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const pieces = rec?.pieces ?? [];
+  if (pieces.length !== 1) return null;
+  const p = pieces[0];
+  if (p.kind === "parts") {
+    const units = new Set((p.parts ?? []).map((l) => partUnit(l.id)));
+    return units.size === 1 ? `part:${[...units][0]}` : null;
+  }
+  if (p.kind === "tabView") {
+    const boards = new Set(Object.keys(p).filter((k) => k !== "kind").map((k) => BOARD_OF[k] ?? "?"));
+    return boards.size === 1 && !boards.has("?") ? [...boards][0] : null;
+  }
+  return null;
+}
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
-  const tabs = r.body ? tabsOf(r.body) : [];
-  const scope = scopeOf(tabs);
+  const { scope, tabs, unit } = r.body ? sectionOf(r.body) : { scope: null, tabs: [] };
   return {
+    ...(unit ? { unit } : {}),
     ...(look ? { look } : {}),
     // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
     ...(tabs.length ? { tabs } : {}),
@@ -953,12 +1031,15 @@ async function recipeList(d, env, url) {
     ORDER BY r.updated_at DESC LIMIT 600`, ...args);
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
-  const scope = ["theme", "tab"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
-  const tab = scope === "tab" && MARKET_TABS.includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
+  // 1.36 [MKX-05] and scope=part / scope=logic (부품·규칙·단추), each with an optional tab= of the tab it touches.
+  const scope = MARKET_SCOPES.includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  const tab = scope && scope !== "theme" && [...MARKET_TABS, "app"].includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
+  // A 갈래 '부품 하나': scope=part&unit=cal.head.
+  const unit = scope === "part" && /^(part:)?[a-z]+(\.[A-Za-z]+)?$/.test(url.searchParams.get("unit") ?? "") ? url.searchParams.get("unit") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
   const rows = scope ? rows0.filter((r) => {
-    const tabs = tabsOf(r.body);
-    return scopeOf(tabs) === scope && (!tab || tabs[0] === tab);
+    const s = sectionOf(r.body);
+    return s.scope === scope && (!tab || (scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) && (!unit || s.unit === unit);
   }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {
@@ -1401,7 +1482,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
     const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${rows.map(() => "?").join(",")})
       GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
-    return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
+    return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n })),
       hidden: r.hidden_reason ?? null })) });
   }

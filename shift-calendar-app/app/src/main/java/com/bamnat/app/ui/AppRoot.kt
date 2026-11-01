@@ -644,7 +644,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
             container.inquiryStore.update(it)
             // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
-            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext)
+            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext,
+                soon = it.any { q -> q.waiting && java.time.Duration.between(q.updatedAt, com.bamnat.core.time.Today.instant()).toDays() < 1 })
             // 1.36 [GRW-03] PC 확인 a4899e83: 스튜디오 부탁이 풀렸으면 앱을 열 때 한 번 '보러 가기'로 알려요(설정 탭까지 가지 않아도).
             val prefs = container.appContext.getSharedPreferences("studio_solved", android.content.Context.MODE_PRIVATE)
             val told = prefs.getStringSet("told", emptySet()).orEmpty()

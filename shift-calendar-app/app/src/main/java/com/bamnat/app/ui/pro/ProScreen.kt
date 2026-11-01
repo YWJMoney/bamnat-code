@@ -387,6 +387,10 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
                 style = MaterialTheme.typography.bodyMedium)
         }
         passes?.until?.let { Text("이용권은 ${dateWords(it.atZone(zone).toLocalDate())}까지예요.", style = MaterialTheme.typography.bodyMedium) }
+        // 1.36 PC 5차: 출시 전(무료 기간)에 받은 이용권은 끝나는 날이 아직 없어요. 비워 두지 않고 언제 시작하는지 말해요.
+            ?: passes?.waitingMonths?.takeIf { it > 0 }?.let {
+                Text("이용권 ${it}개월은 정식 출시 날부터 이어져요. 그때 끝나는 날이 정해져요.", style = MaterialTheme.typography.bodyMedium)
+            }
         if (passes?.deferred?.let { it > 0 } == true) Text("구독 중이라 ${passes.deferred}번은 Play 다음 결제일을 미뤄 드렸어요.", style = MaterialTheme.typography.bodySmall)
         pro.code?.let { saved ->
             Text("복구 코드", style = MaterialTheme.typography.labelLarge)

@@ -2,6 +2,7 @@ import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
 import { needFromInquiry } from "./growth.js";
+import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
 // ---- questions from the app [ADMIN-02] ----
 //
@@ -521,6 +522,8 @@ export async function replyTo(env, row, body, now, audited = true) {
     stmt(env, "DELETE FROM counters WHERE key LIKE ?", `typing|${row.id}|${env.actor?.id ?? ""}|%`),
   ]);
   if (audited) await audit(env, now, "inquiry_reply", row.id, status);
+  // 1.36 [PUSH-01] the asker's phone hears at once (no words go to Google).
+  await fcmTell(env, [row.id], now);
   return true;
 }
 
@@ -1132,6 +1135,7 @@ export async function devReply(env, row, body, now) {
     devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
   ]);
   await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
+  await fcmTell(env, pick, now);
   return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
 }
 
