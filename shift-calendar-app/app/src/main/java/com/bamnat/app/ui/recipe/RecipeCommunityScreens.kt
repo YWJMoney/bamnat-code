@@ -68,45 +68,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-// ---- [RCX-05][RCX-06][RCX-07] 제작자 페이지 ----
-
-class MakerViewModel(private val c: AppContainer, val id: String) : ViewModel() {
-    private val device get() = c.companyStore.device
-    val canFollow: Boolean get() = c.flags.on(FlagCatalog.RECIPE_TALK)
-
-    data class State(val page: MakerPage? = null, val error: String? = null, val message: String? = null)
-    private val _state = MutableStateFlow(State())
-    val state: StateFlow<State> = _state.asStateFlow()
-
-    init { load() }
-
-    fun load() {
-        viewModelScope.launch {
-            _state.value = runCatching { c.recipeApi.maker(device, id) }
-                .fold({ _state.value.copy(page = it, error = null) }, { _state.value.copy(error = RecipeClient.problem(it)) })
-        }
-    }
-
-    fun follow(on: Boolean) {
-        viewModelScope.launch {
-            runCatching { c.recipeApi.follow(device, id, on) }
-                .onSuccess {
-                    load()
-                    _state.value = _state.value.copy(message = if (on) "팔로우했어요. 새 레시피가 올라오면 밤낮 소식으로 알려 드려요" else "팔로우를 그만뒀어요")
-                }
-                .onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
-        }
-    }
-
-    fun face(emoji: String?, color: Long?) {
-        viewModelScope.launch {
-            runCatching { c.recipeApi.makerMe(device, emoji, color, set = true) }
-                .onSuccess { load() }.onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
-        }
-    }
-
-    fun shown() { _state.value = _state.value.copy(message = null) }
-}
+// [RCX-05] 1.35 제작자 페이지 → [PRF-01] 1.36 창작자 프로필: MakerViewModel and MakerScreen are in ProfileScreens.kt.
 
 /** The face of a maker: their emoji on their colour, or the first letter of their nickname. */
 @Composable
@@ -115,58 +77,6 @@ fun MakerFace(face: String?, color: Long?, nick: String?, size: androidx.compose
         contentAlignment = Alignment.Center) {
         Text(face ?: nick?.take(1) ?: "🙂", fontSize = (size.value * 0.5f).sp)
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-fun MakerScreen(vm: MakerViewModel, onBack: () -> Unit, onOpen: (String) -> Unit) {
-    val s by vm.state.collectAsStateWithLifecycle()
-    val snack = remember { SnackbarHostState() }
-    var picking by remember { mutableStateOf(false) }
-    var coloring by remember { mutableStateOf(false) }
-    LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
-    Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text(s.page?.nick ?: "만든 분") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
-    ) { padding ->
-        val p = s.page
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (p == null) {
-                    Text(s.error ?: "불러오는 중이에요", style = MaterialTheme.typography.bodyMedium)
-                    if (s.error != null) TextButton(onClick = vm::load) { Text("다시 해 보기") }
-                    return@Column
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    MakerFace(p.face, p.color, p.nick, 72.dp)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(p.nick ?: "이름 없는 분", style = MaterialTheme.typography.titleLarge)
-                        Text("레시피 ${p.recipes.size}개 · 받은 좋아요 ${p.likes} · 쓰는 분 ${p.users}명 · 팔로워 ${p.followers}",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                if (p.badges.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    p.badges.forEach { (_, name) -> AssistChip(onClick = {}, label = { Text("🏅 $name") }) }
-                }
-                if (p.mine) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { picking = true }) { Text("얼굴 이모지 바꾸기") }
-                    OutlinedButton(onClick = { coloring = true }) { Text("바탕색 바꾸기") }
-                } else if (vm.canFollow) {
-                    if (p.following) OutlinedButton(onClick = { vm.follow(false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("팔로우 그만두기") }
-                    else Button(onClick = { vm.follow(true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("팔로우 (새 레시피 소식 받기)") }
-                } else Text("팔로우는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
-                Text("만든 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                if (p.recipes.isEmpty()) Text("장터에 올린 레시피가 아직 없어요", style = MaterialTheme.typography.bodySmall)
-                p.recipes.forEach { r -> RecipeRow(r) { onOpen(r.code) } }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-    }
-    if (picking) EmojiPickerDialog(onPick = { e -> picking = false; vm.face(e, s.page?.color) }, onDismiss = { picking = false })
-    if (coloring) ColorPickerDialog(initial = s.page?.color ?: 0xFF5C6BC0L, onPick = { col -> coloring = false; vm.face(s.page?.face, col) },
-        onDismiss = { coloring = false })
 }
 
 // ---- [RCX-04] 요청 판 ----

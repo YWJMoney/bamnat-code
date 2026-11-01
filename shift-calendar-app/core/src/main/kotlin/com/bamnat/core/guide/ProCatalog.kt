@@ -37,6 +37,8 @@ object ProCatalog {
         "field.daysProof" to "PAY_REPORT",
         // 1.35 [FREE-10] 테마 옷장.
         "look.wardrobe" to "THEME_WARDROBE",
+        // 1.36 [PRF-12] 창작자 꾸미기.
+        "recipe.creatorPro" to "CREATOR_PRO",
     )
 
     fun isPro(id: String): Boolean = id in tiers

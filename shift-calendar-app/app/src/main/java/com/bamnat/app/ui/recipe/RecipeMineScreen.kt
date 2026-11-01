@@ -87,7 +87,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 if (on) NewsSwitches()
                 if (on) Row {
                     TextButton(onClick = onList) { Text("레시피 보러 가기") }
-                    me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 만든 분 페이지") } }
+                    me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 프로필") } }
                 }
 
                 Header("받은 레시피")

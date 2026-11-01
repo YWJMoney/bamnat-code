@@ -150,10 +150,10 @@ test("a nickname is the phone's own, two to twelve letters, never an admin's", a
   assert.equal((await nick(2, "가")).data.error, "nick");
   assert.equal((await nick(2, "01012345678")).data.error, "phone");
   await t.say(1, "제가 올렸어요");
-  assert.equal((await t.read()).data.posts[0].nick, "야간요정");
-  assert.deepEqual((await call("GET", `/api/companies/${t.c}`)).data.setups[0].by, ["야간요정"]);
-  assert.equal((await nick(1, "")).data.nick, null);
+  // 1.36 [V3] 마을 이름 하나: the name is the 프로필's too, so a company's talk and rule sets show 참여자 번호 only.
   assert.equal((await t.read()).data.posts[0].nick, null);
+  assert.deepEqual((await call("GET", `/api/companies/${t.c}`)).data.setups[0].by, []);
+  assert.equal((await nick(1, "")).data.nick, null);
 });
 
 test("phones that use a rule set are counted once each", async () => {
