@@ -1545,7 +1545,10 @@ private fun AppNavHost(
                     // [LIN-03] My recipe's next 판, with what the 수정판 changed in it.
                     com.bamnat.app.recipe.RecipeLinks.remake = body to mine
                     nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(mine)))
-                })
+                },
+                // PC 제안 1.36 (담은 뒤 스튜디오까지 뒤로 세 번): come from the studio's 보관함 › 장터에서 찾기, straight back to it.
+                onToStudio = remember(entry) { runCatching { nav.getBackStackEntry(Routes.STUDIO) }.isSuccess }
+                    .takeIf { it }?.let { { nav.popBackStack(Routes.STUDIO, inclusive = false); Unit } })
         }
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()

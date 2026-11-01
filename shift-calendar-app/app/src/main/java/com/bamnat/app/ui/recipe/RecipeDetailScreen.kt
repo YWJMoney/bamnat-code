@@ -83,7 +83,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     /** [RCX-31] 1.35: my own recipe, made again as its next 판 (받은 분들께 새 판으로 알려져요). */
     onNewVersion: (String) -> Unit = {},
     /** [LIN-03] 1.35: my recipe (code) made again with what a 수정판 changed (its written form). */
-    onTakeInto: (String, String) -> Unit = { _, _ -> }) {
+    onTakeInto: (String, String) -> Unit = { _, _ -> },
+    /** PC 제안 1.36: opened from the studio's 보관함 › 장터에서 찾기 — 담기 says so and goes back to it. */
+    onToStudio: (() -> Unit)? = null) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
@@ -204,7 +206,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
-                        onKeep = { ids -> vm.keep(ids) },
+                        onKeep = { ids -> vm.keep(ids) }, onToStudio = onToStudio,
                         extra = if (others.isEmpty()) null else { {
                             Text("기능 · 모양과 함께 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
                             others.forEach { p ->

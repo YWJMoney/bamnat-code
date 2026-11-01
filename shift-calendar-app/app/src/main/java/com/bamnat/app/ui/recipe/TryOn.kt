@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -279,6 +280,8 @@ fun TryOnScreen(
     onDismiss: () -> Unit,
     onKeep: ((Set<String>) -> Boolean)?,
     extra: (@Composable ColumnScope.() -> Unit)? = null,
+    /** PC 제안 1.36: come from the studio, 담기 says 스튜디오 보관함 and offers the way back to it. */
+    onToStudio: (() -> Unit)? = null,
     actions: @Composable ColumnScope.(Set<String>) -> Unit,
 ) {
     val c = LocalContext.current.appContainer
@@ -291,7 +294,8 @@ fun TryOnScreen(
     var keptLine by remember(r) { mutableStateOf<String?>(null) }
     val boxSize = c.wardrobe.kept.collectAsStateWithLifecycle().value.size
     fun keep(ids: Set<String>) {
-        keptLine = if (onKeep?.invoke(ids) == true) "✓ 보관함에 담았어요 (${boxSize + 1}개). 마을 › 테마와 스튜디오의 보관함에서 꺼내 써요"
+        keptLine = if (onKeep?.invoke(ids) == true) (if (onToStudio != null) "✓ 스튜디오 보관함에 넣었어요 (${boxSize + 1}개)"
+            else "✓ 보관함에 담았어요 (${boxSize + 1}개). 마을 › 테마와 스튜디오의 보관함에서 꺼내 써요")
             else "보관함이 꽉 찼거나 담을 부분이 없어요 (${c.wardrobe.partsLimit()}개까지)"
     }
     val mine by produceState(Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = emptyList()), c) {
@@ -382,6 +386,8 @@ fun TryOnScreen(
                         }
                         keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+                        if (keptLine?.startsWith("✓") == true && onToStudio != null) FilledTonalButton(onClick = onToStudio,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("스튜디오로 돌아가기") }
                     }
                 }
             }
