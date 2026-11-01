@@ -19,6 +19,9 @@ export const PHOTO_GUARD = {
   lookFirst: 3,
   /** 사진 신고가 이만큼이면 먼저 가려요(작품 신고 3번보다 빨리). */
   flagsToHold: 2,
+  /** 1.36 [SEC-07] 보안 점검 H1: pictures a network may send a day, and all phones together (160 KB each, so about 320 MB a day at most). */
+  perNetworkDay: 30,
+  allDay: 2000,
   /** 자동 검사가 이 시간 안에 답하지 않으면 'unchecked'. */
   checkMs: 4000,
 };
@@ -66,7 +69,9 @@ export function firstState(check, trustLevel, passed) {
   const known = passed >= PHOTO_GUARD.lookFirst;
   if (trustLevel <= 0 && !known) return { state: "pending", why: "first" };
   if (check === "pass") return { state: "ok", why: null };
-  return trustLevel >= 2 || known ? { state: "ok", why: null } : { state: "pending", why: "first" };
+  // 1.36 [SEC-07] 보안 점검 H2: without the automatic check only a phone whose pictures the operator already passed goes straight
+  // through. Before, 단골 (14 days since the id was first seen) did too, and ids cost nothing to make and leave to age.
+  return known ? { state: "ok", why: null } : { state: "pending", why: "first" };
 }
 
 /** How many of [dev]'s pictures were shown (passed the operator or the rules) and not hidden since. */
@@ -75,12 +80,15 @@ export async function passedPhotos(env, dev) {
 }
 
 /** [GRW-08] 셋째 겹: one report on a picture; [flagsToHold] hold it from everyone until the operator looks. */
-export async function flagImage(env, id, dev, reason, now) {
+export async function flagImage(env, id, dev, reason, now, counts = true) {
   const img = await one(env, "SELECT id, owner, state, flags FROM recipe_images WHERE id = ?", id);
   if (!img || img.owner === dev || img.state === "hidden") return { held: false };
   const r = await run(env, "INSERT OR IGNORE INTO recipe_image_flags (id, device, reason, at) VALUES (?, ?, ?, ?)", id, dev,
     PHOTO_FLAG_REASONS.includes(reason) ? reason : "other", now);
   if (!r.meta.changes) return { held: img.state === "held", already: true };
+  // 1.36 [SEC-08] 보안 점검 M3: a report from a 새싹 install or from a network that already reported this picture today is kept for the
+  // operator but does not hold the picture, so ids made on one line cannot hide someone's work.
+  if (!counts) return { held: img.state === "held" };
   const flags = img.flags + 1;
   const hold = img.state === "ok" && flags >= PHOTO_GUARD.flagsToHold;
   await run(env, `UPDATE recipe_images SET flags = ?${hold ? ", state = 'held', why = 'flags', decided_at = ?" : ""} WHERE id = ?`, ...(hold ? [flags, now, id] : [flags, id]));

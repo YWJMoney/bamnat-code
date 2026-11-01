@@ -909,7 +909,10 @@ async function rcImagePost(d, env, request) {
   const bytes = typeof body.webp === "string" ? rcB64bytes(body.webp) : null;
   if (!bytes || !RC_WEBP(bytes)) return d.json({ error: "image", field: "webp" }, 400);
   if (bytes.length > COMMUNITY_LIMITS.imageBytes) return d.json({ error: "too_big", field: "webp" }, 413);
-  const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY]]);
+  const net = await d.network(request, env, now);
+  // 1.36 [SEC-07] 보안 점검 H1: a day's pictures per network and for everyone, not only per install (an id costs nothing to make).
+  const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY],
+    ["network", `rimgnet|${net.day}`, PHOTO_GUARD.perNetworkDay, DAY], ["network", `rimgall|${Math.floor(now / DAY)}`, PHOTO_GUARD.allDay, DAY]]);
   if (hit) return hit;
   const id = (await sha256hex(`${dev}|${now}|${body.webp.length}|${d.randomId(8)}`)).slice(0, 16);
   // 1.36 [GRW-08] 세 겹: 자동 검사 → 믿음 단계(새싹 첫 사진만 운영자가) → 신고 즉시 가림. Before 1.36 every picture waited for the operator.
@@ -944,7 +947,11 @@ async function rcImageFlag(d, env, request, id) {
   const now = Date.now();
   const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
   if (hit) return hit;
-  const out = await flagImage(env, id, dev, body.reason, now);
+  // 1.36 [SEC-08] 보안 점검 M3: a 새싹's report and a second one from the same network today count for the operator only.
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const net = await d.network(request, env, now);
+  const counts = trust.level >= 1 && (await d.allow(env, `rimgflagnet|${net.day}|${id}`, 1, DAY, now));
+  const out = await flagImage(env, id, dev, body.reason, now, counts);
   return d.json({ flagged: true, ...out });
 }
 

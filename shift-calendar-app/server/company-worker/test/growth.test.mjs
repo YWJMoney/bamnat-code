@@ -139,7 +139,9 @@ test("[GRW-05] the ladder climbs by real users and 7-day keeping, not votes, and
 // ---- [GRW-08] 사진 세 겹 ----
 import { firstState, PHOTO_GUARD } from "../src/photo-guard.js";
 
-const webp = (n) => Buffer.concat([Buffer.from("RIFF"), Buffer.from([20, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(16, n)]).toString("base64");
+// A real VP8 header (64×64) so the size check of 1.36 [SEC-05] reads it; [n] makes each picture different.
+const webp = (n) => Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.from([10, 0, 0, 0]),
+  Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 64, 0, 64, 0]), Buffer.alloc(16, n)]).toString("base64");
 
 test("[GRW-08] the second layer: 새싹 first pictures wait, a known phone's go up, a block never shows", () => {
   assert.deepEqual(firstState("unchecked", 0, 0), { state: "pending", why: "first" });
@@ -147,7 +149,9 @@ test("[GRW-08] the second layer: 새싹 first pictures wait, a known phone's go 
   assert.deepEqual(firstState("pass", 0, PHOTO_GUARD.lookFirst), { state: "ok", why: null });
   assert.deepEqual(firstState("pass", 1, 0), { state: "ok", why: null });
   assert.deepEqual(firstState("unchecked", 1, 0), { state: "pending", why: "first" });
-  assert.deepEqual(firstState("unchecked", 2, 0), { state: "ok", why: null });
+  // 1.36 [SEC-07] 단골 by age alone no longer skips the operator when the automatic check could not answer.
+  assert.deepEqual(firstState("unchecked", 2, 0), { state: "pending", why: "first" });
+  assert.deepEqual(firstState("unchecked", 2, PHOTO_GUARD.lookFirst), { state: "ok", why: null });
   assert.deepEqual(firstState("block", 2, 9), { state: "held", why: "check" });
 });
 
@@ -155,8 +159,11 @@ test("[GRW-08] first, check and report: an automatic check, three looked at then
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   let verdict = "SAFE";
   const AI = { run: async () => ({ response: verdict }) };
-  const { call } = server({ plaza: true, AI, PHOTO_CHECK_MODEL: "@cf/test/vision" });
+  const { call, DB } = server({ plaza: true, AI, PHOTO_CHECK_MODEL: "@cf/test/vision" });
   const admin = await signIn(call);
+  // 1.36 [SEC-08] Reports that hold a picture come from phones that have been around (이웃 or more).
+  const { deviceHash, deviceId } = await import("../src/index.js");
+  for (const n of [2, 3]) await DB.prepare("INSERT INTO recipe_trust (device, first_at) VALUES (?, ?)").bind(await deviceHash(deviceId(device(n))), AFTER - 4 * 86400000).run();
   const up = async (n, k) => (await call("POST", "/api/recipes/images", { device: device(n), webp: webp(k) }, from(n))).data;
   // 새싹: the first three wait even when the check passes.
   const first = [];
