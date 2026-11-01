@@ -42,6 +42,9 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
     val kind = when {
         id.startsWith("cal.band") -> "band"
         id.startsWith("cal.line") -> "line"
+        id.startsWith("cal.weekly") -> "weekly"
+        id.startsWith("cal.year") -> "year"
+        id.startsWith("memo.cal") -> "memoCal"
         id == "memo.prop" || id.startsWith("memo.board") -> "memoBoard"
         id.startsWith("memo.table") -> "memoTable"
         id.startsWith("money.cal") -> "moneyCal"
@@ -60,6 +63,9 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
             when (kind) {
                 "band" -> BandSample()
                 "line" -> LineSample()
+                "weekly" -> WeeklySample()
+                "year" -> YearSample()
+                "memoCal" -> MemoCalSample()
                 "memoBoard" -> MemoBoardSample()
                 "memoTable" -> MemoTableSample()
                 "moneyCal" -> MoneyCalSample()
@@ -184,6 +190,71 @@ private fun MoneyBoardSample() {
                 .then(PartMods.box(bp.style("money.board.col"), RoundedCornerShape(14.dp))).padding(8.dp)) {
                 Text(cat, style = MaterialTheme.typography.titleSmall)
                 Text(sum, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+/** [TAB-04] N1 주 판 예시: one week of seven tall days, today and the picked day in their states. */
+@Composable
+private fun WeeklySample() {
+    val bp = LocalBlueprint.current
+    val names = listOf("월", "화", "수", "목", "금", "토", "일")
+    Column(Modifier.fillMaxWidth().then(PartMods.box(bp.style("cal.weekly"), RoundedCornerShape(0.dp)))
+        .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp)).padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("11월 3일 – 11월 9일 · 근무 5일 · 40시간", style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            for (d in 0..6) {
+                val (shift, color) = SHIFTS[d]
+                val states = setOfNotNull("today".takeIf { d == 1 }, "sel".takeIf { d == 3 }, "sat".takeIf { d == 5 }, "sun".takeIf { d == 6 })
+                Column(Modifier.weight(1f).heightIn(min = 76.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                    .then(PartMods.box(bp.style("cal.weekly.day", states), RoundedCornerShape(8.dp))).padding(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("${d + 3} ${names[d]}", style = MaterialTheme.typography.labelSmall, color = if (d == 6) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    Text(shift, style = MaterialTheme.typography.labelMedium, color = Color.White, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().background(color, RoundedCornerShape(4.dp)))
+                    if (d == 1) Text("병원", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+/** [TAB-04] N1 연간 판 예시: six small months as blocks of shift colour, this month in its state. */
+@Composable
+private fun YearSample() {
+    val bp = LocalBlueprint.current
+    Column(Modifier.fillMaxWidth().then(PartMods.box(bp.style("cal.year"), RoundedCornerShape(0.dp))), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("2026년 · 주 120 · 야 96 · 휴 110", style = MaterialTheme.typography.labelMedium)
+        for (row in 0..1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (c in 1..3) {
+                val m = row * 3 + c
+                Column(Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+                    .then(PartMods.box(bp.style("cal.year.month", setOfNotNull("today".takeIf { m == 5 })), RoundedCornerShape(10.dp))).padding(5.dp)) {
+                    Text("${m}월", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    for (w in 0..2) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        for (d in 0..6) Box(Modifier.weight(1f).height(5.dp).background(SHIFTS[(d + w + m) % SHIFTS.size].second.copy(alpha = 0.8f), RoundedCornerShape(1.dp)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [TAB-04] N9 메모 달력 예시: two weeks with memo titles in their days. */
+@Composable
+private fun MemoCalSample() {
+    val bp = LocalBlueprint.current
+    val titles = mapOf(2 to "장보기", 5 to "마감 정리", 9 to "병원", 12 to "월세")
+    Column(Modifier.fillMaxWidth().then(PartMods.box(bp.style("memo.cal"), RoundedCornerShape(10.dp))), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        for (w in 0..1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (d in 1..7) {
+                val n = w * 7 + d
+                Column(Modifier.weight(1f).heightIn(min = 44.dp).background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
+                    .then(PartMods.box(bp.style("memo.cal.cell", setOfNotNull("today".takeIf { n == 3 }, "sel".takeIf { n == 9 })), RoundedCornerShape(8.dp))).padding(2.dp)) {
+                    Text("$n", style = MaterialTheme.typography.labelSmall)
+                    titles[n]?.let { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 2, color = MaterialTheme.colorScheme.primary) }
+                }
             }
         }
     }

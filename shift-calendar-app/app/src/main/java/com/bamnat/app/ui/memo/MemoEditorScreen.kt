@@ -144,8 +144,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var savingTemplate by remember { mutableStateOf(false) }
     var toLedger by remember { mutableStateOf(false) }
     if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
-    if (savingTemplate) SaveTemplateDialog(memo, onSave = { name, asked ->
-        val why = vm.saveAsTemplate(name, asked)
+    if (savingTemplate) SaveTemplateDialog(memo, onSave = { name, asked, picks ->
+        val why = vm.saveAsTemplate(name, asked, picks)
         Toast.makeText(context, why ?: "‘${name.ifBlank { "새 틀" }}’ 틀로 저장했어요. 새 메모를 열면 ‘틀에서 시작’에 있어요", Toast.LENGTH_LONG).show()
         if (why == null) savingTemplate = false
     }, onDismiss = { savingTemplate = false })

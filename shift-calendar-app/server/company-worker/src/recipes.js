@@ -128,9 +128,11 @@ export const PART_IDS = [
   "cal.cell.lunar", "cal.cell.holiday", "cal.foot",
   // [TAB-04] 1.36 달력 판
   "cal.band", "cal.band.slot", "cal.line", "cal.line.row", "cal.line.bar",
+  "cal.weekly", "cal.weekly.day", "cal.year", "cal.year.month",
   "memo.head", "memo.tags", "memo.card", "memo.card.title", "memo.card.body", "memo.card.date",
   // [TAB-01][TAB-02] 메모 속성·보드·표
   "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
+  "memo.cal", "memo.cal.cell",
   "money.head", "money.day", "money.row", "money.amount",
   // [TAB-06] 가계부 판
   "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
@@ -251,8 +253,8 @@ export const RECIPE_PIECES = {
   screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
   // [TAB-07] 1.36 탭 보기, as core PieceKind.TAB_VIEW (CalendarBoard·MemoView·LedgerBoard).
-  tabView: { styles: STYLES, fields: [P("cal", ["month", "list", "rota", "timeline"], { optional: true }),
-    P("memo", ["list", "board", "table", "gallery"], { optional: true }),
+  tabView: { styles: STYLES, fields: [P("cal", ["month", "weekly", "list", "rota", "timeline", "yearly"], { optional: true }),
+    P("memo", ["list", "board", "table", "cal", "gallery"], { optional: true }),
     T("memoBy", 22, { optional: true, guard: false, check: (s) => (memoBy(s) ? null : "memoBy") }),
     T("memoSort", 23, { optional: true, guard: false, check: (s) => (memoSort(s) ? null : "memoSort") }),
     P("money", ["list", "cal", "board", "table"], { optional: true })] },

@@ -94,6 +94,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
@@ -144,6 +145,7 @@ fun MemoListScreen(
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
     val today = Today.date()
+    var undo by remember { mutableStateOf<Pair<String, Memo>?>(null) }
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
         onOpen = open,
@@ -151,7 +153,10 @@ fun MemoListScreen(
         onTogglePin = vm::togglePin,
         onDuplicate = vm::duplicate,
         onDelete = vm::delete,
+        // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for a few seconds.
+        onChange = { before, after, said -> vm.saveEdited(after); undo = said to before },
     )
+    androidx.compose.runtime.LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(6_000); undo = null } }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -229,12 +234,30 @@ fun MemoListScreen(
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions)
                 memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
+                memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
                 !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
                 state.tab == MemoTab.CALENDAR -> CalendarMemoList(state, today, actions)
                 else -> GeneralMemoGrid(state, actions)
             }
         }
 
+        // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
+        undo?.let { (said, before) ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.inverseSurface,
+                shadowElevation = 4.dp,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp).fillMaxWidth()
+                    .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+            ) {
+                Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(said, color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = { vm.saveEdited(before); undo = null }) {
+                        Text("되돌리기", color = MaterialTheme.colorScheme.inversePrimary)
+                    }
+                }
+            }
+        }
         if (!state.selecting) {
             Column(
                 Modifier.align(Alignment.BottomEnd).padding(16.dp),
@@ -313,6 +336,10 @@ internal class CardActions(
     val onTogglePin: (Memo) -> Unit,
     val onDuplicate: (Memo) -> Unit,
     val onDelete: (Memo) -> Unit,
+    /**
+     * [TAB-02] 누락 점검 N9: a memo changed in a view (moved to another 보드 칸, a 표 칸 picked) — saved, with [said] and 되돌리기 to [before].
+     */
+    val onChange: (before: Memo, after: Memo, said: String) -> Unit = { _, _, _ -> },
 )
 
 @Composable

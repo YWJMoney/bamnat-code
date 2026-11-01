@@ -79,8 +79,10 @@ data class MemoView(
         const val BOARD = "board"
         const val TABLE = "table"
         const val GALLERY = "gallery"
-        val VIEWS = listOf(LIST, BOARD, TABLE, GALLERY)
-        val LABELS = mapOf(LIST to "목록", BOARD to "보드", TABLE to "표", GALLERY to "갤러리")
+        /** [TAB-02] 누락 점검 N9 (2차 5-7 "보기: 목록·카드·보드·표·달력·갤러리"): dated memos on a month. */
+        const val CALENDAR = "cal"
+        val VIEWS = listOf(LIST, BOARD, TABLE, CALENDAR, GALLERY)
+        val LABELS = mapOf(LIST to "목록", BOARD to "보드", TABLE to "표", CALENDAR to "달력", GALLERY to "갤러리")
 
         const val BY_TAG = "tag"
         const val BY_COLOR = "color"
@@ -92,6 +94,40 @@ data class MemoView(
         const val NONE = "\u0000none"
 
         private val CHECK_ORDER = listOf("할 일", "하는 중", "다 함", "메모")
+
+        /** Whether a card can be moved between [by]'s columns (근무 and 할 일 상태 come from the day and the ticks, not the card). */
+        fun canMove(by: String): Boolean = by == BY_TAG || by == BY_COLOR || by.startsWith("p:")
+
+        /**
+         * [TAB-02] 누락 점검 N9 (보드에서 카드를 끌어 다른 칸으로): [m] as it reads in column [to] after leaving [from] — the 칸's value set
+         * (or its line gone for "없음"), a #꼬리표 swapped, or the colour. Null when [by] cannot move a card or nothing changes.
+         */
+        fun moved(m: Memo, by: String, from: String, to: String): Memo? {
+            if (from == to || !canMove(by)) return null
+            return when {
+                by.startsWith("p:") -> MemoProps.set(m, by.drop(2), if (to == NONE) "" else to)
+                by == BY_COLOR -> to.toIntOrNull()?.let { m.copy(colorIndex = it) } ?: if (to == NONE) m.copy(colorIndex = 0) else null
+                else -> {
+                    fun swap(t: String) = if (from == NONE) t else t.replace(Regex("#" + Regex.escape(from) + "(?![\\p{L}\\p{N}_])"), if (to == NONE) "" else "#$to")
+                        .replace(Regex(" {2,}"), " ").trimEnd()
+                    val inText = from != NONE && (m.title.contains("#$from") || m.body.contains("#$from") || m.checklist.any { it.text.contains("#$from") })
+                    when {
+                        from == NONE || !inText -> if (to == NONE) null else m.copy(body = (m.body.trimEnd() + if (m.body.isBlank()) "#$to" else " #$to"))
+                        else -> m.copy(title = swap(m.title), body = swap(m.body), checklist = m.checklist.map { it.copy(text = swap(it.text)) })
+                    }
+                }
+            }?.takeIf { it != m }
+        }
+
+        /**
+         * [TAB-02] 누락 점검 N9 메모 '달력' 보기: the day [m] sits on — its own date, else the first 날짜 칸 written in it ("마감일: 11월 5일"), so a
+         * 일반 메모 with a date line still lands on the month. Null when it has neither.
+         */
+        fun dayOf(m: Memo): java.time.LocalDate? = m.date ?: MemoProps.of(m).firstOrNull { it.type == MemoProps.Type.DATE }?.date
+
+        /** [dayOf] for each of [memos] that has one, by day, in the order given. */
+        fun byDay(memos: List<Memo>): Map<java.time.LocalDate, List<Memo>> =
+            memos.mapNotNull { m -> dayOf(m)?.let { it to m } }.groupBy({ it.first }, { it.second })
 
         /** A checklist's 상태 for the board: none ticked, some, all; a plain memo is "메모". */
         fun checkState(m: Memo): String = when {

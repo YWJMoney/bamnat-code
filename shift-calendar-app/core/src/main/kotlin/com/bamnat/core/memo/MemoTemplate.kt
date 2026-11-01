@@ -60,14 +60,21 @@ data class MemoTemplate(
          * template named [name]. Each "칸: 값" line whose name is in [asked] becomes an 입력 칸 of that property's type (금액, 날짜, 별점…)
          * and leaves the body, so starting from it asks for a fresh value instead of copying today's; the other lines stay as written.
          */
-        fun fromMemo(memo: Memo, id: String, name: String, asked: Set<String>): MemoTemplate {
+        fun fromMemo(memo: Memo, id: String, name: String, asked: Set<String>, choices: Map<String, List<String>> = emptyMap()): MemoTemplate {
             val props = MemoProps.of(memo).associateBy { it.label }
             val asks = ArrayList<TemplateAsk>()
             val body = if (memo.isChecklist) "" else memo.body.lineSequence().filter { line ->
                 val label = MemoProps.labelOfLine(line)
                 val p = label?.let { props[it] }
                 if (p != null && label in asked && asks.none { it.label == label }) {
-                    asks += TemplateAsk(label, if (p.type == MemoProps.Type.NUM && MemoProps.isMoneyLabel(label)) "money" else askType(p.type)); false
+                    val picks = choices[label].orEmpty().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MemoProps.MAX_CHOICES)
+                    asks += when {
+                        // [TAB-01] N9: a 칸 the user gave words to pick from asks as 고르기.
+                        picks.size >= 2 -> TemplateAsk(label, "pick", picks)
+                        p.type == MemoProps.Type.NUM && MemoProps.isMoneyLabel(label) -> TemplateAsk(label, "money")
+                        else -> TemplateAsk(label, askType(p.type))
+                    }
+                    false
                 } else true
             }.joinToString("\n").trim().take(300)
             return MemoTemplate(
@@ -84,7 +91,7 @@ data class MemoTemplate(
 
         private fun askType(t: MemoProps.Type): String = when (t) {
             MemoProps.Type.NUM -> "num"; MemoProps.Type.MONEY -> "money"; MemoProps.Type.STAR -> "star"; MemoProps.Type.DATE -> "date"
-            MemoProps.Type.TIME -> "time"; MemoProps.Type.CHECK -> "check"; MemoProps.Type.TEXT -> "text"
+            MemoProps.Type.TIME -> "time"; MemoProps.Type.CHECK -> "check"; MemoProps.Type.TEXT -> "text"; MemoProps.Type.PICK -> "pick"
         }
 
         /** The next day [d] of a month on or after [from]; a short month uses its last day. */

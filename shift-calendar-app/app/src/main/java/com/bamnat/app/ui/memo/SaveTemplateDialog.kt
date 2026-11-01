@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -33,10 +34,12 @@ import com.bamnat.core.memo.MemoTemplate
  * 입력 칸); unticked, the line is kept as written.
  */
 @Composable
-internal fun SaveTemplateDialog(memo: Memo, onSave: (String, Set<String>) -> Unit, onDismiss: () -> Unit) {
+internal fun SaveTemplateDialog(memo: Memo, onSave: (String, Set<String>, Map<String, List<String>>) -> Unit, onDismiss: () -> Unit) {
     val props = remember(memo.body) { if (memo.isChecklist) emptyList() else MemoProps.of(memo).take(MemoTemplate.MAX_ASKS) }
     var name by remember { mutableStateOf(memo.title.take(30)) }
     var asked by remember { mutableStateOf(props.map { it.label }.toSet()) }
+    // [TAB-01] 누락 점검 N9 고르기: a 글 칸 asked with words to pick from ("할 일, 하는 중, 끝") asks as 고르기 in the 틀.
+    var picks by remember { mutableStateOf(props.filter { it.type == MemoProps.Type.TEXT || it.type == MemoProps.Type.PICK }.associate { it.label to "" }) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("틀로 저장") },
@@ -57,6 +60,13 @@ internal fun SaveTemplateDialog(memo: Memo, onSave: (String, Set<String>) -> Uni
                             Text(if (on) "물어봐요" else "‘${shown(p)}’ 그대로", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
+                        if (on && p.label in picks) OutlinedTextField(
+                            picks[p.label].orEmpty(), { v -> picks = picks + (p.label to v.take(120)) },
+                            label = { Text("고를 것 (쉼표로, 비우면 글로 써요)") },
+                            placeholder = { Text("예: ${p.raw}, 하는 중, 끝") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(start = 40.dp),
+                        )
                     }
                 } else {
                     Text("메모에 ‘매출: 32000’, ‘날짜: 11월 1일’처럼 ‘칸: 값’ 줄을 쓰면, 그 칸을 새 메모마다 물어보는 틀이 돼요.",
@@ -66,7 +76,12 @@ internal fun SaveTemplateDialog(memo: Memo, onSave: (String, Set<String>) -> Uni
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, asked) }) { Text("저장") } },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(name, asked, picks.filterKeys { it in asked }.mapValues { (_, v) -> v.split(',', '·').map { it.trim() }.filter { it.isNotEmpty() } }
+                    .filterValues { it.size >= 2 })
+            }) { Text("저장") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("그만두기") } },
     )
 }

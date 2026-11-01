@@ -309,6 +309,11 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     fun delete(memo: Memo) {
         viewModelScope.launch { repo.delete(memo) }
     }
+
+    /** [TAB-02] 누락 점검 N9: a memo changed in a view (보드 칸 옮기기, 표 고르기, 되돌리기) saved as it now reads. */
+    fun saveEdited(memo: Memo) {
+        viewModelScope.launch { repo.save(memo) }
+    }
 }
 
 class MemoTrashViewModel(private val container: AppContainer) : ViewModel() {
@@ -456,10 +461,10 @@ class MemoEditorViewModel(
      * [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. [TAB-03] 1.36: under the name the user
      * gave, with the "칸: 값" lines they picked as 입력 칸. Null when saved, else why not (empty memo, 40 틀 already).
      */
-    fun saveAsTemplate(name: String = "", asked: Set<String> = emptySet()): String? {
+    fun saveAsTemplate(name: String = "", asked: Set<String> = emptySet(), picks: Map<String, List<String>> = emptyMap()): String? {
         val m = _memo.value
         if (m.isBlank) return "빈 메모는 틀로 저장할 수 없어요"
-        val t = com.bamnat.core.memo.MemoTemplate.fromMemo(m, "m" + com.bamnat.core.time.Today.millis().toString(36), name, asked)
+        val t = com.bamnat.core.memo.MemoTemplate.fromMemo(m, "m" + com.bamnat.core.time.Today.millis().toString(36), name, asked, picks)
         return if (container.memoTemplates.add(t)) null else "틀이 ${com.bamnat.core.memo.MemoTemplate.MAX}개로 가득 찼어요. 새 메모의 ‘틀에서 시작’에서 안 쓰는 틀을 지워 주세요"
     }
 

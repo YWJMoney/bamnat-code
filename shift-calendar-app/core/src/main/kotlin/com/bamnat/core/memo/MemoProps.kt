@@ -9,7 +9,12 @@ import java.time.LocalTime
  * backup and a shared memo carry their properties as they are, and the user edits one by editing the line.
  */
 object MemoProps {
-    enum class Type(val label: String) { TEXT("글"), NUM("숫자"), MONEY("금액"), STAR("별점"), DATE("날짜"), TIME("시각"), CHECK("체크") }
+    enum class Type(val label: String) { TEXT("글"), NUM("숫자"), MONEY("금액"), STAR("별점"), DATE("날짜"), TIME("시각"), CHECK("체크"),
+        /**
+         * [TAB-01] 누락 점검 N9 (2차 5-7 "속성 … 고르기"): a 칸 whose memos pick from a few words (상태: 할 일 · 하는 중 · 끝). One line is
+         * written as 글; the 칸 is 고르기 across memos ([columns]) or in a 틀's 입력 칸, and the 표 then picks instead of typing.
+         */
+        PICK("고르기") }
 
     /** One property: its 칸 name, the value as written, what it reads as, and its number when it has one (별 수, 금액, 1·0 for a check). */
     data class Prop(val label: String, val raw: String, val type: Type, val num: Double? = null, val date: LocalDate? = null)
@@ -100,6 +105,7 @@ object MemoProps {
                     (types[Type.MONEY] ?: 0) > 0 && numeric * 2 >= types.values.sum() -> Type.MONEY
                     // PC 확인 bad7d860: "금액: 12000" (원 없이) reads as 금액 in the 표, with commas.
                     (types[Type.NUM] ?: 0) * 2 >= types.values.sum() && isMoneyLabel(e.key) -> Type.MONEY
+                    (types[Type.TEXT] ?: 0) * 2 >= types.values.sum() && pickable(e.key, memos) -> Type.PICK
                     else -> types.maxByOrNull { it.value }!!.key
                 }
                 e.key to type
@@ -111,6 +117,21 @@ object MemoProps {
         val nums = memos.mapNotNull { m -> of(m).firstOrNull { it.label == label }?.takeIf { it.type == Type.NUM || it.type == Type.MONEY }?.num }
         return if (nums.isEmpty()) null else nums.sum()
     }
+
+    /** The words [label] is written with across [memos], first seen first (a 고르기 칸's choices), at most [MAX_CHOICES]. */
+    fun choices(memos: List<Memo>, label: String): List<String> =
+        memos.mapNotNull { m -> of(m).firstOrNull { it.label == label }?.raw }.distinct().take(MAX_CHOICES)
+
+    /** Whether [label] reads as 고르기: a few short words, named like one (상태, 단계…) or with a word used more than once. */
+    fun pickable(label: String, memos: List<Memo>): Boolean {
+        val raws = memos.mapNotNull { m -> of(m).firstOrNull { it.label == label && it.type == Type.TEXT }?.raw }
+        val distinct = raws.distinct()
+        if (distinct.isEmpty() || distinct.size > 8 || distinct.any { it.length > 12 }) return false
+        return PICK_WORDS.any { label.contains(it) } || raws.size > distinct.size
+    }
+
+    const val MAX_CHOICES = 12
+    private val PICK_WORDS = listOf("상태", "단계", "진행", "우선순위", "분류", "종류", "결과", "구분", "등급")
 
     /** The average of [label]'s 별점 across [memos] (a 별점 column's foot shows this, not a sum), or null when none has one. */
     fun average(memos: List<Memo>, label: String): Double? {

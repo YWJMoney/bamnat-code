@@ -9,13 +9,17 @@ import java.time.LocalTime
 /**
  * [TAB-04] 1.36 달력 판짜기 (2차 조사 제안 28, Notion 보기): the boards the calendar tab lays a month on. 월 and 목록 were there; 근무 띠
  * draws each week as one band of the shifts' colours so a rota's 주기 reads at a glance, and 타임라인 draws each day as a 24-hour bar with
- * the shift on it (a night shift runs on into the next morning). 주 and 연간 stay where they were (하루 카드의 '주', 위 메뉴의 '한 해').
+ * the shift on it (a night shift runs on into the next morning). 주 lays each week's seven days large with times and memos, 연간 the
+ * twelve months in small (위 메뉴의 '한 해' stays too).
  */
 enum class CalendarBoard(val key: String, val label: String, val what: String) {
     MONTH("month", "월", "한 달을 칸으로"),
+    // [TAB-04] 누락 점검 N1 (제안 28 "월·주·목록·타임라인·근무 띠·연간"): 주 and 연간 in the same menu.
+    WEEK("weekly", "주", "주마다 7일을 크게, 시간·메모까지"),
     LIST("list", "목록", "날마다 한 줄로"),
     BAND("rota", "근무 띠", "주마다 근무를 띠로, 주기가 한눈에"),
     LINE("timeline", "타임라인", "하루 24시간 막대에 근무 시간"),
+    YEAR("yearly", "연간", "1년 열두 달을 한눈에"),
     ;
 
     companion object {
@@ -64,6 +68,14 @@ object Timeline {
         val from = minutes(s)
         val span = WorkTime.spanMinutes(s, e)
         return from to minOf(from + span, DAY)
+    }
+
+    /** [TAB-04] 주 판: minutes [day]'s shift lasts in all (0 for a day off or one with no times). */
+    fun minutes(day: ResolvedDay?): Int {
+        val s = day?.start ?: return 0
+        val e = day.end ?: return 0
+        if (day.shiftType?.isOff == true) return 0
+        return WorkTime.spanMinutes(s, e)
     }
 
     /** Minutes of [day]'s shift past its own midnight, 0 for one that ends the same day. */

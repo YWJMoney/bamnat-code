@@ -74,6 +74,32 @@ class MemoViewTest {
         assertEquals(LocalDate.of(2026, 11, 11), t.start(LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 11)).date)
     }
 
+    @Test fun aFewRepeatedWordsMakeAPickColumn() {
+        val ms = listOf(memo(1, "상태: 할 일"), memo(2, "상태: 끝"), memo(3, "상태: 할 일"), memo(4, "장소: 서울역 3번 출구 앞"))
+        val cols = MemoProps.columns(ms).toMap()
+        assertEquals(MemoProps.Type.PICK, cols["상태"])
+        assertEquals(MemoProps.Type.TEXT, cols["장소"])
+        assertEquals(listOf("할 일", "끝"), MemoProps.choices(ms, "상태"))
+        // 상태 is named like one, so even two different words pick.
+        assertTrue(MemoProps.pickable("상태", listOf(memo(5, "상태: 접수"), memo(6, "상태: 완료"))))
+        val t = MemoTemplate.fromMemo(ms[0], "t", "일", setOf("상태"), mapOf("상태" to listOf("할 일", "하는 중", "끝")))
+        assertEquals(TemplateAsk("상태", "pick", listOf("할 일", "하는 중", "끝")), t.asks.single())
+    }
+
+    @Test fun movingACardBetweenColumns() {
+        val byProp = MemoView(view = MemoView.BOARD, by = "p:상태")
+        val m = memo(1, "상태: 할 일\n내용")
+        assertEquals("상태: 끝\n내용", MemoView.moved(m, byProp.by, "할 일", "끝")!!.body)
+        assertEquals("내용", MemoView.moved(m, byProp.by, "할 일", MemoView.NONE)!!.body)
+        val tagged = memo(2, "장보기 #집 #급함")
+        assertEquals(listOf("가게", "급함"), MemoView.moved(tagged, MemoView.BY_TAG, "집", "가게")!!.tags)
+        assertEquals(listOf("급함"), MemoView.moved(tagged, MemoView.BY_TAG, "집", MemoView.NONE)!!.tags)
+        assertEquals(listOf("가게"), MemoView.moved(memo(3, "그냥"), MemoView.BY_TAG, MemoView.NONE, "가게")!!.tags)
+        assertEquals(3, MemoView.moved(memo(4, ""), MemoView.BY_COLOR, "0", "3")!!.colorIndex)
+        assertNull(MemoView.moved(m, MemoView.BY_SHIFT, "주간", "야간"))
+        assertNull(MemoView.moved(m, byProp.by, "끝", "끝"))
+    }
+
     @Test fun setWritesReplacesAndRemovesALine() {
         val m = memo(1, "매출: 1000\n본문")
         assertEquals("매출: 2000\n본문", MemoProps.set(m, "매출", "2000").body)
@@ -119,5 +145,19 @@ class MemoViewTest {
         assertEquals(MemoView(), MemoView.decode("nope"))
         assertEquals(MemoView(MemoView.LIST, MemoView.BY_TAG, ""), MemoView.decode("weird|p:a/b|p:http"))
         assertTrue(MemoView.validBy("p:현금 매출"))
+    }
+
+    @Test fun calendarViewPlacesMemosByDateOrDateLine() {
+        val d = LocalDate.of(2026, 11, 3)
+        val dated = memo(1, "", date = d)
+        val line = memo(2, "마감일: 2026-11-05")
+        val none = memo(3, "그냥 메모")
+        assertEquals(d, MemoView.dayOf(dated))
+        assertEquals(LocalDate.of(2026, 11, 5), MemoView.dayOf(line))
+        assertEquals(null, MemoView.dayOf(none))
+        val by = MemoView.byDay(listOf(dated, line, none))
+        assertEquals(setOf(d, LocalDate.of(2026, 11, 5)), by.keys)
+        assertTrue(MemoView.CALENDAR in MemoView.VIEWS)
+        assertEquals(MemoView(MemoView.CALENDAR, MemoView.BY_TAG, ""), MemoView.decode(MemoView(MemoView.CALENDAR).encode()))
     }
 }

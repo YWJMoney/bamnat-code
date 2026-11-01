@@ -1441,9 +1441,20 @@ fun CalendarScreen(
                     key = { it },
                     verticalAlignment = Alignment.Top,
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
-                    userScrollEnabled = !stamping,
+                    // [TAB-04] N1 연간 판 turns by its own year arrows; a sideways swipe would only creep a month along the same year.
+                    userScrollEnabled = !stamping && board != com.bamnat.core.layout.CalendarBoard.YEAR,
                 ) { page ->
-                    if (board == com.bamnat.core.layout.CalendarBoard.BAND) {
+                    if (board == com.bamnat.core.layout.CalendarBoard.WEEK) {
+                        val titles = remember(datedMemos) {
+                            datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.map { m -> m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty() }.filter { it.isNotBlank() } }
+                        }
+                        WeekCardsMonth(pageToMonth(baseMonth, page), snap, settings.weekStart, today, selected, titles, onDayClick)
+                    } else if (board == com.bamnat.core.layout.CalendarBoard.YEAR) {
+                        val year = pageToMonth(baseMonth, page).year
+                        YearBoard(year, snap, settings.weekStart, today,
+                            onYear = { d -> goToMonth(pageToMonth(baseMonth, page).plusYears(d.toLong())) },
+                            onOpen = { m -> goToMonth(m); pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) })
+                    } else if (board == com.bamnat.core.layout.CalendarBoard.BAND) {
                         ShiftBandMonth(pageToMonth(baseMonth, page), snap, settings.weekStart, today, selected, onDayClick)
                     } else if (board == com.bamnat.core.layout.CalendarBoard.LINE) {
                         TimelineMonth(pageToMonth(baseMonth, page), snap, today, selected, onDayClick)

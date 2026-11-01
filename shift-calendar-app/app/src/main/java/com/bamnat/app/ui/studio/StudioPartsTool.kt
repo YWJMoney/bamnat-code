@@ -160,7 +160,9 @@ private fun statesFor(id: String): List<String> = when {
     id == "app.tab" || id == "app.chip" -> listOf("sel")
     id == "money.amount" || id == "money.row" -> listOf("in", "out")
     // [TAB-07] 1.36 탭 판 부품.
-    id == "cal.band.slot" || id == "cal.line.row" || id == "money.cal.cell" -> listOf("today", "sel")
+    id == "cal.band.slot" || id == "cal.line.row" || id == "money.cal.cell" || id == "memo.cal.cell" -> listOf("today", "sel")
+    id == "cal.weekly.day" -> listOf("today", "sel", "sat", "sun", "dim")
+    id == "cal.year.month" -> listOf("today")
     else -> emptyList()
 }
 

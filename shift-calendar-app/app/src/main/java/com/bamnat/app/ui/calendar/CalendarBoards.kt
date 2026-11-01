@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -23,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +35,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -235,6 +239,135 @@ internal fun TimelineMonth(
                 val carriedTo = spans.firstOrNull { it.carried }?.to
                 Text(times ?: carriedTo?.let { "~${it / 60}:${"%02d".format(it % 60)}" } ?: day.shiftType?.name ?: "", style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 1,
                     textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
+            }
+        }
+    }
+}
+
+/**
+ * [TAB-04] 누락 점검 N1 주 판 (제안 28): each week of [month] as a card — the week's hours on top, then its seven days side by side, each
+ * with its shift, times and first memo, big enough to plan a week by. A tap picks the day as everywhere.
+ */
+@Composable
+internal fun WeekCardsMonth(
+    month: YearMonth,
+    snapshot: ScheduleSnapshot,
+    weekStart: DayOfWeek,
+    today: LocalDate,
+    selected: LocalDate,
+    memoTitles: Map<LocalDate, List<String>>,
+    onDay: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(weekStart))
+    val weeks = remember(month, snapshot, weekStart) {
+        generateSequence(first) { it.plusWeeks(1) }.takeWhile { !it.isAfter(month.atEndOfMonth()) }
+            .map { w -> (0..6).map { w.plusDays(it.toLong()) }.map { it to snapshot.resolver.resolve(it) } }.toList()
+    }
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val ink = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly"), RoundedCornerShape(0.dp))).padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (week in weeks) {
+            val minutes = week.sumOf { (_, d) -> Timeline.minutes(d) }
+            val works = week.count { (_, d) -> d.shiftType?.isOff == false }
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp)).padding(6.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+                    Text("${Fmt.monthDay(week.first().first)} – ${Fmt.monthDay(week.last().first)}", style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f).semantics { heading() })
+                    Text(listOfNotNull("근무 ${works}일".takeIf { works > 0 }, (minutes / 60).takeIf { it > 0 }?.let { "${it}시간" + if (minutes % 60 > 0) " ${minutes % 60}분" else "" })
+                        .joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    for ((date, day) in week) {
+                        val inMonth = YearMonth.from(date) == month
+                        val isPicked = date == selected
+                        val c = shiftColor(day)
+                        val times = timesOf(day)
+                        val memo = memoTitles[date].orEmpty()
+                        val states = setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked }, "dim".takeIf { !inMonth },
+                            "sat".takeIf { date.dayOfWeek == DayOfWeek.SATURDAY }, "sun".takeIf { date.dayOfWeek == DayOfWeek.SUNDAY })
+                        Column(
+                            Modifier.weight(1f).heightIn(min = 104.dp)
+                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly.day", states), RoundedCornerShape(8.dp)))
+                                .clickable { onDay(date) }
+                                .clearAndSetSemantics {
+                                    contentDescription = "${Fmt.monthDay(date)} ${Fmt.dayOfWeekShort(date.dayOfWeek)} ${day.shiftType?.name ?: "근무 없음"}" +
+                                        (times?.let { " $it" } ?: "") + (if (memo.isNotEmpty()) ", 메모 ${memo.size}개: ${memo.first()}" else "")
+                                    this.selected = isPicked
+                                }
+                                .padding(3.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text("${date.dayOfMonth} ${Fmt.dayOfWeekShort(date.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                fontWeight = if (date == today) FontWeight.Bold else null,
+                                color = when {
+                                    !inMonth -> ink.copy(alpha = 0.5f)
+                                    date.dayOfWeek == DayOfWeek.SUNDAY -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                })
+                            day.shiftType?.let { t ->
+                                Text(t.name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, textAlign = TextAlign.Center,
+                                    color = c?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.fillMaxWidth().background(c ?: Color.Transparent, RoundedCornerShape(4.dp)).padding(vertical = 1.dp))
+                            }
+                            times?.let { Text(it.replace("–", "\n"), style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 2, lineHeight = MaterialTheme.typography.labelSmall.fontSize) }
+                            memo.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 2, color = MaterialTheme.colorScheme.onSurface,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+                            if (memo.size > 1) Text("+${memo.size - 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * [TAB-04] 누락 점검 N1 연간 판 (제안 28): the year of [year] in twelve small months coloured by shift, with the year's counts on top
+ * (the same months as 위 메뉴의 '1년 달력'). The arrows go a year back or on; a month opens it on the 월 판.
+ */
+@Composable
+internal fun YearBoard(
+    year: Int,
+    snapshot: ScheduleSnapshot,
+    weekStart: DayOfWeek,
+    today: LocalDate,
+    onYear: (Int) -> Unit,
+    onOpen: (YearMonth) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val days by androidx.compose.runtime.produceState<Map<LocalDate, ResolvedDay>?>(null, snapshot, year) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            snapshot.resolver.resolveRange(LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)).associateBy { it.date }
+        }
+    }
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.year"), RoundedCornerShape(0.dp))).padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            androidx.compose.material3.IconButton(onClick = { onYear(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 해") }
+            Text("${year}년", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            androidx.compose.material3.IconButton(onClick = { onYear(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }
+        }
+        val loaded = days ?: emptyMap()
+        YearCounts(snapshot, loaded.values)
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        val columns = if (big) 2 else 3
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+            (1..12).chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { m ->
+                        val month = YearMonth.of(year, m)
+                        Box(Modifier.weight(1f).then(com.bamnat.app.ui.parts.PartMods.box(
+                            bp.style("cal.year.month", setOfNotNull("today".takeIf { YearMonth.from(today) == month })), RoundedCornerShape(12.dp)))) {
+                            MiniMonth(month, loaded, null, weekStart, today, Modifier.fillMaxWidth()) { onOpen(month) }
+                        }
+                    }
+                    repeat(columns - row.size) { Box(Modifier.weight(1f)) }
+                }
             }
         }
     }
