@@ -1473,8 +1473,12 @@ fun CalendarScreen(
             // 1.32 [CALX-06] "이번 급여 기간은 10월 20일에 끝나요 · 5일 남았어요" (or the 주급 week), on this month only.
             if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && visibleMonth == YearMonth.from(today)) {
                 com.bamnat.core.hours.StatsRange.endsLine(payProfile?.period, today, payProfile?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY)?.let { line ->
-                    Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp))
+                    // [BLU-05] 1.36 부품 '달력 아래 요약'(cal.foot).
+                    val foot = com.bamnat.app.ui.parts.partStyle("cal.foot")
+                    if (foot.hide != true) com.bamnat.app.ui.parts.PartText(line, foot,
+                        MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                            .then(com.bamnat.app.ui.parts.PartMods.box(foot, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))))
                 }
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)

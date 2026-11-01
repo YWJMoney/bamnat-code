@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.memo
 
+import com.bamnat.app.ui.parts.fillColor
+import com.bamnat.app.ui.parts.shape
+import com.bamnat.app.ui.parts.text
 import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -297,11 +300,13 @@ private class CardActions(
 @Composable
 private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {}) {
     var sortMenu by remember { mutableStateOf(false) }
+    // [BLU-05] 1.36 부품 '메모장 머리'(memo.head).
+    val head = com.bamnat.app.ui.parts.partStyle("memo.head")
     Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, top = 8.dp, end = 4.dp),
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(head.copy(pad = null, padX = null, padY = null), RoundedCornerShape(0.dp))).padding(start = 20.dp, top = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("메모", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+        com.bamnat.app.ui.parts.PartText("메모", head, MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
         if (state.tab == MemoTab.GENERAL) {
             Box {
                 IconButton(onClick = { sortMenu = true }) {
@@ -379,9 +384,12 @@ private fun SelectionBar(
 
 @Composable
 private fun FilterRow(state: MemoListState, vm: MemoListViewModel) = Column {
+    // [BLU-05] 1.36 부품 '꼬리표 줄'(memo.tags): the row's board and the gap between its chips.
+    val tags = com.bamnat.app.ui.parts.partStyle("memo.tags")
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(tags.copy(pad = null, padX = null, padY = null), RoundedCornerShape(0.dp)))
+            .horizontalScroll(rememberScrollState()).padding(horizontal = (tags.padH ?: 16).dp, vertical = (tags.padV ?: 6).dp),
+        horizontalArrangement = Arrangement.spacedBy((tags.gap ?: 8).dp),
     ) {
         if (state.tab == MemoTab.CALENDAR) {
             for (f in CalendarFilter.entries) {
@@ -710,10 +718,12 @@ private fun MemoContent(memo: Memo, query: String) {
     } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         val cardLook = LocalMemoCardLook.current
-        Text(
+        // [BLU-05] 1.36 부품 '메모 내용'(memo.card.body) over the 메모장 모양.
+        val body = com.bamnat.app.ui.parts.partStyle("memo.card.body")
+        if (body.hide != true) Text(
             highlighted(com.bamnat.core.memo.MemoSearch.excerpt(memo.body, query), query),
-            style = memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium,
-            maxLines = cardLook.lines ?: 8,
+            style = body.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
+            maxLines = body.lines ?: cardLook.lines ?: 8,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp),
         )
@@ -733,14 +743,18 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         val pillColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-        if (date != null) {
+        // [BLU-05] 1.36 부품 '메모 날짜'(memo.card.date).
+        val datePart = com.bamnat.app.ui.parts.partStyle("memo.card.date")
+        if (date != null && datePart.hide != true) {
+            val dateShape = datePart.shape(MaterialTheme.shapes.small)
             Row(
-                Modifier.clip(MaterialTheme.shapes.small).background(pillColor).padding(horizontal = 6.dp, vertical = 2.dp),
+                Modifier.clip(dateShape).background(datePart.fillColor ?: pillColor, dateShape).then(com.bamnat.app.ui.parts.PartMods.box(datePart.copy(fill = null, pad = null, padX = null, padY = null), dateShape))
+                    .padding(horizontal = (datePart.padH ?: 6).dp, vertical = (datePart.padV ?: 2).dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.Event, null, Modifier.size(12.dp))
+                Icon(Icons.Filled.Event, null, Modifier.size(12.dp), tint = datePart.ink?.let { Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current)
                 Spacer(Modifier.width(3.dp))
-                Text(Fmt.dayTitle(date), style = MaterialTheme.typography.labelSmall)
+                Text(Fmt.dayTitle(date), style = datePart.text(MaterialTheme.typography.labelSmall))
             }
         }
         // [SCHED-01] A memo that is a schedule says when it rings or notifies.

@@ -2,6 +2,7 @@ package com.bamnat.app.ui.calendar
 
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
+import com.bamnat.app.ui.parts.partStyle
 import com.bamnat.app.ui.parts.partLine
 import com.bamnat.app.ui.parts.shape
 import com.bamnat.app.ui.parts.text
@@ -289,12 +290,19 @@ fun MonthGrid(
     // Days under the finger while painting, shown at once and written when it lifts.
     var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
     val paint by rememberUpdatedState(onPaint)
-    val painting = Modifier.pointerInput(firstCell, cellHeight, onPaint != null) {
+    // [BLU-04] 1.36 부품 '칸 판'(cal.grid): the board behind the cells and the gap between them.
+    val grid = partStyle("cal.grid")
+    val gap = (grid.gap ?: 0).dp
+    // The screen gives the grid cellHeight × rows; the board's gaps and insets come out of the rows, so it never grows past that.
+    val rowHeight = if (grid.isEmpty) cellHeight else
+        ((cellHeight * GRID_ROWS) - gap * (GRID_ROWS - 1) - (((grid.out ?: 0) + (grid.padV ?: 0)) * 2).dp) / GRID_ROWS
+    val painting = Modifier.pointerInput(firstCell, rowHeight, onPaint != null, gap) {
         if (paint == null) return@pointerInput
         val bar = WEEK_BAR_SPACE.toPx()
+        val g = gap.toPx()
         fun dateAt(p: Offset): LocalDate? {
-            val row = (p.y / cellHeight.toPx()).toInt()
-            val col = ((p.x - bar) / ((size.width - bar) / 7f)).toInt()
+            val row = (p.y / (rowHeight.toPx() + g)).toInt()
+            val col = ((p.x - bar) / ((size.width - bar - g * 6) / 7f + g)).toInt()
             if (p.x < bar || p.y < 0f || row !in 0 until GRID_ROWS || col !in 0..6) return null
             return firstCell.plusDays(row * 7L + col)
         }
@@ -330,7 +338,7 @@ fun MonthGrid(
     }
     // [CAL-33] How many days the finger holds, said while it paints, not only after it lifts (I 리뷰 I4).
     Box(modifier.fillMaxWidth()) {
-    Column(Modifier.fillMaxWidth().then(painting)) {
+    Column(Modifier.fillMaxWidth().partBox(grid).then(painting), verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until GRID_ROWS) {
             val rowStart = firstCell.plusWeeks(row.toLong())
             // [WEEK-01] The Monday-to-Sunday week that holds most of the row: on a grid from Sunday, the row's Monday on.
@@ -341,7 +349,7 @@ fun MonthGrid(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(cellHeight)
+                    .height(rowHeight)
                     .drawBehind {
                         if (week.overLimit) {
                             val inset = 6.dp.toPx()
@@ -354,6 +362,7 @@ fun MonthGrid(
                         }
                     }
                     .padding(start = WEEK_BAR_SPACE),
+                horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 for (col in 0 until 7) {
                     val date = rowStart.plusDays(col.toLong())
