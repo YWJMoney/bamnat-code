@@ -248,7 +248,9 @@ internal fun MemoBoardView(
                     shape = RoundedCornerShape(14.dp),
                     color = if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                     border = if (lit) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                    modifier = Modifier.width(250.dp).fillParentMaxHeight().then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
+                    // PC 확인 9aaf3eef 사용성 제안: an empty 칸 stays narrow and opens wide only while a card is dragged.
+                    modifier = Modifier.width(if (col.memos.isEmpty() && drag == null) 132.dp else 250.dp).animateItem().fillParentMaxHeight()
+                        .then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
                 ) {
                     Column {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -512,7 +514,9 @@ private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
     var editing by remember { mutableStateOf(false) }
     val set: (String) -> Unit = { v ->
         val after = MemoProps.set(memo, label, v)
-        if (after != memo) actions.onChange(memo, after, if (v.isBlank()) "‘$label’ 칸을 비웠어요" else "‘$label’${Fmt.obj(label)} ‘$v’${Fmt.ro(v)} 바꿨어요")
+        // PC 확인 9aaf3eef: the 띠 says the value as the 표 shows it ("‘20,000원’으로"), not as typed.
+        val said = if (v.isBlank()) "" else shown(MemoProps.read(label, v), type)
+        if (after != memo) actions.onChange(memo, after, if (v.isBlank()) "‘$label’ 칸을 비웠어요" else "‘$label’${Fmt.obj(label)} ‘$said’${Fmt.ro(said)} 바꿨어요")
     }
     val check = type == MemoProps.Type.CHECK
     Text(
@@ -536,7 +540,7 @@ private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
                     suffix = if (type == MemoProps.Type.MONEY) ({ Text("원") }) else null,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                         keyboardType = if (numeric) androidx.compose.ui.text.input.KeyboardType.Number else androidx.compose.ui.text.input.KeyboardType.Text),
-                    supportingText = { Text("비우면 이 칸 줄을 지워요") })
+                    supportingText = { Text("비우면 이 메모에서 ‘$label’ 줄을 지워요") })
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
