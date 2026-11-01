@@ -625,7 +625,8 @@ class AppContainer(context: Context) {
     }
 
     /** [MON-08] Only a phone that sent a report or a question, holds passes or brought a code asks the server. */
-    suspend fun syncPasses(force: Boolean = false) {
+    /** [linked]: this phone was just tied to an admin, a reason to ask even on a phone with nothing else (PC 확인 7525ccff). */
+    suspend fun syncPasses(force: Boolean = false, linked: Boolean = false) {
         if (!tierApi.enabled) return
         val s = proStore.current
         val device = companyStore.device
@@ -638,7 +639,7 @@ class AppContainer(context: Context) {
                 if (e.code != "offline" && e.code != "rate_limited") proStore.claimLater(null)
             }
         }
-        val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
+        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
         val last = proStore.current.passes?.checkedAt
         if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))

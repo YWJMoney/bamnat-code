@@ -700,7 +700,8 @@ export async function linkPhone(request, env, dev, now) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, `d${randomId(15)}`, dev, row.admin, row.admin_name, status, now, owner ? now : null, now),
   ]);
   await audit(env, now, "device_link", row.admin_name, status);
-  return json({ status, name: row.admin_name }, 201);
+  // PC 확인 7525ccff: the phone says why it was approved at once (the owner's own code), as /api/passes does with admin.owner.
+  return json({ status, name: row.admin_name, owner }, 201);
 }
 
 export async function phoneList(env) {

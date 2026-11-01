@@ -237,6 +237,19 @@ class TierAppTest {
         assertEquals("6시간 안에는 다시 묻지 않아요", emptyList<String>(), api.calls)
     }
 
+    /** PC 확인 7525ccff: a new phone tied to an admin asks for its passes then, so the card shows the link and why it is approved. */
+    @Test fun aNewPhoneJustLinkedAsksForItsPasses() = runBlocking {
+        val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        val pass = Passes(null, 0, emptyList(), 0, AdminState("approved", "최고 관리자", owner = true), false, Instant.now())
+        val api = FakeTierApi(passesAnswer = pass)
+        c.tierApi = api
+        c.syncPasses(force = true)
+        assertEquals("다른 까닭이 없으면 묻지 않아요", emptyList<String>(), api.calls)
+        c.syncPasses(force = true, linked = true)
+        assertEquals(listOf("passes"), api.calls)
+        assertEquals(true, c.proStore.current.passes?.admin?.owner)
+    }
+
     // ---- The trial's answer waits until it reaches the server [SRV-07] ----
 
     @Test fun aTrialAnswerGivenOfflineWaitsAndGoesAtTheNextSync() = runBlocking {

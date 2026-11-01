@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only (PC 확인 7525ccff): the local share server's links are http://10.0.2.2:8790/s/<id>, which the https
+     filter in src/onlineShare does not take, so a link opened on the emulator (adb shell am start -d <link>) went to the
+     browser instead of 받기. Release builds keep only the https link and bamnat://s/<id>. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="${shareHost}" android:pathPrefix="/s/" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

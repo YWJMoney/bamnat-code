@@ -695,6 +695,8 @@ export const RECIPE_LIMITS = {
   /** S8: more votes than this from one network in an hour wait (held) and count nowhere until the operator lets them. */
   networkVotesHour: 30,
   appliedPerNetworkDay: 200,
+  /** 1.36 보안 점검 M9: one network counts at most this many 넣기 (and as many 7일 유지) for one recipe a day; past it, not counted. */
+  appliedPerRecipeNetworkDay: 3,
   flagsToHide: 3,
   opinion: [5, 120],
   talk: 500,
@@ -1159,6 +1161,12 @@ async function applied(d, env, request, code) {
   const r = await d.one(env, "SELECT code FROM recipes WHERE code = ? AND state = 'visible'", code);
   if (!r) return d.json({ error: "not_found" }, 404);
   const col = body.kind === "applied" ? "applied" : "kept7";
+  // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
+  // they come with no phone (S8), so one line could push a recipe up 200 a day. A few a recipe a line (a family's phones), then
+  // answered as kept but not counted, so the app has nothing to try again.
+  if (!(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
+    return d.json({ ok: true, counted: false });
+  }
   await d.batch(env, [
     d.stmt(env, `INSERT INTO recipe_counts (code, day, ${col}) VALUES (?, ?, 1) ON CONFLICT (code, day) DO UPDATE SET ${col} = ${col} + 1`, code, kstDayOf(now)),
     d.stmt(env, `UPDATE recipes SET ${col} = ${col} + 1 WHERE code = ?`, code),

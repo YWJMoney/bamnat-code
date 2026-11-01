@@ -100,7 +100,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         val m = s.message ?: return@LaunchedEffect
         val undo = s.appliedId != null && m.startsWith("적용했어요")
         // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
-        val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, duration = if (undo) SnackbarDuration.Long else SnackbarDuration.Short)
+        // PC 확인 7525ccff (신고 띠가 아래 스위치를 가려요): a line with nothing to do has its own ✕, so it goes at once when asked.
+        val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, withDismissAction = !undo,
+            duration = if (undo) SnackbarDuration.Long else SnackbarDuration.Short)
         vm.shown()
         if (r == SnackbarResult.ActionPerformed) vm.undo()
     }
@@ -120,7 +122,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     DropdownMenu(menu, { menu = false }) {
                         if (s.doc?.mine == true) DropdownMenuItem(text = { Text("새 판 만들기") }, onClick = { menu = false; vm.body()?.let(onNewVersion) }, enabled = s.recipe != null)
                         DropdownMenuItem(text = { Text("고쳐 만들기") }, onClick = { menu = false; vm.body()?.let(onRemake) }, enabled = s.recipe != null)
-                        if (s.doc?.mine != true) DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
+                        // PC 확인 7525ccff: once reported here, the menu says so (the line about it is gone in a few seconds).
+                        if (s.doc?.mine != true) {
+                            if (s.flagged) DropdownMenuItem(text = { Text("신고했어요 · 운영자가 살펴봐요") }, onClick = {}, enabled = false)
+                            else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
+                        }
                     }
                 },
             )
@@ -305,7 +311,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     if (undoing) AlertDialog(
         onDismissRequest = { undoing = false },
         title = { Text("넣기 전으로 되돌릴까요?") },
-        text = { Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // PC 확인 7525ccff (두 번 넣은 것 중 무엇이 돌아가는지 몰라요): each put-on it takes back, when and what.
+                if (s.undoable.size >= 2) {
+                    Text("이 레시피를 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
+                    s.undoable.forEach { (at, what) ->
+                        Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " 넣음" +
+                            (if (what.isNotEmpty()) " · " + what.joinToString("·") else ""), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
+            }
+        },
         confirmButton = { TextButton(onClick = { undoing = false; vm.undo() }) { Text("되돌리기") } },
         dismissButton = { TextButton(onClick = { undoing = false }) { Text("닫기") } },
     )

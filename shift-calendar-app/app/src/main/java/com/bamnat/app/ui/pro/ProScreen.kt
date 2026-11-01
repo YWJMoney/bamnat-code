@@ -468,7 +468,8 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
                             state.approved -> "연결했어요 · 승인됨. 프로를 무료로 써요."
                             else -> "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
                         }
-                        c.syncPasses(force = true)
+                        // PC 확인 7525ccff: a new phone had no other reason to ask, so the card stayed on the code field.
+                        c.syncPasses(force = true, linked = true)
                         c.featureGate.refresh()
                     }
                 }

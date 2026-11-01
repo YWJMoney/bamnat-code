@@ -178,6 +178,31 @@ test("[RCP-32][RCP-33] applied counts are a day's total; three 신고 hide a rec
   assert.equal((await call("GET", `/api/recipes/${code}`, undefined, { "x-device": device(9) })).status, 200);
 });
 
+test("[SEC-15] 보안 점검 M9: one line counts a few 넣기 and 7일 유지 a recipe a day, the rest answered but not counted", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB } = server({ plaza: true });
+  const code = (await up(call, 1, {}, "link")).data.code;
+  const other = (await up(call, 4, {}, "link")).data.code;
+  for (let i = 0; i < 10; i++) {
+    const res = await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(2));
+    assert.equal(res.status, 200);
+    if (i >= 3) assert.equal(res.data.counted, false);
+  }
+  for (let i = 0; i < 5; i++) await call("POST", `/api/recipes/${code}/applied`, { kind: "kept" }, from(2));
+  let row = await DB.prepare("SELECT applied, kept7 FROM recipes WHERE code = ?").bind(code).first();
+  assert.deepEqual([row.applied, row.kept7], [3, 3]);
+  // Another line, and another recipe from the same line, count as before.
+  await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(3));
+  await call("POST", `/api/recipes/${other}/applied`, { kind: "applied" }, from(2));
+  row = await DB.prepare("SELECT applied FROM recipes WHERE code = ?").bind(code).first();
+  assert.equal(row.applied, 4);
+  assert.equal((await DB.prepare("SELECT applied FROM recipes WHERE code = ?").bind(other).first()).applied, 1);
+  // The next day the line counts again.
+  t.mock.timers.tick(24 * 60 * 60 * 1000);
+  await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(2));
+  assert.equal((await DB.prepare("SELECT applied FROM recipes WHERE code = ?").bind(code).first()).applied, 5);
+});
+
 test("[RCP-28] 모두 지우기 takes a phone's recipes, votes and trust; a new version keeps the code", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call, DB } = server({ plaza: true });

@@ -112,7 +112,14 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val appliedAt: Long? = null,
         /** [TRY-01] The look parts ticked in 입어 보기; null: the look pieces whole, as switched on. */
         val lookParts: Set<String>? = null,
+        /** PC 확인 7525ccff: each put-on 되돌리기 takes back (when, what), newest first, for its question. */
+        val undoable: List<Pair<Long, List<String>>> = emptyList(),
+        /** PC 확인 7525ccff: reported from this page, so its menu says so (the line below goes in a few seconds). */
+        val flagged: Boolean = false,
     )
+    private suspend fun undoableNow(): List<Pair<Long, List<String>>> = c.recipes.undoable(code).map { e ->
+        e.appliedAt to e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }
+    }
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -129,7 +136,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 preview()
                 // [RCX-24] Already on this phone: 되돌리기 stays here for 7 days, not only in the moment's snackbar.
                 c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }?.let { e ->
-                    _state.value = _state.value.copy(appliedId = e.id, appliedAt = e.appliedAt)
+                    _state.value = _state.value.copy(appliedId = e.id, appliedAt = e.appliedAt, undoable = undoableNow())
                 }
                 if (canTalk) loadTalk()
                 if (doc.scope != "private") runCatching { c.recipeApi.lineage(code) }.onSuccess { _state.value = _state.value.copy(lineage = it) }
@@ -243,6 +250,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
+                undoable = undoableNow(),
                 message = when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     id == null -> "바뀐 것이 없어요"
@@ -268,7 +276,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val n = c.recipes.undoAll(code)
             // The card says what is truly left on this phone, read again, not only what was asked.
             val left = c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }
-            _state.value = _state.value.copy(appliedId = left?.id, appliedAt = left?.appliedAt,
+            _state.value = _state.value.copy(appliedId = left?.id, appliedAt = left?.appliedAt, undoable = undoableNow(),
                 message = if (n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요")
         }
     }
@@ -285,8 +293,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
 
     fun flag(reason: String) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(message = runCatching { c.recipeApi.flag(device, code, reason) }
-                .fold({ "신고했어요. 운영자가 살펴봐요" }, { RecipeClient.problem(it) }))
+            val sent = runCatching { c.recipeApi.flag(device, code, reason) }
+            _state.value = _state.value.copy(flagged = _state.value.flagged || sent.isSuccess,
+                message = sent.fold({ "신고했어요. 운영자가 살펴봐요" }, { RecipeClient.problem(it) }))
         }
     }
 

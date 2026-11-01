@@ -129,6 +129,11 @@ class RCScreenshotTest : ScreenshotBase() {
         assertEquals(1, api.applied)
         assertTrue(c.recipes.canUndo(applied.first()))
         assertTrue(runBlocking { c.recipes.undo(applied.first().id) })
+        // 보안 점검 M9 (PC 확인 7525ccff): put on again after 되돌리기, this phone is not counted a second time in 쓰는 분.
+        val r = api.recipes[0].first
+        val again = runBlocking { c.recipes.apply(r, api.code(0), 1, PersonalCalendar.MAIN, r.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap()) }
+        assertTrue("다시 들어갔어요", again != null)
+        assertEquals("한 휴대폰은 한 번만 세요", 1, api.applied)
     }
 
     /**
@@ -153,6 +158,9 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         settle()
         assertTrue("막히면 올리기와 같은 안내", appears("Play 스토어에서 받은 밤낮으로만", exact = false))
+        assertEquals("막힌 신고는 신고한 것이 아니에요", false, vm.state.value.flagged)
+        // PC 확인 7525ccff: the line has its own 닫기 (✕), so it need not cover what is under it.
+        assertTrue(appears("Dismiss", exact = true) || appears("닫기", exact = true))
         refuse = false
         compose.mainClock.advanceTimeBy(10_000)
         settle()
@@ -161,6 +169,8 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         assertEquals(1, flags)
         assertTrue("되면 신고했어요", appears("신고했어요", exact = false))
+        // The ⋮ menu says it was reported after the line has gone (a popup window these shots do not reach, so its state).
+        assertTrue(vm.state.value.flagged)
     }
 
     /** PC 확인 8773e3ae (되돌리기 뒤에도 '내 달력에 넣어 둔 레시피예요'가 남아요): taking it back takes the line away too. */
@@ -238,6 +248,9 @@ class RCScreenshotTest : ScreenshotBase() {
         assertEquals("두 번 넣은 것이 모두 남아 있어요", 2, runBlocking { c.database.recipeDao().applied() }.count { it.code == code && it.undoneAt == null && it.replacedAt == null })
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
+        // PC 확인 7525ccff: the question lists what goes back.
+        assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
+        assertTrue(appears("근무 꾸미기", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
         settle()
