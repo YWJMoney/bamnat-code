@@ -14,7 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
-import { cellExtra, screenExtra, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
+import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -168,6 +168,10 @@ export const PART_STYLE = [
   T("order", 200, { optional: true, guard: false, check: partOrder }),
   P("place", ["tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br"], { optional: true }), N("grow", 0, 10, { optional: true }),
   N("w", 0, 600, { optional: true }), N("h", 0, 600, { optional: true }),
+  // [MAT-01..07] 갈래 B 꾸미기 재료 (core BlueprintParts.STYLE_FIELDS와 같아요).
+  T("paint", 80, { optional: true, guard: false, check: fillProblem }), T("linePaint", 80, { optional: true, guard: false, check: fillProblem }),
+  T("photo", 60, { optional: true, guard: false, check: photoAdjust }), T("frame", 30, { optional: true, guard: false, check: photoFrame }),
+  P("motion", ["none", "pulse", "glow", "ring", "bounce", "shimmer"], { optional: true }),
 ];
 const partLines = (lines) => {
   const seen = new Set();
