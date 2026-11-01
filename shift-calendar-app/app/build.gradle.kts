@@ -67,6 +67,8 @@ android {
         manifestPlaceholders["shareHost"] = runCatching { URI(shareBaseUrl).host }.getOrNull() ?: "share.invalid"
         // [SRV-30] Links made before 1.36 (the old workers.dev name) keep opening in the app.
         manifestPlaceholders["shareHostOld"] = runCatching { URI(shareFallbackUrl).host }.getOrNull() ?: "share-old.invalid"
+        // The /s/ link's second scheme: https again (no change) except in debug builds, below.
+        manifestPlaceholders["shareSchemeLocal"] = "https"
     }
     // The internet permission comes only with a server, see src/online; with the share server,
     // tapped schedule links open in the app too (src/onlineShare).
@@ -103,6 +105,10 @@ android {
     }
 
     buildTypes {
+        // PC 확인 7525ccff: the local share server's links are http://10.0.2.2:8790/s/<id>; in debug builds they open 받기 too.
+        debug {
+            manifestPlaceholders["shareSchemeLocal"] = "http"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
