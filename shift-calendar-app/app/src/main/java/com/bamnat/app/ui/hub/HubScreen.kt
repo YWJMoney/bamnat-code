@@ -138,7 +138,8 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
     }
     // PC 확인 S4 (이어서 하기는 스튜디오를 열어야만 보임): what was left in the studio, on 공방's front too.
     val drafts by c.recipes.drafts.collectAsStateWithLifecycle(emptyList())
-    val left = drafts.filter { it.step <= 1 && com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }.maxByOrNull { it.updatedAt }
+    // PC 확인 1.36: a draft left in 올리기 (step 2 and on) comes back here too, its 이름·설명 kept.
+    val left = drafts.filter { com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }.maxByOrNull { it.updatedAt }
     SoftCard { Column {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             mine?.let { r ->
@@ -170,7 +171,7 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("만들던 ‘${com.bamnat.app.ui.studio.draftName(d.body)}’", style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                    Text("스튜디오에서 꾸미던 중 · ${com.bamnat.app.ui.studio.ago(d.updatedAt)}", style = MaterialTheme.typography.bodySmall,
+                    Text((if (d.step >= 2) "올리던 중" else "스튜디오에서 꾸미던 중") + " · ${com.bamnat.app.ui.studio.ago(d.updatedAt)}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 androidx.compose.material3.FilledTonalButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id) },

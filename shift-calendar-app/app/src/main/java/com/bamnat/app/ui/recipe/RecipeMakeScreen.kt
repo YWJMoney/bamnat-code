@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.recipe
 
+import androidx.compose.foundation.layout.isImeVisible
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -307,10 +308,13 @@ class RecipeMakeViewModel(
         saveDraft()
     }
 
-    private fun saveDraft() {
+    /** PC 확인 1.36 (올리기 3/4에서 뒤로 나가면 쓰던 설명이 사라짐): what is on the screen kept as it is when the screen goes. */
+    fun keepNow() { val s = _state.value; if (s.step >= 3 || s.recipe.title.isNotBlank() || s.recipe.desc.isNotBlank()) saveDraft(c.appScope) }
+
+    private fun saveDraft(scope: kotlinx.coroutines.CoroutineScope = viewModelScope) {
         val s = _state.value
         if (s.sent != null || s.recipe.pieces.isEmpty()) return
-        viewModelScope.launch {
+        scope.launch {
             val id = c.recipes.saveDraft(s.draftId, RecipeCodec.write(s.recipe), s.step, code, s.scope)
             _state.value = _state.value.copy(draftId = id)
         }
@@ -402,6 +406,19 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     val s by vm.state.collectAsStateWithLifecycle()
     var begun by remember { mutableStateOf(false) }
     if (finishOnly) LaunchedEffect(s.step) { if (s.step == 1) { if (begun) onBack() else vm.go(2) } else begun = true }
+    // PC 확인 1.36 (키보드를 닫으려고 뒤로를 누르니 올리기 화면을 나가 버림): 뒤로 closes the keyboard first, then goes one step back
+    // like ← above, and whatever way the screen goes, what was written stays in 만들던 것.
+    val ime = androidx.compose.foundation.layout.WindowInsets.Companion.isImeVisible
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.activity.compose.BackHandler(enabled = s.sent == null) {
+        when {
+            ime -> { keyboard?.hide(); focus.clearFocus() }
+            s.step > 1 -> vm.go(s.step - 1)
+            else -> onBack()
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(vm) { onDispose { vm.keepNow() } }
     // [STU-01] 1.35: 꾸미기 스튜디오 first; what was 고르기 lives under it.
     val titles = listOf("꾸미기", "받는 분이 넣을 값", "이름·표지", "설명", "마치기")
     val shift = if (finishOnly) 1 else 0
