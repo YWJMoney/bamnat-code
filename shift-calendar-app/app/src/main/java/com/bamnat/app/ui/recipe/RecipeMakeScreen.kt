@@ -652,7 +652,11 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 @Composable
 private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
-    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    // PC D6 (낮): 미리 채운 이름은 처음에 통째로 골라져 있어 쓰면 바뀌어요(뒤에 덧붙지 않게).
+    var name by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(r.title, androidx.compose.ui.text.TextRange(0, r.title.length))) }
+    if (name.text != r.title) name = androidx.compose.ui.text.input.TextFieldValue(r.title, androidx.compose.ui.text.TextRange(r.title.length))
+    OutlinedTextField(name, { t -> name = t.copy(text = t.text.take(30)); vm.edit { it.copy(title = t.text.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true,
+        modifier = Modifier.fillMaxWidth())
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))
@@ -762,7 +766,8 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // button, with the one tap that clears it.
     val blocking = lines.filter { it.level == RecipeLint.Level.ERROR }
     val needAgree = s.scope != "private" && !s.agreed
-    if (!RecipeLint.ready(lines) || needAgree) Row(Modifier.fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+    // PC D6 (낮): '위 확인 스위치를 켜야 올라가요'는 아래 단추 줄에 늘 보여서 여기서는 고칠 곳만 말해요.
+    if (!RecipeLint.ready(lines)) Row(Modifier.fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
         verticalAlignment = Alignment.CenterVertically) {
         Text(if (!RecipeLint.ready(lines)) "${blocking.size.coerceAtLeast(1)}곳 고쳐야 올라가요" + (blocking.firstOrNull()?.let { " · ${it.text}" } ?: "")
             else "위 확인 스위치를 켜야 올라가요", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,

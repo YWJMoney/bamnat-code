@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.bamnat.app.logic
 
 import kotlinx.coroutines.launch
@@ -149,7 +151,7 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
 }
 
 /** Values a name usually takes, as chips (no typing). */
-private val CHOICES: Map<String, List<String>> = mapOf(
+internal val CHOICES: Map<String, List<String>> = mapOf(
     FormulaName.ROLE.ko to listOf("주간", "저녁", "야간", "당직", "휴무", "기타"),
     FormulaName.WEEKDAY.ko to listOf("월", "화", "수", "목", "금", "토", "일"),
     FormulaName.STYLE.ko to listOf("교대", "일근", "알바", "현장", "자영업", "투자"),
@@ -258,7 +260,8 @@ private fun PreviewLine(value: String, scope: FormulaScope) {
 private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: FormulaScope) {
     val c = LocalContext.current.appContainer
     Text("무엇을", style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // PC D6 (사용성 중): 8가지가 한눈에 보이게 여러 줄로 (옆으로 밀어야 보이던 쓰기 동작을 못 찾았어요).
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LogicVerb.entries.forEach { v ->
             FilterChip(selected = act.verb == v, onClick = { onChange(LogicAct(v, if (v == LogicVerb.SCREEN) "memo" else "", null)) },
                 label = { Text(v.label + if (v.writes) " ⚠" else "") })
@@ -302,7 +305,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 Text(r.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 OutlinedTextField(r.name, { r = r.copy(name = it.take(20)) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("이름") })
                 Text("언제", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, r.copy(on = t)) }, label = { Text(t.label) }) }
                 }
                 when (r.on) {
@@ -355,7 +358,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     OutlinedTextField(b.label, { b = b.copy(label = it.take(16)) }, Modifier.weight(1f), singleLine = true, label = { Text("단추 글") })
                 }
                 Text("어디에", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ButtonPlace.entries.forEach { p -> FilterChip(selected = b.place == p, onClick = { b = b.copy(place = p) }, label = { Text(p.label) }) }
                 }
                 if (b.place == ButtonPlace.DECOR) Text("칩 줄에는 안 나와요. 스튜디오 › 꾸밈 층 › 고치기 › 누르면에서 그림·글상자에 이 단추를 이어요",

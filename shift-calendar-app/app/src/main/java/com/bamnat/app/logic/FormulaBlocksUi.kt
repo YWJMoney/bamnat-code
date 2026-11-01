@@ -119,7 +119,11 @@ private fun BlockView(b: Block, onSet: (Block) -> Unit, depth: Int) {
                         FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
                             Leaf(b.a) { onSet(b.copy(a = it)) }
                             OpChip(b) { onSet(b.copy(op = it)) }
-                            Leaf(b.b) { onSet(b.copy(b = it)) }
+                            // PC D6 (사용성 중): 근무종류·요일·일 유형이면 오른쪽은 고르는 칩 (주간·야간·휴무 …).
+                            val choices = (b.a as? Block.Name)?.let { CHOICES[it.name] }
+                            if (choices != null && (b.b is Block.Text || b.b == Block.Hole)) choices.forEach { v ->
+                                com.bamnat.app.ui.components.FilterChip(selected = (b.b as? Block.Text)?.s == v, onClick = { onSet(b.copy(b = Block.Text(v))) }, label = { Text(v) })
+                            } else Leaf(b.b) { onSet(b.copy(b = it)) }
                         }
                         BlockMenu(b, onSet) { close ->
                             DropdownMenuItem(text = { Text("왼쪽 비우기 (다른 블록 넣기)") }, onClick = { close(); onSet(b.copy(a = Block.Hole)) })

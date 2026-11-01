@@ -444,6 +444,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun layer(k: ThemeWardrobe.Kept) = viewModelScope.launch {
         val r = runCatching { RecipeCodec.read(k.body) }.getOrNull() ?: return@launch
         var d = _state.value.draft
+        var merged: String? = null
         r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
         // [RUL-07] 규칙·단추 are added to mine (the same one twice is kept once), up to the limits; they never take mine away.
         r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }?.let { p ->
@@ -456,6 +457,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 got.writingRules.filter { it.key !in had }.forEach { store.setOff(it.key, true) }
             }
             d = d.copy(logic = com.bamnat.core.formula.Logic.encode(mine.plus(got)))
+            merged = mine.mergeSay(got)
         }
         val was = _state.value.draft
         where = "보관함 · ‘${k.title}’ 얹기"
@@ -465,12 +467,13 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         // Nothing changed (the same part again): no step to take back.
         val stepped = s.draft != was
         // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
-        if (!stepped) { _state.value = s.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
+        if (!stepped) { _state.value = s.copy(said = merged ?: "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
         // PC D4: 규칙·단추만 얹은 것은 테마가 아니라서 입히기가 그 테마 기간·광고를 따르지 않아요 (출처는 레시피에 남아요).
         val logicOnly = LookParts.partUnit(r) == LookParts.LOGIC
-        _state.value = s.copy(layered = s.layered + k, sources = if (k.own || logicOnly) s.sources else s.sources + (k.from to k.fromTitle),
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" + if (!logicOnly) "" else if (!k.own && r.pieces.any { p -> p.kind == com.bamnat.core.recipe.PieceKind.LOGIC && com.bamnat.core.formula.Logic.from(p.values).writingRules.isNotEmpty() })
-                ". 메모·가계부를 바꾸는 규칙은 꺼진 채로 들어가요. 입힌 뒤 설정 › 수식·규칙·버튼에서 켜요" else ". 입히면 규칙이 켜져요", canUndoLayer = stepped)
+        _state.value = s.copy(layered = s.layered + k, sources = if (k.own || logicOnly) s.sources else s.sources + (k.from to k.fromTitle))
+        val writesOff = !k.own && r.pieces.any { p -> p.kind == com.bamnat.core.recipe.PieceKind.LOGIC && com.bamnat.core.formula.Logic.from(p.values).writingRules.isNotEmpty() }
+        val tail = if (!logicOnly) "" else if (writesOff) ". 메모·가계부를 바꾸는 규칙은 꺼진 채로 들어가요. 입힌 뒤 설정 › 수식·규칙·버튼에서 켜요" else ". 입히면 규칙이 켜져요"
+        _state.value = _state.value.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" + tail + merged?.let { ". $it" }.orEmpty(), canUndoLayer = stepped)
     }
 
     /**

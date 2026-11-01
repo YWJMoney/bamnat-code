@@ -29,6 +29,16 @@ class LogicPlusTest {
         assertEquals(mine, mine.plus(got).minus(got))
     }
 
+    @Test fun sameRuleUnderAnotherNameIsSaid() {
+        val mine = Logic(rules = listOf(night.copy(name = "B 내 야간 규칙")))
+        val theirs = Logic(rules = listOf(night.copy(name = "A 야간 알림"), reset))
+        assertEquals(listOf("A 야간 알림" to "B 내 야간 규칙"), mine.same(theirs))
+        assertEquals("‘A 야간 알림’은 내 ‘B 내 야간 규칙’과 하는 일이 같아 하나로 뒀어요", mine.mergeSay(theirs))
+        assertEquals(null, mine.mergeSay(Logic(rules = listOf(reset))))
+        val full = Logic(rules = (0 until Logic.MAX_RULES).map { reset.copy(min = it) })
+        assertTrue(full.mergeSay(Logic(rules = listOf(night)))!!.contains("넘는 1개"))
+    }
+
     @Test fun plusKeepsLimits() {
         val many = Logic(rules = (0 until 20).map { reset.copy(min = it) })
         assertEquals(Logic.MAX_RULES, Logic().plus(many).rules.size)

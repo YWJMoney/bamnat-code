@@ -33,6 +33,31 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
     /** 1.36 [SEC-12] The rules that write data and run by themselves or by a tap (not a press of a button the user put there). */
     val writingRules: List<LogicRule> get() = rules.filter { it.act.verb.writes }
 
+    /**
+     * PC D6: [other]'s rules and buttons that do the same as one of these (same 언제·조건·무엇을, the name aside) and so are kept once
+     * by [plus], as "theirs = mine" names, to say so.
+     */
+    fun same(other: Logic): List<Pair<String, String>> =
+        other.rules.mapNotNull { r -> rules.firstOrNull { it.key == r.key }?.let { r.name to it.name } } +
+            other.buttons.mapNotNull { b -> buttons.firstOrNull { it.toMap() == b.toMap() }?.let { b.label to it.label } }
+
+    /** PC D6: what [plus] leaves out for the limits (8 buttons, 12 rules). */
+    fun overLimit(other: Logic): Int {
+        val p = plus(other)
+        val wanted = buttons.size + rules.size + other.buttons.size + other.rules.size - same(other).size
+        return (wanted - p.buttons.size - p.rules.size).coerceAtLeast(0)
+    }
+
+    /** One line for [same] and [overLimit], or null: "‘A 야간 알림’은 내 ‘B 내 야간 규칙’과 하는 일이 같아 하나로 뒀어요". */
+    fun mergeSay(other: Logic): String? {
+        val s = same(other)
+        val over = overLimit(other)
+        return listOfNotNull(
+            s.takeIf { it.isNotEmpty() }?.let { l -> l.joinToString(", ") { (t, m) -> "‘$t’" + (if (t != m) "은 내 ‘$m’과" else "은 이미 있는 것과") } + " 하는 일이 같아 하나로 뒀어요" },
+            over.takeIf { it > 0 }?.let { "한도(단추 ${MAX_BUTTONS}개·규칙 ${MAX_RULES}개)를 넘는 ${it}개는 넣지 않았어요" },
+        ).joinToString(". ").ifEmpty { null }
+    }
+
     /** [RUL-07] 보관함 빼기: these without [other]'s buttons and rules (what [plus] added). */
     fun minus(other: Logic): Logic = Logic(
         buttons.filter { b -> other.buttons.none { it.toMap() == b.toMap() } },

@@ -270,6 +270,9 @@ class RecipePieces(private val c: AppContainer) {
                 listOfNotNull(
                     Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },
                     Change("받은 규칙·단추는 가계부에 한 번에 100만 원까지만 넣어요").takeIf { raw.overReceived },
+                    // PC D6: 내 규칙 뒤에 더해지고, 같은 것은 하나로 둬요 (말없이 합쳐지지 않게).
+                    Change("내 규칙·단추는 그대로 두고 뒤에 더해요"),
+                    com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).mergeSay(l)?.let { Change(it) },
                 ))
                 .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
@@ -790,7 +793,8 @@ class RecipePieces(private val c: AppContainer) {
                 ?.let { l -> runCatching { com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(l)).encode() }.getOrNull() }
                 ?.let { mapOf("parts" to it) }.orEmpty()
             // [RUL-03][RUL-04] The recipe's buttons and rules take the place of the ones there were (되돌리기 puts them back).
-            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.from(values)))
+            // PC D6: they are added after mine (the same one kept once), as from the studio's 보관함; they never take mine away.
+            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(cur.logic).plus(com.bamnat.core.formula.Logic.from(values))))
             else -> emptyMap()
         }
     }
