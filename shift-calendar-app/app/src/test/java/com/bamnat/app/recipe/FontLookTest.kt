@@ -30,11 +30,11 @@ class FontLookTest {
         assertFalse(FontProbe.failed("u00000000000000bb"))
     }
 
-    @Test fun theMakerHearsThatAFirstFontWaitsForALook() {
+    @Test fun theMakerHearsThatASharedFontWaitsForALook() {
         assertNull(RecipeFonts.keptNote(RecipeFonts.Sent(listOf("붓글씨"), emptyList())))
         val note = RecipeFonts.keptNote(RecipeFonts.Sent(listOf("붓글씨"), listOf("상용 글꼴"), waiting = listOf("붓글씨")))!!
         assertTrue(note, note.contains("‘상용 글꼴’ 글꼴은 공개 글꼴로 밝히지 않았거나"))
-        assertTrue(note, note.contains("‘붓글씨’ 글꼴은 처음 나누는 글꼴이라 운영자가 라이선스를 확인한 뒤"))
+        assertTrue(note, note.contains("‘붓글씨’ 글꼴은 운영자가 라이선스를 확인한 뒤"))
         assertEquals(2, note.lines().size)
     }
 }
