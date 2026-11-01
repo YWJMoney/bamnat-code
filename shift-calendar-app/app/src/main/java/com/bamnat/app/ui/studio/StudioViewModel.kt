@@ -114,6 +114,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     val state: StateFlow<State> = _state.asStateFlow()
     private var beforeWear: Map<String, String>? = null
 
+    /** The 보관함 ids last seen on the studio screen, so what came in while 장터 was open is said on the way back. */
+    var seenKept: Set<Long>? = null
+
     init {
         when {
             start == START_PLAIN -> startPlain()

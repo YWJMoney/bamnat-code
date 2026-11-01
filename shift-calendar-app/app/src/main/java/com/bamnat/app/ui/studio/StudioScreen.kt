@@ -307,6 +307,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer) "되돌리기" else null, duration = SnackbarDuration.Long)
         if (r == SnackbarResult.ActionPerformed) { if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
     }
+    // PC 제안 1.36 (장터에서 담고 돌아와도 보관함에 들어온 줄 모름): what came into 보관함 while away is said, with 보기 to it.
+    LaunchedEffect(kept) {
+        val ids = kept.map { it.id }.toSet()
+        val before = vm.seenKept
+        vm.seenKept = ids
+        val n = before?.let { (ids - it).size } ?: 0
+        if (n > 0 && snack.showSnackbar("보관함에 새로 들어왔어요 · ${n}개", actionLabel = "보기", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+            if (Tool.BOX !in area.tools) pick(Area.CALENDAR)
+            tool = Tool.BOX
+        }
+    }
     // 1.36 U3: saved or sent since the last change, it leaves without asking.
     androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
 
