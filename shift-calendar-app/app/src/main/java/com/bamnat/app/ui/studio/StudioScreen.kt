@@ -990,8 +990,6 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("바꾼 곳", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-            // [STU-39] 잠그기, where every screen's changes are listed.
-            LockChips(vm)
             parts.groupBy { it.tab }.forEach { (tab, list) ->
                 val area = when (tab) {
                     TabOrder.MONEY -> Area.MONEY; TabOrder.MEMOS -> Area.MEMO; TabOrder.STATS -> if (list.any { it.id == "stats.pay" }) Area.PAY else Area.STATS
@@ -1019,6 +1017,8 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
                 }
             }
             if (parts.isEmpty() && s.extras.isEmpty()) Text("처음 모양과 같아요", style = MaterialTheme.typography.bodyMedium)
+            // [STU-39] 잠그기, where every screen's changes are listed; under the list, so what changed comes first (PC 2차 사용성 제안).
+            LockChips(vm)
         }
     }
 }

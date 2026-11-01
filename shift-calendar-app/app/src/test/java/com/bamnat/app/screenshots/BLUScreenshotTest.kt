@@ -18,7 +18,7 @@ class BLUScreenshotTest : ScreenshotBase() {
     private val parts = Blueprint(
         Blueprint.clean(
             listOf(
-                mapOf("id" to "cal.head.title", "fill" to 0xFFFFC107L, "r" to 15L, "font" to "serif", "pad" to 4L),
+                mapOf("id" to "cal.head.title", "fill" to 0xFF1E335CL, "r" to 15L, "font" to "serif", "pad" to 4L),
                 mapOf("id" to "cal.week.day", "on" to "sun", "ink" to 0xFFE5484DL, "font" to "mono"),
                 mapOf("id" to "cal.cell.date", "on" to "today", "fill" to 0xFFFFF4CCL, "r" to 8L, "font" to "hand", "weight" to 700L),
                 mapOf("id" to "cal.cell.mark", "r" to 0L),

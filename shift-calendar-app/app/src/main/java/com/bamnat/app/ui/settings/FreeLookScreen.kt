@@ -591,18 +591,26 @@ internal fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> 
 }
 
 @Composable
-internal fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String, onDone: (Float) -> Unit) {
+internal fun LabeledSlider(
+    label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
+    /** [BLU-06] Set when nothing is chosen yet: shown in place of the number ("처음대로 · 지금 8dp"), and −/+ both start from [value]. */
+    unset: String? = null,
+    onDone: (Float) -> Unit,
+) {
     var v by remember(value) { mutableFloatStateOf(value) }
+    var moved by remember(value, unset) { mutableStateOf(false) }
+    val showUnset = unset != null && !moved
     Column {
         // [BLU-06] 1.36 −/+ for a value hard to hit with a finger on the slider (PC 1차 사용성 제안 '둥글기 −/+').
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            androidx.compose.material3.TextButton(onClick = { v = (v.toInt() - 1).toFloat().coerceIn(range); onDone(v) }, enabled = v > range.start,
+            Text(if (showUnset) "$label · $unset" else "$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.TextButton(onClick = { moved = true; v = (if (showUnset) v else v.toInt() - 1f).coerceIn(range); onDone(v) },
+                enabled = showUnset || v > range.start,
                 modifier = Modifier.semantics { contentDescription = "$label 하나 줄이기" }) { Text("−") }
-            androidx.compose.material3.TextButton(onClick = { v = (v.toInt() + 1).toFloat().coerceIn(range); onDone(v) }, enabled = v < range.endInclusive,
+            androidx.compose.material3.TextButton(onClick = { moved = true; v = (v.toInt() + 1f).coerceIn(range); onDone(v) }, enabled = v < range.endInclusive,
                 modifier = Modifier.semantics { contentDescription = "$label 하나 늘리기" }) { Text("+") }
         }
-        Slider(v, { v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
+        Slider(v, { moved = true; v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
     }
 }
 

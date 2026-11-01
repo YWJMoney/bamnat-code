@@ -103,7 +103,7 @@ internal fun PartsTool(
         Group("선") {
             Chips(listOf(null to "처음대로", "none" to "없음", "solid" to "실선", "dash" to "끊은 선", "dot" to "점선", "double" to "두 줄"), line["line"] as? String) { set("line", it) }
             if (line["line"] != null && line["line"] != "none") {
-                LabeledSlider("두께", num("lineW") ?: 1f, 0f..8f, "dp") { set("lineW", (Math.round(it * 2) / 2.0).let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
+                LabeledSlider("두께", num("lineW") ?: 1f, 0f..8f, "dp", unset = if (line["lineW"] == null) "처음대로" else null) { set("lineW", (Math.round(it * 2) / 2.0).let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
                 ColorPick("선 색", col("lineC")) { set("lineC", it) }
             }
         }
@@ -113,20 +113,20 @@ internal fun PartsTool(
                 Text("네 귀퉁이 따로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(each, { each = it })
             }
-            if (!each) LabeledSlider("둥글기", num("r") ?: 0f, 0f..48f, "dp") { set("r", it.toLong()) }
+            if (!each) LabeledSlider("둥글기", num("r") ?: 0f, 0f..48f, "dp", unset = if (line["r"] == null) cornerNote(id) else null) { set("r", it.toLong()) }
             else listOf("rTL" to "왼쪽 위", "rTR" to "오른쪽 위", "rBL" to "왼쪽 아래", "rBR" to "오른쪽 아래").forEach { (k, w) ->
-                LabeledSlider(w, num(k) ?: num("r") ?: 0f, 0f..48f, "dp") { set(k, it.toLong()) }
+                LabeledSlider(w, num(k) ?: num("r") ?: 0f, 0f..48f, "dp", unset = if (line[k] == null && line["r"] == null) cornerNote(id) else null) { set(k, it.toLong()) }
             }
         }
         Group("그림자·여백") {
-            LabeledSlider("그림자", num("shadow") ?: 0f, 0f..24f, "dp") { set("shadow", it.toLong().takeIf { v -> v > 0 }) }
+            LabeledSlider("그림자", num("shadow") ?: 0f, 0f..24f, "dp", unset = if (line["shadow"] == null) "처음대로" else null) { set("shadow", it.toLong().takeIf { v -> v > 0 }) }
             if ((num("shadow") ?: 0f) > 0f) ColorPick("그림자 색", col("shadowC")) { set("shadowC", it) }
-            LabeledSlider("안 여백", num("pad") ?: 0f, 0f..32f, "dp") { set("pad", it.toLong()) }
-            LabeledSlider("바깥 간격", num("out") ?: 0f, 0f..32f, "dp") { set("out", it.toLong().takeIf { v -> v > 0 }) }
+            LabeledSlider("안 여백", num("pad") ?: 0f, 0f..32f, "dp", unset = if (line["pad"] == null) "처음대로" else null) { set("pad", it.toLong()) }
+            LabeledSlider("바깥 간격", num("out") ?: 0f, 0f..32f, "dp", unset = if (line["out"] == null) "처음대로" else null) { set("out", it.toLong().takeIf { v -> v > 0 }) }
         }
         Group("글자") {
             Chips(listOf(null to "처음대로") + FONT_WORDS, line["font"] as? String) { set("font", it) }
-            LabeledSlider("크기", num("size") ?: 14f, 6f..48f, "sp") { set("size", it.toLong()) }
+            LabeledSlider("크기", num("size") ?: 14f, 6f..48f, "sp", unset = if (line["size"] == null) "처음대로" else null) { set("size", it.toLong()) }
             Chips(listOf(null to "처음대로", 300L to "가늘게", 400L to "보통", 700L to "굵게", 900L to "아주 굵게"), (line["weight"] as? Number)?.toLong()) { set("weight", it) }
             ColorPick("글자 색", col("ink")) { set("ink", it) }
             // [BLU-06] 글자 색과 채우기가 비슷하면 알려요 (WCAG 4.5:1). 글자 색을 비워 두면 채우기에 맞춰 검정·흰색이 저절로 골라져요.
@@ -142,14 +142,14 @@ internal fun PartsTool(
                 Text("글자 색을 비워 두면 채우기에 맞춰 잘 보이는 색으로 그려요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            LabeledSlider("자간", num("track") ?: 0f, -5f..30f, "%") { set("track", it.toLong()) }
-            LabeledSlider("줄 간격", num("leading") ?: 120f, 80f..300f, "%") { set("leading", it.toLong()) }
+            LabeledSlider("자간", num("track") ?: 0f, -5f..30f, "%", unset = if (line["track"] == null) "처음대로" else null) { set("track", it.toLong()) }
+            LabeledSlider("줄 간격", num("leading") ?: 120f, 80f..300f, "%", unset = if (line["leading"] == null) "처음대로" else null) { set("leading", it.toLong()) }
             Chips(listOf(null to "처음대로", false to "바로", true to "기울임"), line["italic"] as? Boolean) { set("italic", it) }
-            LabeledSlider("글자 테두리", num("stroke") ?: 0f, 0f..4f, "dp") { set("stroke", (Math.round(it * 2) / 2.0).takeIf { v -> v > 0 }?.let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
+            LabeledSlider("글자 테두리", num("stroke") ?: 0f, 0f..4f, "dp", unset = if (line["stroke"] == null) "처음대로" else null) { set("stroke", (Math.round(it * 2) / 2.0).takeIf { v -> v > 0 }?.let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
             if ((num("stroke") ?: 0f) > 0f) ColorPick("테두리 색", col("strokeC")) { set("strokeC", it) }
         }
         Group("투명도·숨기기") {
-            LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%") { set("alpha", it.toLong().takeIf { v -> v < 100 }) }
+            LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%", unset = if (line["alpha"] == null) "처음대로" else null) { set("alpha", it.toLong().takeIf { v -> v < 100 }) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("숨기기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(line["hide"] == true, { set("hide", it.takeIf { h -> h }) })
@@ -160,7 +160,7 @@ internal fun PartsTool(
         val kids = BlueprintParts.CHILDREN[id].orEmpty()
         if (kids.size > 1) Group("배치 (안에 든 것)") {
             Chips(listOf(null to "처음대로", "col" to "세로로", "row" to "가로로", "stack" to "겹쳐서"), line["dir"] as? String) { set("dir", it) }
-            LabeledSlider("사이 간격", num("gap") ?: 1f, 0f..32f, "dp") { set("gap", it.toLong()) }
+            LabeledSlider("사이 간격", num("gap") ?: 1f, 0f..32f, "dp", unset = if (line["gap"] == null) "처음대로" else null) { set("gap", it.toLong()) }
             Chips(listOf(null to "처음대로", "start" to "앞에", "center" to "가운데", "end" to "끝에", "stretch" to "꽉 차게"), line["align"] as? String) { set("align", it) }
             Chips(listOf(null to "처음대로", "start" to "앞부터", "center" to "가운데로", "end" to "뒤로", "between" to "양 끝 맞춤", "around" to "고르게"), line["justify"] as? String) { set("justify", it) }
             val order = remember(bp, id, on) { bp.childOrder(id, on?.let { setOf(it) } ?: emptySet()) }
@@ -181,6 +181,12 @@ internal fun PartsTool(
 }
 
 /** The states that mean something for a part. */
+/** What a part's corners are before the blueprint sets them, said beside 둥글기 (PC 2차: "꾸미기 전에도 0dp로 보여요"). */
+private fun cornerNote(id: String): String = "처음대로 · 지금 " + when (id) {
+    "cal.cell.mark" -> "약 5dp"; "cal.cell.date" -> "동그라미"; "cal.head.title", "app.chip" -> "8dp"; "cal.head", "app.card" -> "12dp"
+    "memo.card", "app.sheet" -> "16dp"; "app.tab" -> "알약"; else -> "네모(0dp)"
+}
+
 internal fun partWords(id: String, on: String?): String =
     (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + (STATE_WORDS[it] ?: it) } ?: "")
 

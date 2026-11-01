@@ -1898,7 +1898,10 @@ private fun CalendarHeader(
                 // [J133-22] 1.33 (실사용 테스트 "작은 폰 달력 머리에 '2026년 10월' 글자가 없음"): a small phone shows this year's month
                 // without the year, and the title is never squeezed out by the buttons around it.
                 val titlePart = bp.style("cal.head.title")
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small), with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) },
+                val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
+                // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
+                val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small, yearInk = yearInk), titleText,
                     (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -1993,8 +1996,8 @@ private val HEADER_ICONS_WIDTH = 480.dp
 
 /** [CAL-52] 중-4: "2026년 10월" with the year smaller, so the month is what reads first and the line fits a phone. */
 @Composable
-private fun monthTitle(month: YearMonth, short: Boolean = false): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
-    pushStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.72.em, color = MaterialTheme.colorScheme.onSurfaceVariant))
+private fun monthTitle(month: YearMonth, short: Boolean = false, yearInk: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+    pushStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.72.em, color = yearInk ?: MaterialTheme.colorScheme.onSurfaceVariant))
     if (!short || month.year != Today.date().year) append(if (short) "${month.year % 100}년 " else "${month.year}년 ")
     pop()
     append("${month.monthValue}월")

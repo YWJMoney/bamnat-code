@@ -379,6 +379,9 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
     // [BLU-05] 1.36 부품 '가계부 머리'(money.head): the totals board.
     val head = com.bamnat.app.ui.parts.partStyle("money.head")
     val headShape = head.shape(MaterialTheme.shapes.medium)
+    // Its small labels read on the board's own fill too (PC 2차: 부품 안의 모든 글자에 같은 대비).
+    val labelInk = head.text(androidx.compose.ui.text.TextStyle()).color.takeIf { head.fill != null && it != Color.Unspecified }?.copy(alpha = 0.8f)
+        ?: MaterialTheme.colorScheme.onSurfaceVariant
     Surface(shape = headShape, color = head.fillColor ?: MaterialTheme.colorScheme.surfaceContainer,
         contentColor = head.ink?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.onSurface,
         shadowElevation = (head.shadow ?: 0).dp,
@@ -388,11 +391,11 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${t.count}건", style = head.text(MaterialTheme.typography.labelLarge))
                 Column(Modifier.weight(1f)) {
-                    Text("나간 돈", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("나간 돈", style = MaterialTheme.typography.labelSmall, color = labelInk)
                     FitText(out, MaterialTheme.typography.titleSmall, cal.expense)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("들어온 돈", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("들어온 돈", style = MaterialTheme.typography.labelSmall, color = labelInk)
                     FitText(ins, MaterialTheme.typography.titleSmall, cal.income)
                 }
             }
@@ -402,7 +405,7 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
                 Text("${t.count}건", style = MaterialTheme.typography.labelLarge)
                 listOf(Triple("나간 돈", out, cal.expense), Triple("들어온 돈", ins, cal.income)).forEach { (label, amount, color) ->
                     Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-                        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = labelInk,
                             modifier = Modifier.padding(end = 8.dp))
                         FitText(amount, MaterialTheme.typography.titleSmall.copy(textAlign = TextAlign.End), color, Modifier.weight(1f))
                     }
