@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.ui.company.SoftCard
+import com.bamnat.app.ui.recipe.thumb
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.work.WorkStyle
 
@@ -182,7 +183,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
-        r.look?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 44.dp); Spacer(Modifier.padding(start = 8.dp)) }
+        r.thumb()?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 44.dp); Spacer(Modifier.padding(start = 8.dp)) }
         Column(Modifier.weight(1f)) {
             Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)

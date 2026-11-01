@@ -38,6 +38,7 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.recipe.RecipeClient
 import com.bamnat.app.recipe.RecipeItem
 import com.bamnat.app.ui.recipe.ThemeThumb
+import com.bamnat.app.ui.recipe.thumb
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 
@@ -57,7 +58,7 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
         val got = runCatching {
             val first = c.recipeApi.list(style, "hot", kind = RecipeClient.SCOPE_THEME)
             val more = first.next?.let { runCatching { c.recipeApi.list(style, "hot", cursor = it, kind = RecipeClient.SCOPE_THEME).items }.getOrNull() }.orEmpty()
-            (first.items + more).distinctBy { it.code }.filter { it.look != null && it.scope != "tab" && !c.recipes.hides(it) }
+            (first.items + more).distinctBy { it.code }.filter { it.thumb() != null && it.scope != "tab" && !c.recipes.hides(it) }
         }
         deck = got.getOrNull()
         failed = got.isFailure
@@ -79,7 +80,7 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                         val t = list[i]
                         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)) {
-                            BoxWithConstraints(Modifier.widthIn(max = 360.dp).fillMaxWidth()) { ThemeThumb(t.look!!, width = maxWidth) }
+                            BoxWithConstraints(Modifier.widthIn(max = 360.dp).fillMaxWidth()) { ThemeThumb(t.thumb()!!, width = maxWidth) }
                             Text(t.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             // 1.36 [VIL-17] PC 확인 V9: say what wearing it changes, not just a picture.
                             if (t.tabs.isNotEmpty()) Text("바뀌는 곳: " + t.tabs.joinToString(" · ") { com.bamnat.app.ui.recipe.marketTabLabel(it, style) },

@@ -172,7 +172,7 @@ internal fun ShowcaseStrip(items: List<RecipeItem>, onItem: (String) -> Unit) {
             OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) }) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // [FREE-08] A theme shows as itself; the rest by their cover.
-                    item.look?.let { ThemeThumb(it, width = 148.dp) } ?: RecipeCover(item.cover, size = 56.dp)
+                    item.thumb()?.let { ThemeThumb(it, width = 148.dp) } ?: RecipeCover(item.cover, size = 56.dp)
                     Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.heightIn(min = 40.dp))
                     Text(item.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -353,7 +353,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                 }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // [FREE-08] The theme itself, to pick by eye.
-            item.look?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
+            item.thumb()?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
         }
     }
 }
@@ -364,7 +364,7 @@ private fun ThemeTile(item: RecipeItem, modifier: Modifier = Modifier, onClick: 
     Card(modifier.clickable(onClickLabel = "테마 보기", onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-                item.look?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
+                item.thumb()?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
@@ -435,3 +435,10 @@ fun CodeDialog(onCode: (String) -> Unit, onDismiss: () -> Unit) {
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/**
+ * PC 확인 V44: the small picture of a list card — the recipe's own look, or for a theme or one that changes the calendar but brought
+ * no colours, the example week in plain colours (the same as 자랑 카드 and 넣기 창), so the same work looks the same everywhere.
+ */
+internal fun com.bamnat.app.recipe.RecipeItem.thumb(): com.bamnat.app.recipe.ThemeSwatch? =
+    look ?: com.bamnat.app.recipe.ThemeSwatch().takeIf { scope == "theme" || "calendar" in tabs || "app" in tabs }
