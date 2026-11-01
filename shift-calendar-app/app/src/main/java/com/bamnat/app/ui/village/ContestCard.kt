@@ -109,7 +109,7 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(code in chosen, onCheckedChange = { on -> chosen = if (on) chosen + code else chosen - code })
                                 // PC 확인 V25: one without a look of its own still shows the example week in plain colours.
-                                com.bamnat.app.ui.recipe.ThemeThumb(r.look ?: com.bamnat.app.recipe.ThemeSwatch(), width = 64.dp)
+                                com.bamnat.app.ui.recipe.ThemeThumb(r.look ?: com.bamnat.app.recipe.ThemeSwatch.example(st), width = 64.dp)
                                 androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp))
                                 Text(r.title, maxLines = 1)
                             }

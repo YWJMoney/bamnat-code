@@ -79,7 +79,11 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
                         .background(tint ?: Color.Transparent)) {
                         Text("$n", fontSize = 6.sp, color = number, fontWeight = if (cellLook?.dateBold == true || today) FontWeight.Bold else null,
                             modifier = Modifier.align(placeOf(cellLook?.datePlace)).padding(1.dp), lineHeight = 7.sp)
-                        if (!off && cellLook?.mark != "none") Box(
+                        // PC 확인 V44: an example week says its days, 주·야·휴, as the calendar does.
+                        if (look.example && d.label.isNotEmpty()) Text(d.label.take(1), fontSize = 6.sp, lineHeight = 7.sp,
+                            color = if (off) ink.copy(alpha = 0.6f) else color, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.BottomCenter))
+                        else if (!off && cellLook?.mark != "none") Box(
                             Modifier.align(if (cellLook?.markPlace == "bottom") Alignment.BottomCenter else Alignment.Center)
                                 .size(if (cellLook?.mark == "dot") 3.dp else 5.dp).clip(if (cellLook?.mark == "line") RoundedCornerShape(1.dp) else CircleShape)
                                 .background(color),

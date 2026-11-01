@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -235,6 +237,7 @@ fun RecipeListScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var codeAsk by remember { mutableStateOf(askCode) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -250,11 +253,15 @@ fun RecipeListScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") })
+            // PC 확인: scrolled down, the button folds to its + so it does not sit on a card's buttons.
+            val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 40 } }
+            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") },
+                expanded = atTop, modifier = Modifier.semantics { contentDescription = "스튜디오에서 만들기" })
         },
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
+            state = listState,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -441,4 +448,4 @@ fun CodeDialog(onCode: (String) -> Unit, onDismiss: () -> Unit) {
  * no colours, the example week in plain colours (the same as 자랑 카드 and 넣기 창), so the same work looks the same everywhere.
  */
 internal fun com.bamnat.app.recipe.RecipeItem.thumb(): com.bamnat.app.recipe.ThemeSwatch? =
-    look ?: com.bamnat.app.recipe.ThemeSwatch().takeIf { scope == "theme" || "calendar" in tabs || "app" in tabs }
+    look ?: com.bamnat.app.recipe.ThemeSwatch.example(styles.firstOrNull()).takeIf { scope == "theme" || "calendar" in tabs || "app" in tabs }

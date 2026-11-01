@@ -56,10 +56,22 @@ data class ThemeSwatch(
     val today: Long? = null, val sat: Long? = null, val sun: Long? = null,
     val days: List<Day> = emptyList(), val cells: String? = null, val pattern: String? = null, val badge: String? = null,
     val memo: String? = null, val photo: Boolean = false,
+    /** PC 확인 V44: drawn for a recipe that brought no colours, with the kind of work's usual days and their letters. */
+    val example: Boolean = false,
 ) {
     data class Day(val color: Long?, val label: String, val emoji: String?, val role: String?)
 
     companion object {
+        /** PC 확인 V44: a kind of work's usual days (주·야·휴, 일·쉼 …) in their own colours, for a recipe without a look. */
+        fun example(style: com.bamnat.core.work.WorkStyle?): ThemeSwatch = ThemeSwatch(example = true, days = when (style) {
+            com.bamnat.core.work.WorkStyle.SHIFT, null -> listOf(Day(0xFFEF6C00, "주", null, "day"), Day(0xFF3949AB, "야", null, "night"), Day(0xFF757575, "휴", null, "off"))
+            com.bamnat.core.work.WorkStyle.HOURLY -> listOf(Day(0xFF2E7D32, "일", null, "day"), Day(0xFF757575, "쉼", null, "off"))
+            com.bamnat.core.work.WorkStyle.FIELD -> listOf(Day(0xFF6D4C41, "현", null, "day"), Day(0xFF757575, "휴", null, "off"))
+            com.bamnat.core.work.WorkStyle.BUSINESS -> listOf(Day(0xFF00897B, "영", null, "day"), Day(0xFF757575, "휴", null, "off"))
+            com.bamnat.core.work.WorkStyle.INVEST -> listOf(Day(0xFF1E88E5, "장", null, "day"), Day(0xFF757575, "휴", null, "off"))
+            else -> listOf(Day(0xFF1E88E5, "근", null, "day"), Day(0xFF757575, "휴", null, "off"))
+        })
+
         private fun hex(s: String?): Long? = s?.takeIf { Regex("^[0-9A-F]{8}$").matches(it) }?.toLong(16)
 
         fun of(o: JSONObject?): ThemeSwatch? = o?.let {

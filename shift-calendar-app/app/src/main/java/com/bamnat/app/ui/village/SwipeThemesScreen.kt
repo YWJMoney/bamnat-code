@@ -85,7 +85,10 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                             // 1.36 [VIL-17] PC 확인 V9: say what wearing it changes, not just a picture.
                             if (t.tabs.isNotEmpty()) Text("바뀌는 곳: " + t.tabs.joinToString(" · ") { com.bamnat.app.ui.recipe.marketTabLabel(it, style) },
                                 style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            else if (t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            // PC 확인: the rest of the page says what it is, who made it and how to see it on one's own calendar.
+                            if (t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            t.nick?.let { Text("만든 분 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 입은 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -97,6 +100,9 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                                 Button(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = t.code; onRecipe(t.code) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입어 보기") }
                             }
                             if (i < list.size - 1) FilledTonalButton(onClick = { scope.launch { pager.animateScrollToPage(i + 1) } }) { Text("다음 테마") }
+                            Text("입어 보기를 누르면 내 달력에 먼저 입혀 보고, 마음에 드는 부분만 골라 넣어요. 넣은 뒤 7일 안에는 되돌릴 수 있어요",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
                         }
                     }
                 }
