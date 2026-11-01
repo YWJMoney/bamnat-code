@@ -18,6 +18,7 @@ import com.bamnat.app.ui.settings.FontPickerDialog
 import com.bamnat.app.ui.settings.MotionEditor
 import com.bamnat.app.ui.settings.PhotoAdjustEditor
 import com.bamnat.app.ui.settings.PhotoFrameEditor
+import com.bamnat.core.recipe.Blueprint
 import com.bamnat.core.recipe.CalendarView
 import com.bamnat.core.recipe.CellLook
 import com.bamnat.core.recipe.Fill
@@ -110,6 +111,40 @@ class MATScreenshotTest : ScreenshotBase() {
             Surface { Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { MotionEditor(m) { m = it } } }
         }
         assertTrue(appears("오늘", exact = false))
+    }
+
+    /**
+     * 누락 점검 N10·N11: glass cells that show the screen's dotted background blurred behind them, the date with a shadow and an
+     * underline (갈래 A's fields, drawn by the part's text), and a button in the 단추 part's gradient.
+     */
+    @Test fun glassCellsShadowedDatesAndAGradientButton() = shoot("1486_mat_glass_button", PHONE) {
+        val bp = Blueprint(Blueprint.clean(listOf(
+            mapOf("id" to "app.button", "paint" to Fill.Linear(90, listOf(Fill.Stop(0xFFFF7043), Fill.Stop(0xFF7E57C2))).encode()),
+            mapOf("id" to "cal.cell.date", "tshadow" to 3L, "tshadowC" to 0xAA000000L, "deco" to "under", "ink" to 0xFFFFFFFFL, "weight" to 700L),
+        )))
+        val view = CalendarView(looks = listOf(CellLook(fill = Fill.Glass(0x55FFFFFF, 20), corner = 12)))
+        val screens = ScreenLooks(mapOf(ScreenLooks.ALL to ScreenLook(fill = Fill.Pattern("bigdots", 0xFFFF7043, 0xFF3949AB, 220, 0))))
+        c.settingsRepository.update { it.copy(calView = view.encode(), screenLooks = screens.encode(), parts = bp.encode()) }
+        settle()
+        assertEquals("under", Blueprint.decode(c.settingsRepository.current.parts).own("cal.cell.date").deco)
+    }
+
+    /** N10: the 단추 part's gradient on the app's Button, while a button given its own colours stays as it is. */
+    @Test fun aButtonInTheButtonPartsGradient() = shoot("1487_mat_button_fill", PHONE) {
+        val bp = Blueprint(Blueprint.clean(listOf(
+            mapOf("id" to "app.button", "paint" to Fill.Linear(90, listOf(Fill.Stop(0xFF26C6DA), Fill.Stop(0xFFAB47BC))).encode()),
+        )))
+        content {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides bp) {
+                Surface {
+                    Column(Modifier.padding(16.dp)) {
+                        com.bamnat.app.ui.components.Button(onClick = {}) { androidx.compose.material3.Text("그라데이션 단추") }
+                        com.bamnat.app.ui.components.Button(onClick = {}, enabled = false) { androidx.compose.material3.Text("꺼진 단추") }
+                    }
+                }
+            }
+        }
+        assertTrue(appears("그라데이션 단추", exact = true))
     }
 
     /** [MAT-06] A recipe names a user font by its id wherever a font goes; ids inside other words are not fonts. */

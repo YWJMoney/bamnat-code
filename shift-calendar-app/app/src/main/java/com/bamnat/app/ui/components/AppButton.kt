@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import com.bamnat.app.ui.parts.LocalBlueprint
 import com.bamnat.app.ui.theme.fillWith
@@ -52,12 +50,10 @@ fun Button(
     }
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val ink = MaterialTheme.colorScheme.onPrimary
-    // The fill is drawn on the button's own box: the room Material adds round a small button for a finger (48 dp) is made out here,
-    // so the fill is as tall as the button looks and a tap in that room still presses it.
+    // The fill is drawn on the button's own box: the room Material leaves round a small button (48 dp) is made out here, so the
+    // fill is as tall as the button looks and the screen keeps its spacing.
     Box(
-        modifier.minimumInteractiveComponentSize()
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .clearAndSetSemantics { },
+        modifier.minimumInteractiveComponentSize(),
         contentAlignment = Alignment.Center,
         propagateMinConstraints = true,
     ) {
