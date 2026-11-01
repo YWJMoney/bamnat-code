@@ -64,7 +64,8 @@ internal fun PartsTool(
         if (focus != null && focus in ids) { id = focus; on = focusOn?.takeIf { it in BlueprintParts.STATES } }
     }
     LaunchedEffect(id, on) { onFocus(id, on) }
-    Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요",
+    // [BLU-09] 누락 점검 N4: 미리 보기에서 누른 곳이 바로 열려요.
+    Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요. 위 미리 보기에서 고칠 곳을 누르면 그 부품이 열리고, 같은 곳을 한 번 더 누르면 그 바깥 부품이 열려요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // 어느 부품, 묶음마다 제목을 달아서 (PC 1차 사용성 제안): 달력 머리 · 요일 줄 · 날짜 칸 …
     ids.groupBy { it.split('.').take(2).joinToString(".") }.forEach { (head, list) ->
