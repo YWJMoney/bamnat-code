@@ -59,6 +59,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -167,7 +168,10 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
 
     private var shown = false
     /** 1.36 PC: coming back to the page (from another screen or app) reads it again, so 운영자 가림·닫힘 shows without leaving it. */
-    fun resumed() { if (shown) load() else shown = true }
+    fun resumed() {
+        if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.d("BamnatProfile", "resumed shown=$shown")
+        if (shown) load() else shown = true
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -179,6 +183,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
             }
             _state.value = got
                 .fold({ p ->
+                    if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.d("BamnatProfile", "loaded mine=${p.mine} bioHidden=${p.bioHidden} by=${p.bioHiddenBy}")
                     if (p.mine) c.recipes.hasProfile(p.recipes.isNotEmpty())
                     _state.value.copy(page = p, error = null)
                 }, { _state.value.copy(error = profileProblem(it), gone = (it as? com.bamnat.app.company.CompanyException)?.code == "not_found") })
@@ -324,6 +329,13 @@ fun MakerScreen(
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.resumed() }
+    // 1.36 PC 재검토 (열어 둔 채 가려지면 HOME → 돌아와도 안 보였어요): while my own page is on screen it looks again each minute too.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    if (s.page?.mine == true) LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) { kotlinx.coroutines.delay(60_000); vm.load() }
+        }
+    }
     val snack = remember { SnackbarHostState() }
     val context = LocalContext.current
     var picking by remember { mutableStateOf(false) }
@@ -633,7 +645,15 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
                 confirmButton = { TextButton(onClick = { explaining = false }) { Text("닫기") } },
             )
         }
-        p.bio?.takeIf { !p.bioHidden || mine }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+        // 1.36 PC 재검토: my hidden 소개 reads as hidden (grey, struck through, with why), never as if others saw it.
+        p.bio?.takeIf { !p.bioHidden || mine }?.let {
+            if (p.bioHidden) Column {
+                Text(it, style = MaterialTheme.typography.bodyLarge.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                Text(if (p.bioHiddenBy == "operator") "운영자가 가려 다른 분께는 보이지 않아요" else "신고로 가려져 다른 분께는 보이지 않아요",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            } else Text(it, style = MaterialTheme.typography.bodyLarge)
+        }
             ?: if (mine) Text("한 줄 소개를 적어 보세요 (프로필 고치기)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else Unit
         // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 쓰는 분
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
