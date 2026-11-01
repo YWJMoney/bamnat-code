@@ -103,5 +103,12 @@ export async function flagRecipeImages(env, body, cover, dev, reason, now) {
   return held;
 }
 
+/** [GRW-08] PC 8d290ec3: how many of a recipe's pictures wait for the operator, for the maker's '사진 확인 중'. */
+export async function waitingPhotos(env, body, cover) {
+  const ids = await imagesOf(env, `${body ?? ""} ${cover ?? ""}`);
+  if (!ids.length) return 0;
+  return (await one(env, `SELECT COUNT(*) AS n FROM recipe_images WHERE state IN ('pending', 'held') AND id IN (${ids.map(() => "?").join(",")})`, ...ids)).n;
+}
+
 export const PHOTO_WHY = { first: "새싹 첫 사진", check: "자동 검사에 걸림", flags: "신고로 먼저 가림" };
 export const photoStaleMs = 2 * DAY;

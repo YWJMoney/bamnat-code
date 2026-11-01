@@ -977,7 +977,14 @@ export async function communityAdmin(d, request, env, path, url, now) {
     // 1.36 [GRW-08] 볼 것: 새싹 첫 사진(pending)과 자동 검사·신고로 먼저 가린 것(held), 신고 많은 순·오래된 순. 이유와 신고 이유별 수.
     const want = url.searchParams.get("state");
     const where = want === "hidden" ? "state = 'hidden'" : want === "ok" ? "state = 'ok' AND flags > 0" : "state IN ('pending', 'held')";
-    const rows = await d.all(env, `SELECT id, bytes, state, at, data, checked, why, flags FROM recipe_images WHERE ${where} ORDER BY flags DESC, at LIMIT 50`);
+    const rows = await d.all(env, `SELECT id, owner, bytes, state, at, data, checked, why, flags FROM recipe_images WHERE ${where} ORDER BY flags DESC, at LIMIT 50`);
+    // PC 8d290ec3 사용성 제안: 한 줄에 작품 이름, 올린 분의 믿음 단계, 같은 사진을 쓴 다른 곳까지.
+    for (const r of rows) {
+      const uses = await d.all(env, "SELECT code, title FROM recipes WHERE state != 'deleted' AND (cover = ? OR instr(body, ?) > 0) ORDER BY updated_at DESC LIMIT 4", r.id, r.id);
+      r.uses = uses;
+      r.trustName = ["새싹", "이웃", "단골"][trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", r.owner), now).level] ?? "새싹";
+      delete r.owner;
+    }
     const reasons = rows.length ? await d.all(env, `SELECT id, reason, COUNT(*) AS n FROM recipe_image_flags WHERE id IN (${rows.map(() => "?").join(",")}) GROUP BY id, reason`,
       ...rows.map((r) => r.id)) : [];
     const counts = Object.fromEntries((await d.all(env, "SELECT state, COUNT(*) AS n FROM recipe_images WHERE state IN ('pending', 'held') GROUP BY state")).map((r) => [r.state, r.n]));

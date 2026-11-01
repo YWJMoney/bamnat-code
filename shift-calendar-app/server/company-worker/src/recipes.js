@@ -14,6 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
+import { waitingPhotos } from "./photo-guard.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -1000,6 +1001,8 @@ async function show(d, env, request, code, url) {
     out.note = r.note || null;
     out.reasons = { tally, opinions: reasons.filter((x) => x.opinion).map((x) => ({ reason: x.reason, text: x.opinion, at: new Date(x.at).toISOString() })) };
     if (r.state === "hidden") out.hidden = r.hidden_reason;
+    // 1.36 [GRW-08] 새싹 첫 사진·신고로 가린 사진: 만든 분께만 '사진 확인 중'.
+    out.photosWaiting = await waitingPhotos(env, r.body, r.cover);
   }
   return d.json(out);
 }

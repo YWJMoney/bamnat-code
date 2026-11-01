@@ -160,6 +160,10 @@ test("[GRW-08] first, check and report: an automatic check, three looked at then
   assert.deepEqual(first.map((x) => x.state), ["pending", "pending", "pending"]);
   let list = (await call("GET", "/api/admin/recipes/images", undefined, admin)).data;
   assert.equal(list.items[0].whyName, "새싹 첫 사진");
+  // One line holds who sent it and where it is used (none yet).
+  assert.equal(list.items[0].trustName, "새싹");
+  assert.deepEqual(list.items[0].uses, []);
+  assert.equal(list.items[0].owner, undefined);
   for (const x of first) await call("POST", `/api/admin/recipes/images/${x.id}/ok`, {}, admin);
   const fourth = await up(1, 4);
   assert.equal(fourth.state, "ok");

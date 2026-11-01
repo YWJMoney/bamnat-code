@@ -354,6 +354,8 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() ->
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("내 레시피", style = MaterialTheme.typography.titleSmall)
             Text(stateLabel(doc.state, doc.scope), style = MaterialTheme.typography.bodyMedium)
+            // 1.36 [GRW-08] PC 8d290ec3: 새싹 첫 사진은 운영자가 본 뒤에 다른 분께 보여요.
+            if (doc.photosWaiting > 0) com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
             doc.note?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
             doc.reasons?.let { rs ->
                 if (rs.tally.isNotEmpty()) Text("안좋아요 이유: " + rs.tally.entries.joinToString(" · ") { (k, n) -> "${RecipeLinks.DISLIKE_REASONS[k] ?: k} $n" },
