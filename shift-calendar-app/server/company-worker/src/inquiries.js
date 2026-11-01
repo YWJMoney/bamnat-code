@@ -198,10 +198,10 @@ export async function ask(request, env) {
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
   // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
-  await needFromInquiry(env, id, dev, body.kind, text, info, now);
+  const studio = await needFromInquiry(env, id, dev, body.kind, text, info, now);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
-  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);
+  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}), ...(studio ? { studio } : {}) }, 201);
 }
 
 /** What the user typed: up to 2000 characters, without an email, phone number or amount. */

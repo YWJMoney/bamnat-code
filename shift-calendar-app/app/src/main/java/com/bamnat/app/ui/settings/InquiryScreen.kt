@@ -160,7 +160,17 @@ private const val HELP = "help"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
+fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit, onOpenRecipe: (String) -> Unit = {}) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalOpenRecipe provides onOpenRecipe) { InquiryScreenBody(vm, onBack) }
+}
+
+/** 1.36 [GRW-03] 스튜디오 요구가 풀렸다는 답의 작품 코드를 바로 열어요(PC 확인 8d290ec3 '풀렸어요 · 보러 가기'). */
+private val LocalOpenRecipe = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
+private val SOLVED_CODE = Regex("""코드 ([2-9A-HJ-NP-Z]{8})""")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
     val list by vm.list.collectAsStateWithLifecycle()
     val offline by vm.offline.collectAsStateWithLifecycle()
     val unread by vm.unread.collectAsStateWithLifecycle()
@@ -1145,6 +1155,11 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
                 Text(text, style = MaterialTheme.typography.bodyLarge,
                     color = if (fromDeveloper) scheme.onPrimaryContainer else scheme.onSurface, modifier = Modifier.padding(12.dp))
             }
+        }
+        val code = if (fromDeveloper) SOLVED_CODE.find(text)?.groupValues?.get(1) else null
+        if (code != null) {
+            val open = LocalOpenRecipe.current
+            TextButton(onClick = { open(code) }) { Text("풀렸어요 · 보러 가기") }
         }
     }
 }

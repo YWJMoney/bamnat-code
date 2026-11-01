@@ -744,5 +744,9 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 .rows.needs h3{margin:0;font-size:1rem}
 .samples{margin:.5rem 0;padding-left:1.1rem}.samples li{margin:.15rem 0}
 .copy-box{white-space:pre-wrap;background:var(--soft);padding:.75rem;border-radius:var(--r)}
-@media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;justify-content:flex-start}}
+.rows.work .row-tags,.rows.work .row-acts{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem}
+/* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
+@media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
+.rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
+.segmented.wrap{flex-wrap:wrap;overflow:visible}.segmented.wrap .seg{flex:1 1 30%}}
 `;

@@ -30,7 +30,10 @@ test("[GRW-01][GRW-02][GRW-03] studio asks group, go to the market at three, and
   const admin = await signIn(call);
   const a = (await studio(call, 1, "[스튜디오 › 달력 칸 › 색] 달력 칸 배경에 그라데이션을 넣고 싶어요")).data;
   assert.equal(a.kind, "studio");
-  await studio(call, 2, "[스튜디오 › 달력 칸 › 색] 칸 배경을 그라데이션으로 넣고 싶어요");
+  // The phone hears how many asked the same (PC 8d290ec3 '2/3명 모였어요').
+  assert.deepEqual(a.studio, { askers: 1, goal: 3, state: "open" });
+  const b = (await studio(call, 2, "[스튜디오 › 달력 칸 › 색] 칸 배경을 그라데이션으로 넣고 싶어요")).data;
+  assert.equal(b.studio.askers, 2);
   // The same phone twice is one asker.
   await studio(call, 2, "[스튜디오 › 달력 칸 › 색] 달력 칸 배경 그라데이션 넣고 싶어요 꼭");
   await studio(call, 4, "[스튜디오 › 머리 › 글꼴] 손글씨 글꼴을 더 많이 쓰고 싶어요");

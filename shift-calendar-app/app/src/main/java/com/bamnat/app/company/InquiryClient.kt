@@ -54,6 +54,9 @@ data class Inquiry(
     val photos: Int = 0,
     /** [SRV-06] Why the photos were left out when it was sent: "paused" or "full"; null when they went (or there were none). */
     val photosSkipped: String? = null,
+    /** 1.36 [GRW-01] 스튜디오 요구: 같은 부탁을 한 분 수와 장터에 오르는 수(3), 보낸 때만. */
+    val studioAskers: Int = 0,
+    val studioGoal: Int = 0,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -288,6 +291,8 @@ class InquiryClient(
         rating = when (o.optInt("rating")) { 1 -> true; -1 -> false; else -> null },
         photos = o.optInt("photos"),
         photosSkipped = o.optStringOrNull("photosSkipped"),
+        studioAskers = o.optJSONObject("studio")?.optInt("askers") ?: 0,
+        studioGoal = o.optJSONObject("studio")?.optInt("goal") ?: 0,
     )
 
     companion object {

@@ -182,7 +182,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(q.body, style = MaterialTheme.typography.bodyLarge)
-                                Text("${stateWord(q.state)}" + (if (q.askers > 0) " · 스튜디오에서 ${q.askers}명이 부탁" else "") + " · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) " · 내가 만드는 중" else ""),
+                                Text("${stateWord(q.state)}" + (if (q.askers > 0) " · 스튜디오에서 ${q.askers}명이 부탁" else "") + " · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) (if (q.state == "done") " · 내가 만든 작품" else " · 내가 만드는 중") else ""),
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })

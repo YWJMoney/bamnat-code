@@ -106,7 +106,10 @@ export async function needFromInquiry(env, id, device, kind, text, info, now) {
   if (kind !== "studio") return;
   try {
     const w = parseWhere(text);
-    await attachNeed(env, { src: "inq", ref: id, device, text: w.body, area: w.area, tool: w.tool, style: info?.studio ?? null, now });
+    const needId = await attachNeed(env, { src: "inq", ref: id, device, text: w.body, area: w.area, tool: w.tool, style: info?.studio ?? null, now });
+    // PC 확인 8d290ec3: 보낸 휴대폰에 '2/3명 모였어요'를 보여 줘요.
+    const n = needId && await one(env, "SELECT askers, state FROM studio_needs WHERE id = ?", needId);
+    return n ? { askers: n.askers, goal: GROWTH.marketAskers, state: n.state } : undefined;
   } catch (e) {
     console.error("growth attach", e && e.stack ? e.stack : String(e));
   }

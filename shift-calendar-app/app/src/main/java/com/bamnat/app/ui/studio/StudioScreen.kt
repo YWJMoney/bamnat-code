@@ -476,9 +476,19 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         }
     }
 
-    if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { ok ->
+    if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { sent ->
         wish = false
-        scope.launch { snack.showSnackbar(if (ok) "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요" else "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요") }
+        val gathered = sent?.takeIf { it.studioGoal > 0 }?.let { q ->
+            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 장터 '만들어 주세요'에 올라가요"
+            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 장터 '만들어 주세요'에 올라가요"
+        }
+        scope.launch {
+            snack.showSnackbar(when {
+                sent == null -> "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"
+                gathered != null -> "보냈어요. $gathered. 풀리면 알림과 '내 문의'로 알려 드려요"
+                else -> "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요"
+            })
+        }
     }
 
     if (leaving) AlertDialog(
@@ -575,7 +585,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
  * '만들어 주세요'에, 풀리거나 기본 도구가 되면 문의 답으로 알려 줘요. 고치던 꾸미기는 그대로예요.
  */
 @Composable
-private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, onSent: (Boolean) -> Unit) {
+private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, onSent: (com.bamnat.app.company.Inquiry?) -> Unit) {
     val c = LocalContext.current.appContainer
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
@@ -602,12 +612,18 @@ private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, 
             TextButton(enabled = !busy && text.isNotBlank(), onClick = {
                 busy = true
                 scope.launch {
-                    val ok = runCatching {
+                    val sent = runCatching {
                         c.inquiryApi.send(c.companyStore.device, com.bamnat.app.company.InquiryKind.STUDIO, "[스튜디오 › $where] ${text.trim()}",
                             com.bamnat.app.ui.company.deviceInquiryInfo().copy(studio = style?.name, public = false))
-                    }.isSuccess
+                    }.getOrNull()
+                    if (sent != null) {
+                        // PC 확인 8d290ec3: 답(풀림·기본 도구·거절)이 오면 알림과 '내 문의'에 보이게, 다른 문의처럼 표시해요.
+                        c.inquiryStore.asked = true
+                        c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
+                        com.bamnat.app.company.InquiryReplyJob.schedule(c.appContext)
+                    }
                     busy = false
-                    onSent(ok)
+                    onSent(sent)
                 }
             }) { Text(if (busy) "보내는 중" else "보내기") }
         },

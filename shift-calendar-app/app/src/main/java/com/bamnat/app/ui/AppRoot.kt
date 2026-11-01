@@ -1278,7 +1278,7 @@ private fun AppNavHost(
         }
         composable(Routes.INQUIRY) {
             val vm = appViewModel { InquiryViewModel(it) }
-            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
+            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) }, onOpenRecipe = { code -> nav.navigate(Routes.recipe(code)) })
         }
         composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
             navArgument("focus") { type = NavType.StringType; nullable = true; defaultValue = null })) { entry ->

@@ -33,12 +33,12 @@ export function workViews(A) {
     return `<li data-key="${esc(x.key)}"><div class="row">${pick}
       <span class="row-main"><b><span class="kind">${esc(x.typeName)}</span> ${link ? `<a href="${esc(link)}">${esc(x.title)}</a>` : esc(x.title)}</b>
         <small>${esc(hoursText(x.age))}${x.n ? ` · ${x.n}${["recipe_flag", "flagged_post", "hidden_post", "recipe_hidden", "maker_flag", "photo"].includes(x.type) ? "번 신고" : x.type === "studio_need" ? "명" : x.type === "tool" ? "명이 씀" : "건"}` : ""}${x.meta ? ` · ${esc(x.meta)}` : ""}${who}${x.note ? ` · ${esc(x.note)}` : ""}</small></span>
-      <span class="row-side">${back}${state}${dueText(x, now)}
+      <span class="row-side"><span class="row-tags">${back}${state}${dueText(x, now)}</span><span class="row-acts">
         ${x.state === "new" ? `<button class="btn small" data-act="work-set" data-key="${esc(x.key)}" data-state="seeing" title="s">보는 중</button>` : ""}
         ${x.state !== "waiting" && x.state !== "done" ? `<button class="btn small ghost" data-act="work-wait" data-key="${esc(x.key)}" title="w">기다림</button>` : ""}
         ${x.state !== "done" ? `<button class="btn small primary" data-act="work-done" data-key="${esc(x.key)}" title="e">끝내기</button>`
           : `<button class="btn small" data-act="work-set" data-key="${esc(x.key)}" data-state="new">다시 열기</button>`}
-        <button class="btn small ghost" data-act="work-log" data-key="${esc(x.key)}" title="h">기록</button></span></div></li>`;
+        <button class="btn small ghost" data-act="work-log" data-key="${esc(x.key)}" title="h">기록</button></span></span></div></li>`;
   }
 
   function workView() {
@@ -53,7 +53,7 @@ export function workViews(A) {
     const sum = d.summary;
     const tiles = `<div class="tiles core">${tile("남은 일", c.open, `오늘 들어온 일 ${sum.inToday}건`, "open", false)}${tile("기한 넘음", c.late, "맨 위에 있어요", "late", true)}
       ${tile("기다림", c.waiting, "7일 지나면 기한 넘음", "waiting", false)}${tile("오늘 끝냄", sum.doneToday, sum.byWho.length ? sum.byWho.map((w) => `${w.name} ${w.n}`).join(" · ") : "아직 없어요", "done", false)}</div>`;
-    const segs = `<div class="segmented" role="group" aria-label="상태">${seg("work-state", "open", st, "남은 것", c.open)}${seg("work-state", "new", st, "새로", c.new)}
+    const segs = `<div class="segmented wrap" role="group" aria-label="상태">${seg("work-state", "open", st, "남은 것", c.open)}${seg("work-state", "new", st, "새로", c.new)}
       ${seg("work-state", "seeing", st, "보는 중", c.seeing)}${seg("work-state", "waiting", st, "기다림", c.waiting)}${seg("work-state", "mine", st, "내 것", c.mine)}${seg("work-state", "done", st, "끝", c.done)}</div>`;
     const groups = `<nav class="chips" aria-label="종류">${[["", "모두", c.open], ...Object.entries(d.names.groups).map(([k, v]) => [k, v, c.groups[k]])].map(([k, label, n]) =>
       `<button type="button" class="chip pick" data-act="work-group" data-key="${k}" aria-pressed="${gr === k}">${esc(label)}${n ? ` <span class="n">${n}</span>` : ""}</button>`).join("")}</nav>`;
@@ -71,16 +71,12 @@ export function workViews(A) {
     return `${tiles}<section class="card">${segs}${groups}${bar}${list}</section>`;
   }
 
-  const DEFAULT_DONE = { inquiry: "answered", studio_need: "handled", photo: "handled", recipe_flag: "handled", tool: "handled" };
-
   function openDone(keys) {
     const d = S.data.work;
     if (!d || !keys.length) return;
-    const type = keys[0].split(":")[0];
-    const first = DEFAULT_DONE[type] ?? "handled";
     openDialog(`<form data-form="work-done" data-keys="${esc(keys.join(","))}"><h2>${keys.length > 1 ? `${keys.length}개를 끝낼까요?` : "끝낼까요?"}</h2>
-      <p>끝낸 이유를 골라요. 원래 칸에 새 움직임이 생기거나, 7일 뒤에도 처리되지 않고 남아 있으면 다시 와요.</p>
-      <div class="radios">${Object.entries(d.names.done).map(([k, v]) => `<label class="radio"><input type="radio" name="reason" value="${k}"${k === first ? " checked" : ""}><span>${esc(v)}</span></label>`).join("")}</div>
+      <p>끝낸 이유를 꼭 골라요(미리 골라 두지 않아요). 원래 칸에 새 움직임이 생기거나, 7일 뒤에도 처리되지 않고 남아 있으면 다시 와요.</p>
+      <div class="radios">${Object.entries(d.names.done).map(([k, v]) => `<label class="radio"><input type="radio" name="reason" value="${k}" required><span>${esc(v)}</span></label>`).join("")}</div>
       <label for="work-note">메모 (선택)</label><input id="work-note" name="note" maxlength="300" placeholder="예: 1.36에서 고침, 개발사항 d12">
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">끝내기</button></div></form>`);
   }
@@ -90,7 +86,7 @@ export function workViews(A) {
     if (!d || !keys.length) return;
     openDialog(`<form data-form="work-wait" data-keys="${esc(keys.join(","))}"><h2>무엇을 기다리나요?</h2>
       <p>기다림은 7일이 지나면 기한 넘김으로 맨 위에 와요.</p>
-      <div class="radios">${Object.entries(d.names.wait).map(([k, v], i) => `<label class="radio"><input type="radio" name="reason" value="${k}"${i === 0 ? " checked" : ""}><span>${esc(v)}</span></label>`).join("")}</div>
+      <div class="radios">${Object.entries(d.names.wait).map(([k, v], i) => `<label class="radio"><input type="radio" name="reason" value="${k}" required><span>${esc(v)}</span></label>`).join("")}</div>
       <label for="wait-note">메모 (선택)</label><input id="wait-note" name="note" maxlength="300">
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">기다림으로</button></div></form>`);
   }
@@ -243,11 +239,13 @@ export function workViews(A) {
   const forms = {
     "work-done": (form) => {
       const data = new FormData(form);
+      if (!data.get("reason")) return toast("끝낸 이유를 골라 주세요");
       dialog.close();
       return setState(form.dataset.keys.split(","), "done", String(data.get("reason") ?? ""), String(data.get("note") ?? ""));
     },
     "work-wait": (form) => {
       const data = new FormData(form);
+      if (!data.get("reason")) return toast("무엇을 기다리는지 골라 주세요");
       dialog.close();
       return setState(form.dataset.keys.split(","), "waiting", String(data.get("reason") ?? ""), String(data.get("note") ?? ""));
     },
