@@ -29,6 +29,7 @@ import com.bamnat.app.ui.recipe.RecipeMineViewModel
 import com.bamnat.core.recipe.PieceKind
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.app.recipe.RecipeRepository
+import com.bamnat.app.recipe.RecipePieces
 import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
@@ -160,6 +161,94 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         assertEquals(1, flags)
         assertTrue("되면 신고했어요", appears("신고했어요", exact = false))
+    }
+
+    /** PC 확인 8773e3ae (되돌리기 뒤에도 '내 달력에 넣어 둔 레시피예요'가 남아요): taking it back takes the line away too. */
+    @Test fun takingItBackTakesTheLineAway() = shoot("1342c_rcp_detail_undone", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        val vm = RecipeDetailViewModel(c, api.code(0), PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        tapText("내 달력에 넣기", exact = false)
+        settle()
+        tapText("넣기", exact = true)
+        settle()
+        assertTrue(vm.state.value.appliedAt != null)
+        // The 적용했어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
+        compose.mainClock.advanceTimeBy(12_000)
+        settle()
+        repeat(6) { scrollDown(400) }
+        settle()
+        assertTrue(appears("내 달력에 넣어 둔 레시피예요", exact = true))
+        // 되돌리기 on the line, then on its question.
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        assertTrue(appears("넣기 전으로 되돌릴까요?", exact = true))
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        settle()
+        assertEquals(null, vm.state.value.appliedAt)
+        assertTrue("되돌린 뒤 줄이 없어요", gone("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == api.code(0) })
+    }
+
+    /** PC 확인 8773e3ae: the same from the 적용했어요 line's own 되돌리기. */
+    @Test fun takingItBackFromTheSnackbar() = shoot("1342d_rcp_detail_undone_snack", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        val vm = RecipeDetailViewModel(c, api.code(0), PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        tapText("내 달력에 넣기", exact = false)
+        settle()
+        tapText("넣기", exact = true)
+        settle()
+        assertTrue(appears("적용했어요", exact = false))
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        settle()
+        assertTrue("되돌린 뒤: ${vm.state.value.appliedAt} ${vm.state.value.message}", vm.state.value.appliedAt == null)
+        assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == api.code(0) })
+        repeat(6) { scrollDown(400) }
+        settle()
+        assertTrue("되돌린 뒤 줄이 없어요", gone("내 달력에 넣어 둔 레시피예요", exact = true))
+    }
+
+    /** PC 확인 8773e3ae: put on twice with other pieces, 되돌리기 on the page takes the whole recipe back, not only the newer half. */
+    @Test fun takingItBackTakesBothPutOns() = shoot("1342e_rcp_detail_undone_twice", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        // 야간 파랑 put on now, and the same recipe still on from a day ago with another piece (a row as an older 넣기 leaves it).
+        val code = api.code(0)
+        val r = api.recipes[0].first
+        val first = runBlocking {
+            c.recipes.apply(r, code, 1, PersonalCalendar.MAIN, listOf(RecipeRepository.Pick(r.pieces[0].kind, RecipePieces.Mode.REPLACE)), emptyMap())
+        }
+        assertTrue(first != null)
+        runBlocking {
+            val dao = c.database.recipeDao()
+            val e = dao.appliedById(first!!)!!
+            dao.insertApplied(e.copy(id = 0, pieces = "calTheme", before = "{}", appliedAt = e.appliedAt - 86_400_000L))
+        }
+        val vm = RecipeDetailViewModel(c, code, PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        assertTrue(appears("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertEquals("두 번 넣은 것이 모두 남아 있어요", 2, runBlocking { c.database.recipeDao().applied() }.count { it.code == code && it.undoneAt == null && it.replacedAt == null })
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        settle()
+        assertEquals(null, vm.state.value.appliedAt)
+        assertTrue("되돌린 뒤 줄이 없어요", gone("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == code })
+        // Opened again, the page has no line to come back with.
+        val again = RecipeDetailViewModel(c, code, PersonalCalendar.MAIN)
+        settle()
+        assertTrue(again.state.value.doc != null)
+        assertEquals(null, again.state.value.appliedAt)
     }
 
     @Test fun theConfirmShowsWhatChanges() = shoot("1343_rcp_detail_confirm", "w360dp-h780dp-port-night-450dpi") {

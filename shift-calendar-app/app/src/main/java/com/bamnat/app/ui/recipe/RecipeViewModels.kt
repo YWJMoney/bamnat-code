@@ -263,10 +263,13 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun noAdCounted(reason: String) = c.wardrobe.counted(reason)
 
     fun undo() {
-        val id = _state.value.appliedId ?: return
+        if (_state.value.appliedId == null) return
         viewModelScope.launch {
-            val ok = c.recipes.undo(id)
-            _state.value = _state.value.copy(appliedId = null, appliedAt = null, message = if (ok) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요")
+            val n = c.recipes.undoAll(code)
+            // The card says what is truly left on this phone, read again, not only what was asked.
+            val left = c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }
+            _state.value = _state.value.copy(appliedId = left?.id, appliedAt = left?.appliedAt,
+                message = if (n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요")
         }
     }
 

@@ -253,6 +253,16 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         return true
     }
 
+    /**
+     * 되돌리기 on a recipe's own page: every put-on of [code] that can still be taken back, newest first, so none of it is left
+     * (PC 확인 8773e3ae: the same recipe put on twice, with other pieces or on another calendar, kept the older one's card). How many.
+     */
+    suspend fun undoAll(code: String): Int {
+        if (code.isEmpty()) return 0
+        val now = Today.millis()
+        return dao.applied().filter { it.code == code && canUndo(it, now) }.sortedByDescending { it.appliedAt }.count { undo(it.id) }
+    }
+
     /** [RCP-26] The 7일 유지 mark of each recipe still on after 7 days, sent once; old rows no longer on are dropped after 90 days. */
     suspend fun sendKept() {
         val now = Today.millis()
