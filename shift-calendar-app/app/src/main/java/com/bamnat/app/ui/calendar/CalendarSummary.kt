@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -272,11 +273,23 @@ internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit
     val haptics = LocalHapticFeedback.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onLegend) { Icon(Icons.Outlined.Info, "달력 표시 안내", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (boardLabel != null) {
+            // [TAB-04] PC 확인 bad7d860 사용성 제안: an icon alone did not say it opens 판 고르기, so the button reads "월 ▾".
+            androidx.compose.material3.FilledTonalButton(
+                onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 10.dp, end = 6.dp),
+                modifier = Modifier.heightIn(min = 40.dp).semantics { contentDescription = "달력 판 고르기, 지금 $boardLabel" },
+            ) {
+                Icon(if (listView) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.CalendarMonth, null, Modifier.size(18.dp))
+                Text(boardLabel, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(start = 4.dp))
+                Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
+            }
+            return@Row
+        }
         // [CAL-08] One button that shows the other view, so the month's shift counts keep their room beside it.
         FilledTonalIconButton(
             onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
-            // [TAB-04] 1.36: the board menu (월·목록·근무 띠·타임라인), said with the board on screen.
-            modifier = Modifier.semantics { contentDescription = boardLabel?.let { "달력 판 고르기, 지금 $it" } ?: if (listView) "달력으로 보기" else "목록으로 보기" },
+            modifier = Modifier.semantics { contentDescription = if (listView) "달력으로 보기" else "목록으로 보기" },
         ) {
             AnimatedContent(listView, transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(90)) }, label = "view-switch") { list ->
                 Icon(if (list) Icons.Filled.CalendarMonth else Icons.AutoMirrored.Filled.ViewList, null, Modifier.size(20.dp))

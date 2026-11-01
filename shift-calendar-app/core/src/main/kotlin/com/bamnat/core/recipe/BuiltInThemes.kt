@@ -153,8 +153,43 @@ object BuiltInThemes {
         else -> "모든 칸 같게"
     }
 
-    /** Every theme, eight for each kind of work. */
-    val all: List<Recipe> by lazy { WorkStyle.entries.flatMap { s -> families.map { theme(it, s) } } }
+    /**
+     * [TAB-05] 1.36 유형 전문 달력 (제안 29 "6유형별 전문 달력 하나씩 만들어 장터에"): one per kind of work, a theme plus the 탭 보기 that
+     * kind of work reads best — 교대 근무 띠 and a 메모 보드 by 근무, 일근·알바 타임라인, 현장·가게·투자 목록 with a 표 of 금액·매출·손익.
+     * Still looks only: the 판 is how records are shown, never the records.
+     */
+    private class Expert(val family: String, val memo: String, val memoBy: String, val memoSort: String, val money: String, val what: String)
+
+    private fun expertOf(s: WorkStyle): Expert = when (s) {
+        WorkStyle.SHIFT -> Expert("숲속 민트", "board", "shift", "", "list", "근무 띠로 한 달 주기를 한 줄에, 메모는 근무별 보드로")
+        WorkStyle.DAY -> Expert("모노 미니멀", "board", "check", "", "cal", "타임라인으로 출퇴근 시간을, 메모는 할 일 상태 보드로")
+        WorkStyle.HOURLY -> Expert("선셋 노을", "table", "tag", "-p:금액", "cal", "타임라인으로 근무 시간을, 메모는 금액 큰 순 표로")
+        WorkStyle.FIELD -> Expert("오션 블루", "table", "tag", "-p:금액", "board", "날마다 한 줄 목록에, 메모는 받을 돈 표, 가계부는 분류 보드로")
+        WorkStyle.BUSINESS -> Expert("벚꽃 파스텔", "table", "tag", "-p:매출", "cal", "날마다 한 줄 목록에, 메모는 매출 큰 순 표, 가계부는 달력으로")
+        WorkStyle.INVEST -> Expert("다크 골드", "table", "tag", "-p:손익", "table", "날마다 한 줄 목록에, 메모는 손익 표, 가계부도 표로")
+    }
+
+    private fun expert(s: WorkStyle): Recipe {
+        val e = expertOf(s)
+        val base = theme(families.first { it.name == e.family }, s)
+        val board = com.bamnat.core.layout.CalendarBoard.expertFor(s)
+        val view = Piece(PieceKind.TAB_VIEW, mapOf("cal" to board.key, "memo" to e.memo, "memoBy" to e.memoBy, "memoSort" to e.memoSort,
+            "money" to e.money).filterValues { it != "" })
+        val desc = "누구에게 좋아요: ${who(s)}\n" +
+            "적용하면 바뀌는 것:\n" +
+            "· ${e.what}\n" +
+            "· ${e.family} 색과 칸 모양, 메모장·가계부·급여 화면 모양\n" +
+            "· 판은 달력·메모장·가계부의 보기 단추에서 언제든 바꿀 수 있어요\n" +
+            "주의할 점: 보이는 방식만 바뀌어요. 근무·메모·돈 기록과 알람은 그대로예요"
+        return base.copy(title = "${word(s)} 전문 달력", summary = "${word(s)}에 맞춘 ${board.label} 판과 탭 보기 묶음", desc = desc,
+            pieces = base.pieces + view)
+    }
+
+    /** The six 전문 달력, one for each kind of work. */
+    val experts: List<Recipe> by lazy { WorkStyle.entries.map { expert(it) } }
+
+    /** Every theme: each kind of work's 전문 달력 first, then eight more. */
+    val all: List<Recipe> by lazy { WorkStyle.entries.flatMap { s -> listOf(expert(s)) + families.map { theme(it, s) } } }
 
     /** The themes for [style] (all of them for no kind of work). */
     fun of(style: WorkStyle?): List<Recipe> = if (style == null) all.filter { it.styles == setOf(WorkStyle.SHIFT) } else all.filter { style in it.styles }

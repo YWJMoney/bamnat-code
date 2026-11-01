@@ -30,6 +30,9 @@ object MemoProps {
     private val YES = setOf("✓", "✔", "☑", "예", "네", "O", "o", "했음", "완료", "yes", "true")
     private val NO = setOf("☐", "아니오", "아니요", "X", "x", "안 함", "no", "false")
 
+    /** The 칸 name a body line writes ("매출: 32000" → "매출"), or null when the line is not a property. */
+    fun labelOfLine(line: String): String? = LINE.matchEntire(line)?.groupValues?.get(1)?.trim()?.takeIf(::isLabel)
+
     /** The properties written in [memo]'s body, first line wins for a name written twice; [year] reads a date with no year. */
     fun of(memo: Memo, year: Int = memo.date?.year ?: LocalDate.now().year): List<Prop> = parse(memo.body, year)
 
@@ -90,6 +93,8 @@ object MemoProps {
                 val numeric = (types[Type.NUM] ?: 0) + (types[Type.MONEY] ?: 0)
                 val type = when {
                     (types[Type.MONEY] ?: 0) > 0 && numeric * 2 >= types.values.sum() -> Type.MONEY
+                    // PC 확인 bad7d860: "금액: 12000" (원 없이) reads as 금액 in the 표, with commas.
+                    (types[Type.NUM] ?: 0) * 2 >= types.values.sum() && isMoneyLabel(e.key) -> Type.MONEY
                     else -> types.maxByOrNull { it.value }!!.key
                 }
                 e.key to type
@@ -101,6 +106,15 @@ object MemoProps {
         val nums = memos.mapNotNull { m -> of(m).firstOrNull { it.label == label }?.takeIf { it.type == Type.NUM || it.type == Type.MONEY }?.num }
         return if (nums.isEmpty()) null else nums.sum()
     }
+
+    /** The average of [label]'s 별점 across [memos] (a 별점 column's foot shows this, not a sum), or null when none has one. */
+    fun average(memos: List<Memo>, label: String): Double? {
+        val nums = memos.mapNotNull { m -> of(m).firstOrNull { it.label == label }?.takeIf { it.type == Type.STAR || it.type == Type.NUM }?.num }
+        return if (nums.isEmpty()) null else nums.average()
+    }
+
+    /** Whether a 칸 name says money (금액, 매출, 현금…), so a bare number under it is 원. */
+    fun isMoneyLabel(label: String): Boolean = MONEY_WORDS.any { label.contains(it) }
 
     /** The first 금액 property, the one '가계부에 넣기' offers ([TAB-03]); a 숫자 칸 named like money counts too. */
     fun money(memo: Memo): Prop? = of(memo).firstOrNull { it.type == Type.MONEY && (it.num ?: 0.0) > 0 }

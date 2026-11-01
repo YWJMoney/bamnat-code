@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -140,6 +141,14 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var savingTemplate by remember { mutableStateOf(false) }
+    var toLedger by remember { mutableStateOf(false) }
+    if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
+    if (savingTemplate) SaveTemplateDialog(memo, onSave = { name, asked ->
+        val why = vm.saveAsTemplate(name, asked)
+        Toast.makeText(context, why ?: "‘${name.ifBlank { "새 틀" }}’ 틀로 저장했어요. 새 메모를 열면 ‘틀에서 시작’에 있어요", Toast.LENGTH_LONG).show()
+        if (why == null) savingTemplate = false
+    }, onDismiss = { savingTemplate = false })
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" }, shareText(memo)) { copying = false }
     val bodyTools = remember { MemoBodyTools() }
@@ -200,10 +209,14 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                             DropdownMenuItem(
                                 text = { Text("이 메모를 틀로 저장") },
                                 leadingIcon = { Icon(Icons.Filled.Checklist, null) },
-                                onClick = {
-                                    menu = false
-                                    if (vm.saveAsTemplate()) Toast.makeText(context, "틀로 저장했어요. 새 메모에서 '틀에서 시작'을 누르세요", Toast.LENGTH_LONG).show()
-                                },
+                                // [TAB-03] PC 확인 bad7d860 "눌러도 반응이 없어요": a dialog asks the name and which 칸 to ask each time.
+                                onClick = { menu = false; savingTemplate = true },
+                                enabled = !memo.isBlank,
+                            )
+                            DropdownMenuItem(
+                                text = { Text("가계부에 넣기") },
+                                leadingIcon = { Icon(Icons.Outlined.AccountBalanceWallet, null) },
+                                onClick = { menu = false; toLedger = true },
                                 enabled = !memo.isBlank,
                             )
                             DropdownMenuItem(
@@ -284,6 +297,9 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     onOpen = { answering = null; scheduling = true },
                     onClear = { vm.setReminder(null) },
                 )
+                // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it. Second in the row
+                // (PC 확인 bad7d860: last, it sat past the screen's edge and was not found).
+                MemoToLedgerChip(memo)
                 AssistChip(
                     onClick = { showDatePicker = true },
                     label = { Text(if (date != null) Fmt.fullDate(date) else "날짜 붙이기") },
@@ -305,8 +321,6 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     label = { Text("틀에서 시작") },
                     leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
                 )
-                // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it.
-                MemoToLedgerChip(memo)
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->

@@ -219,11 +219,12 @@ fun LedgerListPane(
                             PeriodChips(view, month, onView)
                             ActiveConditions(book, view, onView)
                             if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
-                            if (book.entries.isNotEmpty()) LedgerBoardChips(board, pickBoard)
+                            // PC 확인 bad7d860 사용성 제안: the 판 chips show before the first line too, so they are found.
+                            LedgerBoardChips(board, pickBoard)
                         }
                     }
                 }
-                if (shown.isNotEmpty() && board != com.bamnat.core.money.LedgerBoard.LIST) item(key = "board-${board.key}") {
+                if ((shown.isNotEmpty() || board == com.bamnat.core.money.LedgerBoard.CAL) && board != com.bamnat.core.money.LedgerBoard.LIST) item(key = "board-${board.key}") {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         when (board) {
                             com.bamnat.core.money.LedgerBoard.CAL -> LedgerMonthGrid(month, shown, pickedDay) { pickedDay = if (pickedDay == it) null else it }
@@ -288,6 +289,8 @@ fun LedgerListPane(
                 SearchRow(view, onView, onFilter = null, onExport = { exporting = true })
                 PeriodChips(view, month, onView)
                 if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
+                // [TAB-06] The 판 chips on a wide screen too.
+                LedgerBoardChips(board, pickBoard)
                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

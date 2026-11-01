@@ -44,6 +44,38 @@ data class MemoTemplate(
     companion object {
         const val MAX = 40
 
+        /**
+         * [TAB-03] 1.36 이 메모를 틀로 저장 (PC 확인 bad7d860 "눌러도 반응이 없어요", 사용성 제안 "틀 이름을 물어 주세요"): [memo] as a
+         * template named [name]. Each "칸: 값" line whose name is in [asked] becomes an 입력 칸 of that property's type (금액, 날짜, 별점…)
+         * and leaves the body, so starting from it asks for a fresh value instead of copying today's; the other lines stay as written.
+         */
+        fun fromMemo(memo: Memo, id: String, name: String, asked: Set<String>): MemoTemplate {
+            val props = MemoProps.of(memo).associateBy { it.label }
+            val asks = ArrayList<TemplateAsk>()
+            val body = if (memo.isChecklist) "" else memo.body.lineSequence().filter { line ->
+                val label = MemoProps.labelOfLine(line)
+                val p = label?.let { props[it] }
+                if (p != null && label in asked && asks.none { it.label == label }) {
+                    asks += TemplateAsk(label, if (p.type == MemoProps.Type.NUM && MemoProps.isMoneyLabel(label)) "money" else askType(p.type)); false
+                } else true
+            }.joinToString("\n").trim().take(300)
+            return MemoTemplate(
+                id = id,
+                title = name.trim().ifBlank { memo.title.ifBlank { (memo.checklist.firstOrNull()?.text ?: memo.body.lineSequence().firstOrNull()).orEmpty() } }.take(30),
+                check = if (memo.isChecklist) memo.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
+                body = body,
+                repeat = memo.repeat.takeIf { it.startsWith("W") || it.startsWith("M") }.orEmpty(),
+                asks = asks.take(MAX_ASKS),
+            )
+        }
+
+        const val MAX_ASKS = 8
+
+        private fun askType(t: MemoProps.Type): String = when (t) {
+            MemoProps.Type.NUM -> "num"; MemoProps.Type.MONEY -> "money"; MemoProps.Type.STAR -> "star"; MemoProps.Type.DATE -> "date"
+            MemoProps.Type.TIME -> "time"; MemoProps.Type.CHECK -> "check"; MemoProps.Type.TEXT -> "text"
+        }
+
         /** The next day [d] of a month on or after [from]; a short month uses its last day. */
         fun nextDayOfMonth(from: LocalDate, d: Int): LocalDate {
             val here = from.withDayOfMonth(minOf(d, from.lengthOfMonth()))

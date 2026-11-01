@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Palette
@@ -221,7 +222,8 @@ fun MemoListScreen(
             val setView: (com.bamnat.core.memo.MemoView) -> Unit = { v ->
                 container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
             }
-            if (state.shownCount > 0 || !memoView.isDefault) MemoViewChips(memoView, propColumns, setView)
+            // PC 확인 bad7d860 사용성 제안: the chips show from the first visit, so the views are found before there are memos.
+            if (state.loaded) MemoViewChips(memoView, propColumns, setView)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions)
@@ -583,6 +585,8 @@ internal fun MemoCard(
     actions: CardActions,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var toLedger by remember { mutableStateOf(false) }
+    if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
@@ -677,6 +681,12 @@ internal fun MemoCard(
                 text = { Text("복제") },
                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                 onClick = { menu = false; actions.onDuplicate(memo) },
+            )
+            // [TAB-03] PC 확인 bad7d860: '가계부에 넣기' from a card's menu too.
+            DropdownMenuItem(
+                text = { Text("가계부에 넣기") },
+                leadingIcon = { Icon(Icons.Outlined.AccountBalanceWallet, null) },
+                onClick = { menu = false; toLedger = true },
             )
             DropdownMenuItem(
                 text = { Text("여러 개 선택") },

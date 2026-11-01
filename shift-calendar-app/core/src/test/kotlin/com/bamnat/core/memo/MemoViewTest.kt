@@ -47,6 +47,26 @@ class MemoViewTest {
         assertEquals(50_000.0, props[1].num!!, 0.0)
     }
 
+    @Test fun bareNumberUnderMoneyNameIsMoneyAndStarsAverage() {
+        val ms = listOf(memo(1, "금액: 12000\n별점: ★★★★☆"), memo(2, "금액: 3000\n별점: ★★☆☆☆"))
+        val cols = MemoProps.columns(ms).toMap()
+        assertEquals(MemoProps.Type.MONEY, cols["금액"])
+        assertEquals(MemoProps.Type.STAR, cols["별점"])
+        assertEquals(3.0, MemoProps.average(ms, "별점")!!, 0.001)
+        assertEquals(15000.0, MemoProps.total(ms, "금액")!!, 0.001)
+    }
+
+    @Test fun savingAMemoAsTemplateTurnsPickedLinesIntoAsks() {
+        val m = Memo(id = 1, title = "마감", body = "매출: 32000\n날짜: 11월 1일\n별점: ★★★★☆\n메모: 비 옴\n오늘도 수고")
+        val t = MemoTemplate.fromMemo(m, "t1", "  가게 마감 ", setOf("매출", "날짜", "별점"))
+        assertEquals("가게 마감", t.title)
+        assertEquals(listOf("매출" to "money", "날짜" to "date", "별점" to "star"), t.asks.map { it.label to it.type })
+        assertEquals("메모: 비 옴\n오늘도 수고", t.body)
+        val started = t.start(null, LocalDate.of(2026, 11, 2), answers = mapOf("매출" to "50000", "별점" to "5"))
+        assertEquals("50,000원", MemoProps.of(started).first { it.label == "매출" }.raw)
+        assertEquals("마감", MemoTemplate.fromMemo(m, "t2", "", emptySet()).title)
+    }
+
     @Test fun setWritesReplacesAndRemovesALine() {
         val m = memo(1, "매출: 1000\n본문")
         assertEquals("매출: 2000\n본문", MemoProps.set(m, "매출", "2000").body)
@@ -71,7 +91,7 @@ class MemoViewTest {
         assertEquals(listOf(1L, 2L), cols[0].memos.map { it.id })
 
         val byProp = MemoView(view = MemoView.BOARD, by = "p:상태").board(listOf(memo(1, "상태: 끝"), memo(2, "상태: 진행"), memo(3, "상태: 끝"), memo(4, "")))
-        assertEquals(listOf("끝", "진행", "상태 없음"), byProp.map { it.label })
+        assertEquals(listOf("상태 끝", "상태 진행", "상태 없음"), byProp.map { it.label })
 
         val list = Memo(id = 5, isChecklist = true, checklist = listOf(ChecklistItem("a", true), ChecklistItem("b")))
         assertEquals("하는 중", MemoView.checkState(list))

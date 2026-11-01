@@ -47,7 +47,8 @@ data class MemoView(
     private fun labelOf(key: String): String = when (by) {
         BY_TAG -> "#$key"
         BY_COLOR -> if (key == "0") "기본 색" else "색 $key"
-        else -> key
+        // PC 확인 bad7d860 사용성 제안: "5" alone is unclear, so a property column says "별점 5".
+        else -> if (by.startsWith("p:")) "${by.drop(2)} $key" else key
     }
 
     private fun noneLabel(): String = when {

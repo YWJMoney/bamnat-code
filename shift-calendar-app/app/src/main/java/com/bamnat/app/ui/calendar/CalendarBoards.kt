@@ -188,7 +188,8 @@ internal fun TimelineMonth(
                     .background(if (date == selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, RoundedCornerShape(8.dp))
                     .clickable { onDay(date) }
                     .clearAndSetSemantics {
-                        contentDescription = "${Fmt.monthDay(date)} ${day.shiftType?.name ?: "근무 없음"}" + (times?.let { " $it" } ?: "")
+                        contentDescription = "${Fmt.monthDay(date)} ${day.shiftType?.name ?: "근무 없음"}" + (times?.let { " $it" } ?: "") +
+                            (spans.firstOrNull { it.carried }?.to?.let { ", 전날 근무가 ${it / 60}시 ${it % 60}분까지" } ?: "")
                         this.selected = isPicked
                     },
                 verticalAlignment = Alignment.CenterVertically,
@@ -203,15 +204,16 @@ internal fun TimelineMonth(
                     for (h in 1..3) drawLine(grid, Offset(w * h / 4f, 0f), Offset(w * h / 4f, size.height), 1f)
                     for (s in spans) {
                         val color = (if (s.carried) beforeColor else barColor ?: c) ?: Color.Gray
-                        drawRoundRect(
-                            color.copy(alpha = if (s.carried) 0.45f else 0.9f),
-                            topLeft = Offset(w * s.from / Timeline.DAY, 0f),
-                            size = Size(w * s.minutes / Timeline.DAY, size.height),
-                            cornerRadius = CornerRadius(6f, 6f),
-                        )
+                        val at = Offset(w * s.from / Timeline.DAY, 0f)
+                        val box = Size(w * s.minutes / Timeline.DAY, size.height)
+                        drawRoundRect(color.copy(alpha = if (s.carried) 0.5f else 0.9f), topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f))
+                        // PC 확인 bad7d860: the night carried into the morning was too faint; it gets its colour's outline too.
+                        if (s.carried) drawRoundRect(color, topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()))
                     }
                 }
-                Text(times ?: day.shiftType?.name ?: "", style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 1,
+                val carriedTo = spans.firstOrNull { it.carried }?.to
+                Text(times ?: carriedTo?.let { "~${it / 60}:${"%02d".format(it % 60)}" } ?: day.shiftType?.name ?: "", style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 1,
                     textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
             }
         }

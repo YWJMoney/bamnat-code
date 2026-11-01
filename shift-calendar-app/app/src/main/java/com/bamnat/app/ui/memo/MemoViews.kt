@@ -129,8 +129,13 @@ internal fun PropPills(memo: Memo, max: Int = 3, modifier: Modifier = Modifier) 
 }
 
 /** How a property reads in a pill or a 표 칸: money with commas and 원, a check as ✓/–, the rest as written. */
-internal fun shown(p: MemoProps.Prop): String = when (p.type) {
-    MemoProps.Type.MONEY -> p.num?.let { Fmt.won(it.toLong()) } ?: p.raw
+internal fun shown(p: MemoProps.Prop, column: MemoProps.Type? = null): String = when {
+    p.type == MemoProps.Type.MONEY || (column == MemoProps.Type.MONEY && p.type == MemoProps.Type.NUM) || (p.type == MemoProps.Type.NUM && MemoProps.isMoneyLabel(p.label)) ->
+        p.num?.let { Fmt.won(it.toLong()) } ?: p.raw
+    else -> shownPlain(p)
+}
+
+private fun shownPlain(p: MemoProps.Prop): String = when (p.type) {
     MemoProps.Type.CHECK -> if ((p.num ?: 0.0) > 0) "✓" else "–"
     else -> p.raw
 }
@@ -192,6 +197,8 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
     val sideways = rememberScrollState()
     val titleW = 132.dp
     val colW = 104.dp
+    // PC 확인 bad7d860: "11월 30일" was cut; the date column takes the room it needs.
+    val dateW = 120.dp
     val line = MaterialTheme.colorScheme.outlineVariant
     val rowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.row")
     @Composable fun headCell(text: String, key: String, width: androidx.compose.ui.unit.Dp) {
@@ -210,7 +217,7 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
             headCell("제목", MemoView.SORT_TITLE, titleW)
             Row(Modifier.horizontalScroll(sideways)) {
                 for ((c, _) in columns) headCell(c, "p:$c", colW)
-                Text("날짜", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(colW).padding(8.dp, 10.dp))
+                Text("날짜", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(dateW).padding(8.dp, 10.dp))
                 Text("꼬리표", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(colW).padding(8.dp, 10.dp))
             }
         }
@@ -225,23 +232,30 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
                     Text(memo.title.ifBlank { memo.preview }.ifBlank { "(빈 메모)" }, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.width(titleW).padding(horizontal = 8.dp, vertical = 6.dp))
                     Row(Modifier.horizontalScroll(sideways)) {
-                        for ((c, _) in columns) Text(props[c]?.let(::shown) ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                        for ((c, t) in columns) Text(props[c]?.let { shown(it, t) } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 2,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
-                        Text(memo.date?.let { Fmt.monthDay(it) } ?: "", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
+                        Text(memo.date?.let { Fmt.monthDay(it) } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
+                            modifier = Modifier.width(dateW).padding(horizontal = 8.dp))
                         Text(memo.tags.joinToString(" ") { "#$it" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
                     }
                 }
                 HorizontalDivider(color = line.copy(alpha = 0.5f))
             }
-            val sums = columns.filter { it.second == MemoProps.Type.MONEY || it.second == MemoProps.Type.NUM }
+            val sums = columns.filter { it.second == MemoProps.Type.MONEY || it.second == MemoProps.Type.NUM || it.second == MemoProps.Type.STAR }
             if (sums.isNotEmpty()) item(key = "sum") {
                 Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("합계", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.width(titleW).padding(horizontal = 8.dp))
+                    Text(if (sums.all { it.second == MemoProps.Type.STAR }) "평균" else "합계 · 평균", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.width(titleW).padding(horizontal = 8.dp))
                     Row(Modifier.horizontalScroll(sideways)) {
                         for ((c, t) in columns) {
-                            val total = if (t == MemoProps.Type.MONEY || t == MemoProps.Type.NUM) MemoProps.total(memos, c) else null
-                            Text(total?.let { if (t == MemoProps.Type.MONEY) Fmt.won(it.toLong()) else trim(it) } ?: "",
+                            // PC 확인 bad7d860 사용성 제안: 별점은 합계가 아니라 평균 (★ 4.2).
+                            val foot = when (t) {
+                                MemoProps.Type.MONEY -> MemoProps.total(memos, c)?.let { Fmt.won(it.toLong()) }
+                                MemoProps.Type.NUM -> MemoProps.total(memos, c)?.let(::trim)
+                                MemoProps.Type.STAR -> MemoProps.average(memos, c)?.let { "★ " + "%.1f".format(it) }
+                                else -> null
+                            }
+                            Text(foot ?: "",
                                 style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
                         }
                     }
