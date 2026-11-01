@@ -2,8 +2,15 @@ package com.bamnat.app.ui.pro
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,7 +49,6 @@ const val MOMENTS_ID = "pro.moments"
  * '7일간 보지 않기' for a week, '그만 보기' turns it off (기능 켜고 끄기). Never with 프로, before the launch, in the first seconds
  * after the app opens or while the user is painting or writing. 자세히 opens the three-page [ProPaywall].
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProMomentNotice(style: WorkStyle?, @Suppress("UNUSED_PARAMETER") payday: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -78,14 +85,29 @@ fun ProMomentNotice(style: WorkStyle?, @Suppress("UNUSED_PARAMETER") payday: Boo
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(words.first, style = MaterialTheme.typography.titleMedium)
             Text(words.second, style = MaterialTheme.typography.bodyMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 1.36 PC Y13 (단추 4개가 무거워 보여요): 자세히 and 닫기 only; 7일간 보지 않기 and 그만 보기 under ⋯.
+            var more by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (due.time != ProOfferTimes.Time.BACK) FilledTonalButton(onClick = { ProPaywall.show() }) { Text("자세히") }
                 TextButton(onClick = { c.proMoments.closed(today) }) { Text("닫기") }
-                if (due.time != ProOfferTimes.Time.BACK) TextButton(onClick = { c.proMoments.snooze(today) }) { Text("7일간 보지 않기") }
-                if (feature != null) TextButton(onClick = { guide.setOn(feature, GuideState.ALL, false) }) { Text("그만 보기") }
+                Spacer(Modifier.weight(1f))
+                if (due.time != ProOfferTimes.Time.BACK || feature != null) Box {
+                    IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "더 보기") }
+                    DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                        if (due.time != ProOfferTimes.Time.BACK) DropdownMenuItem(text = { Text("7일간 보지 않기") },
+                            onClick = { more = false; c.proMoments.snooze(today) })
+                        if (feature != null) DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("그만 보기")
+                                    Text("설정 › 기능 켜고 끄기에서 다시 켜요", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = { more = false; guide.setOn(feature, GuideState.ALL, false) })
+                    }
+                }
             }
-            Text("그만 보기를 눌러도 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

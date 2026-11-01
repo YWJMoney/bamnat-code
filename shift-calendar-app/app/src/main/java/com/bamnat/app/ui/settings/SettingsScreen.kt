@@ -887,7 +887,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         ) {
             Column(Modifier.weight(1f)) {
                 Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                Text(if (e.where == "설정") "설정" else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
+                // 1.36 PC Y10: a place already starting at 설정 is shown once, not "설정 › 설정 › …".
+                Text(if (e.where == "설정" || e.where.startsWith("설정 ›")) e.where else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)

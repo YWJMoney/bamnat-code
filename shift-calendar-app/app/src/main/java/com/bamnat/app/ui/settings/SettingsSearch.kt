@@ -313,6 +313,8 @@ internal object SettingsIndex {
         row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
+        // 1.36 PC Y11: '보상' found nothing; the 보상 이용권 and earned days live on the 프로 page.
+        screen("설정 › 프로", "보상 이용권", SettingsGo.PRO, "보상", "이용권", "받은 이용권", "쌓인 날", "쓰면 쌓이는 날", "기다리는 날", "광고 보상", "보상 장부"),
         screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),
         // 1.25 Z
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]

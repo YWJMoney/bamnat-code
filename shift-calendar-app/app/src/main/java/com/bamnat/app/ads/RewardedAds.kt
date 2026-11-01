@@ -71,12 +71,25 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
         !FeatureLease.canWatch(leases, bundle, now, today) -> Text(
             "세 번 닫으셔서 ${bundle.label} 광고는 쉬고 있어요" + (leases.quietUntil[bundle]?.let { " · ${com.bamnat.app.ui.pro.untilWords(it)}부터 다시 보여요" } ?: ""),
             style = small, color = dim, textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
-        else -> ThemeAdButton(label, note,
-            onReward = { c.featureGate.grant(bundle, FeatureLease.Why.AD); onOpened() },
-            onQuit = {},
-            onOffline = { c.featureGate.grant(bundle, FeatureLease.Why.NO_AD, "offline"); onOpened() },
-            onNoAd = { why -> c.featureGate.grant(bundle, FeatureLease.Why.NO_AD, why); onOpened() },
-            modifier = modifier)
+        else -> {
+            val context = LocalContext.current
+            // 1.36 PC Y14 (광고가 안 와서 그냥 열렸을 때 아무 말이 없어요): every way it opens says so in one line, with the day it ends.
+            fun opened(why: FeatureLease.Why, reason: String?, lead: String) {
+                val from = leases.until[bundle]?.takeIf { Today.instant() < it } ?: Today.instant()
+                c.featureGate.grant(bundle, why, reason)
+                val end = from.plus(java.time.Duration.ofDays(FeatureLease.AD_DAYS))
+                val until = com.bamnat.app.ui.pro.untilWords(end)
+                android.widget.Toast.makeText(context, if (lead.isEmpty()) "${bundle.label} 7일 열렸어요 · ${until}까지" else "$lead · ${bundle.label} ${until}까지",
+                    android.widget.Toast.LENGTH_LONG).show()
+                onOpened()
+            }
+            ThemeAdButton(label, note,
+                onReward = { opened(FeatureLease.Why.AD, null, "") },
+                onQuit = {},
+                onOffline = { opened(FeatureLease.Why.NO_AD, "offline", "인터넷이 없어 광고 없이 열었어요") },
+                onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why, "광고가 오지 않아 그냥 열었어요") },
+                modifier = modifier)
+        }
     }
 }
 
