@@ -260,6 +260,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // [STU-21] The example draws the 기능 that show (근무 색, 메모 틀, 투자 일지) along with the look.
     val now = remember(s.pieces, s.extras) { vm.shown(s) }
     val before = remember(s.basePieces) { Recipe("처음", styles = WorkStyle.entries.toSet(), pieces = s.basePieces) }
+    // [BLU-06] The bar counts what the 바꾼 곳 sheet lists (PC 3차: 막대는 1개인데 시트는 2줄).
+    val changedCount = remember(before, now) { LookParts.changed(before, now).size }
     val diff = remember(s.draft, s.base) { c.recipes.pieces.lookDiff(s.draft, s.base) }
     fun pick(a: Area) { area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true }
     // [STU-20] The 기록 목록 says where each change was made.
@@ -369,7 +371,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             Text(when {
                                 s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
                                 diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
-                                else -> "바꾼 곳 ${diff}개 · 입히기 전까지 내 앱은 그대로예요"
+                                else -> "바꾼 곳 ${maxOf(changedCount, 1)}곳 · 입히기 전까지 내 앱은 그대로예요"
                             } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -1002,7 +1004,8 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
                             TextButton(onClick = { onGo(area.name) }) { Text("보기") }
                             TextButton(onClick = { vm.resetFields("${LookParts.tabLabel(tab)} 처음대로") { d, b -> resetTab(tab, d, b) } }) { Text("처음대로") }
                         }
-                        Text(list.joinToString(" · ") { it.label }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(list.joinToString(" · ") { p -> p.label + (partsDetail(p, before, now)?.let { " ($it)" } ?: "") },
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -1021,6 +1024,24 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
             LockChips(vm)
         }
     }
+}
+
+/** [BLU-06] Which 부품 a screen's 부품 part changed and how: "달력 머리 · 둥글기, 근무 표시 · 선" (PC 3차 사용성 제안). */
+private fun partsDetail(p: LookParts.Part, before: Recipe, now: Recipe): String? {
+    val roots = p.takes.filterIsInstance<LookParts.Take.Parts>().flatMap { it.roots }.toSet().takeIf { it.isNotEmpty() } ?: return null
+    fun lines(r: Recipe) = (r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.PARTS }?.values?.get("parts") as? List<*>)
+        ?.filterIsInstance<Map<String, Any?>>()?.filter { LookParts.under(it["id"] as? String, roots) }.orEmpty()
+    fun key(l: Map<String, Any?>) = listOf(l["id"], l["on"], l["when"])
+    val was = lines(before).associateBy(::key)
+    val is_ = lines(now).associateBy(::key)
+    val words = mapOf("fill" to "채우기", "paint" to "채우기", "line" to "선", "lineW" to "선", "lineC" to "선", "r" to "둥글기", "rTL" to "둥글기", "rTR" to "둥글기",
+        "rBR" to "둥글기", "rBL" to "둥글기", "shadow" to "그림자", "pad" to "여백", "out" to "여백", "font" to "글꼴", "size" to "글자 크기", "weight" to "굵기",
+        "ink" to "글자 색", "alpha" to "보이는 정도", "hide" to "숨기기", "order" to "순서", "dir" to "배치", "gap" to "간격")
+    return (was.keys + is_.keys).distinct().mapNotNull { k ->
+        val a = was[k].orEmpty(); val b = is_[k].orEmpty()
+        val fields = (a.keys + b.keys).filter { it != "id" && it != "on" && it != "when" && a[it] != b[it] }.map { words[it] ?: "모양" }.distinct()
+        if (fields.isEmpty()) null else (com.bamnat.core.recipe.BlueprintParts.LABELS[k[0] as String] ?: k[0]).toString() + " · " + fields.joinToString("·")
+    }.distinct().take(4).joinToString(", ").takeIf { it.isNotEmpty() }
 }
 
 /** [STU-22] One screen's look back to where it started: its settings and its 화면 색·배경, the rest of the draft as it is. */

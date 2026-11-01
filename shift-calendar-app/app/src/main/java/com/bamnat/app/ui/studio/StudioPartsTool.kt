@@ -113,9 +113,14 @@ internal fun PartsTool(
                 Text("네 귀퉁이 따로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(each, { each = it })
             }
-            if (!each) LabeledSlider("둥글기", num("r") ?: 0f, 0f..48f, "dp", unset = if (line["r"] == null) cornerNote(id) else null) { set("r", it.toLong()) }
+            // '네모' in one tap; the slider starts from the corners the part has now and goes one dp at a time (PC 3차).
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = num("r") == 0f, onClick = { set("r", 0L) }, label = { Text("네모") })
+                FilterChip(selected = line["r"] == null, onClick = { set("r", null) }, label = { Text("처음대로") })
+            }
+            if (!each) LabeledSlider("둥글기", num("r") ?: cornerNow(id), 0f..48f, "dp", unset = if (line["r"] == null) cornerNote(id) else null) { set("r", it.toLong()) }
             else listOf("rTL" to "왼쪽 위", "rTR" to "오른쪽 위", "rBL" to "왼쪽 아래", "rBR" to "오른쪽 아래").forEach { (k, w) ->
-                LabeledSlider(w, num(k) ?: num("r") ?: 0f, 0f..48f, "dp", unset = if (line[k] == null && line["r"] == null) cornerNote(id) else null) { set(k, it.toLong()) }
+                LabeledSlider(w, num(k) ?: num("r") ?: cornerNow(id), 0f..48f, "dp", unset = if (line[k] == null && line["r"] == null) cornerNote(id) else null) { set(k, it.toLong()) }
             }
         }
         Group("그림자·여백") {
@@ -149,7 +154,7 @@ internal fun PartsTool(
             if ((num("stroke") ?: 0f) > 0f) ColorPick("테두리 색", col("strokeC")) { set("strokeC", it) }
         }
         Group("투명도·숨기기") {
-            LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%", unset = if (line["alpha"] == null) "처음대로" else null) { set("alpha", it.toLong().takeIf { v -> v < 100 }) }
+            LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%", step = 5, unset = if (line["alpha"] == null) "처음대로" else null) { set("alpha", it.toLong().takeIf { v -> v < 100 }) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("숨기기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(line["hide"] == true, { set("hide", it.takeIf { h -> h }) })
@@ -181,6 +186,11 @@ internal fun PartsTool(
 }
 
 /** The states that mean something for a part. */
+/** The corners as drawn before the blueprint sets them, where the slider starts. */
+private fun cornerNow(id: String): Float = when (id) {
+    "cal.cell.mark" -> 5f; "cal.cell.date", "app.tab" -> 24f; "cal.head.title", "app.chip" -> 8f; "cal.head", "app.card" -> 12f; "memo.card", "app.sheet" -> 16f; else -> 0f
+}
+
 /** What a part's corners are before the blueprint sets them, said beside 둥글기 (PC 2차: "꾸미기 전에도 0dp로 보여요"). */
 private fun cornerNote(id: String): String = "처음대로 · 지금 " + when (id) {
     "cal.cell.mark" -> "약 5dp"; "cal.cell.date" -> "동그라미"; "cal.head.title", "app.chip" -> "8dp"; "cal.head", "app.card" -> "12dp"
@@ -191,6 +201,8 @@ internal fun partWords(id: String, on: String?): String =
     (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + (STATE_WORDS[it] ?: it) } ?: "")
 
 private fun statesFor(id: String): List<String> = when {
+    // The shift a mark shows comes first there (PC 3차: '야간 근무'가 줄 끝에 있어 밀어야 보여요).
+    id == "cal.cell.mark" -> listOf("role.day", "role.eve", "role.night", "role.long", "role.off", "today", "sat", "sun", "holiday", "dim", "sel")
     id.startsWith("cal.cell") -> listOf("today", "sat", "sun", "holiday", "dim", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off")
     id == "cal.week.day" -> listOf("sat", "sun")
     id == "app.tab" || id == "app.chip" -> listOf("sel")

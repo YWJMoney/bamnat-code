@@ -1,5 +1,9 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -593,24 +597,59 @@ internal fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> 
 @Composable
 internal fun LabeledSlider(
     label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
-    /** [BLU-06] Set when nothing is chosen yet: shown in place of the number ("처음대로 · 지금 8dp"), and −/+ both start from [value]. */
+    /** [BLU-06] Set when nothing is chosen yet: shown in place of the number ("처음대로 · 지금 8dp"); −/+ start from [value]. */
     unset: String? = null,
+    /** How far one press of −/+ goes (보이는 정도 5%씩, PC 3차). Held, it keeps going and is kept once when the finger lifts. */
+    step: Int = 1,
     onDone: (Float) -> Unit,
 ) {
     var v by remember(value) { mutableFloatStateOf(value) }
     var moved by remember(value, unset) { mutableStateOf(false) }
     val showUnset = unset != null && !moved
+    fun nudge(by: Int) { moved = true; v = ((Math.round(v / step) + by) * step).toFloat().coerceIn(range) }
     Column {
         // [BLU-06] 1.36 −/+ for a value hard to hit with a finger on the slider (PC 1차 사용성 제안 '둥글기 −/+').
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (showUnset) "$label · $unset" else "$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            androidx.compose.material3.TextButton(onClick = { moved = true; v = (if (showUnset) v else v.toInt() - 1f).coerceIn(range); onDone(v) },
-                enabled = showUnset || v > range.start,
-                modifier = Modifier.semantics { contentDescription = "$label 하나 줄이기" }) { Text("−") }
-            androidx.compose.material3.TextButton(onClick = { moved = true; v = (v.toInt() + 1f).coerceIn(range); onDone(v) }, enabled = v < range.endInclusive,
-                modifier = Modifier.semantics { contentDescription = "$label 하나 늘리기" }) { Text("+") }
+            StepButton("−", "$label ${step}씩 줄이기", v > range.start, { nudge(-1) }) { onDone(v) }
+            StepButton("+", "$label ${step}씩 늘리기", v < range.endInclusive, { nudge(1) }) { onDone(v) }
         }
         Slider(v, { moved = true; v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
+    }
+}
+
+/** − or +: a tap moves one step; held, it repeats faster until the finger lifts, and [onRelease] keeps the value once (one 되돌리기). */
+@Composable
+private fun StepButton(text: String, description: String, enabled: Boolean, onStep: () -> Unit, onRelease: () -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val step by androidx.compose.runtime.rememberUpdatedState(onStep)
+    val release by androidx.compose.runtime.rememberUpdatedState(onRelease)
+    Box(
+        Modifier.size(48.dp).clip(CircleShape)
+            .semantics {
+                contentDescription = description
+                role = androidx.compose.ui.semantics.Role.Button
+                if (!enabled) disabled()
+                onClick { if (enabled) { step(); release() }; enabled }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectTapGestures(onPress = {
+                    step()
+                    val held = scope.launch {
+                        kotlinx.coroutines.delay(400)
+                        var wait = 120L
+                        while (true) { step(); kotlinx.coroutines.delay(wait); wait = maxOf(40L, wait - 10L) }
+                    }
+                    tryAwaitRelease()
+                    held.cancel()
+                    release()
+                })
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
     }
 }
 

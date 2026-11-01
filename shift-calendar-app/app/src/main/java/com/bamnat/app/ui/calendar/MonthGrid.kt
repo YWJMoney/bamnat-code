@@ -76,6 +76,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -1110,7 +1111,10 @@ internal fun CustomCellBody(
     val memoShown = texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
     val markShape = mp.takeIf { it.corners.any { c -> c != null } }?.shape(RoundedCornerShape(4.dp))
-    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(Modifier.partBox(mp, markShape ?: RoundedCornerShape(4.dp))) {
+    // [BLU-05] The mark's line goes round the badge itself, in the shift's colour unless the blueprint gives one (PC 3차: 옅은 회색이 네모를 따라).
+    val markBox = if (mp.line == null && mp.lineC == null && mp.lineW == null) mp
+        else mp.copy(lineC = mp.lineC ?: barColor?.let { androidx.compose.ui.graphics.lerp(it, Color.Black, 0.45f) }?.toArgb()?.toLong()?.and(0xFFFFFFFFL), lineW = mp.lineW ?: 1.5)
+    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(Modifier.partBox(markBox, markShape ?: RoundedCornerShape((mp.h?.dp ?: markSize) / 3))) {
         androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.components.LocalBadgeShape provides markShape) {
         when (mark) {
             "none", "fill" -> {}
