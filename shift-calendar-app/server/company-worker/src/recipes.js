@@ -993,7 +993,7 @@ async function publish(d, env, request) {
   const trust = await recipeTrust(d, env, dev, now);
   const net = await d.network(request, env, now);
   const hit = (await writeLimitHit(d, env, dev, "recipe", now))
-    ?? (await d.overLimit(env, now, [["network", `recipe|${net.day}`, RECIPE_LIMITS.perNetworkDay, DAY]]));
+    ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
   const r = clean.recipe;
@@ -1262,7 +1262,7 @@ async function talkPost(d, env, request, code) {
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
   const net = await d.network(request, env, now);
-  const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, [["network", `rtalk|${net.day}`, 300, DAY]]));
+  const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "rtalk", 300, now)));
   if (hit) return hit;
   let parent = null;
   if (body.parent !== undefined && body.parent !== null) {

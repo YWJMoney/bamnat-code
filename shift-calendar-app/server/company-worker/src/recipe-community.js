@@ -149,7 +149,7 @@ async function rcRequestPost(d, env, request) {
   // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; one network's day still has one.
   const net = await d.network(request, env, now);
   const hit = (await writeLimitHit(d, env, dev, "rreq", now))
-    ?? (await d.overLimit(env, now, [["network", `rreq|${net.day}`, COMMUNITY_LIMITS.requestsPerNetworkDay, DAY]]));
+    ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "rreq", COMMUNITY_LIMITS.requestsPerNetworkDay, now)));
   if (hit) return hit;
   const id = `q${d.randomId(12)}`;
   await d.run(env, "INSERT INTO recipe_requests (id, device, style, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", id, dev, body.style, t, now, now);

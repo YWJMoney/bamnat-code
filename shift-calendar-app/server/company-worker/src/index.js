@@ -265,6 +265,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
     stmt(env, "DELETE FROM year_passes WHERE purchased_at < ?", now - 400 * 86400000),
     stmt(env, "DELETE FROM day_rewards WHERE given_at < ?", now - 400 * 86400000),
+    stmt(env, "DELETE FROM device_seen WHERE last < ?", now - NEW_DEVICE.keepDays * DAY),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
     // [INVITE-04][INVITE-08] An invite never counted goes 30 days after its period of use could end; a counted one after
@@ -592,6 +593,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS year_passes (hash TEXT PRIMARY KEY, device TEXT NOT NULL, order_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
     purchased_at INTEGER NOT NULL, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS year_passes_device ON year_passes (device)",
+  // 1.36 네트워크 한도 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로"): when an install was first seen, so only a new one (or one
+  // restricted) is held to its network's hourly share. The install's hash only; gone after NEW_DEVICE.keepDays unseen.
+  "CREATE TABLE IF NOT EXISTS device_seen (device TEXT PRIMARY KEY, first INTEGER NOT NULL, last INTEGER NOT NULL)",
   // 1.36 841 쓰면 쌓이는 날: days earned without an ad (a bug report fixed), once per source, at most 14 a month.
   `CREATE TABLE IF NOT EXISTS day_rewards (source TEXT PRIMARY KEY, device TEXT NOT NULL, kind TEXT NOT NULL, days INTEGER NOT NULL,
     given_at INTEGER NOT NULL)`,
@@ -970,6 +974,30 @@ export async function network(request, env, now) {
     day: await hash(`day:${Math.floor(now / DAY)}`),
     login: await hash("login"),
   };
+}
+
+/**
+ * 1.36 네트워크 한도 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로", 논의: 통신사 주소 하나를 수천 명이 같이 써서 오래 쓴 사람이
+ * 하루 한도에 막히는 일): an install seen for under [NEW_DEVICE.days] days, or restricted for reports (write_limits, muted), is
+ * counted with its network by the hour — the old day's limit shared out over [NEW_DEVICE.hourShare] hours. Anyone else is not held
+ * to the network at all, only to their own limits and the report strikes. Wiping the app to post again starts as new.
+ */
+export const NEW_DEVICE = { days: 3, hourShare: 4, keepDays: 90 };
+
+/** Whether [dev] is new or restricted (see [NEW_DEVICE]); marks it seen. No install id counts as new. */
+export async function freshDevice(env, dev, now) {
+  if (!dev) return true;
+  const row = await one(env, `INSERT INTO device_seen (device, first, last) VALUES (?1, ?2, ?2)
+    ON CONFLICT (device) DO UPDATE SET last = ?2 RETURNING first`, dev, now);
+  if (now - Number(row?.first ?? now) < NEW_DEVICE.days * DAY) return true;
+  return !!(await one(env, `SELECT 1 AS x FROM write_limits WHERE device = ?1 AND until > ?2
+    UNION ALL SELECT 1 AS x FROM muted WHERE device = ?1 AND until > ?2 LIMIT 1`, dev, now));
+}
+
+/** The network check for [overLimit] as a list to spread in: none for an old install, else [kind]'s hourly share of [perDay]. */
+export async function networkCheck(env, dev, net, kind, perDay, now) {
+  if (!(await freshDevice(env, dev, now))) return [];
+  return [["network", `${kind}|${net.now}`, Math.max(1, Math.ceil(perDay / NEW_DEVICE.hourShare)), HOUR]];
 }
 
 /** Counts one use against [limit] for the window; false once the window's uses are spent. */
@@ -1997,7 +2025,7 @@ async function members(request, env) {
     return json({ joined: false, company: c.id });
   }
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `join|${dev}`, MEMBER.joinsPerDay, DAY], ["network", `join|${net.day}`, MEMBER.joinsPerNetworkDay, DAY]]);
+  const limitHit = await overLimit(env, now, [["device", `join|${dev}`, MEMBER.joinsPerDay, DAY], ...(await networkCheck(env, dev, net, "join", MEMBER.joinsPerNetworkDay, now))]);
   if (limitHit) return limitHit;
   const r = await joinCompany(env, dev, c.id, calOf(body.cal), now);
   // SP1 1.30 [SPD-08] With ?with=page (or "with": "page"), the company's page as the member now reads it: 이 설정 쓰기 and 이 급여
@@ -2183,7 +2211,7 @@ async function roomPost(request, env, body) {
   const net = await network(request, env, now);
   // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; the network's stays.
   const limitHit = (await writeLimitHit(recipeDeps, env, dev, "room", now))
-    ?? (await overLimit(env, now, [["network", `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY]]));
+    ?? (await overLimit(env, now, await networkCheck(env, dev, net, "room", ROOM_LIMITS.perNetworkDay, now)));
   if (limitHit) return limitHit;
   let parent = null;
   if (given(body.parent)) {
@@ -2815,7 +2843,7 @@ async function report(request, env) {
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   const limitHit = await overLimit(env, now, [["device", `report|${dev}`, LIMITS.reportsPerDay, DAY],
-    ["network", `report|${net.day}`, LIMITS.reportsPerNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "report", LIMITS.reportsPerNetworkDay, now))]);
   if (limitHit) return limitHit;
   const c = await companyFor(env, r.company, now, r);
   const grp = (await sha256(`${r.deptNorm}|${await fingerprint(r.setup)}`)).slice(0, 16);
@@ -3153,6 +3181,7 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
     stmt(env, "DELETE FROM day_rewards WHERE device = ?", dev),
+    stmt(env, "DELETE FROM device_seen WHERE device = ?", dev),
   ]);
   const [, reports, votes, , posts, , , , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
@@ -3521,7 +3550,7 @@ async function post(request, env) {
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
   const limitHit = (await writeLimitHit(recipeDeps, env, dev, "post", now))
-    ?? (await overLimit(env, now, [["network", `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY]]));
+    ?? (await overLimit(env, now, await networkCheck(env, dev, net, "post", LIMITS.postsPerNetworkDay, now)));
   if (limitHit) return limitHit;
   // [PLZ-05] A reply goes under a post of the same talk; replies to replies go under the same first post.
   let parent = null;
@@ -3705,7 +3734,7 @@ async function setNick(request, env) {
   if (why) refuse(why, "nick");
   const now = Date.now();
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `nick|${dev}`, 10, DAY], ["network", `nick|${net.day}`, 200, DAY]]);
+  const limitHit = await overLimit(env, now, [["device", `nick|${dev}`, 10, DAY], ...(await networkCheck(env, dev, net, "nick", 200, now))]);
   if (limitHit) return limitHit;
   const taken = await one(env, "SELECT device FROM nicks WHERE norm = ?", norm);
   if (taken && taken.device !== dev) return json({ error: "taken", field: "nick" }, 409);
@@ -3889,7 +3918,7 @@ async function addRate(request, env) {
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   const net = await network(request, env, now);
   const limitHit = await overLimit(env, now, [["device", `rate|${dev}`, LIMITS.reportsPerDay, DAY],
-    ["network", `rate|${net.day}`, LIMITS.reportsPerNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "rate", LIMITS.reportsPerNetworkDay, now))]);
   if (limitHit) return limitHit;
   const norm = normName(r.trade);
   const before = await one(env, `SELECT id, status FROM rates WHERE device = ? AND job = ? AND region = ? AND trade_norm = ? AND unit = ? AND year = ?
@@ -6890,7 +6919,7 @@ async function sameSecret(given, secret) {
  * recipe.vote, recipe.talk) as the server sees it now, so nothing is kept before 처리방침 3.8 is in force (결정 D109).
  */
 const recipeDeps = {
-  one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, overLimit, allow, tooMany, randomId, paused, edgeCached,
+  one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, networkCheck, overLimit, allow, tooMany, randomId, paused, edgeCached,
   legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
   authorKey,

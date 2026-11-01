@@ -1,4 +1,4 @@
-import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
+import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
 import { kstDay } from "./usage.js";
@@ -169,7 +169,7 @@ export async function ask(request, env) {
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   const limitHit = await overLimit(env, now, [["device", `inquiry|${dev}`, INQUIRY.perDay, DAY],
-    ["network", `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "inquiry", INQUIRY.perNetworkDay, now))]);
   if (limitHit) return limitHit;
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);

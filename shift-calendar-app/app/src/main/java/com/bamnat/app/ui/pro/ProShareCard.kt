@@ -87,6 +87,10 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
                 Text(com.bamnat.core.tier.ProReason.SHARED.words, style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { ending = true }) { Text("나눠 받은 프로 돌려주기") }
             }
+            // 1.36 사용자 결정 (2026-11-01): a free trial is not bought 프로, so it shares nothing yet; it says when it will. Once the
+            // trial turns paid the reason is SUBSCRIPTION and [bought] opens the card by itself.
+            gate.live && gate.access.pro && gate.access.reason == com.bamnat.core.tier.ProReason.TRIAL ->
+                Text("체험이 끝나고 결제되면 1명에게 나눌 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             else -> Text("프로를 구독한 분이 한 사람에게 프로를 나눠 줄 수 있어요. 받은 코드가 있으면 넣어 주세요.",
                 style = MaterialTheme.typography.bodyMedium)
         }

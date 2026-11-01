@@ -16,7 +16,8 @@ object RateLimits {
     fun text(what: String? = null, retryAfter: Int? = null, why: String? = null, instead: String? = null): String {
         val head = what?.let { "지금은 $it${Fmt.obj(it)} 잠시 할 수 없어요." } ?: "요청이 많아 잠시 쉬고 있어요."
         val reason = when (why) {
-            "network" -> " 같은 와이파이(회사·병원 망)에서 많이 써서 그래요. 모바일 데이터로 바꾸면 바로 될 수 있어요."
+            // 1.36 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로"): only a phone new to the app (under 3 days) or restricted is held to its network.
+            "network" -> " 새로 쓰기 시작한 휴대폰은 같은 와이파이·통신망에서 한 시간에 할 수 있는 양이 정해져 있어요. 모바일 데이터로 바꾸면 바로 될 수 있어요."
             "device" -> " 이 휴대폰에서 짧은 사이에 여러 번 했어요."
             "reads" -> " 오늘 많이 열어 보셔서 잠깐 쉬어요."
             else -> ""
