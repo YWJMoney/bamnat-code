@@ -224,6 +224,11 @@ fun MemoListScreen(
                 { d: LocalDate -> m[d] }
             }
             val propColumns = remember(shown) { com.bamnat.core.memo.MemoProps.columns(shown) }
+            // [TAB-01] A 틀's 고르기 choices for a 칸, so its 보드 shows every 칸 and its 표 offers every word.
+            val templates by container.memoTemplates.items.collectAsStateWithLifecycle()
+            val templateChoices = remember(templates) {
+                { label: String -> templates.flatMap { t -> t.asks.filter { it.label == label && it.type == "pick" }.flatMap { it.choices } } }
+            }
             val setView: (com.bamnat.core.memo.MemoView) -> Unit = { v ->
                 container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
             }
@@ -231,8 +236,8 @@ fun MemoListScreen(
             if (state.loaded) MemoViewChips(memoView, propColumns, setView)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
-                memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions)
-                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions)
+                memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions, templateChoices)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
                 memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
                 !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)

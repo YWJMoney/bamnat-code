@@ -160,4 +160,17 @@ class MemoViewTest {
         assertTrue(MemoView.CALENDAR in MemoView.VIEWS)
         assertEquals(MemoView(MemoView.CALENDAR, MemoView.BY_TAG, ""), MemoView.decode(MemoView(MemoView.CALENDAR).encode()))
     }
+
+    @Test fun boardShowsEmptyColumnsAPickCanTake() {
+        val ms = listOf(memo(1, "상태: 하는 중"), memo(2, "상태: 하는 중"))
+        val v = MemoView(view = MemoView.BOARD, by = "p:상태")
+        val choices = MemoView.choicesFor("상태", ms)
+        assertEquals(listOf("하는 중", "할 일", "끝"), choices)
+        val cols = v.board(ms, extra = choices)
+        assertEquals(listOf("하는 중", "할 일", "끝"), cols.map { it.key })
+        assertTrue(cols[1].memos.isEmpty())
+        assertEquals(listOf("A", "B", "할 일", "하는 중", "끝"), MemoView.choicesFor("상태", emptyList(), listOf("A", "B")))
+        // A 꼬리표 board has no empty 칸.
+        assertEquals(1, MemoView(view = MemoView.BOARD).board(listOf(memo(3, "#집")), extra = listOf("가게")).size)
+    }
 }

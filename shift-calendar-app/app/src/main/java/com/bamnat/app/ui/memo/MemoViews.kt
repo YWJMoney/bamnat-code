@@ -161,8 +161,22 @@ private fun shownPlain(p: MemoProps.Prop): String = when (p.type) {
  * screen reader or one hand does it. [CardActions.onChange] saves it and offers 되돌리기.
  */
 @Composable
-internal fun MemoBoardView(memos: List<Memo>, view: MemoView, shiftOf: (LocalDate) -> String?, state: MemoListState, actions: CardActions) {
-    val columns = remember(memos, view, shiftOf) { view.board(memos, shiftOf) }
+internal fun MemoBoardView(
+    memos: List<Memo>, view: MemoView, shiftOf: (LocalDate) -> String?, state: MemoListState, actions: CardActions,
+    templateChoices: (String) -> List<String> = { emptyList() },
+) {
+    // PC 확인 dc7f51ae: a 칸 묶음 also shows the values it can take with no memo yet (상태 → 할 일 · 하는 중 · 끝), as empty 칸 to drop into.
+    val columns = remember(memos, view, shiftOf, templateChoices) {
+        val extra = if (view.by.startsWith("p:")) view.by.drop(2).let { MemoView.choicesFor(it, memos, templateChoices(it)) } else emptyList()
+        view.board(memos, shiftOf, extra)
+    }
+    // Where a card can go: the other 칸, and for 색 every colour (the board shows only the colours in use).
+    val targets = remember(columns, view.by) {
+        columns.map { it.key to it.label } + if (view.by == MemoView.BY_COLOR)
+            com.bamnat.app.ui.theme.MemoPaletteLight.indices.map { it.toString() }.filter { k -> columns.none { it.key == k } }
+                .map { it to if (it == "0") "기본 색" else "색 $it" } else emptyList()
+    }
+    val canAdd = view.by == MemoView.BY_TAG || view.by.startsWith("p:")
     val money = remember(memos) { MemoProps.columns(memos).firstOrNull { it.second == MemoProps.Type.MONEY }?.first }
     val colPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.col")
     val headPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.head")
@@ -177,7 +191,7 @@ internal fun MemoBoardView(memos: List<Memo>, view: MemoView, shiftOf: (LocalDat
     val target = drag?.let { d -> bounds.entries.firstOrNull { it.value.contains(d.at) }?.key }
     val move: (Memo, String, String) -> Unit = { memo, from, to ->
         MemoView.moved(memo, view.by, from, to)?.let { after ->
-            val label = columns.firstOrNull { it.key == to }?.label ?: if (to == MemoView.NONE) "없음" else to
+            val label = targets.firstOrNull { it.first == to }?.second ?: if (to == MemoView.NONE) "없음" else if (view.by == MemoView.BY_TAG) "#$to" else to
             actions.onChange(memo, after, "‘$label’ 칸으로 옮겼어요")
         }
     }
@@ -228,7 +242,8 @@ internal fun MemoBoardView(memos: List<Memo>, view: MemoView, shiftOf: (LocalDat
                                 Box(Modifier.then(if (drag?.memo?.id == memo.id && drag?.from == col.key) Modifier.alpha(0.35f) else Modifier)) {
                                     MemoCard(memo, state.query, selected = memo.id in state.selection, selecting = state.selecting, showDate = true, actions = actions)
                                     if (movable) MoveHandle(
-                                        others = columns.filter { it.key != col.key }.map { it.key to it.label },
+                                        others = targets.filter { it.first != col.key },
+                                        newLabel = if (!canAdd) null else if (view.by == MemoView.BY_TAG) "새 꼬리표" else "새 ${view.by.drop(2)} 값",
                                         onPick = { to -> move(memo, col.key, to) },
                                         onDragStart = { at -> drag = BoardDrag(memo, col.key, at) },
                                         onDrag = { at -> drag = drag?.copy(at = at) },
@@ -268,6 +283,7 @@ private data class BoardDrag(val memo: Memo, val from: String, val at: androidx.
 @Composable
 private fun MoveHandle(
     others: List<Pair<String, String>>,
+    newLabel: String?,
     onPick: (String) -> Unit,
     onDragStart: (androidx.compose.ui.geometry.Offset) -> Unit,
     onDrag: (androidx.compose.ui.geometry.Offset) -> Unit,
@@ -275,6 +291,7 @@ private fun MoveHandle(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
     var origin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var at by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val latestStart by androidx.compose.runtime.rememberUpdatedState(onDragStart)
@@ -302,7 +319,25 @@ private fun MoveHandle(
             Text("옮길 칸", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
             for ((key, label) in others) DropdownMenuItem(text = { Text(label) }, onClick = { open = false; onPick(key) })
+            // PC 확인 dc7f51ae: with one 칸 the list was empty; a new 칸 is always one choice away.
+            if (newLabel != null) DropdownMenuItem(text = { Text("$newLabel 만들기…") }, onClick = { open = false; adding = true })
+            if (others.isEmpty() && newLabel == null) Text("옮길 다른 칸이 없어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
+    }
+    if (adding && newLabel != null) {
+        var text by remember { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { adding = false },
+            title = { Text(newLabel) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(text, { text = it.take(20).replace("\n", " ").replace("#", "") }, singleLine = true,
+                    placeholder = { Text(if (newLabel == "새 꼬리표") "예: 가게" else "예: 할 일") })
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { adding = false; onPick(text.trim().replace(' ', '_').takeIf { newLabel == "새 꼬리표" } ?: text.trim()) },
+                enabled = text.isNotBlank()) { Text("옮기기") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { adding = false }) { Text("닫기") } },
+        )
     }
 }
 
@@ -312,11 +347,11 @@ private fun MoveHandle(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -> Unit, actions: CardActions) {
+internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -> Unit, actions: CardActions, templateChoices: (String) -> List<String> = { emptyList() }) {
     val columns = remember(memos) { MemoProps.columns(memos) }
     val rows = remember(memos, view) { view.sorted(memos).map { it to MemoProps.of(it).associateBy { p -> p.label } } }
     // 누락 점검 N9: a 고르기 칸's words, offered when its 칸 is tapped.
-    val choices = remember(memos, columns) { columns.filter { it.second == MemoProps.Type.PICK }.associate { (c, _) -> c to MemoProps.choices(memos, c) } }
+    val choices = remember(memos, columns) { columns.filter { it.second == MemoProps.Type.PICK }.associate { (c, _) -> c to MemoView.choicesFor(c, memos, templateChoices(c)) } }
     val sideways = rememberScrollState()
     val titleW = 132.dp
     val colW = 104.dp
@@ -409,7 +444,7 @@ private fun PickCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
     var writing by remember { mutableStateOf(false) }
     val set: (String) -> Unit = { v ->
         val after = MemoProps.set(memo, label, v)
-        if (after != memo) actions.onChange(memo, after, if (v.isBlank()) "‘$label’ 칸을 비웠어요" else "‘$label’을 ‘$v’로 바꿨어요")
+        if (after != memo) actions.onChange(memo, after, if (v.isBlank()) "‘$label’ 칸을 비웠어요" else "‘$label’${Fmt.obj(label)} ‘$v’${Fmt.ro(v)} 바꿨어요")
     }
     Box(Modifier.width(width)) {
         Row(

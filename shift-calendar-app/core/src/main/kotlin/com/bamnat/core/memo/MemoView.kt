@@ -21,8 +21,12 @@ data class MemoView(
     /** A 보드 column: its key, the words on its head, and its memos in the view's order. */
     data class Column(val key: String, val label: String, val memos: List<Memo>)
 
-    /** The board's columns: a memo with two 꼬리표 is in both, one with none in "없음" last. [shiftOf] names a dated memo's 근무. */
-    fun board(memos: List<Memo>, shiftOf: (LocalDate) -> String? = { null }): List<Column> {
+    /**
+     * The board's columns: a memo with two 꼬리표 is in both, one with none in "없음" last. [shiftOf] names a dated memo's 근무.
+     * [extra] (누락 점검 N9, PC 확인 dc7f51ae "상태로 묶으면 값이 있는 칸만 생겨 '할 일'로 옮길 길이 없어요"): the values a 칸 묶음 can take
+     * though no memo has them yet ([choicesFor]), shown as empty 칸 to drop into, after the full ones.
+     */
+    fun board(memos: List<Memo>, shiftOf: (LocalDate) -> String? = { null }, extra: List<String> = emptyList()): List<Column> {
         val sorted = sorted(memos)
         val groups = LinkedHashMap<String, MutableList<Memo>>()
         val none = ArrayList<Memo>()
@@ -40,7 +44,8 @@ data class MemoView(
             BY_COLOR -> groups.keys.sortedBy { it.toIntOrNull() ?: 0 }
             else -> groups.keys.sortedByDescending { groups[it]!!.size }
         }
-        return keys.map { Column(it, labelOf(it), groups[it]!!) } +
+        val empty = if (by.startsWith("p:")) extra.map { it.trim() }.filter { it.isNotEmpty() && it !in groups }.distinct() else emptyList()
+        return keys.map { Column(it, labelOf(it), groups[it]!!) } + empty.map { Column(it, labelOf(it), emptyList()) } +
             (if (none.isEmpty()) emptyList() else listOf(Column(NONE, noneLabel(), none)))
     }
 
@@ -128,6 +133,20 @@ data class MemoView(
         /** [dayOf] for each of [memos] that has one, by day, in the order given. */
         fun byDay(memos: List<Memo>): Map<java.time.LocalDate, List<Memo>> =
             memos.mapNotNull { m -> dayOf(m)?.let { it to m } }.groupBy({ it.first }, { it.second })
+
+        /**
+         * [TAB-01] The values a 고르기 칸 named [label] offers: those already written in [memos], then a 틀's 고르기 choices for it ([fromTemplates]),
+         * then the usual words for a 칸 named like 상태·우선순위 (할 일 · 하는 중 · 끝), at most [MemoProps.MAX_CHOICES].
+         */
+        fun choicesFor(label: String, memos: List<Memo>, fromTemplates: List<String> = emptyList()): List<String> =
+            (MemoProps.choices(memos, label) + fromTemplates + usual(label)).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MemoProps.MAX_CHOICES)
+
+        private fun usual(label: String): List<String> = when {
+            listOf("상태", "진행").any { label.contains(it) } -> listOf("할 일", "하는 중", "끝")
+            label.contains("우선순위") -> listOf("높음", "보통", "낮음")
+            label.contains("결과") -> listOf("성공", "보류", "실패")
+            else -> emptyList()
+        }
 
         /** A checklist's 상태 for the board: none ticked, some, all; a plain memo is "메모". */
         fun checkState(m: Memo): String = when {
