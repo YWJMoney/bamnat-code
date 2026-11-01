@@ -1465,12 +1465,15 @@ private fun AppNavHost(
         composable(TopLevel.PLAZA.route) {
             // 1.35 [HUB-01] 마을: 광장, 테마, 장터 (나눔 판) and 공방 (스튜디오) of the calendar's kind of work, one tab.
             val calendar = remember { companyCalendarOf(container, null) }
-            val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+            // PC 확인 38d63451: follows a change of 근무 유형, and 장터's list uses the same kind of work as 오늘의 하나.
+            val hubSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+            val style = remember(calendar, hubSettings.workStyle) { container.calendars.styleOf(calendar, hubSettings.workStyle) }
             val recipeCal = PersonalCalendar.MAIN
             com.bamnat.app.ui.hub.HubScreen(container, style,
                 talk = { PlazaHost(nav, container, null, onBack = null, inHub = true) },
                 share = { kind ->
                     val vm = appViewModel(key = "recipes-$recipeCal") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, recipeCal) }
+                    LaunchedEffect(style) { vm.useStyle(style) }
                     // 테마's 장터에서 새 테마 찾기 opens 장터 on 테마·스킨; the 장터 tab itself opens as it was left.
                     LaunchedEffect(kind) { if (kind != null && vm.state.value.kind != kind) vm.kind(kind) }
                     com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = null,

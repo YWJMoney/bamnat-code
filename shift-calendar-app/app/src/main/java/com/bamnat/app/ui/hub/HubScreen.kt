@@ -137,8 +137,13 @@ fun HubScreen(
             val step = with(density) { 24.dp.toPx() }
             object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
                 var run = 0f
-                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                    run = if ((run < 0) == (available.y < 0)) run + available.y else available.y
+                // PC 확인 38d63451: only what the list really moved counts (and a pull down at its top), so a page too short to
+                // scroll does not jump under the finger and open what is under it.
+                override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset,
+                    source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    val moved = if (consumed.y != 0f) consumed.y else available.y.coerceAtLeast(0f)
+                    if (moved == 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    run = if ((run < 0) == (moved < 0)) run + moved else moved
                     if (run < -step) headerShown = false else if (run > step) headerShown = true
                     return androidx.compose.ui.geometry.Offset.Zero
                 }

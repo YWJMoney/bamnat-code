@@ -314,7 +314,18 @@ fun RecipeListScreen(
                     Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
                         "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
+                    // PC 확인 38d63451: the other half's, and a way to make the first one.
+                    val inTheme = state.kind == RecipeClient.SCOPE_THEME
+                    if (state.other > 0) Text(if (inTheme) "기능별 탭에는 ${state.other}개 있어요. 달력 같은 탭 하나만 바꾸는 작품이에요"
+                        else "테마에는 ${state.other}개 있어요. 앱 전체를 한 벌로 바꾸는 작품이에요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        if (state.other > 0) androidx.compose.material3.FilledTonalButton(onClick = {
+                            vm.kind(if (inTheme) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME)
+                        }) { Text(if (inTheme) "기능별 탭 보기" else "테마 보기") }
+                        TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
+                        TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
+                    }
                 }
             }
             // [HUB-04] Themes are picked by eye: two big pictures a row; the rest as rows.
