@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.settings.Chips
@@ -47,6 +48,8 @@ internal fun PartsTool(
     parts: String,
     focus: String? = null,
     focusOn: String? = null,
+    /** The part and state being changed, for the line kept above the tools while they scroll (PC 1차 사용성 제안). */
+    onFocus: (id: String, on: String?) -> Unit = { _, _ -> },
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -58,15 +61,20 @@ internal fun PartsTool(
     LaunchedEffect(focus, focusOn) {
         if (focus != null && focus in ids) { id = focus; on = focusOn?.takeIf { it in BlueprintParts.STATES } }
     }
+    LaunchedEffect(id, on) { onFocus(id, on) }
     Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    // 어느 부품
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        ids.forEach { p ->
-            val touched = bp.touches(p) && bp.lines.any { it["id"] == p }
-            FilterChip(selected = p == id, onClick = { if (id != p) { id = p; on = null } },
-                label = { Text((if (touched) "● " else "") + (BlueprintParts.LABELS[p] ?: p)) },
-                modifier = Modifier.semantics { if (touched) contentDescription = "${BlueprintParts.LABELS[p]}, 꾸밈 있음" })
+    // 어느 부품, 묶음마다 제목을 달아서 (PC 1차 사용성 제안): 달력 머리 · 요일 줄 · 날짜 칸 …
+    ids.groupBy { it.split('.').take(2).joinToString(".") }.forEach { (head, list) ->
+        if (list.size > 1) Text(BlueprintParts.LABELS[head] ?: head, style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            list.forEach { p ->
+                val touched = bp.lines.any { it["id"] == p }
+                FilterChip(selected = p == id, onClick = { if (id != p) { id = p; on = null } },
+                    label = { Text((if (touched) "● " else "") + (BlueprintParts.LABELS[p] ?: p)) },
+                    modifier = Modifier.semantics { if (touched) contentDescription = "${BlueprintParts.LABELS[p]}, 꾸밈 있음" })
+            }
         }
     }
     // 어떤 때
@@ -121,6 +129,19 @@ internal fun PartsTool(
             LabeledSlider("크기", num("size") ?: 14f, 6f..48f, "sp") { set("size", it.toLong()) }
             Chips(listOf(null to "처음대로", 300L to "가늘게", 400L to "보통", 700L to "굵게", 900L to "아주 굵게"), (line["weight"] as? Number)?.toLong()) { set("weight", it) }
             ColorPick("글자 색", col("ink")) { set("ink", it) }
+            // [BLU-06] 글자 색과 채우기가 비슷하면 알려요 (WCAG 4.5:1). 글자 색을 비워 두면 채우기에 맞춰 검정·흰색이 저절로 골라져요.
+            val fillNow = col("fill")
+            val inkNow = col("ink")
+            if (fillNow != null && inkNow != null && com.bamnat.core.layout.Contrast.ratio(fillNow or 0xFF000000L, inkNow or 0xFF000000L) < 4.5) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("채우기와 글자 색이 비슷해 잘 안 보일 수 있어요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { set("ink", null) }) { Text("저절로 맞추기") }
+                }
+            } else if (fillNow != null && inkNow == null) {
+                Text("글자 색을 비워 두면 채우기에 맞춰 잘 보이는 색으로 그려요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             LabeledSlider("자간", num("track") ?: 0f, -5f..30f, "%") { set("track", it.toLong()) }
             LabeledSlider("줄 간격", num("leading") ?: 120f, 80f..300f, "%") { set("leading", it.toLong()) }
             Chips(listOf(null to "처음대로", false to "바로", true to "기울임"), line["italic"] as? Boolean) { set("italic", it) }
@@ -160,6 +181,9 @@ internal fun PartsTool(
 }
 
 /** The states that mean something for a part. */
+internal fun partWords(id: String, on: String?): String =
+    (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + (STATE_WORDS[it] ?: it) } ?: "")
+
 private fun statesFor(id: String): List<String> = when {
     id.startsWith("cal.cell") -> listOf("today", "sat", "sun", "holiday", "dim", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off")
     id == "cal.week.day" -> listOf("sat", "sun")

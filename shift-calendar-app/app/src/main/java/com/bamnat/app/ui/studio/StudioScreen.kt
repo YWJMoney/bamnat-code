@@ -217,6 +217,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var area by rememberSaveable { mutableStateOf(Area.CALENDAR) }
     var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
+    var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
@@ -526,6 +527,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                 }
                 HorizontalDivider()
+                // [BLU-06] Which part the tools below change, kept in sight while they scroll (PC 1차 사용성 제안).
+                if ((if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS) partNow?.let { (pid, pon) ->
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                        Text("${partWords(pid, pon)} 고치는 중", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                    }
+                }
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     area.target?.takeIf { it.restricted }?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -546,7 +555,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
                         Tool.SEED -> SeedTool(vm, d)
-                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts) { v -> vm.change { it.copy(parts = v) } }
+                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, onFocus = { pid, pon -> partNow = pid to pon }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
@@ -1022,15 +1031,22 @@ private fun resetTab(tab: String, d: com.bamnat.app.data.AppSettings, b: com.bam
         val keep = now.looks.filterKeys { !keys(it) } + was.looks.filterKeys(keys)
         return ScreenLooks(keep).encode()
     }
+    // [BLU-05] That screen's 부품 lines back to where they started, the other screens' parts as they are.
+    fun parts(vararg roots: String): String {
+        val r = roots.toSet()
+        val keep = com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.filterNot { LookParts.under(it["id"] as? String, r) } +
+            com.bamnat.core.recipe.Blueprint.decode(b.parts).lines.filter { LookParts.under(it["id"] as? String, r) }
+        return if (keep.isEmpty()) "" else com.bamnat.core.recipe.Blueprint(keep).encode()
+    }
     return when (tab) {
         TabOrder.CALENDAR -> d.copy(calView = b.calView, calTheme = b.calTheme, calendarLayout = b.calendarLayout, photoLook = b.photoLook,
-            screenLooks = screens { it == "calendar" })
-        TabOrder.MEMOS -> d.copy(memoLook = b.memoLook, memoLayout = b.memoLayout, screenLooks = screens { it == "memo" })
-        TabOrder.MONEY -> d.copy(moneyLook = b.moneyLook, moneyLayout = b.moneyLayout, screenLooks = screens { it == "money" })
-        TabOrder.STATS -> d.copy(statsLayout = b.statsLayout, payLooks = b.payLooks, screenLooks = screens { it == "stats" || it.startsWith("pay.") })
+            screenLooks = screens { it == "calendar" }, parts = parts("cal"))
+        TabOrder.MEMOS -> d.copy(memoLook = b.memoLook, memoLayout = b.memoLayout, screenLooks = screens { it == "memo" }, parts = parts("memo"))
+        TabOrder.MONEY -> d.copy(moneyLook = b.moneyLook, moneyLayout = b.moneyLayout, screenLooks = screens { it == "money" }, parts = parts("money"))
+        TabOrder.STATS -> d.copy(statsLayout = b.statsLayout, payLooks = b.payLooks, screenLooks = screens { it == "stats" || it.startsWith("pay.") }, parts = parts("pay"))
         TabOrder.PLAZA -> d.copy(screenLooks = screens { it == ScreenLooks.PLAZA })
-        LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook)
-        else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) })
+        LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook, parts = parts("widget"))
+        else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) }, parts = parts("app"))
     }
 }
 

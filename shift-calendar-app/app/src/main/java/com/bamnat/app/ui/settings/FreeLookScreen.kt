@@ -594,7 +594,14 @@ internal fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> 
 internal fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String, onDone: (Float) -> Unit) {
     var v by remember(value) { mutableFloatStateOf(value) }
     Column {
-        Text("$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium)
+        // [BLU-06] 1.36 −/+ for a value hard to hit with a finger on the slider (PC 1차 사용성 제안 '둥글기 −/+').
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.TextButton(onClick = { v = (v.toInt() - 1).toFloat().coerceIn(range); onDone(v) }, enabled = v > range.start,
+                modifier = Modifier.semantics { contentDescription = "$label 하나 줄이기" }) { Text("−") }
+            androidx.compose.material3.TextButton(onClick = { v = (v.toInt() + 1).toFloat().coerceIn(range); onDone(v) }, enabled = v < range.endInclusive,
+                modifier = Modifier.semantics { contentDescription = "$label 하나 늘리기" }) { Text("+") }
+        }
         Slider(v, { v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
     }
 }

@@ -158,4 +158,22 @@ class BlueprintTest {
         }
         assertTrue(some > 0)
     }
+
+    @Test
+    fun partsCountAsChangesScreenByScreen() {
+        fun r(lines: List<Map<String, Any?>>) = Recipe(title = "t", styles = setOf(WorkStyle.SHIFT), pieces = if (lines.isEmpty()) emptyList() else listOf(Piece(PieceKind.PARTS, mapOf("parts" to Blueprint.clean(lines)))))
+        val before = r(listOf(mapOf("id" to "memo.card", "r" to 12L)))
+        val now = r(listOf(mapOf("id" to "memo.card", "r" to 12L), mapOf("id" to "cal.head.title", "fill" to 0xFFFFC107L), mapOf("id" to "cal.cell.date", "on" to "today", "fill" to 0xFFFFF4CCL)))
+        // PC 1차 (328a5123): 부품 꾸밈이 바꾼 곳에 안 잡혔어요.
+        assertEquals(listOf("cal.parts"), LookParts.changed(before, now))
+        assertEquals(listOf("cal.parts", "memo.parts"), LookParts.of(now).map { it.id })
+        @Suppress("UNCHECKED_CAST")
+        val cal = LookParts.pick(now, listOf("cal.parts")).pieces.single().values["parts"] as List<Map<String, Any?>>
+        assertEquals(setOf("cal.head.title", "cal.cell.date"), cal.map { it["id"] }.toSet())
+        // 조각 얹기 lays line over line: the memo card stays, the title takes the new fill.
+        val laid = LookParts.layer(before, r(listOf(mapOf("id" to "cal.head.title", "fill" to 0xFF000000L))))
+        @Suppress("UNCHECKED_CAST")
+        val lines = laid.pieces.single().values["parts"] as List<Map<String, Any?>>
+        assertEquals(setOf("memo.card", "cal.head.title"), lines.map { it["id"] }.toSet())
+    }
 }

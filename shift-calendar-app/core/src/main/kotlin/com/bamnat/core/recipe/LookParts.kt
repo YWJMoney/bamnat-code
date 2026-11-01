@@ -25,6 +25,8 @@ object LookParts {
         data class Keys(override val kind: PieceKind, val keys: Set<String>? = null) : Take
         /** Some screens of 화면 색·배경 ([ScreenLooks] keys); [pay] also takes 급여 모양. */
         data class Screens(val screens: (String) -> Boolean, val pay: Boolean = false) : Take { override val kind = PieceKind.SCREEN_LOOK }
+        /** [BLU-05] 1.36 부품 꾸미기: the blueprint lines of the parts under [roots] (`cal` takes `cal`, `cal.head.title` …). */
+        data class Parts(val roots: Set<String>) : Take { override val kind = PieceKind.PARTS }
     }
 
     data class Part(val id: String, val tab: String, val label: String, val takes: List<Take>)
@@ -54,7 +56,17 @@ object LookParts {
         Part("app.tabs", TabOrder.SETTINGS, "아래 탭 순서", listOf(Take.Keys(PieceKind.LAYOUT, setOf("tabs")))),
         Part("app.corners", TabOrder.SETTINGS, "모서리", listOf(Take.Keys(PieceKind.PHOTO_LOOK, setOf("corners")))),
         Part("widget", WIDGET, "위젯", listOf(Take.Keys(PieceKind.WIDGET), Take.Keys(PieceKind.PHOTO_LOOK, setOf("widget")))),
+        // [BLU-05] 1.36 부품 꾸미기, one part per screen, so 바꾼 곳·부분만 담기·처음대로 see them like the rest.
+        Part("cal.parts", TabOrder.CALENDAR, "달력 부품", listOf(Take.Parts(setOf("cal")))),
+        Part("memo.parts", TabOrder.MEMOS, "메모 부품", listOf(Take.Parts(setOf("memo")))),
+        Part("money.parts", TabOrder.MONEY, "가계부 부품", listOf(Take.Parts(setOf("money")))),
+        Part("stats.parts", TabOrder.STATS, "급여 부품", listOf(Take.Parts(setOf("pay")))),
+        Part("app.parts", TabOrder.SETTINGS, "앱 전체 부품", listOf(Take.Parts(setOf("app")))),
+        Part("widget.parts", WIDGET, "위젯 부품", listOf(Take.Parts(setOf("widget")))),
     )
+
+    /** Whether the blueprint part [id] sits under one of [roots]. */
+    fun under(id: String?, roots: Set<String>): Boolean = id != null && roots.any { id == it || id.startsWith("$it.") }
 
     fun byId(id: String): Part? = ALL.firstOrNull { it.id == id }
 
@@ -67,6 +79,8 @@ object LookParts {
             val pay = (values["pay"] as? String)?.takeIf { t.pay && it.isNotEmpty() }
             listOfNotNull(screens?.let { "screens" to it }, pay?.let { "pay" to it }).toMap().takeIf { it.isNotEmpty() }
         }
+        is Take.Parts -> (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.filter { under(it["id"] as? String, t.roots) }
+            ?.takeIf { it.isNotEmpty() }?.let { mapOf("parts" to it) }
     }
 
     /** The parts [r] has, in the order of [TABS]. */
@@ -88,6 +102,14 @@ object LookParts {
     /** Two parts of one piece together ([ScreenLooks] screens joined, the rest key by key). */
     private fun merge(kind: PieceKind, a: Map<String, Any?>?, b: Map<String, Any?>): Map<String, Any?> {
         if (a == null) return b
+        if (kind == PieceKind.PARTS) {
+            // Line by line: [b]'s line for a part and state takes the place of [a]'s, the others stay.
+            fun lines(m: Map<String, Any?>) = (m["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>().orEmpty()
+            fun key(l: Map<String, Any?>) = listOf(l["id"], l["on"], l["when"])
+            val over = lines(b)
+            val keys = over.map(::key).toSet()
+            return mapOf("parts" to (lines(a).filterNot { key(it) in keys } + over).sortedWith(compareBy({ it["id"] as? String }, { it["on"] as? String ?: "" })))
+        }
         if (kind != PieceKind.SCREEN_LOOK) return a + b
         val screens = listOfNotNull(a["screens"] as? String, b["screens"] as? String).map { ScreenLooks.decode(it) }
             .fold(ScreenLooks()) { acc, s -> s.looks.entries.fold(acc) { x, (k, l) -> x.with(k, l) } }.encode().takeIf { it.isNotEmpty() }

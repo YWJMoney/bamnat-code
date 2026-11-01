@@ -69,14 +69,16 @@ fun fontOf(id: String?): FontFamily? = when (id) {
 
 /** [base] with the part's letters over it. Size is in sp, so 큰 글자 still grows it. */
 fun PartStyle.text(base: TextStyle = TextStyle.Default): TextStyle {
-    if (font == null && size == null && weight == null && ink == null && track == null && leading == null && italic == null && talign == null) return base
+    // [BLU-05] A part with its own strong fill and no 글자 색 reads in black or white, whichever stands out on it (PC 1차 사용성 제안).
+    val auto = if (ink == null) fillColor?.takeIf { it.alpha >= 0.5f }?.let { com.bamnat.app.ui.components.contentColorOn(it.copy(alpha = 1f)) } else null
+    if (font == null && size == null && weight == null && ink == null && auto == null && track == null && leading == null && italic == null && talign == null) return base
     val s = size?.sp ?: base.fontSize
     return base.merge(
         TextStyle(
             fontFamily = fontOf(font),
             fontSize = size?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,
             fontWeight = weight?.let { FontWeight(it) },
-            color = ink?.partColor() ?: Color.Unspecified,
+            color = ink?.partColor() ?: auto ?: Color.Unspecified,
             letterSpacing = track?.let { (it / 100).em } ?: androidx.compose.ui.unit.TextUnit.Unspecified,
             lineHeight = leading?.let { if (s.isSp) (s.value * it / 100f).sp else (it / 100f).em } ?: androidx.compose.ui.unit.TextUnit.Unspecified,
             fontStyle = italic?.let { if (it) FontStyle.Italic else FontStyle.Normal },

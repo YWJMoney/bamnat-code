@@ -1109,12 +1109,15 @@ internal fun CustomCellBody(
     }
     val memoShown = texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
-    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(Modifier.partBox(mp, RoundedCornerShape(4.dp))) {
+    val markShape = mp.takeIf { it.corners.any { c -> c != null } }?.shape(RoundedCornerShape(4.dp))
+    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(Modifier.partBox(mp, markShape ?: RoundedCornerShape(4.dp))) {
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.components.LocalBadgeShape provides markShape) {
         when (mark) {
             "none", "fill" -> {}
             "line" -> if (barColor != null) Box(Modifier.fillMaxWidth().height(4.dp).background(barColor, RoundedCornerShape(2.dp))) else dayMark(14.dp)
             "dot" -> if (barColor != null) ColorDot(barColor, size = 7.dp) else dayMark(12.dp)
             else -> dayMark(mp.h?.dp ?: markSize)
+        }
         }
     } }
     val dateBlock: @Composable () -> Unit = {
@@ -1139,6 +1142,8 @@ internal fun CustomCellBody(
                     fontSize = size, lineHeight = size, maxLines = 1,
                     color = when {
                         dp.ink != null -> Color(dp.ink!!.toInt())
+                        // [BLU-05] A fill the blueprint gives the date brings letters that read on it (PC 1차: 노랑 위 흰 글자).
+                        dp.fillColor != null && chip.alpha >= 0.5f -> com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
                         isToday -> todayColor?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: scheme.onPrimary
                         chip != Color.Transparent -> com.bamnat.app.ui.components.contentColorOn(chip)
                         else -> dateInk
