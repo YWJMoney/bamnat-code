@@ -114,6 +114,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     val state: StateFlow<State> = _state.asStateFlow()
     private var beforeWear: Map<String, String>? = null
 
+    /** The 보관함 ids last seen on the studio screen, so what came in while 장터 was open is said on the way back. */
+    var seenKept: Set<Long>? = null
+
     init {
         when {
             start == START_PLAIN -> startPlain()
@@ -207,7 +210,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         ?: when (val o = s.origin) {
             is Origin.Fresh -> o.title
             is Origin.Plain -> "처음 모양에서 새로"
-            else -> "지금 모양 고치기"
+            else -> "지금 모양에서 꾸미던 것"
         } + " · " + com.bamnat.core.time.Today.date().let { "${it.monthValue}/${it.dayOfMonth}" }).take(30)
 
     private fun mineTitle(): String = c.wardrobe.lease.value.worn?.let { "지금 모양 · ${it.title}" } ?: "지금 내 모양"
@@ -697,12 +700,19 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * [STU-26] 1.36 빌드 8 (S29: 가계부만 바꿔 올렸는데 테마 전체가 올라감): the one tab every change of the look is on, so 올리기 can send
      * that tab alone as a 기능별 탭; null when nothing changed or the changes are on more than one tab.
      */
-    fun changedTab(): String? {
+    fun changedTab(): String? = changedTabs().singleOrNull()?.takeIf { changedTabsAll().size == 1 }
+
+    /**
+     * 사용자 2026-11-01 ("개별 가계부·달력·메모·근무 급여는 해당 탭만 만들어서 올릴 수도"): every tab the changes are on (설정 aside), so
+     * 올리기 can send any one of them alone as a 기능별 탭, also when more than one tab was changed.
+     */
+    fun changedTabs(): List<String> = changedTabsAll().filter { it != com.bamnat.core.layout.TabOrder.SETTINGS }
+
+    private fun changedTabsAll(): List<String> {
         val s = _state.value
         val all = WorkStyle.entries.toSet()
         val ids = com.bamnat.core.recipe.LookParts.changed(Recipe("b", styles = all, pieces = s.basePieces), Recipe("d", styles = all, pieces = s.pieces))
-        val tabs = com.bamnat.core.recipe.LookParts.ALL.filter { it.id in ids }.map { it.tab }.distinct()
-        return tabs.singleOrNull()?.takeIf { it != com.bamnat.core.layout.TabOrder.SETTINGS }
+        return com.bamnat.core.recipe.LookParts.ALL.filter { it.id in ids }.map { it.tab }.distinct()
     }
 
     /** [onlyTab] sends that tab's looks alone (a 기능별 탭, no 기능); null sends the whole theme with its 기능. */

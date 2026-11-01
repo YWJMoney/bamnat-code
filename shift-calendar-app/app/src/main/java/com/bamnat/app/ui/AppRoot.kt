@@ -1497,7 +1497,7 @@ private fun AppNavHost(
             // [STU-21] 1.36 올리기 happens inside the studio; once up, the recipe opens in place of it.
             com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onOpen = { code ->
                 nav.navigate(Routes.recipe(code)) { popUpTo(Routes.STUDIO) { inclusive = true } }
-            })
+            }, onMarket = if (container.recipes.on.value && container.recipeApi.enabled) { kind -> nav.navigate(Routes.recipes(kind = kind)) { launchSingleTop = true } } else null)
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }

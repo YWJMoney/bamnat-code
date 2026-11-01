@@ -1,5 +1,6 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.recipe.MakerPage
@@ -88,6 +89,19 @@ class RCScreenshotTest : ScreenshotBase() {
 
     private fun starters() = Starters().also { c.recipeApi = it }
     private fun style(s: WorkStyle) = c.settingsRepository.update { it.copy(workStyle = s) }
+
+    /** 사용자 2026-11-01: 스튜디오 › 보관함 › 장터에서 찾기 opens 장터 on this area's 구간, and 뒤로 comes back to the studio as it was. */
+    @Test fun studioBoxOpensMarketAndComesBack() { starters(); style(WorkStyle.SHIFT); shoot("1349_rcp_studio_market", PHONE) {
+        tab(4, wide = false)
+        tapText("공방", exact = true)
+        tapText("지금 모양 고치기", exact = true)
+        tapText("보관함", prefix = true)
+        tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
+        assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
+        assertTrue(appears("탭 하나를 전문으로", exact = true))
+        back()
+        assertTrue("뒤로 → the studio", appears("앱 화면", exact = true))
+    } }
 
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {
         starters()

@@ -540,7 +540,8 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     val pick = rememberPhotoPicker(LookImages.Slot.BG, onPicked = { id -> problem = null; onChange(l.copy(photo = id)) }, onProblem = { problem = it })
     val picture = rememberLookPicture(l.photo)
     if (target != FreeTarget.ALL) Text("비워 둔 것은 ‘앱 전체’를 따라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    ColorPick("배경색", l.bg) { onChange(l.copy(bg = it)) }
+    // PC 확인 W45 1.36 (색·배경에 바탕색 칸이 없음 — '배경색'으로 따로 불려 못 찾음): one word, 바탕색, as 한 색 and 위젯 say it.
+    ColorPick("바탕색", l.bg) { onChange(l.copy(bg = it)) }
     Group("배경 사진") {
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -571,7 +572,7 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
 }
 
 internal fun colorSummary(l: ScreenLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
-    "배경색".takeIf { l.bg != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
+    "바탕색".takeIf { l.bg != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
     "강조색".takeIf { l.accent != null }, l.emoji,
 ).joinToString(" · ")
 
@@ -687,10 +688,14 @@ private fun StepButton(text: String, description: String, enabled: Boolean, onSt
     }
 }
 
+/** How many of [SWATCHES] are the light ones (the top row). */
+private const val LIGHT_SWATCHES = 10
+
 private val SWATCHES: List<Long> = listOf(
     0xFFFFFFFF, 0xFFF7F8FC, 0xFFFFF8E1, 0xFFFFF4CC, 0xFFFFE2CC, 0xFFFFDDE4, 0xFFE6DDFF, 0xFFD9E7FF, 0xFFCFF3EA, 0xFFE8F5D0,
-    0xFFF2994A, 0xFFE5484D, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF00A3C4, 0xFF00857A, 0xFF27AE60, 0xFF8E9AAF, 0xFF4A5068,
-    0xFF1B1B1B, 0xFF0F1220, 0xFF1E335C, 0xFF16443B, 0xFF4D2230,
+    // PC 제안 1.36: the deep row by kind of colour, each kind light to dark, 검정 last.
+    0xFFF2994A, 0xFFE5484D, 0xFF4D2230, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF8E9AAF, 0xFF4A5068, 0xFF1E335C, 0xFF0F1220,
+    0xFF00A3C4, 0xFF00857A, 0xFF16443B, 0xFF27AE60, 0xFF1B1B1B,
 )
 
 /**
@@ -717,7 +722,8 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
     fun pick(c: Long?) { c?.let(memory.used); onPick(c) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            // PC 확인 1.36 (색·배경의 바탕색 줄에 이름표가 안 보임): the colour's name as a heading, like 배경 사진 above the rows.
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // [STU-40] ★ keeps this colour in 내 색 (or lets it go).
             if (value != null && memory.pin != null) TextButton(onClick = { memory.pin.invoke(value) }) {
@@ -725,6 +731,23 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             }
             if (allowNone && value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
         }
+        // PC 제안 1.36 (25개가 한 줄이라 넘기기 힘듦): two rows that scroll together — 최근·밝은 색 위, 진한·어두운 색 아래.
+        val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
+        val row = recent + SWATCHES
+        val names = remember(row) { colorNames(row) }
+        @Composable fun Dot(i: Int) {
+            val c = row[i]
+            val on = value == c
+            Box(
+                Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
+                    .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
+            )
+        }
+        val split = recent.size + LIGHT_SWATCHES
+        // PC 제안 1.36: on a new phone, where the colours used will gather.
+        if (recent.isEmpty() && memory.pin != null) Text("쓴 색과 ★ 내 색은 줄 맨 앞에 모여요", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -732,17 +755,14 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-            val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
-            val row = recent + SWATCHES
-            val names = remember(row) { colorNames(row) }
-            row.forEachIndexed { i, c ->
-                if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                val on = value == c
-                Box(
-                    Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
-                        .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    for (i in 0 until split) {
+                        if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        Dot(i)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { for (i in split until row.size) Dot(i) }
             }
         }
     }
@@ -809,13 +829,10 @@ internal fun colorName(c: Long): String {
     // PC 확인 W33 1.36 (흰 동그라미 셋이 모두 '흰 색'): greys by how light, near-whites by their hint of colour.
     if (a[1] < 0.04f) return when { a[2] > 0.97f -> "흰색"; a[2] > 0.85f -> "밝은 회색"; a[2] > 0.6f -> "회색"; a[2] > 0.25f -> "진한 회색"; else -> "검정" }
     val hue = when { a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
-        a[0] < 250 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍" }
+        a[0] < 245 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍" }
     if (a[1] < 0.12f) return if (a[2] > 0.85f) "아주 연한 $hue" else "회색빛 $hue"
     // PC 확인 1.36 (연한 파랑이 셋: 하늘색·연보라·회청색): a dull one is 회색빛, not 연한.
-    val tone = when { a[2] < 0.25f -> "어두운"; a[1] < 0.25f && a[2] < 0.8f -> "회색빛"; a[1] < 0.25f -> "연한"; else -> "" }
-    val kind = when {
-        a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
-        a[0] < 260 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍"
-    }
-    return listOf(tone, kind).filter { it.isNotEmpty() }.joinToString(" ")
+    // PC 확인 1.36 ('어두운 파랑'이 '짙은 파랑'과 헷갈림): the darkest say 아주 짙은, above the 밝은·짙은 of a group.
+    val tone = when { a[2] < 0.25f -> "아주 짙은"; a[1] < 0.25f && a[2] < 0.8f -> "회색빛"; a[1] < 0.25f -> "연한"; else -> "" }
+    return listOf(tone, hue).filter { it.isNotEmpty() }.joinToString(" ")
 }

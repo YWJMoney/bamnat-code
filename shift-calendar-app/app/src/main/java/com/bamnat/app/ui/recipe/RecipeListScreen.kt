@@ -304,6 +304,14 @@ fun RecipeListScreen(
                 // [R136-05] 1.36 (리뷰 R-11, 관리자 개발사항 d8quAdDH7r3QKNMp): an empty list could only be read again by closing the
                 // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // PC 제안 1.36 (기능별 탭 › 달력이 비면 무엇이 없는지 말이 없음): that tab's name, and the way to make the first.
+                    val tabNow = state.kind?.takeIf { it.startsWith(RecipeClient.SCOPE_TAB) }?.removePrefix(RecipeClient.SCOPE_TAB)?.takeIf { it.isNotEmpty() }
+                    if (tabNow != null && state.query.isBlank()) {
+                        Text("${marketTabLabel(tabNow, vm.style)} 탭 작품이 아직 없어요", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row { TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }; TextButton(onClick = { vm.load() }) { Text("다시 불러오기") } }
+                        return@Column
+                    }
                     Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
                         "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
