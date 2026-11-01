@@ -141,7 +141,12 @@ data class Lineage(val parents: List<RecipeItem?>, val children: List<RecipeItem
 data class RecipeRequest(
     val id: String, val style: WorkStyle?, val body: String, val likes: Int, val state: String, val code: String?, val at: Instant,
     val mine: Boolean, val taking: Boolean, val liked: Boolean,
+    /** 1.36 [GRW-03] 스튜디오 요구가 모여 저절로 올라온 줄이면 부탁한 분 수. */
+    val askers: Int = 0,
 )
+
+/** 1.36 [GRW-05] 모두의 도구: 많이 쓰이고 7일 뒤에도 쓰는 장터 작품(표 수가 아니라 쓴 사람 수로 올라와요). */
+data class CommonTool(val code: String, val title: String, val summary: String, val users: Int, val kept: Int?, val tierName: String)
 
 /** [RCX-05][RCX-06] A maker's page; [PRF-01] 1.36 the 창작자 프로필 on it. */
 data class MakerPage(
@@ -261,6 +266,8 @@ interface RecipeApi {
     /** [RCX-02] The newest version of each code (no device sent). */
     suspend fun versions(codes: List<String>): Map<String, Int> = emptyMap()
     suspend fun requests(device: String?, style: WorkStyle?): List<RecipeRequest> = emptyList()
+    /** 1.36 [GRW-05] 모두의 도구 (no device sent). */
+    suspend fun tools(style: WorkStyle?): List<CommonTool> = emptyList()
     suspend fun request(device: String, style: WorkStyle, body: String): String = throw CompanyException("offline")
     /** [what] like · take · done · delete; [on] false takes a like or a 만들게요 back; [code] for done. */
     suspend fun requestAct(device: String, id: String, what: String, on: Boolean = true, code: String? = null) {}
@@ -421,7 +428,14 @@ class RecipeClient(
         call("GET", "/api/recipes/requests" + (style?.let { "?style=${it.name}" } ?: ""), device = device).optJSONArray("items").objects().map { q ->
             RecipeRequest(q.getString("id"), WorkStyle.entries.firstOrNull { it.name == q.optString("style") }, q.optString("body"), q.optInt("likes"),
                 q.optString("state", "waiting"), q.optStringOrNull("code"), Instant.parse(q.getString("at")), q.optBoolean("mine"), q.optBoolean("taking"),
-                q.optBoolean("liked"))
+                q.optBoolean("liked"), q.optInt("askers"))
+        }
+    }
+
+    override suspend fun tools(style: WorkStyle?): List<CommonTool> = readCall {
+        call("GET", "/api/recipes/tools" + (style?.let { "?style=${it.name}" } ?: "")).optJSONArray("items").objects().map { t ->
+            CommonTool(t.getString("code"), t.optString("title"), t.optString("summary"), t.optInt("users"), if (t.isNull("kept") || !t.has("kept")) null else t.optInt("kept"),
+                t.optString("tierName", "모두의 도구"))
         }
     }
 

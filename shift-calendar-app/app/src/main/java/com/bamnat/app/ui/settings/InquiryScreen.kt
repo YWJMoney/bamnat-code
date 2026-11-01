@@ -548,7 +548,8 @@ private fun InquiryForm(
             }
         }
         StepTitle("1. 어떤 문의인가요?")
-        InquiryKind.entries.forEach { k ->
+        // 1.36 [GRW-01] 원하는 꾸미기 부탁은 스튜디오에서 열었을 때만 골라요.
+        InquiryKind.entries.filter { it != InquiryKind.STUDIO || kind == InquiryKind.STUDIO }.forEach { k ->
             KindOption(k, selected = kind == k) { kind = k }
         }
 
@@ -767,6 +768,7 @@ private fun placeholder(kind: InquiryKind?): String = when (kind) {
     InquiryKind.IDEA -> "예: 달력이 일요일부터 시작하면 좋겠어요"
     InquiryKind.COMPANY -> "예: OO공장 생산2팀이에요. 휴무일 근무는 8시간에 기본급 10%, 8시간 넘으면 0.5 가산이에요"
     InquiryKind.OTHER -> "예: 야간 근무 날 화면이 어두워져서 좋아요"
+    InquiryKind.STUDIO -> "예: 달력 칸마다 그라데이션 배경을 넣고 싶어요"
     else -> "예: 대근을 4시간만 하면 급여에 어떻게 들어가나요?"
 }
 
@@ -802,6 +804,7 @@ private fun InquiryKind.icon(): ImageVector = when (this) {
     InquiryKind.IDEA -> Icons.Outlined.Lightbulb
     InquiryKind.COMPANY -> Icons.Outlined.Apartment
     InquiryKind.OTHER -> Icons.Outlined.ChatBubbleOutline
+    InquiryKind.STUDIO -> Icons.Outlined.ChatBubbleOutline
 }
 
 @Composable
