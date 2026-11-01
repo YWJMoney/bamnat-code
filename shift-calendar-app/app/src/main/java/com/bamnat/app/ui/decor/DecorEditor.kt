@@ -163,7 +163,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
             size = if (kind == DecorKind.TEXT) (if (place == Decor.CELL) 8.0 else 14.0) else 14.0)
         onChange(null, Decor(items + item))
         picked = setOf(items.size)
-        said = "‘${item.label}’${eul(item.label)} 넣었어요. 판에서 끌어 옮기고, 두 손가락으로 키우고 돌려요"
+        said = "${quoted(item)}${eul(item.label)} 넣었어요. 판에서 끌어 옮기고, 두 손가락으로 키우고 돌려요"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -522,7 +522,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
     fun all(label: String?, f: (DecorItem) -> DecorItem) = set(label, f, picked)
     val part = partSize(place)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(if (picked.size == 1) "${first.kind.label} ‘${first.label}’" + (if (first.lock) " · 잠금" else "") else "${picked.size}개를 함께 고쳐요",
+        Text(if (picked.size == 1) "${first.kind.label} ${quoted(first)}" + (if (first.lock) " · 잠금" else "") else "${picked.size}개를 함께 고쳐요",
             style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         // 1 dp 화살표 (사용성 제안 '손가락으로 작은 스티커 위치를 정확히 맞추기 어려움').
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -754,3 +754,6 @@ internal fun eul(w: String): String {
     val c = w.lastOrNull { it in '가'..'힣' } ?: return "을(를)"
     return if ((c - '가') % 28 != 0) "을" else "를"
 }
+
+/** An item's name in a sentence: a text box's own words already stand in quotes. */
+private fun quoted(i: DecorItem): String = if (i.kind == DecorKind.TEXT) i.label else "‘${i.label}’"

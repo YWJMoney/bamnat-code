@@ -52,13 +52,13 @@ class LayScreenshotTest : ScreenshotBase() {
         tool()
         settle()
         assertTrue(appears("🧲 자석", exact = true))
-        assertTrue(appears("레이어", exact = true))
+        assertTrue(appears("레이어 3", exact = true))
     }
 
     @Test fun theLayersListEveryPieceInOrder() = shoot("1481_lay_layers", PHONE) {
         tool()
         settle()
-        tapText("레이어", exact = true)
+        tapText("레이어 3", exact = true)
         settle()
         assertTrue(appears("묶기", exact = true))
         assertTrue(appears("이번 달도 힘내기", exact = false))
@@ -68,9 +68,11 @@ class LayScreenshotTest : ScreenshotBase() {
         tool()
         settle()
         tapText("고급 보기", exact = true)
-        tapText("레이어", exact = true)
+        tapText("레이어 3", exact = true)
         settle()
         tapText("이번 달도 힘내기", exact = false)
+        settle()
+        tapText("고치기 1", exact = true)
         settle()
         assertTrue(appears("숫자로 맞추기", exact = true))
     }
