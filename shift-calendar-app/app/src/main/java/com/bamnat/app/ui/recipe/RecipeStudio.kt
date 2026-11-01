@@ -835,7 +835,6 @@ internal object StudioStarters {
         // [LAY-01] A star on every 25th, so turning 꾸밈 층 on shows something at once.
         PieceKind.DECOR -> com.bamnat.core.recipe.Decor(listOf(com.bamnat.core.recipe.DecorItem(com.bamnat.core.recipe.DecorKind.SHAPE, "star5",
             com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
-        PieceKind.PARTS -> emptyMap() // 갈래 A가 채워요(임시)
     }
 }
 

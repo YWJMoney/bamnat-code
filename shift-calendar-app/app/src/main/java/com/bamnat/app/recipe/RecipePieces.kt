@@ -163,7 +163,6 @@ class RecipePieces(private val c: AppContainer) {
         }
         // [LAY-01] 1.36 꾸밈 층.
         PieceKind.DECOR -> com.bamnat.core.recipe.Decor.decode(from.decor).takeIf { !it.isDefault }?.values()
-        PieceKind.PARTS -> null // 갈래 A가 채워요(임시)
         // [RCX-30] The phone's own picture ids; they become the server's when the recipe is sent ([LookImages.upload]).
         PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(from.photoLook).takeIf { !it.isDefault }?.let { l ->
             val ctx = c.appContext
@@ -248,7 +247,6 @@ class RecipePieces(private val c: AppContainer) {
             else listOf(Change(runCatching { c.companyShare.summarize(values["setup"] as String).let { s -> "근무 ${s.shiftTypes.size}가지와 순서, 급여 규칙" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
         PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
-        PieceKind.PARTS -> listOf(Change("부품 꾸미기", skipped = true)) // 갈래 A가 채워요(임시)
         // [RCX-30] Said from the recipe itself: its pictures come down only when it is put in.
         PieceKind.PHOTO_LOOK -> {
             val mine = types(cal)
@@ -429,7 +427,7 @@ class RecipePieces(private val c: AppContainer) {
                     .put("patterns", JSONArray(patterns.map { p -> patternJson(p) }))
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
-            PieceKind.BUNDLE, PieceKind.PARTS -> null
+            PieceKind.BUNDLE -> null
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
@@ -635,7 +633,7 @@ class RecipePieces(private val c: AppContainer) {
                 before.optJSONArray("added")?.let { a -> (0 until a.length()).forEach { runCatching { schedule.deleteShiftTypeUndoable(a.getLong(it)) } } }
                 before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
             }
-            PieceKind.BUNDLE, PieceKind.PARTS -> {}
+            PieceKind.BUNDLE -> {}
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR -> {
                 val sets = before.optJSONObject("settings") ?: return
