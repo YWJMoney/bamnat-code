@@ -135,12 +135,16 @@ internal fun startPlace(anchor: String, kind: DecorKind, n: Int, screenW: Float)
             val (a, b) = HeadLayout.free(screenW)
             val room = (b - a).coerceAtLeast(24f)
             val cx = ((a + b) / 2 / screenW * 1000).toInt().coerceIn(0, 1000)
-            if (kind == DecorKind.TEXT) StartPlace(cx, 500, (room - 6).toInt().coerceIn(36, 140), 22)
-            else StartPlace(cx, 500, minOf(w.toFloat(), room - 4).toInt().coerceAtLeast(14), minOf(h.toFloat(), room - 4).toInt().coerceAtLeast(14))
+            // PC 확인 C2-3 1.36 (글자가 조금 위로 붙어요): the top's line of buttons is 8 dp + 24 dp down its 56, not halfway.
+            if (kind == DecorKind.TEXT) StartPlace(cx, HEAD_LINE, (room - 6).toInt().coerceIn(36, 140), 22)
+            else StartPlace(cx, HEAD_LINE, minOf(w.toFloat(), room - 4).toInt().coerceAtLeast(14), minOf(h.toFloat(), room - 4).toInt().coerceAtLeast(14))
         }
         else -> StartPlace((500 + (n % 4) * 60).coerceAtMost(900), (500 + (n % 3) * 60).coerceAtMost(900), w, h)
     }
 }
+
+/** The 달력 머리's middle line, in ‰ of its height: 8 dp of space on top, then its 48 dp of buttons. */
+internal const val HEAD_LINE = 571
 
 internal data class StartPlace(val x: Int, val y: Int, val w: Int, val h: Int)
 
@@ -206,10 +210,15 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h,
             fill = if (kind == DecorKind.SHAPE) DEFAULT_FILLS[n % DEFAULT_FILLS.size] else null,
             fillA = if (glyph == "tape") 70 else 100,
-            size = if (kind == DecorKind.TEXT) (when (place) { Decor.CELL -> 8.0; Decor.HEAD -> 11.0; else -> 14.0 }) else 14.0)
+            size = if (kind == DecorKind.TEXT) (when (place) { Decor.CELL -> 8.0; Decor.HEAD -> 11.0; else -> 14.0 }) else 14.0,
+            // PC 확인 C2-1 1.36 (처음값 '모든 날'이라 넣자마자 모든 칸에 붙어요): a cell's new one stands on today's date, every month.
+            on = if (place == Decor.CELL) "d" + com.bamnat.core.time.Today.date().dayOfMonth else null)
         onChange(null, Decor(items + item))
         picked = setOf(items.size)
-        said = "${quoted(item)}${eul(item.label)} 넣었어요. 판에서 끌어 옮기고, 두 손가락으로 키우고 돌려요"
+        if (place == Decor.CELL) {
+            pane = Pane.EDIT
+            said = "${quoted(item)}${eul(item.label)} 매달 ${com.bamnat.core.time.Today.date().dayOfMonth}일 칸에 넣었어요. 아래 ‘어느 날에 붙일까요’에서 바꿔요"
+        } else said = "${quoted(item)}${eul(item.label)} 넣었어요. 판에서 끌어 옮기고, 두 손가락으로 키우고 돌려요"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -238,7 +247,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 // 사용성 제안 (사용자 2026-10-31 "얹은 뒤 그 자리에서 되돌리기"): right where it was said.
-                if (onUndo != null && line.endsWith("돌려요")) TextButton(onClick = { onUndo(); said = null; picked = emptySet() }) { Text("되돌리기") }
+                if (onUndo != null && "넣었어요" in line) TextButton(onClick = { onUndo(); said = null; picked = emptySet() }) { Text("되돌리기") }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -381,7 +390,7 @@ private fun Stage(items: List<DecorItem>, place: String, picked: Set<Int>, advan
                                 val others = start.filterIndexed { i, it -> i !in all && it.at == place && !it.hide }
                                 val xs = listOf(500f, 333f, 667f) + others.map { it.x.toFloat() } +
                                     listOf(halfW, 1000f - halfW) + others.flatMap { o -> val ow = o.w / 2f / part.width * 1000f; listOf(o.x - ow - halfW, o.x + ow + halfW) }
-                                val ys = listOf(500f, 333f, 667f) + others.map { it.y.toFloat() } +
+                                val ys = listOf(500f, 333f, 667f) + (if (place == Decor.HEAD) listOf(HEAD_LINE.toFloat()) else emptyList()) + others.map { it.y.toFloat() } +
                                     listOf(halfH, 1000f - halfH) + others.flatMap { o -> val oh = o.h / 2f / part.height * 1000f; listOf(o.y - oh - halfH, o.y + oh + halfH) }
                                 xs.minByOrNull { abs(it - nx) }?.takeIf { abs(it - nx) < tolX }?.let { gx = it; nx = it }
                                 ys.minByOrNull { abs(it - ny) }?.takeIf { abs(it - ny) < tolY }?.let { gy = it; ny = it }
@@ -585,6 +594,17 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(if (picked.size == 1) "${first.kind.label} ${quoted(first)}" + (if (first.lock) " · 잠금" else "") else "${picked.size}개를 함께 고쳐요",
             style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // PC 확인 C2-2 1.36 (넣자마자 '어느 날에 붙일까요'를 바로 보여 주기): a cell's day first, right under its name.
+        if (place == Decor.CELL) {
+            Text("어느 날에 붙일까요", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ON_CHOICES.forEach { o -> FilterChip(selected = first.on == o, onClick = { all(null) { it.copy(on = o) } }, label = { Text(Decor.onLabel(o)) }) }
+                FilterChip(selected = first.on?.startsWith("d") == true, onClick = { all(null) { it.copy(on = "d25") } }, label = { Text("매달 며칠") })
+                FilterChip(selected = first.on?.matches(Regex("w[1-7]")) == true, onClick = { all(null) { it.copy(on = "w1") } }, label = { Text("매주 요일") })
+                FilterChip(selected = first.on?.startsWith("m") == true, onClick = { all(null) { it.copy(on = "m1d1") } }, label = { Text("매년 그날") })
+            }
+            DayPinFields(first.on) { o -> all(null) { it.copy(on = o) } }
+        }
         // 1 dp 화살표 (사용성 제안 '손가락으로 작은 스티커 위치를 정확히 맞추기 어려움').
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             val stepX = (1000f / part.width).roundToInt().coerceAtLeast(1)
@@ -654,16 +674,6 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
         }
         SliderRow("투명도", first.alpha.toFloat(), 0f..100f, "%") { v -> all("꾸밈 투명도") { it.copy(alpha = v.roundToInt()) } }
         SliderRow("그림자", first.shadow.toFloat(), 0f..24f, "dp") { v -> all("꾸밈 그림자") { it.copy(shadow = v.roundToInt()) } }
-        if (place == Decor.CELL) {
-            Text("어느 날에 붙일까요", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ON_CHOICES.forEach { o -> FilterChip(selected = first.on == o, onClick = { all(null) { it.copy(on = o) } }, label = { Text(Decor.onLabel(o)) }) }
-                FilterChip(selected = first.on?.startsWith("d") == true, onClick = { all(null) { it.copy(on = "d25") } }, label = { Text("매달 며칠") })
-                FilterChip(selected = first.on?.matches(Regex("w[1-7]")) == true, onClick = { all(null) { it.copy(on = "w1") } }, label = { Text("매주 요일") })
-                FilterChip(selected = first.on?.startsWith("m") == true, onClick = { all(null) { it.copy(on = "m1d1") } }, label = { Text("매년 그날") })
-            }
-            DayPinFields(first.on) { o -> all(null) { it.copy(on = o) } }
-        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("날짜·근무 위로 올리기", style = MaterialTheme.typography.bodyMedium)
