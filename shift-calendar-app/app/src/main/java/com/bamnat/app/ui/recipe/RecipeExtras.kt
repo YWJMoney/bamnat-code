@@ -419,9 +419,12 @@ private fun PartCloseUp(unit: String, content: @Composable () -> Unit) {
         val l = boxes.minOf { it.left } - origin.x; val t = boxes.minOf { it.top } - origin.y
         val rr = boxes.maxOf { it.right } - origin.x
         val w = (rr - l).coerceAtLeast(1f)
-        val scale = (frameW * 0.92f / w).coerceIn(1f, 2.4f)
+        // PC 8차 (달력 머리 예시에서 오른쪽 날짜 칸이 조금 잘림): a part nearly as wide as the screen is shown at its own size, the whole
+        // width in view; a small one is made larger around its middle, never leaving an empty edge.
+        val scale = if (w >= frameW * 0.7f) 1f else (frameW * 0.92f / w).coerceIn(1f, 2.4f)
         val pad = with(density) { 24.dp.toPx() }
-        fit = Triple(scale, frameW / 2 - (l + w / 2) * scale, (pad - t * scale).coerceAtMost(0f))
+        val tx = if (scale == 1f) 0f else (frameW / 2 - (l + w / 2) * scale).coerceIn(frameW - frameW * scale, 0f)
+        fit = Triple(scale, tx, (pad - t * scale).coerceAtMost(0f))
     }
     androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))
         .onGloballyPositionedFrame { frameW = it }) {

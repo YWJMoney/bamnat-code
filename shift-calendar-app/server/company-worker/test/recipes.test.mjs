@@ -195,6 +195,18 @@ test("[RCP-28] 모두 지우기 takes a phone's recipes, votes and trust; a new 
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM recipe_versions").first()).n, 0);
 });
 
+test("[BLU-07] the same 판 sent again with another scope only moves it (PC 8차: 올린 판을 나만 보기로); the same scope is still 'same'", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const a = await up(call, 1, {}, "link");
+  const code = a.data.code;
+  const mine = await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: recipe(), scope: "private" }, from(1));
+  assert.equal(mine.status, 200);
+  assert.deepEqual([mine.data.version, mine.data.scope, mine.data.state], [1, "private", "visible"]);
+  assert.equal((await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: recipe(), scope: "private" }, from(1))).data.error, "same");
+  assert.equal((await call("GET", `/api/recipes/${code}`, undefined, { "x-device": device(1) })).data.scope, "private");
+});
+
 test("[RCP-36] the operator's own recipe is 공식 and listed at once; a 공개 자료 one is on its own tab", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });

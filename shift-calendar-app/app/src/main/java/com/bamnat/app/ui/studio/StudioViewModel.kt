@@ -437,6 +437,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         refresh(both = true)
     }
 
+    /** PC 8차 (따옴표가 ‘‘달력 머리 부품’의 부품 · 달력 머리’처럼 겹침): a kept title that already quotes its theme is not quoted again. */
+    private fun quoted(t: String): String = if (t.startsWith("‘")) t else "‘$t’"
+
     /**
      * [TRY-03] 보관함의 조각 얹기: [k]'s parts laid on the draft, the rest of the draft as it is. Someone else's part keeps where it came
      * from ([State.sources]): putting the look on follows that theme's days and ad, and 올리기 names it.
@@ -456,17 +459,17 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             } else c.recipes.pieces.onDraft(d, p.kind, p.values)
         }
         val was = _state.value.draft
-        where = "보관함 · ‘${k.title}’ 얹기"
+        where = "보관함 · ${quoted(k.title)} 얹기"
         // [STU-39] A locked tab keeps its look when a part is laid on.
         change { keepLocked(it, d) }
         val s = _state.value
         // Nothing changed (the same part again): no step to take back.
         val stepped = s.draft != was
         // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
-        if (!stepped) { _state.value = s.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
+        if (!stepped) { _state.value = s.copy(said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
         val same = overlap.mapNotNull { com.bamnat.core.recipe.BlueprintParts.LABELS[it] }.joinToString("·")
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" +
+            said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" +
                 (if (same.isNotEmpty()) ". 내가 꾸민 ‘$same’ 부품은 얹은 것으로 바뀌었어요. 되돌리기로 돌아가요" else ". 내가 꾸민 다른 부품은 그대로예요"),
             canUndoLayer = stepped)
     }
@@ -495,13 +498,13 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 runCatching { d.copy(parts = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean((keep + back).take(com.bamnat.core.recipe.BlueprintParts.MAX_LINES))).encode()) }.getOrDefault(d)
             } else c.recipes.pieces.onDraft(d, p.kind, p.values)
         }
-        where = "보관함 · ‘${k.title}’ 빼기"
+        where = "보관함 · ${quoted(k.title)} 빼기"
         change { d }
         val now = _state.value
         val left = now.layered - k
         _state.value = now.copy(layered = left,
             sources = if (k.own || left.any { it.from == k.from }) now.sources else now.sources - k.from,
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요")
+            said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요")
     }
 
     // ---- 입히기 · 저장 · 올리기 ----
