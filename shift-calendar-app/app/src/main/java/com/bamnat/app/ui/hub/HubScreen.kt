@@ -141,7 +141,9 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
     // PC 확인 1.36: a draft left in 올리기 (step 2 and on) comes back here too, its 이름·설명 kept.
     val left = drafts.filter { com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }.maxByOrNull { it.updatedAt }
     SoftCard { Column {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        // PC 확인 W39 1.36 (카드 제목·그림을 눌러도 아무 일 없음): the whole card opens the studio.
+        Row(Modifier.fillMaxWidth().clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             mine?.let { r ->
                 Box(Modifier.clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }) {
                     androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalOwnMonth provides true) {

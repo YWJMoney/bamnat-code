@@ -219,6 +219,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    var preparing by remember { mutableStateOf(false) }
     var uploadWhat by remember { mutableStateOf<String?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
@@ -374,14 +375,19 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             // PC 재검토 C11 (저장·올리기·입히기가 같은 무게): 내 앱에 입히기 is the one big button; 저장 and 올리기 are lighter.
                             TextButton(onClick = { checked { saving = true } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("저장") }
                             // [STU-21] 1.36 올리기 stays in the studio: 받는 분이 넣을 값 · 이름 · 설명 · 마치기 over it, back here with 스튜디오로.
+                            // PC 확인 W37 1.36 (올리기를 눌러도 몇 초 아무 표시가 없어 여러 번 누름): 준비 중 at once, one tap only.
                             TextButton(onClick = { checked {
+                                preparing = true
                                 // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
                                 val tab = vm.changedTab()
                                 takeShot()
-                                if (tab != null) uploadWhat = tab
-                                else { val (body, parent) = vm.upload(); publishing = Triple(body, parent, vm.nextOf()) }
-                            } },
-                                modifier = Modifier.heightIn(min = 48.dp)) { Text("올리기") }
+                                if (tab != null) { uploadWhat = tab; preparing = false }
+                                else scope.launch {
+                                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
+                                    publishing = Triple(body, parent, vm.nextOf()); preparing = false
+                                }
+                            } }, enabled = !preparing && publishing == null,
+                                modifier = Modifier.heightIn(min = 48.dp)) { Text(if (preparing) "준비 중…" else "올리기") }
                             Box(Modifier.weight(1f)) {
                                 WearButton(vm, s.busy) { go -> checked(go) }
                             }
@@ -451,7 +457,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                                 // [STU-25] 1.36 빌드 7: the phone's own weeks, as the example phone above shows them.
                                                 val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3)
                                                 CellWeeks(view, rows = if (scale >= 0.5f) 3 else 1, onCell = { i -> lookIndex = i; tool = Tool.CELL },
-                                                    start = my?.first, todayDate = my?.today, days = my?.days)
+                                                    start = my?.first, todayDate = my?.today, days = my?.days,
+                                                    todayColor = com.bamnat.core.recipe.CalendarTheme.decode(d.calTheme).today?.let { androidx.compose.ui.graphics.Color(it.toInt()) })
                                             }
                                             Area.MEMO -> com.bamnat.app.ui.memo.MemoLookSample(memoLook) { tool = Tool.MEMO_LOOK }
                                             Area.MONEY -> MoneySample(moneyLook) { tool = Tool.MONEY_LOOK }

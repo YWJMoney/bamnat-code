@@ -133,9 +133,11 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ShiftPalette.forEach { c ->
+                    // PC 확인 W33 1.36 (동그라미가 '#2F80ED'처럼 읽힘): said as colour names.
+                    val names = remember { com.bamnat.app.ui.settings.colorNames(ShiftPalette) }
+                    ShiftPalette.forEachIndexed { i, c ->
                         Box(Modifier.size(36.dp).clip(CircleShape).background(c.asColor()).clickable(onClickLabel = "이 색 고르기") { set(c) }
-                            .semantics { contentDescription = hexOf(c) })
+                            .semantics { contentDescription = names[i] })
                     }
                 }
                 // 채도 (left → right) and 밝기 (top → bottom) of the hue below.

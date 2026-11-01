@@ -142,7 +142,9 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         * [TRY-04] 1.36 (빌드 6 확인: 칸 디자인을 넣으면 예시가 가짜 달력으로 바뀌어 전·후가 다른 달력): the phone's own days from
                         * [start] with [todayDate], drawn in the looks, instead of the made-up weeks.
                         */
-                       start: LocalDate? = null, todayDate: LocalDate? = null, days: List<com.bamnat.app.ui.calendar.SampleDay>? = null) {
+                       start: LocalDate? = null, todayDate: LocalDate? = null, days: List<com.bamnat.app.ui.calendar.SampleDay>? = null,
+                       /** PC 확인 W38 1.36 (오늘 색을 바꿔도 예시의 오늘 동그라미가 파랑): the 오늘 colour being made, null for the app's own. */
+                       todayColor: Color? = null) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val first = start ?: LocalDate.of(2026, 11, 2)
@@ -178,7 +180,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(
                         view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null }, date = date, isToday = isToday,
-                        numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = null, holidayName = null, hasMemo = s.memo != null,
+                        numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
                         alarmOff = false, marks = emptyList(), barColor = color.takeIf { !s.off },
                         dayMark = { size ->
                             Box(Modifier.size(size).background(if (s.off) Color.Transparent else color, RoundedCornerShape(4.dp))
@@ -633,13 +635,15 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
             val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
-            (recent + SWATCHES).forEachIndexed { i, c ->
+            val row = recent + SWATCHES
+            val names = remember(row) { colorNames(row) }
+            row.forEachIndexed { i, c ->
                 if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
                 val on = value == c
                 Box(
                     Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
                         .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .clickable { pick(c) }.semantics { contentDescription = "$label ${colorName(c)}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
+                        .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
                 )
             }
         }
@@ -682,8 +686,15 @@ private fun CustomColorDialog(start: Long, onDismiss: () -> Unit, onDone: (Long)
 
 private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0')
 
+/** PC 확인 W33 1.36 (흰색 둘, 연한 파랑 둘): each colour of a row said in words, a number added where two read the same. */
+internal fun colorNames(cs: List<Long>): List<String> {
+    val names = cs.map(::colorName)
+    val seen = mutableMapOf<String, Int>()
+    return names.map { n -> if (names.count { it == n } < 2) n else "$n ${seen.merge(n, 1, Int::plus)}" }
+}
+
 /** A colour said in words for 화면 읽기: light or dark and its kind. */
-private fun colorName(c: Long): String {
+internal fun colorName(c: Long): String {
     val a = FloatArray(3)
     android.graphics.Color.colorToHSV(c.toInt(), a)
     // PC 확인 W33 1.36 (흰 동그라미 셋이 모두 '흰 색'): greys by how light, near-whites by their hint of colour.

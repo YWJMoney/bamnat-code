@@ -133,6 +133,8 @@ class RecipeMakeViewModel(
         val parentTitle: String? = null,
         /** [THM-03] 사진 빼고 올리기: the pictures stay on this phone only. */
         val bare: Boolean = false,
+        /** PC 확인 W37 1.36: the recipe is in (until then the screen says 준비 중). */
+        val ready: Boolean = false,
     )
 
     /** [THM-01] One of my themes (or a new one, [com.bamnat.app.recipe.RecipeLinks.NEW_OWN]) sent from 스튜디오: in 장터 once it is up. */
@@ -143,8 +145,15 @@ class RecipeMakeViewModel(
 
     init {
         viewModelScope.launch {
-            val mine = PieceKind.entries.associateWith { k -> runCatching { c.recipes.pieces.export(k, calendar) }.getOrNull() }
+            // PC 확인 W37 1.36 (올리기를 누르고 6초쯤 아무 표시 없음): a recipe handed in (스튜디오의 올리기) shows at once; what this phone
+            // has for every piece (only 고르기 needs it) is read after, off the main thread.
+            val early = from?.let { lenient(it)?.copy(parent = parent?.takeIf { p -> p.isNotBlank() }) }
+            if (early != null) _state.value = _state.value.copy(recipe = early, chosen = early.pieces.map { it.kind }.toSet(), ready = true)
+            val mine = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                PieceKind.entries.associateWith { k -> runCatching { c.recipes.pieces.export(k, calendar) }.getOrNull() }
+            }
             val start = when {
+                early != null -> early
                 from != null -> lenient(from)?.copy(parent = parent?.takeIf { it.isNotBlank() }) // F-99: my own look has no parent ("" is no code)
                 draftId != 0L -> c.database.recipeDao().drafts().firstOrNull { it.id == draftId }?.let { d ->
                     _state.value = _state.value.copy(step = d.step, scope = d.scope); lenient(d.body)
@@ -154,7 +163,9 @@ class RecipeMakeViewModel(
             // [RCX-31] A draft from before kept 최저임금 with its amount in the hint, which the amount check then refused.
             val r = (start ?: blank()).let { d -> d.copy(inputs = d.inputs.map { i -> if (i.hint.contains("최저임금") && i.hint.any(Char::isDigit)) i.copy(hint = WAGE_HINT) else i }) }
             val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(kind)
-            _state.value = _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine)
+            // A recipe already shown keeps what was changed in it meanwhile (받는 분 값, 이름).
+            _state.value = if (early != null) _state.value.copy(mine = mine)
+                else _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine, ready = true)
             val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
             val mineUp = runCatching { c.recipeApi.mine(c.companyStore.device).items.map { it.first.code to it.first.title } }.getOrDefault(emptyList())
             _state.value = _state.value.copy(bundleChoices = (mineUp + put).filter { it.first != code }.distinctBy { it.first }.take(20))
@@ -435,10 +446,15 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // 1.35 실사용 점검: say why 다음 does not go on.
                 when {
+                    !s.ready -> null
                     s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
                     s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
+                    // PC 확인 V36 1.36 (4/4의 빨간 줄이 아래 단추 줄에 가려짐): what holds 올리기 back also sits here, always in sight.
+                    s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
+                    s.step == 5 && s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜야 올라가요"
                     else -> null
-                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
+                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
@@ -464,6 +480,14 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 s.sent?.let { sent ->
                     SentCard(s.recipe.title, sent, onOpen)
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                    return@Column
+                }
+                if (!s.ready) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.CircularProgressIndicator(androidx.compose.ui.Modifier.width(24.dp).height(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("준비 중…", style = MaterialTheme.typography.bodyLarge)
+                    }
                     return@Column
                 }
                 when (s.step) {
@@ -734,6 +758,10 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         if (!RecipeLint.ready(lines) && first != null) TextButton(onClick = { if (first.fix != null) vm.fix(first) else vm.go(first.step) }) {
             Text(if (first.fix != null) "고치기" else "가기") }
     }
+    // PC 확인 W31 1.36: a '!' is advice — said so, and it never holds 올리기 back.
+    val advice = lines.count { it.level == RecipeLint.Level.WARN }
+    if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.tertiary)
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
