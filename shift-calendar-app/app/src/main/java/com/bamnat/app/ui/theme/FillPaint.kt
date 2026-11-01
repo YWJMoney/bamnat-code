@@ -130,6 +130,15 @@ internal fun linearBrush(fill: Fill.Linear, size: Size): Brush {
     return Brush.linearGradient(colorStops = stops(fill), start = Offset(c.x - dx * half, c.y - dy * half), end = Offset(c.x + dx * half, c.y + dy * half))
 }
 
+/** [MAT-02] A brush for a line in [fill]: gradients as they are, anything else (무늬·질감·유리·셰이더) in its average colour. */
+internal fun lineBrushOf(fill: Fill, size: Size): Brush = when (fill) {
+    is Fill.Linear -> linearBrush(fill, size)
+    is Fill.Radial -> Brush.radialGradient(colorStops = stops(fill), center = Offset(size.width * fill.cx / 100f, size.height * fill.cy / 100f),
+        radius = (minOf(size.width, size.height) * fill.radius / 100f).coerceAtLeast(1f))
+    is Fill.Sweep -> Brush.sweepGradient(colorStops = stops(fill), center = Offset(size.width * fill.cx / 100f, size.height * fill.cy / 100f))
+    else -> androidx.compose.ui.graphics.SolidColor(color(fill.average))
+}
+
 /** A [Shape] for a fill preview swatch with no outline of its own. */
 internal object SwatchShape : Shape {
     override fun createOutline(size: Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density): Outline =

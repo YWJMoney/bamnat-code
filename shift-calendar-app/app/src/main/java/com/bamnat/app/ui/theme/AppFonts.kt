@@ -29,9 +29,16 @@ object AppFonts {
         certificates = R.array.com_google_android_gms_fonts_certs,
     )
     private val cache = ConcurrentHashMap<String, FontFamily>()
+    @Volatile private var app: Context? = null
+
+    /** Called once at start so drawing that has no context of its own (부품 글자) can still reach the user's font files. */
+    fun init(c: Context) { app = c.applicationContext }
+
+    /** [id]'s family with the context from [init]; without it a user font stands in as the sans. */
+    fun family(id: String?): FontFamily? = family(app, id)
 
     /** [id]'s family, or null for the app's own (no font chosen). */
-    fun family(context: Context, id: String?): FontFamily? {
+    fun family(context: Context?, id: String?): FontFamily? {
         if (id == null) return null
         cache[id]?.let { return it }
         val made = when (id) {
@@ -42,11 +49,11 @@ object AppFonts {
             else -> FontCatalog.byId(id)?.family?.let { name ->
                 val g = GoogleFont(name, bestEffort = true)
                 FontFamily(Font(g, provider, FontWeight.Normal), Font(g, provider, FontWeight.Bold))
-            } ?: UserFonts.file(context, id)?.let { f ->
+            } ?: context?.let { UserFonts.file(it, id) }?.let { f ->
                 runCatching { FontFamily(androidx.compose.ui.text.font.Font(f)) }.getOrNull()
-            } ?: family(context, UserFonts.fallbackOf(context, id) ?: "sans")
+            } ?: family(context, context?.let { UserFonts.fallbackOf(it, id) } ?: "sans")
         } ?: FontFamily.SansSerif
-        cache[id] = made
+        if (context != null || !FontCatalog.isUser(id)) cache[id] = made
         return made
     }
 
@@ -78,7 +85,7 @@ fun Typography.inFamily(family: FontFamily?): Typography = if (family == null) t
  * its id and its stand-in; a phone without the file draws the stand-in.
  */
 object UserFonts {
-    data class Mine(val id: String, val name: String, val fallback: String, val open: Boolean, val bytes: Long)
+    data class Mine(val id: String, val name: String, val fallback: String, val open: Boolean, val bytes: Long, val received: Boolean = false)
 
     sealed interface Result {
         data class Added(val font: Mine) : Result
@@ -93,7 +100,7 @@ object UserFonts {
         runCatching {
             val o = JSONObject(f.readText())
             val id = f.name.removeSuffix(".json")
-            Mine(id, o.optString("name", "내 글꼴"), o.optString("fallback", "sans"), o.optBoolean("open"), File(dir(c), "$id.ttf").length())
+            Mine(id, o.optString("name", "내 글꼴"), o.optString("fallback", "sans"), o.optBoolean("open"), File(dir(c), "$id.ttf").length(), o.optBoolean("received"))
         }.getOrNull()?.takeIf { file(c, it.id) != null }
     }.sortedBy { it.name }
 
@@ -123,18 +130,35 @@ object UserFonts {
                 out.toByteArray()
             }
         }.getOrNull() ?: return Result.Problem("파일을 열지 못했어요")
+        return addBytes(c, bytes, name?.substringBeforeLast('.'), open = false)
+    }
+
+    /**
+     * [bytes] kept as a font named [name]: checked as a font the phone can read. [open] is what the user said of its licence, or
+     * true for a font that came with a recipe (its sender said so and the server keeps only such fonts).
+     */
+    fun addBytes(c: Context, bytes: ByteArray, name: String?, open: Boolean, received: Boolean = false): Result {
         if (!looksLikeFont(bytes)) return Result.Problem("TTF·OTF 글꼴 파일이 아니에요")
-        val id = "u" + MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }.take(16)
+        val id = idOf(bytes)
+        file(c, id)?.let { list(c).firstOrNull { m -> m.id == id }?.let { m -> return Result.Added(m) } }
+        if (list(c).size >= FontCatalog.USER_MAX_COUNT) return Result.Problem("내 글꼴은 ${FontCatalog.USER_MAX_COUNT}개까지 넣을 수 있어요. 안 쓰는 글꼴을 빼 주세요")
         val ttf = File(dir(c), "$id.ttf")
         ttf.writeBytes(bytes)
         val ok = runCatching { android.graphics.Typeface.Builder(ttf).build() != null }.getOrDefault(false)
         if (!ok) { ttf.delete(); return Result.Problem("이 글꼴은 휴대폰이 읽지 못해요") }
-        val shown = name?.substringBeforeLast('.')?.take(30)?.ifBlank { null } ?: "내 글꼴"
+        val shown = name?.take(30)?.ifBlank { null } ?: "내 글꼴"
         val guess = guessFallback(shown)
-        File(dir(c), "$id.json").writeText(JSONObject().put("name", shown).put("fallback", guess).put("open", false).toString())
+        File(dir(c), "$id.json").writeText(JSONObject().put("name", shown).put("fallback", guess).put("open", open).put("received", received).toString())
         AppFonts.forget(id)
-        return Result.Added(Mine(id, shown, guess, false, bytes.size.toLong()))
+        return Result.Added(Mine(id, shown, guess, open, bytes.size.toLong(), received))
     }
+
+    /** "u" + the first 16 hex of the file's SHA-256: the same on every phone and on the server. */
+    fun idOf(bytes: ByteArray): String = "u" + MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }.take(16)
+
+    /** Whether [id] was already sent to the server (so it is not sent again). */
+    fun sent(c: Context, id: String): Boolean = runCatching { JSONObject(File(dir(c), "$id.json").readText()).optBoolean("sent") }.getOrDefault(false)
+    fun markSent(c: Context, id: String) = edit(c, id) { it.put("sent", true) }
 
     /** Whether the maker lets others use it (OFL·공개 글꼴), as the user says; only such a font may be shared. */
     fun setOpen(c: Context, id: String, open: Boolean) = edit(c, id) { it.put("open", open) }

@@ -658,7 +658,7 @@ function adminApp(L, BUILD, M) {
       if (name === "recipes") {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", fonts: `/recipes/fonts?state=${S.fontState ?? "reported"}` }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
@@ -2229,7 +2229,7 @@ function adminApp(L, BUILD, M) {
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
   const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"]];
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
@@ -2258,6 +2258,7 @@ function adminApp(L, BUILD, M) {
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
+    if (tab === "fonts") return chips + recipeFontsView(d, edit);
     const help = {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
@@ -2312,6 +2313,22 @@ function adminApp(L, BUILD, M) {
         <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [MAT-06] 1.36 나눈 글꼴: 신고 셋이면 저절로 내려가요. 라이선스가 맞으면 다시 올리고, 아니면 내린 채로 둬요. */
+  function recipeFontsView(d, edit) {
+    const state = d.state ?? "reported";
+    const names = { reported: "신고로 내려감", hidden: "내린 것", ok: "나누는 중" };
+    const whys = { license: "라이선스가 의심돼요", broken: "글자가 깨져요", bad: "불쾌한 모양" };
+    const sub = `<div class="chips" role="group" aria-label="글꼴 상태">${Object.entries(names).map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="font-state" data-key="${k}" aria-pressed="${state === k}">${esc(label)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
+    if (!d.items.length) return sub + empty(state === "reported" ? "신고로 내려간 글꼴이 없어요" : "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
+    return `${sub}<p class="hint">글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요.</p>
+      <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
+        <small>${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · 신고 ${f.reports}${Object.entries(f.whys ?? {}).map(([k, n]) => ` · ${esc(whys[k] ?? k)} ${n}`).join("")} · ${esc(ago(f.at))}</small>
+        <small class="mono">${esc(f.id)}</small></span>
+        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">다시 올리기</button>` : ""}
+          ${f.state !== "hidden" ? `<button class="btn small danger" data-act="recipe-font" data-id="${f.id}" data-key="hide">내리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
   /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
@@ -4397,6 +4414,8 @@ function adminApp(L, BUILD, M) {
     "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
+    "recipe-font": async ({ id, key }) => { await act(() => api(`/recipes/fonts/${id}/${key}`, "POST", {}), key === "ok" ? "다시 올렸어요" : "내렸어요"); load(); },
+    "font-state": ({ key }) => { S.fontState = key; S.data.recipes = null; load(); },
     "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {

@@ -431,6 +431,8 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
                 if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
+                // [MAT-06] 1.36 and the shared fonts it names (one taken down or not shared stays its stand-in).
+                RecipeFonts.fetchIn(c, values.toString())
                 val now = c.settingsRepository.current
                 val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {

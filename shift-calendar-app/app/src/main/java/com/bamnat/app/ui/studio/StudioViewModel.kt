@@ -690,6 +690,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
         val sent = runCatching {
             val out = com.bamnat.app.ui.recipe.serverPictures(c, RecipeCodec.read(RecipeCodec.write(r)))
+            com.bamnat.app.recipe.RecipeFonts.send(c, out)
             c.recipeApi.newVersion(c.companyStore.device, w.shared, out, null)
         }.getOrNull()
         if (sent != null) c.wardrobe.markShared(ThemeLease.Wear(name, "", "", 0, 0, own = true).key, w.shared, sent.version, w.bare)

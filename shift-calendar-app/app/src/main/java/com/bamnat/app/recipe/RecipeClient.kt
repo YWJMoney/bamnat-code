@@ -187,6 +187,12 @@ interface RecipeApi {
     suspend fun image(device: String, webp: ByteArray): String = throw CompanyException("offline")
     /** The address of a cover picture, for the image loader (the maker sees a waiting one with its device header). */
     fun imageUrl(id: String): String? = null
+    /** [MAT-06] 1.36 내 글꼴 나누기: an open font (its maker lets others use it, as the user said); the server's id (the phone's). */
+    suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray): String = throw CompanyException("offline")
+    /** [MAT-06] A shared font's name and its file, or null when the server does not have it (or took it down). */
+    suspend fun fontGet(device: String, id: String): Pair<String, ByteArray>? = null
+    /** [MAT-06] 이 글꼴 신고 (라이선스·깨짐·불쾌). */
+    suspend fun fontReport(device: String, id: String, why: String) {}
 }
 
 class RecipeClient(
@@ -365,9 +371,35 @@ class RecipeClient(
             .put("webp", android.util.Base64.encodeToString(webp, android.util.Base64.NO_WRAP))).getString("id")
     }
 
+    override suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray): String = serverCall {
+        call("POST", "/api/recipes/fonts", JSONObject().put("device", device).put("id", id).put("name", name).put("license", license)
+            .put("ttf", android.util.Base64.encodeToString(ttf, android.util.Base64.NO_WRAP))).getString("id")
+    }
+
+    override suspend fun fontGet(device: String, id: String): Pair<String, ByteArray>? = readCall {
+        if (!enabled || !com.bamnat.core.recipe.FontCatalog.isUser(id)) return@readCall null
+        val name = runCatching { call("GET", "/api/recipes/fonts/$id", device = device).optString("name", "받은 글꼴") }.getOrNull() ?: return@readCall null
+        val conn = java.net.URL("$baseUrl/api/recipes/fonts/$id/file").openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 8_000
+        conn.readTimeout = 30_000
+        conn.setRequestProperty("X-Device", device)
+        try {
+            if (conn.responseCode != 200) null
+            else conn.inputStream.use { readAtMost(it, FONT_MAX + 1) }.takeIf { it.size <= FONT_MAX }?.let { name to it }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    override suspend fun fontReport(device: String, id: String, why: String) = serverCall {
+        call("POST", "/api/recipes/fonts/$id/report", JSONObject().put("device", device).put("why", why)); Unit
+    }
+
     override fun imageUrl(id: String): String? = if (enabled && com.bamnat.core.recipe.Cover.IMAGE.matches(id)) "$baseUrl/api/recipes/images/$id" else null
 
     companion object {
+        /** The server keeps shared fonts up to 8 MB. */
+        const val FONT_MAX = 8 * 1024 * 1024
         fun item(o: JSONObject): RecipeItem {
             val c = o.optJSONObject("cover")
             return RecipeItem(

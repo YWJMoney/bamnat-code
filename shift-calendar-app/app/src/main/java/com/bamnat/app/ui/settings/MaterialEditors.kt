@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import kotlinx.coroutines.launch
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -365,6 +366,8 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
     var mine by remember { mutableStateOf(UserFonts.list(ctx)) }
     var problem by remember { mutableStateOf<String?>(null) }
     var stamp by remember { mutableIntStateOf(0) }
+    var reportOf by remember { mutableStateOf<UserFonts.Mine?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         val name = runCatching {
@@ -394,15 +397,21 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                                     Text("+ 내 글꼴 넣기")
                                 }
                             }
-                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 레시피를 받은 사람에게는 비슷한 앱 글꼴로 보여요",
+                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 레시피와 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         items(mine, key = { it.id + stamp }) { f ->
                             FontLine(f.id, f.name, "비슷한 앱 글꼴: " + (FontCatalog.byId(f.fallback)?.name ?: "기본"), f.id == value, onPick)
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("허가를 받은 공개 글꼴(OFL 등)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                                Switch(f.open, { UserFonts.setOpen(ctx, f.id, it); mine = UserFonts.list(ctx) },
-                                    modifier = Modifier.semantics { contentDescription = "${f.name} 공개 글꼴로 표시" })
+                                if (f.received) {
+                                    // [MAT-06] A font that came with a recipe: its sender said it is open; 신고 if it is not.
+                                    Text("레시피와 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = { reportOf = f }) { Text("신고") }
+                                } else {
+                                    Text("누구나 쓰게 허락한 공개 글꼴(OFL 등)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    Switch(f.open, { UserFonts.setOpen(ctx, f.id, it); mine = UserFonts.list(ctx) },
+                                        modifier = Modifier.semantics { contentDescription = "${f.name} 공개 글꼴로 표시" })
+                                }
                                 TextButton(onClick = { UserFonts.remove(ctx, f.id); mine = UserFonts.list(ctx) }) { Text("빼기") }
                             }
                         }
@@ -418,6 +427,27 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+    // [MAT-06] 받은 글꼴 신고: three phones take it down for everyone until the operator looks; it leaves this phone at once.
+    reportOf?.let { f ->
+        val whys = listOf("license" to "허락 없이 나눈 글꼴 같아요", "broken" to "글자가 깨져요", "bad" to "불쾌한 모양이에요")
+        AlertDialog(
+            onDismissRequest = { reportOf = null },
+            title = { Text("‘${f.name}’ 신고") },
+            text = {
+                Column {
+                    Text("고르면 이 휴대폰에서 바로 빠지고, 여러 분이 신고하면 모두에게서 내려가요.", style = MaterialTheme.typography.bodySmall)
+                    whys.forEach { (k, label) ->
+                        TextButton(onClick = {
+                            val c = ctx.applicationContext.let { (it as? com.bamnat.app.BamnatApp)?.container }
+                            if (c != null) scope.launch { runCatching { c.recipeApi.fontReport(c.companyStore.device, f.id, k) } }
+                            UserFonts.remove(ctx, f.id); mine = UserFonts.list(ctx); reportOf = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { reportOf = null }) { Text("닫기") } },
+        )
+    }
 }
 
 @Composable

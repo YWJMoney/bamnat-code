@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
             leftAt = savedInstanceState?.getLong(KEY_LEFT_AT) ?: 0L,
         )
         enableEdgeToEdge()
+        com.bamnat.app.ui.theme.AppFonts.init(this)
         setContent { shown.value?.let { Content(it) } }
         // 1.32.1 [STAB-10][STAB-11] 멈춤 관찰: the screen made again (a Fold, a theme) and every draw of the window.
         com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,

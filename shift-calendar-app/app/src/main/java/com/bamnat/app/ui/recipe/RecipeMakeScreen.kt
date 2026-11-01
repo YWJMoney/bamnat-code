@@ -419,6 +419,8 @@ class RecipeMakeViewModel(
                 }
                 val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
                 val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(shown)))
+                // [MAT-06] 1.36 the open fonts it names go first.
+                val fonts = com.bamnat.app.recipe.RecipeFonts.send(c, r)
                 val up = upCode
                 val sent = if (up != null) c.recipeApi.newVersion(c.companyStore.device, up, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
@@ -435,6 +437,7 @@ class RecipeMakeViewModel(
                     if (key == null) note = "내 테마 칸이 꽉 차서 이 테마를 내 테마로 두지 못했어요. 마을 › 테마에서 한 벌을 빼고 다시 올리면 광고 없이 입어요"
                     key?.let { c.wardrobe.markShared(it, sent.code, sent.version, s.bare) }
                 }
+                note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts)).joinToString("\n").ifBlank { null }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
