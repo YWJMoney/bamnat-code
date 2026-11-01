@@ -352,35 +352,47 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val name = value?.let { id -> FontCatalog.byId(id)?.name ?: UserFonts.list(ctx).firstOrNull { it.id == id }?.name ?: "내 글꼴" } ?: "처음대로"
-    // [MAT-05] PC 확인 1차: the chosen open font comes down now, and the row says how it went.
-    LaunchedEffect(value) { value?.let { AppFonts.fetch(ctx, it) } }
+    // PC 확인 2차: the font before the last pick, for 전 글꼴로 when the new one could not come down.
+    var before by remember { mutableStateOf<String?>(null) }
     val load = value?.let { AppFonts.loads[it] }
+    val base = value?.let { id -> FontCatalog.byId(id)?.name ?: UserFonts.list(ctx).firstOrNull { it.id == id }?.name ?: "내 글꼴" } ?: "처음대로"
+    val name = when (load) { AppFonts.Load.LOADING -> "$base (받는 중)"; AppFonts.Load.FAILED -> "$base (못 받음)"; else -> base }
     Row(Modifier.fillMaxWidth().clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            FontLoadLine(load) { value?.let { id -> AppFonts.loads.remove(id); scope.launch { AppFonts.fetch(ctx, id) } } }
         }
         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }
-    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); onPick(it) }
+    if (value != null) FontLoadLine(load, value?.let { AppFonts.reasons[it] },
+        retry = { scope.launch { AppFonts.fetch(ctx, value) } },
+        standIn = { onPick(AppFonts.standInId(value)) },
+        back = before?.takeIf { it != value }?.let { b -> { onPick(b) } })
+    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); before = value; onPick(it) }
 }
 
-/** 받는 중… · 받았어요 · 못 받았어요 · 다시 for an open font; nothing for the phone's own or the user's. */
+/**
+ * 받는 중… · 받았어요 · 못 받았어요 (이유) · 다시 · 비슷한 앱 글꼴로 쓰기 · 전 글꼴로, for an open font; nothing for the phone's own or the user's.
+ * PC 확인 2차 (사용성 제안 "실패하면 이유를 한 줄로, '비슷한 앱 글꼴로 쓰기' 단추").
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FontLoadLine(load: AppFonts.Load?, retry: () -> Unit) {
+private fun FontLoadLine(load: AppFonts.Load?, reason: String?, retry: () -> Unit, standIn: () -> Unit, back: (() -> Unit)?) {
     val scheme = MaterialTheme.colorScheme
     when (load) {
         AppFonts.Load.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             androidx.compose.material3.CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
-            Text("글꼴 받는 중… 받기 전에는 기본 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            Text("글꼴 받는 중… 받기 전에는 비슷한 앱 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
         }
         AppFonts.Load.READY -> Text("받았어요", style = MaterialTheme.typography.labelSmall, color = scheme.primary)
-        AppFonts.Load.FAILED -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("못 받았어요. 인터넷과 Google Play 서비스를 확인해 주세요", style = MaterialTheme.typography.labelSmall, color = scheme.error, modifier = Modifier.weight(1f, fill = false))
-            TextButton(onClick = retry) { Text("다시") }
+        AppFonts.Load.FAILED -> Column {
+            Text("못 받았어요: ${reason ?: "글꼴을 받지 못했어요"}. 지금은 비슷한 앱 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.error)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = retry) { Text("다시") }
+                TextButton(onClick = standIn) { Text("비슷한 앱 글꼴로 쓰기") }
+                back?.let { TextButton(onClick = it) { Text("전 글꼴로") } }
+            }
         }
         null -> {}
     }
@@ -509,7 +521,8 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
 
 @Composable
 private fun FontLine(id: String, name: String, note: String, on: Boolean, onPick: (String) -> Unit) {
-    val family = com.bamnat.app.ui.theme.rememberFontFamily(id)
+    // The list never starts 70 downloads: a font comes down when it is picked (its picture stands in until then).
+    val family = com.bamnat.app.ui.theme.rememberFontFamily(id, fetch = false)
     val sample = if (FontCatalog.byId(id)?.korean == false) FontCatalog.SAMPLE_LATIN else FontCatalog.SAMPLE
     val ctx = LocalContext.current
     // [MAT-05] PC 확인 1차: until an open font has come down, its line shows the sample drawn in it ahead of time.

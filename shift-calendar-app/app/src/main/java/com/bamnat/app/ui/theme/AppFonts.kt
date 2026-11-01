@@ -8,9 +8,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
-import com.bamnat.app.R
 import com.bamnat.core.recipe.FontCatalog
 import java.io.File
 import java.security.MessageDigest
@@ -18,17 +15,15 @@ import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 
 /**
- * [MAT-05][MAT-06] 1.36 글꼴: what each [FontCatalog] id is drawn in. The phone's own four are always there; the open fonts come down
- * through Google Play services' font provider the first time one is drawn (and are kept by Play services for every app), the text
- * standing in the phone's font until then; the user's own fonts are files under `files/fonts`.
+ * [MAT-05][MAT-06] 1.36 글꼴: what each [FontCatalog] id is drawn in. The phone's own four are always there; the open fonts (SIL OFL·
+ * Apache) come down from Google Fonts the first time one is drawn and are kept under `files/fonts/open` ([OpenFonts]), the text standing
+ * in the closest phone font until then; the user's own fonts are files under `files/fonts`.
+ *
+ * PC 확인 2차 (daf5b9bd): Google Play services' font provider answered 'not found' in two seconds for 본명조 on a phone with Play
+ * services and the internet, so the app no longer goes through it — it fetches the font files itself and can say why one failed.
  */
 @android.annotation.SuppressLint("StaticFieldLeak") // only the application context (see init)
 object AppFonts {
-    private val provider = GoogleFont.Provider(
-        providerAuthority = "com.google.android.gms.fonts",
-        providerPackage = "com.google.android.gms",
-        certificates = R.array.com_google_android_gms_fonts_certs,
-    )
     private val cache = ConcurrentHashMap<String, FontFamily>()
     // The application context only (init takes applicationContext), so nothing short-lived is kept.
     @android.annotation.SuppressLint("StaticFieldLeak")
@@ -49,9 +44,15 @@ object AppFonts {
             "serif" -> FontFamily.Serif
             "mono" -> FontFamily.Monospace
             "hand" -> FontFamily.Cursive
-            else -> FontCatalog.byId(id)?.family?.let { name ->
-                val g = GoogleFont(name, bestEffort = true)
-                FontFamily(Font(g, provider, FontWeight.Normal), Font(g, provider, FontWeight.Bold))
+            else -> FontCatalog.byId(id)?.takeIf { it.family != null }?.let { f ->
+                // An open font: its files once they are down, else the closest phone font (not kept, so the files are used once there).
+                val regular = context?.let { OpenFonts.file(it, id, bold = false) }
+                if (regular == null) return standIn(f)
+                val bold = OpenFonts.file(context, id, bold = true)
+                runCatching {
+                    FontFamily(listOfNotNull(androidx.compose.ui.text.font.Font(regular, FontWeight.Normal),
+                        bold?.let { androidx.compose.ui.text.font.Font(it, FontWeight.Bold) }))
+                }.getOrNull() ?: return standIn(f)
             } ?: context?.let { UserFonts.file(it, id) }?.let { f ->
                 runCatching { FontFamily(androidx.compose.ui.text.font.Font(f)) }.getOrNull()
             } ?: family(context, context?.let { UserFonts.fallbackOf(it, id) } ?: "sans")
@@ -61,6 +62,22 @@ object AppFonts {
     }
 
     fun forget(id: String) { cache.remove(id) }
+
+    /** The phone font closest to an open font not down yet: 명조 → serif, 손글씨 → cursive, 코딩 → mono, else sans. */
+    fun standIn(f: FontCatalog.Font): FontFamily = when (f.group) {
+        FontCatalog.Group.SERIF -> FontFamily.Serif
+        FontCatalog.Group.HAND -> FontFamily.Cursive
+        FontCatalog.Group.MONO -> FontFamily.Monospace
+        else -> FontFamily.SansSerif
+    }
+
+    /** The phone's own font id closest to [id] (for 비슷한 앱 글꼴로 쓰기). */
+    fun standInId(id: String): String = when (FontCatalog.byId(id)?.group) {
+        FontCatalog.Group.SERIF -> "serif"; FontCatalog.Group.HAND -> "hand"; FontCatalog.Group.MONO -> "mono"; else -> "sans"
+    }
+
+    /** Why the last try for an open font failed, in a line for the user. */
+    val reasons = androidx.compose.runtime.mutableStateMapOf<String, String>()
 
     /** [MAT-05] PC 확인 1차: whether an open font has come down yet, shown as 받는 중… · 받았어요 · 못 받았어요 · 다시. */
     enum class Load { LOADING, READY, FAILED }
@@ -72,18 +89,18 @@ object AppFonts {
     fun downloads(id: String?): Boolean = id != null && FontCatalog.byId(id)?.family != null
 
     /**
-     * Brings [id] down now (at most 30 seconds) so the answer can be shown; Compose keeps it in its own shared cache, so every text
-     * in that font draws in it after. A phone without Google Play services, or offline, ends in [Load.FAILED].
+     * Brings [id] down now (at most two minutes; 본명조 is 14 MB) and keeps it; every text in that font draws in it after. Offline, a font Google Fonts
+     * does not have, or a full phone ends in [Load.FAILED] with the reason in [reasons].
      */
     suspend fun fetch(context: Context, id: String) {
-        if (!downloads(id) || loads[id] == Load.READY || loads[id] == Load.LOADING) return
+        if (!downloads(id) || loads[id] == Load.LOADING) return
+        if (OpenFonts.file(context, id, bold = false) != null) { loads[id] = Load.READY; return }
         loads[id] = Load.LOADING
-        val ok = runCatching {
-            val family = family(context, id) ?: return@runCatching false
-            kotlinx.coroutines.withTimeout(30_000) { androidx.compose.ui.text.font.createFontFamilyResolver(context).preload(family) }
-            true
-        }.getOrDefault(false)
-        loads[id] = if (ok) Load.READY else Load.FAILED
+        reasons.remove(id)
+        val why = runCatching { kotlinx.coroutines.withTimeout(120_000) { OpenFonts.download(context, id) } }
+            .fold({ it }, { if (it is kotlinx.coroutines.TimeoutCancellationException) "시간이 오래 걸려 멈췄어요" else OpenFonts.reasonOf(it) })
+        forget(id)
+        if (why == null) loads[id] = Load.READY else { reasons[id] = why; loads[id] = Load.FAILED }
     }
 
     /**
@@ -95,11 +112,13 @@ object AppFonts {
         else context.resources.getIdentifier("font_sample_" + id.replace('-', '_'), "drawable", context.packageName)
 }
 
-/** [id]'s family for this screen, kept across recompositions. */
+/** [id]'s family for this screen, kept across recompositions; an open font not down yet starts coming down and is drawn once it is. */
 @Composable
-fun rememberFontFamily(id: String?): FontFamily? {
+fun rememberFontFamily(id: String?, fetch: Boolean = true): FontFamily? {
     val ctx = LocalContext.current
-    return remember(id) { AppFonts.family(ctx, id) }
+    val load = id?.let { AppFonts.loads[it] }
+    if (fetch && id != null && AppFonts.downloads(id) && load == null) androidx.compose.runtime.LaunchedEffect(id) { AppFonts.fetch(ctx, id) }
+    return remember(id, load) { AppFonts.family(ctx, id) }
 }
 
 /** Every text style of [this] in [family] (sizes, weights and spacing stay). */
