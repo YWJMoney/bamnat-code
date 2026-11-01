@@ -693,10 +693,12 @@ internal fun colorNames(cs: List<Long>): List<String> {
     fun light(c: Long): Float { val a = FloatArray(3); android.graphics.Color.colorToHSV(c.toInt(), a); return a[2] * (1f - a[1] / 2f) }
     return names.mapIndexed { i, n ->
         val same = names.indices.filter { names[it] == n }
+        // PC 제안 1.36: colours that read alike are told apart in words by how light they are (two: 더 밝은·더 짙은; three: 밝은·중간·짙은).
+        val rank = same.sortedByDescending { light(cs[it]) }.indexOf(i)
         when {
             same.size < 2 -> n
-            // PC 제안 1.36: two that read alike are told apart in words, the lighter and the deeper one.
-            same.size == 2 -> if (light(cs[i]) >= light(cs[same.first { it != i }])) "더 밝은 $n" else "더 짙은 $n"
+            same.size == 2 -> (if (rank == 0) "더 밝은 " else "더 짙은 ") + n
+            same.size == 3 -> listOf("밝은 ", "중간 ", "짙은 ")[rank] + n
             else -> "$n ${seen.merge(n, 1, Int::plus)}"
         }
     }

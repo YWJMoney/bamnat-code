@@ -272,7 +272,7 @@ internal fun Modifier.mockPick(region: String): Modifier {
 }
 
 /** The kinds of day an example calendar shows when the recipe brings none: what this kind of work usually has. */
-private fun exampleDays(style: WorkStyle?): List<Map<String, Any?>> = when (style) {
+internal fun exampleDays(style: WorkStyle?): List<Map<String, Any?>> = when (style) {
     WorkStyle.SHIFT, null -> listOf(day("주간", "day", "주", 0xFFEF6C00), day("야간", "night", "야", 0xFF3949AB), day("휴무", "off", "휴", 0xFF757575))
     WorkStyle.HOURLY -> listOf(day("근무", "day", "근", 0xFF2E7D32), day("휴무", "off", "휴", 0xFF757575))
     // F-54: each kind of work's own words on the example days.

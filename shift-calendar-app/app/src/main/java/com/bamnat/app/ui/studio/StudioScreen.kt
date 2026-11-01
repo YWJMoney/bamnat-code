@@ -632,6 +632,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             }
                         }
                     }
+                    // PC 제안 1.36: past 3 seconds of 준비 중, say why.
+                    var slow by remember { mutableStateOf(false) }
+                    LaunchedEffect(preparing) { slow = false; if (preparing) { kotlinx.coroutines.delay(3_000); slow = true } }
+                    if (preparing && slow) Text("처음엔 조금 걸려요. 잠시만 기다려 주세요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             // PC 확인 W37 1.36 (고르기 창 '다음' 뒤 8초 동안 아무 표시 없음): 준비 중 with a spinner, and this window stays until 올리기 is up.

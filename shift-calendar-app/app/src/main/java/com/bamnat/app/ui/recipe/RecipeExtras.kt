@@ -106,8 +106,21 @@ private fun ExampleWeek(r: Recipe, style: WorkStyle) {
     val pieces = r.piecesFor(style)
     val look = pieces.firstOrNull { it.kind == PieceKind.SHIFT_LOOK }?.let { RecipeResolve.piece(r, it, emptyMap()) }
     val theme = pieces.firstOrNull { it.kind == PieceKind.CAL_THEME }?.let { RecipeResolve.piece(r, it, emptyMap()) }
-    val items = (look?.get("items") as? List<Map<String, Any?>>).orEmpty()
-    if (items.isEmpty() && theme == null) return
+    val items0 = (look?.get("items") as? List<Map<String, Any?>>).orEmpty()
+    if (items0.isEmpty() && theme == null) return
+    // PC 확인 W40 1.36 (일근·알바 예시 한 주가 월~일 모두 쉬는 날): a week like that kind of work's — 교대 in turn, 일근 월~금,
+    // 알바 주 4일, 현장 월~토, 가게 화~일, 투자 장 열린 날 — in the recipe's own day looks, else the kind of work's example ones.
+    val pool = items0.ifEmpty { exampleDays(style) }
+    val workItem = pool.firstOrNull { it["role"] != "off" } ?: pool.first()
+    val offItem = pool.firstOrNull { it["role"] == "off" }
+    val works = when (style) {
+        WorkStyle.HOURLY -> listOf(true, false, true, false, true, true, false)
+        WorkStyle.FIELD -> listOf(true, true, true, true, true, true, false)
+        WorkStyle.BUSINESS -> listOf(false, true, true, true, true, true, true)
+        WorkStyle.SHIFT -> emptyList()
+        else -> listOf(true, true, true, true, true, false, false)
+    }
+    val items = if (works.isEmpty()) pool else works.map { if (it) workItem else offItem ?: emptyMap() }
     // [STU-27] 1.36 빌드 8 (마치기 예시 한 주가 모두 쉬는 날): this week of the phone's own calendar, each day in the recipe's look for its
     // kind; the made-up week only when the phone has no days yet.
     val mine = rememberMyWeeks(items, weeks = 1)?.takeIf { style == r.styles.firstOrNull() || r.styles.size == 1 }
