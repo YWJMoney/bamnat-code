@@ -5,6 +5,7 @@ import androidx.compose.ui.layout.positionInRoot
 import com.bamnat.app.appContainer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.runtime.getValue
@@ -405,43 +406,36 @@ private fun PartsPreview(title: String, line: String, labels: Map<String, String
 private fun PartCloseUp(unit: String, content: @Composable () -> Unit) {
     val spots = androidx.compose.runtime.remember { com.bamnat.app.ui.parts.PartSpots() }
     var inner by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
-    var frameW by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    var fit by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Triple<Float, Float, Float>?>(null) }
+    // PC 9차 (넓은 부품인데도 확대돼 일·월·화만 보이고 왼쪽에 회색 띠) and its 사용성 제안 (폭은 그대로, 바꾼 곳에 테두리): the example
+    // keeps its own width; it moves up so the part is near the top, and the part's boxes are ringed.
+    var lift by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    var rings by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<androidx.compose.ui.geometry.Rect>>(emptyList()) }
     val density = androidx.compose.ui.platform.LocalDensity.current
     androidx.compose.runtime.LaunchedEffect(unit) {
         // A few frames: the example laid out and every part's place known, read once before it is moved.
         repeat(3) { androidx.compose.runtime.withFrameNanos { } }
         val origin = inner ?: return@LaunchedEffect
-        val boxes = spots.spots.values.filter { (id, _) -> id == unit || id.startsWith("$unit.") }.map { it.second }
-        if (frameW <= 0f) return@LaunchedEffect
-        // No such part drawn on the example (a 탭 판): the whole screen a little larger, in the middle.
-        if (boxes.isEmpty()) { fit = Triple(1.35f, frameW * (1f - 1.35f) / 2f, 0f); return@LaunchedEffect }
-        val l = boxes.minOf { it.left } - origin.x; val t = boxes.minOf { it.top } - origin.y
-        val rr = boxes.maxOf { it.right } - origin.x
-        val w = (rr - l).coerceAtLeast(1f)
-        // PC 8차 (달력 머리 예시에서 오른쪽 날짜 칸이 조금 잘림): a part nearly as wide as the screen is shown at its own size, the whole
-        // width in view; a small one is made larger around its middle, never leaving an empty edge.
-        val scale = if (w >= frameW * 0.7f) 1f else (frameW * 0.92f / w).coerceIn(1f, 2.4f)
-        val pad = with(density) { 24.dp.toPx() }
-        val tx = if (scale == 1f) 0f else (frameW / 2 - (l + w / 2) * scale).coerceIn(frameW - frameW * scale, 0f)
-        fit = Triple(scale, tx, (pad - t * scale).coerceAtMost(0f))
+        val boxes = spots.spots.values.filter { (id, _) -> id == unit || id.startsWith("$unit.") }.map { it.second.translate(-origin) }
+        rings = boxes
+        lift = if (boxes.isEmpty()) 0f else (with(density) { 24.dp.toPx() } - boxes.minOf { it.top }).coerceAtMost(0f)
     }
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))
-        .onGloballyPositionedFrame { frameW = it }) {
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))) {
         androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(660.dp)
-            .onRootAt { if (fit == null) inner = it }
-            .graphicsLayer {
-                val f = fit
-                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                if (f == null) { scaleX = 1f; scaleY = 1f } else { scaleX = f.first; scaleY = f.first; translationX = f.second; translationY = f.third }
+            .onRootAt { if (lift == null) inner = it }
+            .graphicsLayer { translationY = lift ?: 0f }
+            .drawWithContent {
+                drawContent()
+                val w = 2.dp.toPx()
+                rings.forEach { r ->
+                    drawRoundRect(androidx.compose.ui.graphics.Color(0xFFE91E63), androidx.compose.ui.geometry.Offset(r.left - w / 2, r.top - w / 2),
+                        androidx.compose.ui.geometry.Size(r.width + w, r.height + w), androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(w, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(w * 3, w * 2))))
+                }
             }) {
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalPartSpots provides spots) { content() }
         }
     }
 }
-
-private fun Modifier.onGloballyPositionedFrame(onWidth: (Float) -> Unit): Modifier =
-    this.then(Modifier.onGloballyPositioned { onWidth(it.size.width.toFloat()) })
 
 private fun Modifier.onRootAt(onAt: (androidx.compose.ui.geometry.Offset) -> Unit): Modifier =
     this.then(Modifier.onGloballyPositioned { onAt(it.positionInRoot()) })
