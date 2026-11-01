@@ -68,6 +68,11 @@ data class DecorItem(
      * 단추 does wherever it is placed. Null is a picture only; a button the theme does not have leaves it a picture too.
      */
     val tap: String? = null,
+    /**
+     * PC 확인 C6 1.36 (배경 사진은 화면을 채우게): on a screen's background, the whole screen — the place and size are kept for when it is
+     * turned off. Elsewhere it is ignored.
+     */
+    val full: Boolean = false,
 ) {
     /** Its piece values: what is the app's own is left out, so a recipe holds only what was chosen. */
     fun values(): Map<String, Any?> = buildMap {
@@ -101,6 +106,7 @@ data class DecorItem(
         if (lock) put("lock", true)
         if (group != 0) put("group", group.toLong())
         tap?.let { put("tap", it) }
+        if (full) put("full", true)
     }
 
     /** Whether it stands on a day with these facts (always, off [Decor.CELL]). */
@@ -263,6 +269,7 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
                 dbl("size", 14.0, 6.0, 96.0), int("weight", 400, 100, 900), col("ink"), m["italic"] == true, int("alpha", 100, 0, 100),
                 m["hide"] == true, m["over"] == true, m["flip"] == true, m["lock"] == true, int("group", 0, 0, 9),
                 (m["tap"] as? String)?.takeIf { tapProblem(it) == null && it.isNotEmpty() },
+                m["full"] == true && (at == APP || at.startsWith("bg.")),
             )
         }
 
@@ -289,6 +296,7 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
             Field.Flag("lock", input = false), Field.Num("group", 0.0, 9.0, optional = true),
             Field.Text("photo", 16, optional = true, guard = false, check = ::photoProblem),
             Field.Text("tap", 12, optional = true, guard = false, check = ::tapProblem),
+            Field.Flag("full", input = false),
         )
     }
 }

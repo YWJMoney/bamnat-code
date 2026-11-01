@@ -125,6 +125,8 @@ internal fun iconPath(id: String): Path? = synchronized(iconPaths) {
 
 /** Where [item] stands in [box], in px: its centre and its size. */
 internal fun DrawScope.placeOf(item: DecorItem, box: Rect): Rect {
+    // PC 확인 C6 1.36: 화면 가득 — a background photo over the whole screen.
+    if (item.full) return box
     val w = item.w * density
     val h = item.h * density
     val cx = box.left + box.width * item.x / 1000f
@@ -148,7 +150,7 @@ fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, acce
     val lineW = item.lineW.toFloat() * density
     val stroke = item.line?.takeIf { it != "none" && lineW > 0f }?.let { kind -> strokeOf(kind, lineW) }
     translate(at.left, at.top) {
-        rotate(item.rot.toFloat(), pivot = Offset(at.width / 2, at.height / 2)) {
+        rotate(if (item.full) 0f else item.rot.toFloat(), pivot = Offset(at.width / 2, at.height / 2)) {
             scale(if (item.flip) -1f else 1f, 1f, pivot = Offset(at.width / 2, at.height / 2)) {
                 val shadow = item.shadow * density
                 when (item.kind) {

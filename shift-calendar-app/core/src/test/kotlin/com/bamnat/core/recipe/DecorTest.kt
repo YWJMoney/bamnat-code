@@ -105,4 +105,13 @@ class DecorTest {
         assertEquals("tap", Decor.tapProblem("Bad-Id"))
         assertEquals("photo", Decor.photoProblem("ABC"))
     }
+
+    /** PC 확인 C6 1.36: 화면 가득 is a screen background's own; on a cell it is not kept. */
+    @Test
+    fun fullIsForBackgroundsOnly() {
+        val bg = DecorItem(DecorKind.PHOTO, "0123456789abcdef", "bg.calendar", full = true)
+        assertEquals(Decor(listOf(bg)), Decor.decode(Decor(listOf(bg)).encode()))
+        assertFalse(Decor.decode("""[{"photo":"0123456789abcdef","at":"cal.cell","w":10,"h":10,"full":true}]""").items.single().full)
+    }
 }
+

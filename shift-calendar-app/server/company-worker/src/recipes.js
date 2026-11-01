@@ -258,6 +258,7 @@ export const RECIPE_PIECES = {
     N("alpha", 0, 100, { optional: true }), F("hide", { input: false }), F("over", { input: false }), F("flip", { input: false }),
     F("lock", { input: false }), N("group", 0, 9, { optional: true }),
     T("photo", 16, { optional: true, guard: false, check: decorPhoto }), T("tap", 12, { optional: true, guard: false, check: decorTap }),
+    F("full", { input: false }),
   ], { min: 1 })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);

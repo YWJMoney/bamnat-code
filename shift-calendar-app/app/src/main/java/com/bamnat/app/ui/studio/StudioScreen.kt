@@ -314,7 +314,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val firstTool = remember { tool }
     var toolSeen by remember { mutableStateOf(firstTool) }
     LaunchedEffect(tool) {
-        if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL) scale = SCALE_SMALL }
+        // PC 확인 C6 1.36 (미리 보기가 커서 꾸밈 층 칸이 좁아요): 꾸밈 층 has its own board, so the example folds away for it.
+        if (tool == Tool.DECOR && tool != toolSeen) { toolSeen = tool; scale = 0f }
+        else if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL) scale = SCALE_SMALL }
     }
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }

@@ -761,7 +761,8 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     }
     var all by remember { mutableStateOf(false) }
     TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "올라갈 내용 전부 보기") }
-    if (all) Text(RecipeDescribe.changes(s.recipe, vm.style) + "\n\n" + RecipeCodec.write(s.recipe), style = MaterialTheme.typography.bodySmall)
+    // PC 확인 C6 1.36 (전부 보기에 레시피 원문이 그대로 보여요): what a person reads, line by line.
+    if (all) Text(RecipeDescribe.changes(s.recipe, vm.style), style = MaterialTheme.typography.bodySmall)
     // [LIN-01] 1.35 수정판: what this is made from, said before it goes up.
     s.recipe.parent?.let { Text("‘${s.parentTitle ?: it}’의 수정판으로 그 판 밑에 올라가요. 원래 만든 분 표시는 늘 남고, 그분이 달라진 점을 보고 자기 판에 가져갈 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

@@ -228,7 +228,9 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
                 if (aspect >= 1f) st.copy(w = long, h = (long / aspect).roundToInt().coerceAtLeast(2)) else st.copy(w = (long * aspect).roundToInt().coerceAtLeast(2), h = long)
             }
         }
+        // PC 확인 C6 1.36 (배경 사진은 화면을 채우게): a photo put on a screen's background fills the screen at first.
         val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h, r = if (kind == DecorKind.PHOTO) 8 else 0,
+            full = kind == DecorKind.PHOTO && (place == Decor.APP || place.startsWith("bg.")),
             fill = if (kind == DecorKind.SHAPE) DEFAULT_FILLS[n % DEFAULT_FILLS.size] else null,
             fillA = if (glyph == "tape") 70 else 100,
             size = if (kind == DecorKind.TEXT) (when (place) { Decor.CELL -> 8.0; Decor.HEAD -> 11.0; else -> 14.0 }) else 14.0,
@@ -364,6 +366,8 @@ private fun Stage(items: List<DecorItem>, place: String, picked: Set<Int>, advan
                     val p = Offset(at.x / k * density.density, at.y / k * density.density)
                     return cur.indices.filter { i -> cur[i].at == place && !cur[i].hide }
                         .filter { i -> placeOfPx(cur[i], box(), density.density).inflate(4 * density.density).contains(p) }.reversed()
+                        // A 화면 가득 photo is the ground: what stands on it is found first.
+                        .sortedBy { i -> cur[i].full }
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -485,6 +489,7 @@ private fun Stage(items: List<DecorItem>, place: String, picked: Set<Int>, advan
 
 /** [placeOf] without a draw scope: [item]'s box in [box] at [density] px per dp. */
 internal fun placeOfPx(item: DecorItem, box: Rect, density: Float): Rect {
+    if (item.full) return box
     val w = item.w * density
     val h = item.h * density
     val cx = box.left + box.width * item.x / 1000f
@@ -685,7 +690,11 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
             }
             DecorKind.EMOJI -> {}
             DecorKind.PHOTO -> {
-                SliderRow("모서리", first.r.toFloat(), 0f..48f, "dp") { v -> all("꾸밈 모서리") { it.copy(r = v.roundToInt()) } }
+                if (place == Decor.APP || place.startsWith("bg.")) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = first.full, onClick = { all(null) { it.copy(full = true) } }, label = { Text("화면 가득") })
+                    FilterChip(selected = !first.full, onClick = { all(null) { it.copy(full = false) } }, label = { Text("자리·크기 정하기") })
+                }
+                if (!first.full) SliderRow("모서리", first.r.toFloat(), 0f..48f, "dp") { v -> all("꾸밈 모서리") { it.copy(r = v.roundToInt()) } }
                 Text("올리면 운영자가 사진을 본 뒤 다른 분께 보여요. 그 전에는 회색 상자로 보여요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -713,7 +722,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("날짜·근무 위로 올리기", style = MaterialTheme.typography.bodyMedium)
+                Text("이 꾸밈을 날짜·근무·글 위에 그리기", style = MaterialTheme.typography.bodyMedium)
                 Text(if (first.over) "글자를 가릴 수 있어요. 꼭 필요할 때만 켜요" else "꺼 두면 날짜·근무·글 밑에 그려요", style = MaterialTheme.typography.labelSmall,
                     color = if (first.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
