@@ -377,8 +377,16 @@ class MemoEditorViewModel(
     val savedAt: StateFlow<Long?> = _savedAt.asStateFlow()
 
     private var deleted = false
+    /** [RUL-04] This visit changed and saved the memo. */
+    private var savedSomething = false
 
     init {
+        // [RUL-03] A button or rule opened this new memo with a 메모 틀.
+        if (memoId == 0L) com.bamnat.app.logic.LogicLinks.takeTemplate()?.let { title ->
+            container.memoTemplates.items.value.firstOrNull { it.title == title }?.let { t ->
+                _memo.value = t.start(_memo.value.date, com.bamnat.core.time.Today.date(), _memo.value)
+            }
+        }
         if (memoId != 0L) {
             viewModelScope.launch {
                 repo.get(memoId)?.let { stored ->
@@ -628,6 +636,7 @@ class MemoEditorViewModel(
                 dirty = true
             }
             _savedAt.value = stored.updatedAtMillis
+            savedSomething = true
         }
     }
 
@@ -640,6 +649,8 @@ class MemoEditorViewModel(
                 save()
                 val current = _memo.value
                 if (current.id != 0L && current.isBlank) repo.delete(current, offerUndo = false)
+                // [RUL-04] 메모를 저장하면 규칙: once, when the memo is closed with words in it.
+                else if (current.id != 0L && savedSomething) com.bamnat.app.logic.LogicRunner.onMemoSaved(container, current.date)
             }
         }
     }

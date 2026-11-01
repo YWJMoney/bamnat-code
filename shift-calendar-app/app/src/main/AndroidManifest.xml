@@ -190,6 +190,11 @@
             android:name=".money.JobReminderReceiver"
             android:exported="false" />
 
+        <!-- [RUL-04] 1.36 timed rules (근무 시작·끝 전후, 매일 몇 시). -->
+        <receiver
+            android:name=".logic.LogicReceiver"
+            android:exported="false" />
+
         <!-- [SCHED-01] A memo that is a schedule: its notice or its alarm at that minute. -->
         <receiver
             android:name=".memo.MemoScheduleReceiver"

@@ -86,11 +86,37 @@ internal fun PartsTool(
             FilterChip(selected = st == on, onClick = { on = st }, label = { Text(STATE_WORDS[st] ?: "언제나") })
         }
     }
-    val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
+    // [RUL-02] 1.36 조건부 꾸미기: "이럴 때만" (야간이고 메모에 #인수인계가 있으면 …), as a table to pick from or a 수식.
+    var cond by rememberSaveable(id, on) { mutableStateOf<String?>(null) }
+    val conds = remember(bp, id, on) { bp.lines.filter { it["id"] == id && it["on"] == on }.mapNotNull { it["when"] as? String }.distinct() }
+    if (id.startsWith("cal.cell") || conds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = cond == null, onClick = { cond = null }, label = { Text("조건 없이") })
+        conds.forEach { w ->
+            FilterChip(selected = cond == w, onClick = { cond = w },
+                label = { Text("만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(18), maxLines = 1) })
+        }
+        if (cond?.isBlank() != true) FilterChip(selected = false, onClick = { cond = "" }, label = { Text("＋ 조건으로 꾸미기") })
+    }
+    cond?.let { now ->
+        com.bamnat.app.logic.ConditionEditor(now, { next ->
+            val ok = next.isNotBlank() && com.bamnat.core.formula.Logic.formulaProblem(next) == null
+            if (ok && now.isNotBlank() && next != now) {
+                val moved = bp.lines.map { if (it["id"] == id && it["on"] == on && it["when"] == now) it + ("when" to next) else it }
+                runCatching { Blueprint(Blueprint.clean(moved)).encode() }.getOrNull()?.let(onChange)
+            }
+            cond = next
+        }, com.bamnat.app.logic.LocalDayFacts.current?.scope(com.bamnat.core.time.Today.date()) ?: com.bamnat.core.formula.FormulaNames.SAMPLE,
+            empty = "조건을 골라 주세요")
+        if (now.isBlank() || com.bamnat.core.formula.Logic.formulaProblem(now) != null) Text("조건을 다 고르면 아래에서 그때의 모습을 꾸며요",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    val whenNow = cond?.takeIf { it.isNotBlank() && com.bamnat.core.formula.Logic.formulaProblem(it) == null }
+    if (cond != null && whenNow == null) return
+    val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on && it["when"] == whenNow } ?: emptyMap()
     fun set(k: String, v: Any?) {
-        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + (k to v)).filterValues { it != null }
-        val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
-        val all = if (next.keys.all { it == "id" || it == "on" }) others else others + next
+        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + (whenNow?.let { mapOf("when" to it) } ?: emptyMap()) + (k to v)).filterValues { it != null }
+        val others = bp.lines.filterNot { it["id"] == id && it["on"] == on && it["when"] == whenNow }
+        val all = if (next.keys.all { it == "id" || it == "on" || it == "when" }) others else others + next
         val text = runCatching { Blueprint(Blueprint.clean(all)).encode() }.getOrNull() ?: return
         onChange(if (all.isEmpty()) "" else text)
     }

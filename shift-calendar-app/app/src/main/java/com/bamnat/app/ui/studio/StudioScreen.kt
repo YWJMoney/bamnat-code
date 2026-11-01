@@ -173,7 +173,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.CORNERS, Tool.TABS)
-        FEATURES -> listOf(Tool.FEATURE)
+        FEATURES -> listOf(Tool.FEATURE, Tool.LOGIC)
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
@@ -193,6 +193,8 @@ private enum class Tool(val label: String) {
     BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
     /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
     PARTS("부품"),
+    /** [RUL-06] 1.36 수식·규칙·버튼: 단추와 "이럴 때 이렇게" 규칙. */
+    LOGIC("규칙·단추"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -214,6 +216,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val c = LocalContext.current.appContainer
     val s by vm.state.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
+    val studioFacts = com.bamnat.app.logic.rememberAppDayFacts()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var area by rememberSaveable { mutableStateOf(Area.CALENDAR) }
     var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
@@ -457,6 +460,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
                                     // [BLU-06] the draft's parts in 자세히 too.
                                     com.bamnat.app.ui.parts.LocalBlueprint provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
+                                    // [RUL-02] the phone's own days, so 조건부 꾸미기 shows on the weeks below.
+                                    com.bamnat.app.logic.LocalDayFacts provides studioFacts,
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {
@@ -594,6 +599,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
                         Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
+                        Tool.LOGIC -> com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l ->
+                            vm.change { it.copy(logic = com.bamnat.core.formula.Logic.encode(l)) }
+                        })
                     }
                     Spacer(Modifier.height(24.dp))
                 }

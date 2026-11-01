@@ -728,6 +728,13 @@ class AppContainer(context: Context) {
         flags.refresh()
         // [STAT-01] A no that came another way (a restored backup) forgets what waited, without a job of its own.
         usageStats.forgetUnless(settingsRepository.current.shareUsageStats)
+        // [RUL-04] 1.36 규칙: the next timed one is registered whenever the rules change (and at start), the day's 앱 열기 runs once.
+        keep("logic") {
+            settingsRepository.settings.map { it.logic }.distinctUntilChanged().collect {
+                com.bamnat.app.logic.LogicRunner.schedule(this@AppContainer)
+                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
+            }
+        }
         keep("schedule") {
             scheduleRepository.ensureDefaults()
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.

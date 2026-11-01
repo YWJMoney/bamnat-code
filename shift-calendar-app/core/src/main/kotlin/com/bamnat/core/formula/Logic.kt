@@ -34,6 +34,13 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
             return Logic(b, r)
         }
 
+        /** As the setting keeps it (the piece's values, written as the codec writes them). */
+        fun encode(l: Logic): String = if (l.isEmpty) "" else com.bamnat.core.recipe.RecipeCodec.canonical(l.toValues())
+
+        @Suppress("UNCHECKED_CAST")
+        fun decode(s: String?): Logic = if (s.isNullOrBlank()) Logic() else
+            runCatching { from(com.bamnat.core.remote.Json.parse(s) as? Map<String, Any?>) }.getOrDefault(Logic())
+
         /** The checks the catalog runs on a formula field: it reads, and holds no mail, phone, link or chat (금액은 수식에 써도 돼요). */
         fun formulaProblem(src: String): String? = if (src.isEmpty()) null else Formula.problem(src) ?: guard(src)
 
@@ -94,7 +101,7 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
 
 /** Where a button sits. */
 enum class ButtonPlace(val key: String, val label: String) {
-    DAY("day", "하루 화면"), MEMO("memo", "메모장 위"), CALENDAR("cal", "달력 위");
+    DAY("day", "하루 화면"), MEMO("memo", "메모장"), CALENDAR("cal", "달력 화면");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -181,7 +188,7 @@ data class LogicRule(
 
     /** One line before it is turned on (사용성 제안: "이 규칙은 야간 근무 전날 밤 9시에 메모 틀을 열어요"). */
     fun say(): String {
-        val c = if (cond.isEmpty()) "" else (EasyWhen.read(cond)?.say() ?: "조건이 맞으면").let { " $it 이면".replace("면 이면", "면") }
+        val c = if (cond.isEmpty()) "" else (EasyWhen.read(cond)?.say() ?: "조건이 맞으면").let { " " + ifWord(it) }
         return "${sayWhen()},$c ${act.say()}"
     }
 
@@ -210,4 +217,14 @@ data class LogicRule(
             )
         }
     }
+}
+
+/** "근무종류가 야간" → "근무종류가 야간이면", "… 있음" → "… 있으면", "… 맞으면" stays (자연스러운 말로). */
+internal fun ifWord(say: String): String = when {
+    say.endsWith("면") -> say
+    say.endsWith("있음") -> say.removeSuffix("있음") + "있으면"
+    say.endsWith("없음") -> say.removeSuffix("없음") + "없으면"
+    say.endsWith("아님") -> say.removeSuffix("아님") + "아니면"
+    say.endsWith("임") -> say.removeSuffix("임") + "이면"
+    else -> say.lastOrNull()?.let { c -> if (c in '가'..'힣' && (c - '가') % 28 == 0) "${say}면" else "${say}이면" } ?: say
 }
