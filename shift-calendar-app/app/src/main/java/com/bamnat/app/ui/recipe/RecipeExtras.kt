@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.recipe
 
+import com.bamnat.app.appContainer
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.runtime.getValue
@@ -88,7 +91,14 @@ internal fun ExampleCalendars(r: Recipe) {
                 Text(part?.label ?: unit, style = MaterialTheme.typography.labelLarge)
                 val tab = part?.tab?.takeIf { it in setOf(com.bamnat.core.layout.TabOrder.CALENDAR, com.bamnat.core.layout.TabOrder.MEMOS, com.bamnat.core.layout.TabOrder.MONEY) }
                     ?: com.bamnat.core.layout.TabOrder.CALENDAR
-                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(420.dp)) { MockPhone(r, null, tab, onTab = {}) }
+                // PC 6차: in the reader's own kind of work (no 매출·투자 cards for 교대), and the part's area drawn larger.
+                val style = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))) {
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(660.dp)
+                        .graphicsLayer { scaleX = 1.35f; scaleY = 1.35f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f) }) {
+                        MockPhone(r, style, tab, onTab = {})
+                    }
+                }
                 r.pieces.forEach { p -> Text("• ${RecipeDescribe.line(p, amounts = false)}", style = MaterialTheme.typography.bodySmall) }
                 Text("모든 일 유형에 똑같이 들어가요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
