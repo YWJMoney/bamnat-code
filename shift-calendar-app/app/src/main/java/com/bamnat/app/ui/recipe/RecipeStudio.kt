@@ -217,6 +217,8 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                     com.bamnat.app.ui.theme.LocalScreenLooks provides skin,
                     com.bamnat.app.ui.theme.LocalMemoLook provides (resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook()),
                     com.bamnat.app.ui.theme.LocalMoneyLook provides (resolved[PieceKind.MONEY_LOOK]?.let(::moneyLookOf) ?: com.bamnat.core.recipe.MoneyLook()),
+                    // [LAY-03] The recipe's 꾸밈 층 on the example (none: no decorations, not the phone's own).
+                    com.bamnat.app.ui.decor.LocalDecor provides remember(resolved) { com.bamnat.core.recipe.Decor.of(resolved[PieceKind.DECOR]) },
                 ) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(scroll ?: rememberScrollState()).padding(10.dp),
@@ -407,7 +409,9 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
             memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title.
+        Text(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+            modifier = Modifier.fillMaxWidth().then(with(com.bamnat.app.ui.decor.DecorMod) { decorOf(com.bamnat.core.recipe.Decor.HEAD) }).padding(vertical = 4.dp))
         // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
@@ -827,6 +831,10 @@ internal object StudioStarters {
             com.bamnat.core.recipe.ScreenLooks.ALL, com.bamnat.core.recipe.ScreenLook(bg = 0xFFFFF8EEL, card = 0xFFFFFFFFL, accent = 0xFFE07A5FL),
         ).encode())
         PieceKind.COMPANY, PieceKind.BUNDLE -> emptyMap()
+        // [LAY-01] A star on every 25th, so turning 꾸밈 층 on shows something at once.
+        PieceKind.DECOR -> com.bamnat.core.recipe.Decor(listOf(com.bamnat.core.recipe.DecorItem(com.bamnat.core.recipe.DecorKind.SHAPE, "star5",
+            com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
+        PieceKind.PARTS -> emptyMap() // 갈래 A가 채워요(임시)
     }
 }
 

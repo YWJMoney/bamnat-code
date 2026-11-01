@@ -72,6 +72,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -143,7 +144,7 @@ fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
     // [BLU-05] 1.36 부품 꾸미기: 요일 줄 and each 요일 글자 (토·일 states).
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val row = bp.style("cal.week")
-    Row(modifier.fillMaxWidth().partBox(row, RoundedCornerShape(0.dp), inner = false).padding(horizontal = row.padH?.dp ?: 0.dp, vertical = row.padV?.dp ?: 6.dp)) {
+    Row(modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.WEEK).partBox(row, RoundedCornerShape(0.dp), inner = false).padding(horizontal = row.padH?.dp ?: 0.dp, vertical = row.padV?.dp ?: 6.dp)) {
         for (i in 0 until 7) {
             val dow = weekStart.plus(i.toLong())
             val d = bp.style("cal.week.day", buildSet { if (dow == DayOfWeek.SATURDAY) add("sat"); if (dow == DayOfWeek.SUNDAY) add("sun") })
@@ -551,6 +552,12 @@ private fun DayCell(
             kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }, isToday)
     }
     val shape = cellShape(view, cellLook)
+    // [LAY-03] 1.36 꾸밈 층: the decorations that stand on this day (its date, kind of work, today, a holiday).
+    val decorDay = remember(day.date, day.shiftType, day.coveredShift, isToday, inMonth) {
+        val kind = day.shiftType ?: day.coveredShift
+        com.bamnat.app.ui.decor.decorDay(day.date, kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key },
+            isToday, dim = !inMonth)
+    }
     // [CAL-01] Date 14sp and the line under it 11sp, growing with the font setting only as far as the cell holds.
     val density = LocalDensity.current
     val dateSize = with(density) { minOf((14 + view.textBump * 2).sp.toDp(), (17 + view.textBump * 2).dp).toSp() }
@@ -643,6 +650,7 @@ private fun DayCell(
             .then(run { cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
             .then(run { Modifier.partLine(cellPart, partShape) })
             .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
+            .decor(com.bamnat.core.recipe.Decor.CELL, decorDay)
             .then(
                 when {
                     // [CAL-09] The first day of a range stands out until its end is tapped.

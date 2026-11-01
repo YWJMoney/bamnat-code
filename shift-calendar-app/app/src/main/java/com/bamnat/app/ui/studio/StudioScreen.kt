@@ -256,6 +256,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val memoLook = remember(d.memoLook) { MemoLook.decode(d.memoLook) }
     val moneyLook = remember(d.moneyLook) { MoneyLook.decode(d.moneyLook) }
     val payLooks = remember(d.payLooks) { PayLook.decodeAll(d.payLooks) }
+    // [LAY-04] 1.36 꾸밈 층 being made.
+    val decor = remember(d.decor) { com.bamnat.core.recipe.Decor.decode(d.decor) }
     // [STU-21] The example draws the 기능 that show (근무 색, 메모 틀, 투자 일지) along with the look.
     val now = remember(s.pieces, s.extras) { vm.shown(s) }
     val before = remember(s.basePieces) { Recipe("처음", styles = WorkStyle.entries.toSet(), pieces = s.basePieces) }
@@ -453,6 +455,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
                                     // [BLU-06] the draft's parts in 자세히 too.
                                     com.bamnat.app.ui.parts.LocalBlueprint provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
+                                    com.bamnat.app.ui.decor.LocalDecor provides decor,
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {

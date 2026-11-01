@@ -56,6 +56,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -153,7 +154,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
     val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp }
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().padding(4.dp)) {
-        Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
+        Row(Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.WEEK).then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
             (0 until 7).map { first.plusDays(it.toLong()).dayOfWeek }.forEach { w ->
                 val wd = blueprint.style("cal.week.day", setOfNotNull("sat".takeIf { w == java.time.DayOfWeek.SATURDAY }, "sun".takeIf { w == java.time.DayOfWeek.SUNDAY }))
                 Text(listOf("월", "화", "수", "목", "금", "토", "일")[w.value - 1], Modifier.weight(1f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -185,6 +186,8 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         .cellEdge(shown, look, pShape, scheme.outlineVariant)
                         .clip(pShape).background(tint ?: Color.Transparent)
                         .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
+                        // [LAY-03] The 꾸밈 층 on the example cells too.
+                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(date, s.role, isToday) { com.bamnat.app.ui.decor.decorDay(date, s.role, isToday) })
                         .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(

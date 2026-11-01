@@ -30,6 +30,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -161,7 +163,12 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                 Box(
                     Modifier.weight(1f).fillMaxSize().padding(if (view.grid == "line") 0.5.dp else 1.dp)
                         .then(if (view.grid == "line" || d.blank) Modifier.border(0.6.dp, scheme.outlineVariant, shape) else Modifier)
-                        .background(wash, shape),
+                        .background(wash, shape)
+                        // [LAY-03] The 꾸밈 층 on the example too (this month's day [n], Sunday first).
+                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(n, c, d.role, r) {
+                            com.bamnat.core.recipe.DecorDay(com.bamnat.core.time.Today.date().monthValue, n, if (c == 0) 7 else c, d.role ?: if (d.off) "off" else "day",
+                                r * 7 + c == todayAt, d.holiday != null)
+                        }),
                 ) {
                     Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp),
                         horizontalAlignment = if (left) Alignment.Start else Alignment.CenterHorizontally,

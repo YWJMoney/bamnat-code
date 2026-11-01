@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.theme
 
+import com.bamnat.app.ui.decor.ScreenDecor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -90,11 +91,14 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
                 Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
+            // [LAY-03] 1.36 꾸밈 층 on the screen's background: under its words, then (the maker's choice) over them.
+            ScreenDecor(key, over = false)
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
                 androidx.compose.material3.LocalContentColor provides if (plain) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
+            ScreenDecor(key, over = true)
         }
     }
 }
