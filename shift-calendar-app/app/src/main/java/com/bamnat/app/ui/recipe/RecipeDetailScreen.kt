@@ -516,6 +516,7 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     val problem = RecipeText.problem(body)
     OutlinedTextField(body, { body = it.take(500) }, label = { Text("글 쓰기 (연락처·금액·링크는 적지 않아요)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
     if (problem != null) Text(RecipeText.problemText(problem), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+    com.bamnat.app.ui.company.RulesLink()
     // 1.36 [LIM-10] No daily cap; said only while reports restrict this install.
     talk.limit?.let { Text(it.line(talk.left), style = MaterialTheme.typography.labelSmall,
         color = if (talk.left == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }

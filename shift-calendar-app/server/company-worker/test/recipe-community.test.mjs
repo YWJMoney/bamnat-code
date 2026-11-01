@@ -168,6 +168,10 @@ test("[PRF-01][PRF-02][PRF-04] 창작자 프로필: 소개, 대표 작품, 테�
   // Asking with nothing makes no profile; one put in (here a face) does.
   const none = (await call("POST", "/api/recipes/makers/me", { device: device(2) }, from(2))).data.maker;
   assert.equal((await call("GET", `/api/recipes/makers/${none}`, undefined, dev(1))).status, 404);
+  // 1.36 PC: the owner opening their own page before putting anything in it gets an empty page of theirs.
+  const own = (await call("GET", `/api/recipes/makers/${none}`, undefined, dev(2))).data;
+  assert.equal(own.mine, true);
+  assert.equal(own.recipes.length, 0);
   const two = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐻" }, from(2))).data.maker;
   assert.equal(two, none);
   await call("POST", `/api/recipes/makers/${two}/follow`, { device: device(1) }, from(1));

@@ -865,6 +865,15 @@ internal object HelpFaq {
             listOf("현금영수증", "현금 매출", "카드 수수료", "수수료율", "영세 가맹점", "입금 대조", "하루 마감"),
             listOf("매출·영업", "장부"),
         ),
+        // 1.36 PC 재검토 (주휴수당을 물으면 '급여가 명세서와 달라요'만 나와요).
+        HelpTopic(
+            "holidayPay", "급여", "주휴수당이 안 들어가거나 적게 나와요",
+            "주휴수당은 한 주에 15시간 이상 일하고 정한 날을 다 나오면 붙고, 주 근무시간 ÷ 40 × 8시간(최대 8시간)이에요. 급여 계산의 규칙에서 ‘주휴수당’이 켜져 있는지 보세요. " +
+                "시급으로 받으면 출근·시급의 ‘이번 달 주마다 주휴’에서 주마다 들어갔는지, 결근으로 빠졌는지 보여요. 대타 시간은 정해진 근무가 아니라 넣지 않아요.",
+            listOf("주휴수당", "주휴", "15시간", "개근", "결근", "안 들어", "빠졌", "적게"),
+            listOf("급여", "출근·시급"),
+            "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
+        ),
         HelpTopic(
             "hourlyCover", "알바", "대타 시간이 주휴에 안 들어가요",
             "대타는 정해진 근무(소정근로)가 아니라서 주휴 15시간에 넣지 않아요. 출근·시급 › 주휴수당 아래에 이번 달 대타가 몇 번이었는지 보여요. 휴게 포함 시급과 ‘알바 두 곳까지 무료’도 그 아래에 있어요.",
@@ -941,7 +950,7 @@ internal object HelpFaq {
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
     private val BY_TOPIC = mapOf(
         "alarm" to listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"),
-        "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
+        "pay" to listOf("pay", "holidayPay", "takeHome", "extra", "leave", "publicPay"),
         "look" to listOf("freeLook", "recipe", "look"),
         "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import", "publicCycles"),
         "share" to listOf("share", "receive"),
@@ -961,19 +970,24 @@ internal object HelpFaq {
         // longer put in when none of its answers does.
         val first = search(text, topics.filter { it.id in ids }, limit)
         // 1.36 PC Y22 ('달력 말고 다른 화면…'이 아직 떠요): under a question being written only an answer two of its words meet.
-        return (first + search(text, topics, limit)).distinctBy { it.id }.filter { overlap(text, it) >= 2 }.take(limit)
+        // 1.36 PC 재검토: the one most of its words meet first (the topic's own answers win a tie).
+        return (first + search(text, topics, limit + 2)).distinctBy { it.id }.map { it to overlap(text, it) }.filter { it.second >= 2 }
+            .sortedByDescending { it.second }.map { it.first }.take(limit)
     }
 
     /** Words nearly every question says, whatever it is about. */
     private val COMMON = listOf("화면", "이상", "가끔", "계속", "자꾸", "그냥", "너무", "진짜", "정말", "어떻게", "안돼", "안되", "해요",
         "있어요", "없어요", "밤낮", "문제", "좀", "제가", "저는", "이거", "그거", "어디", "언제", "왜")
 
-    /** How many of [text]'s words (two letters or more) the answer's question or keywords hold. */
+    /**
+     * How many of [text]'s words (two letters or more) the answer's question or keywords hold. 1.36 PC 재검토 ('알람이 안 울려서
+     * 늦었어요'에 알람 답이 없어요): a word of three letters or more also meets by its first two ('울려서' → '안 울려').
+     */
     private fun overlap(text: String, t: HelpTopic): Int {
         val hay = (listOf(t.question) + t.keywords).map(SearchText::norm).filter { it.isNotEmpty() }
         // 1.36 PC Y22 again ('앱이 이상해요 화면이 가끔 멈춰요' → 뒤로 가기 답): words almost every question has do not count.
         return SearchText.words(text).map(SearchText::norm).filter { it.length >= 2 && COMMON.none { c -> it.startsWith(c) } }.distinct()
-            .count { w -> hay.any { h -> w in h || (h.length >= 2 && h in w) } }
+            .count { w -> hay.any { h -> w in h || (h.length >= 2 && h in w) || (w.length >= 3 && w.take(2) in h) } }
     }
 
     /** The answers that fit [query], best first. */

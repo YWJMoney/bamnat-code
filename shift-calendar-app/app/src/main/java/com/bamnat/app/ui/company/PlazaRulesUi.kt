@@ -103,6 +103,14 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
     )
 }
 
+/** 1.36 PC 재검토 (마을에서 운영 규칙 여는 곳을 못 찾았어요): under every writing guide, the rules in the app's own page. */
+@Composable
+fun RulesLink(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "운영 규칙") },
+        modifier = modifier.heightIn(min = 48.dp)) { Text("운영 규칙 보기") }
+}
+
 /** [COMM-09] Asks before hiding a writer; the list can be undone in 내 활동 > 가린 사람. */
 @Composable
 fun HideWriterDialog(post: TalkPost?, onDismiss: () -> Unit, onHide: (TalkPost) -> Unit) {

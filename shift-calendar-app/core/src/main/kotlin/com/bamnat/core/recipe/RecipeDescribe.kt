@@ -14,6 +14,7 @@ object RecipeDescribe {
     )
     private val MISSIONS = mapOf("none" to "미션 없음", "math" to "계산 미션", "shake" to "흔들기 미션")
     private val CELLS = mapOf("fill" to "칸 채우기", "tint" to "옅게 칠하기", "dot" to "점만")
+    private val MARK_NAMES = mapOf("big" to "큰 표시", "small" to "작은 표시", "line" to "글자 줄", "dot" to "점 표시", "fill" to "근무 색 꽉 채우기", "none" to "표시 없음")
     private val MODES = mapOf("DAY_RATE" to "일당(공수)형", "PER_JOB" to "건별형", "PLATFORM" to "플랫폼형")
     private val BREAKS = mapOf("UNPAID" to "휴게 무급", "PAID" to "휴게 유급", "AS_WORK" to "휴게도 근무시간")
     private val TAXES = mapOf("NONE" to "세금 없이", "WITHHOLDING_3_3" to "3.3% 떼기", "INSURANCE_4" to "4대보험")
@@ -102,7 +103,11 @@ object RecipeDescribe {
             "근무 시간".takeIf { p.values["hours"] == true }, "음력".takeIf { p.values["lunar"] == true }, "그날 쓴 돈".takeIf { p.values["spend"] == true },
             (p.values["order"] as? String)?.takeIf { it.isNotEmpty() }?.let { o -> "순서 " + o.split(',').joinToString("→") { LINE_NAMES[it] ?: it } },
             // [FREE-01][FREE-02]
-            CellLook.decodeAll(p.values["looks"] as? String).size.takeIf { it > 0 }?.let { "칸 모양 ${it}개" },
+            // 1.36 PC 재검토: what the looks draw, not only how many ('근무 색 꽉 채우기' read as nothing).
+            CellLook.decodeAll(p.values["looks"] as? String).takeIf { it.isNotEmpty() }?.let { l ->
+                val marks = l.mapNotNull { MARK_NAMES[it.mark] }.distinct()
+                "칸 모양 ${l.size}개" + (if (marks.isNotEmpty()) " (" + marks.joinToString(", ") + ")" else "")
+            },
             (p.values["pattern"] as? String)?.let { PATTERN_NAMES[CellPattern.decode(it).mode] },
             "오늘 칸 따로".takeIf { p.values["today"] != null },
         ).joinToString(" · ").ifEmpty { "달력 모양" }

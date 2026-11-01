@@ -271,7 +271,8 @@ async function rcMakerPage(d, env, request, id) {
   const dev = await rcReadDev(d, request, null);
   const now = Date.now();
   const m = await d.one(env, "SELECT * FROM recipe_makers WHERE maker = ?", id);
-  const owner = id === "operator" ? "operator" : m?.device;
+  // 1.36 PC: my own page before anything is put in it (no row yet) is an empty page of mine, not 볼 수 없는 프로필.
+  const owner = id === "operator" ? "operator" : m?.device ?? (dev && (await makerId(dev)) === id ? dev : null);
   if (!owner) return d.json({ error: "not_found" }, 404);
   const mine = Boolean(dev && dev === owner);
   const block = mine ? { mine: false, theirs: false } : await rcBlocked(d, env, dev, id, owner);

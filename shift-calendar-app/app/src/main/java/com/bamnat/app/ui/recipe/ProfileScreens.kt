@@ -165,6 +165,10 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
 
     init { load() }
 
+    private var shown = false
+    /** 1.36 PC: coming back to the page (from another screen or app) reads it again, so 운영자 가림·닫힘 shows without leaving it. */
+    fun resumed() { if (shown) load() else shown = true }
+
     fun load() {
         viewModelScope.launch {
             // 1.36 확인: a link opened right after install could find the network not up yet; one quiet try again.
@@ -315,8 +319,11 @@ fun MakerScreen(
     onSet: (String) -> Unit = {}, onPeople: (String) -> Unit = {}, onStats: () -> Unit = {}, onPro: () -> Unit = {},
     /** 내가 보낸 정보 (이 휴대폰이 보낸 정보 모두 지우기가 맨 아래). */
     onSent: (() -> Unit)? = null,
+    /** 1.36 PC: 첫 작품 만들기 (스튜디오) from my empty profile. */
+    onMake: () -> Unit = {},
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.resumed() }
     val snack = remember { SnackbarHostState() }
     val context = LocalContext.current
     var picking by remember { mutableStateOf(false) }
@@ -438,6 +445,14 @@ fun MakerScreen(
                             OutlinedButton(onClick = onStats, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("작품 통계") }
                         }
                         s.inbox?.let { InboxCard(it, s.unseen, onOpen, onPeople = { onPeople("followers") }, onSeen = vm::seen) }
+                        // 1.36 PC: my profile before the first work: what it is for and the next step, not three empty tabs.
+                        if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("아직 작품이 없어요", style = MaterialTheme.typography.titleSmall)
+                            Text("스튜디오에서 만든 테마나 기능별 탭을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            FilledTonalButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("첫 작품 만들기") }
+                        }
                     }
                 }
                 // 테마 | 기능별 탭 | 모음

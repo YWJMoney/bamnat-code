@@ -24,4 +24,11 @@ class InquiryTipsTest {
     @Test fun aQuestionAboutTheRotationStillGetsIt() {
         assertTrue(HelpFaq.forQuestion("교대 순서를 바꾸고 싶어요").any { it.id == "pattern" })
     }
+
+    @Test fun aLateAlarmStoryAndAHolidayPayQuestionGetTheirAnswersFirst() {
+        // PC ef16de44: neither got its answer.
+        assertTrue(HelpFaq.forQuestion("알람이 안 울려서 아침에 늦었어요").firstOrNull()?.id == "alarm")
+        val pay = HelpFaq.forQuestion("주휴수당이 안 들어가요")
+        assertTrue(pay.map { it.id }.toString(), pay.firstOrNull()?.id == "holidayPay")
+    }
 }
