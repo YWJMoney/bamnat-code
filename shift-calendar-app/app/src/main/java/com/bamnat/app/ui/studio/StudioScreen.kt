@@ -214,6 +214,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
     var uploadWhat by remember { mutableStateOf<String?>(null) }
+    // PC 006d0aec: what went up from here (body → the answer), so 올리기 with nothing changed says so at once, before '무엇을 올릴까요'.
+    var sentBodies by remember { mutableStateOf(mapOf<String, com.bamnat.app.recipe.Sent>()) }
+    var noChange by remember { mutableStateOf<com.bamnat.app.recipe.Sent?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -338,7 +341,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             OutlinedButton(onClick = { checked {
                                 // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
                                 val tab = vm.changedTab()
-                                if (tab != null) uploadWhat = tab
+                                val same = (listOfNotNull(tab?.let { vm.upload(it).first }) + vm.upload().first).firstNotNullOfOrNull { sentBodies[it] }
+                                if (same != null) noChange = same
+                                else if (tab != null) uploadWhat = tab
                                 else { val (body, parent) = vm.upload(); publishing = Triple(body, parent, vm.nextOf()) }
                             } },
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text("올리기") }
@@ -564,14 +569,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         // PC e20cfe53: 바뀐 것 없이 다시 올리기를 누르면 지난 '올렸어요' 끝 화면 대신, 바뀐 곳이 없다고 말하고 지난번 올린 것을 열어요.
         val already = remember(publishing) { up.state.value.sent }
         if (already != null) {
-            AlertDialog(
-                onDismissRequest = { publishing = null },
-                title = { Text("바뀐 곳이 없어요") },
-                text = { Text("지난번에 올린 그대로예요 (코드 ${already.code} · ${already.version}판). 스튜디오에서 고친 뒤 올리면 새로 올라가요",
-                    style = MaterialTheme.typography.bodyMedium) },
-                confirmButton = { TextButton(onClick = { publishing = null; onOpen(already.code) }) { Text("지난번 올린 것 보기") } },
-                dismissButton = { TextButton(onClick = { publishing = null }) { Text("스튜디오로") } },
-            )
+            NoChangeDialog(already, onOpen = { publishing = null; onOpen(already.code) }, onDismiss = { publishing = null })
             return@let
         }
         // [STU-21] 올리기 over the studio (레시피 만들기 steps 2–5): 스튜디오로 or closing comes back with the draft as it was.
@@ -581,15 +579,29 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,
                 // whether 레시피 보기 or 뒤로 follows.
                 val upState by up.state.collectAsState()
-                LaunchedEffect(upState.sent != null) { if (upState.sent != null) vm.markKept() }
+                LaunchedEffect(upState.sent != null) { upState.sent?.let { sent -> vm.markKept(); sentBodies = sentBodies + (body to sent) } }
                 com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; vm.markKept(); onOpen(code) }, finishOnly = true)
             }
         }
     }
+    noChange?.let { sent -> NoChangeDialog(sent, onOpen = { noChange = null; onOpen(sent.code) }, onDismiss = { noChange = null }) }
     if (saving) SaveDialog(vm, s, onDismiss = { saving = false }) { name, toPlaza ->
         saving = false
         scope.launch { vm.save(name, toPlaza).join(); if (leaving) onBack() }
     }
+}
+
+/** PC e20cfe53·006d0aec: 올리기 with nothing changed since the last time it went up. */
+@Composable
+private fun NoChangeDialog(sent: com.bamnat.app.recipe.Sent, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("바뀐 곳이 없어요") },
+        text = { Text("지난번에 올린 그대로예요 (코드 ${sent.code} · ${sent.version}판). 스튜디오에서 고친 뒤 올리면 새로 올라가요",
+            style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = { TextButton(onClick = onOpen) { Text("지난번 올린 것 보기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("스튜디오로") } },
+    )
 }
 
 /** 내 앱에 입히기: an ad first when the look keeps someone else's days ([StudioViewModel.needsAd]). */

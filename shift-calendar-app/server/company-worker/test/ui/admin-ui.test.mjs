@@ -1544,6 +1544,9 @@ test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo
   assert.match(t1.text("#main"), /열어 볼 세트/);
   assert.match(t1.text("#main"), /보러 온 사진/);
   assert.ok(t1.$(`[data-act="recipe-do"][data-id="${code}"][data-key="hide"]`), "가리기 for the recipe is right there");
+  await t1.click('[data-act="photo-big"]');
+  assert.ok(t1.$("dialog img.photo-big"), "the photo opens big");
+  await t1.click('dialog [data-act="close"]');
   await t1.click(`[data-act="recipe-image"][data-id="${pic.id}"][data-key="ok"]`);
   await t1.settle(20);
   assert.match(t1.text("#main"), /보러 온 사진.*보이게 했어요/);

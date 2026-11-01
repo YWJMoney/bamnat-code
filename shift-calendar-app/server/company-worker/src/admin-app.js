@@ -2390,7 +2390,7 @@ function adminApp(L, BUILD, M) {
     const back = tab === "one" ? `<p><button type="button" class="btn small" data-act="recipe-tab" data-key="${esc(S.recipeBack ?? "flagged")}">← 돌아가기 · ${esc(RECIPE_TABS.find(([k]) => k === (S.recipeBack ?? "flagged"))?.[1] ?? "목록")}</button></p>` : "";
     const ph = tab === "one" ? S.recipePhoto : null;
     const photo = ph ? `<div class="card"><div class="row"><span class="row-main">
-        <img src="data:image/webp;base64,${esc(ph.data)}" alt="보러 온 사진" width="128" height="128" class="cover-img">
+        <button type="button" class="linkish" data-act="photo-big" aria-label="사진 크게 보기"><img src="data:image/webp;base64,${esc(ph.data)}" alt="보러 온 사진" width="128" height="128" class="cover-img"></button>
         <b>보러 온 사진${ph.whyName ? ` <span class="pill ${ph.state === "held" ? "bad" : "warn"}">${esc(ph.whyName)}</span>` : ""}</b>
         ${ph.done ? `<small>${ph.done === "ok" ? "보이게 했어요" : "가렸어요"}</small>` : ""}</span>
         ${edit && !ph.done ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="ok">보이기</button>
@@ -4577,6 +4577,12 @@ function adminApp(L, BUILD, M) {
       ACTIONS["recipe-open"]({ id });
     },
     // 1.36 [GRW-12] PC 20ab0254 제안: 사진 검토에서 그 사진을 쓴 작품을 바로 열기. 돌아가기는 연 곳으로.
+    // PC 006d0aec 사용성 제안: 보러 온 사진을 눌러 크게.
+    "photo-big": () => {
+      if (!S.recipePhoto) return;
+      openDialog(`<div class="card"><h2>보러 온 사진</h2><img src="data:image/webp;base64,${esc(S.recipePhoto.data)}" alt="보러 온 사진 크게" class="photo-big">
+        <div class="actions"><button class="btn" type="button" data-act="close">닫기</button></div></div>`, "wide");
+    },
     "recipe-open": ({ id, key }) => {
       // PC e20cfe53: 사진 검토에서 열면 보러 온 그 사진과 보이기·가리기를 작품 위에 함께.
       const photo = key && S.data.recipes?.tab === "images" ? S.data.recipes.items.find((i) => i.id === key) : null;

@@ -620,6 +620,8 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val clash = vm.sameAsParent(s)
     OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’${withWa(s.parentTitle.orEmpty())} 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null)
+    // PC 006d0aec 사용성 제안: 안내만 있고 고칠 단추가 없던 것.
+    if (clash) TextButton(onClick = { vm.edit { it.copy(title = "${it.title.trim().take(24)} · 내 판") } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("‘ · 내 판’ 붙이기") }
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))
