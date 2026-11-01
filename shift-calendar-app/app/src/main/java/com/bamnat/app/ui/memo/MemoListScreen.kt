@@ -230,6 +230,8 @@ fun MemoListScreen(
                 { label: String -> templates.flatMap { t -> t.asks.filter { it.label == label && it.type == "pick" }.flatMap { it.choices } } }
             }
             val setView: (com.bamnat.core.memo.MemoView) -> Unit = { v ->
+                // PC 확인 1be49fd7: memos picked in one view are let go when the view changes, so nothing stays picked unseen.
+                if (v.view != memoView.view) vm.clearSelection()
                 container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
             }
             // PC 확인 bad7d860 사용성 제안: the chips show from the first visit, so the views are found before there are memos.
@@ -237,7 +239,7 @@ fun MemoListScreen(
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
-                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions, templateChoices)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions, templateChoices, state.selection, state.selecting)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
                 memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
                 !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)

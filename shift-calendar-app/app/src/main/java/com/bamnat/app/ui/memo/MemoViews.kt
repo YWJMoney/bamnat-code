@@ -8,6 +8,11 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.ui.draw.alpha
@@ -262,6 +267,9 @@ internal fun MemoBoardView(
                             Text("$m 합계 ${Fmt.won(t.toLong())}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 6.dp))
                         } }
+                        // PC 확인 1be49fd7 사용성 제안: an empty 칸 says it takes cards.
+                        if (col.memos.isEmpty() && movable) Text("여기로 끌어 놓기", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                         LazyColumn(
                             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 160.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -372,16 +380,36 @@ private fun MoveHandle(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -> Unit, actions: CardActions, templateChoices: (String) -> List<String> = { emptyList() }) {
+internal fun MemoTableView(
+    memos: List<Memo>, view: MemoView, onSort: (String) -> Unit, actions: CardActions, templateChoices: (String) -> List<String> = { emptyList() },
+    selection: Set<Long> = emptySet(), selecting: Boolean = false,
+) {
     val columns = remember(memos) { MemoProps.columns(memos) }
     val rows = remember(memos, view) { view.sorted(memos).map { it to MemoProps.of(it).associateBy { p -> p.label } } }
     // 누락 점검 N9: a 고르기 칸's words, offered when its 칸 is tapped.
     val choices = remember(memos, columns) { columns.filter { it.second == MemoProps.Type.PICK }.associate { (c, _) -> c to MemoView.choicesFor(c, memos, templateChoices(c)) } }
-    val sideways = rememberScrollState()
     val titleW = 132.dp
     val colW = 104.dp
     // PC 확인 bad7d860: "11월 30일" was cut; the date column takes the room it needs.
     val dateW = 80.dp
+    // PC 확인 1be49fd7: one ScrollState shared by every row's horizontalScroll was left at the far end after a 칸 was changed (rows told it
+    // different widths), with columns not drawn and no way back. The columns now slide together by one offset the table owns.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var slideX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var viewW by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val contentW = with(density) { (colW * (columns.size + 1) + dateW).toPx() }
+    val maxX = (contentW - viewW).coerceAtLeast(0f)
+    androidx.compose.runtime.LaunchedEffect(maxX) { slideX = slideX.coerceIn(0f, maxX) }
+    val slide = androidx.compose.foundation.gestures.rememberScrollableState { d ->
+        val before = slideX
+        slideX = (slideX - d).coerceIn(0f, maxX)
+        before - slideX
+    }
+    @Composable fun RowScope.Slid(content: @Composable () -> Unit) {
+        Box(Modifier.weight(1f).clipToBounds().onGloballyPositioned { viewW = it.size.width.toFloat() }) {
+            Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).offset { androidx.compose.ui.unit.IntOffset(-slideX.toInt(), 0) }) { content() }
+        }
+    }
     val line = MaterialTheme.colorScheme.outlineVariant
     val rowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.row")
     @Composable fun headCell(text: String, key: String, width: androidx.compose.ui.unit.Dp) {
@@ -397,11 +425,19 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
     }
     // [TAB-07] 부품 memo.table · memo.table.head.
     val headRowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.head")
-    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), RoundedCornerShape(10.dp)))) {
+    val step = with(density) { colW.toPx() }
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), RoundedCornerShape(10.dp)))
+        .scrollable(slide, androidx.compose.foundation.gestures.Orientation.Horizontal)
+        .semantics {
+            customActions = listOf(
+                androidx.compose.ui.semantics.CustomAccessibilityAction("오른쪽 열 보기") { slideX = (slideX + step).coerceIn(0f, maxX); true },
+                androidx.compose.ui.semantics.CustomAccessibilityAction("왼쪽 열 보기") { slideX = (slideX - step).coerceIn(0f, maxX); true },
+            )
+        }) {
         Row(Modifier.border(1.dp, line, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
             .then(com.bamnat.app.ui.parts.PartMods.box(headRowPart, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)))) {
             headCell("제목", MemoView.SORT_TITLE, titleW)
-            Row(Modifier.horizontalScroll(sideways)) {
+            Slid {
                 for ((c, _) in columns) headCell(c, "p:$c", colW)
                 Text("날짜", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(dateW).padding(8.dp, 10.dp))
                 Text("꼬리표", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(colW).padding(8.dp, 10.dp))
@@ -409,17 +445,23 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 160.dp)) {
             items(rows, key = { it.first.id }) { (memo, props) ->
+                val picked = memo.id in selection
                 Row(
-                    Modifier.heightIn(min = 44.dp).background(memoBackground(memo.colorIndex).copy(alpha = 0.35f))
+                    // PC 확인 1be49fd7: a memo picked in the list shows as picked here too.
+                    Modifier.heightIn(min = 44.dp).background(if (picked) MaterialTheme.colorScheme.primaryContainer else memoBackground(memo.colorIndex).copy(alpha = 0.35f))
+                        .semantics { selected = picked }
                         .then(com.bamnat.app.ui.parts.PartMods.box(rowPart, RoundedCornerShape(0.dp)))
                         .combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(memo.title.ifBlank { memo.preview }.ifBlank { "(빈 메모)" }, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                    Text((if (picked) "✓ " else "") + memo.title.ifBlank { memo.preview }.ifBlank { "(빈 메모)" }, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.width(titleW).padding(horizontal = 8.dp, vertical = 6.dp))
-                    Row(Modifier.horizontalScroll(sideways)) {
+                    Slid {
                         for ((c, t) in columns) {
-                            if (t == MemoProps.Type.PICK || t == MemoProps.Type.STAR) PickCell(memo, c, t, props[c], choices[c].orEmpty(), colW, actions)
+                            // While memos are being picked a tap picks the row, so the 칸 do not open.
+                            if (selecting) Text(props[c]?.let { shown(it, t) } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
+                            else if (t == MemoProps.Type.PICK || t == MemoProps.Type.STAR) PickCell(memo, c, t, props[c], choices[c].orEmpty(), colW, actions)
                             else EditCell(memo, c, t, props[c], colW, actions)
                         }
                         // PC 확인 bf62e966: still cut at 120dp with big text, so the 표 writes a short "11/12".
@@ -435,7 +477,7 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
             if (sums.isNotEmpty()) item(key = "sum") {
                 Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (sums.all { it.second == MemoProps.Type.STAR }) "평균" else "합계 · 평균", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.width(titleW).padding(horizontal = 8.dp))
-                    Row(Modifier.horizontalScroll(sideways)) {
+                    Slid {
                         for ((c, t) in columns) {
                             // PC 확인 bad7d860 사용성 제안: 별점은 합계가 아니라 평균 (★ 4.2).
                             val foot = when (t) {
@@ -529,7 +571,15 @@ private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
             .semantics { contentDescription = "$label ${prop?.let { shown(it, type) } ?: "비어 있음"}, 눌러서 ${if (check) "바꾸기" else "고치기"}" }
             .padding(horizontal = 8.dp, vertical = 12.dp),
     )
-    if (editing) {
+    // PC 확인 1be49fd7 사용성 제안: a 날짜 칸 picks on a calendar and a 시각 칸 on a clock instead of typing.
+    if (editing && type == MemoProps.Type.DATE) {
+        DateCellPicker(prop?.date ?: memo.date ?: com.bamnat.core.time.Today.date(), onDismiss = { editing = false }) { d ->
+            editing = false
+            set(if (d.year == com.bamnat.core.time.Today.date().year) "${d.monthValue}월 ${d.dayOfMonth}일" else "${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일")
+        }
+    } else if (editing && type == MemoProps.Type.TIME) {
+        TimeCellPicker(prop?.let { MemoProps.timeOf(it) }, onDismiss = { editing = false }) { t -> editing = false; set("%02d:%02d".format(t.hour, t.minute)) }
+    } else if (editing) {
         val numeric = type == MemoProps.Type.MONEY || type == MemoProps.Type.NUM
         var text by remember { mutableStateOf(if (numeric) prop?.num?.let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() } ?: "" else prop?.raw.orEmpty()) }
         androidx.compose.material3.AlertDialog(
@@ -547,12 +597,41 @@ private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
                     editing = false
                     val v = text.trim()
                     // A 금액 written as a bare number stays 금액 under a name that does not say money.
-                    set(if (type == MemoProps.Type.MONEY && v.isNotEmpty() && v.all { it.isDigit() || it == ',' } && !MemoProps.isMoneyLabel(label)) v + "원" else v)
+                    // PC 확인 1be49fd7: the memo then reads as the 표 does, "금액: 20,000원".
+                    val n = v.replace(",", "").toLongOrNull()
+                    set(if (type == MemoProps.Type.MONEY && n != null) "%,d원".format(n) else v)
                 }) { Text("저장") }
             },
             dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("닫기") } },
         )
     }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun DateCellPicker(start: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
+    val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                state.selectedDateMillis?.let { onPick(java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate()) } ?: onDismiss()
+            }) { Text("저장") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
+    ) { androidx.compose.material3.DatePicker(state) }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeCellPicker(start: java.time.LocalTime?, onDismiss: () -> Unit, onPick: (java.time.LocalTime) -> Unit) {
+    val state = androidx.compose.material3.rememberTimePickerState(start?.hour ?: 9, start?.minute ?: 0, is24Hour = true)
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { androidx.compose.material3.TimePicker(state) },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text("저장") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 /**

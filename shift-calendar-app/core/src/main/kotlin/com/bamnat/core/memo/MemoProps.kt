@@ -153,6 +153,8 @@ object MemoProps {
         val lines = memo.body.lines().toMutableList()
         val at = lines.indexOfFirst { l -> LINE.matchEntire(l)?.groupValues?.get(1)?.trim() == label }
         val v = value.trim()
+        // PC 확인 1be49fd7: clearing a 칸 the memo does not have changes nothing (it used to rewrite the body's ends).
+        if (at < 0 && v.isEmpty()) return memo
         when {
             at >= 0 && v.isEmpty() -> lines.removeAt(at)
             at >= 0 -> lines[at] = "$label: $v"

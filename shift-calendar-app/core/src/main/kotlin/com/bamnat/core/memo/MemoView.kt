@@ -108,13 +108,13 @@ data class MemoView(
         const val BY_CHECK = "check"
         const val BY_SHIFT = "shift"
         val BY_FIXED = listOf(BY_TAG, BY_SHIFT, BY_CHECK, BY_COLOR)
-        val BY_LABELS = mapOf(BY_TAG to "꼬리표", BY_SHIFT to "근무", BY_CHECK to "할 일 상태", BY_COLOR to "색")
+        val BY_LABELS = mapOf(BY_TAG to "꼬리표", BY_SHIFT to "근무", BY_CHECK to "체크 진행", BY_COLOR to "색")
         const val SORT_TITLE = "title"
         const val NONE = "\u0000none"
 
         private val CHECK_ORDER = listOf("할 일", "하는 중", "다 함", "메모")
 
-        /** Whether a card can be moved between [by]'s columns (근무 and 할 일 상태 come from the day and the ticks, not the card). */
+        /** Whether a card can be moved between [by]'s columns (근무 and 체크 진행 come from the day and the ticks, not the card). */
         fun canMove(by: String): Boolean = by == BY_TAG || by == BY_COLOR || by.startsWith("p:")
 
         /**
