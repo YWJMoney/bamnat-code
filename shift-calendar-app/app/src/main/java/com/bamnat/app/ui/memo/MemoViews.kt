@@ -111,14 +111,17 @@ private fun PickChip(label: String, options: List<Pair<String, String>>, onPick:
 internal fun PropPills(memo: Memo, max: Int = 3, modifier: Modifier = Modifier) {
     val props = remember(memo.body, memo.date) { MemoProps.of(memo) }
     if (props.isEmpty()) return
+    // [TAB-07] 부품 memo.prop: a blueprint can draw the pills its own way.
+    val part = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.prop")
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (p in props.take(max)) {
             Text(
                 "${p.label} ${shown(p)}",
-                style = MaterialTheme.typography.labelSmall,
+                style = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.labelSmall),
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 maxLines = 1,
                 modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
+                    .then(com.bamnat.app.ui.parts.PartMods.box(part, RoundedCornerShape(6.dp)))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
@@ -140,6 +143,8 @@ internal fun shown(p: MemoProps.Prop): String = when (p.type) {
 internal fun MemoBoardView(memos: List<Memo>, view: MemoView, shiftOf: (LocalDate) -> String?, state: MemoListState, actions: CardActions) {
     val columns = remember(memos, view, shiftOf) { view.board(memos, shiftOf) }
     val money = remember(memos) { MemoProps.columns(memos).firstOrNull { it.second == MemoProps.Type.MONEY }?.first }
+    val colPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.col")
+    val headPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.head")
     LazyRow(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp),
@@ -149,11 +154,11 @@ internal fun MemoBoardView(memos: List<Memo>, view: MemoView, shiftOf: (LocalDat
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.width(250.dp).fillParentMaxHeight(),
+                modifier = Modifier.width(250.dp).fillParentMaxHeight().then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
             ) {
                 Column {
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(col.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text(col.label, style = com.bamnat.app.ui.parts.PartMods.text(headPart, MaterialTheme.typography.titleSmall), maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f).semantics { heading() })
                         Text("${col.memos.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -188,6 +193,7 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
     val titleW = 132.dp
     val colW = 104.dp
     val line = MaterialTheme.colorScheme.outlineVariant
+    val rowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.row")
     @Composable fun headCell(text: String, key: String, width: androidx.compose.ui.unit.Dp) {
         val on = view.sort.removePrefix("-") == key
         Row(
@@ -212,6 +218,7 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
             items(rows, key = { it.first.id }) { (memo, props) ->
                 Row(
                     Modifier.heightIn(min = 44.dp).background(memoBackground(memo.colorIndex).copy(alpha = 0.35f))
+                        .then(com.bamnat.app.ui.parts.PartMods.box(rowPart, RoundedCornerShape(0.dp)))
                         .combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

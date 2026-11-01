@@ -126,8 +126,14 @@ export const PART_IDS = [
   "cal", "cal.head", "cal.head.title", "cal.head.nav", "cal.head.today", "cal.week", "cal.week.day", "cal.grid",
   "cal.cell", "cal.cell.date", "cal.cell.mark", "cal.cell.memo", "cal.cell.money", "cal.cell.hours", "cal.cell.spend",
   "cal.cell.lunar", "cal.cell.holiday", "cal.foot",
+  // [TAB-04] 1.36 달력 판
+  "cal.band", "cal.band.slot", "cal.line", "cal.line.row", "cal.line.bar",
   "memo.head", "memo.tags", "memo.card", "memo.card.title", "memo.card.body", "memo.card.date",
+  // [TAB-01][TAB-02] 메모 속성·보드·표
+  "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
   "money.head", "money.day", "money.row", "money.amount",
+  // [TAB-06] 가계부 판
+  "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
   "pay.head", "pay.total", "pay.row",
   "widget", "widget.head", "widget.cell",
 ];

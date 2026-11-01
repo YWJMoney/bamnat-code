@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.core.layout.CalendarBoard
 import com.bamnat.core.layout.ShiftBand
 import com.bamnat.core.layout.Timeline
@@ -100,7 +101,9 @@ internal fun ShiftBandMonth(
         generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.map { it to snapshot.resolver.resolve(it) }.toList()
     }
     val cycle = remember(days) { ShiftBand.cycle(days.filter { YearMonth.from(it.first) == month }.map { it.second.shiftType?.name }) }
-    Column(modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.band"), RoundedCornerShape(0.dp))).padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
         WeekdayHeader(weekStart, Modifier.padding(start = 0.dp))
         for (week in days.chunked(7)) {
             Row(Modifier.fillMaxWidth().height(52.dp)) {
@@ -120,6 +123,8 @@ internal fun ShiftBandMonth(
                         Modifier.weight(1f).height(52.dp).padding(start = if (sameBefore) 0.dp else 2.dp, end = if (sameAfter) 0.dp else 2.dp)
                             .background((c ?: MaterialTheme.colorScheme.surfaceContainerHighest).copy(alpha = (if (off) 0.28f else 0.85f) * (if (inMonth) 1f else 0.35f)), shape)
                             .then(if (date == selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
+                            // [TAB-07] 부품 cal.band.slot (오늘·고른 날 상태도).
+                            .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.band.slot", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked })), shape, ))
                             .clickable { onDay(date) }
                             .clearAndSetSemantics { contentDescription = "${Fmt.monthDay(date)} ${name ?: "근무 없음"}"; this.selected = isPicked },
                         contentAlignment = Alignment.Center,
@@ -165,6 +170,8 @@ internal fun TimelineMonth(
         }
     }
     val grid = MaterialTheme.colorScheme.outlineVariant
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val barColor = bp.style("cal.line.bar").fillColor
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     Column(modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 64.dp, bottom = 4.dp)) {
@@ -195,7 +202,7 @@ internal fun TimelineMonth(
                     drawRoundRect(grid.copy(alpha = 0.25f), size = size, cornerRadius = CornerRadius(6f, 6f))
                     for (h in 1..3) drawLine(grid, Offset(w * h / 4f, 0f), Offset(w * h / 4f, size.height), 1f)
                     for (s in spans) {
-                        val color = (if (s.carried) beforeColor else c) ?: Color.Gray
+                        val color = (if (s.carried) beforeColor else barColor ?: c) ?: Color.Gray
                         drawRoundRect(
                             color.copy(alpha = if (s.carried) 0.45f else 0.9f),
                             topLeft = Offset(w * s.from / Timeline.DAY, 0f),
