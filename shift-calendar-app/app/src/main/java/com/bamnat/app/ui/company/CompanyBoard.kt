@@ -757,8 +757,11 @@ private fun PostRow(
             val openRecipe = LocalOpenRecipe.current
             SoftCard(Modifier.padding(top = 6.dp).fillMaxWidth().clickable(enabled = openRecipe != null, onClickLabel = "작품 보기") { openRecipe?.invoke(code) }) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("🎨", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.width(8.dp))
+                    // PC 확인 V27: a small picture of the recipe when the server sent its look.
+                    val look = remember(p.attachLook) { p.attachLook?.let { runCatching { com.bamnat.app.recipe.ThemeSwatch.of(org.json.JSONObject(it)) }.getOrNull() } }
+                    if (look != null) com.bamnat.app.ui.recipe.ThemeThumb(look, width = 72.dp)
+                    else Text("🎨", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1)
                         Text("장터에서 보고 입어 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)

@@ -87,7 +87,9 @@ internal fun villageFoundOf(o: JSONObject): VillageFound {
 
 /** 1.36 [VIL-19] 이달의 주제 공모: this month's theme (null: none), how many are in, mine, and last month's picks as (code, title). */
 data class Contest(val month: String, val theme: String?, val entries: Int, val mine: List<String>, val lastTheme: String?,
-    val picks: List<Pair<String, String>>)
+    val picks: List<Pair<String, String>>,
+    /** PC 확인 V26: [mine] with their titles, for the card; empty from a server before. */
+    val mineTitles: List<Pair<String, String>> = emptyList())
 
 internal fun contestOf(o: JSONObject): Contest {
     val mine = o.optJSONArray("mine") ?: JSONArray()
@@ -95,5 +97,6 @@ internal fun contestOf(o: JSONObject): Contest {
     val picks = last?.optJSONArray("picks") ?: JSONArray()
     return Contest(o.optString("month"), o.optString("theme").takeIf { it.isNotEmpty() && !o.isNull("theme") }, o.optInt("entries"),
         (0 until mine.length()).map { mine.getString(it) }, last?.optString("theme"),
-        (0 until picks.length()).map { picks.getJSONObject(it) }.map { it.optString("code") to it.optString("title") })
+        (0 until picks.length()).map { picks.getJSONObject(it) }.map { it.optString("code") to it.optString("title") },
+        (o.optJSONArray("mineTitles") ?: JSONArray()).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("code") to it.optString("title") } })
 }

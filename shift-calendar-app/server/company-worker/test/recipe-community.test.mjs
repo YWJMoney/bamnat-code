@@ -552,7 +552,10 @@ test("[VIL-16] 자랑 글에 내 공개 작품 하나를 카드로 붙여요", a
   const id = (await write(1, "제 달력 보세요", { kind: "show", attach: mine })).data.id;
   const talk = (await write(1, "이야기에는 안 붙어요", { attach: mine })).data.id;
   const posts = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, { ...from(3), "x-device": device(3) })).data.posts;
-  assert.deepEqual(posts.find((p) => p.id === id).attach, { code: mine, title: "야간 다크" });
+  const card = posts.find((p) => p.id === id).attach;
+  assert.deepEqual([card.code, card.title], [mine, "야간 다크"]);
+  // PC 확인 V27: with its look for a small picture.
+  assert.equal(typeof card.look, "object");
   assert.equal(posts.find((p) => p.id === talk).attach, undefined);
 });
 
@@ -571,6 +574,7 @@ test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공
   assert.equal((await enter(1, mine)).status, 201);
   const seen = (await see(1)).data;
   assert.deepEqual([seen.theme, seen.entries, seen.mine], ["야간 근무용 어두운 테마", 1, [mine]]);
+  assert.deepEqual(seen.mineTitles.map((m) => m.code), [mine], "PC 확인 V26: by name");
   assert.equal((await call("POST", "/api/admin/village/contests", { style: "SHIFT", theme: "" }, admin)).status, 409, "not taken off once entered");
   const list = (await call("GET", "/api/admin/village/contests", undefined, admin)).data;
   const here = list.items.find((x) => x.month === list.month && x.style === "SHIFT");

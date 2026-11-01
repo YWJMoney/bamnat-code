@@ -81,7 +81,7 @@ import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCo
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
-import { CODE as RECIPE_CODE, RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
@@ -3522,8 +3522,9 @@ async function talkData(request, env, companyId, grp, known = null) {
   ]) : [[], []];
   // 1.36 [VIL-16] The recipes 자랑 posts carry, while they are still up and public.
   const attached = room ? [...new Set(rows.filter((p) => p.attach).map((p) => p.attach))] : [];
-  const cards = new Map(attached.length ? (await all(env, `SELECT code, title FROM recipes WHERE state = 'visible' AND scope = 'public'
-    AND code IN (${attached.map(() => "?").join(",")})`, ...attached)).map((r) => [r.code, r.title]) : []);
+  // PC 확인 V27: the card carries the recipe's look, so the 자랑 shows a small picture of it.
+  const cards = new Map(attached.length ? (await all(env, `SELECT code, title, body FROM recipes WHERE state = 'visible' AND scope = 'public'
+    AND code IN (${attached.map(() => "?").join(",")})`, ...attached)).map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]) : []);
   const pollOfRow = (p) => {
     const options = JSON.parse(p.poll);
     const counts = options.map((_, i) => pollCounts.find((r) => r.post_id === p.id && r.choice === i)?.n ?? 0);
@@ -3586,7 +3587,8 @@ async function talkData(request, env, companyId, grp, known = null) {
       kind: p.kind ?? "talk",
       ...(p.kind === "question" && p.answer ? { answer: p.answer } : {}),
       ...(p.poll ? { poll: pollOfRow(p) } : {}),
-      ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach) } } : {}),
+      ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach).title,
+        ...(cards.get(p.attach).look ? { look: cards.get(p.attach).look } : {}) } } : {}),
       change: p.change ? lines(JSON.parse(p.change)) : null,
       agree: p.agree ?? 0,
       disagree: p.disagree ?? 0,

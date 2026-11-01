@@ -272,6 +272,8 @@ data class TalkPost(
     val poll: Poll? = null,
     /** 1.36 [VIL-16] On a 자랑: the writer's own public recipe, as (code, title). */
     val attach: Pair<String, String>? = null,
+    /** PC 확인 V27: that recipe's look as the server sent it (lookOf), kept as written; null without one. */
+    val attachLook: String? = null,
 )
 
 /** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
@@ -1250,6 +1252,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             answer = p.optStringOrNull("answer"),
             poll = p.optJSONObject("poll")?.let(::pollOf)?.takeIf { it.options.size >= 2 },
             attach = p.optJSONObject("attach")?.let { a -> a.optString("code").takeIf { it.isNotEmpty() }?.let { it to a.optString("title") } },
+            attachLook = p.optJSONObject("attach")?.optJSONObject("look")?.toString(),
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),

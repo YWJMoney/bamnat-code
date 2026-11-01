@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.village
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,17 +53,31 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
     if (k.theme == null && k.picks.isEmpty()) return
     SoftCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("이달의 주제", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            // PC 확인 V31: which month, in the title; with only last month's picks, it is that month's 이달의 테마.
+            val month = k.month.split('-').getOrNull(1)?.toIntOrNull()
+            val lastMonth = month?.let { if (it == 1) 12 else it - 1 }
+            Text(if (k.theme != null) "${month?.let { "${it}월 " } ?: ""}이달의 주제" else "${lastMonth?.let { "${it}월 " } ?: "지난 달 "}이달의 테마",
+                style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             k.theme?.let { theme ->
                 Text("‘$theme’", style = MaterialTheme.typography.bodyLarge)
                 Text("만든 작품을 넣으면 달 끝에 운영자가 3개를 골라 ‘이달의 테마’로 마을에 소개해요 · 지금 ${k.entries}개",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (k.mine.isNotEmpty()) Text("내가 넣은 작품 ${k.mine.size}개", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                if (c.recipeApi.enabled) FilledTonalButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 작품 넣기") }
+                // PC 확인 V26: what I put in by name, and how many more can go in.
+                if (k.mine.isNotEmpty()) {
+                    Text("내가 넣은 작품 ${k.mine.size}개 · ${(3 - k.mine.size).coerceAtLeast(0)}개 더 넣을 수 있어요", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                    if (k.mineTitles.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        k.mineTitles.forEach { (code, title) -> AssistChip(onClick = { onRecipe(code) }, label = { Text("🎨 $title", maxLines = 1) }) }
+                    }
+                }
+                if (c.recipeApi.enabled) FilledTonalButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(if (k.mine.isEmpty()) "내 작품 넣기" else "넣은 작품 바꾸기")
+                }
             }
             problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             if (k.picks.isNotEmpty()) {
-                Text("지난 달 이달의 테마" + (k.lastTheme?.let { " · ‘$it’" } ?: ""), style = MaterialTheme.typography.labelLarge)
+                Text((lastMonth?.let { "${it}월" } ?: "지난 달") + " 이달의 테마" + (k.lastTheme?.let { " · ‘$it’" } ?: "") + " · 눌러서 입어 보기",
+                    style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     k.picks.forEach { (code, title) -> AssistChip(onClick = { onRecipe(code) }, label = { Text("🏆 $title", maxLines = 1) }) }
                 }
@@ -70,11 +85,11 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
         }
     }
     if (picking) {
-        var mine by remember { mutableStateOf<List<Pair<String, String>>?>(null) }
+        var mine by remember { mutableStateOf<List<com.bamnat.app.recipe.RecipeItem>?>(null) }
         var chosen by remember { mutableStateOf(k.mine.toSet()) }
         LaunchedEffect(Unit) {
             mine = runCatching { c.recipeApi.mine(c.companyStore.device).items }.getOrDefault(emptyList())
-                .filter { (r, s) -> s.first == "visible" && s.second == "public" && (r.styles.isEmpty() || st in r.styles) }.map { (r, _) -> r.code to r.title }
+                .filter { (r, s) -> s.first == "visible" && s.second == "public" && (r.styles.isEmpty() || st in r.styles) }.map { (r, _) -> r }
         }
         AlertDialog(
             onDismissRequest = { picking = false },
@@ -86,10 +101,14 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                     when {
                         list == null -> Text("불러오는 중이에요")
                         list.isEmpty() -> Text("공개로 올린 작품이 아직 없어요. 스튜디오에서 만들어 공개로 올리면 넣을 수 있어요")
-                        else -> list.forEach { (code, title) ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        else -> list.forEach { r ->
+                            val code = r.code
+                            // PC 확인 V25: each with a small picture, the whole row a tap.
+                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { chosen = if (code in chosen) chosen - code else chosen + code },
+                                verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(code in chosen, onCheckedChange = { on -> chosen = if (on) chosen + code else chosen - code })
-                                Text(title, maxLines = 1)
+                                r.look?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 48.dp); androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp)) }
+                                Text(r.title, maxLines = 1)
                             }
                         }
                     }

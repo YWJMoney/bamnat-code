@@ -56,9 +56,11 @@ export async function villageRoute(d, request, env, path, url, now) {
       d.one(env, "SELECT COUNT(*) AS n FROM village_entries WHERE month = ? AND style = ?", month, style),
     ]);
     const picks = before ? JSON.parse(before.picks) : [];
-    const titles = await shownTitles(d, env, picks);
+    const titles = await shownTitles(d, env, [...picks, ...mine.map((r) => r.code)]);
     return d.json({
       month, theme: here?.theme ?? null, entries: n?.n ?? 0, mine: mine.map((r) => r.code),
+      // PC 확인 V26: what I put in, by name, for the card.
+      mineTitles: mine.filter((r) => titles.has(r.code)).map((r) => ({ code: r.code, title: titles.get(r.code).title })),
       ...(before && picks.length ? { last: { month: last, theme: before.theme, picks: picks.filter((c) => titles.has(c)).map((c) => ({ code: c, title: titles.get(c).title })) } } : {}),
     });
   }

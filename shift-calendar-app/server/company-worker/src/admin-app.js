@@ -1139,7 +1139,8 @@ function adminApp(L, BUILD, M) {
     const now = d.items.filter((x) => x.month === d.month);
     const last = d.items.filter((x) => x.month !== d.month && x.theme);
     const card = (x, current) => `<article class="card">
-      <div class="head"><h3>${esc(STYLE_NAMES[x.style] ?? x.style)}</h3><span class="pill${x.entries.length ? " info" : ""}">작품 ${x.entries.length}</span></div>
+      <div class="head"><h3>${esc(STYLE_NAMES[x.style] ?? x.style)}</h3><span class="pill${x.entries.length ? " info" : ""}">작품 ${x.entries.length}</span>
+        ${!current && x.picks.length ? `<span class="pill ok">고름 ${x.picks.length}/3 · 앱에 보여요</span>` : ""}</div>
       ${current ? `<label class="field"><span>이달의 주제</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
         placeholder="예: 야간 근무용 어두운 테마"${edit ? "" : " readonly"}></label>
         ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">저장</button></div>` : ""}`
@@ -4107,7 +4108,15 @@ function adminApp(L, BUILD, M) {
       const [month, style] = id.split("|");
       const codes = [...document.querySelectorAll(`input[data-pick="${id}"]:checked`)].map((el) => el.value);
       if (codes.length > 3) return toast("3개까지 골라 주세요");
-      await act(() => api("/village/contests/pick", "POST", { month, style, codes }), codes.length ? "이달의 테마로 골랐어요" : "고른 것을 비웠어요");
+      // PC 확인 V30: said plainly, with 되돌리기 to the picks before.
+      const before = S.data.contests?.items.find((x) => x.month === month && x.style === style)?.picks ?? [];
+      await act(() => api("/village/contests/pick", "POST", { month, style, codes }),
+        codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요` : "고른 것을 비웠어요",
+        async () => {
+          await act(() => api("/village/contests/pick", "POST", { month, style, codes: before }), "되돌렸어요");
+          S.data.contests = null;
+          load();
+        });
       S.data.contests = null;
       load();
     },
