@@ -739,6 +739,11 @@ export const RECIPE_COLUMNS = [
   // [RCP-35][D107] a 안좋아요 on a talk post carries its reason too, seen by the post's writer only.
   "ALTER TABLE post_votes ADD COLUMN why TEXT",
   "ALTER TABLE post_votes ADD COLUMN note TEXT",
+  // 1.36 [MKS-01] 출시 대기: the operator's recipes put in ahead of an app update ('waiting' until release_at or 지금 공개),
+  // shown only to apps at min_app or newer (the list's app=), in a named batch (출시 묶음) the operator releases at once.
+  "ALTER TABLE recipes ADD COLUMN release_at INTEGER",
+  "ALTER TABLE recipes ADD COLUMN min_app INTEGER",
+  "ALTER TABLE recipes ADD COLUMN batch TEXT",
 ];
 
 export function newCode() {
@@ -902,6 +907,33 @@ async function readDevice(d, request, body) {
 
 const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
 
+/** 1.36 [MKS-01] The list's app= (the phone's versionCode), 0 when absent or odd. */
+export function appCodeOf(url) {
+  const n = Number(url.searchParams.get("app"));
+  return Number.isInteger(n) && n > 0 && n < 1_000_000 ? n : 0;
+}
+
+/** 1.36 [MKS-01] An operator upload's 출시 대기 settings: {hold, releaseAt (ms|null), minApp (int|null), batch (text|null)}; null on a bad one. */
+export function releaseOf(body, now) {
+  const hold = body.hold === true || body.releaseAt !== undefined && body.releaseAt !== null;
+  let releaseAt = null;
+  if (body.releaseAt !== undefined && body.releaseAt !== null) {
+    releaseAt = typeof body.releaseAt === "number" ? body.releaseAt : Date.parse(String(body.releaseAt));
+    if (!Number.isFinite(releaseAt) || releaseAt < now - DAY || releaseAt > now + 366 * DAY) return null;
+  }
+  let minApp = null;
+  if (body.minApp !== undefined && body.minApp !== null) {
+    if (!Number.isInteger(body.minApp) || body.minApp < 1 || body.minApp >= 1_000_000) return null;
+    minApp = body.minApp;
+  }
+  let batch = null;
+  if (body.batch !== undefined && body.batch !== null) {
+    batch = String(body.batch).trim().slice(0, 40);
+    if (!/^[0-9A-Za-z가-힣._ -]{1,40}$/.test(batch)) return null;
+  }
+  return { hold, releaseAt, minApp, batch };
+}
+
 /** GET /api/recipes: one kind of work's plaza, a page at a time, the same for every phone (edge-cached). */
 async function recipeList(d, env, url) {
   const style = url.searchParams.get("style");
@@ -911,6 +943,9 @@ async function recipeList(d, env, url) {
   const now = Date.now();
   const where = ["r.state = 'visible'", "r.scope = 'public'"];
   const args = [];
+  // 1.36 [MKS-01] An app sends its versionCode as app=; one that sends none (before 1.36) never sees a min_app recipe it cannot read.
+  where.push("(r.min_app IS NULL OR r.min_app <= ?)");
+  args.push(appCodeOf(url));
   if (style && ALL_STYLES.has(style)) {
     where.push("(',' || r.styles || ',') LIKE ?");
     args.push(`%,${style},%`);
@@ -1357,12 +1392,13 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     code, action, String(reason).slice(0, 200), actorName, now);
   if (path === "/recipes" && method === "GET") {
     const tab = url.searchParams.get("tab") ?? "queue";
-    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
+    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1", waiting: "state = 'waiting'" }[tab]
       ?? "state = 'pending'";
     const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
     const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${rows.map(() => "?").join(",")})
       GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
     return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
+      ...(r.release_at ? { releaseAt: new Date(r.release_at).toISOString() } : {}), ...(r.min_app ? { minApp: r.min_app } : {}), ...(r.batch ? { batch: r.batch } : {}),
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n })),
       hidden: r.hidden_reason ?? null })) });
   }
@@ -1380,7 +1416,9 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     return d.json({ month, made: made.n, actions: Object.fromEntries(rows.map((r) => [r.action, r.n])) });
   }
   if (path === "/recipes" && method === "POST") {
-    // The operator's own: 공개 자료 or a 시작 레시피, 공식 marked, never waiting.
+    // The operator's own: 공개 자료 or a 시작 레시피, 공식 marked, never waiting for 검토.
+    // 1.36 [MKS-01] hold/releaseAt put it in 출시 대기 instead of on the 장터; minApp keeps it from apps that cannot read it;
+    // replace: true takes the operator's recipe of the same name (a 출시 묶음 put in again after its format moved) to a new 판.
     const body = await d.readJson(request, RECIPE.maxBytes + 2048);
     let clean;
     try {
@@ -1390,16 +1428,63 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       throw e;
     }
     const r = clean.recipe;
+    const rel = releaseOf(body, now);
+    if (!rel) return d.json({ error: "release", field: "releaseAt" }, 400);
+    const state = rel.hold ? "waiting" : "visible";
+    const same = body.replace === true ? await d.one(env, `SELECT code, version, hash, state FROM recipes WHERE owner = 'operator' AND title_skel = ?
+      AND state != 'deleted' ORDER BY created_at DESC LIMIT 1`, nameSkeleton(r.title)) : null;
+    if (same) {
+      if (same.hash === clean.hash && (same.state === state || same.state === "visible")) {
+        await d.run(env, "UPDATE recipes SET release_at = ?, min_app = ?, batch = ? WHERE code = ?", rel.releaseAt, rel.minApp, rel.batch, same.code);
+        return d.json({ code: same.code, hash: clean.hash, version: same.version, state: same.state, same: true });
+      }
+      const v = same.version + 1;
+      // A 판 already on the 장터 stays there; one still waiting takes the new settings.
+      const next = same.state === "visible" ? "visible" : state;
+      await d.batch(env, [
+        d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, state = ?, public_data = ?, showcase = ?, version = ?,
+          hash = ?, body = ?, updated_at = ?, release_at = ?, min_app = ?, batch = ? WHERE code = ?`, r.title, nameSkeleton(r.title), r.summary ?? "",
+        r.styles.join(","), JSON.stringify(r.cover), next, body.publicData === true ? 1 : 0, body.showcase === true ? 1 : 0, v, clean.hash, clean.text, now,
+        rel.releaseAt, rel.minApp, rel.batch, same.code),
+        d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", same.code, v, clean.hash, clean.text, now),
+        act(same.code, "official", `새 판 ${v}${rel.batch ? ` · ${rel.batch}` : ""}`),
+      ]);
+      return d.json({ code: same.code, hash: clean.hash, version: v, state: next });
+    }
     let code = newCode();
     while (await d.one(env, "SELECT 1 AS x FROM recipes WHERE code = ?", code)) code = newCode();
     await d.batch(env, [
-      d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, official, public_data, showcase, version, hash, body, created_at, updated_at, decided_at)
-        VALUES (?, 'operator', ?, ?, ?, ?, ?, 'public', 'visible', 1, ?, ?, 1, ?, ?, ?, ?, ?)`, code, r.title, nameSkeleton(r.title), r.summary ?? "",
-      r.styles.join(","), JSON.stringify(r.cover), body.publicData === true ? 1 : 0, body.showcase === true ? 1 : 0, clean.hash, clean.text, now, now, now),
+      d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, official, public_data, showcase, version, hash, body, created_at, updated_at, decided_at,
+        release_at, min_app, batch)
+        VALUES (?, 'operator', ?, ?, ?, ?, ?, 'public', ?, 1, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`, code, r.title, nameSkeleton(r.title), r.summary ?? "",
+      r.styles.join(","), JSON.stringify(r.cover), state, body.publicData === true ? 1 : 0, body.showcase === true ? 1 : 0, clean.hash, clean.text, now, now, now,
+      rel.releaseAt, rel.minApp, rel.batch),
       d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
-      act(code, "official", body.publicData === true ? "공개 자료" : body.showcase === true ? "보여주기" : "시작 레시피"),
+      act(code, state === "waiting" ? "waiting" : "official", [body.publicData === true ? "공개 자료" : body.showcase === true ? "보여주기" : "시작 레시피", rel.batch].filter(Boolean).join(" · ")),
     ]);
-    return d.json({ code, hash: clean.hash }, 201);
+    return d.json({ code, hash: clean.hash, state }, 201);
+  }
+  // 1.36 [MKS-01] 출시 대기 묶음: how many wait in each, and 지금 공개 / 예약 (at) / 예약 풀기 (at: null) for one batch or every waiting one.
+  if (path === "/recipes/release" && method === "GET") {
+    const rows = await d.all(env, `SELECT COALESCE(batch, '') AS batch, COUNT(*) AS n, MIN(release_at) AS at, MAX(min_app) AS minApp FROM recipes
+      WHERE state = 'waiting' GROUP BY COALESCE(batch, '') ORDER BY batch`);
+    return d.json({ items: rows.map((x) => ({ batch: x.batch || null, n: x.n, releaseAt: x.at ? new Date(x.at).toISOString() : null, minApp: x.minApp ?? null })) });
+  }
+  if (path === "/recipes/release" && method === "POST") {
+    const body = await d.readJson(request, 1024);
+    const one = body.batch === undefined || body.batch === null ? null : String(body.batch);
+    const where = one === null ? "state = 'waiting'" : "state = 'waiting' AND COALESCE(batch, '') = ?";
+    const args = one === null ? [] : [one];
+    if (body.at !== undefined) {
+      const at = body.at === null ? null : Date.parse(String(body.at));
+      if (at !== null && (!Number.isFinite(at) || at < now || at > now + 366 * DAY)) return d.json({ error: "release", field: "at" }, 400);
+      const res = await d.run(env, `UPDATE recipes SET release_at = ? WHERE ${where}`, at, ...args);
+      await d.run(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES ('-', 'schedule', ?, ?, ?)",
+        `${one ?? "모두"} · ${at ? new Date(at).toISOString() : "예약 풀기"}`, actorName, now);
+      return d.json({ scheduled: res.meta?.changes ?? 0, at: at ? new Date(at).toISOString() : null });
+    }
+    const n = await releaseWaiting(d, env, now, where, args, actorName);
+    return d.json({ released: n });
   }
   const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {
@@ -1475,8 +1560,24 @@ export async function forgetRecipes(d, env, dev) {
   return own.length;
 }
 
-/** Hidden recipes go 90 days after they were hidden (처리방침 3.8), from the hourly job. */
+/**
+ * 1.36 [MKS-01] 출시 대기 → 장터: the waiting rows [where] picks, at once, each logged. They come up as new (updated_at now) so 새로 순
+ * shows them on the day; their min_app still keeps them from older apps.
+ */
+async function releaseWaiting(d, env, now, where, args, actor) {
+  const rows = await d.all(env, `SELECT code FROM recipes WHERE ${where} LIMIT 400`, ...args);
+  if (!rows.length) return 0;
+  await d.batch(env, rows.flatMap((r) => [
+    d.stmt(env, "UPDATE recipes SET state = 'visible', release_at = NULL, created_at = ?, updated_at = ?, decided_at = ? WHERE code = ? AND state = 'waiting'",
+      now, now, now, r.code),
+    d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'release', '', ?, ?)", r.code, actor, now),
+  ]));
+  return rows.length;
+}
+
+/** Hidden recipes go 90 days after they were hidden (처리방침 3.8), from the hourly job. 1.36 [MKS-01] and 예약된 출시 대기 comes up. */
 export async function pruneRecipes(d, env, now) {
+  await releaseWaiting(d, env, now, "state = 'waiting' AND release_at IS NOT NULL AND release_at <= ?", [now], "예약");
   const old = await d.all(env, "SELECT code FROM recipes WHERE state = 'hidden' AND hidden_at < ? LIMIT 50", now - 90 * DAY);
   if (old.length) await d.batch(env, old.flatMap((r) => dropRecipe(d, env, r.code)));
   return old.length;
