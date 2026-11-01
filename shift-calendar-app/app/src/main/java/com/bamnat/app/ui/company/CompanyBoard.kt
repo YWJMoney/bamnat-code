@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -397,6 +398,7 @@ fun TalkSheet(holder: TalkHolder) {
     // PC 확인 V21: the rules are asked as a room's talk opens, before anything is typed (asked at 보내기 it came late, and the
     // words written could be lost); 나중에 still lets one read, and 보내기 asks again.
     LaunchedEffect(o.company, o.setup) { if (o.room) rules.ensure {} }
+    var askedOnFocus by remember(o.company, o.setup) { mutableStateOf(false) }
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     // [J133-99] 1.33 빌드 8 확인 ("고치자는 제안에 글을 쓰고 뒤로 키 두 번이면 묻지 않고 사라져요"): words or a change not sent yet
     // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).
@@ -561,7 +563,8 @@ fun TalkSheet(holder: TalkHolder) {
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f),
+                        // PC 확인 V38: also asked the first time the box is touched (after 나중에, or a talk opened before agreeing).
+                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !askedOnFocus) { askedOnFocus = true; rules.ensure {} } },
                     )
                     IconButton(
                         onClick = {
@@ -578,7 +581,8 @@ fun TalkSheet(holder: TalkHolder) {
                                     withSetup = proposing && withSetup, poll = poll,
                                     attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->
                                     busy = false; error = e
-                                    if (e == null) { text = ""; replyTo = null; pollDraft = emptyList(); attach = null; if (proposing) { change = listOf(blankChange()); kind = "talk" } }
+                                    // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
+                                    if (e == null) { text = ""; replyTo = null; pollDraft = emptyList(); attach = null; change = listOf(blankChange()); if (o.room || proposing) kind = "talk" }
                                 }
                             }
                         },
@@ -759,8 +763,8 @@ private fun PostRow(
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     // PC 확인 V27: a small picture of the recipe when the server sent its look.
                     val look = remember(p.attachLook) { p.attachLook?.let { runCatching { com.bamnat.app.recipe.ThemeSwatch.of(org.json.JSONObject(it)) }.getOrNull() } }
-                    if (look != null) com.bamnat.app.ui.recipe.ThemeThumb(look, width = 72.dp)
-                    else Text("🎨", style = MaterialTheme.typography.titleMedium)
+                    // PC 확인 V27: without a look of its own, the example week in plain colours.
+                    com.bamnat.app.ui.recipe.ThemeThumb(look ?: com.bamnat.app.recipe.ThemeSwatch(), width = 72.dp)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1)

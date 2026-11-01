@@ -76,10 +76,11 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
             }
             problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             if (k.picks.isNotEmpty()) {
-                Text((lastMonth?.let { "${it}월" } ?: "지난 달") + " 이달의 테마" + (k.lastTheme?.let { " · ‘$it’" } ?: "") + " · 눌러서 입어 보기",
+                // PC 확인 V33: with no theme this month the title already says it; the line only says the theme.
+                Text((if (k.theme == null) "" else (lastMonth?.let { "${it}월" } ?: "지난 달") + " 이달의 테마 · ") + (k.lastTheme?.let { "‘$it’ · " } ?: "") + "눌러서 입어 보기",
                     style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    k.picks.forEach { (code, title) -> AssistChip(onClick = { onRecipe(code) }, label = { Text("🏆 $title", maxLines = 1) }) }
+                    k.picks.forEach { (code, title) -> AssistChip(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = code; onRecipe(code) }, label = { Text("🏆 $title", maxLines = 1) }) }
                 }
             }
         }
@@ -107,7 +108,9 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { chosen = if (code in chosen) chosen - code else chosen + code },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(code in chosen, onCheckedChange = { on -> chosen = if (on) chosen + code else chosen - code })
-                                r.look?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 48.dp); androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp)) }
+                                // PC 확인 V25: one without a look of its own still shows the example week in plain colours.
+                                com.bamnat.app.ui.recipe.ThemeThumb(r.look ?: com.bamnat.app.recipe.ThemeSwatch(), width = 48.dp)
+                                androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp))
                                 Text(r.title, maxLines = 1)
                             }
                         }

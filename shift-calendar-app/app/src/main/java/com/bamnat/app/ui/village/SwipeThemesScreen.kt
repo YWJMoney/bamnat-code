@@ -93,7 +93,7 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                                     liked.value = if (on) liked.value - t.code else liked.value + t.code
                                     scope.launch { runCatching { c.recipeApi.vote(c.companyStore.device, t.code, if (on) null else 1) } }
                                 }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (on) "♥ 좋아요 함" else "♡ 좋아요") }
-                                Button(onClick = { onRecipe(t.code) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입어 보기") }
+                                Button(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = t.code; onRecipe(t.code) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입어 보기") }
                             }
                             if (i < list.size - 1) FilledTonalButton(onClick = { scope.launch { pager.animateScrollToPage(i + 1) } }) { Text("다음 테마") }
                         }

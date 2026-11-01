@@ -202,6 +202,13 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [TRY-01] 1.35 (사용자 2026-10-30 21:45 "입어보기랑 넣기가 버튼 두개가 있을 필요가 없고"): a recipe with looks has one way in,
                 // 입어 보기 — 지금 ↔ 입으면 and the parts to tick — whose button puts in what was ticked. One without looks is put in at once.
                 val hasLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).isNotEmpty() }
+                // PC 확인 V34: opened from a 입어 보기 elsewhere, it goes on to 입어 보기 at once.
+                LaunchedEffect(r) {
+                    if (hasLooks && com.bamnat.app.recipe.RecipeLinks.tryNext != null && com.bamnat.app.recipe.RecipeLinks.tryNext == vm.code) {
+                        com.bamnat.app.recipe.RecipeLinks.tryNext = null
+                        tryOn = true
+                    }
+                }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")

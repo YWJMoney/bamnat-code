@@ -54,6 +54,9 @@ object RecipeLinks {
     /** 고쳐 만들기: the written recipe and its code, handed to 만들기 once (in memory). */
     var remake: Pair<String, String>? = null
 
+    /** PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory). */
+    @Volatile var tryNext: String? = null
+
     /** [THM-01] The key of one of my themes being sent from 스튜디오: once it is up, it is marked as in 장터 (no days, no ad). */
     var ownTheme: String? = null
     const val NEW_OWN = "new"

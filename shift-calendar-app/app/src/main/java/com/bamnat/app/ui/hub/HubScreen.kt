@@ -129,7 +129,7 @@ fun HubScreen(
         if (recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
             val strip = com.bamnat.app.ui.appViewModel(key = "following-strip-${style?.name}") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
             com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople)
-            TodayOne(c, style, prefs, onRecipe)
+            TodayOne(c, style, prefs, onRecipe, onMake = { onStudio("mine") })
             // 1.36 [VIL-17] 마을 V17: 장터's themes one by one, big, flipped upward.
             if (section == HubSection.SHARE && onSwipe != null) {
                 TextButton(onClick = onSwipe, modifier = Modifier.padding(horizontal = 8.dp)) { Text("🃏 테마 넘겨 보며 고르기") }
@@ -152,19 +152,33 @@ fun HubScreen(
  * popular one — changing each day; '오늘은 그만' folds it until tomorrow. Nothing shows while there is nothing to show.
  */
 @Composable
-private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.SharedPreferences, onRecipe: (String) -> Unit) {
+private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.SharedPreferences, onRecipe: (String) -> Unit, onMake: () -> Unit = {}) {
     val today = com.bamnat.core.time.Today.date().toString()
     var folded by remember { mutableStateOf(prefs.getString("todayFolded", null) == today) }
     if (folded) return
+    var looked by remember(style, today) { mutableStateOf(false) }
     val item by androidx.compose.runtime.produceState<com.bamnat.app.recipe.RecipeItem?>(null, style, today) {
         val pool = runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList())
             .ifEmpty { runCatching { c.recipeApi.list(style, "hot").items.take(5) }.getOrDefault(emptyList()) }
-            // PC 확인: a kind of work with nothing of its own yet still gets one, from every kind of work.
-            .ifEmpty { if (style == null) emptyList() else runCatching { c.recipeApi.list(null, "hot").items.take(5) }.getOrDefault(emptyList()) }
-            .filter { !c.recipes.hides(it) }
+            // PC 확인 V40: only what is made for this kind of work (a 교대 theme is no 오늘의 하나 for 알바).
+            .filter { !c.recipes.hides(it) && (style == null || it.styles.isEmpty() || style in it.styles) }
         value = pool.takeIf { it.isNotEmpty() }?.let { it[(com.bamnat.core.time.Today.date().dayOfYear) % it.size] }
+        looked = true
     }
-    val r = item ?: return
+    val r = item
+    // PC 확인 V40: nothing for this kind of work yet: one line asking for its first, folded with 오늘은 그만 like the rest.
+    if (r == null) {
+        if (!looked || style == null) return
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("아직 ${when (style) { WorkStyle.SHIFT -> "교대"; WorkStyle.DAY -> "일근"; WorkStyle.HOURLY -> "알바"; WorkStyle.FIELD -> "현장"; WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "투자" }} 작품이 없어요. 첫 작품을 만들어 보세요", style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+            }
+            TextButton(onClick = onMake) { Text("만들기") }
+            TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
+        }
+        return
+    }
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
@@ -173,7 +187,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
             Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
-        TextButton(onClick = { onRecipe(r.code) }) { Text("입어 보기") }
+        TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) { Text("입어 보기") }
         TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
     }
 }
