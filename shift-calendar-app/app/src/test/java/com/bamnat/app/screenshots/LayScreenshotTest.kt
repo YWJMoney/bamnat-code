@@ -34,7 +34,7 @@ import org.robolectric.annotation.GraphicsMode
 class LayScreenshotTest : ScreenshotBase() {
     private val start = Decor(listOf(
         DecorItem(DecorKind.TEXT, "이번 달도 힘내기", at = Decor.HEAD, y = 500, w = 180, h = 30, size = 16.0, weight = 700),
-        DecorItem(DecorKind.SHAPE, "tape", at = Decor.HEAD, x = 120, y = 300, w = 60, h = 18, rot = -12.0, fill = 0xFFF6C1CCL),
+        DecorItem(DecorKind.SHAPE, "tape", at = Decor.HEAD, x = 120, y = 300, w = 60, h = 18, rot = -12, fill = 0xFFF6C1CCL),
         DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d25", x = 780, y = 220, w = 22, h = 22),
     ))
 
