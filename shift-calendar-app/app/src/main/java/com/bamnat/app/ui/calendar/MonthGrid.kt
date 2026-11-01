@@ -660,7 +660,7 @@ private fun DayCell(
             .then(run { cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
             .then(run { Modifier.partLine(cellPart, partShape) })
             .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
-            .decor(com.bamnat.core.recipe.Decor.CELL, decorDay)
+            .decor(com.bamnat.core.recipe.Decor.CELL, decorDay, date = day.date)
             .then(
                 when {
                     // [CAL-09] The first day of a range stands out until its end is tapped.

@@ -14,7 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
-import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn } from "./decor.js";
+import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -257,6 +257,7 @@ export const RECIPE_PIECES = {
     N("size", 6, 96, { decimals: 1, optional: true }), N("weight", 100, 900, { optional: true }), C("ink", { optional: true }), F("italic", { input: false }),
     N("alpha", 0, 100, { optional: true }), F("hide", { input: false }), F("over", { input: false }), F("flip", { input: false }),
     F("lock", { input: false }), N("group", 0, 9, { optional: true }),
+    T("photo", 16, { optional: true, guard: false, check: decorPhoto }), T("tap", 12, { optional: true, guard: false, check: decorTap }),
   ], { min: 1 })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);

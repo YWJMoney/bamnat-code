@@ -34,7 +34,7 @@ internal object WidgetDecor {
             val canvas = androidx.compose.ui.graphics.Canvas(bmp.asImageBitmap())
             CanvasDrawScope().draw(density, LayoutDirection.Ltr, canvas, Size(w.toFloat(), h.toFloat())) {
                 val box = Rect(Offset.Zero, size)
-                items.forEach { drawDecor(it, box, measurer, accent, ink) }
+                items.forEach { drawDecor(it, box, measurer, accent, ink) { id -> com.bamnat.app.ui.decor.DecorPhotos.now(context, id) } }
             }
             bmp
         }.getOrNull()

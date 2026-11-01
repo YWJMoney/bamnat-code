@@ -83,4 +83,26 @@ class DecorTest {
         assertTrue("💰 among the first: $found", "💰" in found.take(6))
         assertFalse("💇" in found)
     }
+
+    /** [LAY-10][LAY-11] 누락 점검 N12·N8: a photo by its picture id and a decoration that presses a 규칙 단추 go through settings and recipe. */
+    @Test
+    fun photosAndButtonsGoThrough() {
+        val photo = DecorItem(DecorKind.PHOTO, "0123456789abcdef", "bg.memo", w = 96, h = 72, r = 8)
+        val bell = DecorItem(DecorKind.EMOJI, "🔔", Decor.HEAD, tap = "alarm1")
+        val d = Decor(listOf(photo, bell))
+        assertEquals(d, Decor.decode(d.encode()))
+        assertEquals(setOf("0123456789abcdef"), d.images)
+        val r = RecipeCodec.read(RecipeCodec.write(Recipe("꾸밈", styles = setOf(com.bamnat.core.work.WorkStyle.SHIFT),
+            pieces = listOf(Piece(PieceKind.DECOR, d.values())))))
+        assertEquals(d, Decor.of(r.pieces.single().values))
+        // 사진 빼고 올리기 keeps the bell, leaves the photo on the phone.
+        val bare = LookParts.withoutPhotos(r)
+        assertEquals(Decor(listOf(bell)), Decor.of(bare.pieces.single().values))
+        assertTrue(LookParts.hasPhotos(r))
+        // A photo that is not a picture id, or a button id that is not one, is not taken.
+        assertEquals(Decor(), Decor.decode("""[{"photo":"../x","at":"app","w":10,"h":10}]"""))
+        assertNull(Decor.decode("""[{"emoji":"⭐","at":"app","tap":"Bad-Id","w":10,"h":10}]""").items.single().tap)
+        assertEquals("tap", Decor.tapProblem("Bad-Id"))
+        assertEquals("photo", Decor.photoProblem("ABC"))
+    }
 }

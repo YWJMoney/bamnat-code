@@ -14,6 +14,18 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -45,7 +57,7 @@ val LocalDecor = staticCompositionLocalOf { Decor() }
  * TalkBack reads nothing of it. With nothing on [anchor] the modifier does nothing.
  */
 @Composable
-fun Modifier.decor(anchor: String, day: DecorDay? = null, layer: Decor = LocalDecor.current): Modifier {
+fun Modifier.decor(anchor: String, day: DecorDay? = null, layer: Decor = LocalDecor.current, date: java.time.LocalDate? = null): Modifier {
     if (!layer.has(anchor)) return this
     val items = remember(layer, anchor, day) { layer.on(anchor).filter { day == null || it.standsOn(day) } }
     if (items.isEmpty()) return this
@@ -54,12 +66,40 @@ fun Modifier.decor(anchor: String, day: DecorDay? = null, layer: Decor = LocalDe
     val ink = MaterialTheme.colorScheme.onSurface
     val under = items.filter { !it.over }
     val over = items.filter { it.over }
-    return drawWithContent {
+    // [LAY-10] 꾸밈 사진 come from the phone (or the server, once looked at); a grey box until then.
+    DecorPhotos.Load(remember(items) { items.filter { it.kind == DecorKind.PHOTO }.map { it.glyph }.toSet() })
+    val drawn = drawWithContent {
         val box = Rect(Offset.Zero, size)
         under.forEach { drawDecor(it, box, measurer, accent, ink) }
         drawContent()
         over.forEach { drawDecor(it, box, measurer, accent, ink) }
     }
+    // [LAY-11] 꾸밈 단추: a tap on a decoration that names a 규칙 단추 presses it, before the part's own tap (it is caught first and used);
+    // TalkBack, which reads no decoration, gets the same as an action of the part.
+    val tap = LocalDecorTap.current
+    val taps = items.filter { it.tap != null }
+    if (tap == null || taps.isEmpty()) return drawn
+    return drawn
+        .semantics { customActions = taps.distinctBy { it.tap }.map { i -> CustomAccessibilityAction("${i.label} 꾸밈 단추 누르기") { tap(i.tap!!, date); true } } }
+        .pointerInput(taps, date) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val box = Rect(Offset.Zero, Size(size.width.toFloat(), size.height.toFloat()))
+                val hit = taps.lastOrNull { i -> with(this@pointerInput) { tapRect(i, box, density) }.contains(down.position) } ?: return@awaitEachGesture
+                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
+                up.consume()
+                tap(hit.tap!!, date)
+            }
+        }
+}
+
+/** [LAY-11] Where a decoration takes a tap: its place, at least 48 dp each way so a small sticker is easy to hit. */
+internal fun tapRect(item: DecorItem, box: Rect, density: Float): Rect {
+    val w = maxOf(item.w, 48) * density
+    val h = maxOf(item.h, 48) * density
+    val cx = box.left + box.width * item.x / 1000f
+    val cy = box.top + box.height * item.y / 1000f
+    return Rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
 }
 
 private val iconPaths = HashMap<String, Path?>()
@@ -98,7 +138,8 @@ private fun Color.times(a: Float) = copy(alpha = (alpha * a).coerceIn(0f, 1f))
  * [LAY-03] One decoration drawn in [box] (the part's own bounds). [accent] is a shape's colour when it has none chosen, [ink] an icon's
  * or a text's.
  */
-fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, accent: Color, ink: Color) {
+fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, accent: Color, ink: Color,
+                        photo: (String) -> ImageBitmap? = DecorPhotos::of) {
     val at = placeOf(item, box)
     val a = item.alpha / 100f
     if (a <= 0f) return
@@ -153,6 +194,23 @@ fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, acce
                         if (shadow > 0f) drawText(measurer, item.glyph, Offset((at.width - layout.size.width) / 2 + shadow / 2, (at.height - layout.size.height) / 2 + shadow / 2),
                             style.copy(color = Color.Black.times(0.25f * a)), size = Size(at.width, at.height + layout.size.height))
                         drawText(layout, topLeft = Offset((at.width - layout.size.width) / 2, (at.height - layout.size.height) / 2))
+                    }
+                    DecorKind.PHOTO -> {
+                        val path = DecorShapes.path("rect", at.width, at.height, item.r * density)
+                        if (shadow > 0f) translate(shadow / 2, shadow / 2) { drawPath(path, Color.Black.times(0.22f * a)) }
+                        val img = photo(item.glyph)
+                        if (img == null) drawPath(path, Color(0xFF9E9E9E).times(0.45f * a))
+                        else clipPath(path) {
+                            // The photo's middle at the decoration's shape (가득 채우기).
+                            val iw = img.width.toFloat()
+                            val ih = img.height.toFloat()
+                            val k = maxOf(at.width / iw, at.height / ih)
+                            val sw = (at.width / k).coerceIn(1f, iw)
+                            val sh = (at.height / k).coerceIn(1f, ih)
+                            drawImage(img, srcOffset = IntOffset(((iw - sw) / 2).toInt(), ((ih - sh) / 2).toInt()), srcSize = IntSize(sw.toInt(), sh.toInt()),
+                                dstSize = IntSize(at.width.toInt().coerceAtLeast(1), at.height.toInt().coerceAtLeast(1)), alpha = a)
+                        }
+                        stroke?.let { st -> drawPath(path, lineColor, style = st); if (item.line == "double") drawInner(path, lineColor, lineW) }
                     }
                 }
             }

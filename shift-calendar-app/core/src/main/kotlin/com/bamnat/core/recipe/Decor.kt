@@ -63,6 +63,11 @@ data class DecorItem(
     val lock: Boolean = false,
     /** 묶기: items of the same group (1..9) move together; 0 is none. */
     val group: Int = 0,
+    /**
+     * [LAY-11] 1.36 누락 점검 N8: a 규칙 단추's id (갈래 D, `^[a-z0-9]{1,12}$`) — pressing the decoration presses that button, as the
+     * 단추 does wherever it is placed. Null is a picture only; a button the theme does not have leaves it a picture too.
+     */
+    val tap: String? = null,
 ) {
     /** Its piece values: what is the app's own is left out, so a recipe holds only what was chosen. */
     fun values(): Map<String, Any?> = buildMap {
@@ -71,6 +76,7 @@ data class DecorItem(
             DecorKind.ICON -> put("icon", glyph)
             DecorKind.EMOJI -> put("emoji", glyph)
             DecorKind.TEXT -> put("text", glyph)
+            DecorKind.PHOTO -> put("photo", glyph)
         }
         put("at", at)
         on?.let { put("on", it) }
@@ -94,6 +100,7 @@ data class DecorItem(
         if (flip) put("flip", true)
         if (lock) put("lock", true)
         if (group != 0) put("group", group.toLong())
+        tap?.let { put("tap", it) }
     }
 
     /** Whether it stands on a day with these facts (always, off [Decor.CELL]). */
@@ -119,6 +126,7 @@ data class DecorItem(
         DecorKind.ICON -> DecorGlyphs.icon(glyph)?.label?.substringBefore(' ') ?: "아이콘"
         DecorKind.EMOJI -> glyph
         DecorKind.TEXT -> "“" + glyph.take(12) + (if (glyph.length > 12) "…" else "") + "”"
+        DecorKind.PHOTO -> "사진"
     }
 
     private fun num(d: Double): Any = if (d == kotlin.math.round(d)) d.toLong() else d
@@ -130,7 +138,13 @@ data class DecorDay(
 )
 
 enum class DecorKind(val key: String, val label: String) {
-    SHAPE("shape", "도형"), ICON("icon", "아이콘"), EMOJI("emoji", "이모지"), TEXT("text", "글상자");
+    SHAPE("shape", "도형"), ICON("icon", "아이콘"), EMOJI("emoji", "이모지"), TEXT("text", "글상자"),
+    /**
+     * [LAY-10] 1.36 누락 점검 N12: a photo of the user's own, made small on the phone without its place or camera ([glyph] is its
+     * 16-hex picture id, as 그림 꾸미기's). Sent with a recipe it passes the server's three photo checks (갈래 F photo-guard): a new maker's
+     * first is looked at first, two reports hide it, and others draw a grey box until they may see it.
+     */
+    PHOTO("photo", "사진");
 }
 
 /** The whole layer, in drawing order (the first is at the back). */
@@ -144,6 +158,12 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
     fun on(anchor: String): List<DecorItem> = items.filter { it.at == anchor && !it.hide }
 
     fun has(anchor: String): Boolean = items.any { it.at == anchor && !it.hide }
+
+    /** [LAY-10] The picture ids its photos name. */
+    val images: Set<String> get() = items.filter { it.kind == DecorKind.PHOTO }.map { it.glyph }.toSet()
+
+    /** [LAY-10] 사진 빼고 올리기: the layer without its photos. */
+    fun withoutPhotos(): Decor = Decor(items.filter { it.kind != DecorKind.PHOTO })
 
     /** The piece's values. */
     fun values(): Map<String, Any?> = if (items.isEmpty()) emptyMap() else mapOf("items" to items.map { it.values() })
@@ -189,6 +209,12 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
         private val ON = Regex("^(today|sat|sun|holiday|dim|role\\.(day|eve|night|long|off|other)|d([1-9]|[12][0-9]|3[01])|w[1-7]|m([1-9]|1[0-2])d([1-9]|[12][0-9]|3[01]))$")
         fun onProblem(s: String): String? = if (s.isEmpty() || ON.matches(s)) null else "on"
         fun fontProblem(s: String): String? = if (s.isEmpty() || FONT.matches(s)) null else "font"
+        private val PHOTO = Regex("^[0-9a-f]{16}$")
+        private val TAP = Regex("^[a-z0-9]{1,12}$")
+        /** [LAY-10] A photo is named by its 16-hex picture id only (server decor.js decorPhoto). */
+        fun photoProblem(s: String): String? = if (s.isEmpty() || PHOTO.matches(s)) null else "photo"
+        /** [LAY-11] A 규칙 단추's id (갈래 D Logic, server decor.js decorTap). */
+        fun tapProblem(s: String): String? = if (s.isEmpty() || TAP.matches(s)) null else "tap"
 
         fun onLabel(on: String?): String = when {
             on == null -> "모든 날"
@@ -223,6 +249,7 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
                 ?: (m["emoji"] as? String)?.let { DecorKind.EMOJI to it }
                 ?: (m["icon"] as? String)?.takeIf { it in DecorGlyphs.ICONS }?.let { DecorKind.ICON to it }
                 ?: (m["shape"] as? String)?.takeIf { it in DecorGlyphs.SHAPES }?.let { DecorKind.SHAPE to it }
+                ?: (m["photo"] as? String)?.takeIf { photoProblem(it) == null && it.isNotEmpty() }?.let { DecorKind.PHOTO to it }
                 ?: return null
             val at = (m["at"] as? String)?.takeIf { it in ANCHORS } ?: return null
             fun int(k: String, d: Int, lo: Int, hi: Int) = ((m[k] as? Number)?.toDouble()?.let { kotlin.math.round(it).toInt() } ?: d).coerceIn(lo, hi)
@@ -235,6 +262,7 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
                 int("r", 0, 0, 48), int("shadow", 0, 0, 24), (m["font"] as? String)?.takeIf { fontProblem(it) == null && it.isNotEmpty() },
                 dbl("size", 14.0, 6.0, 96.0), int("weight", 400, 100, 900), col("ink"), m["italic"] == true, int("alpha", 100, 0, 100),
                 m["hide"] == true, m["over"] == true, m["flip"] == true, m["lock"] == true, int("group", 0, 0, 9),
+                (m["tap"] as? String)?.takeIf { tapProblem(it) == null && it.isNotEmpty() },
             )
         }
 
@@ -259,6 +287,8 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
             Field.Num("alpha", 0.0, 100.0, optional = true),
             Field.Flag("hide", input = false), Field.Flag("over", input = false), Field.Flag("flip", input = false),
             Field.Flag("lock", input = false), Field.Num("group", 0.0, 9.0, optional = true),
+            Field.Text("photo", 16, optional = true, guard = false, check = ::photoProblem),
+            Field.Text("tap", 12, optional = true, guard = false, check = ::tapProblem),
         )
     }
 }

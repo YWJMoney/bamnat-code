@@ -144,7 +144,11 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
                 com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) },
                 // [LAY-03] 1.36 꾸밈 층.
-                com.bamnat.app.ui.decor.LocalDecor provides androidx.compose.runtime.remember(settings.decor) { com.bamnat.core.recipe.Decor.decode(settings.decor) }) {
+                com.bamnat.app.ui.decor.LocalDecor provides androidx.compose.runtime.remember(settings.decor) { com.bamnat.core.recipe.Decor.decode(settings.decor) },
+                // [LAY-11] 꾸밈 단추: a decoration that names a 규칙 단추 presses it (갈래 D's engine through DecorTap).
+                com.bamnat.app.ui.decor.LocalDecorTap provides androidx.compose.runtime.remember(container) {
+                    { id: String, date: java.time.LocalDate? -> com.bamnat.app.ui.decor.DecorTap.press(container, id, date ?: com.bamnat.core.time.Today.date()); Unit }
+                }) {
                 androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.

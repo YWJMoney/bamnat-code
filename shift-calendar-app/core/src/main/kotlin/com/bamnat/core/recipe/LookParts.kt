@@ -212,7 +212,7 @@ object LookParts {
      */
     const val OWN_PARTS = 3
 
-    /** Whether [r] names any picture (배경 사진, 머리 그림, 근무 그림, 위젯 사진). */
+    /** Whether [r] names any picture (배경 사진, 머리 그림, 근무 그림, 위젯 사진, 꾸밈 사진). */
     fun hasPhotos(r: Recipe): Boolean = withoutPhotos(r) != r
 
     /** [THM-03] 사진 빼고 올리기: [r] with every picture left out (each screen keeps its colours); the phone keeps its own. */
@@ -226,6 +226,11 @@ object LookParts {
                 }
             }
             PieceKind.PHOTO_LOOK -> p.copy(values = p.values - PHOTO_KEYS).takeIf { it.values.isNotEmpty() }
+            // [LAY-10] 꾸밈 사진 stay on the phone too; the shapes, icons and words go.
+            PieceKind.DECOR -> (p.values["items"] as? List<*>)?.let { l ->
+                val bare = l.filterNot { (it as? Map<*, *>)?.containsKey("photo") == true }
+                if (bare.size == l.size) p else if (bare.isEmpty()) null else p.copy(values = p.values + ("items" to bare))
+            } ?: p
             else -> p
         }
     })

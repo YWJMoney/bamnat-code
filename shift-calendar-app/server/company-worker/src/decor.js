@@ -39,3 +39,9 @@ const DECOR_ON_RE = /^(today|sat|sun|holiday|dim|role\.(day|eve|night|long|off|o
 const DECOR_FONT_RE = /^([a-z][a-z0-9-]{1,39}|u\+[0-9a-f]{16})$/;
 export const decorOn = (s) => (s === "" || DECOR_ON_RE.test(s) ? null : "on");
 export const decorFont = (s) => (s === "" || DECOR_FONT_RE.test(s) ? null : "font");
+// [LAY-10] 1.36 꾸밈 사진: a 16-hex picture id from POST /api/recipes/images (photo-guard.js imagesOf finds it like any other).
+const DECOR_PHOTO_RE = /^[0-9a-f]{16}$/;
+export const decorPhoto = (s) => (s === "" || DECOR_PHOTO_RE.test(s) ? null : "photo");
+// [LAY-11] 1.36 꾸밈 단추: a 규칙 단추 id (갈래 D logic buttons).
+const DECOR_TAP_RE = /^[a-z0-9]{1,12}$/;
+export const decorTap = (s) => (s === "" || DECOR_TAP_RE.test(s) ? null : "tap");

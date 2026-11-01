@@ -639,7 +639,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                         Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
                             if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
-                        }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null })
+                        }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null },
+                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) })
                     }
                     Spacer(Modifier.height(24.dp))
                 }

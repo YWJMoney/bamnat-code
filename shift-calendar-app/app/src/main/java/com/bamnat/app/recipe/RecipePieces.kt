@@ -431,7 +431,7 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
-                if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
+                if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK || kind == PieceKind.DECOR) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
                 val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {
@@ -924,6 +924,7 @@ class RecipePieces(private val c: AppContainer) {
     /** [RCX-30] Every picture id a 그림 꾸미기 piece names. */
     fun photoIds(values: Map<String, Any?>): List<String> =
         (listOf(values["bg"], values["head"], values["widget"], values["memoBg"]) + items(values, "icons").map { it["image"] } +
+            items(values, "items").map { it["photo"] } +
             ((values["screens"] as? String)?.let { com.bamnat.core.recipe.ScreenLooks.decode(it).images }.orEmpty()))
             .filterIsInstance<String>().filter { com.bamnat.core.recipe.PhotoLook.isId(it) }.distinct()
 

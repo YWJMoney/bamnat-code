@@ -386,7 +386,7 @@ class RecipeMakeViewModel(
 
 /** [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id. */
 internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
-    if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK }) return r
+    if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK || it.kind == PieceKind.DECOR }) return r
     val sent = mutableMapOf<String, String>()
     suspend fun server(id: Any?): Any? {
         val local = id as? String ?: return id
@@ -399,6 +399,12 @@ internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamna
             val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
             val sentLooks = com.bamnat.core.recipe.ScreenLooks(looks.looks.mapValues { (_, l) -> l.photo?.let { l.copy(photo = server(it) as? String) } ?: l })
             p.copy(values = p.values + ("screens" to sentLooks.encode()))
+        } ?: p
+        // [LAY-10] 꾸밈 사진: each photo item names the server's picture (갈래 F's three photo checks see it like any other).
+        else if (p.kind == PieceKind.DECOR) (p.values["items"] as? List<*>)?.let { l ->
+            p.copy(values = p.values + ("items" to l.map { i ->
+                (i as? Map<*, *>)?.takeIf { it.containsKey("photo") }?.let { m -> m.mapKeys { it.key.toString() }.toMutableMap().also { it["photo"] = server(it["photo"]) } } ?: i
+            }))
         } ?: p
         else if (p.kind != PieceKind.PHOTO_LOOK) p else {
             val v = p.values.toMutableMap()

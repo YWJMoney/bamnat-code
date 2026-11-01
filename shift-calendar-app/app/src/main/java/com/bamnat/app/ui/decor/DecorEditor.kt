@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.decor
 
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Lock
@@ -177,7 +178,9 @@ private enum class Pane(val label: String) { ADD("넣기"), EDIT("고치기"), L
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> Unit, onUndo: (() -> Unit)? = null,
-              advancedIn: Boolean? = null, onAdvanced: (Boolean) -> Unit = {}, focus: Int? = null, onFocused: () -> Unit = {}) {
+              advancedIn: Boolean? = null, onAdvanced: (Boolean) -> Unit = {}, focus: Int? = null, onFocused: () -> Unit = {},
+              /** [LAY-11] The theme's 규칙 단추 a decoration may press (id to words); empty when it has none. */
+              buttons: List<Pair<String, String>> = emptyList()) {
     if (places.isEmpty()) return
     var place by rememberSaveable(places) {
         mutableStateOf(lastPlaces[places]?.takeIf { it in places } ?: decor.items.lastOrNull { it.at in places }?.at ?: places.first())
@@ -209,15 +212,22 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         if (which.isEmpty()) return
         onChange(label, Decor(items.mapIndexed { i, it -> if (i in which) f(it) else it }))
     }
-    fun add(kind: DecorKind, glyph: String) {
+    DecorPhotos.Load(decor.images)
+    fun add(kind: DecorKind, glyph: String, aspect: Float? = null) {
         if (items.size >= Decor.MAX) { said = "꾸밈은 ${Decor.MAX}개까지 넣을 수 있어요. 레이어에서 안 쓰는 것을 지워 주세요"; return }
         if (place == Decor.CELL && items.count { it.at == Decor.CELL } >= Decor.MAX_CELL) {
             said = "달력 칸에는 ${Decor.MAX_CELL}개까지예요(칸마다 그려서 달력 넘김이 느려지지 않게)"; return
         }
         // A free spot of the part, a little apart each time, so a second one does not hide the first.
         val n = items.count { it.at == place }
-        val sp = startPlace(place, kind, n, stageW)
-        val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h,
+        val sp = startPlace(place, kind, n, stageW).let { st ->
+            // [LAY-10] A photo keeps its own shape, its long side the place's size.
+            if (kind != DecorKind.PHOTO || aspect == null) st else {
+                val long = photoSide(place)
+                if (aspect >= 1f) st.copy(w = long, h = (long / aspect).roundToInt().coerceAtLeast(2)) else st.copy(w = (long * aspect).roundToInt().coerceAtLeast(2), h = long)
+            }
+        }
+        val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h, r = if (kind == DecorKind.PHOTO) 8 else 0,
             fill = if (kind == DecorKind.SHAPE) DEFAULT_FILLS[n % DEFAULT_FILLS.size] else null,
             fillA = if (glyph == "tape") 70 else 100,
             size = if (kind == DecorKind.TEXT) (when (place) { Decor.CELL -> 8.0; Decor.HEAD -> 11.0; else -> 14.0 }) else 14.0,
@@ -271,10 +281,10 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         }
         HorizontalDivider()
         when (pane) {
-            Pane.ADD -> Library(place, ::add)
+            Pane.ADD -> Library(place, { k, g -> add(k, g) }, onPhoto = { id, aspect -> add(DecorKind.PHOTO, id, aspect) })
             Pane.EDIT -> if (picked.isEmpty()) Text("판에서 꾸밈을 누르거나, 레이어에서 골라요", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else ItemEditor(items, picked, place, advanced, ::set,
+            else ItemEditor(items, picked, place, advanced, ::set, buttons,
                 onCopy = {
                     if (items.size + picked.size > Decor.MAX) { said = "꾸밈은 ${Decor.MAX}개까지예요"; return@ItemEditor }
                     val copies = picked.sorted().map { i -> items[i].let { it.copy(x = (it.x + 40).coerceAtMost(1000), y = (it.y + 40).coerceAtMost(1000), lock = false) } }
@@ -526,15 +536,15 @@ private fun DrawScope.backdrop(place: String, box: Rect, measurer: androidx.comp
 /** 요소 모음: 도형·아이콘·이모지·글상자, each found by its words. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Library(place: String, onAdd: (DecorKind, String) -> Unit) {
+private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: (String, Float) -> Unit) {
     var kind by rememberSaveable { mutableStateOf(DecorKind.SHAPE) }
     var q by rememberSaveable { mutableStateOf("") }
     var words by rememberSaveable { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             DecorKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
         }
-        if (kind != DecorKind.TEXT) OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true,
+        if (kind != DecorKind.TEXT && kind != DecorKind.PHOTO) OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true,
             label = { Text(when (kind) { DecorKind.EMOJI -> "이모지 찾기 (예: 달, 돈, 하트)"; else -> "찾기 (예: 별, 하트, 달)" }) })
         val ink = MaterialTheme.colorScheme.onSurface
         val accent = MaterialTheme.colorScheme.primary
@@ -564,6 +574,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit) {
                     }
                 }
             }
+            DecorKind.PHOTO -> PhotoAdd(onPhoto)
             DecorKind.TEXT -> {
                 OutlinedTextField(words, { words = it.take(Decor.MAX_TEXT) }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text("넣을 글 (${Decor.MAX_TEXT}자까지)") })
@@ -597,12 +608,12 @@ private val ON_CHOICES: List<String?> = listOf(null, "today", "holiday", "sat", 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, advanced: Boolean,
-                       set: (String?, (DecorItem) -> DecorItem, Set<Int>) -> Unit, onCopy: () -> Unit, onDelete: () -> Unit, onOrder: (Boolean) -> Unit) {
+                       set: (String?, (DecorItem) -> DecorItem, Set<Int>) -> Unit, buttons: List<Pair<String, String>>, onCopy: () -> Unit, onDelete: () -> Unit, onOrder: (Boolean) -> Unit) {
     val first = items[picked.min()]
     fun all(label: String?, f: (DecorItem) -> DecorItem) = set(label, f, picked)
     val part = partSize(place, screenW())
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(if (picked.size == 1) "${first.kind.label} ${quoted(first)}" + (if (first.lock) " · 잠금" else "") else "${picked.size}개를 함께 고쳐요",
+        Text(if (picked.size == 1) (if (first.kind == DecorKind.PHOTO) first.kind.label else "${first.kind.label} ${quoted(first)}") + (if (first.lock) " · 잠금" else "") else "${picked.size}개를 함께 고쳐요",
             style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         // PC 확인 C2-2 1.36 (넣자마자 '어느 날에 붙일까요'를 바로 보여 주기): a cell's day first, right under its name.
         if (place == Decor.CELL) {
@@ -668,6 +679,11 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
                 ColorPick("글상자 바탕", first.fill, allowNone = true) { c -> all(null) { it.copy(fill = c) } }
             }
             DecorKind.EMOJI -> {}
+            DecorKind.PHOTO -> {
+                SliderRow("모서리", first.r.toFloat(), 0f..48f, "dp") { v -> all("꾸밈 모서리") { it.copy(r = v.roundToInt()) } }
+                Text("올리면 운영자가 사진을 본 뒤 다른 분께 보여요. 그 전에는 회색 상자로 보여요", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         if (first.kind != DecorKind.EMOJI) {
             Text("선", style = MaterialTheme.typography.labelLarge)
@@ -691,6 +707,15 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
                     color = if (first.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(first.over, { v -> all(null) { it.copy(over = v) } })
+        }
+        // [LAY-11] 누르면 단추 (누락 점검 N8): the decoration presses one of the theme's 규칙 단추.
+        Text("누르면", style = MaterialTheme.typography.labelLarge)
+        if (buttons.isEmpty()) Text(if (first.tap != null) "‘${first.tap}’ 단추를 눌러요. 이 테마에 그 단추가 없으면 그림으로만 보여요"
+            else "규칙에서 단추를 만들면, 이 꾸밈을 눌러 그 단추를 누를 수 있어요", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            FilterChip(selected = first.tap == null, onClick = { all(null) { it.copy(tap = null) } }, label = { Text("그림만") })
+            buttons.forEach { (id, words) -> FilterChip(selected = first.tap == id, onClick = { all(null) { it.copy(tap = id) } }, label = { Text(words) }) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             AssistChip(onClick = { all(null) { it.copy(flip = !first.flip) } }, label = { Text("좌우 뒤집기") })
@@ -846,3 +871,37 @@ internal fun eul(w: String): String {
 
 /** An item's name in a sentence: a text box's own words already stand in quotes. */
 private fun quoted(i: DecorItem): String = if (i.kind == DecorKind.TEXT) i.label else "‘${i.label}’"
+
+/** [LAY-10] A photo's long side when it is put on [place], dp. */
+private fun photoSide(place: String): Int = when (place) {
+    Decor.CELL -> 20; Decor.WEEK -> 20; Decor.HEAD -> 40; Decor.WIDGET -> 72; else -> 140
+}
+
+/**
+ * [LAY-10] 1.36 꾸밈 사진 (누락 점검 N12): one photo from the phone's photo picker (no permission asked), made small, upright and without
+ * its place or camera ([LookImages.importWhole]).
+ */
+@Composable
+private fun PhotoAdd(onPhoto: (String, Float) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            val got = com.bamnat.app.recipe.LookImages.importWhole(context, uri)
+            busy = false
+            if (got == null) said = "이 사진은 열 수 없어요. 64px보다 큰 다른 사진을 골라 주세요" else { said = null; onPhoto(got.first, got.second) }
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedButton(onClick = { pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (busy) "사진 준비하는 중…" else "사진 고르기") }
+        said?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        Text("사진은 휴대폰에서 작게 줄이고 찍은 곳·기기 정보를 지워요. 장터에 올리면 운영자가 본 뒤에 다른 분께 보여요. 올릴 때 ‘사진 빼고 올리기’를 켜면 이 휴대폰에만 남아요",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+

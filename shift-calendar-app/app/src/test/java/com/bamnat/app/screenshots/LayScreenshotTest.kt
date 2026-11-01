@@ -106,4 +106,36 @@ class LayScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("숫자로 맞추기", exact = true))
     }
+
+    /**
+     * [LAY-10][LAY-11] 누락 점검 N12·N8: a photo the phone does not have yet is a grey box (others' until the operator looked at it), and a
+     * decoration picks the 규칙 단추 it presses.
+     */
+    @Test fun aPhotoAndAButton() = shoot("1485_lay_photo_button", PHONE) {
+        content {
+            var d by remember { mutableStateOf(Decor(listOf(
+                DecorItem(DecorKind.PHOTO, "00000000000000ff", at = Decor.HEAD, x = 820, y = 500, w = 64, h = 40, r = 8),
+                DecorItem(DecorKind.EMOJI, "🔔", at = Decor.HEAD, x = 120, y = 500, w = 28, h = 28, tap = "alarm1"),
+            ))) }
+            Surface {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
+                    Text("10월", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().height(56.dp).decor(Decor.HEAD, layer = d))
+                    DecorTool(d, listOf(Decor.HEAD), { _, nd -> d = nd }, buttons = listOf("alarm1" to "⏰ 알람 켜기", "rest" to "🛌 쉬는 날"))
+                }
+            }
+        }
+        settle()
+        tapText("레이어 2", exact = true)
+        settle()
+        tapText("사진", exact = true)
+        settle()
+        tapText("고치기 ›", exact = true)
+        settle()
+        assertTrue(appears("모서리", exact = true))
+        // 누르면: the picked one presses ⏰ 알람 켜기 (scrolled to, then the shot shows the chips).
+        tapText("⏰ 알람 켜기", exact = true, scrolls = 20)
+        settle()
+        assertTrue(appears("그림만", exact = true))
+    }
 }
+
