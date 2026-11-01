@@ -649,13 +649,14 @@ private fun DayCell(
 
     Box(
         modifier
-            .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
+            .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, paint = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
             .cellEdge(view, cellLook, partShape, scheme.outlineVariant)
             .clip(partShape)
             // [MAT-01] 1.36 칸 채우기 under the day's wash; a shader moves only in today's cell (a month of moving cells is too much).
             .fillWith(cellLook?.fill, alpha = cellFillAlpha(cellLook), animate = isToday)
             .background(tint ?: Color.Transparent)
-            .then(run { cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
+            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour.
+            .then(run { cellPart.paint?.let { Modifier.fillWith(it, alpha = (cellPart.fillA ?: 100) / 100f, animate = isToday) } ?: cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
             .then(run { Modifier.partLine(cellPart, partShape) })
             .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
             .then(
