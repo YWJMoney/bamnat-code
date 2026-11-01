@@ -52,7 +52,11 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     // [BLU-12] Light or dark as the widget is drawn (위젯 모양's own, else the phone's), for the parts' dark lines.
     val night = when (look.theme) { "dark" -> true; "light" -> false
         else -> isNight(context) }
-    val parts = remember(settings?.parts, night) { com.bamnat.core.recipe.Blueprint.decode(settings?.parts).forDark(night) }
+    // 1.36 [SEC-13] 안전 모드: the widget too is drawn without the blueprint.
+    val parts = remember(settings?.parts, night) {
+        if (com.bamnat.app.diag.StartGuard.safe.value) com.bamnat.core.recipe.Blueprint.EMPTY
+        else com.bamnat.core.recipe.Blueprint.decode(settings?.parts).forDark(night)
+    }
     val whole = if (parts.touches("widget")) parts.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
     val bgArgb = whole.fill?.let { it or 0xFF000000L } ?: look.bg
     val inkArgb = whole.ink ?: look.ink

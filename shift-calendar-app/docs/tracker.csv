@@ -1640,3 +1640,4 @@ BLU-09,"1.36 누락 점검 N4 미리 보기에서 누른 부품 바로 고치기
 BLU-10,"1.36 누락 점검 N2 위젯이 widget·widget.head·widget.cell 부품을 그리기(편집 화면은 갈래 C)",1.36,진행 중,에뮬레이터 확인,"widget/"
 BLU-11,"1.36 누락 점검 N3 급여 화면 부품 pay.head·pay.total·pay.row 그리기",1.36,진행 중,에뮬레이터 확인,"ui/pay/"
 BLU-12,"1.36 부품 어두운 화면 상태 dark: 토큰 어두운 색을 dark 줄로, Blueprint.forDark로 앱·스튜디오·위젯이 접음",1.36,진행 중,에뮬레이터 확인,"Blueprint.forDark, RecipeResolve.piece"
+SEC-13,"1.36 보안 점검 M2(A 몫): 안전 모드에서는 부품 설계도 없이 그림(앱·위젯), 평소대로 누르면 다시",1.36,진행 중,에뮬레이터 확인,"app MainActivity partsResting, widget/WidgetLookTheme"

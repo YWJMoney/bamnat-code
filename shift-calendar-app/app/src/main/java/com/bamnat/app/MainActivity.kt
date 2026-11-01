@@ -125,9 +125,13 @@ class MainActivity : ComponentActivity() {
         val (screensNow, calNow) = androidx.compose.runtime.remember(shiftLooks, shiftMode, settings.screenLooks, settings.calTheme) {
             shiftLooks.apply(shiftMode, settings.screenLooks, settings.calTheme)
         }
+        // 1.36 [SEC-13] 보안 점검 M2: 안전 모드 draws without the blueprint (a received one may be what stopped the app); 평소대로 brings it back.
+        val partsResting by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor,
-            parts = androidx.compose.runtime.remember(settings.parts) { com.bamnat.core.recipe.Blueprint.decode(settings.parts) }) {
+            parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
+                if (partsResting) com.bamnat.core.recipe.Blueprint.EMPTY else com.bamnat.core.recipe.Blueprint.decode(settings.parts)
+            }) {
             // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
             val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
             val look = androidx.compose.runtime.remember(calNow, darkSurface) {
