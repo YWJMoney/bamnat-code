@@ -397,13 +397,25 @@ class LegalPagesTest {
      * [PRIV-05] 결정 D111 3.9: 3.2~3.8 start on 정식 출시일. Every LEGAL row they named waits for 3.9's date and, on a phone
      * installed before 3.9 was posted, its yes or the latest promised day; the card asks for 3.9, which also counts for 3.1.
      */
+    /** 1.36 [PUSH-01][GRW-10] 사용자 2026-11-01 승인 (YWJMoney/-#7): 알림 토큰과 Firebase 위탁, '없다고 알리기'. */
+    @Test fun policy39TellsTheAnswerSignalAndTheMissWords() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("문의 답 바로 알림 (앱 1.36.0부터)") && text.contains("알림 토큰"))
+        assertTrue("Google LLC Firebase 위탁", text.contains("Firebase 클라우드 메시징"))
+        assertTrue("내용 없는 신호", text.contains("문의 글과 답은 Google로 가지 않습니다"))
+        assertTrue(text.contains("없다고 알리기 (앱 1.36.0부터, 선택)") && text.contains("2번 이상 모인 말만"))
+        assertTrue("권한 표", text.contains("<td>클라우드 메시지 받기(Google Play 서비스, 앱 1.36.0부터)</td>"))
+    }
+
     @Test fun policy39BringsThePreLaunchItemsToLaunchDay() {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
         assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
-        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue("3.9 is the newest version line", text.indexOf("처리방침 3.9 ·") < text.indexOf("처리방침 3.8 ·"))
         assertTrue(text.contains("정식 출시 뒤의 개정은 위 기간을 그대로 지킵니다"))
         assertTrue(text.contains("꾸미기 그림"))
