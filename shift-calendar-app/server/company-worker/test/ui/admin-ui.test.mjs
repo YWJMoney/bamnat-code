@@ -1520,3 +1520,21 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
   assert.deepEqual(t.errors, []);
 });
+
+test("[SEC-11] 서버 상태 shows Play Integrity: off, and require without a service account as the thing to fix", async () => {
+  // PC 확인 d263030e: /server answered integrity but the screen drew none of it.
+  const off = await signedIn(server().env);
+  await off.go("#/server");
+  assert.ok(off.$('[data-integrity="off"]'), "the part is there when off");
+  assert.match(off.text("#main"), /무결성 확인 \(Play Integrity\)/);
+  assert.match(off.text("#main"), /꺼짐: 남에게 보이는 쓰기/);
+  assert.ok(!off.$("[data-integrity-numbers]"), "no numbers while off");
+
+  const stuck = await signedIn(server({ INTEGRITY_MODE: "require" }).env);
+  await stuck.go("#/server");
+  assert.ok(stuck.$('[data-integrity="require"]'));
+  assert.match(stuck.text("#main"), /지금 남에게 보이는 쓰기가 모두 막혀요/);
+  assert.match(stuck.text("[data-integrity-numbers]"), /오늘 확인을 물은 쓰기 0 · 지난 하루 확인에 실패한 휴대폰 0 · 7일 안에 확인된 휴대폰 0/);
+  assert.equal(stuck.$$("#main [style]").length, 0);
+  assert.deepEqual([...off.errors, ...stuck.errors], []);
+});

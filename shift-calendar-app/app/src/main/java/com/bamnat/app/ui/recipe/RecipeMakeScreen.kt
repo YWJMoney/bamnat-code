@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -425,8 +426,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                         Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
                     }
                     Spacer(Modifier.weight(1f))
-                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()) &&
-                        (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
+                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = canLeave(s, s.step),
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
                 }
             }
@@ -442,6 +442,9 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LinearProgressIndicator(progress = { (s.step - shift) / (5f - shift) }, modifier = Modifier.fillMaxWidth())
+                // PC 확인 d263030e (4/4에서 열린 판에서 2/4로 돌아갈 길이 잘 안 보여요): every step is a chip. A step behind opens with
+                // one tap; a step ahead does once the steps before it are filled, as 다음 would.
+                if (s.sent == null) StepChips(s.step, shift, titles, reachable = { t -> t <= s.step || (s.step until t).all { canLeave(s, it) } }, onGo = vm::go)
                 s.sent?.let { sent ->
                     SentCard(s.recipe.title, sent, onOpen)
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
@@ -492,6 +495,25 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
         }
+        }
+    }
+}
+
+/** Whether 다음 may leave [step]: something chosen, a name by 이름·표지, and no range upside down in 받는 분이 넣을 값. */
+private fun canLeave(s: RecipeMakeViewModel.State, step: Int): Boolean =
+    s.recipe.pieces.isNotEmpty() && (step != 3 || s.recipe.title.isNotBlank()) &&
+        (step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi })
+
+/** The steps as chips, numbered as the title counts them ([shift] 1 when 올리기 from the studio starts at 받는 분이 넣을 값). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StepChips(step: Int, shift: Int, titles: List<String>, reachable: (Int) -> Boolean, onGo: (Int) -> Unit) {
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (t in (1 + shift)..titles.size) {
+            val here = t == step
+            FilterChip(selected = here, onClick = { if (!here) onGo(t) }, enabled = here || reachable(t),
+                label = { Text("${t - shift} ${titles[t - 1]}") },
+                modifier = Modifier.semantics { stateDescription = if (here) "지금 단계" else "" })
         }
     }
 }
@@ -601,7 +623,11 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 @Composable
 private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
-    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    // PC 확인 d263030e (2/4에서 키보드가 아래 단추를 가려요): the keyboard's 완료 puts it away, so 표지·사진 under the name are in reach.
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focus.clearFocus() }), modifier = Modifier.fillMaxWidth())
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))

@@ -1218,18 +1218,43 @@ internal class SettingsFiles(
     val shareCompany: () -> Unit,
 )
 
+/**
+ * PC 확인 d263030e (백업 파일 고르기에서 카드 그림을 누르면 Google 지갑이 열려요): the file picker is Android's, and it lists other
+ * apps that hand out files. 파일 불러오기 now opens where the last backup was saved, so the backup is there without going
+ * through that list. Only the saved file's address is kept, on this phone.
+ */
+internal object BackupPlace {
+    private const val PREFS = "backup_place"
+    private const val KEY = "last"
+
+    fun remember(context: Context, uri: Uri) {
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, uri.toString()).apply() }
+    }
+
+    fun last(context: Context): Uri? =
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.let(Uri::parse) }.getOrNull()
+
+    class Open : ActivityResultContracts.OpenDocument() {
+        override fun createIntent(context: Context, input: Array<String>): Intent =
+            super.createIntent(context, input).apply { last(context)?.let { putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, it) } }
+    }
+}
+
 @Composable
 private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
-        if (uri != null) vm.exportTo(context, uri, sealedExport)
+        if (uri != null) {
+            BackupPlace.remember(context, uri)
+            vm.exportTo(context, uri, sealedExport)
+        }
     }
     val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
         if (uri != null) vm.exportIcs(context, uri)
     }
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val openLauncher = rememberLauncherForActivityResult(remember { BackupPlace.Open() }) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
     // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.

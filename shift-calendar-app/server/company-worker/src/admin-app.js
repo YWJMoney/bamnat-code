@@ -2495,9 +2495,37 @@ function adminApp(L, BUILD, M) {
         : empty("자주 쓰는 답이 없어요", "새 답을 넣으면 모든 관리자의 답 칸 아래에 보여요.")}`;
   }
 
+  /**
+   * 1.36 [SEC-11] 서버 상태's Play Integrity part: which way INTEGRITY_MODE is set, today's numbers, and what to do next. require
+   * without a working service account would turn every public write away, so that shows as the thing to fix first.
+   */
+  function integrityPart(g) {
+    if (!g) return "";
+    const MODE = { off: "꺼짐", watch: "지켜보기", require: "막기" };
+    const say = {
+      off: "남에게 보이는 쓰기(공개 올리기·사진·글꼴·신고·초대)에 Play 확인을 묻지 않아요",
+      watch: "Play 확인을 묻기만 하고 막지는 않아요. 아래 숫자로 막았을 때 얼마나 걸릴지 봐요",
+      require: "7일 안에 Play 확인을 받은 휴대폰만 남에게 보이는 쓰기를 할 수 있어요",
+    }[g.mode] ?? "";
+    const broken = g.mode !== "off" && !g.ready;
+    const line = broken
+      ? `${MODE[g.mode]}: PLAY_SERVICE_ACCOUNT가 없거나 Play Integrity를 쓸 수 없어요. ${g.mode === "require" ? "지금 남에게 보이는 쓰기가 모두 막혀요. " : ""}INTEGRITY_MODE를 off로 바꾸거나 서비스 계정을 넣어 주세요`
+      : `${MODE[g.mode] ?? esc(g.mode)}: ${say}`;
+    const tone = broken ? "todo" : g.mode === "off" ? "off" : "ok";
+    const mark = broken ? "!" : g.mode === "off" ? "–" : "✓";
+    const numbers = g.mode === "off" ? ""
+      : `<p class="meta" data-integrity-numbers>오늘 ${g.mode === "require" ? "확인을 물은 쓰기" : "확인 없이 온 쓰기"} ${g.missToday ?? 0} · 지난 하루 확인에 실패한 휴대폰 ${g.failedDay ?? 0} · 7일 안에 확인된 휴대폰 ${g.provenWeek ?? 0}</p>`;
+    const next = { off: "켜려면 Worker › 설정 › 런타임 변수에 INTEGRITY_MODE를 watch로 넣어요. 며칠 숫자를 본 뒤 require로 바꿔요",
+      watch: "실패한 휴대폰이 거의 없으면 INTEGRITY_MODE를 require로 바꿔요",
+      require: "실패한 휴대폰이 갑자기 늘면 INTEGRITY_MODE를 watch로 되돌려요" }[g.mode] ?? "";
+    return `<h3 class="sub" data-integrity="${esc(g.mode)}">무결성 확인 (Play Integrity)</h3>
+        <ul class="checks"><li class="${tone}"><span aria-hidden="true">${mark}</span>${esc(line)}</li></ul>${numbers}
+        <p class="hint">${esc(next)}</p>`;
+  }
+
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) : skeleton(1)}
+    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
         <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
   }
 

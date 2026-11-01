@@ -151,6 +151,33 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
     }
 
+    /** PC 확인 d263030e: a draft opened at 마치기 goes back to 이름·표지 by its chip; a step ahead waits for the name, as 다음 does. */
+    @Test fun aStepChipGoesBackAndWaitsLikeNext() = shoot("1344b_rcp_make_chips", PHONE) {
+        starters()
+        style(WorkStyle.SHIFT)
+        val model = RecipeMakeViewModel(c)
+        content { RecipeMakeScreen(model, onBack = {}, onOpen = {}) }
+        settle()
+        // After the model has read the phone, as a hand on 꾸미기 would.
+        model.setValue(PieceKind.CAL_VIEW, "size", "tall")
+        model.go(5)
+        settle()
+        assertTrue(model.state.value.recipe.pieces.isNotEmpty())
+        assertTrue(appears("레시피 만들기 5/5 · 마치기", exact = true))
+        tapText("3 이름·표지", exact = true)
+        settle()
+        assertEquals(3, model.state.value.step)
+        tapText("2 받는 분이 넣을 값", exact = true)
+        settle()
+        assertEquals(2, model.state.value.step)
+        tapText("5 마치기", exact = true)
+        settle()
+        assertEquals("이름이 없으면 3단계를 넘지 않아요", 2, model.state.value.step)
+        tapText("3 이름·표지", exact = true)
+        settle()
+        assertEquals("앞 단계는 다음처럼 갈 수 있어요", 3, model.state.value.step)
+    }
+
     @Test fun settingsOfTheBoard() = shoot("1345_rcp_mine", PHONE) {
         starters()
         val model = RecipeMineViewModel(c)

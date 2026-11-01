@@ -166,6 +166,20 @@ test("[SEC-11] watch: nothing refused, the misses are counted for 서버 상태"
   assert.equal(state.integrity.mode, "watch");
   assert.equal(state.integrity.ready, true);
   assert.equal(state.integrity.missToday, 1);
+  assert.equal(state.integrity.failedDay, 0);
+});
+
+test("[SEC-11] require: 서버 상태 counts the writes it asked and the phones that failed", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-01T03:00:00Z") });
+  const { call, env } = server({ plaza: true, INTEGRITY_MODE: "require" });
+  assert.equal((await call("POST", "/api/recipes/images", { device: device(1), webp: vp8(512, 512).toString("base64") }, { "x-device": device(1) })).status, 428);
+  const { deviceHash, deviceId } = await import("../src/index.js");
+  await env.DB.prepare("INSERT INTO integrity (device, ok, why, at) VALUES (?, 0, 'device', ?)").bind(await deviceHash(deviceId(device(2))), Date.now() - 1000).run();
+  const state = (await call("GET", "/api/admin/server", undefined, await signIn(call))).data.integrity;
+  assert.equal(state.mode, "require");
+  assert.equal(state.ready, false, "no service account");
+  assert.equal(state.missToday, 1);
+  assert.equal(state.failedDay, 1);
 });
 
 test("[SEC-11] the phone and the server make the same nonce (IntegrityProofTest)", async () => {

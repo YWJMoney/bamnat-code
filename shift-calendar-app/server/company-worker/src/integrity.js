@@ -73,10 +73,9 @@ export async function integrityGate(d, env, dev, now) {
   if (mode === "off" || !dev || dev === "operator") return null;
   const row = await d.one(env, "SELECT ok, at FROM integrity WHERE device = ?", dev);
   if (row?.ok === 1 && now - row.at < INTEGRITY.okMs) return null;
-  if (mode === "watch") {
-    await d.allow(env, `integritymiss|${integrityDay(now)}`, Infinity, 2 * DAY, now);
-    return null;
-  }
+  // 서버 상태 counts the writes that came without a proof: in watch the ones it would have asked, in require the ones it asked.
+  await d.allow(env, `integritymiss|${integrityDay(now)}`, Infinity, 2 * DAY, now);
+  if (mode === "watch") return null;
   const failedLately = row && row.ok === 0 && now - row.at < INTEGRITY.failRetryMs;
   return d.json({ error: "integrity", field: "integrity", ...(failedLately ? { failed: true } : {}) }, 428);
 }
@@ -85,7 +84,9 @@ export async function integrityGate(d, env, dev, now) {
 export async function integrityState(d, env, now, ready) {
   const miss = await d.one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `integritymiss|${integrityDay(now)}`, now);
   const ok = await d.one(env, "SELECT COUNT(*) AS n FROM integrity WHERE ok = 1 AND at > ?", now - INTEGRITY.okMs);
-  return { mode: integrityMode(env), ready, missToday: miss?.count ?? 0, provenWeek: ok?.n ?? 0 };
+  // Installs whose last verdict failed in the last day: in require they cannot write what others see.
+  const failed = await d.one(env, "SELECT COUNT(*) AS n FROM integrity WHERE ok = 0 AND at > ?", now - DAY);
+  return { mode: integrityMode(env), ready, missToday: miss?.count ?? 0, provenWeek: ok?.n ?? 0, failedDay: failed?.n ?? 0 };
 }
 
 /**

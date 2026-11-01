@@ -19,6 +19,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.text.input.ImeAction
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -177,7 +185,9 @@ fun ProScreen(onBack: () -> Unit) {
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
         )
     }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+        // PC 확인 d263030e (관리자 연결 코드 칸에서 키보드가 연결하기를 가려요): the page ends above the keyboard, so what is under a
+        // field can be scrolled to while typing.
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -426,6 +436,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
 }
 
 /** [MON-09] An invited admin's phone, tied with the 6-digit code from the developer app. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -439,9 +450,7 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
-            OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6자리 코드") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
-            Button(onClick = {
+            val linking = {
                 scope.launch {
                     runServer(onMessage) {
                         val state = c.tierApi.link(c.companyStore.device, code)
@@ -451,7 +460,17 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
                         onMessage(if (state.approved) "연결했어요. 프로를 무료로 써요." else "연결했어요. 최고 관리자가 승인하면 프로가 열려요.")
                     }
                 }
-            }, enabled = code.length == 6) { Text("연결하기") }
+                Unit
+            }
+            // PC 확인 d263030e: the field and 연결하기 come above the keyboard together, and the keyboard's own key links too.
+            val bring = remember { BringIntoViewRequester() }
+            Column(Modifier.bringIntoViewRequester(bring), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6자리 코드") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (code.length == 6) linking() }),
+                    modifier = Modifier.fillMaxWidth().onFocusEvent { if (it.isFocused) scope.launch { delay(350); bring.bringIntoView() } })
+                Button(onClick = { linking() }, enabled = code.length == 6) { Text("연결하기") }
+            }
         } else {
             TextButton(onClick = {
                 scope.launch {
