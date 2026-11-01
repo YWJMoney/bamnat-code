@@ -1893,6 +1893,8 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
     SettingsGo.STUDIO_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_FONT)
+    SettingsGo.STUDIO_SCREEN_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_SCREEN_FONT)
+    SettingsGo.STUDIO_DATE_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_DATE_FONT)
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null

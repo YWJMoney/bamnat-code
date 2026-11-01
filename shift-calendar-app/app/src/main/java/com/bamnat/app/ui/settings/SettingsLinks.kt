@@ -35,6 +35,8 @@ enum class SettingsGo {
     LEAVE,
     /** [MAT-05] 1.36 스튜디오 › 앱 전체 › 글꼴 (PC 확인 4차: 설정 검색 '글꼴'). */
     STUDIO_FONT,
+    /** PC 확인 5차: 화면마다 글꼴 (달력 › 색·배경) and 날짜 숫자 글꼴 (달력 › 칸 디자인). */
+    STUDIO_SCREEN_FONT, STUDIO_DATE_FONT,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

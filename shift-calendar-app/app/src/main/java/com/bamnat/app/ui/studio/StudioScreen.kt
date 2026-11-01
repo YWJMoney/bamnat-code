@@ -259,7 +259,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var resumeShut by rememberSaveable { mutableStateOf(false) }
     var feelOpen by remember { mutableStateOf(false) }
     LaunchedEffect(vm.askFeel) { if (vm.askFeel) { vm.askFeel = false; feelOpen = true } }
-    LaunchedEffect(vm.openFont) { if (vm.openFont) { vm.openFont = false; area = Area.ALL; tool = Tool.FONT } }
+    LaunchedEffect(vm.openFont) {
+        when (vm.openFont) {
+            StudioViewModel.START_FONT -> { area = Area.ALL; tool = Tool.FONT }
+            StudioViewModel.START_SCREEN_FONT -> { area = Area.CALENDAR; tool = Tool.COLORS }
+            StudioViewModel.START_DATE_FONT -> { area = Area.CALENDAR; tool = Tool.CELL }
+        }
+        vm.openFont = null
+    }
     val shotLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     // [STU-41] The example as a picture, taken as 올리기 opens.
     fun takeShot() { scope.launch { StudioShot.last = runCatching { shotLayer.toImageBitmap().asAndroidBitmap() }.getOrNull() } }
