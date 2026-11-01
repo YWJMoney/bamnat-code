@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.studio
 
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import android.graphics.ColorMatrixColorFilter
 import android.os.Build
 import androidx.compose.foundation.background
@@ -197,8 +199,11 @@ internal fun LockChips(vm: StudioViewModel) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         StudioColors.LOCKABLE.forEach { tab ->
             val on = tab in vm.locked
+            // PC 제안 1.36 (켜고 끌 때 칩 자리가 옮겨 다님): the same width either way — a lock icon, shut or open, always in front.
             FilterChip(selected = on, onClick = { vm.locked = if (on) vm.locked - tab else vm.locked + tab },
-                label = { Text((if (on) "🔒 " else "") + lockName(tab, vm.style)) },
+                leadingIcon = { androidx.compose.material3.Icon(if (on) androidx.compose.material.icons.Icons.Filled.Lock
+                    else androidx.compose.material.icons.Icons.Outlined.LockOpen, null, Modifier.size(18.dp)) },
+                label = { Text(lockName(tab, vm.style)) },
                 modifier = Modifier.semantics { contentDescription = "${lockName(tab, vm.style)} " + if (on) "잠금 풀기" else "잠그기" })
         }
     }
