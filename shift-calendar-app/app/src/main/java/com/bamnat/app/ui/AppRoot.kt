@@ -335,6 +335,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // that already have a pattern were set up before this question existed, so they are shift workers
     // and are not asked; a setup on its way (or being saved) is never taken for one of those.
     val settingsNow by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    // 1.36 [PUSH-01] PC 8fe7d8b3: 밤낮 소식을 끄면 바로 알림 토큰도 그 자리에서 거두고(다음 답 확인을 기다리지 않고), 켜면 다시 줘요.
+    LaunchedEffect(settingsNow.plazaNews) { container.appScope.launch { runCatching { com.bamnat.app.company.PushPhone.sync(container) } } }
     // [CALS-02] The calendar on screen and its kind of work, which names the tabs and opens its own settings.
     val activeCalendarId by container.calendars.active.collectAsStateWithLifecycle()
     val calendarList by container.calendars.calendars.collectAsStateWithLifecycle()
@@ -644,7 +646,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
             container.inquiryStore.update(it)
             // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
-            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext)
+            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext,
+                soon = it.any { q -> q.waiting && java.time.Duration.between(q.updatedAt, com.bamnat.core.time.Today.instant()).toDays() < 1 })
+            // 1.36 [GRW-03] PC 확인 a4899e83: 스튜디오 부탁이 풀렸으면 앱을 열 때 한 번 '보러 가기'로 알려요(설정 탭까지 가지 않아도).
+            val prefs = container.appContext.getSharedPreferences("studio_solved", android.content.Context.MODE_PRIVATE)
+            val told = prefs.getStringSet("told", emptySet()).orEmpty()
+            val solved = it.filter { q -> q.kind == com.bamnat.app.company.InquiryKind.STUDIO && q.id !in told }.firstNotNullOfOrNull { q ->
+                q.messages.lastOrNull { m -> m.fromDeveloper }?.text?.let { t -> Regex("""코드 ([2-9A-HJ-NP-Z]{8})""").find(t)?.groupValues?.get(1) }?.let { code -> q.id to code }
+            }
+            if (solved != null) {
+                prefs.edit().putStringSet("told", told + solved.first).apply()
+                // PC 6ec395bf: 몇 초 만에 사라지지 않고, 닫기나 보러 가기를 누를 때까지 남아요.
+                val result = snackbar.showSnackbar("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요",
+                    actionLabel = "보러 가기", withDismissAction = true, duration = SnackbarDuration.Indefinite)
+                if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.recipe(solved.second))
+            }
         }
     }
 
@@ -1278,7 +1294,7 @@ private fun AppNavHost(
         }
         composable(Routes.INQUIRY) {
             val vm = appViewModel { InquiryViewModel(it) }
-            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
+            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) }, onOpenRecipe = { code -> nav.navigate(Routes.recipe(code)) })
         }
         composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
             navArgument("focus") { type = NavType.StringType; nullable = true; defaultValue = null })) { entry ->

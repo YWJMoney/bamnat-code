@@ -3,6 +3,8 @@ package com.bamnat.app.ui.recipe
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -270,7 +272,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     }
                 }
                 // [RCX-01] 계보: what it was made from, and what others made from it.
-                s.lineage?.let { l -> LineageSection(l, onOpen) }
+                s.lineage?.let { l -> LineageSection(l, onOpen, s.doc?.item?.look) }
                 // [LIN-02][LIN-03] 1.35 달라진 점, and for the maker of the recipe it came from, 내 판에 가져오기.
                 // For anyone else it sits with the 계보; the maker of the original sees it first, above 넣기 (1.35 자유도 점검).
                 s.parentDoc?.takeIf { !it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { } }
@@ -354,6 +356,12 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() ->
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("내 레시피", style = MaterialTheme.typography.titleSmall)
             Text(stateLabel(doc.state, doc.scope), style = MaterialTheme.typography.bodyMedium)
+            // 1.36 [GRW-08] PC 8d290ec3: 새싹 첫 사진은 운영자가 본 뒤에 다른 분께 보여요.
+            if (doc.photosWaiting > 0) com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
+            if (doc.photosHeld > 0) {
+                com.bamnat.app.ui.company.StatusChip("사진이 신고로 잠시 가려졌어요", com.bamnat.app.ui.company.Tone.BAD)
+                Text("운영자가 살펴본 뒤 괜찮으면 다시 보여요. 작품의 다른 부분은 그대로 보여요", style = MaterialTheme.typography.bodySmall)
+            }
             doc.note?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
             doc.reasons?.let { rs ->
                 if (rs.tally.isNotEmpty()) Text("안좋아요 이유: " + rs.tally.entries.joinToString(" · ") { (k, n) -> "${RecipeLinks.DISLIKE_REASONS[k] ?: k} $n" },
@@ -589,7 +597,7 @@ private fun Modifier.androidx_clip(c: androidx.compose.ui.graphics.Color): Modif
 
 /** [RCX-01] 1.35 계보: the recipes it was made from (원작자 표시는 지울 수 없음) and those made from it. */
 @Composable
-private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) -> Unit) {
+private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) -> Unit, look: com.bamnat.app.recipe.ThemeSwatch? = null) {
     if (l.parents.isEmpty() && l.children.isEmpty()) return
     Text("계보", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
     l.parents.forEachIndexed { i, p ->
@@ -601,7 +609,40 @@ private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) ->
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (l.children.isNotEmpty()) {
         Text("이 레시피를 고쳐 만든 것 ${l.children.size}개", style = MaterialTheme.typography.labelLarge)
-        l.children.take(5).forEach { k -> RecipeRow(k, Modifier) { onOpen(k.code) } }
+        l.children.take(5).forEach { k -> ForkRow(k, look, l.changed[k.code].orEmpty()) { onOpen(k.code) } }
+    }
+}
+
+/**
+ * 1.36 누락 점검 N15 (1차 사용성 제안): 고친 판 한 줄에 반반 그림(왼쪽 이 판, 오른쪽 고친 판)과 '바꾼 곳' 한 줄,
+ * so which 수정판 is worth opening shows without opening each.
+ */
+@Composable
+private fun ForkRow(k: com.bamnat.app.recipe.RecipeItem, mineLook: com.bamnat.app.recipe.ThemeSwatch?, changed: List<Pair<String, String>>, onOpen: () -> Unit) {
+    val words = changed.joinToString(" · ") { (kind, how) ->
+        (PieceKind.entries.firstOrNull { it.key == kind }?.label ?: kind) + when (how) { "add" -> " 새로 넣음"; "del" -> " 뺌"; else -> " 바꿈" }
+    }.ifEmpty { "조각은 같고 이름·설명·표지만 달라요" }
+    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val theirs = k.look
+            if (mineLook != null && theirs != null) {
+                androidx.compose.foundation.layout.Box(Modifier.width(84.dp)) {
+                    ThemeThumb(mineLook, width = 84.dp)
+                    ThemeThumb(theirs, width = 84.dp, modifier = Modifier.drawWithContent {
+                        clipRect(left = size.width / 2f) { this@drawWithContent.drawContent() }
+                    })
+                    androidx.compose.foundation.layout.Box(Modifier.align(Alignment.Center).width(2.dp).height(48.dp).background(MaterialTheme.colorScheme.outline))
+                }
+                Spacer(Modifier.width(10.dp))
+            } else if (theirs != null) { ThemeThumb(theirs, width = 84.dp); Spacer(Modifier.width(10.dp)) }
+            Column(Modifier.weight(1f)) {
+                Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text("바꾼 곳: $words", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 쓰는 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 

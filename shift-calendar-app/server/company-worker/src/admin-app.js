@@ -12,6 +12,8 @@ import { ADMIN_CSS } from "./admin/style.js";
 import { todayViews } from "./admin/views/today.js";
 import { plazaViews } from "./admin/views/plaza.js";
 import { insightViews } from "./admin/views/insight.js";
+// 1.36 [GRW-07] 할 일함, [GRW-04]~[GRW-06] 스튜디오 요구·기본 도구 후보·손잡이 지도.
+import { workViews } from "./admin/views/work.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -68,7 +70,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -615,6 +617,15 @@ function adminApp(L, BUILD, M) {
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
+      // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
+      if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
+      // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
+      if (name === "growth") {
+        const t = S.growthTab ?? "needs";
+        const src = { needs: "/growth/needs", unsolved: "/growth/needs?show=unsolved", ended: "/growth/needs?show=ended", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`,
+          map: `/growth/map${S.growthVersion ? `?version=${encodeURIComponent(S.growthVersion)}` : ""}` }[t];
+        jobs.push(api(src).then(keep((d) => { S.data.growth = { tab: t, ...d }; })));
+      }
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
@@ -663,7 +674,7 @@ function adminApp(L, BUILD, M) {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
         // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", makers: "/recipes/makers/flagged",
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
           month: "/recipes/makers/month" }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
@@ -1008,6 +1019,9 @@ function adminApp(L, BUILD, M) {
    */
   const VIEWS = {
     home: () => V.homeView(),
+    // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
+    work: () => V.workView(),
+    growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
     sort: () => sortView(),
@@ -1051,7 +1065,7 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, work: d.work, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -1110,6 +1124,10 @@ function adminApp(L, BUILD, M) {
    * 1.36 [VIL-21] 마을 운영 (조사 V11·V21): this week's 이야기 주제 for each kind of work's plaza, shown on top of that plaza in the app.
    * An empty line takes it off; next Monday (KST) every one is gone by itself.
    */
+  function roomName(room) {
+    return S.data.village?.items?.find((x) => x.room === room)?.name ?? room;
+  }
+
   function villageView() {
     const d = S.data.village;
     const edit = can("community", "edit");
@@ -1120,11 +1138,11 @@ function adminApp(L, BUILD, M) {
     const [, m, dd] = d.week.split("-").map(Number);
     return head + `<h3>이번 주 이야기 주제</h3><p class="meta">${m}월 ${dd}일(월)부터 이번 주</p><div class="grid">${d.items.map((x) => `<article class="card">
       <div class="head"><h3>${esc(x.name)}</h3>${x.text ? '<span class="pill ok">보이는 중</span>' : '<span class="pill">없음</span>'}</div>
-      <label class="field"><span>이번 주 주제</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
+      <label class="field"><span>이번 주 이야기 주제 (광장 글쓰기)</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
-      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">저장</button>
+      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
-    </article>`).join("")}</div>` + contestsView(edit);
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit);
   }
 
   const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
@@ -1141,16 +1159,16 @@ function adminApp(L, BUILD, M) {
     const card = (x, current) => `<article class="card">
       <div class="head"><h3>${esc(STYLE_NAMES[x.style] ?? x.style)}</h3><span class="pill${x.entries.length ? " info" : ""}">작품 ${x.entries.length}</span>
         ${!current && x.picks.length ? `<span class="pill ok">고름 ${x.picks.length}/3 · 앱에 보여요</span>` : ""}</div>
-      ${current ? `<label class="field"><span>이달의 주제</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
+      ${current ? `<label class="field"><span>이달의 공모 주제 (공방 작품)</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
         placeholder="예: 야간 근무용 어두운 테마"${edit ? "" : " readonly"}></label>
-        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">저장</button></div>` : ""}`
+        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">공모 주제 저장</button></div>` : ""}`
         : `<p>${esc(x.theme)}</p>`}
       ${x.entries.length ? `<ul class="plain">${x.entries.slice(0, 10).map((e) => `<li><label><input type="checkbox" data-pick="${esc(x.month)}|${esc(x.style)}" value="${esc(e.code)}"
         ${x.picks.includes(e.code) ? "checked" : ""}${edit && !current ? "" : " disabled"}> ${esc(e.title)} <span class="meta">좋아요 ${e.likes} · 쓰는 분 ${e.users} · ${esc(e.code)}</span></label></li>`).join("")}</ul>` : '<p class="meta">아직 넣은 작품이 없어요</p>'}
       ${edit && !current && x.entries.length ? `<div class="actions"><button class="btn primary" data-act="contest-pick" data-id="${esc(x.month)}|${esc(x.style)}">고른 작품을 이달의 테마로 (3개까지)</button></div>` : ""}
     </article>`;
     return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 마을 › 공방 맨 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
-      앱에 ‘지난 달 이달의 테마’로 보여요. 고른 분께 드릴 프로 보상(조사 V19·832)은 아직 앱에 약속하지 않았고, 보상 길이 생기면 함께 열어요.</p>
+      앱에 ‘지난 달 이달의 테마’로 보여요. 고르면 작품 주인에게 프로 한 달(만든 작품 보상, 작품·달마다 한 번, 1년 12달 상한)이 바로 들어가요.</p>
       <div class="grid">${now.map((x) => card(x, true)).join("")}</div>
       ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
   }
@@ -2293,7 +2311,7 @@ function adminApp(L, BUILD, M) {
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
   const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
@@ -2310,6 +2328,10 @@ function adminApp(L, BUILD, M) {
     } catch { return ""; }
   }
 
+  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름).
+  const RECIPE_SECTIONS = { theme: "테마", tab: "탭 하나", part: "부품", logic: "규칙·단추" };
+  const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
+
   function recipesView() {
     const d = S.data.recipes;
     const m = S.data.recipeMonth;
@@ -2321,6 +2343,8 @@ function adminApp(L, BUILD, M) {
     if (!d || (d.tab ?? tab) !== tab) return chips + skeleton(2);
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
+    // 1.36 [GRW-05] 기본 도구 후보·모두의 도구 (문의 › 스튜디오 요구에도 같은 목록).
+    if (tab === "tools") return chips + V.toolsBlock(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
     if (tab === "makers") return chips + recipeMakersView(d, edit);
     if (tab === "month") return chips + recipeMonthView(d, edit);
@@ -2333,9 +2357,14 @@ function adminApp(L, BUILD, M) {
       // [RCX-32]
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
-    const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
-        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
+    const sec = S.recipeSection ?? "all";
+    const secChips = d.items.some((r) => r.section) ? `<div class="chips" role="group" aria-label="구간">${[["all", "모든 구간"], ...Object.entries(RECIPE_SECTIONS)].map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${k === "all" ? d.items.length : d.items.filter((r) => r.section === k).length}</button>`).join("")}</div>` : "";
+    const shown = sec === "all" ? d.items : d.items.filter((r) => r.section === sec);
+    const rows = shown.length ? `<ul class="rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
+        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}${r.tabs?.length ? ` · ${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")}` : ""}</span>` : ""} <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
+        ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
@@ -2356,7 +2385,7 @@ function adminApp(L, BUILD, M) {
     const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
       `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
-    return `${chips}${month}<p class="hint">${esc(help)}</p>${rows}${upload}${log}`;
+    return `${chips}${month}<p class="hint">${esc(help)}</p>${secChips}${rows}${upload}${log}`;
   }
 
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
@@ -2370,12 +2399,20 @@ function adminApp(L, BUILD, M) {
   }
 
   /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
+  // 1.36 [GRW-08] 사진 세 겹: 운영자가 보는 것은 새싹 첫 사진·자동 검사에 걸린 것·신고로 먼저 가린 것뿐이에요.
+  const PHOTO_FLAG_NAMES = { nude: "성적인 사진", violence: "폭력·잔인", personal: "개인정보", copy: "남의 저작물", other: "그 밖" };
   function recipeImagesView(d, edit) {
-    if (!d.items.length) return empty("볼 그림이 없어요", "레시피 표지로 올린 그림이 여기 와요. 본 그림만 다른 분께 보여요.");
-    return `<p class="hint">사람 얼굴·개인정보·광고·남의 저작물이 보이면 가려요. 괜찮으면 보이기를 눌러요.</p>
-      <ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
-        <img src="data:image/webp;base64,${esc(i.data)}" alt="레시피 표지 그림" width="128" height="128" class="cover-img">
-        <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
+    const c = d.counts ?? {};
+    const rules = d.rules ?? { lookFirst: 3, flagsToHold: 2 };
+    const head = `<p class="hint">세 겹으로 봐요. ① 올릴 때 자동 검사(설정되어 있으면) ② 새싹은 첫 ${rules.lookFirst}장만 여기서 보고, 그 뒤와 이웃·단골은 바로 보여요 ③ 신고 ${rules.flagsToHold}번이면 먼저 가려져 여기로 와요.
+      얼굴·개인정보·성적인 사진·남의 저작물이면 가리기(쓰기 제한 한 번), 괜찮으면 보이기(신고는 비워요).</p>
+      <p class="meta">새싹 첫 사진 ${c.pending ?? 0} · 먼저 가린 것 ${c.held ?? 0}</p>`;
+    if (!d.items.length) return `${head}${empty("볼 사진이 없어요", "새싹의 첫 사진, 자동 검사에 걸린 사진, 신고로 먼저 가린 사진이 여기 와요.")}`;
+    return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
+        <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
+        <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
+        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (${esc(u.code)})`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
+        <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
@@ -2410,7 +2447,7 @@ function adminApp(L, BUILD, M) {
     const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
     const style = Object.fromEntries(RECIPE_STYLES);
     return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
-        <small>${esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
+        <small>${q.style === "ALL" ? "모든 유형" : esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)}${q.askers ? ` · 스튜디오 요구 ${q.askers}명` : ""} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
@@ -4091,16 +4128,16 @@ function adminApp(L, BUILD, M) {
       S.data.limits = null;
       load();
     }, "primary"),
-    // 1.36 [VIL-21] 이번 주 주제 저장·내리기.
+    // 1.36 [VIL-21] 이번 주 주제 저장·내리기 (PC 6ec395bf: 알림에 어떤 주제·어느 광장인지).
     "topic-save": async ({ id }) => {
       const text = document.getElementById(`topic-${id}`)?.value?.trim() ?? "";
-      await act(() => api("/village/topics", "POST", { room: id, text }), text ? "저장했어요. 앱 광장 맨 위에 보여요" : "내렸어요");
+      await act(() => api("/village/topics", "POST", { room: id, text }), text ? `이번 주 이야기 주제(${roomName(id)})를 저장했어요. 앱 광장 맨 위에 보여요` : `이번 주 이야기 주제(${roomName(id)})를 내렸어요`);
       S.data.village = null;
       load();
     },
     "contest-save": async ({ id }) => {
       const theme = document.getElementById(`contest-${id}`)?.value?.trim() ?? "";
-      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? "저장했어요. 앱 마을 › 공방 맨 위에 보여요" : "내렸어요");
+      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? `${STYLE_NAMES[id] ?? id} 공모 주제를 저장했어요 (앱 공방 맨 위)` : `${STYLE_NAMES[id] ?? id} 공모 주제를 내렸어요`);
       S.data.contests = null;
       load();
     },
@@ -4111,7 +4148,7 @@ function adminApp(L, BUILD, M) {
       // PC 확인 V30: said plainly, with 되돌리기 to the picks before.
       const before = S.data.contests?.items.find((x) => x.month === month && x.style === style)?.picks ?? [];
       await act(() => api("/village/contests/pick", "POST", { month, style, codes }),
-        codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요` : "고른 것을 비웠어요",
+        (r) => (codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요${r?.rewarded ? ` · 보상 ${r.rewarded}명` : ""}` : "고른 것을 비웠어요"),
         async () => {
           await act(() => api("/village/contests/pick", "POST", { month, style, codes: before }), "되돌렸어요");
           S.data.contests = null;
@@ -4520,7 +4557,15 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCP-39]
-    "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
+    "recipe-tab": ({ key }) => { S.recipeTab = key; S.recipeSection = "all"; S.data.recipes = null; load(); },
+    "recipe-section": ({ key }) => { S.recipeSection = key; render({ keepScroll: true }); },
+    // PC ce2b7091 사용성 제안: 고친 판에서 원본으로. 지금 목록에 있으면 그 줄로, 없으면 코드를 복사해요.
+    "recipe-find": ({ id }) => {
+      const row = [...document.querySelectorAll("[data-act='recipe-do']")].find((b) => b.dataset.id === id)?.closest("li");
+      if (row) { row.scrollIntoView({ block: "center" }); row.classList.add("flash"); setTimeout(() => row.classList.remove("flash"), 1500); return; }
+      navigator.clipboard?.writeText(id).catch(() => {});
+      toast(`원본 ${id}은 이 목록에 없어요. 코드를 복사했어요`);
+    },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
     "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
@@ -5225,7 +5270,8 @@ function adminApp(L, BUILD, M) {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A) };
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A) };
+  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms } });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
 
@@ -5474,17 +5520,26 @@ function adminApp(L, BUILD, M) {
         if (detail) return document.getElementById("reply")?.focus();
         return load();
       case "close":
+        if (S.route.name === "work" && V.workKey("done")) return stop();
         if (detail && editInq && S.data.inquiry?.status !== "closed") return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
       case "reject":
         if (S.route.name === "review") return reviewKey("reject");
         if (detail && S.queue) return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
+      // 1.36 [GRW-07] w 기다림, h 기록 (할 일함).
+      case "wait":
+        if (S.route.name === "work" && V.workKey("wait")) stop();
+        return;
+      case "history":
+        if (S.route.name === "work" && V.workKey("log")) stop();
+        return;
       // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
       case "next":
         stop();
         return nextWaiting();
       case "skip":
+        if (S.route.name === "work" && V.workKey("seeing")) return stop();
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);
         return;

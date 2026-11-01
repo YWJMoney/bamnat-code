@@ -1,3 +1,4 @@
+import { fcmTell } from "./fcm.js";
 import { all, audit, batch, can, iso, json, one, randomId, readJson, refuse, run, stmt } from "./index.js";
 import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, plainText, triage } from "./inquiries.js";
 
@@ -301,6 +302,8 @@ async function inboxAnswer(env, id, text, now, by) {
     now, env.actor?.id ?? null, by, id);
   if (!r.meta.changes) return false;
   await run(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, t, by, now);
+  // 1.36 [PUSH-01]
+  await fcmTell(env, [id], now);
   return true;
 }
 

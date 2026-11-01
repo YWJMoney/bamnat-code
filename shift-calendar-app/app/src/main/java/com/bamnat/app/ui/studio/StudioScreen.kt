@@ -226,6 +226,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var saving by remember { mutableStateOf(false) }
     var startAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // 1.36 [GRW-01] 원하는 꾸미기가 없을 때 스튜디오를 떠나지 않고 그 자리에서 부탁해요.
+    var wish by remember { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
 
     val d = s.draft
@@ -467,9 +469,25 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                     }
+                    TextButton(onClick = { wish = true }) { Text("원하는 꾸미기가 없나요? 부탁하기") }
                     Spacer(Modifier.height(24.dp))
                 }
             }
+        }
+    }
+
+    if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { sent ->
+        wish = false
+        val gathered = sent?.takeIf { it.studioGoal > 0 }?.let { q ->
+            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 장터 '만들어 주세요'에 올라가요"
+            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 장터 '만들어 주세요'에 올라가고, 모이지 않아도 운영자가 함께 봐요"
+        }
+        scope.launch {
+            snack.showSnackbar(when {
+                sent == null -> "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"
+                gathered != null -> "보냈어요. $gathered. 풀리면 알림과 '내 문의'로 알려 드려요"
+                else -> "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요"
+            })
         }
     }
 
@@ -562,6 +580,57 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
 }
 
 /** 내 앱에 입히기: an ad first when the look keeps someone else's days ([StudioViewModel.needsAd]). */
+/**
+ * 1.36 [GRW-01] 스튜디오 요구: 보는 칸·도구를 앞에 붙여 개발자에게 보내요(공개 안 함). 서버가 같은 부탁끼리 묶고, 3명이 모이면 장터
+ * '만들어 주세요'에, 풀리거나 기본 도구가 되면 문의 답으로 알려 줘요. 고치던 꾸미기는 그대로예요.
+ */
+@Composable
+private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, onSent: (com.bamnat.app.company.Inquiry?) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var text by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    val tools by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.CommonTool>()) {
+        value = runCatching { c.recipeApi.tools(style) }.getOrDefault(emptyList())
+    }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("원하는 꾸미기 부탁하기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요",
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = text, onValueChange = { text = it.take(500) }, minLines = 3, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("예: 야간 근무 칸에 달 모양을 넣고 싶어요") })
+                if (tools.isNotEmpty()) {
+                    Text("먼저 모두의 도구를 살펴보세요", style = MaterialTheme.typography.labelLarge)
+                    tools.take(3).forEach { t -> Text("• ${t.title} · ${t.users}명이 써요", style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy && text.isNotBlank(), onClick = {
+                busy = true
+                scope.launch {
+                    val sent = runCatching {
+                        c.inquiryApi.send(c.companyStore.device, com.bamnat.app.company.InquiryKind.STUDIO, "[스튜디오 › $where] ${text.trim()}",
+                            com.bamnat.app.ui.company.deviceInquiryInfo().copy(studio = style?.name, public = false))
+                    }.getOrNull()
+                    if (sent != null) {
+                        // PC 확인 8d290ec3: 답(풀림·기본 도구·거절)이 오면 알림과 '내 문의'에 보이게, 다른 문의처럼 표시해요.
+                        c.inquiryStore.asked = true
+                        c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
+                        com.bamnat.app.company.InquiryReplyJob.schedule(c.appContext)
+                    }
+                    busy = false
+                    onSent(sent)
+                }
+            }) { Text(if (busy) "보내는 중" else "보내기") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
 @Composable
 private fun WearButton(vm: StudioViewModel, busy: Boolean, check: (() -> Unit) -> Unit) {
     val c = LocalContext.current.appContainer

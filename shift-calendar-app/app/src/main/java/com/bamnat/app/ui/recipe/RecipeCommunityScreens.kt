@@ -153,6 +153,8 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     val draft = remember { RequestDraft.text.also { RequestDraft.text = null } }
     var writing by remember { mutableStateOf(draft != null && vm.canWrite) }
     var finishing by remember { mutableStateOf<String?>(null) }
+    // 1.36 [GRW-03] PC 6ec395bf: 완성 전에 그 작품이 이 부탁에 맞는지 한 번 보고 정해요(부탁과 상관없는 작품으로 잘못 잇지 않게).
+    var confirming by remember { mutableStateOf<Pair<com.bamnat.app.recipe.RecipeRequest, com.bamnat.app.recipe.RecipeItem>?>(null) }
     // 1.36 [VIL-15] While I make something for a request, my newest recipe is offered to finish it with in one tap.
     val taking = s.items.orEmpty().any { it.taking }
     LaunchedEffect(taking) { if (taking) vm.loadMine() }
@@ -182,8 +184,11 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(q.body, style = MaterialTheme.typography.bodyLarge)
-                                Text("${stateWord(q.state)} · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) " · 내가 만드는 중" else ""),
+                                Text("${stateWord(q.state)}" + (if (q.askers > 0) " · 스튜디오에서 ${q.askers}명이 부탁" else "") + " · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) (if (q.state == "done") " · 내가 만든 작품" else " · 내가 만드는 중") else ""),
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // 1.36 누락 점검 N14 (1차 사용성 제안): 14일 동안 아무도 못 만든 요청은 이유와 다음 일을 말해요.
+                                if (q.told && q.state == "waiting") Text("스튜디오로 아직 못 만드는 것일 수 있어요. 개발자에게 알렸어요. 만들 수 있게 되면 이 요청에 알려 드려요",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {
@@ -199,8 +204,8 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                 }
                                 // 1.36 [VIL-15] 올리고 돌아오면 바로 잇기: my newest public recipe, one tap.
                                 if (q.taking && q.state == "making") s.mine.firstOrNull()?.let { r ->
-                                    OutlinedButton(onClick = { vm.act(q.id, "done", code = r.code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                        Text("‘${r.title}’${com.bamnat.app.ui.Fmt.ro("‘${r.title}’")} 완성하기", maxLines = 1)
+                                    OutlinedButton(onClick = { confirming = q to r }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                        Text("방금 올린 ‘${r.title}’${com.bamnat.app.ui.Fmt.ro("‘${r.title}’")} 완성하기", maxLines = 1)
                                     }
                                 }
                             }
@@ -240,6 +245,23 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
             dismissButton = { TextButton(onClick = { writing = false }) { Text("닫기") } },
         )
     }
+    confirming?.let { (q, r) ->
+        AlertDialog(
+            onDismissRequest = { confirming = null },
+            title = { Text("이 부탁에 맞나요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("부탁: ${q.body}", style = MaterialTheme.typography.bodyMedium)
+                    Text("완성할 작품: ‘${r.title}’ (${r.code})", style = MaterialTheme.typography.bodyMedium)
+                    Text("완성하면 부탁한 분들께 이 작품이 알려져요. 맞는지 먼저 열어 볼 수 있어요", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { onOpen(r.code) }) { Text("작품 먼저 보기") }
+                    if (s.mine.size > 1) TextButton(onClick = { confirming = null; vm.loadMine(); finishing = q.id }) { Text("다른 작품 고르기") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { confirming = null; vm.act(q.id, "done", code = r.code) }) { Text("맞아요, 완성") } },
+            dismissButton = { TextButton(onClick = { confirming = null }) { Text("닫기") } },
+        )
+    }
     finishing?.let { id ->
         AlertDialog(
             onDismissRequest = { finishing = null },
@@ -247,7 +269,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (s.mine.isEmpty()) Text("올린 레시피가 아직 없어요. 먼저 만들어 올려 주세요")
-                    s.mine.forEach { r -> TextButton(onClick = { finishing = null; vm.act(id, "done", code = r.code) }) { Text(r.title) } }
+                    s.mine.forEach { r -> TextButton(onClick = { finishing = null; s.items.orEmpty().firstOrNull { it.id == id }?.let { q -> confirming = q to r } }) { Text(r.title) } }
                 }
             },
             confirmButton = { TextButton(onClick = { finishing = null; onMake() }) { Text("지금 만들기") } },

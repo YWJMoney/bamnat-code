@@ -2,6 +2,8 @@
 // apart from the plaza's posts (index.js) and the recipes' community (recipe-community.js).
 // [VIL-11] 이번 주 이야기 주제: one line the operator sets for a kind of work's plaza each week (KST, from Monday); none, none shown.
 import { DAY, HOUR } from "./units.js";
+// 1.36 [GRW-09] 이달의 테마로 고르면 만든 분께 프로 한 달.
+import { rewardContestPicks } from "./maker-reward.js";
 
 export const VILLAGE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plaza_topics (room TEXT NOT NULL, week TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL,
@@ -127,7 +129,7 @@ export async function villageAdmin(d, request, env, path, now, rooms) {
 /**
  * [VIL-19] The operator's side of 이달의 주제 공모: GET /village/contests (this month's and last month's, each kind of work, with the
  * entries by likes), POST /village/contests {style, theme} (this month's; empty takes it off while nothing is in),
- * POST /village/contests/pick {month, style, codes} (up to three entries as 이달의 테마; the makers' 보상 goes the 832 way).
+ * POST /village/contests/pick {month, style, codes} (up to three entries as 이달의 테마; [GRW-09] each new pick's maker gets 프로 한 달).
  */
 async function contestAdmin(d, request, env, path, now) {
   const month = contestMonth(now);
@@ -171,6 +173,10 @@ async function contestAdmin(d, request, env, path, now) {
   const ok = codes.length ? await d.all(env, `SELECT code FROM village_entries WHERE month = ? AND style = ? AND code IN (${codes.map(() => "?").join(",")})`,
     m, body.style, ...codes) : [];
   if (ok.length !== codes.length) return d.json({ error: "codes", field: "codes" }, 400);
+  const was = await d.one(env, "SELECT picks FROM village_contests WHERE month = ? AND style = ?", m, body.style);
   await d.run(env, "UPDATE village_contests SET picks = ?, at = ? WHERE month = ? AND style = ?", JSON.stringify(codes), now, m, body.style);
-  return d.json({ month: m, style: body.style, picks: codes });
+  // 1.36 [GRW-09] 새로 고른 작품의 주인께 프로 한 달 (작품·달마다 한 번이라 되돌렸다가 다시 골라도 두 번 가지 않아요).
+  const before = new Set(JSON.parse(was?.picks ?? "[]"));
+  const rewarded = await rewardContestPicks(env, codes.filter((x) => !before.has(x)), m, now);
+  return d.json({ month: m, style: body.style, picks: codes, rewarded: rewarded.filter((r) => r.given).length });
 }
