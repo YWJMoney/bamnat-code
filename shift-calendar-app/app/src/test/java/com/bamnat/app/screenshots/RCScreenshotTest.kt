@@ -130,6 +130,38 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(runBlocking { c.recipes.undo(applied.first().id) })
     }
 
+    /**
+     * PC 확인 20ab0254 (require에서 신고하면 창만 닫혀요): the answer to a report stays on screen, whether the server turned it
+     * away for Play Integrity or took it. The line was cleared before it was shown, which took the snackbar down at once.
+     */
+    @Test fun aReportSaysWhatHappened() = shoot("1342b_rcp_detail_flag", PHONE) {
+        var refuse = true
+        var flags = 0
+        val api = object : Starters() {
+            override suspend fun flag(device: String, code: String, reason: String) {
+                if (refuse) throw com.bamnat.app.company.CompanyException("integrity")
+                flags++
+            }
+        }
+        c.recipeApi = api
+        style(WorkStyle.SHIFT)
+        val vm = RecipeDetailViewModel(c, api.code(0), PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        vm.flag("spam")
+        settle()
+        settle()
+        assertTrue("막히면 올리기와 같은 안내", appears("Play 스토어에서 받은 밤낮으로만", exact = false))
+        refuse = false
+        compose.mainClock.advanceTimeBy(10_000)
+        settle()
+        vm.flag("spam")
+        settle()
+        settle()
+        assertEquals(1, flags)
+        assertTrue("되면 신고했어요", appears("신고했어요", exact = false))
+    }
+
     @Test fun theConfirmShowsWhatChanges() = shoot("1343_rcp_detail_confirm", "w360dp-h780dp-port-night-450dpi") {
         val api = starters()
         style(WorkStyle.SHIFT)
@@ -164,16 +196,16 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(model.state.value.recipe.pieces.isNotEmpty())
         assertTrue(appears("레시피 만들기 5/5 · 마치기", exact = true))
-        tapText("3 이름·표지", exact = true)
+        tapText("이름·표지", exact = true)
         settle()
         assertEquals(3, model.state.value.step)
-        tapText("2 받는 분이 넣을 값", exact = true)
+        tapText("넣을 값", exact = true)
         settle()
         assertEquals(2, model.state.value.step)
-        tapText("5 마치기", exact = true)
+        tapText("마치기", exact = true)
         settle()
         assertEquals("이름이 없으면 3단계를 넘지 않아요", 2, model.state.value.step)
-        tapText("3 이름·표지", exact = true)
+        tapText("이름·표지", exact = true)
         settle()
         assertEquals("앞 단계는 다음처럼 갈 수 있어요", 3, model.state.value.step)
     }

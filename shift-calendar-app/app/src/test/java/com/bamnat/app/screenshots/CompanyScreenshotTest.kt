@@ -215,7 +215,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
         content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
         settle()
-        assertTrue(appears("가족에게 링크 보내기"))
+        assertTrue(appears("링크로 보내기"))
         assertTrue(appears("사진으로 보내기", exact = false))
         assertTrue(gone("누구에게 보내요?"))
         tapText("자세히 정하기", prefix = true)

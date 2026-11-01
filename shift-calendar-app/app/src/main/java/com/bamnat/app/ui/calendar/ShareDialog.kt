@@ -203,6 +203,14 @@ fun ShareDialog(
             // 보내기'): with no link yet, the two things most people open this for, big, and the rest behind '자세히 정하기'.
             var detailed by androidx.compose.runtime.saveable.rememberSaveable(slot) { mutableStateOf(detailedFirst || link != null || preview != null || slot > 1) }
             if (!detailed) {
+                // PC 확인 20ab0254 (링크를 만들 때 이름을 안 물어 '이름 없는 근무표'가 돼요): the name goes with the quick link too.
+                val quickKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
+                    label = { Text("내 이름 (선택)") }, placeholder = { Text("예: 민지") },
+                    supportingText = { Text("받는 분 화면에 ‘${title.trim().ifEmpty { "민지" }}의 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { quickKeyboard?.hide() }))
                 Button(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                     Icon(Icons.Outlined.Image, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
@@ -223,7 +231,7 @@ fun ShareDialog(
                     else {
                         Icon(Icons.Outlined.Link, null, Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("가족에게 링크 보내기")
+                        Text("링크로 보내기")
                     }
                 }
                 Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·급여 빼고). " +
@@ -427,7 +435,7 @@ fun ShareDialog(
                         send(context, made, style)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크로 보내기")
                 }
             } else {
                 // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.

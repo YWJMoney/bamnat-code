@@ -379,7 +379,8 @@ private fun NoLinkYet() {
     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Text("링크가 아직 없나요?", style = MaterialTheme.typography.titleSmall)
-            Text("동료가 밤낮 달력 위 ‘공유’에서 ‘링크 만들어 보내기’를 누르면 받을 수 있어요. 받은 링크를 누르면 여기로 바로 열려요.",
+            // PC 확인 20ab0254 (공유 말과 단추 이름이 섞여 있어요): the button is ‘링크로 보내기’ in both of 공유's views.
+            Text("보내는 분이 밤낮 달력 위 ‘공유’에서 ‘링크로 보내기’를 누르면 받을 수 있어요. 받은 링크를 누르면 여기로 바로 열려요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, end = 8.dp))
             TextButton(onClick = {
@@ -394,7 +395,7 @@ private fun NoLinkYet() {
 }
 
 /** [UX-03] What the ask says: where the link is made, in the app's own words. */
-internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달력 위 ‘공유’ → ‘링크 만들어 보내기’로 링크 하나 보내 줄래요?"
+internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달력 위 ‘공유’ → ‘링크로 보내기’로 링크 하나 보내 줄래요?"
 
 @Composable
 private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, today: LocalDate) {

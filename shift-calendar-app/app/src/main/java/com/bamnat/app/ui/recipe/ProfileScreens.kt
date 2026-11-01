@@ -371,7 +371,8 @@ fun MakerScreen(
         part = when { pg.themes.isNotEmpty() -> 0; pg.tabRecipes.isNotEmpty() -> 1; pg.sets.isNotEmpty() -> 2; else -> 0 }
     }
     var tabFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     val p = s.page
     val mine = p?.mine == true && !s.asOthers
     androidx.compose.runtime.CompositionLocalProvider(LocalViewerStyle provides viewerStyle(vm.c)) {
@@ -1010,7 +1011,8 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     val parts = listOf("new" to "새 작품", "following" to "팔로잉", "followers" to "팔로워", "blocked" to "차단")
     var part by rememberSaveable { mutableStateOf(parts.indexOfFirst { it.first == start }.coerceAtLeast(0)) }
     val snack = remember { SnackbarHostState() }
-    LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     LaunchedEffect(s.unblocked) {
         val id = s.unblocked ?: return@LaunchedEffect
         vm.undoShown()

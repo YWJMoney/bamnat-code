@@ -23,13 +23,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.text.input.ImeAction
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -441,7 +438,6 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
 }
 
 /** [MON-09] An invited admin's phone, tied with the 6-digit code from the developer app. */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -455,27 +451,34 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
+            // PC 확인 20ab0254: the answer stays in this card (the page's line is at the top, out of sight from here), and the
+            // keyboard goes away once it is sent.
+            var said by rememberSaveable { mutableStateOf<String?>(null) }
+            val focus = androidx.compose.ui.platform.LocalFocusManager.current
             val linking = {
+                focus.clearFocus()
                 scope.launch {
-                    runServer(onMessage) {
+                    runServer({ said = it }) {
                         val state = c.tierApi.link(c.companyStore.device, code)
+                        code = ""
+                        said = if (state.approved) "연결했어요 · 승인됨. 프로를 무료로 써요." else "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
                         c.syncPasses(force = true)
                         c.featureGate.refresh()
-                        code = ""
-                        onMessage(if (state.approved) "연결했어요. 프로를 무료로 써요." else "연결했어요. 최고 관리자가 승인하면 프로가 열려요.")
                     }
                 }
                 Unit
             }
-            // PC 확인 d263030e: the field and 연결하기 come above the keyboard together, and the keyboard's own key links too.
-            val bring = remember { BringIntoViewRequester() }
-            Column(Modifier.bringIntoViewRequester(bring), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6자리 코드") }, singleLine = true,
+            // PC 확인 20ab0254 (Gboard 숫자 키보드가 연결하기를 가려요): 연결하기 sits beside the field, so it is in view whenever the
+            // field is; the keyboard's own key links too.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6); said = null }, label = { Text("6자리 코드") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { if (code.length == 6) linking() }),
-                    modifier = Modifier.fillMaxWidth().onFocusEvent { if (it.isFocused) scope.launch { delay(350); bring.bringIntoView() } })
-                Button(onClick = { linking() }, enabled = code.length == 6) { Text("연결하기") }
+                    modifier = Modifier.weight(1f))
+                Button(onClick = { linking() }, enabled = code.length == 6, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결하기") }
             }
+            said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
         } else {
             TextButton(onClick = {
                 scope.launch {

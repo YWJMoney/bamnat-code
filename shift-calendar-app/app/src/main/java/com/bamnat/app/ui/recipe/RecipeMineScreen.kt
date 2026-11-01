@@ -67,7 +67,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
     var undoing by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
-    LaunchedEffect(message) { message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
         topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },

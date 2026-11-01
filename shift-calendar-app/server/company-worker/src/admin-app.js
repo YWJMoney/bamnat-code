@@ -2516,9 +2516,11 @@ function adminApp(L, BUILD, M) {
     const mark = broken ? "!" : g.mode === "off" ? "–" : "✓";
     const numbers = g.mode === "off" ? ""
       : `<p class="meta" data-integrity-numbers>오늘 ${g.mode === "require" ? "확인을 물은 쓰기" : "확인 없이 온 쓰기"} ${g.missToday ?? 0} · 지난 하루 확인에 실패한 휴대폰 ${g.failedDay ?? 0} · 7일 안에 확인된 휴대폰 ${g.provenWeek ?? 0}</p>`;
-    const next = { off: "켜려면 Worker › 설정 › 런타임 변수에 INTEGRITY_MODE를 watch로 넣어요. 며칠 숫자를 본 뒤 require로 바꿔요",
-      watch: "실패한 휴대폰이 거의 없으면 INTEGRITY_MODE를 require로 바꿔요",
-      require: "실패한 휴대폰이 갑자기 늘면 INTEGRITY_MODE를 watch로 되돌려요" }[g.mode] ?? "";
+    // PC 확인 20ab0254: watch without the account must not suggest require; the account comes first.
+    const next = broken ? "먼저 PLAY_SERVICE_ACCOUNT를 넣고 Play Console › 앱 무결성에서 Google Cloud 프로젝트를 연결해요. 그 전에는 require로 바꾸지 않아요"
+      : { off: "켜려면 Worker › 설정 › 런타임 변수에 INTEGRITY_MODE를 watch로 넣어요. 며칠 숫자를 본 뒤 require로 바꿔요",
+        watch: "실패한 휴대폰이 거의 없으면 INTEGRITY_MODE를 require로 바꿔요",
+        require: "실패한 휴대폰이 갑자기 늘면 INTEGRITY_MODE를 watch로 되돌려요" }[g.mode] ?? "";
     return `<h3 class="sub" data-integrity="${esc(g.mode)}">무결성 확인 (Play Integrity)</h3>
         <ul class="checks"><li class="${tone}"><span aria-hidden="true">${mark}</span>${esc(line)}</li></ul>${numbers}
         <p class="hint">${esc(next)}</p>`;

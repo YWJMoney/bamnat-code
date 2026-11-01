@@ -98,9 +98,10 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var undoing by remember { mutableStateOf(false) }
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
-        vm.shown()
         val undo = s.appliedId != null && m.startsWith("적용했어요")
+        // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, duration = if (undo) SnackbarDuration.Long else SnackbarDuration.Short)
+        vm.shown()
         if (r == SnackbarResult.ActionPerformed) vm.undo()
     }
     Scaffold(

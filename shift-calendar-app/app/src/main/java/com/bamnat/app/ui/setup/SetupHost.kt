@@ -111,8 +111,9 @@ fun SetupHost(
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         val m = message ?: return@LaunchedEffect
-        vm.consumeMessage()
+        // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         snackbar.showSnackbar(m)
+        vm.consumeMessage()
     }
     LaunchedEffect(firstStyle) {
         val (style, roster) = firstStyle ?: return@LaunchedEffect

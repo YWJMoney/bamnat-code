@@ -17,6 +17,12 @@ object RecipeLint {
     private const val LIGHT_BG = 0xFFFFFFFFL
     private const val MIN_RATIO = 4.5
 
+    /** 은/는 after [word], by whether its last syllable has a final consonant (PC 확인 20ab0254: ‘내가 꾸민 모양’는). */
+    internal fun topic(word: String): String {
+        val last = word.lastOrNull { it in '가'..'힣' } ?: return "는"
+        return if ((last - '가') % 28 != 0) "은" else "는"
+    }
+
     /**
      * Every check on [r]. [others] are recipes already on the plaza (title and written form) for 비슷한 레시피; [mine] the
      * maker's own codes, which do not count as someone else's.
@@ -39,7 +45,7 @@ object RecipeLint {
         }
         // [STU-25] 1.36 빌드 7: the studio's starting words and an empty 틀 채우기 are not the maker's own words yet.
         out += if (r.summary.isBlank()) Line("summary", Level.WARN, "한 줄 설명을 적으면 목록에서 더 잘 보여요", 4)
-            else if (r.summary.trim() in STARTER_SUMMARIES) Line("summary", Level.WARN, "한 줄 설명을 내 말로 바꿔 주세요 (‘${r.summary.trim()}’는 처음 넣어 둔 말이에요)", 4)
+            else if (r.summary.trim() in STARTER_SUMMARIES) Line("summary", Level.WARN, "한 줄 설명을 내 말로 바꿔 주세요 (‘${r.summary.trim()}’${topic(r.summary.trim())} 처음 넣어 둔 말이에요)", 4)
             else Line("summary", Level.OK, "한 줄 설명이 있어요", 4)
         out += if (RecipeText.graphemes(ownWords(r.desc)) < 10) Line("desc", Level.WARN, "설명에 누구에게 좋은지 적어 주세요", 4)
             else Line("desc", Level.OK, "설명이 있어요", 4)
