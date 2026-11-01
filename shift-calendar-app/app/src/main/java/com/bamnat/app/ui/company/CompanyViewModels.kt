@@ -1033,7 +1033,9 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
     data class State(val board: com.bamnat.app.company.RateBoard? = null, val loading: Boolean = true, val error: String? = null)
 
     val enabled: Boolean = c.companyApi.enabled
-    private val _filter = MutableStateFlow(Filter())
+    // 1.36 PC 재검토 (교대 사용자에게도 '건설 일용직·기능공'이 먼저): the board opens on the user's own kind of work.
+    private val _filter = MutableStateFlow(Filter(job = jobOfStyle(
+        c.calendars.styleOf(com.bamnat.app.data.PersonalCalendar.MAIN, c.settingsRepository.current.workStyle)) ?: "construction"))
     val filter: StateFlow<Filter> = _filter.asStateFlow()
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
