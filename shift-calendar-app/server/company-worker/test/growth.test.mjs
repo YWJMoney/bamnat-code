@@ -21,6 +21,7 @@ const recipe = (title) => ({ format: "bamnat-recipe", v: 1, title, summary: "칸
 test("[GRW-01] where a studio ask came from is read off its first line", () => {
   assert.deepEqual(parseWhere("[스튜디오 › 달력 칸 › 색] 칸마다 그라데이션을 넣고 싶어요"), { area: "달력 칸", tool: "색", body: "칸마다 그라데이션을 넣고 싶어요" });
   assert.deepEqual(parseWhere("[스튜디오] 스티커"), { area: "", tool: "", body: "스티커" });
+  assert.deepEqual(parseWhere("[스튜디오 › 달력 › 칸 디자인] 메모에 줄무늬 배경"), { area: "메모", tool: "", body: "메모에 줄무늬 배경" });
   assert.equal(parseWhere("그냥 글").area, "");
 });
 

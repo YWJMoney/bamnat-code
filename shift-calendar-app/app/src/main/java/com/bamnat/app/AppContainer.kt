@@ -636,7 +636,8 @@ class AppContainer(context: Context) {
                 if (e.code != "offline" && e.code != "rate_limited") proStore.claimLater(null)
             }
         }
-        val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
+        val made = appContext.getSharedPreferences(MAKER_PREFS, Context.MODE_PRIVATE).getBoolean("made", false)
+        val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made
         val last = proStore.current.passes?.checkedAt
         if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))
@@ -677,6 +678,8 @@ class AppContainer(context: Context) {
         const val IDLE_WAIT_MILLIS = 2_000L
         /** [MON-09] Often enough for the admin link's weekly check, rare enough to stay quiet. */
         val PASSES_EVERY: java.time.Duration = java.time.Duration.ofHours(6)
+        /** 1.36 [GRW-09] "made": this phone put a recipe up, so it may get 만든 분 보상 and asks for its passes. */
+        const val MAKER_PREFS = "maker"
         /** [OBS-01] The next alarm in '밤낮이 한 일': "10/24 06:30". */
         val JOURNAL_ALARM: java.time.format.DateTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("MM/dd HH:mm")
     }

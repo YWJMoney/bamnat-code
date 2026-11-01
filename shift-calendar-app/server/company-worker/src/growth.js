@@ -62,8 +62,15 @@ export function parseWhere(text) {
   const t = String(text ?? "");
   const m = t.match(/^\s*\[스튜디오(?:\s*›\s*([^›\]]{1,30}))?(?:\s*›\s*([^\]]{1,40}))?\]\s*/);
   if (!m) return { area: "", tool: "", body: t.trim() };
-  return { area: (m[1] ?? "").trim(), tool: (m[2] ?? "").trim(), body: t.slice(m[0].length).trim() };
+  const body = t.slice(m[0].length).trim();
+  // PC 6ec395bf: 달력 칸에서 '메모 줄무늬'를 부탁하면 메모 묶음으로. 글에 다른 탭 이름이 있으면 그 탭이 칸이에요(도구는 비워요).
+  const said = WHERE_WORDS.find(([re]) => re.test(body));
+  if (said && said[1] !== (m[1] ?? "").trim()) return { area: said[1], tool: "", body };
+  return { area: (m[1] ?? "").trim(), tool: (m[2] ?? "").trim(), body };
 }
+
+/** Words in an ask that name a studio area (the app's Area labels). */
+const WHERE_WORDS = [[/메모/, "메모"], [/가계부/, "가계부"], [/급여|월급|명세서/, "급여"], [/위젯/, "위젯"], [/알람/, "알람 화면"], [/통계/, "통계"], [/마을|광장|장터/, "마을"]];
 
 /**
  * [GRW-02] 요구 하나를 가장 비슷한 열린 묶음에 붙이거나 새 묶음을 만들어요. 같은 휴대폰이 같은 묶음에 두 번 부탁해도 한 명이에요.

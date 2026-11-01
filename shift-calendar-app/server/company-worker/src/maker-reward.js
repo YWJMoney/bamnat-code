@@ -37,7 +37,10 @@ export async function grantMakerReward(env, dev, kind, ref, now) {
       console.error(`defer maker: ${e?.code ?? e}`);
     }
   }
-  const memo = `${k.memo} (${ref})${deferred ? ` · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : ""}${capped ? " · 1년 12달 넘음" : ""}`;
+  // The app's 보상 이용권 line reads the part before " (": what for and which work.
+  const work = await one(env, "SELECT title FROM recipes WHERE code = ?", String(ref).split(":").pop());
+  const title = work?.title ? ` · ${String(work.title).replace(/\s*\(.*$/, "").slice(0, 24)}` : "";
+  const memo = `${k.memo}${title} (${ref})${deferred ? ` · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : ""}${capped ? " · 1년 12달 넘음" : ""}`;
   await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
     VALUES (?, ?, 'maker', ?, ?, ?, ?, ?, ?, ?)`, id, reportId, dev, k.months, capped ? "capped" : "paid", memo, now, capped ? null : now, deferred ? 1 : 0);
   await audit(env, now, capped ? "maker_reward_capped" : "maker_reward", id, `${kind}:${ref}`);

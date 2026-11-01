@@ -653,8 +653,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             if (solved != null) {
                 prefs.edit().putStringSet("told", told + solved.first).apply()
+                // PC 6ec395bf: 몇 초 만에 사라지지 않고, 닫기나 보러 가기를 누를 때까지 남아요.
                 val result = snackbar.showSnackbar("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요",
-                    actionLabel = "보러 가기", duration = SnackbarDuration.Long)
+                    actionLabel = "보러 가기", withDismissAction = true, duration = SnackbarDuration.Indefinite)
                 if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.recipe(solved.second))
             }
         }

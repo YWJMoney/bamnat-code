@@ -746,6 +746,7 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 .copy-box{white-space:pre-wrap;background:var(--soft);padding:.75rem;border-radius:var(--r)}
 .rows.work .row-tags,.rows.work .row-acts{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem}
 /* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
+hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
 @media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
 .rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
 .segmented.wrap{flex-wrap:wrap;overflow:visible}.segmented.wrap .seg{flex:1 1 30%}}

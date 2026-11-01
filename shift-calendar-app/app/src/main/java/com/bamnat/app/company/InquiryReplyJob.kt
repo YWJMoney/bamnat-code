@@ -84,7 +84,7 @@ class InquiryReplyJob : JobService() {
         }
 
         private fun post(c: AppContainer, unread: Int) {
-            val n = NotificationCompat.Builder(c.appContext, Notifications.PLAZA_CHANNEL_ID)
+            val n = NotificationCompat.Builder(c.appContext, Notifications.INQUIRY_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("문의에 답이 왔어요")
                 .setContentText(if (unread > 1) "읽지 않은 답 ${unread}개 · 눌러서 보기" else "눌러서 답을 볼 수 있어요")

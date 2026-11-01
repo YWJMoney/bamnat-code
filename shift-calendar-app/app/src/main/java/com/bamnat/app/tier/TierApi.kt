@@ -12,7 +12,8 @@ import java.time.Instant
 import com.bamnat.core.time.Today
 
 /** [MON-08] One reward pass the developer gave this install: [why] is "rule" (회사 방식) or "idea" (제안). */
-data class PassItem(val months: Int, val at: Instant, val why: String)
+/** [what]: 1.36 [GRW-09] 만든 분 보상이 무엇 때문인지("이달의 주제에 뽑힘" 등), 다른 이용권은 null. */
+data class PassItem(val months: Int, val at: Instant, val why: String, val what: String? = null)
 
 /**
  * [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved".
@@ -160,7 +161,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
         fun readPasses(o: JSONObject): Passes = Passes(
             until = o.optStringOrNull("until")?.let(Instant::parse),
             waitingMonths = o.optInt("waitingMonths"),
-            items = o.optJSONArray("items").objects().map { PassItem(it.getInt("months"), Instant.parse(it.getString("at")), it.optString("why")) },
+            items = o.optJSONArray("items").objects().map { PassItem(it.getInt("months"), Instant.parse(it.getString("at")), it.optString("why"), it.optString("what").ifEmpty { null }) },
             deferred = o.optInt("deferred"),
             // S 1.32 [SECX-01] previews: set in the developer app for this phone only.
             admin = o.optJSONObject("admin")?.let { a ->

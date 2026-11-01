@@ -585,7 +585,7 @@ test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공
   // 1.36 [GRW-09] 고르면 주인 기기의 프로 내역에 만든 작품 보상이 생기고, 다시 저장해도 두 번 가지 않아요.
   assert.equal(picked.data.rewarded, 1);
   assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [mine] }, admin)).data.rewarded, 0);
-  assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.items.some((x) => x.why === "maker"));
+  assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.items.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
   t.mock.timers.setTime(AFTER + 3 * 86_400_000); // December (KST): November's picks show
   const next = (await see(3)).data;
   assert.deepEqual([next.theme, next.last.theme, next.last.picks], [null, "야간 근무용 어두운 테마", [{ code: mine, title: "야간 다크" }]]);

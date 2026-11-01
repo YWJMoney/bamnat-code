@@ -136,7 +136,9 @@ data class RecipeTalk(val posts: List<RecipePost>, val left: Int?, val mutedUnti
 data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: Boolean = false)
 
 /** [RCP-29] The phone's own recipes in every state. */
-data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>)
+/** [photos]: 1.36 [GRW-08] 사진이 운영자를 기다리는("pending") 또는 신고로 가려진("held") 작품의 코드별 표시. */
+data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>,
+    val photos: Map<String, String> = emptyMap())
 
 /** [RCX-01] 계보: the recipes it was made from (nearest first; null where one is gone) and those made from it. */
 data class Lineage(val parents: List<RecipeItem?>, val children: List<RecipeItem>)
@@ -389,9 +391,10 @@ class RecipeClient(
 
     override suspend fun mine(device: String): MyRecipes = readCall {
         val o = call("GET", "/api/recipes/mine", device = device)
-        MyRecipes(o.optInt("trust"), o.optInt("reviewLeft"), o.optJSONArray("items").objects().map {
+        val rows = o.optJSONArray("items").objects()
+        MyRecipes(o.optInt("trust"), o.optInt("reviewLeft"), rows.map {
             item(it) to Triple(it.optString("state"), it.optString("scope"), it.optStringOrNull("note"))
-        })
+        }, rows.mapNotNull { r -> r.optStringOrNull("photos")?.let { r.optString("code") to it } }.toMap())
     }
 
     override suspend fun talk(device: String?, code: String): RecipeTalk = readCall {

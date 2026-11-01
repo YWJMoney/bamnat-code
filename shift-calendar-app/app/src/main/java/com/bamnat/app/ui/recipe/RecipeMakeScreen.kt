@@ -332,6 +332,8 @@ class RecipeMakeViewModel(
                 val sent = if (code != null) c.recipeApi.newVersion(c.companyStore.device, code, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
+                // 1.36 [GRW-09] PC 6ec395bf: 만든 분 보상(공모·모두의 도구·기본 도구)이 프로 › 보상 이용권에 보이도록, 작품을 올린 휴대폰도 이용권을 물어요.
+                c.appContext.getSharedPreferences("maker", android.content.Context.MODE_PRIVATE).edit().putBoolean("made", true).apply()
                 // [THM-01] My own theme in 장터 for everyone: worn without days or ads from now (a new one is kept in 내 테마 first).
                 var note: String? = null
                 if (ownTheme != null && sent.scope == "public" && com.bamnat.core.recipe.BuiltInThemes.isTheme(s.recipe)) {
@@ -418,6 +420,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 when {
                     s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
                     s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
+                    // PC 6ec395bf: 마치기에서 올리기가 아래 막대에 가려 회색인 이유가 안 보이던 것.
+                    s.step == 5 && s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜야 ‘올리기’가 눌려요"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -698,14 +702,14 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         Spacer(Modifier.width(8.dp))
         Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall)
     }
-    Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
-    // 1.35 실사용 점검: why 올리기 is off, in one line.
+    // 1.35 실사용 점검: why 올리기 is off, in one line (PC 6ec395bf: above the button, so it is never under the bottom bar).
     when {
         !RecipeLint.ready(lines) -> "위 검사의 ✕를 먼저 고쳐 주세요"
         s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜면 올릴 수 있어요"
-        else -> " "
-    }.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+        else -> null
+    }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+    Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
     HorizontalDivider()
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)

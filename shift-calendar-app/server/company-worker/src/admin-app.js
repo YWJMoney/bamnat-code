@@ -1124,6 +1124,10 @@ function adminApp(L, BUILD, M) {
    * 1.36 [VIL-21] 마을 운영 (조사 V11·V21): this week's 이야기 주제 for each kind of work's plaza, shown on top of that plaza in the app.
    * An empty line takes it off; next Monday (KST) every one is gone by itself.
    */
+  function roomName(room) {
+    return S.data.village?.items?.find((x) => x.room === room)?.name ?? room;
+  }
+
   function villageView() {
     const d = S.data.village;
     const edit = can("community", "edit");
@@ -1134,11 +1138,11 @@ function adminApp(L, BUILD, M) {
     const [, m, dd] = d.week.split("-").map(Number);
     return head + `<h3>이번 주 이야기 주제</h3><p class="meta">${m}월 ${dd}일(월)부터 이번 주</p><div class="grid">${d.items.map((x) => `<article class="card">
       <div class="head"><h3>${esc(x.name)}</h3>${x.text ? '<span class="pill ok">보이는 중</span>' : '<span class="pill">없음</span>'}</div>
-      <label class="field"><span>이번 주 주제</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
+      <label class="field"><span>이번 주 이야기 주제 (광장 글쓰기)</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
-      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">저장</button>
+      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
-    </article>`).join("")}</div>` + contestsView(edit);
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit);
   }
 
   const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
@@ -1155,9 +1159,9 @@ function adminApp(L, BUILD, M) {
     const card = (x, current) => `<article class="card">
       <div class="head"><h3>${esc(STYLE_NAMES[x.style] ?? x.style)}</h3><span class="pill${x.entries.length ? " info" : ""}">작품 ${x.entries.length}</span>
         ${!current && x.picks.length ? `<span class="pill ok">고름 ${x.picks.length}/3 · 앱에 보여요</span>` : ""}</div>
-      ${current ? `<label class="field"><span>이달의 주제</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
+      ${current ? `<label class="field"><span>이달의 공모 주제 (공방 작품)</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
         placeholder="예: 야간 근무용 어두운 테마"${edit ? "" : " readonly"}></label>
-        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">저장</button></div>` : ""}`
+        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">공모 주제 저장</button></div>` : ""}`
         : `<p>${esc(x.theme)}</p>`}
       ${x.entries.length ? `<ul class="plain">${x.entries.slice(0, 10).map((e) => `<li><label><input type="checkbox" data-pick="${esc(x.month)}|${esc(x.style)}" value="${esc(e.code)}"
         ${x.picks.includes(e.code) ? "checked" : ""}${edit && !current ? "" : " disabled"}> ${esc(e.title)} <span class="meta">좋아요 ${e.likes} · 쓰는 분 ${e.users} · ${esc(e.code)}</span></label></li>`).join("")}</ul>` : '<p class="meta">아직 넣은 작품이 없어요</p>'}
@@ -4115,16 +4119,16 @@ function adminApp(L, BUILD, M) {
       S.data.limits = null;
       load();
     }, "primary"),
-    // 1.36 [VIL-21] 이번 주 주제 저장·내리기.
+    // 1.36 [VIL-21] 이번 주 주제 저장·내리기 (PC 6ec395bf: 알림에 어떤 주제·어느 광장인지).
     "topic-save": async ({ id }) => {
       const text = document.getElementById(`topic-${id}`)?.value?.trim() ?? "";
-      await act(() => api("/village/topics", "POST", { room: id, text }), text ? "저장했어요. 앱 광장 맨 위에 보여요" : "내렸어요");
+      await act(() => api("/village/topics", "POST", { room: id, text }), text ? `이번 주 이야기 주제(${roomName(id)})를 저장했어요. 앱 광장 맨 위에 보여요` : `이번 주 이야기 주제(${roomName(id)})를 내렸어요`);
       S.data.village = null;
       load();
     },
     "contest-save": async ({ id }) => {
       const theme = document.getElementById(`contest-${id}`)?.value?.trim() ?? "";
-      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? "저장했어요. 앱 마을 › 공방 맨 위에 보여요" : "내렸어요");
+      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? `이달의 공모 주제(${L.WORK_NAMES?.[id] ?? id})를 저장했어요. 앱 마을 › 공방 맨 위에 보여요` : `이달의 공모 주제(${L.WORK_NAMES?.[id] ?? id})를 내렸어요`);
       S.data.contests = null;
       load();
     },

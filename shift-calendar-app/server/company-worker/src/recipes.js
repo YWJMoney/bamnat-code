@@ -1232,7 +1232,11 @@ async function mine(d, env, request) {
   const trust = await recipeTrust(d, env, dev, now);
   const lim = await writeLeft(d, env, dev, "recipe", now);
   return d.json({ trust: trust.level, leftToday: lim.limit ? lim.limit.left : null, ...lim, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
-    items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash })) });
+    items: await Promise.all(rows.map(async (r) => {
+      // 1.36 [GRW-08] PC 6ec395bf: 목록 카드에도 '사진 확인 중'·'사진이 신고로 잠시 가려졌어요'.
+      const p = await waitingPhotos(env, r.body, r.cover);
+      return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash, photos: p.held ? "held" : p.pending ? "pending" : null };
+    })) });
 }
 
 // ---- a recipe's talk (RCP-35) ----
