@@ -564,9 +564,20 @@ private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
     val m = remember(gate.leases, moments.found, yearly) { ledgerOf(c, gate, yearly) }
     if (m.empty) return
     SectionCard(title = "보상 장부") {
-        if (m.days > 0) Text("받은 날  ${m.partsLine} (이번 달 ${m.days}일치)", style = MaterialTheme.typography.bodyMedium)
+        if (m.days > 0) Text("이번 달 받은 것  ${m.partsLine} (${m.days}일치)", style = MaterialTheme.typography.bodyMedium)
+        // 1.36 PC Y16 ('받은 날' 뒤에 날짜가 없어요): each bundle open now, from the day it was given to the day it ends.
+        val now = java.time.Instant.ofEpochMilli(gate.now)
+        for (b in com.bamnat.core.tier.FeatureLease.Bundle.entries) {
+            val end = gate.leases.until[b]?.takeIf { now < it } ?: continue
+            val from = gate.leases.grants.lastOrNull { it.bundle == b }?.at ?: continue
+            Text("${b.label}  ${dayWords(from)}에 받아 ${untilWords(end)}까지 열려 있어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         m.wonValue?.let { Text("돈으로 치면  약 ${won(it)}어치 (프로 연 요금 하루 ${com.bamnat.core.tier.RewardLedger.perDay(yearly)}원 기준)", style = MaterialTheme.typography.bodyMedium) }
         if (m.found > 0) Text("밤낮이 찾아 준 돈  올해 ${won(m.found)} (명세서보다 계산이 많았던 차이)", style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary)
     }
 }
+
+/** "1월 11일", in the phone's zone. */
+private fun dayWords(at: java.time.Instant): String = at.atZone(com.bamnat.core.time.Today.zone()).toLocalDate().let { "${it.monthValue}월 ${it.dayOfMonth}일" }

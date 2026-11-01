@@ -135,11 +135,11 @@ internal fun ledgerOf(c: AppContainer, gate: Gate, yearlyMicros: Long?): RewardL
     return RewardLedger.month(gate.leases, from, to, emptyList(), yearlyMicros, c.proMoments.state.value.foundIn(today.year))
 }
 
-/** "받은 날 급여 7일 · 돈 통계 7일 (이번 달 14일치, 약 1,100원어치)." or "" when nothing was given. */
+/** "이번 달 받은 것 급여 7일 · 돈 통계 7일 (14일치, 약 1,100원어치)." or "" when nothing was given. */
 internal fun ledgerLine(m: RewardLedger.Month): String {
     if (m.days == 0L) return ""
     val value = m.wonValue?.let { ", 약 ${won(it)}어치" }.orEmpty()
-    return "받은 날 ${m.partsLine} (이번 달 ${m.days}일치$value)."
+    return "이번 달 받은 것 ${m.partsLine} (${m.days}일치$value)."
 }
 
 internal fun won(v: Long): String = "%,d원".format(v)
