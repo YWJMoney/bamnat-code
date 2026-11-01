@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.decor
 
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Lock
@@ -270,7 +271,11 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
                 if (onUndo != null && "넣었어요" in line) TextButton(onClick = { onUndo(); said = null; picked = emptySet() }) { Text("되돌리기") }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // PC 확인 C4 1.36 (탭을 바꾸면 앞 탭에서 내린 자리 그대로 열려요): a new pane opens from its top, the tabs in sight.
+        val tabsAt = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+        var shownPane by remember { mutableStateOf(pane) }
+        androidx.compose.runtime.LaunchedEffect(pane) { if (pane != shownPane) { shownPane = pane; runCatching { tabsAt.bringIntoView() } } }
+        Row(Modifier.bringIntoViewRequester(tabsAt), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Pane.entries.forEach { p ->
                 TextButton(onClick = { pane = p }, modifier = Modifier.heightIn(min = 44.dp)) {
                     Text(p.label + when (p) { Pane.EDIT -> if (picked.isEmpty()) "" else " ${picked.size}"; Pane.LAYERS -> " ${items.size}"; else -> "" },

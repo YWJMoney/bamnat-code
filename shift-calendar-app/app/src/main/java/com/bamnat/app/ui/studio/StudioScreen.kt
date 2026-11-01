@@ -234,6 +234,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
     // [LAY-09] 고급 보기 for the whole studio (부품 숫자 칸·여러 부품·색 변수, 꾸밈 층 숫자 칸, 층 나무), and the item the 층 나무 opens.
     var studioAdvanced by rememberSaveable { mutableStateOf(false) }
+    var partsTogether by remember { mutableIntStateOf(1) }
     var decorFocus by remember { mutableStateOf<Int?>(null) }
     // [LAY-09] 곳 줄: the six most used, kept on the phone, and '더 보기'.
     val studioCtx = LocalContext.current
@@ -579,7 +580,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 if ((if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS) partNow?.let { (pid, pon) ->
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
+                            Text(if (partsTogether > 1) "${partsTogether}곳 함께 고치는 중" else "${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                             // PC 4차 사용성 제안: the state changes from here too, when the chips have scrolled away.
@@ -627,7 +628,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         Tool.SEED -> SeedTool(vm, d)
                         Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
-                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }, advanced = studioAdvanced) { v -> vm.change { it.copy(parts = v) } }
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }, advanced = studioAdvanced,
+                            onTogether = { partsTogether = it }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }

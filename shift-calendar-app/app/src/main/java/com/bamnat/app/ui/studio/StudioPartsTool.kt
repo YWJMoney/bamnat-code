@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.FilterChip
@@ -58,6 +60,8 @@ internal fun PartsTool(
     onUploadPart: ((unit: String) -> Unit)? = null,
     /** [LAY-08] 1.36 고급 보기 (누락 점검 N5): 숫자 칸·여러 부품 한꺼번에·색 변수. */
     advanced: Boolean = false,
+    /** [LAY-08] PC 확인 C4: how many parts the next change goes to, for the line kept above ('3곳 함께 고치는 중'). */
+    onTogether: (Int) -> Unit = {},
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -74,6 +78,7 @@ internal fun PartsTool(
     var many by rememberSaveable(group) { mutableStateOf(false) }
     var multi by rememberSaveable(group) { mutableStateOf(listOf<String>()) }
     if (!advanced && many) { many = false; multi = emptyList() }
+    LaunchedEffect(many, multi) { onTogether(if (many) multi.size + 1 else 1) }
     // [BLU-09] 누락 점검 N4: 미리 보기에서 누른 곳이 바로 열려요.
     Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요. 위 미리 보기에서 고칠 곳을 누르면 그 부품이 열리고, 같은 곳을 한 번 더 누르면 그 바깥 부품이 열려요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -309,13 +314,15 @@ internal val PART_COLOR_FIELDS = listOf("fill" to "채우기", "lineC" to "선",
 private fun PartsAdvanced(bp: Blueprint, id: String, on: String?, line: Map<String, Any?>, many: Boolean, multi: List<String>,
                           onMany: (Boolean) -> Unit, set: (String, Any?) -> Unit, onAll: (String) -> Unit) {
     Group("고급 보기") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // PC 확인 C4 (글자 줄을 눌러도 안 켜져요): the whole row turns it on and off.
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = many, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onMany)) {
             Column(Modifier.weight(1f)) {
                 Text("여러 부품 한꺼번에", style = MaterialTheme.typography.bodyMedium)
                 Text(if (many) "위 부품 칩을 눌러 더해요. 고친 값이 ${multi.size + 1}곳에 같이 들어가요" else "켜면 부품 칩을 여러 개 골라 같은 값을 넣어요",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(many, onMany)
+            Switch(many, null)
         }
         Text("숫자로 맞추기", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -340,7 +347,9 @@ private fun PartsAdvanced(bp: Blueprint, id: String, on: String?, line: Map<Stri
                     .background(androidx.compose.ui.graphics.Color(c.toInt()), androidx.compose.foundation.shape.CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.outline, androidx.compose.foundation.shape.CircleShape))
                 Column(Modifier.weight(1f)) {
-                    Text("#" + "%08X".format(c), style = MaterialTheme.typography.bodyMedium)
+                    // PC 확인 C4 (16진 값만 보여요): the colour said in words, the number small after it.
+                    Text(com.bamnat.app.ui.settings.colorName(c), style = MaterialTheme.typography.bodyMedium)
+                    Text("#" + "%06X".format(c and 0xFFFFFF), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${where.size}곳 · " + where.take(3).joinToString(", ") + if (where.size > 3) " …" else "",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                 }

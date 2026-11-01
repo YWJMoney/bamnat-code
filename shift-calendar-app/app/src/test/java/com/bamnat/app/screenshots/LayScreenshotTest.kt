@@ -156,5 +156,14 @@ class LayScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("${today.monthValue}월", exact = true))
     }
+
+    /** PC 확인 C4 1.36: a decoration under the calendar screen's words is seen on the real screen (the page above it is clear). */
+    @Test fun theCalendarBackgroundShowsItsDecor() {
+        app.container.settingsRepository.update { it.copy(decor = Decor(listOf(
+            DecorItem(DecorKind.SHAPE, "circle", at = "bg.calendar", x = 820, y = 860, w = 160, h = 160, fill = 0xFFFFB300L),
+            DecorItem(DecorKind.PHOTO, "00000000000000ee", at = "bg.calendar", x = 200, y = 880, w = 120, h = 90, r = 12),
+        )).encode()) }
+        shoot("1487_lay_calendar_bg", PHONE) { settle() }
+    }
 }
 

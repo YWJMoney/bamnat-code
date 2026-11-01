@@ -71,7 +71,14 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val base = MaterialTheme.colorScheme
     val photo = rememberLookPicture(look.photo)
     val plain = look.isDefault
-    val scheme = if (plain) base else skinned(base, look, photo?.second)
+    // PC 확인 C4 1.36 (꾸밈 사진을 달력 화면 배경에 넣었는데 실제 화면에는 안 보여요): the screen's page and bars are opaque and covered
+    // what the 꾸밈 층 drew under them. With a decoration under the words, the ground is drawn here once and the page above it is clear.
+    val decorUnder = com.bamnat.app.ui.decor.LocalDecor.current.let { d ->
+        val bg = "bg." + key.substringBefore('.')
+        !d.isDefault && bg.removePrefix("bg.") in com.bamnat.core.recipe.Decor.SCREENS && d.items.any { (it.at == com.bamnat.core.recipe.Decor.APP || it.at == bg) && !it.over && !it.hide }
+    }
+    val skin = if (plain) base else skinned(base, look, photo?.second)
+    val scheme = if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin
     val dark = Palette.luminance((if (plain) base.background else groundOf(base, look, photo?.second)).argb()) < if (plain) 0.5 else 0.3
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
@@ -85,7 +92,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     // [J135-15] One shape of tree for the user's own look and for a theme: putting a theme on or taking it off only changes colours.
     // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        Box(if (plain) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
+        Box(if (plain && !decorUnder) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
             if (photo != null && !plain) {
                 Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
