@@ -1641,3 +1641,4 @@ TAB-04,"1.36 890 달력 판짜기(제안 28): 월·목록·근무 띠(주마다 
 TAB-05,"1.36 891 유형 전문 달력(제안 29): 6유형마다 전문 판(교대 근무 띠, 일근·알바 타임라인, 현장·가게·투자 목록), 장터 '○○ 전문' 꼬리표, 테마 맨 앞 '○○ 전문 달력' 6개",1.36,진행 중,에뮬레이터 확인,"CalendarBoard.expertFor BuiltInThemes.experts"
 TAB-06,"1.36 892 가계부 판: 목록·달력(날마다 들어옴·나감)·분류 보드(분류마다 합계)·표(날짜·분류·내용·금액 정렬), 기간·거르기 그대로",1.36,진행 중,에뮬레이터 확인,"core money/LedgerBoard.kt, LedgerBoardTest"
 TAB-07,"1.36 893 장터 기능별 탭 넓히기: 레시피 조각 tabView(달력 판·메모 보기·가계부 판), 앱 RecipeCodec·서버 cleanRecipe 같은 사례, 새 부품 id(cal.band·cal.line·memo.board·memo.table·money.board·money.table…)",1.36,진행 중,에뮬레이터 확인,""
+TAB-08,"1.36 탭 판의 수식 값(사용자 2026-11-01 수식·조건으로 모든 연동): 메모 한 장·가계부 한 줄·보드 칸의 값 지도, 갈래 D when·fx와 잇기",1.36,진행 중,갈래 D 합친 뒤 잇기,"TabFacts"
