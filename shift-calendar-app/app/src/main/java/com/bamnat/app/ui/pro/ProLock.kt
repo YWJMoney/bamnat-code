@@ -71,8 +71,13 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
             }
             Text("프로에서 쓸 수 있어요. 흐리게 보이는 건 내 기록으로 만든 화면이에요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-            Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-            LeaseAdOption(feature, gate)
+            if (gate.canTry(feature)) {
+                LeaseAdOption(feature, gate)
+                androidx.compose.material3.TextButton(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+            } else {
+                Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+                LeaseAdOption(feature, gate)
+            }
             // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet.
             if (LocalContext.current.appContainer.inviteApi.enabled) {
                 OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text("친구 초대로 프로 이용권 받기") }

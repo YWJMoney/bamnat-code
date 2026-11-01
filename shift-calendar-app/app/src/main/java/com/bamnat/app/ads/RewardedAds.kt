@@ -73,8 +73,9 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
             androidx.compose.material3.Button(onClick = {
                 if (com.bamnat.app.ui.pro.tryFeature(feature)) {
                     val end = Today.instant().plus(java.time.Duration.ofDays(FeatureLease.FIRST_DAYS))
+                    // Short: it sat over the card it had just opened (PC).
                     android.widget.Toast.makeText(context, "${bundle.label} 처음 7일 무료로 열었어요 · ${com.bamnat.app.ui.pro.untilWords(end)}까지",
-                        android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.LENGTH_SHORT).show()
                     onOpened()
                 }
             }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("처음 7일 무료로 열기") }

@@ -581,7 +581,7 @@ private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
             Text("${b.label}  ${dayWords(from)}에 받아 ${untilWords(end)}까지 열려 있어요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        m.wonValue?.let { Text("돈으로 치면  약 ${won(it)}어치 (프로 연 요금 하루 ${com.bamnat.core.tier.RewardLedger.perDay(yearly)}원 기준)", style = MaterialTheme.typography.bodyMedium) }
+        m.wonValue?.let { Text("프로 연 요금(하루 ${com.bamnat.core.tier.RewardLedger.perDay(yearly)}원)으로 치면 약 ${won(it)}어치", style = MaterialTheme.typography.bodyMedium) }
         if (m.found > 0) Text("밤낮이 찾아 준 돈  올해 ${won(m.found)} (명세서보다 계산이 많았던 차이)", style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary)
     }

@@ -113,7 +113,18 @@ fun LedgerReportsPane(
         if (!gate.live) ProNote()
     }
     if (!r.hasData && analysis.year.activeMonths == 0) {
-        LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+        // 1.36 PC 재검토: with no records, what the analysis will need, and (locked) that its first week is free, under the empty words.
+        val lead = when {
+            gate.allows(Feature.MONEY_STATS) || !gate.live -> null
+            gate.canTry(Feature.MONEY_STATS) -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이고, 처음 여는 날부터 7일은 무료예요."
+            else -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 광고 한 편으로 7일 열 수도 있어요."
+        }
+        if (lead == null) LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+        else Column {
+            LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+            Text(lead, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+        }
         return
     }
     if (wide) {
