@@ -2511,7 +2511,8 @@ function adminApp(L, BUILD, M) {
     const line = broken
       ? `${MODE[g.mode]}: PLAY_SERVICE_ACCOUNT가 없거나 Play Integrity를 쓸 수 없어요. ${g.mode === "require" ? "지금 남에게 보이는 쓰기가 모두 막혀요. " : ""}INTEGRITY_MODE를 off로 바꾸거나 서비스 계정을 넣어 주세요`
       : `${MODE[g.mode] ?? esc(g.mode)}: ${say}`;
-    const tone = broken ? "todo" : g.mode === "off" ? "off" : "ok";
+    // Every public write turned away is the one red line on the screen; watch without the account only counts nothing.
+    const tone = broken ? (g.mode === "require" ? "bad" : "todo") : g.mode === "off" ? "off" : "ok";
     const mark = broken ? "!" : g.mode === "off" ? "–" : "✓";
     const numbers = g.mode === "off" ? ""
       : `<p class="meta" data-integrity-numbers>오늘 ${g.mode === "require" ? "확인을 물은 쓰기" : "확인 없이 온 쓰기"} ${g.missToday ?? 0} · 지난 하루 확인에 실패한 휴대폰 ${g.failedDay ?? 0} · 7일 안에 확인된 휴대폰 ${g.provenWeek ?? 0}</p>`;
