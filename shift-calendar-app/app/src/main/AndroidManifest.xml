@@ -275,7 +275,6 @@
             android:name=".alarm.WakeCheckReceiver"
             android:exported="false" />
 
-        <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <!-- 1.36 [SEC-10] 보안 점검 H3: 남이 나눈 글꼴을 먼저 열어 보는 곳. 권한도 앱 파일도 없는 따로 된 프로세스예요. -->
         <service
             android:name=".recipe.FontProbeService"
@@ -283,6 +282,7 @@
             android:isolatedProcess="true"
             android:process=":fontprobe" />
 
+        <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <service
             android:name=".backup.AutoBackupJob"
             android:exported="false"
