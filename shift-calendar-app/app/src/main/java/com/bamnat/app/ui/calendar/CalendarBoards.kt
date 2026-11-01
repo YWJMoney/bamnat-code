@@ -175,6 +175,23 @@ internal fun TimelineMonth(
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val rowShape = RoundedCornerShape(8.dp)
     Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line"), RoundedCornerShape(0.dp))).padding(horizontal = 12.dp)) {
+        // PC 확인 c6bfa8b2 사용성 제안: a month with no timed work drew only grey bars; it says how bars come, with one example.
+        if (rows.none { (_, _, pair) -> pair.first.isNotEmpty() }) Row(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp).background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), rowShape).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("이달에는 시각이 있는 근무가 없어요", style = MaterialTheme.typography.labelLarge)
+                Text("근무를 넣을 때 시작·끝 시각이 있으면 하루 막대가 생겨요. 빠른 입력이나 날짜를 눌러 넣어요",
+                    style = MaterialTheme.typography.bodySmall, color = ink)
+            }
+            val example = MaterialTheme.colorScheme.primary
+            Canvas(Modifier.padding(start = 8.dp).width(72.dp).height(14.dp).clearAndSetSemantics { contentDescription = "예시 막대, 9시부터 18시" }) {
+                drawRoundRect(grid.copy(alpha = 0.25f), size = size, cornerRadius = CornerRadius(6f, 6f))
+                drawRoundRect(example.copy(alpha = 0.9f), topLeft = Offset(size.width * 9 / 24f, 0f), size = Size(size.width * 9 / 24f, size.height),
+                    cornerRadius = CornerRadius(6f, 6f))
+            }
+        }
         Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 64.dp, bottom = 4.dp)) {
             for (h in listOf("0", "6", "12", "18")) Text(h, style = MaterialTheme.typography.labelSmall, color = ink, modifier = Modifier.weight(1f))
         }
