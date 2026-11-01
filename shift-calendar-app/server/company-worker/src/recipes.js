@@ -14,6 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
+import { cellExtra, screenExtra, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -81,7 +82,7 @@ const cellLooks = (s) => {
   for (const l of looks) {
     if (l === "") continue;
     const parts = l.split("|");
-    if (!parts.every((x) => CELL_PART.test(x)) || !onceEach(parts)) return "looks";
+    if (!parts.every((x) => CELL_PART.test(x) || cellExtra(x)) || !onceEach(parts)) return "looks";
   }
   return null;
 };
@@ -94,7 +95,7 @@ const screenLooks = (s) => {
   if (keys.some((k) => !SCREEN_KEY.test(k)) || new Set(keys).size !== keys.length) return "screens";
   for (const e of entries) {
     const parts = e.slice(e.indexOf("~") + 1).split("|").filter((x) => x !== "");
-    if (!parts.every((x) => SCREEN_PART.test(x)) || !onceEach(parts)) return "screens";
+    if (!parts.every((x) => SCREEN_PART.test(x) || screenExtra(x)) || !onceEach(parts)) return "screens";
   }
   return null;
 };
@@ -218,30 +219,35 @@ export const RECIPE_PIECES = {
   photoLook: { styles: STYLES, fields: [T("bg", 16, { optional: true, guard: false, check: imageId }), N("dim", 0, 80, { optional: true }),
     T("head", 16, { optional: true, guard: false, check: imageId }), T("widget", 16, { optional: true, guard: false, check: imageId }),
     P("corners", ["round", "soft", "square"], { optional: true }),
-    I("icons", 6, [P("role", ROLES), T("image", 16, { min: 16, guard: false, check: imageId })], { optional: true })] },
+    I("icons", 6, [P("role", ROLES), T("image", 16, { min: 16, guard: false, check: imageId })], { optional: true }),
+    // [MAT-03][MAT-04] 1.36 그림 조정·틀 모양.
+    T("adjust", 60, { optional: true, guard: false, check: photoAdjust }), T("frame", 30, { optional: true, guard: false, check: photoFrame })] },
   // 1.35 [CVW-01] 달력 모양: cell size, mark, date place, text, lines, memo lines and the order of what stands under the mark.
   calView: { styles: STYLES, fields: [P("size", ["short", "normal", "tall", "huge"], { optional: true }), P("badge", ["big", "small", "line"], { optional: true }),
     P("date", ["center", "left"], { optional: true }), P("text", ["small", "normal", "large"], { optional: true }), P("grid", ["none", "line"], { optional: true }),
     N("memo", 0, 4, { optional: true }), F("hours"), F("lunar"), F("spend"), T("order", 80, { optional: true, guard: false, check: cellOrder }),
     // [FREE-01][FREE-02] 1.35 칸 디자이너: the cells' own looks, how they take turns, today's own.
-    T("looks", 760, { optional: true, guard: false, check: cellLooks }), T("pattern", 80, { optional: true, guard: false, check: cellPattern }),
+    T("looks", 2400, { optional: true, guard: false, check: cellLooks }), T("pattern", 80, { optional: true, guard: false, check: cellPattern }),
     N("today", 0, 5, { optional: true })] },
   // 1.35 [CVW-07] 앱 동작: never the alarm's 끄기, 잠금, 동의, 결제·광고 or where a backup goes.
   appFeel: { styles: STYLES, fields: [P("theme", ["system", "light", "dark", "night"], { optional: true }), F("dynamic"), C("accent", { optional: true }),
     N("textStep", 0, 4, { optional: true }), F("compact"), F("clock12"), P("tap", ["preview", "sheet", "week"], { optional: true }),
     P("hold", ["menu", "memo", "open"], { optional: true }), T("dayOrder", 120, { optional: true, guard: false, check: dayOrder }),
-    F("flow"), F("rest"), F("payPeriod")] },
+    F("flow"), F("rest"), F("payPeriod"),
+    // [MAT-07] 1.36 움직임.
+    T("motion", 60, { optional: true, guard: false, check: motionProblem })] },
   // [FREE-04] 1.35 메모장 모양.
   memoLook: { styles: STYLES, fields: [P("layout", ["list", "grid2", "grid3", "sticky", "diary", "compact"], { optional: true }),
     P("card", ["own", "one", "none"], { optional: true }), C("cardColor", { optional: true }), P("border", ["none", "thin"], { optional: true }),
     N("corner", 0, 24, { optional: true }), N("lines", 1, 10, { optional: true }), P("title", ["s", "m", "l"], { optional: true }), F("bold"),
-    P("font", ["sans", "serif", "mono", "hand"], { optional: true }), F("date"), C("bg", { optional: true })] },
+    // [MAT-05] 1.36 any app font or the user's own (core FontCatalog).
+    T("font", 40, { optional: true, guard: false, check: fontId }), F("date"), C("bg", { optional: true })] },
   // [FREE-06] 1.35 가계부 모양.
   moneyLook: { styles: STYLES, fields: [P("rows", ["compact", "normal", "roomy"], { optional: true }), P("amount", ["s", "m", "l"], { optional: true }),
     P("mark", ["emoji", "dot", "none"], { optional: true }), C("income", { optional: true }), C("expense", { optional: true }),
     P("dayHead", ["line", "band", "big"], { optional: true })] },
   // [FREE-05][FREE-07] 1.35 화면 색·배경 (pictures by recipe_images id, looked at before others see them) and 급여 모양 by kind of work.
-  screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
+  screenLook: { styles: STYLES, fields: [T("screens", 4000, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
   // [BLU-01] 1.36 부품 꾸미기.
   parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }), ...PART_STYLE], { min: 1, check: partLines })] },

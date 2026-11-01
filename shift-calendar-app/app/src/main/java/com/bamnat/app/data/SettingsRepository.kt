@@ -232,6 +232,8 @@ data class AppSettings(
     val payLooks: String = "",
     /** [BLU-05] 1.36 부품 꾸미기: the blueprint's lines (core Blueprint.encode), drawn over the older looks; "" for none. */
     val parts: String = "",
+    /** [MAT-07] 1.36 움직임 ([com.bamnat.core.recipe.Motion.encode]). In the backup. */
+    val motion: String = "",
     /** [DAILY-16] The 지역 시세 line on the pay screen, worked out on the phone only; off from that line. */
     val rateHint: Boolean = true,
     /** [DAILY-17] The second 리뷰 moment (first 급여 리포트) came, and when any review was last asked (epoch day, 0 for never). */
@@ -403,6 +405,7 @@ class SettingsRepository(context: Context) {
             screenLooks = prefs.getString(K_SCREEN_LOOKS, null) ?: d.screenLooks,
             payLooks = prefs.getString(K_PAY_LOOKS, null) ?: d.payLooks,
             parts = prefs.getString(K_PARTS, null) ?: d.parts,
+            motion = prefs.getString(K_MOTION, null) ?: d.motion,
             memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
             rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
             payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
@@ -507,6 +510,7 @@ class SettingsRepository(context: Context) {
             .putString(K_SCREEN_LOOKS, s.screenLooks)
             .putString(K_PAY_LOOKS, s.payLooks)
             .putString(K_PARTS, s.parts)
+            .putString(K_MOTION, s.motion)
             .putString(K_MEMO_LAYOUT, s.memoLayout)
             .putBoolean(K_RATE_HINT, s.rateHint)
             .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
@@ -560,6 +564,7 @@ class SettingsRepository(context: Context) {
         const val K_SCREEN_LOOKS = "screen_looks"
         const val K_PAY_LOOKS = "pay_looks"
         const val K_PARTS = "parts"
+        const val K_MOTION = "motion"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MEMO_LAYOUT = "memo_layout"

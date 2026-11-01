@@ -159,7 +159,7 @@ class RecipePieces(private val c: AppContainer) {
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
                 "accent" to s.accentColor.takeIf { it != 0L }, "textStep" to s.textStep.toLong(), "compact" to s.compact, "clock12" to s.clock12,
                 "tap" to s.phoneDayView.name.lowercase(), "hold" to s.longPress, "dayOrder" to s.dayGroupOrder.joinToString(",").ifEmpty { null },
-                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod)
+                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod, "motion" to s.motion.ifEmpty { null })
         }
         // [RCX-30] The phone's own picture ids; they become the server's when the recipe is sent ([LookImages.upload]).
         PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(from.photoLook).takeIf { !it.isDefault }?.let { l ->
@@ -168,7 +168,8 @@ class RecipePieces(private val c: AppContainer) {
             val icons = l.icons.mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
                 .distinctBy { it.first }.take(6).map { (r, id) -> mapOf("role" to r, "image" to id) }
             mapOf("bg" to l.bg?.takeIf { LookImages.has(ctx, it) }, "dim" to l.dim.toLong(), "head" to l.head?.takeIf { LookImages.has(ctx, it) },
-                "widget" to l.widget?.takeIf { LookImages.has(ctx, it) }, "corners" to l.corners, "icons" to icons.ifEmpty { null })
+                "widget" to l.widget?.takeIf { LookImages.has(ctx, it) }, "corners" to l.corners, "icons" to icons.ifEmpty { null },
+                "adjust" to l.adjust.takeIf { !it.isDefault }?.encode(), "frame" to l.frame)
         }
     }
 
@@ -679,7 +680,10 @@ class RecipePieces(private val c: AppContainer) {
                 val icons = if (byRole.isEmpty()) l.icons else l.icons + types(cal).mapNotNull { t -> byRole[role(t).key]?.let { t.id to it } }
                 val after = l.copy(bg = pic("bg") ?: l.bg, head = pic("head") ?: l.head, widget = pic("widget") ?: l.widget,
                     dim = (values["dim"] as? Number)?.toInt()?.coerceIn(0, 80) ?: l.dim,
-                    corners = (values["corners"] as? String)?.takeIf { it in com.bamnat.core.recipe.PhotoLook.CORNERS } ?: l.corners, icons = icons)
+                    corners = (values["corners"] as? String)?.takeIf { it in com.bamnat.core.recipe.PhotoLook.CORNERS } ?: l.corners, icons = icons,
+                    adjust = (values["adjust"] as? String)?.takeIf { com.bamnat.core.recipe.PhotoAdjust.problem(it) == null }
+                        ?.let { com.bamnat.core.recipe.PhotoAdjust.decode(it) } ?: l.adjust,
+                    frame = (values["frame"] as? String)?.takeIf { it.isNotEmpty() && com.bamnat.core.recipe.PhotoFrame.problem(it) == null } ?: l.frame)
                 mapOf("photoLook" to after.encode())
             }
             // [CVW-01] What the piece names takes its place; what it leaves out stays as it is.
@@ -720,6 +724,7 @@ class RecipePieces(private val c: AppContainer) {
                 (values["flow"] as? Boolean)?.let { "sleepTips" to it.toString() },
                 (values["rest"] as? Boolean)?.let { "restCheck" to it.toString() },
                 (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to it.toString() },
+                (values["motion"] as? String)?.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null }?.let { "motion" to it },
             ).toMap()
             // [FREE-04] What the piece names over the user's own.
             PieceKind.MEMO_LOOK -> {
@@ -731,7 +736,7 @@ class RecipePieces(private val c: AppContainer) {
                     corner = (values["corner"] as? Number)?.toInt()?.coerceIn(0, 24) ?: l.corner,
                     lines = (values["lines"] as? Number)?.toInt()?.coerceIn(1, com.bamnat.core.recipe.MemoLook.MAX_LINES) ?: l.lines,
                     title = pick("title", com.bamnat.core.recipe.MemoLook.TITLES) ?: l.title, bold = (values["bold"] as? Boolean) ?: l.bold,
-                    font = pick("font", com.bamnat.core.recipe.MemoLook.FONTS) ?: l.font, date = (values["date"] as? Boolean) ?: l.date,
+                    font = (values["font"] as? String)?.takeIf { com.bamnat.core.recipe.FontCatalog.idProblem(it) == null } ?: l.font, date = (values["date"] as? Boolean) ?: l.date,
                     bg = (values["bg"] as? Long) ?: l.bg,
                 )
                 mapOf("memoLook" to after.encode())
@@ -797,6 +802,7 @@ class RecipePieces(private val c: AppContainer) {
         "sleepTips" -> s.sleepTips.toString()
         "restCheck" -> s.restCheck.toString()
         "statsByPayPeriod" -> s.statsByPayPeriod.toString()
+        "motion" -> s.motion
         "memoLook" -> s.memoLook
         "moneyLook" -> s.moneyLook
         "screenLooks" -> s.screenLooks
@@ -833,6 +839,7 @@ class RecipePieces(private val c: AppContainer) {
         "sleepTips" -> s.copy(sleepTips = v == "true")
         "restCheck" -> s.copy(restCheck = v == "true")
         "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
+        "motion" -> s.copy(motion = v.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null } ?: s.motion)
         "memoLook" -> s.copy(memoLook = v)
         "moneyLook" -> s.copy(moneyLook = v)
         "screenLooks" -> s.copy(screenLooks = v)
@@ -1006,7 +1013,7 @@ class RecipePieces(private val c: AppContainer) {
             "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서·칸 디자인·패턴)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
             "showLunar" to "음력 날짜", "spendInCells" to "날짜 밑 쓴 돈", "themeMode" to "밝기", "dynamicColor" to "휴대폰 배경색에 맞추기", "accentColor" to "앱 강조색",
             "textStep" to "글자 크기", "compact" to "촘촘하게", "clock12" to "오전/오후로 보기", "phoneDayView" to "날짜를 누르면", "longPress" to "날짜를 길게 누르면",
-            "dayGroupOrder" to "하루 화면 순서", "sleepTips" to "오늘의 흐름", "restCheck" to "휴식 점검", "statsByPayPeriod" to "통계를 급여 기간으로",
+            "dayGroupOrder" to "하루 화면 순서", "sleepTips" to "오늘의 흐름", "restCheck" to "휴식 점검", "statsByPayPeriod" to "통계를 급여 기간으로", "motion" to "움직임",
             "memoLook" to "메모장 모양 (배치·카드·글꼴·배경)", "moneyLook" to "가계부 모양 (줄 간격·금액 크기·표시·색)",
             "screenLooks" to "화면 색·배경", "payLooks" to "급여 화면 모양 (근무 유형별)",
             "parts" to "부품 꾸미기 (달력 머리·칸·날짜·탭 막대·카드 하나하나)")
