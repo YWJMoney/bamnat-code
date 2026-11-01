@@ -10,7 +10,9 @@ import com.bamnat.app.logic.ConditionEditor
 import com.bamnat.app.logic.FormulaField
 import com.bamnat.app.logic.LogicEditor
 import com.bamnat.app.logic.RuleDialog
+import com.bamnat.app.logic.followWords
 import com.bamnat.app.logic.minutesWord
+import com.bamnat.app.logic.notifyWords
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.Logic
@@ -46,6 +48,17 @@ class RulScreenshotTest : ScreenshotBase() {
         assertEquals("1시간 전", minutesWord(-60))
         assertEquals("30분 뒤", minutesWord(30))
         assertEquals("바로", minutesWord(0))
+    }
+
+    @Test fun notifyWordsFollowWhenAndShift() {
+        // PC 3차: 주간·근무 끝 규칙에 '야간 근무예요'가 왔어요.
+        val start = LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, "night")))
+        val end = followWords(start, start.copy(on = RuleTrigger.END, role = "day"))
+        assertEquals("{근무끝}에 주간 근무가 끝나요", end.act.arg)
+        val mine = start.copy(act = start.act.copy(arg = "내가 쓴 글"))
+        assertEquals("내가 쓴 글", followWords(mine, mine.copy(on = RuleTrigger.END)).act.arg)
+        val old = start.copy(act = start.act.copy(arg = "{근무시작}에 야간 근무예요"))
+        assertEquals("{근무시작}에 주간 근무가 시작돼요", followWords(old, old.copy(role = "day")).act.arg)
     }
 
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {

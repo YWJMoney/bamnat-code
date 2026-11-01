@@ -287,7 +287,7 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
 
 @Composable
 fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Unit, onDismiss: () -> Unit) {
-    var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, "{근무시작}에 야간 근무예요"))) }
+    var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, "night")))) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
@@ -297,14 +297,14 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 OutlinedTextField(r.name, { r = r.copy(name = it.take(20)) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("이름") })
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = r.copy(on = t) }, label = { Text(t.label) }) }
+                    RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, r.copy(on = t)) }, label = { Text(t.label) }) }
                 }
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = r.role == null, onClick = { r = r.copy(role = null) }, label = { Text("모든 근무") })
+                            FilterChip(selected = r.role == null, onClick = { r = followWords(r, r.copy(role = null)) }, label = { Text("모든 근무") })
                             LogicRule.ROLE_WORDS.filterKeys { it != "off" }.forEach { (k, w) ->
-                                FilterChip(selected = r.role == k, onClick = { r = r.copy(role = k) }, label = { Text(w) })
+                                FilterChip(selected = r.role == k, onClick = { r = followWords(r, r.copy(role = k)) }, label = { Text(w) })
                             }
                         }
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -384,6 +384,28 @@ internal fun nextLine(r: LogicRule, facts: com.bamnat.core.formula.DayFactsBook?
 
 private val MONEY_VERBS = setOf(LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME)
 
+/** The 1.36 build 3 fixed 알림 글, read as untouched so an old draft also follows. */
+private const val OLD_NOTIFY = "{근무시작}에 야간 근무예요"
+
+/** [RUL-06] PC 3차: an 알림 글 the user has not touched follows 언제 and 근무 (주간·근무 끝 규칙에 '야간 근무예요'가 오지 않게). */
+internal fun followWords(old: LogicRule, new: LogicRule): LogicRule {
+    val untouched = old.act.verb == LogicVerb.NOTIFY && (old.act.arg.isBlank() || old.act.arg == notifyWords(old.on, old.role) || old.act.arg == OLD_NOTIFY)
+    return if (untouched) new.copy(act = new.act.copy(arg = notifyWords(new.on, new.role))) else new
+}
+
+/** [RUL-06] The 알림 글 a new rule starts with, said for its 언제 and 근무: "{근무끝}에 주간 근무가 끝나요". */
+internal fun notifyWords(on: RuleTrigger, role: String?): String {
+    val w = role?.let { LogicRule.ROLE_WORDS[it] }?.let { "$it " }.orEmpty()
+    return when (on) {
+        RuleTrigger.START -> "{근무시작}에 ${w}근무가 시작돼요"
+        RuleTrigger.END -> "{근무끝}에 ${w}근무가 끝나요"
+        RuleTrigger.DAILY -> "오늘 {근무} · 확인할 시간이에요"
+        RuleTrigger.MEMO -> "메모를 적었어요"
+        RuleTrigger.MONEY -> "이달 지출 {원(이달지출)}이에요"
+        else -> "{근무} 날이에요"
+    }
+}
+
 /** "1시간 전", "30분 전", "바로", "30분 뒤", "1시간 뒤". */
 internal fun minutesWord(m: Int): String = when {
     m == 0 -> "바로"
@@ -411,6 +433,11 @@ fun LogicEditor(
     var editRule by remember { mutableStateOf<Int?>(null) }
     var editButton by remember { mutableStateOf<Int?>(null) }
     var bump by remember { mutableIntStateOf(0) }
+    // [RUL-06] PC 3차 사용성 제안: the lines read again whenever the screen shows, and each minute while it stays open (울린 뒤 바로 '했어요').
+    if (phone) {
+        androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { bump++ }
+        androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(30_000); bump++ } }
+    }
     val store = remember { LogicStore(c.appContext) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (show != LogicShow.RULES) {

@@ -287,7 +287,8 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         }
     }
     // [RUL-06] 1.36 수식·규칙·버튼: "이럴 때 이렇게" 규칙과 화면 단추, 스튜디오와 같은 편집기.
-    SectionCard(title = com.bamnat.app.logic.LOGIC_ROW) {
+    // PC 3차 사용성 제안: '규칙·단추' 칩·검색은 이 칸으로 바로 내려와요.
+    SectionCard(title = com.bamnat.app.logic.LOGIC_ROW, modifier = Modifier.focusMark(com.bamnat.app.logic.LOGIC_ROW)) {
         // 스튜디오 갈래·PC 1차 확인: 만들고 고치는 곳은 스튜디오 › 규칙·단추 하나, 여기는 켜고 끄기와 '다음 실행'·'지난번 결과'.
         NavRow("스튜디오에서 열기", "규칙·단추·조건부 꾸미기를 만들고 고쳐요") { SettingsLinks.go(SettingsGo.STUDIO_RULES) }
         com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(settings.logic), { l ->

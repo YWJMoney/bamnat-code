@@ -999,7 +999,18 @@ export function partUnitOf(body) {
 const VIEW_UNITS = { "cal.board": ["cal"], "memo.view": ["memo", "memoBy", "memoSort"], "money.board": ["money"] };
 
 /** [MKX-01] 테마 (앱 전체를 한 벌로, 탭 둘 이상이나 앱 전체 색) or 기능별 탭 (탭 하나만); null for one that changes no tab (묶음). */
-export function scopeOf(tabs) {
+/** [RUL-07] 1.36 규칙·단추만 (LookParts.partUnit == "logic"): the only piece is the logic piece. 장터 '규칙·단추' 구간 (scope `logic`). */
+export function logicOnly(body) {
+  try {
+    const rec = typeof body === "string" ? JSON.parse(body) : body;
+    return rec?.pieces?.length === 1 && rec.pieces[0]?.kind === "logic";
+  } catch {
+    return false;
+  }
+}
+
+export function scopeOf(tabs, body) {
+  if (body !== undefined && logicOnly(body)) return "logic";
   if (!tabs.length) return null;
   return tabs.includes("app") || tabs.length >= 2 ? "theme" : "tab";
 }
@@ -1008,7 +1019,7 @@ export function scopeOf(tabs) {
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
   const tabs = r.body ? tabsOf(r.body) : [];
-  const scope = scopeOf(tabs);
+  const scope = scopeOf(tabs, r.body);
   return {
     ...(look ? { look } : {}),
     // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
@@ -1071,12 +1082,12 @@ async function recipeList(d, env, url) {
     ORDER BY r.updated_at DESC LIMIT 600`, ...args);
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
-  const scope = ["theme", "tab"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  const scope = ["theme", "tab", "logic"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
   const tab = scope === "tab" && MARKET_TABS.includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
   const rows = scope ? rows0.filter((r) => {
     const tabs = tabsOf(r.body);
-    return scopeOf(tabs) === scope && (!tab || tabs[0] === tab);
+    return scopeOf(tabs, r.body) === scope && (!tab || tabs[0] === tab);
   }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {
