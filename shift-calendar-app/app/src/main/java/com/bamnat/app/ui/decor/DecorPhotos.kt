@@ -42,7 +42,7 @@ object DecorPhotos {
         }
     }
 
-    private fun ask(id: String, now: Long = System.currentTimeMillis()): Boolean {
+    private fun ask(id: String, now: Long = android.os.SystemClock.elapsedRealtime()): Boolean {
         val last = asked[id]
         if (last != null && now - last < AGAIN_MS) return false
         asked[id] = now
