@@ -990,7 +990,7 @@ export async function communityAdmin(d, request, env, path, url, now) {
   }
   if (path === "/recipes/requests" && method === "GET") {
     // Newest first, hidden ones too, so the operator can put one back. Never who wrote it.
-    const rows = await d.all(env, "SELECT id, style, body, likes, state, code, hidden, created_at FROM recipe_requests ORDER BY created_at DESC LIMIT 100");
+    const rows = await d.all(env, "SELECT id, style, body, likes, state, code, hidden, askers, created_at FROM recipe_requests ORDER BY created_at DESC LIMIT 100");
     return d.json({ items: rows.map((r) => ({ ...r, hidden: r.hidden === 1, at: new Date(r.created_at).toISOString() })) });
   }
   m = path.match(/^\/recipes\/requests\/(q[A-Za-z0-9]{12})\/(hide|show)$/);

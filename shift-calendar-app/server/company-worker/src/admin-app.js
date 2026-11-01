@@ -12,6 +12,8 @@ import { ADMIN_CSS } from "./admin/style.js";
 import { todayViews } from "./admin/views/today.js";
 import { plazaViews } from "./admin/views/plaza.js";
 import { insightViews } from "./admin/views/insight.js";
+// 1.36 [GRW-07] 할 일함, [GRW-04]~[GRW-06] 스튜디오 요구·기본 도구 후보·손잡이 지도.
+import { workViews } from "./admin/views/work.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -68,7 +70,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -615,6 +617,15 @@ function adminApp(L, BUILD, M) {
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
+      // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
+      if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
+      // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
+      if (name === "growth") {
+        const t = S.growthTab ?? "needs";
+        const src = { needs: "/growth/needs", unsolved: "/growth/needs?show=unsolved", ended: "/growth/needs?show=ended", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`,
+          map: `/growth/map${S.growthVersion ? `?version=${encodeURIComponent(S.growthVersion)}` : ""}` }[t];
+        jobs.push(api(src).then(keep((d) => { S.data.growth = { tab: t, ...d }; })));
+      }
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
@@ -663,7 +674,7 @@ function adminApp(L, BUILD, M) {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
         // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", makers: "/recipes/makers/flagged",
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
           month: "/recipes/makers/month" }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
@@ -1008,6 +1019,9 @@ function adminApp(L, BUILD, M) {
    */
   const VIEWS = {
     home: () => V.homeView(),
+    // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
+    work: () => V.workView(),
+    growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
     sort: () => sortView(),
@@ -1051,7 +1065,7 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, work: d.work, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -2293,7 +2307,7 @@ function adminApp(L, BUILD, M) {
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
   const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
@@ -2321,6 +2335,8 @@ function adminApp(L, BUILD, M) {
     if (!d || (d.tab ?? tab) !== tab) return chips + skeleton(2);
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
+    // 1.36 [GRW-05] 기본 도구 후보·모두의 도구 (문의 › 스튜디오 요구에도 같은 목록).
+    if (tab === "tools") return chips + V.toolsBlock(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
     if (tab === "makers") return chips + recipeMakersView(d, edit);
     if (tab === "month") return chips + recipeMonthView(d, edit);
@@ -2370,12 +2386,19 @@ function adminApp(L, BUILD, M) {
   }
 
   /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
+  // 1.36 [GRW-08] 사진 세 겹: 운영자가 보는 것은 새싹 첫 사진·자동 검사에 걸린 것·신고로 먼저 가린 것뿐이에요.
+  const PHOTO_FLAG_NAMES = { nude: "성적인 사진", violence: "폭력·잔인", personal: "개인정보", copy: "남의 저작물", other: "그 밖" };
   function recipeImagesView(d, edit) {
-    if (!d.items.length) return empty("볼 그림이 없어요", "레시피 표지로 올린 그림이 여기 와요. 본 그림만 다른 분께 보여요.");
-    return `<p class="hint">사람 얼굴·개인정보·광고·남의 저작물이 보이면 가려요. 괜찮으면 보이기를 눌러요.</p>
-      <ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
-        <img src="data:image/webp;base64,${esc(i.data)}" alt="레시피 표지 그림" width="128" height="128" class="cover-img">
-        <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
+    const c = d.counts ?? {};
+    const rules = d.rules ?? { lookFirst: 3, flagsToHold: 2 };
+    const head = `<p class="hint">세 겹으로 봐요. ① 올릴 때 자동 검사(설정되어 있으면) ② 새싹은 첫 ${rules.lookFirst}장만 여기서 보고, 그 뒤와 이웃·단골은 바로 보여요 ③ 신고 ${rules.flagsToHold}번이면 먼저 가려져 여기로 와요.
+      얼굴·개인정보·성적인 사진·남의 저작물이면 가리기(쓰기 제한 한 번), 괜찮으면 보이기(신고는 비워요).</p>
+      <p class="meta">새싹 첫 사진 ${c.pending ?? 0} · 먼저 가린 것 ${c.held ?? 0}</p>`;
+    if (!d.items.length) return `${head}${empty("볼 사진이 없어요", "새싹의 첫 사진, 자동 검사에 걸린 사진, 신고로 먼저 가린 사진이 여기 와요.")}`;
+    return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
+        <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
+        <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
+        <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림", unchecked: "안 함" }[i.checked] ?? "안 함")} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
@@ -2410,7 +2433,7 @@ function adminApp(L, BUILD, M) {
     const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
     const style = Object.fromEntries(RECIPE_STYLES);
     return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
-        <small>${esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
+        <small>${q.style === "ALL" ? "모든 유형" : esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)}${q.askers ? ` · 스튜디오 요구 ${q.askers}명` : ""} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
@@ -5225,7 +5248,8 @@ function adminApp(L, BUILD, M) {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A) };
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A) };
+  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms } });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
 
@@ -5474,17 +5498,26 @@ function adminApp(L, BUILD, M) {
         if (detail) return document.getElementById("reply")?.focus();
         return load();
       case "close":
+        if (S.route.name === "work" && V.workKey("done")) return stop();
         if (detail && editInq && S.data.inquiry?.status !== "closed") return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
       case "reject":
         if (S.route.name === "review") return reviewKey("reject");
         if (detail && S.queue) return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
+      // 1.36 [GRW-07] w 기다림, h 기록 (할 일함).
+      case "wait":
+        if (S.route.name === "work" && V.workKey("wait")) stop();
+        return;
+      case "history":
+        if (S.route.name === "work" && V.workKey("log")) stop();
+        return;
       // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
       case "next":
         stop();
         return nextWaiting();
       case "skip":
+        if (S.route.name === "work" && V.workKey("seeing")) return stop();
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);
         return;

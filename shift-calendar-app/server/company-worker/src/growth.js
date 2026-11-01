@@ -116,6 +116,9 @@ export function toldText(need, how) {
   if (how === "solved") {
     return `부탁하신 꾸미기("${need.title}")를 다른 분이 만들어 장터에 올렸어요. 마을 › 장터에서 코드 ${need.code}로 찾아 입어 볼 수 있어요. 고마워요!`;
   }
+  if (how === "declined") {
+    return `부탁하신 꾸미기("${need.title}")는 지금은 넣기 어려워요. ${need.note} 같은 부탁이 더 모이면 다시 볼게요. 의견 고마워요!`;
+  }
   return `부탁하신 꾸미기("${need.title}")가 ${need.version ? `${need.version} 판에서 ` : "다음 판에서 "}스튜디오의 기본 손잡이로 나와요. 여러분이 부탁해서 생긴 꾸미기로 출시 노트에도 적을게요.`;
 }
 
@@ -274,7 +277,7 @@ export async function growthAdmin(request, env, url, path, now) {
     const state = NEED_STATES.includes(url.searchParams.get("state")) ? url.searchParams.get("state") : null;
     // 기본: 아직 끝나지 않은 것 (모이는 중·장터·만드는 중), 부탁한 분 많은 순. unsolved: 장터에 올렸는데 14일 넘게 아무도 못 푼 것.
     const show = url.searchParams.get("show");
-    const where = state ? "state = ?" : show === "unsolved" ? "state = 'market' AND updated_at < ?" : "state IN ('open', 'market', 'building')";
+    const where = state ? "state = ?" : show === "unsolved" ? "state = 'market' AND updated_at < ?" : show === "ended" ? "state IN ('solved', 'official', 'declined')" : "state IN ('open', 'market', 'building')";
     const args = state ? [state] : show === "unsolved" ? [now - GROWTH.staleDays * DAY] : [];
     const rows = await all(env, `SELECT * FROM studio_needs WHERE ${where} ORDER BY askers DESC, updated_at DESC LIMIT 100`, ...args);
     const counts = Object.fromEntries((await all(env, "SELECT state, COUNT(*) AS n FROM studio_needs GROUP BY state")).map((r) => [r.state, r.n]));
@@ -308,6 +311,7 @@ export async function growthAdmin(request, env, url, path, now) {
       case "decline":
         if (!note) return json({ error: "note", field: "note" }, 400);
         await run(env, "UPDATE studio_needs SET state = 'declined', note = ?, updated_at = ? WHERE id = ?", note, now, n.id);
+        told = await tellAskers(env, { ...n, note }, "declined", now);
         break;
       case "reopen":
         await run(env, "UPDATE studio_needs SET state = CASE WHEN request_id IS NULL THEN 'open' ELSE 'market' END, updated_at = ? WHERE id = ?", now, n.id);
