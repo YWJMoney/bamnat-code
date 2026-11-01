@@ -16,6 +16,8 @@ object BuiltInThemes {
         PieceKind.PHOTO_LOOK, PieceKind.LAYOUT, PieceKind.CARDS,
         // [BLU-01] 1.36 부품 꾸미기.
         PieceKind.PARTS,
+        // [TAB-07] 1.36 탭 보기.
+        PieceKind.TAB_VIEW,
     )
 
     private class Family(

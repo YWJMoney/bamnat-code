@@ -268,14 +268,15 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
  * or as a list.
  */
 @Composable
-internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit, onLegend: () -> Unit, modifier: Modifier = Modifier) {
+internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit, onLegend: () -> Unit, modifier: Modifier = Modifier, boardLabel: String? = null) {
     val haptics = LocalHapticFeedback.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onLegend) { Icon(Icons.Outlined.Info, "달력 표시 안내", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         // [CAL-08] One button that shows the other view, so the month's shift counts keep their room beside it.
         FilledTonalIconButton(
             onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
-            modifier = Modifier.semantics { contentDescription = if (listView) "달력으로 보기" else "목록으로 보기" },
+            // [TAB-04] 1.36: the board menu (월·목록·근무 띠·타임라인), said with the board on screen.
+            modifier = Modifier.semantics { contentDescription = boardLabel?.let { "달력 판 고르기, 지금 $it" } ?: if (listView) "달력으로 보기" else "목록으로 보기" },
         ) {
             AnimatedContent(listView, transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(90)) }, label = "view-switch") { list ->
                 Icon(if (list) Icons.Filled.CalendarMonth else Icons.AutoMirrored.Filled.ViewList, null, Modifier.size(20.dp))

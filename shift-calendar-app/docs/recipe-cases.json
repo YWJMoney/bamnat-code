@@ -57,7 +57,10 @@
  {"in":{"format":"bamnat-recipe","pieces":[{"kind":"parts","parts":[{"fill":4294940928,"id":"cal.cell.sticker"}]}],"styles":["SHIFT","DAY"],"title":"[BLU-01] 모르는 부품은 거절","v":1},"name":"[BLU-01] 모르는 부품은 거절","want":{"code":"pick","ok":false}},
  {"in":{"format":"bamnat-recipe","pieces":[{"kind":"parts","parts":[{"fill":{"fx":"만약(근무=\"야간\",\"빨강\",없음)"},"id":"cal.cell"}]}],"styles":["SHIFT","DAY"],"title":"[BLU-01] 수식 자리는 1판에서 아직 거절","v":1},"name":"[BLU-01] 수식 자리는 1판에서 아직 거절","want":{"code":"ref","ok":false}},
  {"in":{"format":"bamnat-recipe","pieces":[{"kind":"parts","parts":[{"font":"Noto Sans","id":"app"}]}],"styles":["SHIFT","DAY"],"title":"[BLU-01] 글꼴 id 모양","v":1},"name":"[BLU-01] 글꼴 id 모양","want":{"code":"font","ok":false}},
- {"in":{"format":"bamnat-recipe","pieces":[{"kind":"parts","parts":[{"id":"app.card","r":49}]}],"styles":["SHIFT","DAY"],"title":"[BLU-01] 범위 밖 모서리","v":1},"name":"[BLU-01] 범위 밖 모서리","want":{"code":"range","ok":false}}
+ {"in":{"format":"bamnat-recipe","pieces":[{"kind":"parts","parts":[{"id":"app.card","r":49}]}],"styles":["SHIFT","DAY"],"title":"[BLU-01] 범위 밖 모서리","v":1},"name":"[BLU-01] 범위 밖 모서리","want":{"code":"range","ok":false}},
+ {"in":{"format":"bamnat-recipe","pieces":[{"cal":"rota","kind":"tabView","memo":"board","memoBy":"p:상태","memoSort":"-p:매출","money":"board"}],"styles":["SHIFT"],"title":"교대 근무 띠 보기","v":1},"name":"[TAB-07] 탭 보기: 근무 띠·보드·분류 보드","want":{"canonical":"{\"cover\":{\"a\":4282339765,\"b\":4288423856,\"dir\":0,\"emoji\":\"🗓️\"},\"format\":\"bamnat-recipe\",\"pieces\":[{\"cal\":\"rota\",\"kind\":\"tabView\",\"memo\":\"board\",\"memoBy\":\"p:상태\",\"memoSort\":\"-p:매출\",\"money\":\"board\"}],\"styles\":[\"SHIFT\"],\"title\":\"교대 근무 띠 보기\",\"v\":1}","hash":"c16562f55221f5bec5788f283fc0e268dea54c3376b0e933018d86c7c62c07ed","ok":true}},
+ {"in":{"format":"bamnat-recipe","pieces":[{"kind":"tabView","memo":"board","memoBy":"p:a|b"}],"styles":["SHIFT"],"title":"교대 근무 띠 보기","v":1},"name":"[TAB-07] 탭 보기: 메모 묶음 이름에 구분 글자는 거절","want":{"code":"memoBy","ok":false}},
+ {"in":{"format":"bamnat-recipe","pieces":[{"cal":"week","kind":"tabView"}],"styles":["SHIFT"],"title":"교대 근무 띠 보기","v":1},"name":"[TAB-07] 탭 보기: 모르는 달력 판은 거절","want":{"code":"pick","ok":false}}
 ],
 "skeleton":[
  {"name":"밤 낮","want":{"reserved":true,"skeleton":"밤낮"}},

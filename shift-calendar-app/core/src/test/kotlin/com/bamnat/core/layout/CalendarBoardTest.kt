@@ -54,6 +54,6 @@ class TabViewsTest {
         assertEquals(v, TabViews.decode(v.encode()))
         assertEquals("", TabViews().encode())
         assertEquals(TabViews(), TabViews.decode("cal=zzz;memo=bad;money=?"))
-        assertEquals(CalendarBoard.LINE, TabViews.decode("money=cal;cal=line").cal)
+        assertEquals(CalendarBoard.LINE, TabViews.decode("money=cal;cal=timeline").cal)
     }
 }

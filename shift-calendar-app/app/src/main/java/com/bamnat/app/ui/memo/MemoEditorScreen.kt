@@ -305,6 +305,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     label = { Text("틀에서 시작") },
                     leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
                 )
+                // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it.
+                MemoToLedgerChip(memo)
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
@@ -881,9 +883,29 @@ internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Ma
                                 a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) }) }
                             }
                         }
-                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = (if (a.type == "num") numberOnly(it) else it).take(100) }, label = { Text(a.label) },
+                        // [TAB-03] 1.36 체크: 예 or 아니오.
+                        "check" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(a.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            for (c in listOf("예", "아니오")) com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) })
+                        }
+                        // [TAB-03] 날짜: 오늘·내일 one tap, or typed as 11월 3일 / 2026-11-03.
+                        "date" -> Column {
+                            androidx.compose.material3.OutlinedTextField(v, { answers[key] = it.take(20) }, label = { Text(a.label) }, placeholder = { Text("11월 3일") },
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val today = com.bamnat.core.time.Today.date()
+                                for ((n, d) in listOf("오늘" to today, "내일" to today.plusDays(1))) {
+                                    val s = "${d.monthValue}월 ${d.dayOfMonth}일"
+                                    com.bamnat.app.ui.components.FilterChip(selected = v == s, onClick = { answers[key] = s }, label = { Text(n) })
+                                }
+                            }
+                        }
+                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = (if (a.type == "num" || a.type == "money") numberOnly(it) else it).take(100) }, label = { Text(a.label) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = if (a.type == "num") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                            suffix = if (a.type == "money") ({ Text("원") }) else null,
+                            placeholder = if (a.type == "time") ({ Text("22:30") }) else null,
+                            keyboardOptions = if (a.type == "num" || a.type == "money") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                                else if (a.type == "time") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
                                 else androidx.compose.foundation.text.KeyboardOptions.Default)
                     }
                 }

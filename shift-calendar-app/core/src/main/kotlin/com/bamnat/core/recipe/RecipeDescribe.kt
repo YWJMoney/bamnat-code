@@ -131,6 +131,12 @@ object RecipeDescribe {
         PieceKind.PARTS -> items(p, "parts").map { it["id"] as String }.distinct().let { ids ->
             "부품 ${ids.size}개 꾸밈: " + ids.take(4).joinToString("·") { BlueprintParts.LABELS[it] ?: it } + if (ids.size > 4) " 외" else ""
         }
+        // [TAB-07] 1.36 탭 보기.
+        PieceKind.TAB_VIEW -> listOfNotNull(
+            (p.values["cal"] as? String)?.let { "달력 " + com.bamnat.core.layout.CalendarBoard.of(it).label },
+            (p.values["memo"] as? String)?.let { "메모 " + (com.bamnat.core.memo.MemoView.LABELS[it] ?: it) },
+            (p.values["money"] as? String)?.let { "가계부 " + com.bamnat.core.money.LedgerBoard.of(it).label },
+        ).joinToString(" · ").ifEmpty { "탭 보기" }
         // [CVW-07]
         PieceKind.APP_FEEL -> listOfNotNull(
             (p.values["theme"] as? String)?.let { RecipeWords.PICKS[it] }, "기기 색".takeIf { p.values["dynamic"] == true },

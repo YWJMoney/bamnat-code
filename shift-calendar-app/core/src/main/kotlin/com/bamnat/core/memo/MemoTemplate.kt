@@ -76,7 +76,7 @@ data class TemplateAsk(val label: String, val type: String = "text", val choices
                 // [TAB-03] 금액: whole won with commas and 원, so the 표 adds it up and '가계부에 넣기' reads it.
                 "money" -> v.replace(",", "").replace("원", "").trim().toDoubleOrNull()?.let { "%,d원".format(it.toLong()) } ?: return@mapNotNull null
                 "date" -> MemoProps.read(a.label, v).takeIf { it.type == MemoProps.Type.DATE }?.raw ?: return@mapNotNull null
-                "time" -> MemoProps.read(a.label, v).takeIf { it.type == MemoProps.Type.TIME }?.raw ?: return@mapNotNull null
+                "time" -> MemoProps.read(a.label, if (v.length in 3..4 && v.all { it.isDigit() }) v.dropLast(2) + ":" + v.takeLast(2) else v).takeIf { it.type == MemoProps.Type.TIME }?.raw ?: return@mapNotNull null
                 "check" -> when (v) { "1", "예", "true" -> "예"; "0", "아니오", "false" -> "아니오"; else -> return@mapNotNull null }
                 else -> v
             }

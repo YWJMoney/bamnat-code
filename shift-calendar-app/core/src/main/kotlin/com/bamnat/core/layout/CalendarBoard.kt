@@ -14,8 +14,8 @@ import java.time.LocalTime
 enum class CalendarBoard(val key: String, val label: String, val what: String) {
     MONTH("month", "월", "한 달을 칸으로"),
     LIST("list", "목록", "날마다 한 줄로"),
-    BAND("band", "근무 띠", "주마다 근무를 띠로, 주기가 한눈에"),
-    LINE("line", "타임라인", "하루 24시간 막대에 근무 시간"),
+    BAND("rota", "근무 띠", "주마다 근무를 띠로, 주기가 한눈에"),
+    LINE("timeline", "타임라인", "하루 24시간 막대에 근무 시간"),
     ;
 
     companion object {

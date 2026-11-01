@@ -175,6 +175,11 @@ const partLines = (lines) => {
   return null;
 };
 
+// [TAB-07] core MemoProps.isLabel and MemoView.validBy·validSort: a 칸 name with a letter, at most three words, no link or separator.
+const propLabel = (s) => s.length >= 1 && s.length <= 20 && /\p{L}/u.test(s) && s.split(" ").length <= 3 && !/http/i.test(s) && !/[/|:;]/.test(s);
+const memoBy = (s) => ["tag", "shift", "check", "color"].includes(s) || (s.startsWith("p:") && propLabel(s.slice(2)));
+const memoSort = (s) => s === "" || s === "title" || (s.replace(/^-/, "").startsWith("p:") && propLabel(s.replace(/^-/, "").slice(2)));
+
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 export const RECIPE_PIECES = {
   shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", 20, { min: 1 }), P("role", ROLES),
@@ -239,6 +244,12 @@ export const RECIPE_PIECES = {
   // [FREE-05][FREE-07] 1.35 화면 색·배경 (pictures by recipe_images id, looked at before others see them) and 급여 모양 by kind of work.
   screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
+  // [TAB-07] 1.36 탭 보기, as core PieceKind.TAB_VIEW (CalendarBoard·MemoView·LedgerBoard).
+  tabView: { styles: STYLES, fields: [P("cal", ["month", "list", "rota", "timeline"], { optional: true }),
+    P("memo", ["list", "board", "table", "gallery"], { optional: true }),
+    T("memoBy", 22, { optional: true, guard: false, check: (s) => (memoBy(s) ? null : "memoBy") }),
+    T("memoSort", 23, { optional: true, guard: false, check: (s) => (memoSort(s) ? null : "memoSort") }),
+    P("money", ["list", "cal", "board", "table"], { optional: true })] },
   // [BLU-01] 1.36 부품 꾸미기.
   parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }), ...PART_STYLE], { min: 1, check: partLines })] },
 };
@@ -845,6 +856,10 @@ export function lookOf(body) {
   if (typeof view?.badge === "string") out.badge = view.badge;
   const memo = piece("memoLook");
   if (memo?.layout) out.memo = memo.layout;
+  // [TAB-07] 1.36 탭 보기: the calendar board and memo view a 장터 card can say.
+  const tv = piece("tabView");
+  if (tv?.cal) out.board = tv.cal;
+  if (tv?.memo) out.memoView = tv.memo;
   if (piece("photoLook")?.bg || (typeof screens === "string" && screens.includes("ph:"))) out.photo = true;
   return Object.keys(out).length ? out : null;
 }
@@ -852,7 +867,7 @@ export function lookOf(body) {
 /** [FREE-08] 종류로 보기: what kind of piece a recipe must carry to show under each chip. */
 export const RECIPE_KINDS = {
   skin: ["screenLook", "calTheme", "calView", "photoLook", "shiftLook"],
-  layout: ["layout", "cards", "appFeel"],
+  layout: ["layout", "cards", "appFeel", "tabView"],
   memo: ["memoLook", "memoTpl"],
   money: ["moneyLook", "shop", "field"],
   rules: ["alarms", "hourly", "invest", "company"],
@@ -884,6 +899,11 @@ export function tabsOf(body) {
       case "alarms": out.add("alarm"); break;
       case "widget": out.add("widget"); break;
       case "appFeel": out.add("app"); break;
+      case "tabView":
+        if (p.cal) out.add("calendar");
+        if (p.memo) out.add("memo");
+        if (p.money) out.add("money");
+        break;
       case "layout":
         if (p.calendar) out.add("calendar");
         if (Array.isArray(p.tabs) && p.tabs.length) out.add("app");
