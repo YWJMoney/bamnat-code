@@ -458,8 +458,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val stepped = s.draft != was
         // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
         if (!stepped) { _state.value = s.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
-        _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요", canUndoLayer = stepped)
+        // PC D4: 규칙·단추만 얹은 것은 테마가 아니라서 입히기가 그 테마 기간·광고를 따르지 않아요 (출처는 레시피에 남아요).
+        val logicOnly = LookParts.partUnit(r) == LookParts.LOGIC
+        _state.value = s.copy(layered = s.layered + k, sources = if (k.own || logicOnly) s.sources else s.sources + (k.from to k.fromTitle),
+            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" + if (logicOnly) ". 입히면 규칙이 켜져요" else "", canUndoLayer = stepped)
     }
 
     /**
@@ -475,6 +477,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
         val was = Recipe("전", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(before.draft))
         var d = s.draft
+        // [RUL-07] 규칙·단추: what it added comes off; the rest of mine stays.
+        runCatching { RecipeCodec.read(k.body) }.getOrNull()?.pieces?.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }?.let { p ->
+            d = d.copy(logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(d.logic).minus(com.bamnat.core.formula.Logic.from(p.values))))
+        }
         LookParts.pick(was, k.parts.ifEmpty { LookParts.of(was).map { it.id } }).pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
         where = "보관함 · ‘${k.title}’ 빼기"
         change { d }
@@ -591,17 +597,35 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 }
             }
         }.getOrDefault(false)
+        // PC D4 (높): 규칙·단추는 모양이 아니라 테마 입기에 들어가지 않아요. 입히기가 스튜디오에서 만든 그대로 저장해요.
+        val logicSaid = if (done) wearLogic(s.draft.logic) else null
         // F-94: once on, the draft is the phone's look: 바꾼 곳 counts from here (the settings may still be being written, so the draft
         // itself is the new start, not a read of them).
-        _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" else "입히지 못했어요. 다시 해 주세요",
+        _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" + logicSaid.orEmpty() else "입히지 못했어요. 다시 해 주세요",
             canUndoWear = done && beforeWear != null, base = if (done) s.draft else _state.value.base, past = if (done) emptyList() else _state.value.past,
             future = emptyList(), wornNow = done)
         if (done) refresh(both = true)
     }
 
+    /** The rules and buttons before the last 입히기, for 되돌리기. */
+    private var beforeLogic: String? = null
+
+    /** Puts the draft's 규칙·단추 on (they stay with the phone, not a theme) and says what is on now: " · 규칙 2개·단추 1개가 켜졌어요". */
+    private fun wearLogic(logic: String): String? {
+        val now = c.settingsRepository.current.logic
+        if (now == logic) return null
+        beforeLogic = now
+        c.settingsRepository.update { it.copy(logic = logic) }
+        val l = com.bamnat.core.formula.Logic.decode(logic)
+        return if (l.isEmpty) " · 규칙과 단추를 모두 껐어요"
+        else " · " + listOfNotNull(l.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, l.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" }).joinToString("·") + "가 켜졌어요"
+    }
+
     /** 입히기 바로 뒤의 되돌리기: the look from just before, back on the phone and in the draft. */
     fun undoWear() {
         val before = beforeWear ?: return
+        beforeLogic?.let { l -> c.settingsRepository.update { it.copy(logic = l) } }
+        beforeLogic = null
         c.recipes.pieces.restoreLook(before)
         beforeWear = null
         com.bamnat.app.data.LookUndo.clear(c.appContext)

@@ -376,6 +376,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Items(
                 "buttons", com.bamnat.core.formula.Logic.MAX_BUTTONS, optional = true,
                 fields = listOf(
+                    // 누락 점검 N8: what a 꾸밈 항목 tap names (LogicButton.ID; server the same).
+                    Field.Text("id", 12, optional = true, guard = false, check = { s -> if (com.bamnat.core.formula.LogicButton.ID.matches(s)) null else "id" }),
                     Field.Text("label", 16, min = 1),
                     Field.Emoji("emoji", input = false),
                     Field.Pick("where", com.bamnat.core.formula.ButtonPlace.KEYS),

@@ -1010,9 +1010,9 @@ class RecipePieces(private val c: AppContainer) {
             // [STU-37] 1.36 근무에 따라 바뀌는 모양: 입히기 puts it on with the rest; it stays on this phone (not in a recipe).
             "shiftLooks",
             // [BLU-01] 1.36 부품 꾸미기.
-            "parts",
-            // [RUL-03] 1.36 스튜디오에서 만든 단추·규칙도 입히기와 함께.
-            "logic")
+            "parts")
+            // [RUL-03] PC D4 (입히기 뒤 규칙이 모두 사라짐): 단추·규칙은 모양이 아니에요. 테마를 입거나 처음 모양으로 돌려도 그대로이고,
+            // 스튜디오 입히기가 따로 저장해요 (StudioViewModel.wear).
 
         private val SETTING_NAMES = mapOf("logic" to "수식·규칙·버튼","tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",

@@ -6,6 +6,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.logic.BlockEditor
 import com.bamnat.app.logic.ConditionEditor
 import com.bamnat.app.logic.FormulaField
 import com.bamnat.app.logic.LogicEditor
@@ -75,6 +76,20 @@ class RulScreenshotTest : ScreenshotBase() {
         assertTrue("easy view", appears("쉬운 보기"))
         assertTrue("joined with 그리고", appears("그리고", exact = true))
         assertTrue("value chip", appears("야간", exact = true))
+    }
+
+    /** 누락 점검 N7 블록: 만약 안에 그리고, 빈칸 하나가 남은 모습. */
+    @Test fun blocks() = shoot("887_rul_blocks", FOLDED) {
+        content {
+            Surface {
+                Column(Modifier.padding(16.dp)) {
+                    BlockEditor("만약(근무종류 = \"야간\" 그리고 꼬리표.포함(\"인수인계\"), \"빨강\", 지출 > 50000, \"주황\", \"없음\")", {}, FormulaNames.SAMPLE)
+                }
+            }
+        }
+        assertTrue("if block", appears("만약", exact = true))
+        assertTrue("else words", appears("아니고 만약", exact = true))
+        assertTrue("join block", appears("모두 맞으면 (그리고)"))
     }
 
     @Test fun formulaMistake() = shoot("886_rul_formula_mistake", FOLDED) {

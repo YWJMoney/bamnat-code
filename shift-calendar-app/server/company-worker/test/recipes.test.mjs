@@ -315,6 +315,12 @@ test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own se
   assert.equal(logicOnly({ pieces: [logic] }), true);
   assert.equal(logicOnly({ pieces: [logic, { kind: "calView", size: "tall" }] }), false);
   assert.equal(scopeOf(["alarm"], JSON.stringify({ pieces: [logic] })), "logic");
+  // 누락 점검 N8: a button's id (꾸밈 층 tap), the 꾸밈 층 place and 길게 누르면.
+  const n8 = { kind: "logic", buttons: [{ id: "deco1", label: "알려 줘", where: "decor", do: "notify", arg: "꾸밈" }],
+    rules: [{ name: "길게 메모장", on: "hold", do: "screen", arg: "memo" }] };
+  const ok = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, n8] })));
+  for (const k of ['"id":"deco1"', '"where":"decor"', '"on":"hold"']) assert.ok(ok.text.includes(k), k);
+  await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...n8, buttons: [{ ...n8.buttons[0], id: "Bad-Id" }] }] }))), (e) => e.code !== undefined);
   const { call } = server({ plaza: true });
   const admin = await signIn(call);
   const put = await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "퇴근 규칙·단추", pieces: [logic] }) }, admin);

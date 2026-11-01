@@ -57,6 +57,7 @@ import com.bamnat.core.formula.EasyCond
 import com.bamnat.core.formula.EasyWhen
 import com.bamnat.core.formula.Formula
 import com.bamnat.core.formula.FormulaName
+import com.bamnat.core.formula.FormulaBlocks
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.FormulaScope
 import com.bamnat.core.formula.FormulaText
@@ -77,16 +78,21 @@ import java.time.LocalDate
 @Composable
 fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaScope, modifier: Modifier = Modifier, empty: String = "언제나") {
     val easy = remember(value) { EasyWhen.read(value) }
-    var advanced by remember { mutableStateOf(easy == null) }
+    // 누락 점검 N7: 쉬운 보기 · 블록 · 수식으로, 세 가지가 같은 값. 표로 못 나타내는 수식은 블록으로 먼저 열어요.
+    var view by remember { mutableIntStateOf(if (easy != null) 0 else if (FormulaBlocks.read(value) != null) 1 else 2) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(selected = !advanced, onClick = { if (easy != null) advanced = false }, enabled = easy != null || !advanced,
-                shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("쉬운 보기") }
-            SegmentedButton(selected = advanced, onClick = { advanced = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("수식으로") }
+            SegmentedButton(selected = view == 0 && easy != null, onClick = { if (easy != null) view = 0 }, enabled = easy != null || view == 0,
+                shape = SegmentedButtonDefaults.itemShape(0, 3)) { Text("쉬운 보기") }
+            SegmentedButton(selected = view == 1, onClick = { view = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("블록") }
+            SegmentedButton(selected = view == 2 || (view == 0 && easy == null), onClick = { view = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("수식으로") }
         }
-        if (advanced || easy == null) {
+        if (view == 1) {
+            BlockEditor(value, onChange, scope)
+            PreviewLine(value, scope)
+        } else if (view == 2 || easy == null) {
             FormulaField(value, onChange, scope)
-            if (easy == null && value.isNotBlank()) Text("이 수식은 표로 나타낼 수 없어 수식으로만 보여요", style = MaterialTheme.typography.bodySmall,
+            if (easy == null && value.isNotBlank()) Text("이 수식은 표로 나타낼 수 없어 블록이나 수식으로 보여요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             EasyTable(easy, { onChange(it.toFormula().let { f -> if (it.conds.isEmpty()) "" else f }) }, empty)
@@ -316,6 +322,8 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                     }
                     RuleTrigger.DAILY -> OutlinedTextField(r.at ?: "21:00", { s -> r = r.copy(at = s.take(5)) }, singleLine = true, label = { Text("시각 (HH:mm)") },
                         isError = r.at?.matches(Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")) == false)
+                    RuleTrigger.HOLD -> Text("화면이나 메모 틀을 여는 규칙이 맞는 날에는 길게 눌러도 빠른 설정 대신 그것이 열려요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> Unit
                 }
                 Text("조건 (이럴 때만)", style = MaterialTheme.typography.labelLarge)
@@ -347,9 +355,11 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     OutlinedTextField(b.label, { b = b.copy(label = it.take(16)) }, Modifier.weight(1f), singleLine = true, label = { Text("단추 글") })
                 }
                 Text("어디에", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ButtonPlace.entries.forEach { p -> FilterChip(selected = b.place == p, onClick = { b = b.copy(place = p) }, label = { Text(p.label) }) }
                 }
+                if (b.place == ButtonPlace.DECOR) Text("칩 줄에는 안 나와요. 스튜디오 › 꾸밈 층 › 고치기 › 누르면에서 그림·글상자에 이 단추를 이어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ActEditor(b.act, { b = b.copy(act = it) }, scope)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("조건이 맞는 날에만 보이기", Modifier.weight(1f))
@@ -486,7 +496,10 @@ fun LogicEditor(
     }
     editButton?.let { i ->
         ButtonDialog(logic.buttons.getOrNull(i), scope, { b ->
-            onChange(logic.copy(buttons = if (i < 0) logic.buttons + b else logic.buttons.toMutableList().also { it[i] = b })); editButton = null
+            // 누락 점검 N8: a new button gets its own id (꾸밈 층 tap); an edited one keeps the one it had, so a 꾸밈 stays joined.
+            val keep = logic.buttons.getOrNull(i)?.id
+            val b2 = if (keep != null) b.copy(givenId = keep) else b.copy(givenId = LogicButton.newId(logic.buttons.map { it.id }))
+            onChange(logic.copy(buttons = if (i < 0) logic.buttons + b2 else logic.buttons.toMutableList().also { it[i] = b2 })); editButton = null
         }, { editButton = null })
     }
 }

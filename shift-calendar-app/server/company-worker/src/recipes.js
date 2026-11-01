@@ -178,9 +178,9 @@ const partLines = (lines) => {
 
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 // 1.36 [RUL-03][RUL-04] core formula/Logic.kt: where a button sits, the safe verbs, when a rule runs; a formula may compare amounts.
-const BUTTON_PLACES = ["day", "memo", "cal", "money"];
+const BUTTON_PLACES = ["day", "memo", "cal", "money", "decor"];
 const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome"];
-const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money"];
+const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold"];
 const logicGuard = (s) => textProblemExcept(s, "amount") ?? (investAdvice(s) ? "invest_advice" : null);
 const logicFormula = (s) => (s === "" ? null : formulaProblem(s) ?? logicGuard(s));
 const logicText = (s) => (s === "" ? null : formulaTextProblem(s) ?? logicGuard(s));
@@ -253,7 +253,8 @@ export const RECIPE_PIECES = {
     T("when", FORMULA.maxLen, { optional: true, guard: false, check: (s) => logicFormula(s) }), ...PART_STYLE], { min: 1, check: partLines })] },
   // 1.36 [RUL-03][RUL-04] 수식·규칙·버튼 (core PieceKind.LOGIC, formula/Logic.kt): formulas read as core reads them, safe verbs only.
   logic: { styles: STYLES, fields: [
-    I("buttons", 8, [T("label", 16, { min: 1 }), E("emoji", { input: false }), P("where", BUTTON_PLACES), P("do", LOGIC_VERBS),
+    // 누락 점검 N8: id (core LogicButton.ID), what a 꾸밈 항목 tap names.
+    I("buttons", 8, [T("id", 12, { optional: true, guard: false, check: (s) => (/^[a-z0-9]{1,12}$/.test(s) ? null : "id") }), T("label", 16, { min: 1 }), E("emoji", { input: false }), P("where", BUTTON_PLACES), P("do", LOGIC_VERBS),
       T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
       T("show", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula })], { optional: true }),
     I("rules", 12, [T("name", 20, { min: 1 }), P("on", RULE_TRIGGERS), N("min", -720, 720, { optional: true }), K("at", { optional: true, input: false }),

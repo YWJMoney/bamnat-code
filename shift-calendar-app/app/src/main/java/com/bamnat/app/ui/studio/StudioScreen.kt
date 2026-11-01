@@ -180,7 +180,8 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
         ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
-        RULES -> listOf(Tool.RULES, Tool.BUTTONS, Tool.COND)
+        // PC D4: 장터에서 담은 규칙·단추를 여기 보관함에서 얹어요.
+        RULES -> listOf(Tool.RULES, Tool.BUTTONS, Tool.COND, Tool.BOX)
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
@@ -920,7 +921,8 @@ private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area:
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    val here = kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
+    val here = if (area == Area.RULES) kept.filter { k -> LookParts.LOGIC in k.parts }
+        else kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
     val rest = kept - here.toSet()
     Text("누르면 지금 모양에 얹어요. 얹은 조각은 ‘빼기’로 다시 빼요. 미리 보기를 누르고 있으면 바로 전 모양이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // [STU-27] 1.36 빌드 8 (S32: 메모 조각이 달력 영역에서 안 보이는 줄 앎): every piece shows in every area, this area's first, under a title.

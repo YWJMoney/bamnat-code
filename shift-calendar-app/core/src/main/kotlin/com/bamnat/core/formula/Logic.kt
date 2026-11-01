@@ -21,6 +21,15 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
         if (rules.isNotEmpty()) put("rules", rules.map { it.toMap() })
     }
 
+    /** [RUL-07] 보관함 빼기: these without [other]'s buttons and rules (what [plus] added). */
+    fun minus(other: Logic): Logic = Logic(
+        buttons.filter { b -> other.buttons.none { it.toMap() == b.toMap() } },
+        rules.filter { r -> other.rules.none { it.key == r.key } },
+    )
+
+    /** 누락 점검 N8: the button a 꾸밈 항목's `tap` names. */
+    fun button(id: String): LogicButton? = buttons.firstOrNull { it.id == id }
+
     /** [RUL-07] [other]'s buttons and rules after these (one already here is not added again), within the limits. */
     fun plus(other: Logic): Logic = Logic(
         (buttons + other.buttons.filter { b -> buttons.none { it.toMap() == b.toMap() } }).take(MAX_BUTTONS),
@@ -115,7 +124,9 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
 enum class ButtonPlace(val key: String, val label: String) {
     DAY("day", "하루 화면"), MEMO("memo", "메모장"), CALENDAR("cal", "달력 화면"),
     /** 사용자 2026-11-01 "가계부와 연동도": 가계부 화면에도 단추. */
-    MONEY("money", "가계부 화면");
+    MONEY("money", "가계부 화면"),
+    /** 누락 점검 N8: 꾸밈 층의 그림을 누르면 (갈래 C의 꾸밈 항목 `tap`이 단추 [LogicButton.id]를 담아요). 칩 줄에는 안 나와요. */
+    DECOR("decor", "꾸밈 층");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -124,8 +135,14 @@ enum class ButtonPlace(val key: String, val label: String) {
 }
 
 /** A button: [show] is a formula; when it is there and false for the day, the button hides. */
-data class LogicButton(val label: String, val emoji: String? = null, val place: ButtonPlace = ButtonPlace.DAY, val act: LogicAct, val show: String = "") {
+data class LogicButton(val label: String, val emoji: String? = null, val place: ButtonPlace = ButtonPlace.DAY, val act: LogicAct, val show: String = "",
+    /** 누락 점검 N8: what a 꾸밈 항목's `tap` names, [ID] form. Blank: [idOf] the label (예전 단추). */
+    val givenId: String = "") {
+    /** The id other places point at (꾸밈 층 `tap`). */
+    val id: String get() = givenId.takeIf { ID.matches(it) } ?: idOf(label)
+
     fun toMap(): Map<String, Any?> = buildMap {
+        put("id", id)
         put("label", label)
         emoji?.let { put("emoji", it) }
         put("where", place.key)
@@ -140,7 +157,24 @@ data class LogicButton(val label: String, val emoji: String? = null, val place: 
         fun from(m: Map<String, Any?>): LogicButton? {
             val label = (m["label"] as? String)?.takeIf { it.isNotBlank() } ?: return null
             val act = LogicAct.from(m) ?: return null
-            return LogicButton(label, m["emoji"] as? String, ButtonPlace.of(m["where"] as? String), act, (m["show"] as? String).orEmpty())
+            return LogicButton(label, m["emoji"] as? String, ButtonPlace.of(m["where"] as? String), act, (m["show"] as? String).orEmpty(),
+                (m["id"] as? String)?.takeIf { ID.matches(it) }.orEmpty())
+        }
+
+        /** 영문 소문자·숫자 1~12자 (server recipes.js the same). */
+        val ID = Regex("^[a-z0-9]{1,12}$")
+
+        /** The same id for the same label every time: "b" + 6 base-36 of its hash. */
+        fun idOf(label: String): String = "b" + Integer.toUnsignedString(label.hashCode(), 36).padStart(7, '0').takeLast(6)
+
+        /** A new button's id, not one of [taken]. */
+        fun newId(taken: Collection<String>, seed: Long = System.nanoTime()): String {
+            var n = seed
+            while (true) {
+                val id = "b" + java.lang.Long.toUnsignedString(n, 36).takeLast(4).padStart(4, '0')
+                if (id !in taken) return id
+                n = n * 31 + 7
+            }
         }
     }
 }
@@ -154,7 +188,9 @@ enum class RuleTrigger(val key: String, val label: String) {
     MEMO("memo", "메모를 저장하면"),
     OPEN("open", "하루 처음 앱을 열면"),
     /** 사용자 2026-11-01 "가계부와 연동도": 가계부에 적으면 (그날 값으로 조건, 예: 이달지출 > 500000이면 알림). */
-    MONEY("money", "가계부에 적으면");
+    MONEY("money", "가계부에 적으면"),
+    /** 누락 점검 N8: 날짜를 길게 누르면. 화면·메모 틀을 여는 규칙이 맞으면 빠른 설정 대신 그것을 열어요. */
+    HOLD("hold", "날짜를 길게 누르면");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -200,6 +236,7 @@ data class LogicRule(
             RuleTrigger.MEMO -> "메모를 저장하면"
             RuleTrigger.OPEN -> "하루 처음 앱을 열면"
             RuleTrigger.MONEY -> "가계부에 적으면"
+            RuleTrigger.HOLD -> "날짜를 길게 누르면"
         }
     }
 

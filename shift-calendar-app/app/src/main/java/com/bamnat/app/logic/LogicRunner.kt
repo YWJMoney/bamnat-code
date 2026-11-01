@@ -178,6 +178,44 @@ object LogicRunner {
         }
     }
 
+    /**
+     * 누락 점검 N8 날짜를 길게 누르면: the hold rules that hold run, as [onTap]. True when one of them opens a screen or a 메모 틀, so
+     * the calendar leaves its own 빠른 설정 closed (one long press opens one thing).
+     */
+    fun onHold(c: AppContainer, date: LocalDate, facts: DayFactsBook?): Boolean {
+        facts ?: return false
+        val rules = due(c, RuleTrigger.HOLD, date, facts)
+        if (rules.isEmpty()) return false
+        val opens = rules.any { it.act.verb == LogicVerb.SCREEN || it.act.verb == LogicVerb.MEMO_TEMPLATE }
+        c.appScope.launch {
+            var opened = false
+            for (r in rules) {
+                val o = r.act.verb == LogicVerb.SCREEN || r.act.verb == LogicVerb.MEMO_TEMPLATE
+                if (o && opened) continue
+                opened = opened || o
+                runCatching { run(c, r.act, date, facts.scope(date), r.name) }
+            }
+        }
+        return opens
+    }
+
+    /**
+     * 누락 점검 N8 꾸밈 층 단추: the button [id] ([com.bamnat.core.formula.LogicButton.id], a 꾸밈 항목's `tap`) does its one thing on
+     * [date]. False when there is no such button or its 보이기 조건 is false that day (the 꾸밈 stays a picture). Not suspending: 갈래 C
+     * calls it from a tap.
+     */
+    fun press(c: AppContainer, id: String, date: LocalDate, facts: DayFactsBook? = null): Boolean {
+        val b = logic(c).button(id) ?: return false
+        fun holds(f: DayFactsBook) = b.show.isEmpty() || com.bamnat.core.formula.Formula.eval(b.show, f.scope(date))?.truthy == true
+        if (facts != null && !holds(facts)) return false
+        c.appScope.launch {
+            val f = facts ?: runCatching { facts(c) }.getOrNull() ?: return@launch
+            if (!holds(f)) { _message.value = "‘${b.label}’ 단추는 이 날 조건에 맞지 않아요"; return@launch }
+            runCatching { run(c, b.act, date, f.scope(date), b.label) }
+        }
+        return true
+    }
+
     /** 메모를 저장하면 (the memo's own day) and 하루 처음 앱을 열면 (today, once a day). */
     fun onMemoSaved(c: AppContainer, date: LocalDate?) {
         if (logic(c).rules.none { it.on == RuleTrigger.MEMO }) return

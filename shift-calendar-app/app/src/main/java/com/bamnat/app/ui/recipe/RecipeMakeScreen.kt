@@ -106,6 +106,7 @@ class RecipeMakeViewModel(
 ) : ViewModel() {
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     val canPublish: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_PUBLISH)
+    val flags get() = c.flags
     /** [RCX-31] Making the next 판 of this code of mine; null for a new recipe. */
     val ownCode: String? get() = code
 
@@ -711,6 +712,11 @@ private fun StepWords(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 
 @Composable
 private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onTop: () -> Unit = {}) {
+    // PC D4 (낮): 출시일이 지나면 4/4를 다시 열 때 바로 풀려요 (그 날을 다시 따지고, 바뀌면 이 화면도 다시 그려요).
+    val flagsNow by vm.flags.byKey.collectAsStateWithLifecycle()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.flags.refresh() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.flags.refresh() }
+    @Suppress("UNUSED_VARIABLE") val read = flagsNow.size
     val lines = vm.lint
     lines.forEach { l ->
         Row(verticalAlignment = Alignment.CenterVertically) {

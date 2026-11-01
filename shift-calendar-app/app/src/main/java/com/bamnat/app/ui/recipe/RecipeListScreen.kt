@@ -266,24 +266,27 @@ fun RecipeListScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
                     // [MKX-01] 1.36 두 구간 (사용자 2026-10-31 "장터가 너무 보기 어렵게 … 테마를 주는건지 기능별로 보여지는건지 구간을 나눠서"):
                     // 테마 (모든 것을 종합해 만든 한 벌) and 기능별 탭 (탭 하나를 전문으로, 고른 테마 위에 얹어요), two big halves on top.
-                    val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true || state.kind == RecipeClient.SCOPE_LOGIC
+                    // [RUL-07] PC D4 (사용성 제안 높): 맨 위를 테마 · 기능별 탭 · 규칙·단추 세 갈래로 (규칙·단추 칩이 탭 줄 끝에 숨어 있었어요).
+                    val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
+                    val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MarketHalf("테마", "앱 전체를 한 벌로", "🎨", selected = !featured, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_THEME) }
-                        MarketHalf("기능별 탭", "탭 하나를 전문으로", "🧩", selected = featured, Modifier.weight(1f)) {
+                        MarketHalf("테마", "앱 전체를 한 벌로", "🎨", selected = !featured && !logicOnly, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_THEME) }
+                        MarketHalf("기능별 탭", "탭 하나만", "🧩", selected = featured, Modifier.weight(1f)) {
                             if (!featured) vm.kind(RecipeClient.SCOPE_TAB)
                         }
+                        MarketHalf("규칙·단추", "이럴 때 이렇게", "⚡", selected = logicOnly, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_LOGIC) }
                     }
-                    Text(if (featured) "지금 입은 테마는 그대로 두고, 고른 탭 하나만 바꿔요. 입어 보기에서 내 테마 위에 얹어 봐요"
-                        else "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(when {
+                        logicOnly -> "모양은 그대로 두고 '이럴 때 이렇게' 규칙과 단추만 더해요. 담으면 스튜디오 › 규칙·단추에서 내 규칙 뒤에 얹어요"
+                        featured -> "지금 입은 테마는 그대로 두고, 고른 탭 하나만 바꿔요. 입어 보기에서 내 테마 위에 얹어 봐요"
+                        else -> "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요"
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
-                        FilterChip(selected = now.isEmpty() && state.kind != RecipeClient.SCOPE_LOGIC, onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
+                        FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
                         RecipeClient.MARKET_TABS.forEach { t ->
                             FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.SCOPE_TAB + t) }, label = { Text(marketTabLabel(t, vm.style)) })
                         }
-                        // [RUL-07] 1.36 규칙·단추만 올린 것 (사용자 2026-11-01 "개별 카테고리로 … 부품들 기능을 만든 것").
-                        FilterChip(selected = state.kind == RecipeClient.SCOPE_LOGIC, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("규칙·단추") })
                     }
                     // How sorted and whose, under the half chosen.
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -389,13 +392,11 @@ private fun MarketHalf(title: String, sub: String, emoji: String, selected: Bool
     androidx.compose.material3.Surface(onClick = onClick, color = bg, shape = RoundedCornerShape(16.dp),
         border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier.heightIn(min = 72.dp).semantics { this.selected = selected }) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(emoji, fontSize = 24.sp)
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                Text(sub, style = MaterialTheme.typography.bodySmall, color = fg)
-            }
+        // Three across a phone (테마 · 기능별 탭 · 규칙·단추): the picture over the words.
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(emoji, fontSize = 22.sp)
+            Text(title, style = MaterialTheme.typography.titleSmall, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1)
+            Text(sub, style = MaterialTheme.typography.labelSmall, color = fg, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }

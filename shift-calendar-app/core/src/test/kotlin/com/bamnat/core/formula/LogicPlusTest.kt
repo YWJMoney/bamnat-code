@@ -23,9 +23,29 @@ class LogicPlusTest {
         assertEquals(listOf(reset, night), got.rules)
     }
 
+    @Test fun minusTakesOffOnlyWhatWasLaidOn() {
+        val mine = Logic(listOf(memo), listOf(reset))
+        val got = Logic(listOf(memo.copy(label = "남의 단추")), listOf(night))
+        assertEquals(mine, mine.plus(got).minus(got))
+    }
+
     @Test fun plusKeepsLimits() {
         val many = Logic(rules = (0 until 20).map { reset.copy(min = it) })
         assertEquals(Logic.MAX_RULES, Logic().plus(many).rules.size)
+    }
+
+    /** 누락 점검 N8: a button's id survives the recipe check, a bad one is refused; 꾸밈 층 and 길게 누르면 read. */
+    @Test fun idDecorAndHoldPassTheRecipeCheck() {
+        val body = Logic(listOf(memo.copy(place = ButtonPlace.DECOR, givenId = "deco1")), listOf(reset.copy(on = RuleTrigger.HOLD))).toValues()
+        val json = com.bamnat.core.recipe.RecipeCodec.canonical(mapOf("format" to "bamnat-recipe", "v" to 1L, "title" to "꾸밈 단추", "styles" to listOf("SHIFT"),
+            "pieces" to listOf(mapOf("kind" to "logic") + body)))
+        val r = com.bamnat.core.recipe.RecipeCodec.read(json)
+        val back = Logic.from(r.pieces.single().values)
+        assertEquals("deco1", back.buttons.single().id)
+        assertEquals(ButtonPlace.DECOR, back.buttons.single().place)
+        assertEquals(RuleTrigger.HOLD, back.rules.single().on)
+        val bad = runCatching { com.bamnat.core.recipe.RecipeCodec.read(json.replace("deco1", "Bad-Id")) }.exceptionOrNull()
+        assertEquals("id", (bad as com.bamnat.core.recipe.RecipeException).code)
     }
 
     @Test fun logicOnlyRecipeIsItsOwnPart() {

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
 import com.bamnat.app.ui.parts.partStyle
@@ -549,6 +550,8 @@ private fun DayCell(
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
+    val holdContainer = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val holdFacts = com.bamnat.app.logic.LocalDayFacts.current
     var menu by remember { mutableStateOf(false) }
     // [CVW-01] 1.35 달력 모양; the app's own cells when it is the default.
     val view = LocalCalendarView.current
@@ -675,6 +678,8 @@ private fun DayCell(
                     })
                     quickMenu -> ({
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        // 누락 점검 N8: '날짜를 길게 누르면' 규칙이 화면·메모 틀을 열면 그것 하나만.
+                        if (!com.bamnat.app.logic.LogicRunner.onHold(holdContainer, day.date, holdFacts))
                         // [CVW-09] 1.35 날짜를 길게 누르면: the quick menu, a memo for the day at once, or the whole day.
                         when (hold) {
                             "memo" -> onQuickAction(QuickAction.Memo)
