@@ -57,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -403,8 +404,13 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Plaza.JOBS.forEach { (key, name) ->
+                    // 1.36 PC 재검토 (골라진 '알바·시급' 칩이 화면 밖이라 안 보여요): the row opens scrolled to the chosen chip.
+                    val jobs = remember { Plaza.JOBS.entries.toList() }
+                    val row = androidx.compose.foundation.lazy.rememberLazyListState()
+                    LaunchedEffect(Unit) { jobs.indexOfFirst { it.key == filter.job }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
+                    androidx.compose.foundation.lazy.LazyRow(state = row, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(jobs.size) { i ->
+                            val (key, name) = jobs[i]
                             FilterChip(selected = filter.job == key, onClick = { vm.setFilter(filter.copy(job = key)) }, label = { Text(name) })
                         }
                     }

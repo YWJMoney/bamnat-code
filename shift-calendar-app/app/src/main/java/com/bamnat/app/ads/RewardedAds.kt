@@ -2,6 +2,8 @@ package com.bamnat.app.ads
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -63,6 +65,24 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
     val today = Today.date()
     val leases = gate.leases
     val left = leases.daysLeft(bundle, now)
+    // 1.36 PC 재검토 (근무표 PDF를 처음 열었는데 '처음 7일 무료' 대신 결제 창): the bundle's free first week, first and on its own,
+    // before any ad. One tap starts it; the toast says until when, and the feature is open on the next tap.
+    if (gate.canTry(feature)) {
+        val context = LocalContext.current
+        Column(modifier, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+            androidx.compose.material3.Button(onClick = {
+                if (com.bamnat.app.ui.pro.tryFeature(feature)) {
+                    val end = Today.instant().plus(java.time.Duration.ofDays(FeatureLease.FIRST_DAYS))
+                    android.widget.Toast.makeText(context, "${bundle.label} 처음 7일 무료로 열었어요 · ${com.bamnat.app.ui.pro.untilWords(end)}까지",
+                        android.widget.Toast.LENGTH_LONG).show()
+                    onOpened()
+                }
+            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("처음 7일 무료로 열기") }
+            Text("${bundle.label} 묶음(${bundle.gives})을 처음 쓰는 날부터 7일 광고 없이 써요. 그 뒤에는 광고 한 편으로 7일씩 열려요.",
+                style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        return
+    }
     when {
         left != null -> Text("${bundle.label} 묶음이 열려 있어요 · ${left}일 남았어요", style = small, color = dim, textAlign = TextAlign.Center,
             modifier = modifier.fillMaxWidth())

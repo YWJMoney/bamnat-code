@@ -97,7 +97,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
         val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
         val locked = gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)
         androidx.compose.material3.OutlinedButton(onClick = {
-            if (locked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
+            if (locked && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
             scope.launch {
                 runCatching {
                     val from = today.minusMonths(18).plusDays(1)
@@ -182,7 +182,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                 // 1.32 [WTYP-20] The same 거래내역서 as a PDF to print or file (프로).
                 val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                    if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
+                    if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
                     scope.launch {
                         runCatching {
                             com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
