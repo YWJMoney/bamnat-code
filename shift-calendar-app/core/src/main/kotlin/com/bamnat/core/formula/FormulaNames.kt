@@ -55,9 +55,22 @@ enum class FormulaName(
     HOUR_PAY("그날급여", "dayPay", Group.PAY, Type.NUM, "그날 일로 번 돈(예상)", 135000),
 
     NOW("지금시각", "now", Group.TIME, Type.TEXT, "지금 시각(규칙이 돌 때, 21:30)", "21:30"),
+
+    // 사용자 2026-11-01 "모든 곳에서 연동": 메모 한 장·가계부 한 줄·보드 한 칸을 꾸밀 때 그 하나의 값 (갈래 E 판 부품).
+    // 그 자리에서는 꼬리표·체크율·남은체크도 그 메모 하나의 것이고, 메모의 '칸: 값'은 칸("매출")으로 읽어요.
+    TITLE("제목", "title", Group.ROW, Type.TEXT, "그 메모 제목·가계부 한 줄 내용", "인수인계"),
+    BODY("내용", "body", Group.ROW, Type.TEXT, "그 메모 글", "약품 확인"),
+    COLOR("색번호", "colorIndex", Group.ROW, Type.NUM, "그 메모 색 번호(0은 기본)", 0),
+    PINNED("고정", "pinned", Group.ROW, Type.BOOL, "그 메모를 맨 위에 고정했나", false),
+    AMOUNT("금액", "amount", Group.ROW, Type.NUM, "그 가계부 한 줄 금액", 8000),
+    KIND("종류", "kind", Group.ROW, Type.TEXT, "그 한 줄이 수입·지출·이체 중 무엇", "지출"),
+    CATEGORY("분류", "category", Group.ROW, Type.TEXT, "그 한 줄의 분류", "식비"),
+    COL_NAME("칸이름", "columnName", Group.ROW, Type.TEXT, "보드 한 칸의 이름(분류·상태)", "식비"),
+    COL_COUNT("칸수", "columnCount", Group.ROW, Type.NUM, "보드 한 칸에 든 것의 수", 5),
+    COL_SUM("칸합계", "columnSum", Group.ROW, Type.NUM, "보드 한 칸 금액 합계", 52000),
     ;
 
-    enum class Group(val label: String) { DAY("날짜"), WORK("근무"), MEMO("메모"), MONEY("가계부"), PAY("급여"), TIME("시각") }
+    enum class Group(val label: String) { DAY("날짜"), WORK("근무"), MEMO("메모"), MONEY("가계부"), PAY("급여"), TIME("시각"), ROW("한 장·한 줄") }
     enum class Type(val label: String) { NUM("숫자"), TEXT("글"), BOOL("참·거짓"), LIST("목록") }
 }
 
@@ -157,4 +170,15 @@ object FormulaText {
     }.take(Formula.MAX_TEXT)
 
     fun render(src: String, scope: FormulaScope): String = parse(src).getOrNull()?.let { render(it, scope) } ?: src
+
+    /**
+     * 사용자 2026-11-01 "메모장 및 모든 곳에서": a memo template's words with {수식} worked out for the day it is used. Text with no '{',
+     * or braces that are not a formula (a plain "{메모}"), stays exactly as written; the rest is kept whole (no 300-letter cut).
+     */
+    fun fill(src: String, scope: FormulaScope): String {
+        if ('{' !in src || src.length > Formula.MAX_LEN) return src
+        val parts = parse(src).getOrNull() ?: return src
+        if (parts.none { it is Part.Calc }) return src
+        return parts.joinToString("") { when (it) { is Part.Plain -> it.text; is Part.Calc -> it.formula.run(scope)?.text.orEmpty() } }
+    }
 }

@@ -52,6 +52,11 @@ internal fun PartsTool(
     onFocus: (id: String, on: String?) -> Unit = { _, _ -> },
     /** [BLU-07] 이 부품만 올리기: the unit of the part being changed; null hides the button. */
     onUploadPart: ((unit: String) -> Unit)? = null,
+    /** [RUL-06] 스튜디오 › 규칙·단추 › 조건부 꾸미기: the condition row opens first. */
+    conditionFirst: Boolean = false,
+    /** The rules whose 조건 is this same formula (이 조건을 쓰는 곳). */
+    rulesUsing: (String) -> List<String> = { emptyList() },
+    onOpenRules: (() -> Unit)? = null,
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -87,8 +92,8 @@ internal fun PartsTool(
         }
     }
     // [RUL-02] 1.36 조건부 꾸미기: "이럴 때만" (야간이고 메모에 #인수인계가 있으면 …), as a table to pick from or a 수식.
-    var cond by rememberSaveable(id, on) { mutableStateOf<String?>(null) }
     val conds = remember(bp, id, on) { bp.lines.filter { it["id"] == id && it["on"] == on }.mapNotNull { it["when"] as? String }.distinct() }
+    var cond by rememberSaveable(id, on) { mutableStateOf<String?>(if (conditionFirst) conds.firstOrNull() ?: "" else null) }
     if (id.startsWith("cal.cell") || conds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = cond == null, onClick = { cond = null }, label = { Text("조건 없이") })
         conds.forEach { w ->
@@ -109,6 +114,13 @@ internal fun PartsTool(
             empty = "조건을 골라 주세요")
         if (now.isBlank() || com.bamnat.core.formula.Logic.formulaProblem(now) != null) Text("조건을 다 고르면 아래에서 그때의 모습을 꾸며요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [RUL-06] 이 조건을 쓰는 곳: the same formula in 규칙, to go there and back.
+        val users = remember(now, parts) { if (now.isBlank()) emptyList() else rulesUsing(now) }
+        if (users.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("같은 조건을 쓰는 규칙: " + users.joinToString(", ") { "‘$it’" }, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            onOpenRules?.let { go -> TextButton(onClick = go) { Text("규칙 보기") } }
+        }
     }
     val whenNow = cond?.takeIf { it.isNotBlank() && com.bamnat.core.formula.Logic.formulaProblem(it) == null }
     if (cond != null && whenNow == null) return

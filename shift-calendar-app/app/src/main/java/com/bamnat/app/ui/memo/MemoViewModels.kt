@@ -385,6 +385,7 @@ class MemoEditorViewModel(
         if (memoId == 0L) com.bamnat.app.logic.LogicLinks.takeTemplate()?.let { title ->
             container.memoTemplates.items.value.firstOrNull { it.title == title }?.let { t ->
                 _memo.value = t.start(_memo.value.date, com.bamnat.core.time.Today.date(), _memo.value)
+                viewModelScope.launch { _memo.value = com.bamnat.app.logic.LogicRunner.fillMemo(container, _memo.value) }
             }
         }
         if (memoId != 0L) {
@@ -458,7 +459,14 @@ class MemoEditorViewModel(
     val templates: StateFlow<List<com.bamnat.core.memo.MemoTemplate>> = container.memoTemplates.items
 
     /** [RCP-11] 틀에서 시작: the template's title, list or text and repeat; the date and calendars stay as they are. */
-    fun startFrom(t: com.bamnat.core.memo.MemoTemplate, answers: Map<String, String> = emptyMap()) = update { t.start(it.date, com.bamnat.core.time.Today.date(), it, answers) }
+    fun startFrom(t: com.bamnat.core.memo.MemoTemplate, answers: Map<String, String> = emptyMap()) {
+        update { t.start(it.date, com.bamnat.core.time.Today.date(), it, answers) }
+        // [RUL-05] 1.36 사용자 "메모장 및 모든 곳에서": {근무}·{이번주야간}처럼 틀 속 수식은 그날 값으로.
+        viewModelScope.launch {
+            val filled = com.bamnat.app.logic.LogicRunner.fillMemo(container, _memo.value)
+            if (filled != _memo.value) applyChange(record = false) { filled }
+        }
+    }
 
     /** [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. */
     fun saveAsTemplate(): Boolean {

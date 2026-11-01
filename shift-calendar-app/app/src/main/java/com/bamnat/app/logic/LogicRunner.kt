@@ -81,7 +81,7 @@ object LogicRunner {
                 val t = c.memoTemplates.items.value.firstOrNull { it.title == act.arg }
                 val base = Memo(calendars = setOf(c.calendars.active.value))
                 val memo = t?.start(date, Today.date(), base) ?: base.copy(date = date, title = words.ifBlank { act.arg }.take(60))
-                val saved = c.memoRepository.save(memo)
+                val saved = c.memoRepository.save(fillMemo(c, memo))
                 store.undo = JSONObject().put("memo", saved.id).put("say", act.say()).toString()
             }
             LogicVerb.CHECK_RESET -> {
@@ -94,12 +94,26 @@ object LogicRunner {
                 }
                 if (before.length() > 0) store.undo = JSONObject().put("checks", before).put("say", act.say()).toString()
             }
-            LogicVerb.ADD_MONEY -> {
+            LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME -> {
                 val amount = act.amount ?: return
                 val entry = c.scopeOf(c.calendars.active.value).money.save(
-                    MoneyEntry(date = date, kind = MoneyKind.EXPENSE, amount = amount, category = act.arg.ifBlank { "기타" }, memo = "규칙·단추: $who"),
+                    MoneyEntry(date = date, kind = if (act.verb == LogicVerb.ADD_INCOME) MoneyKind.INCOME else MoneyKind.EXPENSE, amount = amount,
+                        category = act.arg.ifBlank { "기타" }, memo = "규칙·단추: $who"),
                 )
                 store.undo = JSONObject().put("money", entry.id).put("cal", c.calendars.active.value).put("say", act.say()).toString()
+            }
+            // 사용자 2026-11-01 "메모와 달력을 연동": the day's first memo gets a line made from its values; none, a new one.
+            LogicVerb.MEMO_LINE -> {
+                val line = words.ifBlank { return }.take(200)
+                val m = c.memoRepository.memos.first().firstOrNull { it.date == date && !it.inTrash && !it.isChecklist && it.showsOn(c.calendars.active.value) }
+                if (m != null) {
+                    c.memoRepository.save(m.copy(body = listOf(m.body, line).filter { it.isNotEmpty() }.joinToString("\n")))
+                    store.undo = JSONObject().put("line", m.id).put("body", m.body).put("say", act.say()).toString()
+                } else {
+                    val saved = c.memoRepository.save(Memo(date = date, title = line.take(60), body = if (line.length > 60) line else "",
+                        calendars = setOf(c.calendars.active.value)))
+                    store.undo = JSONObject().put("memo", saved.id).put("say", act.say()).toString()
+                }
             }
         }
         store.ran(who)
@@ -109,6 +123,8 @@ object LogicRunner {
                 LogicVerb.NEW_MEMO -> "‘${act.arg.ifEmpty { "메모" }}’ 메모를 만들었어요"
                 LogicVerb.CHECK_RESET -> "‘${act.arg.ifEmpty { "체크 목록" }}’ 체크를 다시 비웠어요"
                 LogicVerb.ADD_MONEY -> "가계부에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
+                LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
+                LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.take(20)}’ 줄을 더했어요"
                 else -> act.say()
             }
         }
@@ -120,6 +136,7 @@ object LogicRunner {
         val o = store.undo?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return false
         store.undo = null
         when {
+            o.has("line") -> c.memoRepository.get(o.getLong("line"))?.let { c.memoRepository.save(it.copy(body = o.optString("body"))) }
             o.has("memo") -> c.memoRepository.get(o.getLong("memo"))?.let { c.memoRepository.delete(it, offerUndo = false) }
             o.has("money") -> c.scopeOf(o.optString("cal", c.calendars.active.value)).money.book.first().entries
                 .firstOrNull { it.id == o.getLong("money") }?.let { c.scopeOf(o.optString("cal")).money.delete(it) }
@@ -171,6 +188,25 @@ object LogicRunner {
         }
     }
 
+    /** A memo from a 메모 틀: {수식} in its title, words and list worked out on its day (오늘 when it has none). */
+    suspend fun fillMemo(c: AppContainer, m: Memo): Memo {
+        if ('{' !in m.title && '{' !in m.body && m.checklist.none { '{' in it.text }) return m
+        val scope = runCatching { facts(c).scope(m.date ?: Today.date()) }.getOrNull() ?: return m
+        return m.copy(
+            title = FormulaText.fill(m.title, scope), body = FormulaText.fill(m.body, scope),
+            checklist = m.checklist.map { it.copy(text = FormulaText.fill(it.text, scope)) },
+        )
+    }
+
+    /** 가계부에 적으면 (사용자 2026-11-01 "가계부와 연동"): the entry's day. */
+    fun onMoneySaved(c: AppContainer, date: LocalDate) {
+        if (logic(c).rules.none { it.on == RuleTrigger.MONEY }) return
+        c.appScope.launch {
+            val f = facts(c)
+            due(c, RuleTrigger.MONEY, date, f).forEach { runCatching { run(c, it.act, date, f.scope(date), it.name, quiet = true) } }
+        }
+    }
+
     fun onOpen(c: AppContainer) {
         val store = LogicStore(c.appContext)
         val today = Today.date()
@@ -184,9 +220,9 @@ object LogicRunner {
 
     // ---- timed rules: 근무 시작·끝 전후, 매일 몇 시 ----
 
-    /** When [r] next comes after [after], looking two days ahead; null when it does not come. */
+    /** When [r] next comes after [after], looking two weeks ahead; null when it does not come in them. */
     fun nextTime(r: LogicRule, after: LocalDateTime, facts: DayFactsBook): Pair<LocalDateTime, LocalDate>? {
-        for (k in -1..2) {
+        for (k in -1..14) {
             val day = after.toLocalDate().plusDays(k.toLong())
             val at: LocalDateTime? = when (r.on) {
                 RuleTrigger.DAILY -> runCatching { LocalTime.parse(r.at ?: "09:00") }.getOrNull()?.let { day.atTime(it) }
@@ -209,6 +245,17 @@ object LogicRunner {
         return null
     }
 
+    /** The app started: what came while it was away (phone off, clock moved) is run or said as missed, then the next is registered. */
+    fun catchUp(c: AppContainer) {
+        c.appScope.launch { runCatching { fire(c) }.onFailure { schedule(c) } }
+    }
+
+    /** The rules were changed: only times from now on count, then the next is registered. */
+    fun rulesChanged(c: AppContainer) {
+        LogicStore(c.appContext).checked = Today.dateTime().toString()
+        schedule(c)
+    }
+
     /** Registers the next timed rule (one alarm; when it comes, the one after is registered). */
     fun schedule(c: AppContainer) {
         c.appScope.launch {
@@ -220,30 +267,53 @@ object LogicRunner {
             if (timed.isEmpty()) { am.cancel(op); return@launch }
             val f = runCatching { facts(c) }.getOrNull() ?: return@launch
             val now = Today.dateTime()
-            val next = timed.mapNotNull { r -> nextTime(r, now, f)?.first }.minOrNull()
-            if (next == null) { am.cancel(op); return@launch }
+            // Nothing in two weeks (no night shift yet): look again in a day, so a 근무표 filled in later is not missed.
+            val next = timed.mapNotNull { r -> nextTime(r, now, f)?.first }.minOrNull() ?: now.plusDays(1)
             val at = next.atZone(Today.zone()).toInstant().toEpochMilli()
-            runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op) }
+            // PC 1차 확인: '몇 분 전' 규칙은 근무 알람처럼 제시각에 (an inexact alarm may come an hour late).
+            runCatching {
+                if (android.os.Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+                else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+            }
+            store.scheduled = next.toString()
         }
     }
 
-    /** The registered time came: the timed rules due within this minute run, then the next is registered. */
+    /**
+     * The registered time came (or the clock moved, or the app woke late): each timed rule whose time fell between the last check and
+     * now runs once; one that came more than [LATE_MINUTES] ago is said as missed instead (the phone was off, the clock jumped). Then the
+     * next is registered.
+     */
     internal suspend fun fire(c: AppContainer) {
         val f = facts(c)
         val now = Today.dateTime()
         val store = LogicStore(c.appContext)
+        val since = store.checked?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
+            ?.takeIf { !it.isAfter(now) && it.isAfter(now.minusDays(2)) } ?: now.minusMinutes(2)
         for (r in logic(c).rules) {
-            if (store.isOff(r.key) || r.on !in setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END)) continue
-            val (at, day) = nextTime(r, now.minusMinutes(2), f) ?: continue
+            if (store.isOff(r.key) || r.on !in TIMED) continue
+            val (at, day) = nextTime(r, since.minusSeconds(1), f) ?: continue
             if (at.isAfter(now.plusMinutes(1))) continue
             if (store.firedAt(r.key) == at.toString()) continue
             store.fired(r.key, at.toString())
+            if (at.isBefore(now.minusMinutes(LATE_MINUTES))) { store.result(r.key, at, "휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요"); continue }
             val scope = f.scope(day)
-            if (r.cond.isNotEmpty() && com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy != true) continue
-            runCatching { run(c, r.act, day, scope, r.name, quiet = true) }
+            if (r.cond.isNotEmpty() && com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy != true) {
+                store.result(r.key, at, "조건이 맞지 않아 건너뛰었어요"); continue
+            }
+            val ok = runCatching { run(c, r.act, day, scope, r.name, quiet = true) }
+            store.result(r.key, at, when {
+                ok.isFailure -> "하다가 멈췄어요"
+                r.act.verb == LogicVerb.NOTIFY && !Notifications.canPost(c.appContext) -> "알림이 꺼져 있어 못 띄웠어요(설정 › 알림과 잠)"
+                else -> "했어요"
+            })
         }
+        store.checked = now.toString()
         schedule(c)
     }
+
+    private val TIMED = setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END)
+    private const val LATE_MINUTES = 60L
 
     private fun notify(ctx: Context, title: String, text: String) {
         val n = NotificationCompat.Builder(ctx, Notifications.RULES_CHANNEL_ID)
@@ -301,6 +371,19 @@ class LogicStore(context: Context) {
     }
 
     private fun times(who: String): List<Long> = p.getString("runs.$who", "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }
+
+    /** "11/13 18:00 · 했어요": the last time [key] came and what happened (규칙 줄에 보여요). */
+    fun result(key: String, at: LocalDateTime, what: String) =
+        p.edit().putString("result.$key", "${at.monthValue}/${at.dayOfMonth} ${"%02d:%02d".format(at.hour, at.minute)} · $what").apply()
+    fun lastResult(key: String): String? = p.getString("result.$key", null)
+
+    /** The last time the timed rules were looked at, and the next registered. */
+    var checked: String?
+        get() = p.getString("checked", null)
+        set(v) { p.edit().putString("checked", v).apply() }
+    var scheduled: String?
+        get() = p.getString("scheduled", null)
+        set(v) { p.edit().putString("scheduled", v).apply() }
 
     fun firedAt(key: String): String? = p.getString("fired.$key", null)
     fun fired(key: String, at: String) = p.edit().putString("fired.$key", at).apply()

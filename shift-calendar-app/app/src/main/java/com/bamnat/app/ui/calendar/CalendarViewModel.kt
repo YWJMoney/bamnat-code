@@ -1405,6 +1405,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.appScope.launch {
             val before = if (entry.id == 0L) null else money.book.first().entries.firstOrNull { it.id == entry.id }
             val saved = money.save(entry)
+            // [RUL-04] 1.36 규칙 '가계부에 적으면'.
+            com.bamnat.app.logic.LogicRunner.onMoneySaved(container, saved.date)
             // [LEDG-18] When the category changed, offer the other lines from this place instead.
             val same = before?.let { money.samePlace(saved, it.category) }.orEmpty()
             if (same.isNotEmpty()) {

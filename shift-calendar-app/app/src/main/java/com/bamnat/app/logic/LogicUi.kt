@@ -80,3 +80,28 @@ fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
         }
     }
 }
+
+
+/**
+ * [RUL-05] 1.36 메모 속 수식: a memo with {수식} in it shows what it reads as on its day, and that a 틀 made from it fills them in when
+ * used (사용자 2026-11-01 "메모와 달력을 연동", "가계부와 연동").
+ */
+@androidx.compose.runtime.Composable
+fun MemoFormulaPreview(memo: com.bamnat.core.memo.Memo, modifier: Modifier = Modifier) {
+    val text = if (memo.isChecklist) memo.checklist.joinToString("\n") { it.text } else memo.body
+    val src = listOf(memo.title, text).filter { '{' in it }.joinToString("\n")
+    if (src.isEmpty()) return
+    val facts = LocalDayFacts.current ?: rememberAppDayFacts() ?: return
+    val day = memo.date ?: com.bamnat.core.time.Today.date()
+    val shown = androidx.compose.runtime.remember(src, facts, day) {
+        val scope = facts.scope(day)
+        src.lines().map { com.bamnat.core.formula.FormulaText.fill(it, scope) }.joinToString("\n").takeIf { it != src }
+    } ?: return
+    androidx.compose.foundation.layout.Column(modifier) {
+        androidx.compose.material3.Text("수식이 들어 있어요 · ${day.monthValue}/${day.dayOfMonth} 값으로 읽으면", style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        androidx.compose.material3.Text(shown.take(300), style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.Text("이 메모를 틀로 저장하면 쓸 때마다 그날 값으로 채워져요", style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

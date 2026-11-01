@@ -1900,6 +1900,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
+    SettingsGo.STUDIO_RULES -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "RULES")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null

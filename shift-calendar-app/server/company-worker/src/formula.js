@@ -117,6 +117,8 @@ export const FORMULA_NAMES = [
   ["지출", "spend"], ["수입", "income"], ["지출분류", "spendKinds"], ["이달지출", "monthSpend"], ["이달수입", "monthIncome"],
   ["이달급여", "monthPay"], ["그날급여", "dayPay"],
   ["지금시각", "now"],
+  ["제목", "title"], ["내용", "body"], ["색번호", "colorIndex"], ["고정", "pinned"], ["금액", "amount"], ["종류", "kind"], ["분류", "category"],
+  ["칸이름", "columnName"], ["칸수", "columnCount"], ["칸합계", "columnSum"],
 ];
 const fx_NAME_BY = new Map();
 for (const [ko, en, also = []] of FORMULA_NAMES) {

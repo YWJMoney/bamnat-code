@@ -154,7 +154,7 @@ private fun NamePicker(current: String, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     OutlinedButton(onClick = { open = true }) { Text(current) }
     DropdownMenu(open, { open = false }) {
-        FormulaName.Group.entries.forEach { g ->
+        FormulaName.Group.entries.filter { it != FormulaName.Group.ROW }.forEach { g ->
             Text(g.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             FormulaName.entries.filter { it.group == g }.forEach { n ->
@@ -272,7 +272,8 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
         LogicVerb.SCREEN -> Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) }, label = { Text(label) }) }
         }
-        LogicVerb.ADD_MONEY -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LogicVerb.MEMO_LINE -> FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "더할 줄 (예: 야간 {이번주야간}번째 · 이달 지출 {원(이달지출)})")
+        LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(act.arg, { onChange(act.copy(arg = it.take(20))) }, Modifier.weight(1f), singleLine = true, label = { Text("분류") })
             OutlinedTextField(act.amount?.toString() ?: "", { s -> onChange(act.copy(amount = s.filter(Char::isDigit).take(9).toLongOrNull())) },
                 Modifier.weight(1f), singleLine = true, label = { Text("금액(원)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
@@ -323,7 +324,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
             }
         },
         confirmButton = {
-            val ok = (r.cond.isEmpty() || Formula.problem(r.cond) == null) && (r.act.verb != LogicVerb.ADD_MONEY || r.act.amount != null) &&
+            val ok = (r.cond.isEmpty() || Formula.problem(r.cond) == null) && (r.act.verb !in MONEY_VERBS || r.act.amount != null) && (r.act.verb != LogicVerb.MEMO_LINE || r.act.arg.isNotBlank()) &&
                 (r.on != RuleTrigger.DAILY || r.at?.matches(Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")) == true)
             TextButton(onClick = { onDone(r.copy(name = r.name.ifBlank { r.act.say().take(20) })) }, enabled = ok) { Text("저장") }
         },
@@ -358,15 +359,30 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
             }
         },
         confirmButton = {
-            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null) && (b.act.verb != LogicVerb.ADD_MONEY || b.act.amount != null)
+            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null) && (b.act.verb !in MONEY_VERBS || b.act.amount != null) && (b.act.verb != LogicVerb.MEMO_LINE || b.act.arg.isNotBlank())
             TextButton(onClick = { onDone(b) }, enabled = ok) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
 
+/** Which half of the editor a studio tool shows. */
+enum class LogicShow { ALL, RULES, BUTTONS }
+
 /** The 설정 section title, also in 설정 검색. */
 const val LOGIC_ROW = "수식·규칙·버튼"
+
+/** "다음: 11/13(목) 18:00", or why there is none, for a rule that runs at a time; null for the others. */
+internal fun nextLine(r: LogicRule, facts: com.bamnat.core.formula.DayFactsBook?): String? {
+    if (r.on !in setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END)) return null
+    facts ?: return null
+    val at = LogicRunner.nextTime(r, com.bamnat.core.time.Today.dateTime(), facts)?.first
+        ?: return "다음: 2주 안에 ${r.role?.let { LogicRule.ROLE_WORDS[it] } ?: ""} 근무가 없어요".replace("  ", " ")
+    val wd = "월화수목금토일"[at.dayOfWeek.value - 1]
+    return "다음: ${at.monthValue}/${at.dayOfMonth}($wd) ${"%02d:%02d".format(at.hour, at.minute)}"
+}
+
+private val MONEY_VERBS = setOf(LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME)
 
 /** "1시간 전", "30분 전", "바로", "30분 뒤", "1시간 뒤". */
 internal fun minutesWord(m: Int): String = when {
@@ -380,7 +396,15 @@ internal fun minutesWord(m: Int): String = when {
  * times it ran in the last 7 days; the studio's list (false) edits the look being made.
  */
 @Composable
-fun LogicEditor(logic: Logic, onChange: (Logic) -> Unit, phone: Boolean = false, day: LocalDate = com.bamnat.core.time.Today.date()) {
+fun LogicEditor(
+    logic: Logic, onChange: (Logic) -> Unit, phone: Boolean = false, day: LocalDate = com.bamnat.core.time.Today.date(),
+    show: LogicShow = LogicShow.ALL,
+    /** 설정's list: switches and what happened; the editing is in the studio (스튜디오에서 열기). */
+    readOnly: Boolean = false,
+    /** Whether a 조건 is also a 조건부 꾸미기 line, and the way there. */
+    usedInParts: (String) -> Boolean = { false },
+    onOpenParts: (() -> Unit)? = null,
+) {
     val c = LocalContext.current.appContainer
     val facts = LocalDayFacts.current ?: rememberAppDayFacts()
     val scope = remember(facts, day) { facts?.scope(day) ?: FormulaNames.SAMPLE }
@@ -389,25 +413,43 @@ fun LogicEditor(logic: Logic, onChange: (Logic) -> Unit, phone: Boolean = false,
     var bump by remember { mutableIntStateOf(0) }
     val store = remember { LogicStore(c.appContext) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (show != LogicShow.RULES) {
         Text("단추", style = MaterialTheme.typography.titleSmall)
         if (logic.buttons.isEmpty()) Text("하루 화면·메모장·달력에 단추를 놓으면 한 번 눌러 메모 틀을 열거나 가계부에 넣을 수 있어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.buttons.forEachIndexed { i, b ->
             LineCard(b.say(), if (phone) "지난 7일 ${store.runs(b.label)}번" else null, null, null,
-                onEdit = { editButton = i }, onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) })
+                onEdit = { editButton = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
-        if (logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
+        if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
+        }
 
+        if (show != LogicShow.BUTTONS) {
         Text("규칙", style = MaterialTheme.typography.titleSmall)
         if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: 야간 근무 1시간 전에 알림, 날짜를 누르면 그날 메모 틀 열기",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.rules.forEachIndexed { i, r ->
             val on = remember(bump, r.key) { !store.isOff(r.key) }
-            LineCard("${r.name}: ${r.say()}", if (phone) "지난 7일 ${store.runs(r.name)}번" else null,
+            // PC 1차 확인 (사용성 제안 높): when it comes next and what happened last time, so a rule that did not run says why.
+            val note = remember(bump, r, facts) {
+                if (!phone) null else listOfNotNull(
+                    if (!on) "꺼져 있어요" else nextLine(r, facts),
+                    store.lastResult(r.key)?.let { "지난번 $it" },
+                    "지난 7일 ${store.runs(r.name)}번",
+                ).joinToString(" · ")
+            }
+            LineCard("${r.name}: ${r.say()}", note,
                 if (phone) on else null, { v -> store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) },
-                onEdit = { editRule = i }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) })
+                onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
+            // [RUL-06] 이 조건을 쓰는 곳: the same 조건 also decorates days.
+            if (r.cond.isNotEmpty() && usedInParts(r.cond)) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("이 조건은 조건부 꾸미기에도 쓰여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f).padding(start = 12.dp))
+                onOpenParts?.let { go -> TextButton(onClick = go) { Text("꾸미기 보기") } }
+            }
         }
-        if (logic.rules.size < Logic.MAX_RULES) TextButton(onClick = { editRule = -1 }) { Text("+ 규칙 만들기") }
+        if (!readOnly && logic.rules.size < Logic.MAX_RULES) TextButton(onClick = { editRule = -1 }) { Text("+ 규칙 만들기") }
+        }
         if (phone && store.undo != null) OutlinedButton(onClick = { c.appScope.launch { LogicRunner.undo(c); bump++ } }) { Text("마지막 동작 되돌리기") }
     }
     editRule?.let { i ->
@@ -423,7 +465,7 @@ fun LogicEditor(logic: Logic, onChange: (Logic) -> Unit, phone: Boolean = false,
 }
 
 @Composable
-private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: () -> Unit, onRemove: () -> Unit) {
+private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)?, onRemove: (() -> Unit)?) {
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -431,8 +473,8 @@ private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Bool
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             if (on != null && onSwitch != null) Switch(on, onSwitch, Modifier.semantics { contentDescription = if (on) "규칙 켜짐" else "규칙 꺼짐" })
-            TextButton(onClick = onEdit) { Text("고치기") }
-            TextButton(onClick = onRemove) { Text("빼기") }
+            onEdit?.let { TextButton(onClick = it) { Text("고치기") } }
+            onRemove?.let { TextButton(onClick = it) { Text("빼기") } }
         }
     }
 }

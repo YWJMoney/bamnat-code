@@ -66,6 +66,8 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
         LogicVerb.NEW_MEMO -> "‘${arg.ifEmpty { "메모" }}’ 메모 만들기"
         LogicVerb.CHECK_RESET -> "‘${arg.ifEmpty { "체크 목록" }}’ 체크 다시 비우기"
         LogicVerb.ADD_MONEY -> "가계부에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
+        LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
+        LogicVerb.MEMO_LINE -> "그날 메모에 ‘${arg.ifEmpty { "한 줄" }}’ 더하기"
         LogicVerb.SCREEN -> "${LogicVerb.SCREENS[arg] ?: "화면"} 열기"
     }
 
@@ -88,7 +90,11 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
     SCREEN("screen", "화면 열기", false),
     NEW_MEMO("newMemo", "메모 만들기", true),
     CHECK_RESET("checkReset", "체크 목록 다시 비우기", true),
-    ADD_MONEY("addMoney", "가계부에 넣기", true);
+    ADD_MONEY("addMoney", "가계부에 넣기", true),
+    /** 사용자 2026-11-01 "메모와 달력을 연동": 그날 메모에 수식으로 만든 한 줄 (예: "야간 {이번주야간}번째, 이달 지출 {원(이달지출)}"). */
+    MEMO_LINE("memoLine", "그날 메모에 한 줄 더하기", true),
+    /** 가계부 수입 쪽 (예: 야간 근무 끝에 야간 수당 기록). */
+    ADD_INCOME("addIncome", "가계부에 수입 넣기", true);
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -101,7 +107,9 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
 
 /** Where a button sits. */
 enum class ButtonPlace(val key: String, val label: String) {
-    DAY("day", "하루 화면"), MEMO("memo", "메모장"), CALENDAR("cal", "달력 화면");
+    DAY("day", "하루 화면"), MEMO("memo", "메모장"), CALENDAR("cal", "달력 화면"),
+    /** 사용자 2026-11-01 "가계부와 연동도": 가계부 화면에도 단추. */
+    MONEY("money", "가계부 화면");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -138,7 +146,9 @@ enum class RuleTrigger(val key: String, val label: String) {
     END("end", "근무 끝"),
     DAILY("daily", "매일"),
     MEMO("memo", "메모를 저장하면"),
-    OPEN("open", "하루 처음 앱을 열면");
+    OPEN("open", "하루 처음 앱을 열면"),
+    /** 사용자 2026-11-01 "가계부와 연동도": 가계부에 적으면 (그날 값으로 조건, 예: 이달지출 > 500000이면 알림). */
+    MONEY("money", "가계부에 적으면");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -183,6 +193,7 @@ data class LogicRule(
             RuleTrigger.DAILY -> "매일 ${at ?: "09:00"}"
             RuleTrigger.MEMO -> "메모를 저장하면"
             RuleTrigger.OPEN -> "하루 처음 앱을 열면"
+            RuleTrigger.MONEY -> "가계부에 적으면"
         }
     }
 

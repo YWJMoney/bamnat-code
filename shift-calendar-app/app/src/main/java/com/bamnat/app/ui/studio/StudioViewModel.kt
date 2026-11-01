@@ -37,6 +37,9 @@ import kotlinx.coroutines.flow.stateIn
  * someone else's theme, or parts of others' from 보관함 ([State.sources]), keep their days and ad, as wearing them from 장터 would.
  */
 class StudioViewModel(private val c: AppContainer, start: String = START_MINE) : ViewModel() {
+    /** [RUL-06] "area:RULES" opens the studio on that area (설정 › 알람 › 규칙·단추 → 스튜디오에서 열기). */
+    val startArea: String? = if (start.startsWith(START_AREA)) start.removePrefix(START_AREA) else null
+
     /**
      * [STU-20] 1.36 one step of 되돌리기: the look and the 기능 at that point, and what was changed there (기록 목록, 사용자 2026-10-31
      * "최상의 엔터프라이즈급 스튜디오").
@@ -793,6 +796,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
         const val START_FEATURE = "feature:"
+        const val START_AREA = "area:"
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */
         fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
         /** [STU-21] The 기능 the studio can carry, in the order shown. */

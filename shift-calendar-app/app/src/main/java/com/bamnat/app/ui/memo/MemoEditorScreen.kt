@@ -400,6 +400,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 )
             }
             if (!memo.isChecklist) MemoBodyToolbar(bodyTools)
+            // [RUL-05] 1.36 사용자 "메모장 및 모든 곳에서": {근무}·{이번주야간} 같은 수식이 있으면 그날 값으로 어떻게 읽히는지.
+            com.bamnat.app.logic.MemoFormulaPreview(memo, Modifier.padding(horizontal = 20.dp))
             val chars = if (memo.isChecklist) memo.checklist.sumOf { it.text.length } else memo.body.length
             Text(
                 "${chars}자" + if (memo.isChecklist) " · 완료 ${memo.checkedCount}/${memo.itemCount}" else "",

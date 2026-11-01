@@ -178,9 +178,9 @@ const partLines = (lines) => {
 
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 // 1.36 [RUL-03][RUL-04] core formula/Logic.kt: where a button sits, the safe verbs, when a rule runs; a formula may compare amounts.
-const BUTTON_PLACES = ["day", "memo", "cal"];
-const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney"];
-const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open"];
+const BUTTON_PLACES = ["day", "memo", "cal", "money"];
+const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome"];
+const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money"];
 const logicGuard = (s) => textProblemExcept(s, "amount") ?? (investAdvice(s) ? "invest_advice" : null);
 const logicFormula = (s) => (s === "" ? null : formulaProblem(s) ?? logicGuard(s));
 const logicText = (s) => (s === "" ? null : formulaTextProblem(s) ?? logicGuard(s));
@@ -923,8 +923,8 @@ export function tabsOf(body) {
       case "logic":
         out.add("app");
         for (const x of [...(p.buttons ?? []), ...(p.rules ?? [])]) {
-          if (["memoTpl", "newMemo", "checkReset"].includes(x.do)) out.add("memo");
-          if (x.do === "addMoney") out.add("money");
+          if (["memoTpl", "newMemo", "checkReset", "memoLine"].includes(x.do) || x.on === "memo" || x.where === "memo") out.add("memo");
+          if (["addMoney", "addIncome"].includes(x.do) || x.on === "money" || x.where === "money") out.add("money");
         }
         break;
       case "layout":
