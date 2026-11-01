@@ -176,6 +176,15 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         FEATURES -> listOf(Tool.FEATURE)
     }
 
+    /** 사용자 2026-11-01: the 장터 구간 that holds this area's looks — a 기능별 탭 where there is one, else 테마. */
+    val marketKind: String get() = com.bamnat.app.recipe.RecipeClient.let { r ->
+        when (this) {
+            CALENDAR -> r.SCOPE_TAB + "calendar"; MONEY -> r.SCOPE_TAB + "money"; MEMO -> r.SCOPE_TAB + "memo"
+            STATS, PAY -> r.SCOPE_TAB + "pay"; WIDGET -> r.SCOPE_TAB + "widget"; ALARM -> r.SCOPE_TAB + "alarm"; FEATURES -> r.SCOPE_TAB
+            else -> r.SCOPE_THEME
+        }
+    }
+
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
     val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET)
 
@@ -207,7 +216,7 @@ private const val SCALE_SMALL = 0.38f
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Unit = {}) {
+fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Unit = {}, onMarket: ((String) -> Unit)? = null) {
     com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.surface.luminance() > 0.5f)
     val c = LocalContext.current.appContainer
     val s by vm.state.collectAsStateWithLifecycle()
@@ -220,7 +229,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
     var preparing by remember { mutableStateOf(false) }
-    var uploadWhat by remember { mutableStateOf<String?>(null) }
+    var uploadWhat by remember { mutableStateOf<List<String>?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -388,9 +397,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             TextButton(onClick = { checked {
                                 preparing = true
                                 // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
-                                val tab = vm.changedTab()
+                                val tabs = vm.changedTabs()
                                 takeShot()
-                                if (tab != null) { uploadWhat = tab; preparing = false }
+                                if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
                                     publishing = Triple(body, parent, vm.nextOf())
@@ -569,7 +578,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             vm.change { it.copy(photoLook = PhotoLook.decode(it.photoLook).copy(corners = k).encode()) }
                         }
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
-                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
+                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer,
+                            onMarket = onMarket?.let { go -> { go(area.marketKind) } }, style = vm.style)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                     }
                     Spacer(Modifier.height(24.dp))
@@ -621,20 +631,21 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     }
     if (history) HistorySheet(s, onBack = { i -> vm.backTo(i) }, onDismiss = { history = false })
     if (changes) ChangesSheet(vm, s, before, now, onGo = { a -> pick(Area.valueOf(a)); changes = false }, onDismiss = { changes = false })
-    uploadWhat?.let { tab ->
-        var alone by remember(tab) { mutableStateOf(true) }
-        val name = com.bamnat.app.ui.recipe.tabName(tab)
+    uploadWhat?.let { tabs ->
+        // 사용자 2026-11-01: 테마 (모든 곳을 한 벌로) or any one tab changed, alone, as a 기능별 탭 — one tab changed starts on that tab.
+        val single = vm.changedTab()
+        var choice by remember(tabs) { mutableStateOf(single) }
         AlertDialog(
             onDismissRequest = { uploadWhat = null },
             title = { Text("무엇을 올릴까요?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(true to "바꾼 탭만 ($name)", false to "테마 전체").forEach { (v, label) ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alone = v }, verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = alone == v, onClick = { alone = v })
+                    (tabs + listOf<String?>(null)).forEach { v ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choice = v }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = choice == v, onClick = { choice = v })
                             Column {
-                                Text(label, style = MaterialTheme.typography.bodyLarge)
-                                Text(if (v) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                Text(if (v == null) "테마 전체" else "${com.bamnat.app.ui.recipe.tabName(v)} 탭만", style = MaterialTheme.typography.bodyLarge)
+                                Text(if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
                                     (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
                                     else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개가" else "이") + " 함께 가요",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -650,8 +661,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             confirmButton = { TextButton(onClick = {
                 preparing = true
                 scope.launch {
-                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(if (alone) tab else null) }
-                    publishing = Triple(body, parent, if (alone) null else vm.nextOf())
+                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(choice) }
+                    publishing = Triple(body, parent, if (choice != null) null else vm.nextOf())
                 }
             }, enabled = !preparing) {
                 if (preparing) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
@@ -854,7 +865,14 @@ private fun rememberTwoDays(): Pair<String, String>? {
 @Composable
 private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
                     onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet(),
-                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}) {
+                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}, onMarket: (() -> Unit)? = null, style: WorkStyle? = null) {
+    // 사용자 2026-11-01 ("다른 분이 만든 것을 해당 카테고리에 맞게 찾아서 스튜디오에서 사용"): 장터 opens on this area's 구간 (기능별 탭 › 가계부 …);
+    // what is 담아 두기'd there comes back here, in 보관함, to lay on.
+    if (onMarket != null) OutlinedButton(onClick = onMarket, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(if (area.marketKind.startsWith(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB) && area.marketKind != com.bamnat.app.recipe.RecipeClient.SCOPE_TAB)
+            "장터 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
+        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘기능별 탭’에서 찾기")
+    }
     // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
     val kept = remember(kept0) { kept0.sortedByDescending { it.id } }
     if (kept.isEmpty()) {

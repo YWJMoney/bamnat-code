@@ -67,6 +67,21 @@ class StudioVm136Test {
         assertEquals(com.bamnat.core.layout.TabOrder.MONEY, com.bamnat.core.recipe.LookParts.onlyTab(r))
     }
 
+    /** 사용자 2026-11-01: 가계부 and 메모 changed — either one can still go up alone as a 기능별 탭. */
+    @Test fun twoTabsChangedEitherGoesUpAlone() {
+        val vm = StudioViewModel(c)
+        idle()
+        vm.change { it.copy(screenLooks = com.bamnat.core.recipe.ScreenLooks().with("money", com.bamnat.core.recipe.ScreenLook(bg = 0xFFFFF8E1))
+            .with("memo", com.bamnat.core.recipe.ScreenLook(bg = 0xFFE8F5E9)).encode()) }
+        idle()
+        assertEquals(null, vm.changedTab())
+        val tabs = vm.changedTabs()
+        assertTrue(tabs.toString(), com.bamnat.core.layout.TabOrder.MONEY in tabs && com.bamnat.core.layout.TabOrder.MEMOS in tabs)
+        val (body, _) = vm.upload(com.bamnat.core.layout.TabOrder.MEMOS)
+        val r = RecipeCodec.read(body.replace("\"title\":\"\"", "\"title\":\"시험\""))
+        assertEquals(com.bamnat.core.layout.TabOrder.MEMOS, com.bamnat.core.recipe.LookParts.onlyTab(r))
+    }
+
     /** PC 확인 V22: a whole theme sent from 지금 모양 carries what was changed, not the app's own widget (or any piece left as the app has it). */
     @Test fun untouchedWidgetStaysOut() {
         val vm = StudioViewModel(c)
