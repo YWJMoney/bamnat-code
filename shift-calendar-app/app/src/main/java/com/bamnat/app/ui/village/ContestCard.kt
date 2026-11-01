@@ -93,7 +93,7 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                             Text("눌러서 입어 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
                     }
-                } else
+                } else {
                 // PC 확인 f39bcfbe: each pick as its small picture with the title under it, the whole a tap to try it on.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     k.picks.forEach { (code, title) ->
@@ -105,6 +105,7 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                     }
+                }
                 }
             }
         }
